@@ -4,7 +4,7 @@ use daft_logical_plan::LogicalPlanBuilder;
 use daft_scan::builder::CsvScanBuilder;
 use sqlparser::ast::TableFunctionArgs;
 
-use super::{try_coerce_list, SQLTableFunction};
+use super::{SQLTableFunction, try_coerce_list};
 use crate::{
     error::{PlannerError, SQLPlannerResult},
     functions::SQLFunctionArguments,

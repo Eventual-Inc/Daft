@@ -2,11 +2,10 @@ use std::cmp::min;
 
 #[cfg(feature = "python")]
 use common_py_serde::pickle_dumps;
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{SeedableRng, rngs::StdRng};
 
-use super::as_arrow::AsArrow;
 #[cfg(feature = "python")]
-use crate::datatypes::PythonArray;
+use crate::prelude::PythonArray;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{DaftArrowBackedType, FileArray},
@@ -25,6 +24,7 @@ where
 impl PythonArray {
     /// Estimate the size of this list by sampling and pickling its objects.
     pub fn size_bytes(&self) -> usize {
+        use pyo3::Python;
         use rand::seq::IndexedRandom;
 
         // Sample up to 1MB or 10000 items to determine total size.
@@ -35,7 +35,7 @@ impl PythonArray {
             return 0;
         }
 
-        let values = self.as_arrow().values();
+        let values = self.values();
 
         let mut rng = StdRng::seed_from_u64(0);
         let sample_candidates =
@@ -43,16 +43,18 @@ impl PythonArray {
 
         let mut sample_size_allowed = MAX_SAMPLE_SIZE;
         let mut sampled_sizes = Vec::with_capacity(sample_candidates.len());
-        for c in sample_candidates {
-            // Just estimate to 0 if pickle_dumps fails.
-            let size = pickle_dumps(c).map(|v| v.len()).unwrap_or(0);
-            sampled_sizes.push(size);
-            sample_size_allowed = sample_size_allowed.saturating_sub(size);
+        Python::with_gil(|py| {
+            for c in sample_candidates {
+                // Just estimate to 0 if pickle_dumps fails.
+                let size = pickle_dumps(py, c).map(|v| v.len()).unwrap_or(0);
+                sampled_sizes.push(size);
+                sample_size_allowed = sample_size_allowed.saturating_sub(size);
 
-            if sample_size_allowed == 0 {
-                break;
+                if sample_size_allowed == 0 {
+                    break;
+                }
             }
-        }
+        });
 
         if sampled_sizes.len() == values.len() {
             // Sampling complete.

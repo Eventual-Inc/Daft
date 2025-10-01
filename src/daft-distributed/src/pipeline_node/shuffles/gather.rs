@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_logical_plan::partitioning::UnknownClusteringConfig;
 use daft_schema::schema::SchemaRef;
@@ -8,15 +8,15 @@ use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        make_in_memory_task_from_materialized_outputs, DistributedPipelineNode, NodeID, NodeName,
-        PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        SubmittableTaskStream, make_in_memory_task_from_materialized_outputs,
     },
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SwordfishTask, TaskContext},
     },
-    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
-    utils::channel::{create_channel, Sender},
+    utils::channel::{Sender, create_channel},
 };
 
 pub(crate) struct GatherNode {
@@ -32,12 +32,12 @@ impl GatherNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![child.node_id()],
@@ -46,7 +46,7 @@ impl GatherNode {
         );
         let config = PipelineNodeConfig::new(
             schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             Arc::new(UnknownClusteringConfig::new(1).into()),
         );
         Self {
@@ -83,6 +83,7 @@ impl GatherNode {
             TaskContext::from((&self_clone.context, task_id_counter.next())),
             materialized,
             &(self_clone as Arc<dyn DistributedPipelineNode>),
+            None,
         )?;
 
         let _ = result_tx.send(task).await;
@@ -130,19 +131,19 @@ impl DistributedPipelineNode for GatherNode {
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_node = self.child.clone().produce_tasks(stage_context);
+        let input_node = self.child.clone().produce_tasks(plan_context);
 
         // Materialize and gather all partitions to a single node
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.execution_loop(
             input_node,
-            stage_context.task_id_counter(),
+            plan_context.task_id_counter(),
             result_tx,
-            stage_context.scheduler_handle(),
+            plan_context.scheduler_handle(),
         );
-        stage_context.spawn(execution_loop);
+        plan_context.spawn(execution_loop);
 
         SubmittableTaskStream::from(result_rx)
     }

@@ -7,12 +7,13 @@
 Daft: Unified Engine for Data Analytics, Engineering & ML/AI
 ============================================================
 
+|TrendShift|
 
 `Daft <https://www.daft.ai>`_ is a distributed query engine for large-scale data processing using Python or SQL, implemented in Rust.
 
 * **Familiar interactive API:** Lazy Python Dataframe for rapid and interactive iteration, or SQL for analytical queries
 * **Focus on the what:** Powerful Query Optimizer that rewrites queries to be as efficient as possible
-* **Data Catalog integrations:** Full integration with data catalogs such as Apache Iceberg
+* **Data Catalog integrations:** Integration with data catalogs (AWS Glue, Unity Catalog) and table formats like Apache Iceberg
 * **Rich multimodal type-system:** Supports multimodal types such as Images, URLs, Tensors and more
 * **Seamless Interchange**: Built on the `Apache Arrow <https://arrow.apache.org/docs/index.html>`_ In-Memory Format
 * **Built for the cloud:** `Record-setting <https://www.daft.ai/blog/announcing-daft-02>`_ I/O performance for integrations with S3 cloud storage
@@ -77,13 +78,14 @@ Benchmarks
 ----------
 |Benchmark Image|
 
-To see the full benchmarks, detailed setup, and logs, check out our `benchmarking page. <https://docs.daft.ai/en/stable/resources/benchmarks/tpch/>`_
+To see the full benchmarks, detailed setup, and logs, check out our `benchmarking page. <https://docs.daft.ai/en/stable/benchmarks>`_
 
 
 More Resources
 ^^^^^^^^^^^^^^
 
 * `Daft Quickstart <https://docs.daft.ai/en/stable/quickstart/>`_ - learn more about Daft's full range of capabilities including dataloading from URLs, joins, user-defined functions (UDF), groupby, aggregations and more.
+* `Examples <https://docs.daft.ai/en/stable/examples/>`_ - see Daft in action with use cases across text, images, audio, and more
 * `User Guide <https://docs.daft.ai/en/stable/>`_ - take a deep-dive into each topic within Daft
 * `API Reference <https://docs.daft.ai/en/stable/api/>`_ - API reference for public classes/functions of Daft
 * `SQL Reference <https://docs.daft.ai/en/stable/sql/>`_ - Daft SQL reference
@@ -126,12 +128,12 @@ Related Projects
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
 | `Modin <https://github.com/modin-project/modin>`_ | Yes             | Python object | Yes         | No              | Some(Pandas)                | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
-| `Pyspark <https://github.com/apache/spark>`_      | Yes             | No            | Yes         | Pandas UDF/IO   | Pandas UDF                  | Yes         |
+| `Ray Data <https://github.com/ray-project/ray>`_  | No              | Yes           | Yes         | Yes             | Some(PyArrow)               | Yes         |
++---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
+| `PySpark <https://github.com/apache/spark>`_      | Yes             | No            | Yes         | Pandas UDF/IO   | Pandas UDF                  | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
 | `Dask DF <https://github.com/dask/dask>`_         | No              | Python object | Yes         | No              | Some(Pandas)                | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
-
-Check out our `engine comparison page <https://docs.daft.ai/en/stable/resources/engine_comparison/>`_ for more details!
 
 License
 -------
@@ -142,8 +144,8 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
    :alt: Dataframe code to load a folder of images from AWS S3 and create thumbnails
    :height: 256
 
-.. |Benchmark Image| image:: https://github-production-user-asset-6210df.s3.amazonaws.com/2550285/243524430-338e427d-f049-40b3-b555-4059d6be7bfd.png
-   :alt: Benchmarks for SF100 TPCH
+.. |Benchmark Image| image:: https://raw.githubusercontent.com/Eventual-Inc/Daft/refs/heads/main/assets/benchmark.png
+   :alt: AI Benchmarks
 
 .. |Banner| image:: https://daft.ai/images/diagram.png
    :target: https://www.daft.ai
@@ -168,3 +170,9 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
 .. |Slack| image:: https://img.shields.io/badge/slack-@distdata-purple.svg?logo=slack
    :target: https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg
    :alt: slack community
+
+.. |TrendShift| image:: https://trendshift.io/api/badge/repositories/8239
+   :target: https://trendshift.io/repositories/8239
+   :alt: Eventual-Inc/Daft | Trendshift
+   :width: 250px
+   :height: 55px

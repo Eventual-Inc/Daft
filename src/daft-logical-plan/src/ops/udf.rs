@@ -2,15 +2,15 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::Schema;
-use daft_dsl::{functions::python::UDFProperties, ExprRef};
+use daft_dsl::{ExprRef, functions::python::UDFProperties};
 use daft_schema::{dtype::DataType, schema::SchemaRef};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    LogicalPlan,
     logical_plan::{Error, Result},
     stats::StatsState,
-    LogicalPlan,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -59,16 +59,18 @@ impl UDFProject {
                     .find(|f| matches!(f.dtype, DataType::Python))
                 {
                     return Err(Error::CreationError {
-                        source: DaftError::InternalError(
-                            format!("UDF `{}` can not set `use_process=True` because it has a Python-dtype input column `{}`. Please unset `use_process` or cast the input to a non-Python dtype if possible.", udf_properties.name, col.name)
-                        ),
+                        source: DaftError::InternalError(format!(
+                            "UDF `{}` can not set `use_process=True` because it has a Python-dtype input column `{}`. Please unset `use_process` or cast the input to a non-Python dtype if possible.",
+                            udf_properties.name, col.name
+                        )),
                     });
                 }
                 if output_field.dtype == DataType::Python {
                     return Err(Error::CreationError {
-                        source: DaftError::InternalError(
-                            format!("UDF `{}` can not set `use_process=True` because it returns a Python-dtype value. Please unset `use_process` or specify the `return_dtype` to another dtype if possible.", udf_properties.name)
-                        ),
+                        source: DaftError::InternalError(format!(
+                            "UDF `{}` can not set `use_process=True` because it returns a Python-dtype value. Please unset `use_process` or specify the `return_dtype` to another dtype if possible.",
+                            udf_properties.name
+                        )),
                     });
                 }
             }

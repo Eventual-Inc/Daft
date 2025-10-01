@@ -5,8 +5,8 @@ use pyo3::{basic::CompareOp, prelude::*};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    file_format_config::DatabaseSourceConfig, CsvSourceConfig, FileFormat, FileFormatConfig,
-    JsonSourceConfig, ParquetSourceConfig, WarcSourceConfig, WriteMode,
+    CsvSourceConfig, FileFormat, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig,
+    WarcSourceConfig, WriteMode, file_format_config::DatabaseSourceConfig,
 };
 
 /// Configuration for parsing a particular file format.

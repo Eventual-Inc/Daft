@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use common_error::{ensure, DaftError, DaftResult};
+use common_error::{DaftError, DaftResult, ensure};
 use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF},
 };
-use daft_io::{get_io_client, Error, IOConfig, IOStatsContext, IOStatsRef};
+use daft_io::{Error, IOConfig, IOStatsContext, IOStatsRef, get_io_client};
 use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
 
@@ -62,7 +62,7 @@ impl ScalarUDF for UrlDownload {
                 return Err(DaftError::ValueError(format!(
                     "Invalid value for 'on_error': {}",
                     on_error
-                )))
+                )));
             }
         };
 
@@ -132,7 +132,7 @@ fn url_download(
                 (
                     i,
                     owned_client
-                        .single_url_download(i, url, raise_error_on_failure, owned_io_stats)
+                        .single_url_download(url, raise_error_on_failure, owned_io_stats)
                         .await,
                 )
             })

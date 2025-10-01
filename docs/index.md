@@ -136,13 +136,22 @@ Daft is a high-performance data engine providing simple and reliable data proces
     50% { opacity: 0; }
   }
 
-  .daft-pipeline-component .fade-in {
-    animation: daft-enter .45s ease both;
+  .daft-pipeline-component .cursor-fade {
+    color: #ff00ff;
+    animation: daft-cursor-fade 400ms ease-out forwards;
+    transform-origin: bottom right;
+    display: inline-block;
   }
 
-  @keyframes daft-enter {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: translateY(0); }
+  @keyframes daft-cursor-fade {
+    0% {
+      opacity: 1;
+      transform: rotate(0deg);
+    }
+    100% {
+      opacity: 0;
+      transform: rotate(10deg);
+    }
   }
 
   @media (max-width: 720px) {
@@ -171,7 +180,7 @@ Daft is a high-performance data engine providing simple and reliable data proces
         <div class="description">
           <div class="stage-header">READ ANYTHING</div>
           <p>Daft reads raw unstructured and multimodal data collected from application systems</p>
-          <p>Object Store (AWS S3, GCS, R2)<br>Event Bus (Kafka)<br>Data Lake (Iceberg, Deltalake)</p>
+          <p>Object storage (AWS S3, GCS, R2)<br>Event bus (Kafka)<br>Data lake (Iceberg, Deltalake)</p>
         </div>
         <div class="pipeline-item">
           <span id="read" class="swap"></span>
@@ -196,8 +205,8 @@ Daft is a high-performance data engine providing simple and reliable data proces
       <div class="row">
         <div class="description">
           <div class="stage-header">WRITE</div>
-          <p>Daft lands data into specialized data systems for downstream use-cases</p>
-          <p>Search (full-text search and vector DBs)<br>Applications (SQL/NoSQL databases)<br>Analytics (data warehouses)<br>Model Training (S3 object storage)</p>
+          <p>Daft lands data into specialized data systems for downstream use cases</p>
+          <p>Search (full-text search and vector DBs)<br>Applications (SQL/NoSQL databases)<br>Analytics (data warehouses)<br>Model training (S3 object storage)</p>
         </div>
         <div class="pipeline-item">
           <span id="write" class="swap"></span>
@@ -396,7 +405,6 @@ async function typeTo(el, text) {
     if (!el) return; // Safety check for null elements
 
     const speed = 12 + Math.random() * 10;
-    el.classList.remove("fade-in");
     el.innerHTML = "";
     const span = document.createElement("span");
     span.className = "type";
@@ -414,7 +422,15 @@ async function typeTo(el, text) {
         span.innerHTML = formattedLines.join('\n') + '<span class="cursor">█</span>';
         await new Promise(r => setTimeout(r, speed));
     }
-    el.classList.add("fade-in");
+
+    // Let cursor blink for a moment, then fade away
+    const cursor = span.querySelector('.cursor');
+    if (cursor) {
+        setTimeout(() => {
+            cursor.classList.remove('cursor');
+            cursor.classList.add('cursor-fade');
+        }, 2200); // Keep blinking for N seconds before fading
+    }
 }
 
 // Cycle logic
@@ -458,7 +474,7 @@ setInterval(runCycle, 4600);
 
 **:octicons-image-24: Unified multimodal data processing**
 
-Break down data silos with a single framework that handles structured tables, unstructured text, and rich media like images—all with the same intuitive API. Why juggle multiple tools when one can do it all?
+While traditional dataframes struggle with anything beyond tables, Daft natively handles tables, images, text, and embeddings through a single Python API. No more stitching together specialized tools for different data types.
 
 **:material-language-python: Python-native, no JVM required**
 
@@ -488,7 +504,9 @@ Start local, scale global—without changing a line of code. Daft's Rust-powered
 
     1. [Quickstart](quickstart.md): Itching to run some Daft code? Hit the ground running with our 10 minute quickstart notebook.
 
-    2. [API Documentation](api/index.md): Searchable documentation and reference material to Daft’s public API.
+    2. [Examples](examples/index.md): See Daft in action with use cases across text, images, audio, and more.
+
+    3. [API Documentation](api/index.md): Searchable documentation and reference material to Daft's public API.
 
 ## Contribute to Daft
 

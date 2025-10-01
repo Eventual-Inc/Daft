@@ -9,8 +9,8 @@ use std::{
 };
 
 use common_display::table_display::StrValue;
-use common_error::{ensure, DaftError, DaftResult};
-use common_file::DaftFile;
+use common_error::{DaftError, DaftResult, ensure};
+use common_file::FileReference;
 use common_hashable_float_wrapper::FloatWrapper;
 use common_image::{CowImage, Image};
 #[cfg(feature = "python")]
@@ -91,8 +91,8 @@ pub enum Literal {
     #[cfg(feature = "python")]
     Python(PyObjectWrapper),
     /// TODO chore: audit struct literal vs. struct expression support.
-    Struct(IndexMap<Field, Literal>),
-    File(DaftFile),
+    Struct(IndexMap<String, Literal>),
+    File(FileReference),
     /// A tensor
     Tensor {
         data: Series,
@@ -236,11 +236,11 @@ impl Display for Literal {
             }),
             Self::Struct(entries) => {
                 write!(f, "Struct(")?;
-                for (i, (field, v)) in entries.iter().enumerate() {
+                for (i, (k, v)) in entries.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}: {}", field.name, v)?;
+                    write!(f, "{}: {}", k, v)?;
                 }
                 write!(f, ")")
             }
@@ -323,7 +323,12 @@ impl Literal {
             Self::List(series) => DataType::List(Box::new(series.data_type().clone())),
             #[cfg(feature = "python")]
             Self::Python(_) => DataType::Python,
-            Self::Struct(entries) => DataType::Struct(entries.keys().cloned().collect()),
+            Self::Struct(entries) => DataType::Struct(
+                entries
+                    .iter()
+                    .map(|(k, v)| Field::new(k, v.get_type()))
+                    .collect(),
+            ),
             Self::File(_) => DataType::File,
             Self::Tensor { data, .. } => DataType::Tensor(Box::new(data.data_type().clone())),
             Self::SparseTensor {
@@ -548,7 +553,7 @@ impl Literal {
     }
 
     /// If the literal is a struct, return the reference to its map. Otherwise, return None.
-    pub fn as_struct(&self) -> Option<&IndexMap<Field, Self>> {
+    pub fn as_struct(&self) -> Option<&IndexMap<String, Self>> {
         match self {
             Self::Struct(map) => Some(map),
             _ => None,
@@ -571,10 +576,17 @@ impl Literal {
         // A "struct" literal is a strange concept, and only makes
         // sense that it predates the struct expression. The literals
         // tell us the type, so need to give before construction.
-        let iter_with_types = iter
-            .into_iter()
-            .map(|(name, lit)| (Field::new(name, lit.get_type()), lit));
-        Self::Struct(IndexMap::from_iter(iter_with_types))
+        Self::Struct(IndexMap::from_iter(iter))
+    }
+
+    /// Cast the literal to a data type.
+    ///
+    /// This method is lossy, AKA it is not guaranteed that `lit.cast(dtype).get_type() == dtype`.
+    /// This is because null literals always have the null data type.
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Self> {
+        Series::from(self.clone())
+            .cast(dtype)
+            .and_then(|s| Self::try_from_single_value_series(&s))
     }
 }
 

@@ -33,9 +33,10 @@ class RowWiseUdf(Generic[P, T]):
     Row-wise functions are called with data from one row at a time, and map that to a single output value for that row.
     """
 
-    def __init__(self, fn: Callable[P, T], return_dtype: DataTypeLike | None):
+    def __init__(self, fn: Callable[P, T], return_dtype: DataTypeLike | None, unnest: bool):
         self._inner = fn
         self.name = get_unique_function_name(fn)
+        self.unnest = unnest
 
         if return_dtype is None:
             type_hints = get_type_hints(fn)
@@ -45,7 +46,12 @@ class RowWiseUdf(Generic[P, T]):
                 )
 
             return_dtype = type_hints["return"]
-        self.return_dtype = DataType._infer_type(return_dtype)
+        self.return_dtype = DataType._infer(return_dtype)
+
+        if self.unnest and not self.return_dtype.is_struct():
+            raise ValueError(
+                f"Expected Daft function `return_dtype` to be `DataType.struct` when `unnest=True`, instead found: {self.return_dtype}"
+            )
 
     @overload
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> T: ...
@@ -62,9 +68,14 @@ class RowWiseUdf(Generic[P, T]):
         if len(expr_args) == 0:
             return self._inner(*args, **kwargs)
 
-        return Expression._from_pyexpr(
+        expr = Expression._from_pyexpr(
             row_wise_udf(self.name, self._inner, self.return_dtype._dtype, (args, kwargs), expr_args)
         )
+
+        if self.unnest:
+            expr = expr.unnest()
+
+        return expr
 
 
 def __call_async_batch(

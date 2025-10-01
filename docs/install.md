@@ -42,6 +42,14 @@ Depending on your use case, you may need to install Daft with additional depende
       </label>
 
       <label class="checkbox-item">
+        <input type="checkbox" id="transformers" data-extra="transformers">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>Transformers</strong> <code>transformers</code>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
         <input type="checkbox" id="ray" data-extra="ray">
         <span class="checkmark"></span>
         <div class="checkbox-content">
@@ -171,7 +179,7 @@ pip install -U daft-lts
 .checkbox-group {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 12px;
+  gap: 8px;
   margin-bottom: 24px;
   align-items: center;
 }
@@ -180,7 +188,7 @@ pip install -U daft-lts
   display: flex;
   align-items: center;
   cursor: pointer;
-  padding: 8px 8px 8px 16px;
+  padding: 4px 4px 4px 16px;
   border: 1px solid var(--md-default-fg-color--lightest);
   border-radius: 6px;
   transition: all 0.2s ease;
@@ -228,7 +236,7 @@ pip install -U daft-lts
 
 .checkbox-content strong {
   display: block;
-  margin-bottom: -2px;
+  margin-bottom: -4px;
   color: var(--md-default-fg-color);
   font-size: 14px;
   font-weight: normal;

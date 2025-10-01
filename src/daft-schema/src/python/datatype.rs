@@ -287,13 +287,17 @@ impl PyDataType {
     ) -> PyResult<Self> {
         match (height, width) {
             (Some(height), Some(width)) => {
-                let image_mode = mode.ok_or_else(|| PyValueError::new_err(
-                    "Image mode must be provided if specifying an image size.",
-                ))?;
+                let image_mode = mode.ok_or_else(|| {
+                    PyValueError::new_err(
+                        "Image mode must be provided if specifying an image size.",
+                    )
+                })?;
                 Ok(DataType::FixedShapeImage(image_mode, height, width).into())
             }
             (None, None) => Ok(DataType::Image(mode).into()),
-            (_, _) => Err(PyValueError::new_err(format!("Height and width for image type must both be specified or both not specified, but got: height={height:?}, width={width:?}"))),
+            (_, _) => Err(PyValueError::new_err(format!(
+                "Height and width for image type must both be specified or both not specified, but got: height={height:?}, width={width:?}"
+            ))),
         }
     }
 
@@ -301,12 +305,6 @@ impl PyDataType {
     #[pyo3(signature = (dtype, shape=None))]
     pub fn tensor(dtype: Self, shape: Option<Vec<u64>>) -> PyResult<Self> {
         // TODO(Clark): Add support for non-numeric (e.g. string) tensor columns.
-        if !dtype.dtype.is_numeric() {
-            return Err(PyValueError::new_err(format!(
-                "The data type for a tensor column must be numeric, but got: {}",
-                dtype.dtype
-            )));
-        }
         let dtype = Box::new(dtype.dtype);
         match shape {
             Some(shape) => Ok(DataType::FixedShapeTensor(dtype, shape).into()),
@@ -321,12 +319,6 @@ impl PyDataType {
         shape: Option<Vec<u64>>,
         use_offset_indices: bool,
     ) -> PyResult<Self> {
-        if !dtype.dtype.is_numeric() {
-            return Err(PyValueError::new_err(format!(
-                "The data type for a tensor column must be numeric, but got: {}",
-                dtype.dtype
-            )));
-        }
         let dtype = Box::new(dtype.dtype);
         match shape {
             Some(shape) => {

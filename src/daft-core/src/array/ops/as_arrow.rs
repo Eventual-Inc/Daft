@@ -1,17 +1,11 @@
-use std::sync::Arc;
-
 use arrow2::{array, types::months_days_ns};
 
-#[cfg(feature = "python")]
-use crate::array::pseudo_arrow::PseudoArrowArray;
-#[cfg(feature = "python")]
-use crate::datatypes::PythonArray;
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::{DateArray, DurationArray, TimeArray, TimestampArray},
         BinaryArray, BooleanArray, DaftPrimitiveType, FixedSizeBinaryArray, IntervalArray,
         NullArray, Utf8Array,
+        logical::{DateArray, DurationArray, TimeArray, TimestampArray},
     },
 };
 
@@ -64,9 +58,6 @@ impl_asarrow_dataarray!(BooleanArray, array::BooleanArray);
 impl_asarrow_dataarray!(BinaryArray, array::BinaryArray<i64>);
 impl_asarrow_dataarray!(FixedSizeBinaryArray, array::FixedSizeBinaryArray);
 impl_asarrow_dataarray!(IntervalArray, array::PrimitiveArray<months_days_ns>);
-
-#[cfg(feature = "python")]
-impl_asarrow_dataarray!(PythonArray, PseudoArrowArray<Arc<pyo3::PyObject>>);
 
 impl_asarrow_logicalarray!(DateArray, array::PrimitiveArray<i32>);
 impl_asarrow_logicalarray!(TimeArray, array::PrimitiveArray<i64>);

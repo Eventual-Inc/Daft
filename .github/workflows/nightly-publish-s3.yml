@@ -29,6 +29,7 @@ jobs:
       arch: ${{ matrix.arch }}
       lts: ${{ matrix.lts }}
       build_type: release
+      run_tests: true
     strategy:
       fail-fast: false
       matrix:

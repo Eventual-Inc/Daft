@@ -2,11 +2,13 @@ use arrow2::array::Array;
 use common_error::DaftResult;
 
 use super::as_arrow::AsArrow;
+#[cfg(feature = "python")]
+use crate::prelude::PythonArray;
 use crate::{
     array::{
+        DataArray, FixedSizeListArray, ListArray, StructArray,
         growable::{Growable, GrowableArray},
         ops::full::FullNull,
-        DataArray, FixedSizeListArray, ListArray, StructArray,
     },
     datatypes::{BooleanArray, DaftPhysicalType, DataType},
     series::{IntoSeries, Series},
@@ -129,7 +131,7 @@ where
     }
 }
 
-macro_rules! impl_if_else_nested_array {
+macro_rules! impl_if_else {
     ($arr:ident) => {
         impl<'a> $arr {
             pub fn if_else(
@@ -153,6 +155,9 @@ macro_rules! impl_if_else_nested_array {
     };
 }
 
-impl_if_else_nested_array!(ListArray);
-impl_if_else_nested_array!(FixedSizeListArray);
-impl_if_else_nested_array!(StructArray);
+impl_if_else!(ListArray);
+impl_if_else!(FixedSizeListArray);
+impl_if_else!(StructArray);
+
+#[cfg(feature = "python")]
+impl_if_else!(PythonArray);

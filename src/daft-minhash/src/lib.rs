@@ -1,10 +1,7 @@
-#![feature(test)]
 #![feature(portable_simd)]
 #![feature(iter_next_chunk)]
 #![feature(iter_array_chunks)]
 #![feature(split_array)]
-#![feature(array_windows)]
-#![feature(allocator_api)]
 //! MinHash: Efficient Set Similarity Estimation
 //!
 //! MinHash is a probabilistic technique for rapidly estimating similarity between sets,
@@ -95,7 +92,7 @@
 use std::{
     collections::VecDeque,
     hash::{BuildHasher, Hasher},
-    simd::{cmp::SimdOrd, Simd},
+    simd::{Simd, cmp::SimdOrd},
 };
 
 use common_error::DaftResult;

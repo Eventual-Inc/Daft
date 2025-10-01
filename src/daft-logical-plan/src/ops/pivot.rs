@@ -8,9 +8,9 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    LogicalPlan,
     logical_plan::{self},
     stats::StatsState,
-    LogicalPlan,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -44,8 +44,8 @@ impl Pivot {
         };
 
         let output_schema = {
-            let value_col_dtype = value_column.to_field(&input.schema())?.dtype;
-            let pivot_value_fields = names.iter().map(|f| Field::new(f, value_col_dtype.clone()));
+            let agg_dtype = agg_expr.to_field(&input.schema())?.dtype;
+            let pivot_value_fields = names.iter().map(|f| Field::new(f, agg_dtype.clone()));
 
             let group_by_fields = group_by
                 .iter()

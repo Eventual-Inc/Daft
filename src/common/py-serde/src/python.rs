@@ -6,21 +6,26 @@ use std::{
 };
 
 #[cfg(feature = "python")]
-use pyo3::{types::PyAnyMethods, PyObject, PyResult, Python};
+use pyo3::{Bound, PyAny, PyObject, PyResult, Python, types::PyAnyMethods};
 use serde::{
+    Deserialize, Deserializer, Serialize, Serializer,
     de::{Error as DeError, Visitor},
     ser::Error as SerError,
-    Deserialize, Deserializer, Serialize, Serializer,
 };
 
 #[cfg(feature = "python")]
-pub fn pickle_dumps(obj: &PyObject) -> PyResult<Vec<u8>> {
-    Python::with_gil(|py| {
-        py.import(pyo3::intern!(py, "daft.pickle"))
-            .and_then(|m| m.getattr(pyo3::intern!(py, "dumps")))
-            .and_then(|f| f.call1((obj,)))
-            .and_then(|b| b.extract::<Vec<u8>>())
-    })
+pub fn pickle_dumps(py: Python, obj: &PyObject) -> PyResult<Vec<u8>> {
+    py.import(pyo3::intern!(py, "daft.pickle"))?
+        .getattr(pyo3::intern!(py, "dumps"))?
+        .call1((obj,))?
+        .extract::<Vec<u8>>()
+}
+
+#[cfg(feature = "python")]
+pub fn pickle_loads(py: Python, bytes: impl AsRef<[u8]>) -> PyResult<Bound<PyAny>> {
+    py.import(pyo3::intern!(py, "daft.pickle"))?
+        .getattr(pyo3::intern!(py, "loads"))?
+        .call1((bytes.as_ref(),))
 }
 
 #[cfg(feature = "python")]
@@ -28,7 +33,8 @@ pub fn serialize_py_object<S>(obj: &PyObject, s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let bytes = pickle_dumps(obj).map_err(|e| SerError::custom(e.to_string()))?;
+    let bytes =
+        Python::with_gil(|py| pickle_dumps(py, obj).map_err(|e| SerError::custom(e.to_string())))?;
 
     s.serialize_bytes(bytes.as_slice())
 }
@@ -94,9 +100,9 @@ macro_rules! impl_bincode_py_state_serialization {
                 py: Python<'py>,
             ) -> PyResult<(PyObject, (pyo3::Bound<'py, pyo3::types::PyBytes>,))> {
                 use pyo3::{
+                    PyErr, PyTypeInfo,
                     exceptions::PyRuntimeError,
                     types::{PyAnyMethods, PyBytes},
-                    PyErr, PyTypeInfo,
                 };
                 Ok((
                     Self::type_object(py)

@@ -6,10 +6,10 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use crate::sink_info::CatalogType;
 use crate::{
+    LogicalPlan,
     logical_plan::{self},
     sink_info::SinkInfo,
     stats::{PlanStats, StatsState},
-    LogicalPlan,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -4,8 +4,8 @@ use common_scan_info::Sharder;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan,
+    stats::{ApproxStats, PlanStats, StatsState},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

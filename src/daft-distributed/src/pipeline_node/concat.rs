@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use daft_logical_plan::{
-    partitioning::{ClusteringSpecRef, UnknownClusteringConfig},
     ClusteringSpec,
+    partitioning::{ClusteringSpecRef, UnknownClusteringConfig},
 };
 use daft_schema::prelude::SchemaRef;
 use futures::StreamExt;
@@ -13,7 +13,7 @@ use crate::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
         SubmittableTaskStream,
     },
-    stage::{StageConfig, StageExecutionContext},
+    plan::{PlanConfig, PlanExecutionContext},
 };
 
 pub(crate) struct ConcatNode {
@@ -29,13 +29,13 @@ impl ConcatNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         schema: SchemaRef,
         other: Arc<dyn DistributedPipelineNode>,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![child.node_id(), other.node_id()],
@@ -45,7 +45,7 @@ impl ConcatNode {
 
         let config = PipelineNodeConfig::new(
             schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             ClusteringSpecRef::new(ClusteringSpec::Unknown(UnknownClusteringConfig::new(
                 child.config().clustering_spec.num_partitions()
                     + other.config().clustering_spec.num_partitions(),
@@ -105,10 +105,10 @@ impl DistributedPipelineNode for ConcatNode {
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_node = self.child.clone().produce_tasks(stage_context);
-        let other_node = self.other.clone().produce_tasks(stage_context);
+        let input_node = self.child.clone().produce_tasks(plan_context);
+        let other_node = self.other.clone().produce_tasks(plan_context);
         SubmittableTaskStream::new(input_node.chain(other_node).boxed())
     }
 

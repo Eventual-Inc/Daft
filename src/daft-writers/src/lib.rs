@@ -1,5 +1,3 @@
-#![feature(hash_raw_entry)]
-#![feature(let_chains)]
 mod batch;
 mod file;
 mod ipc;
@@ -51,6 +49,11 @@ pub use sink::make_data_sink_writer_factory;
 
 pub const RETURN_PATHS_COLUMN_NAME: &str = "path";
 
+pub struct WriteResult {
+    pub bytes_written: usize,
+    pub rows_written: usize,
+}
+
 /// This trait is used to abstract the writing of data to a file.
 ///
 /// The `Input` type is the type of data that will be written to the file.
@@ -61,7 +64,7 @@ pub trait AsyncFileWriter: Send + Sync {
     type Result;
 
     /// Write data to the file, returning the number of bytes written.
-    async fn write(&mut self, data: Self::Input) -> DaftResult<usize>;
+    async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult>;
 
     /// Close the file and return the result. The caller should NOT write to the file after calling this method.
     async fn close(&mut self) -> DaftResult<Self::Result>;

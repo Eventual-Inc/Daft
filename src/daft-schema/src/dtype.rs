@@ -282,9 +282,15 @@ impl DataType {
                 logical_extension.to_arrow()
             }
             #[cfg(feature = "python")]
-            Self::Python => Err(DaftError::TypeError(format!(
-                "Can not convert {self:?} into arrow type"
-            ))),
+            Self::Python => {
+                let physical = Box::new(Self::Binary);
+                let logical_extension = Self::Extension(
+                    DAFT_SUPER_EXTENSION_NAME.into(),
+                    physical,
+                    Some(self.to_json()?),
+                );
+                logical_extension.to_arrow()
+            }
             Self::Unknown => Err(DaftError::TypeError(format!(
                 "Can not convert {self:?} into arrow type"
             ))),
@@ -688,7 +694,7 @@ impl DataType {
                 return Err(DaftError::TypeError(format!(
                     "Expected input to be numeric, instead got {}",
                     self,
-                )))
+                )));
             }
         };
         Ok(data_type)
@@ -920,7 +926,7 @@ impl DataType {
 )]
 impl From<&ArrowType> for DataType {
     fn from(item: &ArrowType) -> Self {
-        let result = match item {
+        match item {
             ArrowType::Null => Self::Null,
             ArrowType::Boolean => Self::Boolean,
             ArrowType::Int8 => Self::Int8,
@@ -980,12 +986,11 @@ impl From<&ArrowType> for DataType {
                 Self::Struct(fields)
             }
             ArrowType::Extension(name, dtype, metadata) => {
-                if name == DAFT_SUPER_EXTENSION_NAME {
-                    if let Some(metadata) = metadata {
-                        if let Ok(daft_extension) = Self::from_json(metadata.as_str()) {
-                            return daft_extension;
-                        }
-                    }
+                if name == DAFT_SUPER_EXTENSION_NAME
+                    && let Some(metadata) = metadata
+                    && let Ok(daft_extension) = Self::from_json(metadata.as_str())
+                {
+                    return daft_extension;
                 }
                 Self::Extension(
                     name.clone(),
@@ -995,9 +1000,7 @@ impl From<&ArrowType> for DataType {
             }
 
             _ => panic!("DataType :{item:?} is not supported"),
-        };
-
-        result
+        }
     }
 }
 

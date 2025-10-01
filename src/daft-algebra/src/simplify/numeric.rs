@@ -120,7 +120,7 @@ mod tests {
 
     use common_error::DaftResult;
     use common_treenode::Transformed;
-    use daft_dsl::{lit, Column, Expr, ExprRef, Operator, ResolvedColumn};
+    use daft_dsl::{Column, Expr, ExprRef, Operator, ResolvedColumn, lit};
     use daft_schema::schema::Schema;
 
     use crate::simplify::numeric::simplify_numeric_expr;

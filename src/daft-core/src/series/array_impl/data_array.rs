@@ -3,13 +3,11 @@ use std::sync::Arc;
 use common_error::DaftResult;
 
 use super::{ArrayWrapper, IntoSeries, Series};
-#[cfg(feature = "python")]
-use crate::datatypes::PythonArray;
 use crate::{
     array::{
-        ops::{broadcast::Broadcastable, DaftListAggable, DaftSetAggable, GroupIndices},
-        prelude::*,
         DataArray,
+        ops::{DaftListAggable, DaftSetAggable, GroupIndices, broadcast::Broadcastable},
+        prelude::*,
     },
     datatypes::{DaftArrowBackedType, DataType, FixedSizeBinaryArray, IntervalArray},
     lit::Literal,
@@ -21,15 +19,6 @@ impl<T: DaftArrowBackedType> IntoSeries for DataArray<T>
 where
     ArrayWrapper<Self>: SeriesLike,
 {
-    fn into_series(self) -> Series {
-        Series {
-            inner: Arc::new(ArrayWrapper(self)),
-        }
-    }
-}
-
-#[cfg(feature = "python")]
-impl IntoSeries for PythonArray {
     fn into_series(self) -> Series {
         Series {
             inner: Arc::new(ArrayWrapper(self)),
@@ -198,5 +187,3 @@ impl_series_like_for_data_array!(Utf8Array);
 impl_series_like_for_data_array!(ExtensionArray);
 impl_series_like_for_data_array!(IntervalArray);
 impl_series_like_for_data_array!(Decimal128Array);
-#[cfg(feature = "python")]
-impl_series_like_for_data_array!(PythonArray);

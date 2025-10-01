@@ -16,7 +16,7 @@ use tokio::{
 };
 use tokio_util::io::StreamReader;
 
-use crate::{schema::merge_schema, CsvParseOptions};
+use crate::{CsvParseOptions, schema::merge_schema};
 
 const DEFAULT_COLUMN_PREFIX: &str = "column_";
 

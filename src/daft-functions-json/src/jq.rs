@@ -50,9 +50,8 @@ mod jaq {
         series::Series,
     };
     use jaq_core::{
-        compile, load,
+        Compiler, Ctx, Filter, Native, RcIter, compile, load,
         load::{Arena, File, Loader},
-        Compiler, Ctx, Filter, Native, RcIter,
     };
     use jaq_json::Val;
     use serde_json::Value;

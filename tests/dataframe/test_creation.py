@@ -225,14 +225,21 @@ def test_create_dataframe_arrow_extension_type(valid_data: list[dict[str, float]
     assert df.to_arrow() == expected
 
 
-class PyExtType(pa.PyExtensionType):
-    def __init__(self):
-        pa.PyExtensionType.__init__(self, pa.binary())
+# Define PyExtType class conditionally at module level to avoid import errors
+if hasattr(pa, "PyExtensionType"):
 
-    def __reduce__(self):
-        return PyExtType, ()
+    class PyExtType(pa.PyExtensionType):
+        def __init__(self):
+            pa.PyExtensionType.__init__(self, pa.binary())
+
+        def __reduce__(self):
+            return PyExtType, ()
 
 
+@pytest.mark.skipif(
+    not hasattr(pa, "PyExtensionType"),
+    reason="Arrow version doesn't support the py_ext_type extension type.",
+)
 def test_create_dataframe_arrow_py_ext_type_raises(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     uuid_type = PyExtType()
@@ -254,10 +261,6 @@ def test_create_dataframe_arrow_unsupported_dtype(valid_data: list[dict[str, flo
     assert set(df.column_names) == set(t.column_names)
     # Type not natively supported, so should have Python object dtype.
     assert df.schema()["obj"].dtype == DataType.python()
-
-    # Assert that it raises an error when trying to convert back to arrow
-    with pytest.raises(ValueError):
-        df.to_arrow()
 
 
 ###
@@ -309,12 +312,12 @@ def test_create_dataframe_pandas_py_object(valid_data: list[dict[str, float]]) -
         pytest.param(np.array([None, MyObj(), MyObj()], dtype=np.object_), DataType.python(), id="np_object"),
         pytest.param(
             [None, {"foo": 1}, {"bar": 1}],
-            DataType.struct({"bar": DataType.int64(), "foo": DataType.int64()}),
+            DataType.struct({"foo": DataType.int64(), "bar": DataType.int64()}),
             id="arrow_struct",
         ),
         pytest.param(
             [np.array([1], dtype=np.int64), np.array([2], dtype=np.int64), np.array([3], dtype=np.int64)],
-            DataType.list(DataType.int64()),
+            DataType.tensor(DataType.int64()),
             id="numpy_1d_arrays",
         ),
         pytest.param(pa.array([[1, 2, 3], [1, 2], [1]]), DataType.list(DataType.int64()), id="pa_nested"),
@@ -336,7 +339,7 @@ def test_create_dataframe_pandas_py_object(valid_data: list[dict[str, float]]) -
             DataType.list(DataType.int64()),
             id="pa_nested_chunked",
         ),
-        pytest.param(np.ones((3, 3)), DataType.list(DataType.float64()), id="np_nested_1d"),
+        pytest.param(np.ones((3, 3)), DataType.tensor(DataType.float64()), id="np_nested_1d"),
         pytest.param(np.ones((3, 3, 3)), DataType.tensor(DataType.float64()), id="np_nested_nd"),
     ],
 )

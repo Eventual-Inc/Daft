@@ -6,8 +6,8 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    functions::{python::RuntimePyObject, scalar::ScalarFn},
     Expr, ExprRef,
+    functions::{python::RuntimePyObject, scalar::ScalarFn},
 };
 
 #[derive(derive_more::Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -186,13 +186,14 @@ impl RowWisePyFn {
         let inner_ref = self.inner.as_ref();
         let args_ref = self.original_args.as_ref();
         let name = args[0].name();
-        let outputs = Python::with_gil(|py| {
+
+        Python::with_gil(|py| {
             let func = py
                 .import(pyo3::intern!(py, "daft.udf.row_wise"))?
                 .getattr(pyo3::intern!(py, "__call_func"))?;
 
-            let mut py_args = Vec::with_capacity(args.len());
             // pre-allocating py_args vector so we're not creating a new vector for each iteration
+            let mut py_args = Vec::with_capacity(args.len());
             let outputs = (0..num_rows)
                 .map(|i| {
                     for s in args {
@@ -204,12 +205,11 @@ impl RowWisePyFn {
 
                     let result = func.call1((inner_ref, args_ref, &py_args))?;
                     py_args.clear();
-                    DaftResult::Ok(result.unbind())
+                    DaftResult::Ok(result)
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
-            DaftResult::Ok(outputs)
-        })?;
 
-        Ok(PySeries::from_pylist_impl(name, outputs, self.return_dtype.clone())?.series)
+            Ok(PySeries::from_pylist_impl(name, outputs, self.return_dtype.clone())?.series)
+        })
     }
 }

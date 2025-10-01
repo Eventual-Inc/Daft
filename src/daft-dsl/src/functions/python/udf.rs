@@ -2,12 +2,12 @@ use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 #[cfg(feature = "python")]
 use pyo3::{
-    types::{PyAnyMethods, PyModule},
     Bound, PyAny, PyResult,
+    types::{PyAnyMethods, PyModule},
 };
 
 use super::{super::FunctionEvaluator, LegacyPythonUDF};
-use crate::{functions::FunctionExpr, ExprRef};
+use crate::{ExprRef, functions::FunctionExpr};
 
 #[cfg(feature = "python")]
 fn run_udf(
@@ -51,7 +51,9 @@ fn run_udf(
             let pyseries = pyany.extract::<PySeries>();
             match pyseries {
                 Ok(pyseries) => Ok(pyseries.series),
-                Err(e) => Err(DaftError::ValueError(format!("Internal error occurred when coercing the results of running UDF to Series:\n\n{e}"))),
+                Err(e) => Err(DaftError::ValueError(format!(
+                    "Internal error occurred when coercing the results of running UDF to Series:\n\n{e}"
+                ))),
             }
         }
         Err(e) => Err(e.into()),
@@ -63,7 +65,7 @@ impl LegacyPythonUDF {
     pub fn call_udf(&self, inputs: &[Series]) -> DaftResult<Series> {
         use pyo3::Python;
 
-        use crate::functions::python::{py_udf_initialize, MaybeInitializedUDF};
+        use crate::functions::python::{MaybeInitializedUDF, py_udf_initialize};
 
         if inputs.len() != self.num_expressions {
             return Err(DaftError::SchemaMismatch(format!(

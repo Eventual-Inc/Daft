@@ -1,17 +1,17 @@
 use arrow2::bitmap::{Bitmap, MutableBitmap};
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    array::ops::{arrow2::comparison::build_multi_array_is_equal, IntoGroups},
+    array::ops::{IntoGroups, arrow2::comparison::build_multi_array_is_equal},
     prelude::*,
 };
 use daft_dsl::{
-    expr::bound_expr::{BoundAggExpr, BoundExpr},
     AggExpr, WindowBoundary, WindowFrame,
+    expr::bound_expr::{BoundAggExpr, BoundExpr},
 };
 
 use crate::{
-    ops::window_states::{create_window_agg_state, WindowAggStateOps},
     RecordBatch,
+    ops::window_states::{WindowAggStateOps, create_window_agg_state},
 };
 
 impl RecordBatch {

@@ -9,7 +9,7 @@ use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
-use crate::{AsyncFileWriter, TargetInMemorySizeBytesCalculator, WriterFactory};
+use crate::{AsyncFileWriter, TargetInMemorySizeBytesCalculator, WriteResult, WriterFactory};
 
 // SizeBasedBuffer is a buffer that stores tables and their sizes in bytes.
 // It produces Micropartitions that are within a certain size range.
@@ -148,11 +148,11 @@ impl TargetBatchWriter {
         &mut self,
         input: Arc<MicroPartition>,
         in_memory_size_bytes: usize,
-    ) -> DaftResult<usize> {
-        let bytes_written = self.writer.write(input).await?;
+    ) -> DaftResult<WriteResult> {
+        let write_result = self.writer.write(input).await?;
         self.size_calculator
-            .record_and_update_inflation_factor(bytes_written, in_memory_size_bytes);
-        Ok(bytes_written)
+            .record_and_update_inflation_factor(write_result.bytes_written, in_memory_size_bytes);
+        Ok(write_result)
     }
 }
 
@@ -161,13 +161,16 @@ impl AsyncFileWriter for TargetBatchWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
-    async fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<usize> {
+    async fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<WriteResult> {
         assert!(
             !self.is_closed,
             "Cannot write to a closed TargetBatchWriter"
         );
         if input.is_empty() {
-            return Ok(0);
+            return Ok(WriteResult {
+                bytes_written: 0,
+                rows_written: 0,
+            });
         }
 
         self.buffer.push(input)?;
@@ -178,16 +181,22 @@ impl AsyncFileWriter for TargetBatchWriter {
         let mut max_size_bytes =
             (target_size_bytes as f64 * (1.0 + Self::SIZE_BYTE_LENIENCY)) as usize;
         let mut bytes_written = 0;
+        let mut rows_written = 0;
         while let Some(mp) = self.buffer.pop(min_size_bytes, max_size_bytes)? {
-            bytes_written += self
+            let write_result = self
                 .write_and_update_inflation_factor(mp, target_size_bytes)
                 .await?;
+            bytes_written += write_result.bytes_written;
+            rows_written += write_result.rows_written;
             target_size_bytes = self.size_calculator.calculate_target_in_memory_size_bytes();
             min_size_bytes = (target_size_bytes as f64 * (1.0 - Self::SIZE_BYTE_LENIENCY)) as usize;
             max_size_bytes = (target_size_bytes as f64 * (1.0 + Self::SIZE_BYTE_LENIENCY)) as usize;
         }
 
-        Ok(bytes_written)
+        Ok(WriteResult {
+            bytes_written,
+            rows_written,
+        })
     }
 
     fn bytes_written(&self) -> usize {
@@ -250,7 +259,7 @@ impl WriterFactory for TargetBatchWriterFactory {
 mod tests {
 
     use super::*;
-    use crate::test::{make_dummy_mp, DummyWriterFactory};
+    use crate::test::{DummyWriterFactory, make_dummy_mp};
 
     #[tokio::test]
     async fn test_target_batch_writer_exact_batch() {

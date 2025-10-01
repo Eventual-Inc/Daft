@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
@@ -10,17 +10,16 @@ use futures::StreamExt;
 use super::{DistributedPipelineNode, SubmittableTaskStream};
 use crate::{
     pipeline_node::{
-        append_plan_to_existing_task, make_in_memory_task_from_materialized_outputs,
-        make_new_task_from_materialized_outputs, NodeID, NodeName, PipelineNodeConfig,
-        PipelineNodeContext,
+        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, append_plan_to_existing_task,
+        make_in_memory_task_from_materialized_outputs, make_new_task_from_materialized_outputs,
     },
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SwordfishTask, TaskContext},
     },
-    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::{
-        channel::{create_channel, Sender},
+        channel::{Sender, create_channel},
         joinset::OrderedJoinSet,
     },
 };
@@ -39,13 +38,13 @@ impl IntoPartitionsNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         num_partitions: usize,
         schema: SchemaRef,
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![child.node_id()],
@@ -54,7 +53,7 @@ impl IntoPartitionsNode {
         );
         let config = PipelineNodeConfig::new(
             schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             Arc::new(UnknownClusteringConfig::new(num_partitions).into()),
         );
 
@@ -99,7 +98,7 @@ impl IntoPartitionsNode {
         // Remainder: 10 % 3 = 1 (one task gets an extra input)
         let num_partitions_with_extra_input = tasks.len() % self.num_partitions;
 
-        let mut output_futures = OrderedJoinSet::new();
+        let mut tasks_per_partition = Vec::new();
 
         let mut task_iter = tasks.into_iter();
         for partition_idx in 0..self.num_partitions {
@@ -115,8 +114,13 @@ impl IntoPartitionsNode {
                 .take(chunk_size)
                 .map(|task| task.submit(scheduler_handle))
                 .collect::<DaftResult<Vec<_>>>()?;
+            tasks_per_partition.push(submitted_tasks);
+        }
+
+        let mut output_futures = OrderedJoinSet::new();
+        for tasks in tasks_per_partition {
             output_futures.spawn(async move {
-                let materialized_output = futures::future::try_join_all(submitted_tasks)
+                let materialized_output = futures::future::try_join_all(tasks)
                     .await?
                     .into_iter()
                     .flatten()
@@ -136,6 +140,7 @@ impl IntoPartitionsNode {
                 move |input| {
                     LocalPhysicalPlan::into_partitions(input, 1, StatsState::NotMaterialized)
                 },
+                None,
             )?;
             if result_tx.send(task).await.is_err() {
                 break;
@@ -167,7 +172,7 @@ impl IntoPartitionsNode {
         // Remainder: 10 % 3 = 1 (one partition will split into 4 outputs)
         let num_partitions_with_extra_output = self.num_partitions % tasks.len();
 
-        let mut output_futures = OrderedJoinSet::new();
+        let mut submitted_tasks = Vec::new();
 
         for (input_partition_idx, task) in tasks.into_iter().enumerate() {
             let mut num_outputs = base_splits_per_partition;
@@ -187,7 +192,12 @@ impl IntoPartitionsNode {
                 },
             );
             let submitted_task = into_partitions_task.submit(scheduler_handle)?;
-            output_futures.spawn(submitted_task);
+            submitted_tasks.push(submitted_task);
+        }
+
+        let mut output_futures = OrderedJoinSet::new();
+        for task in submitted_tasks {
+            output_futures.spawn(task);
         }
 
         // Collect all the outputs and emit a new task for each output.
@@ -200,6 +210,7 @@ impl IntoPartitionsNode {
                         TaskContext::from((&self.context, task_id_counter.next())),
                         vec![output],
                         &(self_arc as Arc<dyn DistributedPipelineNode>),
+                        None,
                     )?;
                     if result_tx.send(task).await.is_err() {
                         break;
@@ -239,7 +250,7 @@ impl IntoPartitionsNode {
                 self.split_tasks(input_tasks, &scheduler_handle, &task_id_counter, result_tx)
                     .await?;
             }
-        };
+        }
         Ok(())
     }
 }
@@ -284,16 +295,16 @@ impl DistributedPipelineNode for IntoPartitionsNode {
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_stream = self.child.clone().produce_tasks(stage_context);
+        let input_stream = self.child.clone().produce_tasks(plan_context);
         let (result_tx, result_rx) = create_channel(1);
 
-        stage_context.spawn(self.execute_into_partitions(
+        plan_context.spawn(self.execute_into_partitions(
             input_stream,
-            stage_context.task_id_counter(),
+            plan_context.task_id_counter(),
             result_tx,
-            stage_context.scheduler_handle(),
+            plan_context.scheduler_handle(),
         ));
 
         SubmittableTaskStream::from(result_rx)

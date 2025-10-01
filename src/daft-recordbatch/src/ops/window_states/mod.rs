@@ -8,7 +8,7 @@ use common_error::DaftResult;
 use count::CountWindowState;
 use count_distinct::CountDistinctWindowState;
 use daft_core::prelude::*;
-use daft_dsl::{expr::bound_expr::BoundAggExpr, AggExpr};
+use daft_dsl::{AggExpr, expr::bound_expr::BoundAggExpr};
 use sum::SumWindowState;
 
 use crate::RecordBatch;

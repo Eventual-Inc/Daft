@@ -5,8 +5,8 @@ use daft_core::{
     utils::supertype::try_get_supertype,
 };
 use daft_dsl::{
-    functions::{prelude::*, scalar::ScalarFn},
     ExprRef,
+    functions::{prelude::*, scalar::ScalarFn},
 };
 use serde::{Deserialize, Serialize};
 
@@ -43,16 +43,12 @@ impl ScalarUDF for FillNan {
             1 => {
                 let fill_value = fill_value.broadcast(input.len())?;
                 input.if_else(&fill_value, &predicate)
-
             }
-            len if len == input.len() => {
-                input.if_else(&fill_value, &predicate)
-
-            }
+            len if len == input.len() => input.if_else(&fill_value, &predicate),
             len => Err(DaftError::ValueError(format!(
                 "Expected fill_value to be a scalar or a vector of the same length as input, but received {len} and {}",
                 input.len()
-            )))
+            ))),
         }
     }
 
@@ -70,12 +66,16 @@ impl ScalarUDF for FillNan {
         if data_field.dtype == DataType::Null {
             Ok(Field::new(data_field.name, DataType::Null))
         } else {
-            match (&data_field.dtype.is_floating(), &fill_value_field.dtype.is_floating(), try_get_supertype(&data_field.dtype, &fill_value_field.dtype)) {
-            (true, true, Ok(dtype)) => Ok(Field::new(data_field.name, dtype)),
-            _ => Err(DaftError::TypeError(format!(
-                "Expects input for fill_nan to be float, but received {data_field} and {fill_value_field}",
-            ))),
-        }
+            match (
+                &data_field.dtype.is_floating(),
+                &fill_value_field.dtype.is_floating(),
+                try_get_supertype(&data_field.dtype, &fill_value_field.dtype),
+            ) {
+                (true, true, Ok(dtype)) => Ok(Field::new(data_field.name, dtype)),
+                _ => Err(DaftError::TypeError(format!(
+                    "Expects input for fill_nan to be float, but received {data_field} and {fill_value_field}",
+                ))),
+            }
         }
     }
 

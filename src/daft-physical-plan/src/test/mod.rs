@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_scan_info::{test::DummyScanOperator, Pushdowns, ScanOperatorRef};
+use common_scan_info::{Pushdowns, ScanOperatorRef, test::DummyScanOperator};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_schema::{field::Field, schema::Schema};
 

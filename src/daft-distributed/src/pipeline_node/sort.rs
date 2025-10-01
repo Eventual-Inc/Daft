@@ -1,6 +1,6 @@
 use std::{future, sync::Arc};
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::{DaftError, DaftResult};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::IOStatsContext;
@@ -11,24 +11,24 @@ use daft_logical_plan::{
 };
 use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
-use futures::{future::try_join_all, TryStreamExt};
+use futures::{TryStreamExt, future::try_join_all};
 #[cfg(feature = "python")]
-use pyo3::{prelude::*, Python};
+use pyo3::{Python, prelude::*};
 
 use super::{
-    make_new_task_from_materialized_outputs, DistributedPipelineNode, SubmittableTaskStream,
+    DistributedPipelineNode, SubmittableTaskStream, make_new_task_from_materialized_outputs,
 };
 use crate::{
     pipeline_node::{
         MaterializedOutput, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
     },
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SwordfishTask, TaskContext},
     },
-    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::{
-        channel::{create_channel, Sender},
+        channel::{Sender, create_channel},
         transpose::transpose_materialized_outputs_from_vec,
     },
 };
@@ -50,7 +50,7 @@ impl SortNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         sort_by: Vec<BoundExpr>,
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
@@ -58,7 +58,7 @@ impl SortNode {
         child: Arc<dyn DistributedPipelineNode>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![child.node_id()],
@@ -68,7 +68,7 @@ impl SortNode {
 
         let config = PipelineNodeConfig::new(
             output_schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             child.config().clustering_spec.clone(),
         );
         Self {
@@ -211,6 +211,7 @@ impl SortNode {
                         StatsState::NotMaterialized,
                     )
                 },
+                None,
             )?;
             let _ = result_tx.send(task).await;
             return Ok(());
@@ -242,6 +243,7 @@ impl SortNode {
                             StatsState::NotMaterialized,
                         )
                     },
+                    None,
                 )?;
                 let submitted_task = task.submit(&scheduler_handle)?;
                 Ok(submitted_task)
@@ -281,6 +283,7 @@ impl SortNode {
                             StatsState::NotMaterialized,
                         )
                     },
+                    None,
                 )?;
                 let submitted_task = task.submit(&scheduler_handle)?;
                 Ok(submitted_task)
@@ -312,6 +315,7 @@ impl SortNode {
                         StatsState::NotMaterialized,
                     )
                 },
+                None,
             )?;
             let _ = result_tx.send(task).await;
         }
@@ -377,15 +381,15 @@ impl DistributedPipelineNode for SortNode {
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_node = self.child.clone().produce_tasks(stage_context);
+        let input_node = self.child.clone().produce_tasks(plan_context);
         let (result_tx, result_rx) = create_channel(1);
-        stage_context.spawn(self.execution_loop(
+        plan_context.spawn(self.execution_loop(
             input_node,
-            stage_context.task_id_counter(),
+            plan_context.task_id_counter(),
             result_tx,
-            stage_context.scheduler_handle(),
+            plan_context.scheduler_handle(),
         ));
         SubmittableTaskStream::from(result_rx)
     }

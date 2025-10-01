@@ -5,7 +5,7 @@ use common_error::DaftResult;
 use super::{Growable, GrowableArray};
 use crate::{
     array::prelude::*,
-    datatypes::{prelude::*, FileType},
+    datatypes::{FileType, prelude::*},
     series::{IntoSeries, Series},
 };
 

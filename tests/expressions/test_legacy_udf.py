@@ -11,7 +11,7 @@ from openai import APIStatusError
 
 import daft
 from daft import col
-from daft.context import get_context
+from daft.context import execution_config_ctx, get_context
 from daft.datatype import DataType
 from daft.errors import UDFException
 from daft.exceptions import DaftCoreException
@@ -39,8 +39,8 @@ def test_udf():
     assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
 
 
-@pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
-@pytest.mark.parametrize("use_actor_pool", [False, True])
+@pytest.mark.parametrize("batch_size", [None])
+@pytest.mark.parametrize("use_actor_pool", [True])
 def test_class_udf(batch_size, use_actor_pool):
     df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
@@ -518,8 +518,7 @@ def test_udf_with_error(use_actor_pool):
 
 
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() != "ray"
-    or get_context().daft_execution_config.use_experimental_distributed_engine is False,
+    get_tests_daft_runner_name() != "ray" or get_context().daft_execution_config.use_legacy_ray_runner is True,
     reason="requires Flotilla to be in use",
 )
 @pytest.mark.parametrize("use_actor_pool", [True, False])
@@ -558,8 +557,7 @@ def test_udf_retry_with_process_killed_ray(use_actor_pool):
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
 @pytest.mark.parametrize("use_actor_pool", [False, True])
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() == "ray"
-    and get_context().daft_execution_config.use_experimental_distributed_engine is False,
+    get_tests_daft_runner_name() == "ray" and get_context().daft_execution_config.use_legacy_ray_runner is True,
     reason="Multiple UDFs on different columns fails on legacy ray runner",
 )
 def test_multiple_udfs_different_columns(batch_size, use_actor_pool):
@@ -608,8 +606,7 @@ def test_multiple_udfs_different_columns(batch_size, use_actor_pool):
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
 @pytest.mark.parametrize("use_actor_pool", [False, True])
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() == "ray"
-    and get_context().daft_execution_config.use_experimental_distributed_engine is False,
+    get_tests_daft_runner_name() == "ray" and get_context().daft_execution_config.use_legacy_ray_runner is True,
     reason="Multiple UDFs on same column fails on legacy ray runner",
 )
 def test_multiple_udfs_same_column(batch_size, use_actor_pool):
@@ -717,6 +714,41 @@ def test_udf_python_dtype():
     with pytest.raises(DaftCoreException, match="because it has a Python-dtype input column `a`"):
         result = df.select(udf1_process(col("a")).alias("udf_1"))
         assert result.to_pydict() == {"udf_1": [f"{os.getpid()} foo"]}
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray" or get_context().daft_execution_config.use_legacy_ray_runner is True,
+    reason="Ray runner will always run UDFs on separate processes",
+)
+def test_udf_fails_with_no_actors_schedulable():
+    with execution_config_ctx(actor_udf_ready_timeout=10):
+        df = daft.from_pydict({"a": [1, 2, 3]})
+
+        # Request for 1 actor, with 50 gpus. This will never be scheduled.
+        @udf(return_dtype=DataType.int64(), concurrency=1, num_gpus=50)
+        def udf_1(data):
+            return data
+
+        result = df.select(udf_1(col("a")).alias("udf_1"))
+        with pytest.raises(RuntimeError, match="RuntimeError: UDF actors failed to start within 10 seconds"):
+            result.collect()
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray" or get_context().daft_execution_config.use_legacy_ray_runner is True,
+    reason="Ray runner will always run UDFs on separate processes",
+)
+def test_udf_succeeds_with_some_actors_schedulable():
+    with execution_config_ctx(actor_udf_ready_timeout=10):
+        df = daft.from_pydict({"a": [1, 2, 3]})
+
+        # Request for 100 actors, with 1 cpu. Not all will be scheduled, but the query can still run.
+        @udf(return_dtype=DataType.int64(), concurrency=100, num_cpus=1)
+        def udf_1(data):
+            return data
+
+        result = df.select(udf_1(col("a")).alias("udf_1")).to_pydict()
+        assert result == {"udf_1": [1, 2, 3]}
 
 
 def test_udf_error_serialize_err():

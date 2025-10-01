@@ -5,42 +5,38 @@ use std::{
 };
 
 use arrow2::{
-    array::Array,
     bitmap::utils::SlicesIterator,
     compute::{
         self,
-        cast::{can_cast_types, cast, CastOptions},
+        cast::{CastOptions, can_cast_types, cast},
     },
     offset::Offsets,
 };
 use common_error::{DaftError, DaftResult};
 use indexmap::IndexMap;
 #[cfg(feature = "python")]
-use {
-    crate::datatypes::PythonArray,
-    num_traits::{NumCast, ToPrimitive},
-    numpy::{PyReadonlyArrayDyn, PyUntypedArrayMethods},
-    pyo3::prelude::*,
-    std::iter,
-};
+use pyo3::prelude::*;
 
 use super::as_arrow::AsArrow;
+#[cfg(feature = "python")]
+use crate::prelude::PythonArray;
 use crate::{
     array::{
+        DataArray, FixedSizeListArray, ListArray, StructArray,
         growable::make_growable,
         image_array::ImageArraySidecarData,
-        ops::{from_arrow::FromArrow, full::FullNull, DaftCompare},
-        DataArray, FixedSizeListArray, ListArray, StructArray,
+        ops::{DaftCompare, full::FullNull},
     },
     datatypes::{
+        DaftArrayType, DaftArrowBackedType, DataType, Field, FileArray, ImageMode, Int64Array,
+        NullArray, TimeUnit, UInt64Array, Utf8Array,
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
-        DaftArrayType, DaftArrowBackedType, DataType, Field, FileArray, ImageMode, Int64Array,
-        NullArray, TimeUnit, UInt64Array, Utf8Array,
     },
+    lit::Literal,
     series::{IntoSeries, Series},
     utils::display::display_time64,
     with_match_numeric_daft_types,
@@ -53,11 +49,19 @@ impl Series {
             use pyo3::IntoPyObjectExt;
 
             self.to_literals()
-                .map(|lit| lit.into_py_any(py).map(Arc::new))
+                .map(|lit| {
+                    use crate::lit::Literal;
+
+                    if matches!(lit, Literal::Null) {
+                        Ok(None)
+                    } else {
+                        Ok(Some(Arc::new(lit.into_py_any(py)?)))
+                    }
+                })
                 .collect::<PyResult<Vec<_>>>()
         })?;
 
-        Ok(PythonArray::from((self.name(), py_values)).into_series())
+        Ok(PythonArray::from_iter(self.name(), py_values.into_iter()).into_series())
     }
 }
 
@@ -66,6 +70,10 @@ where
     T: DaftArrowBackedType,
 {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        if self.data_type().is_null() {
+            return Ok(Series::full_null(self.name(), dtype, self.len()));
+        }
+
         match dtype {
             #[cfg(feature = "python")]
             DataType::Python => {
@@ -585,686 +593,24 @@ impl FileArray {
 // }
 
 #[cfg(feature = "python")]
-macro_rules! pycast_then_arrowcast {
-    ($self:expr, $daft_type:expr, $pytype_str:expr) => {
-        {
-            use daft_schema::python::PyDataType;
-
-            let old_pyseries = PySeries::from($self.clone().into_series());
-
-            let new_pyseries = Python::with_gil(|py| -> PyResult<PySeries> {
-                let old_daft_series = {
-                    PyModule::import(py, pyo3::intern!(py, "daft.series"))?
-                        .getattr(pyo3::intern!(py, "Series"))?
-                        .getattr(pyo3::intern!(py, "_from_pyseries"))?
-                        .call1((old_pyseries,))?
-                };
-
-                let py_type_fn = {
-                    PyModule::import(py, pyo3::intern!(py, "builtins"))?
-                        .getattr(pyo3::intern!(py, $pytype_str))?
-                };
-
-                let py_dtype = PyDataType { dtype: $daft_type.clone() };
-
-                old_daft_series
-                    .call_method1(
-                        (pyo3::intern!(py, "_pycast_to_pynative")),
-                        (py_type_fn, py_dtype),
-                    )?
-                    .getattr(pyo3::intern!(py, "_series"))?
-                    .extract()
-            })?;
-
-            let new_series: Series = new_pyseries.into();
-
-            if new_series.data_type() == &DataType::Python {
-                panic!("After casting, we expected an Arrow data type castable to {}, but got Python type again", $daft_type)
-            }
-            return new_series.cast(&$daft_type);
-        }
-    }
-}
-
-#[cfg(feature = "python")]
-fn append_values_from_numpy<
-    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
->(
-    py: Python,
-    pyarray: Bound<PyAny>,
-    index: usize,
-    from_numpy_dtype_fn: &Bound<PyAny>,
-    enforce_dtype: Option<&DataType>,
-    values_vec: &mut Vec<Tgt>,
-    shapes_vec: &mut Vec<u64>,
-) -> DaftResult<(usize, usize)> {
-    use std::num::Wrapping;
-
-    use daft_schema::python::PyDataType;
-
-    let np_dtype = pyarray.getattr(pyo3::intern!(py, "dtype"))?;
-
-    let datatype = from_numpy_dtype_fn
-        .call1((np_dtype,))?
-        .getattr(pyo3::intern!(py, "_dtype"))?
-        .extract::<PyDataType>()?;
-    let datatype = datatype.dtype;
-    if let Some(enforce_dtype) = enforce_dtype {
-        if enforce_dtype != &datatype {
-            return Err(DaftError::ValueError(format!(
-                "Expected Numpy array to be of type: {enforce_dtype} but is {datatype} at index: {index}",
-            )));
-        }
-    }
-    if !datatype.is_numeric() {
-        return Err(DaftError::ValueError(format!(
-            "Numpy array has unsupported type {} at index: {index}",
-            datatype
-        )));
-    }
-    with_match_numeric_daft_types!(datatype, |$N| {
-        type Src = <$N as DaftNumericType>::Native;
-        let pyarray: PyReadonlyArrayDyn<'_, Src> = pyarray.extract()?;
-        // All of the conditions given in the ndarray::ArrayView::from_shape_ptr() docstring must be met in order to do
-        // the pyarray.as_array conversion: https://docs.rs/ndarray/0.15.6/ndarray/type.ArrayView.html#method.from_shape_ptr
-        // Relevant:
-        //  1. Must have non-negative strides.
-
-        // TODO(Clark): Double-check that we're covering all bases here for this unsafe handoff.
-        if pyarray.strides().iter().any(|s| *s < 0) {
-            return Err(DaftError::ValueError(format!(
-                "we only support numpy arrays with non-negative strides, but got {:?} at index: {}",
-                pyarray.strides(), index
-            )));
-        }
-
-        let pyarray = pyarray.as_array();
-        let owned_arr;
-        // Create 1D slice from potentially non-contiguous and non-C-order arrays.
-        // This will only create a copy if the ndarray is non-contiguous.
-        let sl: &[Src] = match pyarray.as_slice_memory_order() {
-            Some(sl) => sl,
-            None => {
-                owned_arr = pyarray.to_owned();
-                owned_arr.as_slice_memory_order().unwrap()
-            }
-        };
-        values_vec.extend(sl.iter().map(|v| <Wrapping<Tgt> as NumCast>::from(*v).unwrap().0));
-        shapes_vec.extend(pyarray.shape().iter().map(|v| *v as u64));
-        Ok((sl.len(), pyarray.shape().len()))
-    })
-}
-
-type ArrayPayload<Tgt> = (
-    Vec<Tgt>,
-    Option<Vec<i64>>,
-    Option<Vec<u64>>,
-    Option<Vec<i64>>,
-);
-
-/// Extract a PythonArray of elements list[T] into set of vectors:
-/// 1) A values Vec<T>
-/// 2) An optional offsets Vec<i64>
-/// 3) An optional shapes Vec<u64>
-/// 4) An optional shape_offsets Vec<i64>
-#[cfg(feature = "python")]
-fn extract_python_to_vec<
-    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
->(
-    py: Python,
-    python_objects: &PythonArray,
-    child_dtype: &DataType,
-    enforce_dtype: Option<&DataType>,
-    list_size: Option<usize>,
-    shape_size: Option<usize>,
-) -> DaftResult<ArrayPayload<Tgt>> {
-    use std::num::Wrapping;
-
-    let mut values_vec: Vec<Tgt> =
-        Vec::with_capacity(list_size.unwrap_or(0) * python_objects.len());
-
-    let mut offsets_vec: Vec<i64> = vec![];
-    let mut shapes_vec: Vec<u64> = vec![];
-    let mut shape_offsets_vec: Vec<i64> = vec![];
-
-    if list_size.is_none() {
-        offsets_vec.reserve(python_objects.len() + 1);
-        offsets_vec.push(0);
-        shape_offsets_vec.reserve(python_objects.len() + 1);
-        shape_offsets_vec.push(0);
-    }
-
-    let from_numpy_dtype = {
-        PyModule::import(py, pyo3::intern!(py, "daft.datatype"))?
-            .getattr(pyo3::intern!(py, "DataType"))?
-            .getattr(pyo3::intern!(py, "from_numpy_dtype"))?
-    };
-
-    let builtins = PyModule::import(py, pyo3::intern!(py, "builtins"))?;
-
-    let py_type_fn = match child_dtype {
-        dtype if dtype.is_integer() => Ok(builtins.getattr(pyo3::intern!(py, "int"))?),
-        dtype if dtype.is_floating() => Ok(builtins.getattr(pyo3::intern!(py, "float"))?),
-        dtype => Err(DaftError::ValueError(format!(
-            "We only support numeric types when converting to List or FixedSizeList, got {dtype}"
-        ))),
-    }?;
-
-    let py_memory_view = py
-        .import(pyo3::intern!(py, "builtins"))?
-        .getattr(pyo3::intern!(py, "memoryview"))?;
-
-    // TODO: use this to extract our the image mode
-    // let py_pil_image_type = py
-    //     .import("PIL.Image")
-    //     .and_then(|m| m.getattr(pyo3::intern!(py, "Image")));
-
-    for (i, object) in python_objects.as_arrow().iter().enumerate() {
-        if let Some(object) = object {
-            let object = object.bind(py);
-
-            let supports_buffer_protocol = py_memory_view.call1((object,)).is_ok();
-            let supports_array_interface_protocol =
-                object.hasattr(pyo3::intern!(py, "__array_interface__"))?;
-            let supports_array_protocol = object.hasattr(pyo3::intern!(py, "__array__"))?;
-
-            if supports_buffer_protocol
-                || supports_array_interface_protocol
-                || supports_array_protocol
-            {
-                // Path if object supports buffer/array protocols.
-                let np_as_array_fn = py
-                    .import(pyo3::intern!(py, "numpy"))?
-                    .getattr(pyo3::intern!(py, "asarray"))?;
-                let pyarray = np_as_array_fn.call1((object,))?;
-                let (num_values, shape_size) = append_values_from_numpy(
-                    py,
-                    pyarray,
-                    i,
-                    &from_numpy_dtype,
-                    enforce_dtype,
-                    &mut values_vec,
-                    &mut shapes_vec,
-                )?;
-                if let Some(list_size) = list_size {
-                    if num_values != list_size {
-                        return Err(DaftError::ValueError(format!(
-                            "Expected Array-like Object to have {list_size} elements but got {} at index {}",
-                            num_values, i
-                        )));
-                    }
-                } else {
-                    offsets_vec.push(offsets_vec.last().unwrap() + num_values as i64);
-                    shape_offsets_vec.push(shape_offsets_vec.last().unwrap() + shape_size as i64);
-                }
-            } else {
-                // Path if object does not support buffer/array protocols.
-                // Try a best-effort conversion of the elements.
-                let pyiter = object.try_iter();
-                if let Ok(pyiter) = pyiter {
-                    // has an iter
-                    let casted_iter = pyiter.map(|v| v.and_then(|f| py_type_fn.call1((f,))));
-                    let collected = if child_dtype.is_integer() {
-                        let int_iter = casted_iter
-                            .map(|v| v.and_then(|v| v.extract::<i64>()))
-                            .map(|v| {
-                                v.and_then(|v| {
-                                    <Wrapping<Tgt> as NumCast>::from(v).ok_or(
-                                        DaftError::ComputeError(format!(
-                                            "Could not convert pyint to i64 at index {i}"
-                                        ))
-                                        .into(),
-                                    )
-                                })
-                            })
-                            .map(|v| v.map(|v| v.0));
-
-                        int_iter.collect::<PyResult<Vec<_>>>()
-                    } else if child_dtype.is_floating() {
-                        let float_iter = casted_iter
-                            .map(|v| v.and_then(|v| v.extract::<f64>()))
-                            .map(|v| {
-                                v.and_then(|v| {
-                                    <Wrapping<Tgt> as NumCast>::from(v).ok_or(
-                                        DaftError::ComputeError(
-                                            "Could not convert pyfloat to f64".into(),
-                                        )
-                                        .into(),
-                                    )
-                                })
-                            })
-                            .map(|v| v.map(|v| v.0));
-                        float_iter.collect::<PyResult<Vec<_>>>()
-                    } else {
-                        unreachable!(
-                            "dtype should either be int or float at this point; this is a bug"
-                        );
-                    };
-
-                    if collected.is_err() {
-                        log::warn!("Could not convert python object to list at index: {i} for input series: {}", python_objects.name());
-                    }
-                    let collected: Vec<Tgt> = collected?;
-                    if let Some(list_size) = list_size {
-                        if collected.len() != list_size {
-                            return Err(DaftError::ValueError(format!(
-                                "Expected Array-like Object to have {list_size} elements but got {} at index {}",
-                                collected.len(), i
-                            )));
-                        }
-                    } else {
-                        let offset = offsets_vec.last().unwrap() + collected.len() as i64;
-                        offsets_vec.push(offset);
-                        shapes_vec.extend(vec![1]);
-                        shape_offsets_vec.push(1i64);
-                    }
-                    values_vec.extend_from_slice(collected.as_slice());
-                } else {
-                    return Err(DaftError::ValueError(format!(
-                        "Python Object is neither array-like or an iterable at index {}. Can not convert to a list. object type: {}",
-                        i, object.getattr(pyo3::intern!(py, "__class__"))?)));
-                }
-            }
-        } else if let Some(list_size) = list_size {
-            values_vec.extend(iter::repeat_n(Tgt::default(), list_size));
-        } else {
-            let offset = offsets_vec.last().unwrap();
-            offsets_vec.push(*offset);
-            if let Some(shape_size) = shape_size {
-                shapes_vec.extend(iter::repeat_n(1, shape_size));
-                shape_offsets_vec.push(shape_offsets_vec.last().unwrap() + shape_size as i64);
-            } else {
-                shape_offsets_vec.push(*shape_offsets_vec.last().unwrap());
-            }
-        }
-    }
-    if list_size.is_some() {
-        Ok((values_vec, None, None, None))
-    } else {
-        Ok((
-            values_vec,
-            Some(offsets_vec),
-            Some(shapes_vec),
-            Some(shape_offsets_vec),
-        ))
-    }
-}
-
-#[cfg(feature = "python")]
-fn extract_python_like_to_fixed_size_list<
-    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
->(
-    py: Python,
-    python_objects: &PythonArray,
-    child_dtype: &DataType,
-    list_size: usize,
-) -> DaftResult<FixedSizeListArray> {
-    let (values_vec, _, _, _) =
-        extract_python_to_vec::<Tgt>(py, python_objects, child_dtype, None, Some(list_size), None)?;
-
-    let values_array: Box<dyn arrow2::array::Array> =
-        Box::new(arrow2::array::PrimitiveArray::from_vec(values_vec));
-
-    let inner_dtype = child_dtype.to_arrow()?;
-    let list_dtype = arrow2::datatypes::DataType::FixedSizeList(
-        Box::new(arrow2::datatypes::Field::new("item", inner_dtype, true)),
-        list_size,
-    );
-    let daft_type = (&list_dtype).into();
-
-    let list_array = arrow2::array::FixedSizeListArray::new(
-        list_dtype,
-        values_array,
-        python_objects.as_arrow().validity().cloned(),
-    );
-
-    FixedSizeListArray::from_arrow(
-        Arc::new(Field::new(python_objects.name(), daft_type)),
-        Box::new(list_array),
-    )
-}
-
-#[cfg(feature = "python")]
-fn extract_python_like_to_list<
-    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
->(
-    py: Python,
-    python_objects: &PythonArray,
-    child_dtype: &DataType,
-) -> DaftResult<ListArray> {
-    let (values_vec, offsets, _, _) =
-        extract_python_to_vec::<Tgt>(py, python_objects, child_dtype, None, None, None)?;
-
-    let offsets = offsets.expect("Offsets should but non-None for dynamic list");
-
-    let values_array: Box<dyn arrow2::array::Array> =
-        Box::new(arrow2::array::PrimitiveArray::from_vec(values_vec));
-
-    let inner_dtype = child_dtype.to_arrow()?;
-
-    let list_dtype = arrow2::datatypes::DataType::LargeList(Box::new(
-        arrow2::datatypes::Field::new("item", inner_dtype, true),
-    ));
-
-    let daft_type = (&list_dtype).into();
-
-    let list_arrow_array = arrow2::array::ListArray::new(
-        list_dtype,
-        arrow2::offset::OffsetsBuffer::try_from(offsets)?,
-        values_array,
-        python_objects.as_arrow().validity().cloned(),
-    );
-
-    ListArray::from_arrow(
-        Arc::new(Field::new(python_objects.name(), daft_type)),
-        Box::new(list_arrow_array),
-    )
-}
-
-#[cfg(feature = "python")]
-fn extract_python_like_to_image_array<
-    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
->(
-    py: Python,
-    python_objects: &PythonArray,
-    dtype: &DataType,
-    child_dtype: &DataType,
-    mode_from_dtype: Option<ImageMode>,
-) -> DaftResult<ImageArray> {
-    // 3 dimensions - height x width x channel.
-
-    let shape_size = 3;
-    let (values_vec, offsets, shapes, shape_offsets) = extract_python_to_vec::<Tgt>(
-        py,
-        python_objects,
-        child_dtype,
-        Some(child_dtype),
-        None,
-        Some(shape_size),
-    )?;
-
-    let offsets = offsets.expect("Offsets should but non-None for image struct array");
-    let shapes = shapes.expect("Shapes should be non-None for image struct array");
-    let shape_offsets =
-        shape_offsets.expect("Shape offsets should be non-None for image struct array");
-
-    let validity = python_objects.as_arrow().validity();
-
-    let num_rows = offsets.len() - 1;
-
-    let mut channels = Vec::<u16>::with_capacity(num_rows);
-    let mut heights = Vec::<u32>::with_capacity(num_rows);
-    let mut widths = Vec::<u32>::with_capacity(num_rows);
-    let mut modes = Vec::<u8>::with_capacity(num_rows);
-    for i in 0..num_rows {
-        let is_valid = validity.is_none_or(|v| v.get_bit(i));
-        if !is_valid {
-            // Handle invalid row by populating dummy data.
-            channels.push(1);
-            heights.push(1);
-            widths.push(1);
-            modes.push(mode_from_dtype.unwrap_or(ImageMode::L) as u8);
-            continue;
-        }
-        let shape_start = shape_offsets[i] as usize;
-        let shape_end = shape_offsets[i + 1] as usize;
-        let shape = &mut shapes[shape_start..shape_end].to_owned();
-        if shape.len() == shape_size - 1 {
-            shape.push(1);
-        } else if shape.len() != shape_size {
-            return Err(DaftError::ValueError(format!(
-                "Image expected to have {} dimensions, but has {}. Image shape = {:?}",
-                shape_size,
-                shape.len(),
-                shape,
-            )));
-        }
-        assert!(shape.len() == shape_size);
-        heights.push(
-            shape[0]
-                .try_into()
-                .expect("Image height should fit into a uint16"),
-        );
-        widths.push(
-            shape[1]
-                .try_into()
-                .expect("Image width should fit into a uint16"),
-        );
-        channels.push(
-            shape[2]
-                .try_into()
-                .expect("Number of channels should fit into a uint8"),
-        );
-
-        modes.push(mode_from_dtype.unwrap_or(ImageMode::try_from_num_channels(
-            shape[2].try_into().unwrap(),
-            child_dtype,
-        )?) as u8);
-    }
-    ImageArray::from_vecs(
-        python_objects.name(),
-        dtype.clone(),
-        values_vec,
-        offsets,
-        ImageArraySidecarData {
-            channels,
-            heights,
-            widths,
-            modes,
-            validity: validity.cloned(),
-        },
-    )
-}
-
-#[cfg(feature = "python")]
-fn extract_python_like_to_tensor_array<
-    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
->(
-    py: Python,
-    python_objects: &PythonArray,
-    dtype: &DataType,
-    child_dtype: &DataType,
-) -> DaftResult<TensorArray> {
-    let (data, offsets, shapes, shape_offsets) = extract_python_to_vec::<Tgt>(
-        py,
-        python_objects,
-        child_dtype,
-        Some(child_dtype),
-        None,
-        None,
-    )?;
-
-    let offsets = offsets.expect("Offsets should but non-None for image struct array");
-    let shapes = shapes.expect("Shapes should be non-None for image struct array");
-    let shape_offsets =
-        shape_offsets.expect("Shape offsets should be non-None for image struct array");
-
-    let validity = python_objects.as_arrow().validity();
-
-    let name = python_objects.name();
-    if data.is_empty() {
-        // Create an all-null array if the data array is empty.
-        let physical_type = dtype.to_physical();
-        let struct_array = StructArray::empty(name, &physical_type);
-        return Ok(TensorArray::new(
-            Field::new(name, dtype.clone()),
-            struct_array,
-        ));
-    }
-    let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
-    let arrow_dtype: arrow2::datatypes::DataType = Tgt::PRIMITIVE.into();
-
-    let data_dtype = arrow2::datatypes::DataType::LargeList(Box::new(
-        arrow2::datatypes::Field::new("data", arrow_dtype, true),
-    ));
-    let data_array = Box::new(arrow2::array::ListArray::<i64>::new(
-        data_dtype,
-        offsets,
-        Box::new(arrow2::array::PrimitiveArray::from_vec(data)),
-        validity.cloned(),
-    ));
-    let shapes_dtype = arrow2::datatypes::DataType::LargeList(Box::new(
-        arrow2::datatypes::Field::new("shape", arrow2::datatypes::DataType::UInt64, true),
-    ));
-    let shape_offsets = arrow2::offset::OffsetsBuffer::try_from(shape_offsets)?;
-    let shapes_array = Box::new(arrow2::array::ListArray::<i64>::new(
-        shapes_dtype,
-        shape_offsets,
-        Box::new(arrow2::array::PrimitiveArray::from_vec(shapes)),
-        validity.cloned(),
-    ));
-    let physical_type = dtype.to_physical();
-
-    let struct_array = StructArray::new(
-        Field::new(name, physical_type),
-        vec![
-            ListArray::from_arrow(
-                Arc::new(Field::new("data", data_array.data_type().into())),
-                data_array,
-            )?
-            .into_series(),
-            ListArray::from_arrow(
-                Arc::new(Field::new("shape", shapes_array.data_type().into())),
-                shapes_array,
-            )?
-            .into_series(),
-        ],
-        validity.cloned(),
-    );
-    Ok(TensorArray::new(
-        Field::new(name, dtype.clone()),
-        struct_array,
-    ))
-}
-
-#[cfg(feature = "python")]
 impl PythonArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        use pyo3::prelude::*;
-
-        use crate::python::PySeries;
-        match dtype {
-            DataType::Python => Ok(self.clone().into_series()),
-
-            DataType::Null => {
-                // (Follow Arrow cast behavior: turn all elements into Null.)
-                let null_array = crate::datatypes::NullArray::full_null(
-                    self.name(),
-                    &DataType::Null,
-                    self.len(),
-                );
-                Ok(null_array.into_series())
-            }
-            DataType::Boolean => pycast_then_arrowcast!(self, DataType::Boolean, "bool"),
-            DataType::Binary => pycast_then_arrowcast!(self, DataType::Binary, "bytes"),
-            DataType::FixedSizeBinary(size) => {
-                pycast_then_arrowcast!(self, DataType::FixedSizeBinary(*size), "fixed_size_bytes")
-            }
-            DataType::Utf8 => pycast_then_arrowcast!(self, DataType::Utf8, "str"),
-            dt @ (DataType::UInt8
-            | DataType::UInt16
-            | DataType::UInt32
-            | DataType::UInt64
-            | DataType::Int8
-            | DataType::Int16
-            | DataType::Int32
-            | DataType::Int64) => {
-                pycast_then_arrowcast!(self, dt, "int")
-            }
-            // DataType::Float16 => todo!(),
-            dt @ (DataType::Float32 | DataType::Float64) => {
-                pycast_then_arrowcast!(self, dt, "float")
-            }
-            DataType::List(child_dtype) => {
-                if child_dtype.is_numeric() {
-                    with_match_numeric_daft_types!(child_dtype.as_ref(), |$T| {
-                        type Tgt = <$T as DaftNumericType>::Native;
-                        pyo3::Python::with_gil(|py| {
-                            let result = extract_python_like_to_list::<Tgt>(py, self, child_dtype.as_ref())?;
-                            Ok(result.into_series())
-                        })
-                    })
-                } else if child_dtype.is_physical() {
-                    // TODO: This is not fully operational since we can't guarantee that our Series.from_pylist
-                    // implementation (using PyArrow) will cast the values arrays correctly.
-                    pycast_then_arrowcast!(self, dtype, "list")
-                } else {
-                    Err(DaftError::ValueError(format!(
-                        "We can only convert numeric python types to List, got {}",
-                        child_dtype
-                    )))
-                }
-            }
-            DataType::FixedSizeList(child_dtype, size) => {
-                if child_dtype.is_numeric() {
-                    with_match_numeric_daft_types!(child_dtype.as_ref(), |$T| {
-                        type Tgt = <$T as DaftNumericType>::Native;
-                        pyo3::Python::with_gil(|py| {
-                            let result = extract_python_like_to_fixed_size_list::<Tgt>(py, self, child_dtype.as_ref(), *size)?;
-                            Ok(result.into_series())
-                        })
-                    })
-                } else if child_dtype.is_physical() {
-                    pycast_then_arrowcast!(self, dtype, "list")
-                } else {
-                    Err(DaftError::ValueError(format!(
-                        "We can only convert numeric python types to FixedSizeList, got {}",
-                        child_dtype,
-                    )))
-                }
-            }
-            DataType::Struct(_) => {
-                // TODO: This is not fully operational since we can't guarantee that our Series.from_pylist
-                // implementation (using PyArrow) will cast the struct field arrays correctly.
-                pycast_then_arrowcast!(self, dtype, "dict")
-            }
-            DataType::Embedding(..) => {
-                let result = self.cast(&dtype.to_physical())?;
-                let embedding_array = EmbeddingArray::new(
-                    Field::new(self.name(), dtype.clone()),
-                    result.fixed_size_list()?.clone(),
-                );
-                Ok(embedding_array.into_series())
-            }
-            DataType::Image(mode) => {
-                let inner_dtype = mode.map_or(DataType::UInt8, |m| m.get_dtype());
-                with_match_numeric_daft_types!(inner_dtype, |$T| {
-                    type Tgt = <$T as DaftNumericType>::Native;
-                    pyo3::Python::with_gil(|py| {
-                        let result = extract_python_like_to_image_array::<Tgt>(py, self, dtype, &inner_dtype, *mode)?;
-                        Ok(result.into_series())
-                    })
-                })
-            }
-            DataType::FixedShapeImage(..) => {
-                let result = self.cast(&dtype.to_physical())?;
-                let image_array = FixedShapeImageArray::new(
-                    Field::new(self.name(), dtype.clone()),
-                    result.fixed_size_list()?.clone(),
-                );
-                Ok(image_array.into_series())
-            }
-            DataType::Tensor(inner_dtype) => {
-                with_match_numeric_daft_types!(**inner_dtype, |$T| {
-                    type Tgt = <$T as DaftNumericType>::Native;
-                    pyo3::Python::with_gil(|py| {
-                        let result = extract_python_like_to_tensor_array::<Tgt>(py, self, dtype, &inner_dtype)?;
-                        Ok(result.into_series())
-                    })
-                })
-            }
-            DataType::FixedShapeTensor(..) => {
-                let result = self.cast(&dtype.to_physical())?;
-                let tensor_array = FixedShapeTensorArray::new(
-                    Field::new(self.name(), dtype.clone()),
-                    result.fixed_size_list()?.clone(),
-                );
-                Ok(tensor_array.into_series())
-            }
-            // TODO: Add implementations for these types
-            // DataType::Timestamp(_, _) => $self.timestamp().unwrap().$method($($args),*),
-            dt => unimplemented!("dtype {:?} not supported", dt),
+        if dtype.is_python() {
+            return Ok(self.clone().into_series());
         }
+
+        // TODO: optimize this.
+        // Currently this does PythonArray -> Vec<Literal> -> Series -> Series::cast
+        let literals = Python::with_gil(|py| {
+            self.values()
+                .iter()
+                .map(|ob| Literal::from_pyobj(ob.bind(py), Some(dtype)))
+                .collect::<PyResult<Vec<Literal>>>()
+        })?;
+
+        Ok(Series::from_literals(literals)?
+            .cast(dtype)?
+            .rename(self.name()))
     }
 }
 
@@ -1426,22 +772,36 @@ impl TensorArray {
                 }) {
                     return Err(DaftError::TypeError(format!(
                         "Can not cast Tensor array to FixedShapeTensor array with type {:?}: Tensor array has shapes different than {:?};",
-                        dtype,
-                        shape,
+                        dtype, shape,
                     )));
                 }
                 let size = shape.iter().product::<u64>() as usize;
 
-                let result = da.cast(&DataType::FixedSizeList(
-                    Box::new(inner_dtype.as_ref().clone()),
-                    size,
-                ))?;
+                let result = da
+                    .cast(&DataType::FixedSizeList(
+                        Box::new(inner_dtype.as_ref().clone()),
+                        size,
+                    ))?
+                    .rename(self.name());
                 let tensor_array = FixedShapeTensorArray::new(
                     Field::new(self.name(), dtype.clone()),
                     result.fixed_size_list().unwrap().clone(),
                 );
                 Ok(tensor_array.into_series())
             }
+            DataType::Embedding(inner_dtype, length) => self
+                .cast(&DataType::FixedShapeTensor(
+                    inner_dtype.clone(),
+                    vec![*length as u64],
+                ))?
+                .cast(dtype),
+            DataType::List(_) => self.data_array().cast(dtype),
+            DataType::FixedSizeList(inner_dtype, length) => self
+                .cast(&DataType::FixedShapeTensor(
+                    inner_dtype.clone(),
+                    vec![*length as u64],
+                ))?
+                .cast(dtype),
             DataType::SparseTensor(inner_dtype, use_offset_indices) => {
                 let shape_iterator = self.shape_array().into_iter();
                 let data_iterator = self.data_array().into_iter();
@@ -1533,6 +893,21 @@ impl TensorArray {
                 .into_series())
             }
             DataType::Image(mode) => {
+                let DataType::Tensor(inner_dtype) = self.data_type() else {
+                    unreachable!("TensorArray should have Tensor datatype")
+                };
+
+                if let Some(m) = mode
+                    && **inner_dtype != m.get_dtype()
+                {
+                    return Err(DaftError::TypeError(format!(
+                        "Images with mode {} can only be created from tensors of type {}, found {}",
+                        m,
+                        m.get_dtype(),
+                        inner_dtype
+                    )));
+                }
+
                 let sa = self.shape_array();
                 if !(0..self.len()).map(|i| sa.get(i)).all(|s| {
                     s.is_none_or(|s| {
@@ -1774,8 +1149,7 @@ impl SparseTensorArray {
                 }) {
                     return Err(DaftError::TypeError(format!(
                         "Can not cast SparseTensor array to FixedShapeSparseTensor array with type {:?}: Tensor array has shapes different than {:?};",
-                        dtype,
-                        shape,
+                        dtype, shape,
                     )));
                 }
 
@@ -1865,8 +1239,7 @@ impl FixedShapeSparseTensorArray {
                 if size != target_size {
                     return Err(DaftError::TypeError(format!(
                         "Can not cast FixedShapeSparseTensor array to FixedShapeTensor array with type {:?}: FixedShapeSparseTensor array has shapes different than {:?};",
-                        dtype,
-                        tensor_shape,
+                        dtype, tensor_shape,
                     )));
                 }
                 let n_values = size * non_zero_values_array.len();
@@ -2313,6 +1686,58 @@ impl StructArray {
                         .into_series(),
                 )
             }
+            (DataType::Struct(..), DataType::List(child_dtype)) => {
+                let casted_children = self
+                    .children
+                    .iter()
+                    .map(|c| c.cast(child_dtype))
+                    .collect::<DaftResult<Vec<_>>>()?;
+
+                let lists = (0..self.len())
+                    .map(|i| {
+                        if self.is_valid(i) {
+                            let slices_at_index = casted_children
+                                .iter()
+                                .map(|c| c.slice(i, i + 1))
+                                .collect::<DaftResult<Vec<_>>>()?;
+
+                            Some(Series::concat(&slices_at_index.iter().collect::<Vec<_>>()))
+                                .transpose()
+                        } else {
+                            Ok(None)
+                        }
+                    })
+                    .collect::<DaftResult<Vec<_>>>()?;
+
+                Ok(ListArray::try_from((self.name(), lists.as_slice()))?.into_series())
+            }
+            (DataType::Struct(..), DataType::FixedSizeList(child_dtype, length))
+                if *length == self.children.len() =>
+            {
+                let casted_children = self
+                    .children
+                    .iter()
+                    .map(|c| c.cast(child_dtype))
+                    .collect::<DaftResult<Vec<_>>>()?;
+
+                let flat_slices = (0..self.len())
+                    .flat_map(|i| casted_children.iter().map(move |c| c.slice(i, i + 1)))
+                    .collect::<DaftResult<Vec<_>>>()?;
+
+                let flat_child = Series::concat(&flat_slices.iter().collect::<Vec<_>>())?;
+
+                Ok(FixedSizeListArray::new(
+                    Field::new(self.name(), dtype.clone()),
+                    flat_child,
+                    self.validity().cloned(),
+                )
+                .into_series())
+            }
+            (DataType::Struct(..), DataType::Embedding(_, length))
+                if *length == self.children.len() =>
+            {
+                self.cast(&dtype.to_physical())?.cast(dtype)
+            }
             _ => unimplemented!(
                 "Daft casting from {} to {} not implemented",
                 self.data_type(),
@@ -2325,12 +1750,12 @@ impl StructArray {
 #[cfg(test)]
 mod tests {
     use arrow2::array::PrimitiveArray;
-    use rand::{rng, Rng};
+    use rand::{Rng, rng};
 
     use super::*;
     use crate::{
         datatypes::DataArray,
-        prelude::{Decimal128Type, Float64Array},
+        prelude::{Decimal128Type, Float64Array, FromArrow},
     };
 
     fn create_test_decimal_array(
@@ -2506,7 +1931,8 @@ mod tests {
         );
 
         assert!(
-            fsl.cast(&DataType::Embedding(Box::new(DataType::Float32), 0)).is_err(),
+            fsl.cast(&DataType::Embedding(Box::new(DataType::Float32), 0))
+                .is_err(),
             "Not expected to be able to cast FixedSizeList into Embedding with different element type."
         );
     }

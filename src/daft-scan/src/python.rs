@@ -70,16 +70,16 @@ pub mod pylib {
 
     use common_daft_config::PyDaftExecutionConfig;
     use common_error::DaftResult;
-    use common_file_formats::{python::PyFileFormatConfig, FileFormatConfig};
+    use common_file_formats::{FileFormatConfig, python::PyFileFormatConfig};
     use common_py_serde::impl_bincode_py_state_serialization;
     use common_scan_info::{
-        python::pylib::{PyPartitionField, PyPushdowns},
         PartitionField, Pushdowns, ScanOperator, ScanOperatorRef, ScanTaskLike, ScanTaskLikeRef,
         SupportsPushdownFilters,
+        python::pylib::{PyPartitionField, PyPushdowns},
     };
-    use daft_dsl::{expr::bound_expr::BoundExpr, python::PyExpr, ExprRef};
+    use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, python::PyExpr};
     use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
-    use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
+    use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
     use daft_schema::{python::schema::PySchema, schema::SchemaRef};
     use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
     use pyo3::{prelude::*, pyclass, types::PyIterator};
@@ -87,8 +87,8 @@ pub mod pylib {
 
     use super::PythonTablesFactoryArgs;
     use crate::{
-        anonymous::AnonymousScanOperator, glob::GlobScanOperator, storage_config::StorageConfig,
-        DataSource, ScanTask,
+        DataSource, ScanTask, anonymous::AnonymousScanOperator, glob::GlobScanOperator,
+        storage_config::StorageConfig,
     };
 
     #[pyclass(module = "daft.daft", frozen)]
@@ -135,7 +135,8 @@ pub mod pylib {
             hive_partitioning,
             infer_schema,
             schema=None,
-            file_path_column=None
+            file_path_column=None,
+            skip_glob=false
         ))]
         pub fn glob_scan(
             py: Python,
@@ -146,6 +147,7 @@ pub mod pylib {
             infer_schema: bool,
             schema: Option<PySchema>,
             file_path_column: Option<String>,
+            skip_glob: bool,
         ) -> PyResult<Self> {
             py.allow_threads(|| {
                 let executor = common_runtime::get_io_runtime(true);
@@ -158,6 +160,7 @@ pub mod pylib {
                     schema.map(|s| s.schema),
                     file_path_column,
                     hive_partitioning,
+                    skip_glob,
                 );
 
                 let operator = executor.block_within_async_context(task)??;
@@ -282,7 +285,9 @@ pub mod pylib {
                     Ok(res) => res,
                     Err(e) => {
                         e.print_and_set_sys_last_vars(py);
-                        panic!("Python method call failed, please ensure return value is a tuple of (pushed_filters, post_filters)");
+                        panic!(
+                            "Python method call failed, please ensure return value is a tuple of (pushed_filters, post_filters)"
+                        );
                     }
                 };
 
@@ -464,7 +469,7 @@ pub mod pylib {
             stats: Option<PyRecordBatch>,
         ) -> PyResult<Option<Self>> {
             if let Some(ref pvalues) = partition_values
-                && let Some(Some(ref partition_filters)) =
+                && let Some(Some(partition_filters)) =
                     pushdowns.as_ref().map(|p| &p.0.partition_filters)
             {
                 let table = &pvalues.record_batch;

@@ -4,17 +4,17 @@ use common_error::DaftResult;
 use common_resource_request::ResourceRequest;
 use common_treenode::TreeNode;
 use daft_dsl::{
-    functions::{
-        python::{LegacyPythonUDF, UDFProperties},
-        FunctionExpr,
-    },
     Expr, ExprRef,
+    functions::{
+        FunctionExpr,
+        python::{LegacyPythonUDF, UDFProperties},
+    },
 };
-use daft_logical_plan::partitioning::{translate_clustering_spec, ClusteringSpec};
+use daft_logical_plan::partitioning::{ClusteringSpec, translate_clustering_spec};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-use crate::{impl_default_tree_display, PhysicalPlanRef};
+use crate::{PhysicalPlanRef, impl_default_tree_display};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ActorPoolProject {

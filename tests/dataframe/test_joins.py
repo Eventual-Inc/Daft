@@ -5,6 +5,7 @@ import pytest
 
 import daft
 from daft import col
+from daft.context import get_context
 from daft.datatype import DataType
 from tests.conftest import get_tests_daft_runner_name
 from tests.utils import sort_arrow_table
@@ -15,7 +16,11 @@ def skip_invalid_join_strategies(join_strategy, join_type):
         if join_strategy not in [None, "hash"]:
             pytest.skip("Native executor fails for these tests")
     else:
-        if (join_strategy == "sort_merge" or join_strategy == "sort_merge_aligned_boundaries") and join_type != "inner":
+        if not get_context().daft_execution_config.use_legacy_ray_runner and join_strategy == "sort_merge":
+            pytest.skip("Sort merge joins are not supported on Flotilla")
+        elif (
+            join_strategy == "sort_merge" or join_strategy == "sort_merge_aligned_boundaries"
+        ) and join_type != "inner":
             pytest.skip("Sort merge currently only supports inner joins")
         elif join_strategy == "broadcast" and join_type == "outer":
             pytest.skip("Broadcast join does not support outer joins")

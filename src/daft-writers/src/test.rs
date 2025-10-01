@@ -3,15 +3,15 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_core::{
-    prelude::{DataType, Field, Schema, UInt64Array, UInt8Array, Utf8Array},
+    prelude::{DataType, Field, Schema, UInt8Array, UInt64Array, Utf8Array},
     series::IntoSeries,
 };
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
 use crate::{
-    AsyncFileWriter, TargetFileSizeWriterFactory, TargetInMemorySizeBytesCalculator, WriterFactory,
-    RETURN_PATHS_COLUMN_NAME,
+    AsyncFileWriter, RETURN_PATHS_COLUMN_NAME, TargetFileSizeWriterFactory,
+    TargetInMemorySizeBytesCalculator, WriteResult, WriterFactory,
 };
 
 pub struct DummyWriterFactory;
@@ -49,11 +49,14 @@ impl AsyncFileWriter for DummyWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
-    async fn write(&mut self, input: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, input: Self::Input) -> DaftResult<WriteResult> {
         self.write_count += 1;
         let size_bytes = input.size_bytes().unwrap();
         self.byte_count += size_bytes;
-        Ok(size_bytes)
+        Ok(WriteResult {
+            bytes_written: size_bytes,
+            rows_written: input.len(),
+        })
     }
 
     fn bytes_written(&self) -> usize {
@@ -90,12 +93,14 @@ impl AsyncFileWriter for DummyWriter {
     }
 }
 
+#[allow(dead_code)]
 pub struct FailingWriterFactory {
     pub fail_on_write: bool,
     pub fail_on_close: bool,
 }
 
 impl FailingWriterFactory {
+    #[allow(dead_code)]
     pub fn new_fail_on_write() -> Self {
         Self {
             fail_on_write: true,
@@ -103,6 +108,7 @@ impl FailingWriterFactory {
         }
     }
 
+    #[allow(dead_code)]
     pub fn new_fail_on_close() -> Self {
         Self {
             fail_on_write: false,
@@ -148,7 +154,7 @@ impl AsyncFileWriter for FailingWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
-    async fn write(&mut self, input: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, input: Self::Input) -> DaftResult<WriteResult> {
         if self.fail_on_write {
             return Err(common_error::DaftError::ValueError(
                 "Intentional failure in FailingWriter::write".to_string(),
@@ -158,7 +164,10 @@ impl AsyncFileWriter for FailingWriter {
         self.write_count += 1;
         let size_bytes = input.size_bytes().unwrap();
         self.byte_count += size_bytes;
-        Ok(size_bytes)
+        Ok(WriteResult {
+            bytes_written: size_bytes,
+            rows_written: input.len(),
+        })
     }
 
     fn bytes_written(&self) -> usize {
@@ -202,6 +211,7 @@ impl AsyncFileWriter for FailingWriter {
     }
 }
 
+#[allow(dead_code)]
 pub fn make_dummy_target_file_size_writer_factory(
     target_size_bytes: usize,
     initial_inflation_factor: f64,

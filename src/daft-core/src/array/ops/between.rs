@@ -21,12 +21,16 @@ where
                 .len()
                 == 1
         };
-        match  (self.len(), lower.len(), upper.len()) {
-            (v_size, l_size, u_size) if (v_size == l_size && v_size == u_size) || (l_size == 1 && u_size == 1) || (are_two_equal_and_single_one(v_size, l_size, u_size)) => {
+        match (self.len(), lower.len(), upper.len()) {
+            (v_size, l_size, u_size)
+                if (v_size == l_size && v_size == u_size)
+                    || (l_size == 1 && u_size == 1)
+                    || (are_two_equal_and_single_one(v_size, l_size, u_size)) =>
+            {
                 let gte_res = self.gte(lower)?;
                 let lte_res = self.lte(upper)?;
                 gte_res.and(&lte_res)
-            },
+            }
             (v_size, l_size, u_size) => Err(DaftError::ValueError(format!(
                 "trying to compare different length arrays: {}: {v_size} vs {}: {l_size} vs {}: {u_size}",
                 self.name(),

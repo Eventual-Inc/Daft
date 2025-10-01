@@ -32,9 +32,10 @@ class GeneratorUdf(Generic[P, T]):
     If no values are yielded for an input, a null value is inserted.
     """
 
-    def __init__(self, fn: Callable[P, Iterator[T]], return_dtype: DataTypeLike | None):
+    def __init__(self, fn: Callable[P, Iterator[T]], return_dtype: DataTypeLike | None, unnest: bool):
         self._inner = fn
         self.name = get_unique_function_name(fn)
+        self.unnest = unnest
 
         # attempt to extract return type from an Iterator or Generator type hint
         if return_dtype is None:
@@ -54,7 +55,12 @@ class GeneratorUdf(Generic[P, T]):
                 )
 
             return_dtype = args[0]
-        self.return_dtype = DataType._infer_type(return_dtype)
+        self.return_dtype = DataType._infer(return_dtype)
+
+        if self.unnest and not self.return_dtype.is_struct():
+            raise ValueError(
+                f"Expected Daft function `return_dtype` to be `DataType.struct` when `unnest=True`, instead found: {self.return_dtype}"
+            )
 
     @overload
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> Iterator[T]: ...
@@ -78,6 +84,11 @@ class GeneratorUdf(Generic[P, T]):
 
         return_dtype_rowwise = DataType.list(self.return_dtype)
 
-        return Expression._from_pyexpr(
+        expr = Expression._from_pyexpr(
             row_wise_udf(self.name, inner_rowwise, return_dtype_rowwise._dtype, (args, kwargs), expr_args)
         ).explode()
+
+        if self.unnest:
+            expr = expr.unnest()
+
+        return expr

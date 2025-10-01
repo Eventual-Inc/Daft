@@ -10,7 +10,7 @@ use common_error::{DaftError, DaftResult};
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_core::join::JoinSide;
 use daft_dsl::{
-    optimization::get_required_columns, Column, Expr, ResolvedColumn, Subquery, SubqueryPlan,
+    Column, Expr, ResolvedColumn, Subquery, SubqueryPlan, optimization::get_required_columns,
 };
 use daft_schema::{field::Field, schema::SchemaRef};
 use indexmap::IndexSet;
@@ -489,57 +489,210 @@ impl LogicalPlan {
     pub fn with_new_children(&self, children: &[Arc<Self>]) -> Self {
         match children {
             [input] => match self {
-                Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
-                Self::Shard(Shard { sharder, .. }) => Self::Shard(Shard::new(input.clone(), sharder.clone())),
-                Self::Project(Project { projection, .. }) => Self::Project(Project::try_new(
-                        input.clone(), projection.clone(),
-                    ).unwrap()),
-                Self::UDFProject(UDFProject {expr, passthrough_columns, ..}) => Self::UDFProject(UDFProject::try_new(input.clone(), expr.clone(), passthrough_columns.clone()).unwrap()),
-                Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap()),
-                Self::IntoBatches(IntoBatches { batch_size, .. }) => Self::IntoBatches(IntoBatches::new(input.clone(), *batch_size)),
-                Self::Limit(Limit { limit, offset, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *offset, *eager)),
-                Self::Offset(Offset { offset, .. }) => Self::Offset(Offset::new(input.clone(), *offset)),
-                Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
-                Self::Sort(Sort { sort_by, descending, nulls_first, .. }) => Self::Sort(Sort::try_new(input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone()).unwrap()),
-                Self::Repartition(Repartition {  repartition_spec: scheme_config, .. }) => Self::Repartition(Repartition::new(input.clone(), scheme_config.clone())),
-                Self::Distinct(distinct) => Self::Distinct(Distinct::new(input.clone(), distinct.columns.clone())),
-                Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::try_new(input.clone(), aggregations.clone(), groupby.clone()).unwrap()),
-                Self::Pivot(Pivot { group_by, pivot_column, value_column, aggregation, names, ..}) => Self::Pivot(Pivot::try_new(input.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), aggregation.into(), names.clone()).unwrap()),
-                Self::Sink(Sink { sink_info, .. }) => Self::Sink(Sink::try_new(input.clone(), sink_info.clone()).unwrap()),
-                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {column_name, starting_offset, .. }) => Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId::try_new(input.clone(), Some(column_name), *starting_offset).unwrap()),
-                Self::Unpivot(Unpivot {ids, values, variable_name, value_name, output_schema, ..}) =>
-                    Self::Unpivot(Unpivot::new(input.clone(), ids.clone(), values.clone(), variable_name.clone(), value_name.clone(), output_schema.clone())),
-                Self::Sample(Sample {fraction, with_replacement, seed, ..}) => Self::Sample(Sample::new(input.clone(), *fraction, *with_replacement, *seed)),
-                Self::SubqueryAlias(SubqueryAlias { name: id, .. }) => Self::SubqueryAlias(SubqueryAlias::new(input.clone(), id.clone())),
-                Self::Window(Window { window_functions, aliases, window_spec, .. }) => Self::Window(Window::try_new(
+                Self::Source(_) => panic!(
+                    "Source nodes don't have children, with_new_children() should never be called for Source ops"
+                ),
+                Self::Shard(Shard { sharder, .. }) => {
+                    Self::Shard(Shard::new(input.clone(), sharder.clone()))
+                }
+                Self::Project(Project { projection, .. }) => {
+                    Self::Project(Project::try_new(input.clone(), projection.clone()).unwrap())
+                }
+                Self::UDFProject(UDFProject {
+                    expr,
+                    passthrough_columns,
+                    ..
+                }) => Self::UDFProject(
+                    UDFProject::try_new(input.clone(), expr.clone(), passthrough_columns.clone())
+                        .unwrap(),
+                ),
+                Self::Filter(Filter { predicate, .. }) => {
+                    Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap())
+                }
+                Self::IntoBatches(IntoBatches { batch_size, .. }) => {
+                    Self::IntoBatches(IntoBatches::new(input.clone(), *batch_size))
+                }
+                Self::Limit(Limit {
+                    limit,
+                    offset,
+                    eager,
+                    ..
+                }) => Self::Limit(Limit::new(input.clone(), *limit, *offset, *eager)),
+                Self::Offset(Offset { offset, .. }) => {
+                    Self::Offset(Offset::new(input.clone(), *offset))
+                }
+                Self::Explode(Explode { to_explode, .. }) => {
+                    Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap())
+                }
+                Self::Sort(Sort {
+                    sort_by,
+                    descending,
+                    nulls_first,
+                    ..
+                }) => Self::Sort(
+                    Sort::try_new(
+                        input.clone(),
+                        sort_by.clone(),
+                        descending.clone(),
+                        nulls_first.clone(),
+                    )
+                    .unwrap(),
+                ),
+                Self::Repartition(Repartition {
+                    repartition_spec: scheme_config,
+                    ..
+                }) => Self::Repartition(Repartition::new(input.clone(), scheme_config.clone())),
+                Self::Distinct(distinct) => {
+                    Self::Distinct(Distinct::new(input.clone(), distinct.columns.clone()))
+                }
+                Self::Aggregate(Aggregate {
+                    aggregations,
+                    groupby,
+                    ..
+                }) => Self::Aggregate(
+                    Aggregate::try_new(input.clone(), aggregations.clone(), groupby.clone())
+                        .unwrap(),
+                ),
+                Self::Pivot(Pivot {
+                    group_by,
+                    pivot_column,
+                    value_column,
+                    aggregation,
+                    names,
+                    ..
+                }) => Self::Pivot(
+                    Pivot::try_new(
+                        input.clone(),
+                        group_by.clone(),
+                        pivot_column.clone(),
+                        value_column.clone(),
+                        aggregation.into(),
+                        names.clone(),
+                    )
+                    .unwrap(),
+                ),
+                Self::Sink(Sink { sink_info, .. }) => {
+                    Self::Sink(Sink::try_new(input.clone(), sink_info.clone()).unwrap())
+                }
+                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
+                    column_name,
+                    starting_offset,
+                    ..
+                }) => Self::MonotonicallyIncreasingId(
+                    MonotonicallyIncreasingId::try_new(
+                        input.clone(),
+                        Some(column_name),
+                        *starting_offset,
+                    )
+                    .unwrap(),
+                ),
+                Self::Unpivot(Unpivot {
+                    ids,
+                    values,
+                    variable_name,
+                    value_name,
+                    output_schema,
+                    ..
+                }) => Self::Unpivot(Unpivot::new(
                     input.clone(),
-                    window_functions.clone(),
-                    aliases.clone(),
-                    window_spec.clone(),
-                ).unwrap()),
-                Self::TopN(TopN { sort_by, descending, nulls_first, limit, offset, .. }) => Self::TopN(TopN::try_new(
-                    input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit, *offset
-                ).unwrap()),
-                Self::Concat(_)
-                | Self::Intersect(_)
-                | Self::Union(_)
-                | Self::Join(_) => panic!("{} ops should never have only one input, but got one", input.name()),
+                    ids.clone(),
+                    values.clone(),
+                    variable_name.clone(),
+                    value_name.clone(),
+                    output_schema.clone(),
+                )),
+
+                Self::Sample(Sample {
+                    fraction,
+                    with_replacement,
+                    seed,
+                    ..
+                }) => Self::Sample(Sample::new(
+                    input.clone(),
+                    *fraction,
+                    *with_replacement,
+                    *seed,
+                )),
+                Self::SubqueryAlias(SubqueryAlias { name: id, .. }) => {
+                    Self::SubqueryAlias(SubqueryAlias::new(input.clone(), id.clone()))
+                }
+                Self::Window(Window {
+                    window_functions,
+                    aliases,
+                    window_spec,
+                    ..
+                }) => Self::Window(
+                    Window::try_new(
+                        input.clone(),
+                        window_functions.clone(),
+                        aliases.clone(),
+                        window_spec.clone(),
+                    )
+                    .unwrap(),
+                ),
+                Self::TopN(TopN {
+                    sort_by,
+                    descending,
+                    nulls_first,
+                    limit,
+                    offset,
+                    ..
+                }) => Self::TopN(
+                    TopN::try_new(
+                        input.clone(),
+                        sort_by.clone(),
+                        descending.clone(),
+                        nulls_first.clone(),
+                        *limit,
+                        *offset,
+                    )
+                    .unwrap(),
+                ),
+                Self::Concat(_) | Self::Intersect(_) | Self::Union(_) | Self::Join(_) => panic!(
+                    "{} ops should never have only one input, but got one",
+                    input.name()
+                ),
             },
             [input1, input2] => match self {
-                Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
-                Self::Concat(_) => Self::Concat(Concat::try_new(input1.clone(), input2.clone()).unwrap()),
-                Self::Intersect(inner) => Self::Intersect(Intersect::try_new(input1.clone(), input2.clone(), inner.is_all).unwrap()),
-                Self::Union(inner) => Self::Union(Union::try_new(input1.clone(), input2.clone(), inner.quantifier, inner.strategy).unwrap()),
-                Self::Join(Join { on, join_type, join_strategy, .. }) => Self::Join(Join::try_new(
-                    input1.clone(),
-                    input2.clone(),
-                    on.clone(),
-                    *join_type,
-                    *join_strategy,
-                ).unwrap()),
+                Self::Source(_) => panic!(
+                    "Source nodes don't have children, with_new_children() should never be called for Source ops"
+                ),
+                Self::Concat(_) => {
+                    Self::Concat(Concat::try_new(input1.clone(), input2.clone()).unwrap())
+                }
+                Self::Intersect(inner) => Self::Intersect(
+                    Intersect::try_new(input1.clone(), input2.clone(), inner.is_all).unwrap(),
+                ),
+                Self::Union(inner) => Self::Union(
+                    Union::try_new(
+                        input1.clone(),
+                        input2.clone(),
+                        inner.quantifier,
+                        inner.strategy,
+                    )
+                    .unwrap(),
+                ),
+                Self::Join(Join {
+                    on,
+                    join_type,
+                    join_strategy,
+                    ..
+                }) => Self::Join(
+                    Join::try_new(
+                        input1.clone(),
+                        input2.clone(),
+                        on.clone(),
+                        *join_type,
+                        *join_strategy,
+                    )
+                    .unwrap(),
+                ),
                 _ => panic!("Logical op {} has one input, but got two", self),
             },
-            _ => panic!("Logical ops should never have more than 2 inputs, but got: {}", children.len())
+            _ => panic!(
+                "Logical ops should never have more than 2 inputs, but got: {}",
+                children.len()
+            ),
         }
     }
 

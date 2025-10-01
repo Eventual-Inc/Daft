@@ -22,8 +22,8 @@ impl SQLModule for SQLModuleConfig {
 
 pub struct S3ConfigFunction;
 macro_rules! item {
-    ($name:expr, $ty:ident) => {
-        (Field::new(stringify!($name), DataType::$ty), $name.into())
+    ($name:expr) => {
+        (stringify!($name).to_string(), $name.into())
     };
 }
 
@@ -96,26 +96,26 @@ impl SQLFunction for S3ConfigFunction {
         let profile_name = args.try_get_named::<String>("profile_name")?;
 
         let entries = vec![
-            (Field::new("variant", DataType::Utf8), "s3".into()),
-            item!(region_name, Utf8),
-            item!(endpoint_url, Utf8),
-            item!(key_id, Utf8),
-            item!(session_token, Utf8),
-            item!(access_key, Utf8),
-            item!(buffer_time, UInt64),
-            item!(max_connections_per_io_thread, UInt32),
-            item!(retry_initial_backoff_ms, UInt64),
-            item!(connect_timeout_ms, UInt64),
-            item!(read_timeout_ms, UInt64),
-            item!(num_tries, UInt32),
-            item!(retry_mode, Utf8),
-            item!(anonymous, Boolean),
-            item!(use_ssl, Boolean),
-            item!(verify_ssl, Boolean),
-            item!(check_hostname_ssl, Boolean),
-            item!(requester_pays, Boolean),
-            item!(force_virtual_addressing, Boolean),
-            item!(profile_name, Utf8),
+            ("variant".to_string(), "s3".into()),
+            item!(region_name),
+            item!(endpoint_url),
+            item!(key_id),
+            item!(session_token),
+            item!(access_key),
+            item!(buffer_time),
+            item!(max_connections_per_io_thread),
+            item!(retry_initial_backoff_ms),
+            item!(connect_timeout_ms),
+            item!(read_timeout_ms),
+            item!(num_tries),
+            item!(retry_mode),
+            item!(anonymous),
+            item!(use_ssl),
+            item!(verify_ssl),
+            item!(check_hostname_ssl),
+            item!(requester_pays),
+            item!(force_virtual_addressing),
+            item!(profile_name),
         ]
         .into_iter()
         .collect::<_>();
@@ -180,13 +180,13 @@ impl SQLFunction for HTTPConfigFunction {
             .map(|t: usize| t as u32);
 
         let entries = vec![
-            (Field::new("variant", DataType::Utf8), "http".into()),
-            item!(user_agent, Utf8),
-            item!(bearer_token, Utf8),
-            item!(retry_initial_backoff_ms, UInt64),
-            item!(connect_timeout_ms, UInt64),
-            item!(read_timeout_ms, UInt64),
-            item!(num_tries, UInt32),
+            ("variant".to_string(), "http".into()),
+            item!(user_agent),
+            item!(bearer_token),
+            item!(retry_initial_backoff_ms),
+            item!(connect_timeout_ms),
+            item!(read_timeout_ms),
+            item!(num_tries),
         ]
         .into_iter()
         .collect::<_>();
@@ -247,18 +247,18 @@ impl SQLFunction for AzureConfigFunction {
         let use_ssl = args.try_get_named::<bool>("use_ssl")?;
 
         let entries = vec![
-            (Field::new("variant", DataType::Utf8), "azure".into()),
-            item!(storage_account, Utf8),
-            item!(access_key, Utf8),
-            item!(sas_token, Utf8),
-            item!(bearer_token, Utf8),
-            item!(tenant_id, Utf8),
-            item!(client_id, Utf8),
-            item!(client_secret, Utf8),
-            item!(use_fabric_endpoint, Boolean),
-            item!(anonymous, Boolean),
-            item!(endpoint_url, Utf8),
-            item!(use_ssl, Boolean),
+            ("variant".to_string(), "azure".into()),
+            item!(storage_account),
+            item!(access_key),
+            item!(sas_token),
+            item!(bearer_token),
+            item!(tenant_id),
+            item!(client_id),
+            item!(client_secret),
+            item!(use_fabric_endpoint),
+            item!(anonymous),
+            item!(endpoint_url),
+            item!(use_ssl),
         ]
         .into_iter()
         .collect::<_>();
@@ -307,11 +307,11 @@ impl SQLFunction for GCSConfigFunction {
         let anonymous = args.try_get_named::<bool>("anonymous")?;
 
         let entries = vec![
-            (Field::new("variant", DataType::Utf8), "gcs".into()),
-            item!(project_id, Utf8),
-            item!(credentials, Utf8),
-            item!(token, Utf8),
-            item!(anonymous, Boolean),
+            ("variant".to_string(), "gcs".into()),
+            item!(project_id),
+            item!(credentials),
+            item!(token),
+            item!(anonymous),
         ]
         .into_iter()
         .collect::<_>();
@@ -336,7 +336,7 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
     macro_rules! get_value {
         ($field:literal, $type:ident) => {
             entries
-                .get(&Field::new($field, DataType::$type))
+                .get($field)
                 .and_then(|s| match s {
                     Literal::$type(s) => Some(Ok(s.clone())),
                     Literal::Null => None,
@@ -371,6 +371,8 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
             let requester_pays = get_value!("requester_pays", Boolean)?;
             let force_virtual_addressing = get_value!("force_virtual_addressing", Boolean)?;
             let profile_name = get_value!("profile_name", Utf8)?;
+            let multipart_size = get_value!("multipart_size", UInt64)?;
+            let multipart_max_concurrency = get_value!("multipart_max_concurrency", UInt32)?;
             let default = S3Config::default();
             let s3_config = S3Config {
                 region_name,
@@ -396,6 +398,9 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
                 force_virtual_addressing: force_virtual_addressing
                     .unwrap_or(default.force_virtual_addressing),
                 profile_name,
+                multipart_size: multipart_size.unwrap_or(default.multipart_size),
+                multipart_max_concurrency: multipart_max_concurrency
+                    .unwrap_or(default.multipart_max_concurrency),
             };
 
             Ok(IOConfig {

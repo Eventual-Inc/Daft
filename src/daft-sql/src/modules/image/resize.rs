@@ -1,5 +1,5 @@
 use daft_dsl::{Expr, ExprRef, Literal};
-use daft_functions::image::resize::{resize, ImageResize};
+use daft_functions::image::resize::{ImageResize, resize};
 
 use crate::{
     ensure,

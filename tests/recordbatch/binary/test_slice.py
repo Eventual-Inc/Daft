@@ -313,32 +313,6 @@ def test_binary_slice_edge_cases(
 
 
 def test_binary_slice_errors() -> None:
-    # Test negative start
-    table = MicroPartition.from_pydict(
-        {"col": [b"hello", b"world", b"Hello\xe2\x98\x83World", b"\xff\xfe\xfd"], "start": [-1, -2, -3, -1]}
-    )
-    with pytest.raises(Exception, match="DaftError::ComputeError Failed to cast numeric value to target type"):
-        table.eval_expression_list([col("col").binary.slice(col("start"), 2)])
-
-    # Test negative length
-    table = MicroPartition.from_pydict({"col": [b"hello", b"world", b"Hello\xe2\x98\x83World", b"\xff\xfe\xfd"]})
-    with pytest.raises(Exception, match="DaftError::ComputeError Failed to cast numeric value to target type"):
-        table.eval_expression_list([col("col").binary.slice(0, -3)])
-
-    # Test both negative
-    table = MicroPartition.from_pydict(
-        {"col": [b"hello", b"world", b"Hello\xe2\x98\x83World", b"\xff\xfe\xfd"], "start": [-2, -1, -3, -2]}
-    )
-    with pytest.raises(Exception, match="DaftError::ComputeError Failed to cast numeric value to target type"):
-        table.eval_expression_list([col("col").binary.slice(col("start"), -2)])
-
-    # Test negative length in column
-    table = MicroPartition.from_pydict(
-        {"col": [b"hello", b"world", b"Hello\xe2\x98\x83World", b"\xff\xfe\xfd"], "length": [-2, -3, -4, -2]}
-    )
-    with pytest.raises(Exception, match="DaftError::ComputeError Failed to cast numeric value to target type"):
-        table.eval_expression_list([col("col").binary.slice(0, col("length"))])
-
     # Test slice with wrong number of arguments (too many)
     table = MicroPartition.from_pydict(
         {"col": [b"hello", b"world"], "start": [1, 2], "length": [2, 3], "extra": [4, 5]}
@@ -458,7 +432,7 @@ def test_binary_slice_type_errors() -> None:
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": ["1", "2"]})
     with pytest.raises(
         Exception,
-        match="Expects inputs to binary_slice to be binary, integer and integer or null but received Binary, Utf8 and Int32",
+        match="`start` argument to `slice` must be an integer, received: Utf8",
     ):
         table.eval_expression_list([col("col").binary.slice(col("start"), 2)])
 
@@ -466,7 +440,7 @@ def test_binary_slice_type_errors() -> None:
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [1.5, 2.5]})
     with pytest.raises(
         Exception,
-        match="Expects inputs to binary_slice to be binary, integer and integer or null but received Binary, Float64 and Int32",
+        match="`start` argument to `slice` must be an integer, received: Float64",
     ):
         table.eval_expression_list([col("col").binary.slice(col("start"), 2)])
 
@@ -474,7 +448,7 @@ def test_binary_slice_type_errors() -> None:
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [True, False]})
     with pytest.raises(
         Exception,
-        match="Expects inputs to binary_slice to be binary, integer and integer or null but received Binary, Boolean and Int32",
+        match="`start` argument to `slice` must be an integer, received: Boolean",
     ):
         table.eval_expression_list([col("col").binary.slice(col("start"), 2)])
 
@@ -482,15 +456,7 @@ def test_binary_slice_type_errors() -> None:
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [b"1", b"2"]})
     with pytest.raises(
         Exception,
-        match="Expects inputs to binary_slice to be binary, integer and integer or null but received Binary, Binary and Int32",
-    ):
-        table.eval_expression_list([col("col").binary.slice(col("start"), 2)])
-
-    # Test slice with null start type
-    table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [None, None]})
-    with pytest.raises(
-        Exception,
-        match="Expects inputs to binary_slice to be binary, integer and integer or null but received Binary, Null and Int32",
+        match="`start` argument to `slice` must be an integer, received: Binary",
     ):
         table.eval_expression_list([col("col").binary.slice(col("start"), 2)])
 

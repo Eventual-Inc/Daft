@@ -6,8 +6,8 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn},
 };
 use serde::{Deserialize, Serialize};
 

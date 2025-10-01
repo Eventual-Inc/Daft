@@ -11,8 +11,8 @@ use pyo3::{exceptions::PyIndexError, intern, prelude::*, types::PyDict};
 pub use wrappers::{PyCatalogWrapper, PyTableWrapper};
 
 use crate::{
-    impls::memory::{MemoryCatalog, MemoryTable},
     Catalog, CatalogRef, Identifier, Table, TableRef, TableSource,
+    impls::memory::{MemoryCatalog, MemoryTable},
 };
 
 #[derive(Clone)]
@@ -94,7 +94,7 @@ impl PyTable {
                 .iter()
                 .map(|(key, val)| {
                     let key = key.extract()?;
-                    let val = daft_dsl::python::literal_value(val)?;
+                    let val = Literal::from_pyobj(&val, None)?;
 
                     Ok((key, val))
                 })

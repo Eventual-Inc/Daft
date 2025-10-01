@@ -10,8 +10,8 @@ use daft_core::prelude::*;
 use itertools::Itertools;
 #[cfg(feature = "python")]
 use pyo3::{
-    types::{PyDict, PyTuple},
     Bound, IntoPyObject, PyObject, PyResult, Python,
+    types::{PyDict, PyTuple},
 };
 pub use runtime_py_object::RuntimePyObject;
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use super::FunctionExpr;
 #[cfg(feature = "python")]
 use crate::python::PyExpr;
-use crate::{functions::scalar::ScalarFn, Expr, ExprRef};
+use crate::{Expr, ExprRef, functions::scalar::ScalarFn};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum MaybeInitializedUDF {

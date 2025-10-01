@@ -3,12 +3,13 @@ use std::fmt::{Display, Formatter};
 use common_error::DaftError;
 use indexmap::IndexMap;
 use serde::{
+    Deserializer,
     de::{self, Error},
-    forward_to_deserialize_any, Deserializer,
+    forward_to_deserialize_any,
 };
 
 use super::Literal;
-use crate::{prelude::Field, series::Series};
+use crate::series::Series;
 
 #[derive(Debug)]
 pub struct LitError {
@@ -72,13 +73,13 @@ impl<'de> serde::de::SeqAccess<'de> for SeriesDeserializer<'de> {
 }
 
 struct StructDeserializer<'de> {
-    fields: &'de IndexMap<Field, Literal>,
-    iter: indexmap::map::Iter<'de, Field, Literal>,
+    fields: &'de IndexMap<String, Literal>,
+    iter: indexmap::map::Iter<'de, String, Literal>,
     value: Option<&'de Literal>,
 }
 
 impl<'de> StructDeserializer<'de> {
-    fn new(fields: &'de IndexMap<Field, Literal>) -> Self {
+    fn new(fields: &'de IndexMap<String, Literal>) -> Self {
         StructDeserializer {
             fields,
             iter: fields.iter(),
@@ -100,7 +101,7 @@ impl<'de> serde::de::MapAccess<'de> for StructDeserializer<'de> {
                 self.value = Some(value);
 
                 // Deserialize key name as a string
-                let key_deserializer = StringDeserializer(&key.name);
+                let key_deserializer = StringDeserializer(key);
                 seed.deserialize(key_deserializer).map(Some)
             }
             None => Ok(None),
@@ -152,25 +153,6 @@ pub struct LiteralDeserializer<'de> {
 // Owned deserializer
 pub struct OwnedLiteralDeserializer {
     lit: Literal,
-}
-
-// Helper struct for enum deserialization
-pub struct EnumDeserializer<'de> {
-    variant: &'de str,
-}
-
-impl<'de> serde::de::EnumAccess<'de> for EnumDeserializer<'de> {
-    type Error = LitError;
-    type Variant = UnitOnlyVariantAccess;
-
-    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant), Self::Error>
-    where
-        V: serde::de::DeserializeSeed<'de>,
-    {
-        let variant = StringDeserializer(self.variant);
-        let val = seed.deserialize(variant)?;
-        Ok((val, UnitOnlyVariantAccess))
-    }
 }
 
 // Simple variant access that only supports unit variants
@@ -419,9 +401,9 @@ impl<'de> Deserializer<'de> for LiteralDeserializer<'de> {
 
             // Handle struct representation (like {"Variant": value} or {"Variant": {"field": value}})
             Literal::Struct(fields) if fields.len() == 1 => {
-                let (field, value) = fields.iter().next().unwrap();
+                let (key, value) = fields.iter().next().unwrap();
                 visitor.visit_enum(StructEnumAccess {
-                    variant: &field.name,
+                    variant: key,
                     value,
                 })
             }

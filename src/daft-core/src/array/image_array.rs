@@ -36,23 +36,39 @@ impl ImageArray {
     }
 
     pub fn channel_array(&self) -> &arrow2::array::UInt16Array {
-        let array = self.physical.children.get(Self::IMAGE_CHANNEL_IDX).unwrap();
-        array.u16().unwrap().as_arrow()
+        self.channels().as_arrow()
     }
 
     pub fn height_array(&self) -> &arrow2::array::UInt32Array {
-        let array = self.physical.children.get(Self::IMAGE_HEIGHT_IDX).unwrap();
-        array.u32().unwrap().as_arrow()
+        self.heights().as_arrow()
     }
 
     pub fn width_array(&self) -> &arrow2::array::UInt32Array {
-        let array = self.physical.children.get(Self::IMAGE_WIDTH_IDX).unwrap();
-        array.u32().unwrap().as_arrow()
+        self.widths().as_arrow()
     }
 
     pub fn mode_array(&self) -> &arrow2::array::UInt8Array {
+        self.modes().as_arrow()
+    }
+
+    pub fn channels(&self) -> &DataArray<UInt16Type> {
+        let array = self.physical.children.get(Self::IMAGE_CHANNEL_IDX).unwrap();
+        array.u16().unwrap()
+    }
+
+    pub fn heights(&self) -> &DataArray<UInt32Type> {
+        let array = self.physical.children.get(Self::IMAGE_HEIGHT_IDX).unwrap();
+        array.u32().unwrap()
+    }
+
+    pub fn widths(&self) -> &DataArray<UInt32Type> {
+        let array = self.physical.children.get(Self::IMAGE_WIDTH_IDX).unwrap();
+        array.u32().unwrap()
+    }
+
+    pub fn modes(&self) -> &DataArray<UInt8Type> {
         let array = self.physical.children.get(Self::IMAGE_MODE_IDX).unwrap();
-        array.u8().unwrap().as_arrow()
+        array.u8().unwrap()
     }
 
     pub fn from_list_array(
@@ -118,7 +134,10 @@ impl ImageArray {
         let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
         let arrow_dtype: arrow2::datatypes::DataType = T::PRIMITIVE.into();
         if let DataType::Image(Some(mode)) = &data_type {
-            assert!(!(mode.get_dtype().to_arrow()? != arrow_dtype), "Inner value dtype of provided dtype {data_type:?} is inconsistent with inferred value dtype {arrow_dtype:?}");
+            assert!(
+                !(mode.get_dtype().to_arrow()? != arrow_dtype),
+                "Inner value dtype of provided dtype {data_type:?} is inconsistent with inferred value dtype {arrow_dtype:?}"
+            );
         }
         let data_array = ListArray::new(
             Field::new("data", DataType::List(Box::new((&arrow_dtype).into()))),

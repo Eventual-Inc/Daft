@@ -1,7 +1,7 @@
 use std::{
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
     vec,
 };
@@ -15,10 +15,10 @@ use daft_core::series::Series;
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
 use daft_dsl::{
+    Column, Expr, ExprRef,
     common_treenode::{TreeNode, TreeNodeRecursion},
     expr::bound_expr::BoundExpr,
     functions::python::UDFProperties,
-    Column, Expr, ExprRef,
 };
 use daft_micropartition::MicroPartition;
 #[cfg(feature = "python")]
@@ -26,15 +26,15 @@ use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
 use crate::{
+    ExecutionTaskSpawner,
     ops::NodeType,
     pipeline::{MorselSizeRequirement, NodeName},
-    ExecutionTaskSpawner,
 };
 
 fn get_required_columns(expr: &BoundExpr) -> Vec<BoundExpr> {
@@ -363,7 +363,7 @@ impl IntermediateOperator for UdfOperator {
         res
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    async fn make_state(&self) -> DaftResult<Self::State> {
         let worker_count = self.worker_count.fetch_add(1, Ordering::SeqCst);
 
         // Check if any inputs or the output are Python-dtype columns

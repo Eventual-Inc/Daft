@@ -12,7 +12,7 @@ pub use agg_ops::{
 };
 use arrow2::{
     compute::comparison::Simd8,
-    types::{simd::Simd, NativeType},
+    types::{NativeType, simd::Simd},
 };
 // Import DataType enum
 pub use daft_schema::dtype::DataType;
@@ -20,18 +20,22 @@ pub use daft_schema::{
     field::{Field, FieldID, FieldRef},
     image_format::ImageFormat,
     image_mode::ImageMode,
-    time_unit::{format_string_has_offset, infer_timeunit_from_format_string, TimeUnit},
+    time_unit::{TimeUnit, format_string_has_offset, infer_timeunit_from_format_string},
 };
 pub use infer_datatype::try_physical_supertype;
 use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero};
 use serde::Serialize;
 
-pub use crate::array::{file_array::FileArray, DataArray, FixedSizeListArray};
-use crate::array::{ops::as_arrow::AsArrow, ListArray, StructArray};
+pub use crate::array::{DataArray, FixedSizeListArray, file_array::FileArray};
+use crate::array::{ListArray, StructArray, ops::as_arrow::AsArrow};
+#[cfg(feature = "python")]
+use crate::prelude::PythonArray;
 
 pub mod interval;
 pub mod logical;
 pub use interval::*;
+#[cfg(feature = "python")]
+pub mod python;
 
 /// Trait that is implemented by all Array types
 ///
@@ -81,23 +85,6 @@ macro_rules! impl_daft_arrow_datatype {
         }
 
         impl DaftArrowBackedType for $ca {}
-        impl DaftPhysicalType for $ca {}
-    };
-}
-
-macro_rules! impl_daft_non_arrow_datatype {
-    ($ca:ident, $variant:ident) => {
-        #[derive(Clone, Debug)]
-        pub struct $ca {}
-
-        impl DaftDataType for $ca {
-            #[inline]
-            fn get_dtype() -> DataType {
-                DataType::$variant
-            }
-
-            type ArrayType = DataArray<$ca>;
-        }
         impl DaftPhysicalType for $ca {}
     };
 }
@@ -253,7 +240,18 @@ impl_daft_logical_fixed_size_list_datatype!(FixedShapeTensorType, Unknown);
 impl_daft_logical_list_datatype!(MapType, Unknown);
 
 #[cfg(feature = "python")]
-impl_daft_non_arrow_datatype!(PythonType, Python);
+#[derive(Clone, Debug)]
+pub struct PythonType {}
+
+#[cfg(feature = "python")]
+impl DaftDataType for PythonType {
+    #[inline]
+    fn get_dtype() -> DataType {
+        DataType::Python
+    }
+
+    type ArrayType = PythonArray;
+}
 
 pub trait NumericNative:
     PartialOrd
@@ -412,9 +410,6 @@ pub type Utf8Array = DataArray<Utf8Type>;
 pub type ExtensionArray = DataArray<ExtensionType>;
 pub type IntervalArray = DataArray<IntervalType>;
 pub type Decimal128Array = DataArray<Decimal128Type>;
-
-#[cfg(feature = "python")]
-pub type PythonArray = DataArray<PythonType>;
 
 impl<T: DaftNumericType> DataArray<T> {
     pub fn as_slice(&self) -> &[T::Native] {

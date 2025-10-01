@@ -1,6 +1,6 @@
 mod array_impl;
 mod from;
-mod from_lit;
+pub mod from_lit;
 mod ops;
 mod serdes;
 mod series_like;
@@ -8,19 +8,19 @@ mod utils;
 use std::{hash::Hash, ops::Sub, sync::Arc};
 
 pub use array_impl::{ArrayWrapper, IntoSeries};
-use common_display::table_display::{make_comfy_table, StrValue};
+use common_display::table_display::{StrValue, make_comfy_table};
 use common_error::DaftResult;
 use derive_more::Display;
-use indexmap::{map::RawEntryApiV1, IndexMap};
+use indexmap::{IndexMap, map::RawEntryApiV1};
 pub use ops::cast_series_to_supertype;
 
 pub(crate) use self::series_like::SeriesLike;
 use crate::{
     array::{
-        ops::{
-            arrow2::comparison::build_is_equal, from_arrow::FromArrow, full::FullNull, DaftCompare,
-        },
         DataArray,
+        ops::{
+            DaftCompare, arrow2::comparison::build_is_equal, from_arrow::FromArrow, full::FullNull,
+        },
     },
     datatypes::{DaftDataType, DaftNumericType, DataType, Field, FieldRef, NumericNative},
     lit::Literal,
@@ -262,7 +262,7 @@ macro_rules! series {
             // put into a vec first for compile-time type consistency checking
             let elements = vec![$($element),+];
             let elements_lit = elements.into_iter().map(Literal::from).collect::<Vec<_>>();
-            Series::try_from(elements_lit).unwrap()
+            Series::from_literals(elements_lit).unwrap()
         }
     };
 }

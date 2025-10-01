@@ -43,9 +43,11 @@ impl FixedSizeListArray {
                         validity.len() * size,
                     )
                 }
-                assert!(!(child_dtype.as_ref() != flat_child.data_type()), "FixedSizeListArray::new expects the child series to have dtype {}, but received: {}",
-                        child_dtype,
-                        flat_child.data_type(),
+                assert!(
+                    !(child_dtype.as_ref() != flat_child.data_type()),
+                    "FixedSizeListArray::new expects the child series to have dtype {}, but received: {}",
+                    child_dtype,
+                    flat_child.data_type(),
                 );
             }
             _ => panic!(
@@ -106,6 +108,10 @@ impl FixedSizeListArray {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    pub fn field(&self) -> &Field {
+        &self.field
     }
 
     pub fn name(&self) -> &str {
@@ -230,6 +236,7 @@ impl<'a> IntoIterator for &'a FixedSizeListArray {
     }
 }
 
+#[derive(Clone)]
 pub struct FixedSizeListArrayIter<'a> {
     array: &'a FixedSizeListArray,
     idx: usize,

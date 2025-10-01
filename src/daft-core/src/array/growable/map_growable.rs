@@ -1,8 +1,8 @@
 use common_error::DaftResult;
 
-use super::{list_growable::ListGrowable, Growable};
+use super::{Growable, list_growable::ListGrowable};
 use crate::{
-    datatypes::{logical::MapArray, DataType, Field},
+    datatypes::{DataType, Field, logical::MapArray},
     series::{IntoSeries, Series},
 };
 

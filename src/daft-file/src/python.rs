@@ -1,95 +1,67 @@
 use std::{
-    io,
-    io::{BufReader, Cursor, Read, Seek, SeekFrom},
+    io::{Read, Seek, SeekFrom},
     sync::Arc,
 };
 
 use common_error::DaftError;
-use daft_io::{python::IOConfig, GetRange, IOStatsRef, ObjectSource};
+use common_file::FileReference;
+use daft_io::python::IOConfig as PyIOConfig;
 use pyo3::{
-    exceptions::{PyIOError, PyValueError},
+    exceptions::{PyIOError, PyTypeError, PyValueError},
     prelude::*,
+    types::{PyBytes, PyString, PyTuple},
 };
 
-#[pyclass]
-pub struct PyDaftFile {
-    path: Option<String>,
-    cursor: Option<FileCursor>,
-    position: usize,
-}
+use crate::file::{DaftFile, FileCursor};
 
-enum FileCursor {
-    ObjectReader(BufReader<ObjectSourceReader>),
-    Memory(std::io::Cursor<Vec<u8>>),
-}
+#[cfg_attr(feature = "python", pymethods)]
+impl DaftFile {
+    pub fn _get_file(&self) -> PyResult<FileReference> {
+        match &self.cursor {
+            Some(FileCursor::ObjectReader(reader)) => {
+                let reader = reader.get_ref();
 
-impl Read for FileCursor {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match self {
-            Self::ObjectReader(cursor) => cursor.read(buf),
-            Self::Memory(cursor) => cursor.read(buf),
+                Ok(FileReference::Reference(
+                    reader.uri.clone(),
+                    reader.io_config.clone(),
+                ))
+            }
+            Some(FileCursor::Memory(cursor)) => {
+                Ok(FileReference::Data(Arc::new(cursor.get_ref().clone())))
+            }
+            None => Err(PyIOError::new_err("file is not open")),
         }
     }
-    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
-        match self {
-            Self::ObjectReader(cursor) => cursor.read_to_end(buf),
-            Self::Memory(cursor) => cursor.read_to_end(buf),
+
+    #[staticmethod]
+    fn _from_tuple(tuple: Bound<'_, PyAny>) -> PyResult<Self> {
+        let tuple = tuple.downcast::<PyTuple>()?;
+        let first = tuple.get_item(0)?;
+        if first.is_instance_of::<PyString>() {
+            let url = first.extract::<String>()?;
+            let io_config = tuple.get_item(1)?.extract::<Option<PyIOConfig>>()?;
+            Self::_from_path(url, io_config)
+        } else if first.is_instance_of::<PyBytes>() {
+            let data = first.extract::<Vec<u8>>()?;
+            Ok(Self::_from_bytes(data))
+        } else {
+            Err(PyErr::new::<PyTypeError, _>("Expected a string or bytes"))
         }
     }
-}
 
-impl Seek for FileCursor {
-    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        match self {
-            Self::ObjectReader(cursor) => cursor.seek(pos),
-            Self::Memory(cursor) => cursor.seek(pos),
-        }
-    }
-}
-
-#[pymethods]
-impl PyDaftFile {
     #[staticmethod]
     #[pyo3(signature = (path, io_config = None))]
-    fn _from_path(path: String, io_config: Option<IOConfig>) -> PyResult<Self> {
-        let io_config = io_config.unwrap_or_default();
-
-        let io_client = daft_io::get_io_client(true, Arc::new(io_config.config))?;
-        let rt = common_runtime::get_io_runtime(true);
-
-        let (source, path) = rt.block_within_async_context(async move {
-            io_client
-                .get_source_and_path(&path)
-                .await
-                .map_err(DaftError::from)
-        })??;
-
-        // Default to 8MB buffer
-        const DEFAULT_BUFFER_SIZE: usize = 8 * 1024 * 1024;
-
-        let reader = ObjectSourceReader::new(source, path.clone(), None);
-
-        // we wrap it in a BufReader so we are not making so many network requests for each byte read
-        let buffered_reader = BufReader::with_capacity(DEFAULT_BUFFER_SIZE, reader);
-
-        Ok(Self {
-            path: Some(path),
-            cursor: Some(FileCursor::ObjectReader(buffered_reader)),
-            position: 0,
-        })
+    fn _from_path(path: String, io_config: Option<PyIOConfig>) -> PyResult<Self> {
+        Ok(Self::from_path(path, io_config.map(|conf| conf.config))?)
     }
 
     #[staticmethod]
     fn _from_bytes(bytes: Vec<u8>) -> Self {
-        Self {
-            path: None,
-            cursor: Some(FileCursor::Memory(Cursor::new(bytes))),
-            position: 0,
-        }
+        Self::from_bytes(bytes)
     }
 
     #[pyo3(signature=(size=-1))]
-    fn read(&mut self, size: isize) -> PyResult<Vec<u8>> {
+    fn read(&mut self, size: isize) -> PyResult<Option<Vec<u8>>> {
         let cursor = self
             .cursor
             .as_mut()
@@ -104,9 +76,13 @@ impl PyDaftFile {
             buffer.truncate(bytes_read);
             self.position = bytes_read;
 
-            Ok(buffer)
+            Ok(Some(buffer))
         } else {
             let mut buffer = vec![0u8; size as usize];
+
+            if self.position == cursor.size() {
+                return Ok(None);
+            }
 
             let bytes_read = cursor
                 .read(&mut buffer)
@@ -115,7 +91,7 @@ impl PyDaftFile {
             buffer.truncate(bytes_read);
             self.position += bytes_read;
 
-            Ok(buffer)
+            Ok(Some(buffer))
         }
     }
 
@@ -177,170 +153,45 @@ impl PyDaftFile {
 
     // String representation
     fn __str__(&self) -> PyResult<String> {
-        match &self.path {
-            Some(path) => Ok(format!("File({})", path)),
-            None => Ok("File(None)".to_string()),
-        }
+        Ok("File".to_string())
     }
 
     fn closed(&self) -> PyResult<bool> {
         Ok(self.cursor.is_none())
     }
-}
 
-#[cfg(feature = "python")]
-pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_class::<PyDaftFile>()?;
+    fn supports_range_requests(&mut self) -> PyResult<bool> {
+        let cursor = self
+            .cursor
+            .as_mut()
+            .ok_or_else(|| PyIOError::new_err("File not open"))?;
 
-    Ok(())
-}
-
-// Simple wrapper around ObjectSource
-struct ObjectSourceReader {
-    source: Arc<dyn ObjectSource>,
-    uri: String,
-    position: usize,
-    io_stats: Option<IOStatsRef>,
-}
-
-impl ObjectSourceReader {
-    pub fn new(source: Arc<dyn ObjectSource>, uri: String, io_stats: Option<IOStatsRef>) -> Self {
-        Self {
-            source,
-            uri,
-            position: 0,
-            io_stats,
-        }
-    }
-}
-
-// Implement Read for synchronous reading
-impl Read for ObjectSourceReader {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if buf.is_empty() {
-            return Ok(0);
-        }
-
-        let rt = common_runtime::get_io_runtime(true);
-        let start = self.position;
-        let end = start + buf.len();
-        let range = Some(GetRange::Bounded(start..end));
-
-        let source = self.source.clone();
-        let uri = self.uri.clone();
-        let io_stats = self.io_stats.clone();
-
-        let bytes = rt
-            .block_within_async_context(async move {
-                let result = source
-                    .get(&uri, range, io_stats)
-                    .await
-                    .map_err(map_get_error)?;
-                result.bytes().await.map_err(map_bytes_error)
-            })
-            .map_err(map_async_error)??;
-
-        if bytes.is_empty() {
-            return Ok(0);
-        }
-
-        let bytes_to_copy = std::cmp::min(buf.len(), bytes.len());
-        buf[..bytes_to_copy].copy_from_slice(&bytes[..bytes_to_copy]);
-
-        self.position += bytes_to_copy;
-
-        Ok(bytes_to_copy)
-    }
-
-    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
-        let rt = common_runtime::get_io_runtime(true);
-
-        let source = self.source.clone();
-        let uri = self.uri.clone();
-        let io_stats = self.io_stats.clone();
-
-        let size = rt
-            .block_within_async_context(async move {
-                source
-                    .get_size(&uri, io_stats.clone())
-                    .await
-                    .map_err(map_get_error)
-            })
-            .map_err(map_async_error)??;
-
-        let source = self.source.clone();
-        let uri = self.uri.clone();
-        let io_stats = self.io_stats.clone();
-        let position = self.position;
-
-        let bytes = rt
-            .block_within_async_context(async move {
-                let range = Some(GetRange::Bounded(position..size));
-
-                let result = source
-                    .get(&uri, range, io_stats)
-                    .await
-                    .map_err(map_get_error)?;
-
-                result.bytes().await.map_err(map_bytes_error)
-            })
-            .map_err(map_async_error)??;
-
-        buf.reserve(bytes.len());
-
-        buf.extend_from_slice(&bytes);
-
-        self.position += bytes.len();
-
-        Ok(bytes.len())
-    }
-}
-
-impl Seek for ObjectSourceReader {
-    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        // Calculate the new position
-        let new_position = match pos {
-            SeekFrom::Start(offset) => offset as usize,
-            SeekFrom::End(offset) => {
+        // Try to read a single byte from the beginning
+        let supports_range = match cursor {
+            FileCursor::ObjectReader(reader) => {
                 let rt = common_runtime::get_io_runtime(true);
+                let inner_reader = reader.get_ref();
+                let uri = inner_reader.uri.clone();
+                let source = inner_reader.source.clone();
 
-                let source = self.source.clone();
-                let uri = self.uri.clone();
-                let io_stats = self.io_stats.clone();
-
-                let size = rt
-                    .block_within_async_context(async move {
-                        source.get_size(&uri, io_stats).await.map_err(map_get_error)
-                    })
-                    .map_err(map_async_error)??;
-
-                if offset < 0 {
-                    size.saturating_sub((-offset) as usize)
-                } else {
-                    size.saturating_add(offset as usize)
-                }
+                rt.block_within_async_context(async move {
+                    source.supports_range(&uri).await.map_err(DaftError::from)
+                })??
             }
-            SeekFrom::Current(offset) => {
-                if offset < 0 {
-                    self.position.saturating_sub((-offset) as usize)
-                } else {
-                    self.position.saturating_add(offset as usize)
-                }
-            }
+            FileCursor::Memory(_) => true,
         };
 
-        // Update position
-        self.position = new_position;
+        Ok(supports_range)
+    }
 
-        Ok(self.position as u64)
+    #[pyo3(name = "size")]
+    fn py_size(&mut self) -> PyResult<usize> {
+        Ok(self.size()?)
     }
 }
-fn map_get_error(e: daft_io::Error) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, format!("Get failed: {}", e))
-}
-fn map_bytes_error(e: daft_io::Error) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, format!("Bytes failed: {}", e))
-}
-fn map_async_error(e: DaftError) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, format!("Async context failed: {}", e))
+
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+    parent.add_class::<DaftFile>()?;
+
+    Ok(())
 }

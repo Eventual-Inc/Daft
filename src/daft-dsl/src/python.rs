@@ -13,18 +13,13 @@ use daft_core::{
     prelude::*,
     python::{PyDataType, PyField, PySchema, PySeries, PyTimeUnit},
 };
-use pyo3::{
-    exceptions::PyValueError,
-    prelude::*,
-    pyclass::CompareOp,
-    types::{PyBool, PyBytes, PyFloat, PyInt, PyString},
-};
+use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    ExprRef, Operator,
     expr::{Expr, WindowExpr},
     visitor::accept,
-    ExprRef, Operator,
 };
 
 #[pyfunction]
@@ -177,43 +172,7 @@ pub fn list_lit(series: PySeries) -> PyResult<PyExpr> {
 
 #[pyfunction]
 pub fn lit(item: Bound<PyAny>) -> PyResult<PyExpr> {
-    literal_value(item).map(Expr::Literal).map(Into::into)
-}
-
-pub fn literal_value(item: Bound<PyAny>) -> PyResult<Literal> {
-    if item.is_instance_of::<PyBool>() {
-        let val = item.extract::<bool>()?;
-        Ok(val.into())
-    } else if let Ok(int) = item.downcast::<PyInt>() {
-        match int.extract::<i64>() {
-            Ok(val) => {
-                if val >= 0 && val < i32::MAX as i64 || val <= 0 && val > i32::MIN as i64 {
-                    Ok((val as i32).into())
-                } else {
-                    Ok(val.into())
-                }
-            }
-            _ => {
-                let val = int.extract::<u64>()?;
-                Ok(val.into())
-            }
-        }
-    } else if let Ok(float) = item.downcast::<PyFloat>() {
-        let val = float.extract::<f64>()?;
-        Ok(val.into())
-    } else if let Ok(pystr) = item.downcast::<PyString>() {
-        Ok(pystr
-            .extract::<String>()
-            .expect("could not transform Python string to Rust Unicode")
-            .into())
-    } else if let Ok(pybytes) = item.downcast::<PyBytes>() {
-        let bytes = pybytes.as_bytes();
-        Ok(bytes.into())
-    } else if item.is_none() {
-        Ok(Literal::Null)
-    } else {
-        Ok(PyObject::from(item).into())
-    }
+    Literal::from_pyobj(&item, None).map(|l| Expr::Literal(l).into())
 }
 
 #[pyfunction]
@@ -248,12 +207,12 @@ pub fn udf(
 ) -> PyResult<PyExpr> {
     use crate::functions::python::udf;
 
-    if let Some(batch_size) = batch_size {
-        if batch_size == 0 {
-            return Err(PyValueError::new_err(format!(
-                "Error creating UDF: batch size must be positive (got {batch_size})"
-            )));
-        }
+    if let Some(batch_size) = batch_size
+        && batch_size == 0
+    {
+        return Err(PyValueError::new_err(format!(
+            "Error creating UDF: batch size must be positive (got {batch_size})"
+        )));
     }
 
     let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
@@ -490,7 +449,7 @@ impl PyExpr {
     }
 
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {
-        use crate::{binary_op, Operator};
+        use crate::{Operator, binary_op};
         match op {
             CompareOp::Lt => Ok(binary_op(Operator::Lt, self.into(), other.into()).into()),
             CompareOp::Le => Ok(binary_op(Operator::LtEq, self.into(), other.into()).into()),
@@ -600,7 +559,7 @@ impl PyExpr {
     pub fn over(&self, window_spec: &crate::expr::window::WindowSpec) -> PyResult<Self> {
         let window_expr = WindowExpr::try_from(self.expr.clone())?;
         Ok(Self {
-            expr: Arc::new(Expr::Over(window_expr, window_spec.clone())),
+            expr: Arc::new(Expr::Over(window_expr, Arc::new(window_spec.clone()))),
         })
     }
 

@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use super::{from_proto, from_proto_arc, ProtoResult, ToFromProto};
+use super::{ProtoResult, ToFromProto, from_proto, from_proto_arc};
 use crate::{
     from_proto_err, non_null, not_implemented_err, not_optimized_err,
     proto::{
-        from_proto_vec,
+        UNIT, from_proto_vec,
         functions::{from_proto_function, function_expr_to_proto, scalar_fn_to_proto},
-        to_proto_vec, UNIT,
+        to_proto_vec,
     },
 };
 
@@ -681,7 +681,7 @@ impl ToFromProto for ir::Literal {
         let variant = match self {
             Self::Null => proto::LiteralVariant::Null(UNIT),
             Self::Boolean(bool) => proto::LiteralVariant::Boolean(*bool),
-            Self::Utf8(s) => proto::LiteralVariant::Utf8(s.to_string()),
+            Self::Utf8(s) => proto::LiteralVariant::Utf8(s.clone()),
             Self::Binary(items) => proto::LiteralVariant::Binary(items.clone()),
             Self::Int8(i) => proto::LiteralVariant::Int8(*i as i32),
             Self::UInt8(i) => proto::LiteralVariant::Uint8(*i as u32),
@@ -731,7 +731,7 @@ impl ToFromProto for ir::Literal {
                 let mut fields = vec![];
                 for field in struct_ {
                     fields.push(proto::literal::r#struct::Field {
-                        name: field.0.to_string(),
+                        name: field.0.clone(),
                         value: Some(field.1.to_proto()?),
                     });
                 }

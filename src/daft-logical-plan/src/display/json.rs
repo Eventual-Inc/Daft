@@ -127,11 +127,13 @@ where
                 let mut obj = serde_json::Map::with_capacity(5);
                 obj.insert(
                     "sort_by".to_string(),
-                    json!(top_n
-                        .sort_by
-                        .iter()
-                        .map(|c| c.to_string())
-                        .collect::<Vec<_>>()),
+                    json!(
+                        top_n
+                            .sort_by
+                            .iter()
+                            .map(|c| c.to_string())
+                            .collect::<Vec<_>>()
+                    ),
                 );
                 obj.insert("nulls_first".to_string(), json!(top_n.nulls_first));
                 obj.insert("descending".to_string(), json!(top_n.descending));
@@ -212,8 +214,8 @@ mod tests {
     use daft_functions_utf8::{endswith, startswith};
 
     use crate::{
-        display::test::{plan_1, plan_2},
         LogicalPlanBuilder,
+        display::test::{plan_1, plan_2},
     };
 
     #[test]
