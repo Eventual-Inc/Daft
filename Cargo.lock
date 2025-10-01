@@ -1886,6 +1886,7 @@ name = "common-metrics"
 version = "0.3.0-dev0"
 dependencies = [
  "indicatif 0.17.11",
+ "pyo3",
  "serde",
  "smallvec",
 ]
@@ -2503,12 +2504,15 @@ name = "daft-context"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
+ "async-trait",
  "common-daft-config",
  "common-error",
+ "common-metrics",
  "daft-core",
  "daft-logical-plan",
  "daft-micropartition",
  "daft-runners",
+ "dashmap",
  "pyo3",
 ]
 
@@ -2966,6 +2970,7 @@ dependencies = [
  "common-system-info",
  "common-tracing",
  "console 0.16.1",
+ "daft-context",
  "daft-core",
  "daft-csv",
  "daft-dsl",

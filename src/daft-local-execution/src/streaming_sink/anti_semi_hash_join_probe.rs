@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use daft_core::{
     prelude::{SchemaRef, UInt64Array},
     series::IntoSeries,
@@ -18,7 +19,7 @@ use super::{
     outer_hash_join_probe::IndexBitmapBuilder,
 };
 use crate::{
-    ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef,
+    ExecutionTaskSpawner, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef,
     streaming_sink::base::StreamingSinkFinalizeResult,
 };
 
