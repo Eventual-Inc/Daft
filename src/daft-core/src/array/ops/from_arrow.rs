@@ -6,7 +6,7 @@ use common_error::{DaftError, DaftResult};
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
-        DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field, FieldRef, FileArray,
+        DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field, FieldRef, FileType,
         logical::LogicalArray,
     },
     prelude::*,
@@ -208,16 +208,6 @@ impl FromArrow for MapArray {
     }
 }
 
-impl FromArrow for FileArray {
-    fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
-        Err(DaftError::TypeError(format!(
-            "Attempting to create Daft FileArray with type {} from arrow array with type {:?}",
-            field.dtype,
-            arrow_arr.data_type()
-        )))
-    }
-}
-
 #[cfg(feature = "python")]
 impl FromArrow for PythonArray {
     fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
@@ -271,3 +261,4 @@ impl_logical_from_arrow!(FixedShapeTensorType);
 impl_logical_from_arrow!(SparseTensorType);
 impl_logical_from_arrow!(FixedShapeSparseTensorType);
 impl_logical_from_arrow!(FixedShapeImageType);
+impl_logical_from_arrow!(FileType);

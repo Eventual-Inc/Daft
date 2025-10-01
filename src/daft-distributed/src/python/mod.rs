@@ -94,10 +94,7 @@ impl PyDistributedPhysicalPlan {
             Default::default(),
         )?;
 
-        Ok(viz_distributed_pipeline_ascii(
-            pipeline_node.as_ref(),
-            simple,
-        ))
+        Ok(viz_distributed_pipeline_ascii(&pipeline_node, simple))
     }
 
     /// Visualize the distributed pipeline as Mermaid markdown
@@ -116,7 +113,7 @@ impl PyDistributedPhysicalPlan {
             DisplayLevel::Default
         };
         Ok(viz_distributed_pipeline_mermaid(
-            pipeline_node.as_ref(),
+            &pipeline_node,
             display_level,
             bottom_up,
             None,

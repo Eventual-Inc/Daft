@@ -14,22 +14,22 @@ from tests.conftest import get_tests_daft_runner_name
 
 def test_bytes_file_is_readable_and_seekable():
     data = b"hello world"
-    file = daft.File(data)
-    assert file.seekable()
-    assert file.readable()
-    assert not file.isatty()
-    assert not file.writable()
+    f = daft.File(data)
+    assert f.seekable()
+    assert f.readable()
+    assert not f.isatty()
+    assert not f.writable()
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
 def test_path_file_is_readable_and_seekable(tmp_path: Path):
     temp_file = tmp_path / "test_file.txt"
     temp_file.write_text("hello world")
-    file = daft.File(str(temp_file.absolute()))
-    assert file.seekable()
-    assert file.readable()
-    assert not file.isatty()
-    assert not file.writable()
+    f = daft.File(str(temp_file.absolute()))
+    assert f.seekable()
+    assert f.readable()
+    assert not f.isatty()
+    assert not f.writable()
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
@@ -37,24 +37,26 @@ def test_path_to_file(tmp_path: Path):
     temp_file = tmp_path / "test_file.txt"
     temp_file.write_text("hello world")
     file = daft.File(str(temp_file.absolute()))
-    data = file.read()
-    assert data == b"hello world"
-    file.seek(0)
-    data = file.read(5)
-    assert data == b"hello"
-    file.seek(0)
-    data = file.read()
-    assert data == b"hello world"
+    with file.open() as f:
+        data = f.read()
+        assert data == b"hello world"
+        f.seek(0)
+        data = f.read(5)
+        assert data == b"hello"
+        f.seek(0)
+        data = f.read()
+        assert data == b"hello world"
 
 
 def test_bytes_to_file():
     data = b"hello world"
     file = daft.File(data)
-    data = file.read(1)
-    assert data == b"h"
-    file.seek(0)
-    data = file.read()
-    assert data == b"hello world"
+    with file.open() as f:
+        data = f.read(1)
+        assert data == b"h"
+        f.seek(0)
+        data = f.read()
+        assert data == b"hello world"
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
@@ -86,7 +88,8 @@ def test_can_open_local_file(tmp_path: Path):
 
     @daft.func
     def read_text(file: daft.File) -> str:
-        return file.read().decode("utf-8")
+        with file.open() as f:
+            return f.read().decode("utf-8")
 
     df = df.select(read_text(df["path"]).alias("text"))
     assert df.to_pydict()["text"] == ["test content"]
@@ -114,8 +117,9 @@ def test_can_open_local_image_with_pil(tmp_path: Path):
     def open_with_pil(file: daft.File):
         from PIL import Image
 
-        img = Image.open(file)
-        return img.getpixel((0, 0))[0] == 255
+        with file.open() as f:
+            img = Image.open(f)
+            return img.getpixel((0, 0))[0] == 255
 
     df = df.select(open_with_pil(df["path"]).alias("is_red_image"))
     assert df.to_pydict()["is_red_image"] == [True]
@@ -142,8 +146,9 @@ def test_can_open_in_memory_image_with_pil():
     def open_with_pil(file: daft.File):
         from PIL import Image
 
-        img = Image.open(file)
-        return img.getpixel((0, 0))[2] == 255
+        with file.open() as f:
+            img = Image.open(f)
+            return img.getpixel((0, 0))[2] == 255
 
     df = df.select(open_with_pil(df["data"]).alias("is_blue_image"))
     assert df.to_pydict()["is_blue_image"] == [True]
@@ -156,12 +161,13 @@ def test_large_binary_file_handling():
 
     @daft.func
     def get_size(file: daft.File) -> int:
-        return len(file.read())
+        return file.size()
 
     @daft.func
     def sample(file: daft.File) -> bytes:
-        file.seek(1024 * 512)  # Middle
-        return file.read(10)
+        with file.open() as f:
+            f.seek(1024 * 512)  # Middle
+            return f.read(10)
 
     df = df.select(get_size(df["data"]).alias("size"), sample(df["data"]).alias("sample"))
 
@@ -181,12 +187,13 @@ def test_large_binary_file_handling_with_file(tmp_path: Path):
 
     @daft.func
     def get_size(file: daft.File) -> int:
-        return len(file.read())
+        return file.size()
 
     @daft.func
     def sample(file: daft.File) -> bytes:
-        file.seek(1024 * 512)  # Middle
-        return file.read(10)
+        with file.open() as f:
+            f.seek(1024 * 512)  # Middle
+            return f.read(10)
 
     df = df.select(get_size(df["path"]).alias("size"), sample(df["path"]).alias("sample"))
 
@@ -205,8 +212,9 @@ def test_compatibility_with_json():
 
     @daft.func()
     def read_with_json(file: daft.File) -> str:
-        data = json.load(file)
-        return data["skills"][0]
+        with file.open() as f:
+            data = json.load(f)
+            return data["skills"][0]
 
     df = df.select(read_with_json(df["data"]).alias("skill"))
     assert df.to_pydict()["skill"] == ["Python"]
@@ -225,8 +233,9 @@ def test_compatibility_with_json_file(tmp_path: Path):
 
     @daft.func()
     def read_with_json(file: daft.File) -> str:
-        data = json.load(file)
-        return data["skills"][0]
+        with file.open() as f:
+            data = json.load(f)
+            return data["skills"][0]
 
     df = df.select(read_with_json(df["path"]).alias("skill"))
     assert df.to_pydict()["skill"] == ["Python"]
@@ -241,9 +250,6 @@ def test_to_tempfile(tmp_path: Path):
 
     with file.to_tempfile() as temp_file:
         assert temp_file.read() == b"test content"
-
-    # to_tempfile consumes and closes the original file
-    assert file.closed()
 
 
 def test_to_tempfile_larger_data(tmp_path: Path):

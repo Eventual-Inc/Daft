@@ -18,7 +18,9 @@
         * [Working with GPUs](custom-code/gpu.md)
         * [External APIs](custom-code/apis.md)
     * Models and Providers
-        * [Overview](models/index.md)
+        * [Models and Providers](models/index.md)
+    * Datasets
+        * [Common Crawl](datasets/common-crawl.md)
     * Data Connectors
         * [Connectors](connectors/index.md)
         * [Custom Connectors](connectors/custom.md)
@@ -62,6 +64,7 @@
     * [AI](api/ai.md)
     * [I/O](api/io.md)
     * [DataFrame](api/dataframe.md)
+    * [Datasets](api/datasets.md)
     * [Expressions](api/expressions.md)
     * [Functions](api/functions/)
     * [User-Defined Functions](api/udf.md)

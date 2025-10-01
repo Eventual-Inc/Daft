@@ -1,6 +1,5 @@
 use std::{future, sync::Arc};
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::{DaftError, DaftResult};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::IOStatsContext;
@@ -15,12 +14,11 @@ use futures::{TryStreamExt, future::try_join_all};
 #[cfg(feature = "python")]
 use pyo3::{Python, prelude::*};
 
-use super::{
-    DistributedPipelineNode, SubmittableTaskStream, make_new_task_from_materialized_outputs,
-};
+use super::{PipelineNodeImpl, SubmittableTaskStream, make_new_task_from_materialized_outputs};
 use crate::{
     pipeline_node::{
-        MaterializedOutput, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        PipelineNodeContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -40,7 +38,7 @@ pub(crate) struct SortNode {
     sort_by: Vec<BoundExpr>,
     descending: Vec<bool>,
     nulls_first: Vec<bool>,
-    child: Arc<dyn DistributedPipelineNode>,
+    child: DistributedPipelineNode,
 }
 
 impl SortNode {
@@ -55,7 +53,7 @@ impl SortNode {
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
         output_schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -81,8 +79,8 @@ impl SortNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     #[cfg(feature = "python")]
@@ -201,7 +199,7 @@ impl SortNode {
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((&self_clone.context, task_id_counter.next())),
                 materialized_outputs,
-                &(self_clone.clone() as Arc<dyn DistributedPipelineNode>),
+                &(self_clone.clone() as Arc<dyn PipelineNodeImpl>),
                 move |input| {
                     LocalPhysicalPlan::sort(
                         input,
@@ -225,7 +223,7 @@ impl SortNode {
                 let task = make_new_task_from_materialized_outputs(
                     TaskContext::from((&self.context, task_id_counter.next())),
                     vec![mo],
-                    &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                    &(self.clone() as Arc<dyn PipelineNodeImpl>),
                     move |input| {
                         let sample = LocalPhysicalPlan::sample(
                             input,
@@ -268,7 +266,7 @@ impl SortNode {
                 let task = make_new_task_from_materialized_outputs(
                     TaskContext::from((&self.context, task_id_counter.next())),
                     vec![mo],
-                    &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                    &(self.clone() as Arc<dyn PipelineNodeImpl>),
                     move |input| {
                         LocalPhysicalPlan::repartition(
                             input,
@@ -305,7 +303,7 @@ impl SortNode {
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((&self_clone.context, task_id_counter.next())),
                 partition_group,
-                &(self_clone.clone() as Arc<dyn DistributedPipelineNode>),
+                &(self_clone.clone() as Arc<dyn PipelineNodeImpl>),
                 move |input| {
                     LocalPhysicalPlan::sort(
                         input,
@@ -321,8 +319,22 @@ impl SortNode {
         }
         Ok(())
     }
+}
 
-    fn multiline_display(&self) -> Vec<String> {
+impl PipelineNodeImpl for SortNode {
+    fn context(&self) -> &PipelineNodeContext {
+        &self.context
+    }
+
+    fn config(&self) -> &PipelineNodeConfig {
+        &self.config
+    }
+
+    fn children(&self) -> Vec<DistributedPipelineNode> {
+        vec![self.child.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         use itertools::Itertools;
         let mut res = vec!["Sort".to_string()];
         res.push(format!(
@@ -339,45 +351,6 @@ impl SortNode {
         ));
         res
     }
-}
-
-impl TreeDisplay for SortNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.context.node_name).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.context.node_name.to_string()
-    }
-}
-
-impl DistributedPipelineNode for SortNode {
-    fn context(&self) -> &PipelineNodeContext {
-        &self.context
-    }
-
-    fn config(&self) -> &PipelineNodeConfig {
-        &self.config
-    }
-
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
-        vec![self.child.clone()]
-    }
 
     fn produce_tasks(
         self: Arc<Self>,
@@ -392,9 +365,5 @@ impl DistributedPipelineNode for SortNode {
             plan_context.scheduler_handle(),
         ));
         SubmittableTaskStream::from(result_rx)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
     }
 }
