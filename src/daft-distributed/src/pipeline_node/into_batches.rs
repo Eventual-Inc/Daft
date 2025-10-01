@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
@@ -12,7 +11,8 @@ use super::{
 };
 use crate::{
     pipeline_node::{
-        MaterializedOutput, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        DistributedPipelineNodeWrapper, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        PipelineNodeContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -26,7 +26,7 @@ pub(crate) struct IntoBatchesNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     batch_size: usize,
-    child: Arc<dyn DistributedPipelineNode>,
+    child: DistributedPipelineNodeWrapper,
 }
 
 // The threshold at which we will emit a batch of data to the next task.
@@ -46,7 +46,7 @@ impl IntoBatchesNode {
         plan_config: &PlanConfig,
         batch_size: usize,
         schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNodeWrapper,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -69,12 +69,8 @@ impl IntoBatchesNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
-    }
-
-    fn multiline_display(&self) -> Vec<String> {
-        vec![format!("IntoBatches: {}", self.batch_size)]
+    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
+        DistributedPipelineNodeWrapper::new(Arc::new(self))
     }
 
     async fn execute_into_batches(
@@ -145,31 +141,6 @@ impl IntoBatchesNode {
     }
 }
 
-impl TreeDisplay for IntoBatchesNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.name()).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.name().to_string()
-    }
-}
-
 impl DistributedPipelineNode for IntoBatchesNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
@@ -179,8 +150,12 @@ impl DistributedPipelineNode for IntoBatchesNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
         vec![self.child.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        vec![format!("IntoBatches: {}", self.batch_size)]
     }
 
     fn produce_tasks(
@@ -208,9 +183,5 @@ impl DistributedPipelineNode for IntoBatchesNode {
         plan_context.spawn(execution_future);
 
         SubmittableTaskStream::from(result_rx)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
     }
 }

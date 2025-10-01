@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_logical_plan::partitioning::UnknownClusteringConfig;
 use daft_schema::schema::SchemaRef;
@@ -8,8 +7,9 @@ use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        SubmittableTaskStream, make_in_memory_task_from_materialized_outputs,
+        DistributedPipelineNode, DistributedPipelineNodeWrapper, NodeID, NodeName,
+        PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
+        make_in_memory_task_from_materialized_outputs,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -22,7 +22,7 @@ use crate::{
 pub(crate) struct GatherNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    child: Arc<dyn DistributedPipelineNode>,
+    child: DistributedPipelineNodeWrapper,
 }
 
 impl GatherNode {
@@ -34,7 +34,7 @@ impl GatherNode {
         logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNodeWrapper,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -56,12 +56,8 @@ impl GatherNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
-    }
-
-    fn multiline_display(&self) -> Vec<String> {
-        vec!["Gather".to_string()]
+    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
+        DistributedPipelineNodeWrapper::new(Arc::new(self))
     }
 
     // Async execution to get all partitions out
@@ -91,31 +87,6 @@ impl GatherNode {
     }
 }
 
-impl TreeDisplay for GatherNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.context.node_name).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.context.node_name.to_string()
-    }
-}
-
 impl DistributedPipelineNode for GatherNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
@@ -125,8 +96,12 @@ impl DistributedPipelineNode for GatherNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
         vec![self.child.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        vec!["Gather".to_string()]
     }
 
     fn produce_tasks(
@@ -146,9 +121,5 @@ impl DistributedPipelineNode for GatherNode {
         plan_context.spawn(execution_loop);
 
         SubmittableTaskStream::from(result_rx)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
     }
 }

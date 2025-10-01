@@ -1,4 +1,4 @@
-use std::{cmp::max, sync::Arc};
+use std::cmp::max;
 
 use common_error::DaftResult;
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, is_partition_compatible};
@@ -11,7 +11,7 @@ use daft_logical_plan::{
 use daft_schema::schema::SchemaRef;
 
 use crate::pipeline_node::{
-    DistributedPipelineNode, NodeID,
+    DistributedPipelineNodeWrapper, NodeID,
     join::{BroadcastJoinNode, CrossJoinNode, HashJoinNode},
     translate::LogicalPlanToPipelineNodeTranslator,
 };
@@ -66,14 +66,14 @@ impl LogicalPlanToPipelineNodeTranslator {
     pub(crate) fn gen_hash_join_nodes(
         &mut self,
         logical_node_id: Option<NodeID>,
-        left: Arc<dyn DistributedPipelineNode>,
-        right: Arc<dyn DistributedPipelineNode>,
+        left: DistributedPipelineNodeWrapper,
+        right: DistributedPipelineNodeWrapper,
         left_on: Vec<BoundExpr>,
         right_on: Vec<BoundExpr>,
         null_equals_nulls: Vec<bool>,
         join_type: JoinType,
         output_schema: SchemaRef,
-    ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
+    ) -> DaftResult<DistributedPipelineNodeWrapper> {
         let left_spec = left.config().clustering_spec.as_ref();
         let right_spec = right.config().clustering_spec.as_ref();
 
@@ -158,7 +158,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             right,
             output_schema,
         )
-        .arced())
+        .into_node())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -169,12 +169,12 @@ impl LogicalPlanToPipelineNodeTranslator {
         right_on: Vec<BoundExpr>,
         null_equals_nulls: Vec<bool>,
         join_type: JoinType,
-        left_node: Arc<dyn DistributedPipelineNode>,
-        right_node: Arc<dyn DistributedPipelineNode>,
+        left_node: DistributedPipelineNodeWrapper,
+        right_node: DistributedPipelineNodeWrapper,
         left_stats: &ApproxStats,
         right_stats: &ApproxStats,
         output_schema: SchemaRef,
-    ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
+    ) -> DaftResult<DistributedPipelineNodeWrapper> {
         // Calculate which side is larger for broadcast join logic
         let left_is_larger = right_stats.size_bytes < left_stats.size_bytes;
 
@@ -212,16 +212,16 @@ impl LogicalPlanToPipelineNodeTranslator {
             receiver,
             output_schema,
         )
-        .arced())
+        .into_node())
     }
 
     pub(crate) fn gen_cross_join_node(
         &mut self,
         logical_node_id: Option<NodeID>,
-        left_node: Arc<dyn DistributedPipelineNode>,
-        right_node: Arc<dyn DistributedPipelineNode>,
+        left_node: DistributedPipelineNodeWrapper,
+        right_node: DistributedPipelineNodeWrapper,
         output_schema: SchemaRef,
-    ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
+    ) -> DaftResult<DistributedPipelineNodeWrapper> {
         let num_partitions = {
             let left_num_partitions = left_node.config().clustering_spec.num_partitions();
             let right_num_partitions = right_node.config().clustering_spec.num_partitions();
@@ -237,16 +237,16 @@ impl LogicalPlanToPipelineNodeTranslator {
             right_node,
             output_schema,
         )
-        .arced())
+        .into_node())
     }
 
     pub(crate) fn translate_join(
         &mut self,
         logical_node_id: Option<NodeID>,
         join: &Join,
-        left_node: Arc<dyn DistributedPipelineNode>,
-        right_node: Arc<dyn DistributedPipelineNode>,
-    ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
+        left_node: DistributedPipelineNodeWrapper,
+        right_node: DistributedPipelineNodeWrapper,
+    ) -> DaftResult<DistributedPipelineNodeWrapper> {
         let (remaining_on, left_on, right_on, null_equals_nulls) = join.on.split_eq_preds();
         if !remaining_on.is_empty() {
             todo!("FLOTILLA_MS?: Implement non-equality joins")

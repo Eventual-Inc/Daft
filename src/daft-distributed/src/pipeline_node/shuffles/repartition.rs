@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
@@ -8,8 +7,9 @@ use daft_schema::schema::SchemaRef;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        SubmittableTaskStream, make_in_memory_task_from_materialized_outputs,
+        DistributedPipelineNode, DistributedPipelineNodeWrapper, NodeID, NodeName,
+        PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
+        make_in_memory_task_from_materialized_outputs,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -27,7 +27,7 @@ pub(crate) struct RepartitionNode {
     context: PipelineNodeContext,
     repartition_spec: RepartitionSpec,
     num_partitions: usize,
-    child: Arc<dyn DistributedPipelineNode>,
+    child: DistributedPipelineNodeWrapper,
 }
 
 impl RepartitionNode {
@@ -40,7 +40,7 @@ impl RepartitionNode {
         repartition_spec: RepartitionSpec,
         num_partitions: usize,
         schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNodeWrapper,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -67,14 +67,8 @@ impl RepartitionNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
-    }
-
-    fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec![format!("Repartition: {}", self.repartition_spec.var_name())];
-        res.extend(self.repartition_spec.multiline_display());
-        res
+    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
+        DistributedPipelineNodeWrapper::new(Arc::new(self))
     }
 
     // Async execution to get all partitions out
@@ -109,31 +103,6 @@ impl RepartitionNode {
     }
 }
 
-impl TreeDisplay for RepartitionNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.context.node_name).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.context.node_name.to_string()
-    }
-}
-
 impl DistributedPipelineNode for RepartitionNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
@@ -143,8 +112,14 @@ impl DistributedPipelineNode for RepartitionNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
         vec![self.child.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        let mut res = vec![format!("Repartition: {}", self.repartition_spec.var_name())];
+        res.extend(self.repartition_spec.multiline_display());
+        res
     }
 
     fn produce_tasks(
@@ -156,7 +131,7 @@ impl DistributedPipelineNode for RepartitionNode {
 
         // First pipeline the local repartition op
         let self_clone = self.clone();
-        let local_repartition_node = input_node.pipeline_instruction(self.clone(), move |input| {
+        let local_repartition_node = input_node.pipeline_instruction(self, move |input| {
             LocalPhysicalPlan::repartition(
                 input,
                 self_clone.repartition_spec.clone(),
@@ -184,9 +159,5 @@ impl DistributedPipelineNode for RepartitionNode {
 
         plan_context.spawn(map_reduce_execution);
         SubmittableTaskStream::from(result_rx)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
     }
 }

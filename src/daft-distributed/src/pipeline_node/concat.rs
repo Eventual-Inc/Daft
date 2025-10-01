@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
 use daft_logical_plan::{
     ClusteringSpec,
     partitioning::{ClusteringSpecRef, UnknownClusteringConfig},
@@ -10,8 +9,8 @@ use futures::StreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        SubmittableTaskStream,
+        DistributedPipelineNode, DistributedPipelineNodeWrapper, NodeID, NodeName,
+        PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
     },
     plan::{PlanConfig, PlanExecutionContext},
 };
@@ -19,8 +18,8 @@ use crate::{
 pub(crate) struct ConcatNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    child: Arc<dyn DistributedPipelineNode>,
-    other: Arc<dyn DistributedPipelineNode>,
+    child: DistributedPipelineNodeWrapper,
+    other: DistributedPipelineNodeWrapper,
 }
 
 impl ConcatNode {
@@ -31,8 +30,8 @@ impl ConcatNode {
         logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         schema: SchemaRef,
-        other: Arc<dyn DistributedPipelineNode>,
-        child: Arc<dyn DistributedPipelineNode>,
+        other: DistributedPipelineNodeWrapper,
+        child: DistributedPipelineNodeWrapper,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -60,33 +59,8 @@ impl ConcatNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
-    }
-
-    pub fn multiline_display(&self) -> Vec<String> {
-        vec!["Concat".to_string()]
-    }
-}
-
-impl TreeDisplay for ConcatNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.context.node_name).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display(), self.other.as_tree_display()]
+    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
+        DistributedPipelineNodeWrapper::new(Arc::new(self))
     }
 }
 
@@ -99,8 +73,12 @@ impl DistributedPipelineNode for ConcatNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
         vec![self.child.clone(), self.other.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        vec!["Concat".to_string()]
     }
 
     fn produce_tasks(
@@ -110,9 +88,5 @@ impl DistributedPipelineNode for ConcatNode {
         let input_node = self.child.clone().produce_tasks(plan_context);
         let other_node = self.other.clone().produce_tasks(plan_context);
         SubmittableTaskStream::new(input_node.chain(other_node).boxed())
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
     }
 }

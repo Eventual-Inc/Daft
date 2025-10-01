@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
-use super::{DistributedPipelineNode, SubmittableTaskStream};
+use super::{DistributedPipelineNode, DistributedPipelineNodeWrapper, SubmittableTaskStream};
 use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext},
@@ -16,7 +15,7 @@ pub(crate) struct DistinctNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     columns: Vec<BoundExpr>,
-    child: Arc<dyn DistributedPipelineNode>,
+    child: DistributedPipelineNodeWrapper,
 }
 
 impl DistinctNode {
@@ -29,7 +28,7 @@ impl DistinctNode {
         plan_config: &PlanConfig,
         columns: Vec<BoundExpr>,
         schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNodeWrapper,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -58,43 +57,8 @@ impl DistinctNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
-    }
-
-    fn multiline_display(&self) -> Vec<String> {
-        use itertools::Itertools;
-        let mut res = vec![];
-        res.push(format!(
-            "Distinct: By {}",
-            self.columns.iter().map(|e| e.to_string()).join(", ")
-        ));
-        res
-    }
-}
-
-impl TreeDisplay for DistinctNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.context.node_name).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.context.node_name.to_string()
+    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
+        DistributedPipelineNodeWrapper::new(Arc::new(self))
     }
 }
 
@@ -107,8 +71,18 @@ impl DistributedPipelineNode for DistinctNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
         vec![self.child.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        use itertools::Itertools;
+        let mut res = vec![];
+        res.push(format!(
+            "Distinct: By {}",
+            self.columns.iter().map(|e| e.to_string()).join(", ")
+        ));
+        res
     }
 
     fn produce_tasks(
@@ -119,7 +93,7 @@ impl DistributedPipelineNode for DistinctNode {
 
         // Pipeline the distinct op
         let self_clone = self.clone();
-        input_node.pipeline_instruction(self.clone(), move |input| {
+        input_node.pipeline_instruction(self, move |input| {
             LocalPhysicalPlan::dedup(
                 input,
                 self_clone.columns.clone(),
@@ -127,9 +101,5 @@ impl DistributedPipelineNode for DistinctNode {
                 StatsState::NotMaterialized,
             )
         })
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
     }
 }

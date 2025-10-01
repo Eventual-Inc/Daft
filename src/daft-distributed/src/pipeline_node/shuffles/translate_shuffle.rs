@@ -1,11 +1,9 @@
-use std::sync::Arc;
-
 use common_error::DaftResult;
 use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_schema::schema::SchemaRef;
 
 use crate::pipeline_node::{
-    DistributedPipelineNode, NodeID,
+    DistributedPipelineNodeWrapper, NodeID,
     shuffles::{
         gather::GatherNode, pre_shuffle_merge::PreShuffleMergeNode, repartition::RepartitionNode,
     },
@@ -18,8 +16,8 @@ impl LogicalPlanToPipelineNodeTranslator {
         logical_node_id: Option<NodeID>,
         repartition_spec: RepartitionSpec,
         schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
-    ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
+        child: DistributedPipelineNodeWrapper,
+    ) -> DaftResult<DistributedPipelineNodeWrapper> {
         let num_partitions = match &repartition_spec {
             RepartitionSpec::Hash(config) => config
                 .num_partitions
@@ -45,7 +43,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 schema.clone(),
                 child,
             )
-            .arced();
+            .into_node();
 
             Ok(RepartitionNode::new(
                 self.get_next_pipeline_node_id(),
@@ -56,7 +54,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 schema,
                 merge_node,
             )
-            .arced())
+            .into_node())
         } else {
             Ok(RepartitionNode::new(
                 self.get_next_pipeline_node_id(),
@@ -67,14 +65,14 @@ impl LogicalPlanToPipelineNodeTranslator {
                 schema,
                 child,
             )
-            .arced())
+            .into_node())
         }
     }
 
     /// Determine if we should use pre-shuffle merge strategy
     fn should_use_pre_shuffle_merge(
         &self,
-        child: &Arc<dyn DistributedPipelineNode>,
+        child: &DistributedPipelineNodeWrapper,
         target_num_partitions: usize,
     ) -> DaftResult<bool> {
         let input_num_partitions = child.config().clustering_spec.num_partitions();
@@ -98,8 +96,8 @@ impl LogicalPlanToPipelineNodeTranslator {
     pub fn gen_gather_node(
         &mut self,
         logical_node_id: Option<NodeID>,
-        input_node: Arc<dyn DistributedPipelineNode>,
-    ) -> Arc<dyn DistributedPipelineNode> {
+        input_node: DistributedPipelineNodeWrapper,
+    ) -> DistributedPipelineNodeWrapper {
         if input_node.config().clustering_spec.num_partitions() == 1 {
             return input_node;
         }
@@ -111,6 +109,6 @@ impl LogicalPlanToPipelineNodeTranslator {
             input_node.config().schema.clone(),
             input_node,
         )
-        .arced()
+        .into_node()
     }
 }

@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use common_file_formats::WriteMode;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -13,7 +12,9 @@ use super::{
     DistributedPipelineNode, SubmittableTaskStream, make_new_task_from_materialized_outputs,
 };
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
+    pipeline_node::{
+        DistributedPipelineNodeWrapper, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+    },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
@@ -27,7 +28,7 @@ pub(crate) struct SinkNode {
     context: PipelineNodeContext,
     sink_info: Arc<SinkInfo<BoundExpr>>,
     data_schema: SchemaRef,
-    child: Arc<dyn DistributedPipelineNode>,
+    child: DistributedPipelineNodeWrapper,
 }
 
 impl SinkNode {
@@ -40,7 +41,7 @@ impl SinkNode {
         sink_info: Arc<SinkInfo<BoundExpr>>,
         file_schema: SchemaRef,
         data_schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNodeWrapper,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -64,8 +65,8 @@ impl SinkNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
+    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
+        DistributedPipelineNodeWrapper::new(Arc::new(self))
     }
 
     fn create_sink_plan(
@@ -138,8 +139,22 @@ impl SinkNode {
         let _ = sender.send(task).await;
         Ok(())
     }
+}
 
-    fn multiline_display(&self) -> Vec<String> {
+impl DistributedPipelineNode for SinkNode {
+    fn context(&self) -> &PipelineNodeContext {
+        &self.context
+    }
+
+    fn config(&self) -> &PipelineNodeConfig {
+        &self.config
+    }
+
+    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+        vec![self.child.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         let mut res = vec![];
 
         match self.sink_info.as_ref() {
@@ -172,45 +187,6 @@ impl SinkNode {
             self.config.schema.short_string()
         ));
         res
-    }
-}
-
-impl TreeDisplay for SinkNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.context.node_name).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.context.node_name.to_string()
-    }
-}
-
-impl DistributedPipelineNode for SinkNode {
-    fn context(&self) -> &PipelineNodeContext {
-        &self.context
-    }
-
-    fn config(&self) -> &PipelineNodeConfig {
-        &self.config
-    }
-
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
-        vec![self.child.clone()]
     }
 
     fn produce_tasks(
@@ -248,9 +224,5 @@ impl DistributedPipelineNode for SinkNode {
         } else {
             pipelined_node_with_writes
         }
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
     }
 }
