@@ -262,7 +262,7 @@ macro_rules! series {
             // put into a vec first for compile-time type consistency checking
             let elements = vec![$($element),+];
             let elements_lit = elements.into_iter().map(Literal::from).collect::<Vec<_>>();
-            Series::from_literals(elements_lit).unwrap()
+            Series::from_literals(elements_lit, None).unwrap()
         }
     };
 }

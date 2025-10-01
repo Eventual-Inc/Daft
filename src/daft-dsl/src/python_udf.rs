@@ -191,7 +191,6 @@ impl RowWisePyFn {
         args: &[Series],
         num_rows: usize,
     ) -> DaftResult<(Series, std::time::Duration)> {
-        use daft_core::python::PySeries;
         use pyo3::prelude::*;
 
         let inner_ref = self.inner.as_ref();
@@ -216,13 +215,15 @@ impl RowWisePyFn {
                     }
 
                     let result = func.call1((inner_ref, args_ref, &py_args))?;
+                    let result = Literal::from_pyobj(&result, Some(&self.return_dtype))?;
+
                     py_args.clear();
                     DaftResult::Ok(result)
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
 
             Ok((
-                PySeries::from_pylist_impl(name, outputs, self.return_dtype.clone())?.series,
+                Series::from_literals(outputs, Some(self.return_dtype.clone()))?.rename(name),
                 gil_contention_time,
             ))
         })

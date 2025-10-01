@@ -58,16 +58,19 @@ impl Series {
     ///
     /// Literals must all be the same type or null, this function does not do any casting or coercion.
     /// If that is desired, you should handle it for each literal before converting it into a series.
-    pub fn from_literals(values: Vec<Literal>) -> DaftResult<Self> {
-        let dtype = values.iter().try_fold(DataType::Null, |acc, v| {
-            let dtype = v.get_type();
-            combine_lit_types(&acc, &dtype).ok_or_else(|| {
-                DaftError::ValueError(format!(
-                    "All literals must have the same data type or null. Found: {} vs {}",
-                    acc, dtype
-                ))
-            })
-        })?;
+    pub fn from_literals(values: Vec<Literal>, dtype: Option<DataType>) -> DaftResult<Self> {
+        let dtype = match dtype {
+            Some(dtype) => dtype,
+            None => values.iter().try_fold(DataType::Null, |acc, v| {
+                let dtype = v.get_type();
+                combine_lit_types(&acc, &dtype).ok_or_else(|| {
+                    DaftError::ValueError(format!(
+                        "All literals must have the same data type or null. Found: {} vs {}",
+                        acc, dtype
+                    ))
+                })
+            })?,
+        };
 
         let field = Field::new("literal", dtype.clone());
 
@@ -184,7 +187,7 @@ impl Series {
                             })
                             .collect::<Vec<_>>();
 
-                        Ok(Self::from_literals(child_values)?.rename(&f.name))
+                        Ok(Self::from_literals(child_values, None)?.rename(&f.name))
                     })
                     .collect::<DaftResult<_>>()?;
 
@@ -385,7 +388,8 @@ impl Series {
 
 impl From<Literal> for Series {
     fn from(value: Literal) -> Self {
-        Self::from_literals(vec![value])
+        let dtype = Some(value.get_type());
+        Self::from_literals(vec![value], dtype)
             .expect("Series::try_from should not fail on single literal value")
     }
 }
@@ -512,7 +516,7 @@ mod test {
     ])]
     fn test_literal_series_roundtrip_basics(#[case] literals: Vec<Literal>) {
         let expected = [vec![Literal::Null], literals, vec![Literal::Null]].concat();
-        let series = Series::from_literals(expected.clone()).unwrap();
+        let series = Series::from_literals(expected.clone(), None).unwrap();
         let actual = series.to_literals().collect::<Vec<_>>();
 
         assert_eq!(expected, actual)
@@ -521,7 +525,7 @@ mod test {
     #[test]
     fn test_literals_to_series_mismatched() {
         let values = vec![Literal::UInt64(1), Literal::Utf8("test".to_string())];
-        let actual = Series::from_literals(values);
+        let actual = Series::from_literals(values, None);
         assert!(actual.is_err());
     }
 }

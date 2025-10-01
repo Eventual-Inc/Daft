@@ -583,10 +583,14 @@ impl Literal {
     ///
     /// This method is lossy, AKA it is not guaranteed that `lit.cast(dtype).get_type() == dtype`.
     /// This is because null literals always have the null data type.
-    pub fn cast(&self, dtype: &DataType) -> DaftResult<Self> {
-        Series::from(self.clone())
-            .cast(dtype)
-            .and_then(|s| Self::try_from_single_value_series(&s))
+    pub fn cast(self, dtype: &DataType) -> DaftResult<Self> {
+        if &self.get_type() == dtype {
+            Ok(self)
+        } else {
+            Series::from(self)
+                .cast(dtype)
+                .and_then(|s| Self::try_from_single_value_series(&s))
+        }
     }
 }
 

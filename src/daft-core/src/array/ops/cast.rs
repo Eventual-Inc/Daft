@@ -608,7 +608,7 @@ impl PythonArray {
                 .collect::<PyResult<Vec<Literal>>>()
         })?;
 
-        Ok(Series::from_literals(literals)?
+        Ok(Series::from_literals(literals, None)?
             .cast(dtype)?
             .rename(self.name()))
     }
