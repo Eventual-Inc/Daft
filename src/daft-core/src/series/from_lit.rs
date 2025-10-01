@@ -68,11 +68,11 @@ pub enum OnError {
 }
 
 impl Series {
-    /// Creates a series from an iterator of Result<Literal>. 
-    /// The `on_error` indicates how to handle the result. 
-    /// 
-    /// Unlike `from_literals`, `from_literal_iter` does not do any dtype inference 
-    /// as such, it'll panic if the dtype variant does not match the expected literal variant. 
+    /// Creates a series from an iterator of Result<Literal>.
+    /// The `on_error` indicates how to handle the result.
+    ///
+    /// Unlike `from_literals`, `from_literal_iter` does not do any dtype inference
+    /// as such, it'll panic if the dtype variant does not match the expected literal variant.
     /// So it is up to the caller to ensure the datatypes match!
     pub fn from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>> + TrustedLen>(
         values: I,
@@ -98,10 +98,8 @@ impl Series {
                             },
 
                         }
-
                     }
-                    // SAFETY: This is safe because we have already checked that all literals have the same data type or null.
-                    _ => unsafe { std::hint::unreachable_unchecked() },
+                    _ => unreachable!()
                 }
             };
 
@@ -119,8 +117,7 @@ impl Series {
 
                         }
                     }
-                    // SAFETY: This is safe because we have already checked that all literals have the same data type or null.
-                    _ => unsafe { std::hint::unreachable_unchecked() },
+                    _ => unreachable!()
                 }
             };
         }
