@@ -27,11 +27,7 @@ pub fn get_or_init_shuffle_cache_runtime() -> &'static RuntimeRef {
     })
 }
 
-fn get_shuffle_dirs(
-    shuffle_dirs: &[String],
-    node_id: &str,
-    shuffle_stage_id: usize,
-) -> Vec<String> {
+fn get_shuffle_dirs(shuffle_dirs: &[String], node_id: &str, shuffle_stage_id: u64) -> Vec<String> {
     shuffle_dirs
         .iter()
         .map(|dir| {
@@ -76,7 +72,7 @@ impl InProgressShuffleCache {
         num_partitions: usize,
         dirs: &[String],
         node_id: String,
-        shuffle_stage_id: usize,
+        shuffle_stage_id: u64,
         target_filesize: usize,
         compression: Option<&str>,
         partition_by: Option<Vec<ExprRef>>,
