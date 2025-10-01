@@ -879,6 +879,7 @@ class ScanOperatorHandle:
         infer_schema: bool,
         schema: PySchema | None = None,
         file_path_column: str | None = None,
+        skip_glob: bool = False,
     ) -> ScanOperatorHandle: ...
     @staticmethod
     def from_python_scan_operator(operator: ScanOperator) -> ScanOperatorHandle: ...

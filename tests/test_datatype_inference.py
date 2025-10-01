@@ -88,6 +88,11 @@ def test_infer_from_type(user_provided_type, expected_datatype):
         ((), dt.struct({"": dt.null()})),
         (("0", 1), dt.struct({"_0": dt.string(), "_1": dt.int64()})),
         (decimal.Decimal("1.5"), dt.decimal128(38, 1)),
+        (decimal.Decimal("4.56e-2"), dt.decimal128(38, 4)),  # 0.0456
+        (decimal.Decimal("1.23e2"), dt.decimal128(38, 0)),  # 123
+        (decimal.Decimal("7.89E3"), dt.decimal128(38, 0)),  # 7890
+        (decimal.Decimal("7.89E+3"), dt.decimal128(38, 0)),  # 7890
+        (decimal.Decimal("1.2345e-4"), dt.decimal128(38, 8)),  # 0.00012345
         (np.array([1, 2, 3]), dt.tensor(dt.int64())),
         (np.bool_(False), dt.bool()),
         (np.int8(1), dt.int8()),
@@ -231,3 +236,56 @@ def test_roundtrippable_numpy(arr):
     assert pre is None
     assert post is None
     assert (out_arr == arr).all()
+
+
+def test_decimals_with_scientific_notation():
+    """Test roundtripping decimals in (-1, 1) with exponents 0 to -18.
+
+    See: https://github.com/Eventual-Inc/Daft/issues/5302
+    """
+    import daft
+
+    decimals = [
+        decimal.Decimal("-1E0"),
+        decimal.Decimal("-1E-1"),
+        decimal.Decimal("-1E-2"),
+        decimal.Decimal("-1E-3"),
+        decimal.Decimal("-1E-4"),
+        decimal.Decimal("-1E-5"),
+        decimal.Decimal("-1E-6"),
+        decimal.Decimal("-1E-7"),
+        decimal.Decimal("-1E-8"),
+        decimal.Decimal("-1E-9"),
+        decimal.Decimal("-1E-10"),
+        decimal.Decimal("-1E-11"),
+        decimal.Decimal("-1E-12"),
+        decimal.Decimal("-1E-13"),
+        decimal.Decimal("-1E-14"),
+        decimal.Decimal("-1E-15"),
+        decimal.Decimal("-1E-16"),
+        decimal.Decimal("-1E-17"),
+        decimal.Decimal("-1E-18"),
+        decimal.Decimal("0E0"),
+        decimal.Decimal("1E-18"),
+        decimal.Decimal("1E-17"),
+        decimal.Decimal("1E-16"),
+        decimal.Decimal("1E-15"),
+        decimal.Decimal("1E-14"),
+        decimal.Decimal("1E-13"),
+        decimal.Decimal("1E-12"),
+        decimal.Decimal("1E-11"),
+        decimal.Decimal("1E-10"),
+        decimal.Decimal("1E-9"),
+        decimal.Decimal("1E-8"),
+        decimal.Decimal("1E-7"),
+        decimal.Decimal("1E-6"),
+        decimal.Decimal("1E-5"),
+        decimal.Decimal("1E-4"),
+        decimal.Decimal("1E-3"),
+        decimal.Decimal("1E-2"),
+        decimal.Decimal("1E-1"),
+        decimal.Decimal("1E0"),
+    ]
+
+    # assert roundtrip equality
+    assert daft.from_pydict({"col": decimals}).to_pydict()["col"] == decimals
