@@ -43,11 +43,11 @@ jobs:
         sudo mkfs.ext4 /dev/nvme2n1
         sudo mount -t ext4 /dev/nvme2n1 /tmp
         sudo chmod 777 /tmp
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
     - name: Assume GitHub Actions AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v5
       with:
         aws-region: ${{ env.AWS_REGION }}
         role-session-name: DaftLocalTpchGitHubWorkflow

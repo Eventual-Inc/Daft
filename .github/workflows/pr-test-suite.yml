@@ -29,7 +29,7 @@ jobs:
     outputs:
       skip: ${{ steps.filter.outputs.skip }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Detect non-trivial changes
       id: filter
@@ -115,7 +115,7 @@ jobs:
         docker-images: false
         swap-storage: true
 
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -187,7 +187,7 @@ jobs:
         path: ./report-output
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -228,7 +228,7 @@ jobs:
       matrix:
         python-version: ['3.9']
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
         fetch-depth: 0
@@ -279,12 +279,12 @@ jobs:
     env:
       package-name: daft
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v5
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -345,7 +345,7 @@ jobs:
         DAFT_FLOTILLA: 1
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -380,12 +380,12 @@ jobs:
         - daft-runner: native
           flotilla: 1
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v5
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -416,7 +416,7 @@ jobs:
         mkdir -p /tmp/daft-integration-testing/nginx
         chmod +rw /tmp/daft-integration-testing/nginx
     - name: Spin up IO services
-      uses: isbang/compose-action@v2.0.2
+      uses: isbang/compose-action@v2.4.0
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes
@@ -431,7 +431,7 @@ jobs:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_FLOTILLA: ${{ matrix.flotilla }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -472,12 +472,12 @@ jobs:
       id-token: write
       contents: read
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v5
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -508,13 +508,13 @@ jobs:
         mkdir -p /tmp/daft-integration-testing/nginx
         chmod +rw /tmp/daft-integration-testing/nginx
     - name: Assume GitHub Actions AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v5
       with:
         aws-region: us-west-2
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
         role-session-name: DaftPythonPackageGitHubWorkflow
     - name: Assume GitHub Actions GCloud Credentials
-      uses: google-github-actions/auth@v2
+      uses: google-github-actions/auth@v3
       with:
         credentials_json: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT_JSON }}
         # NOTE: Workload Identity seems to be having problems with our Rust crate, so we use JSON instead
@@ -522,7 +522,7 @@ jobs:
         # workload_identity_provider: ${{ secrets.ACTIONS_GCP_WORKLOAD_IDENTITY_PROVIDER }}
         # service_account: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT }}
     - name: Spin up IO services
-      uses: isbang/compose-action@v2.0.2
+      uses: isbang/compose-action@v2.4.0
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes
@@ -537,7 +537,7 @@ jobs:
         DAFT_FLOTILLA: ${{ matrix.flotilla }}
         HF_TOKEN: ${{ secrets.ACTIONS_HF_TOKEN }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() }}
       with:
         payload: |
@@ -563,12 +563,12 @@ jobs:
     env:
       package-name: daft
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v5
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -634,7 +634,7 @@ jobs:
         DAFT_FLOTILLA: 1
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -660,15 +660,15 @@ jobs:
     env:
       package-name: daft
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-java@v4
+    - uses: actions/setup-java@v5
       with:
         distribution: 'temurin'
         java-version: '17'
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         repository: unitycatalog/unitycatalog
         ref: 20dd3820be332ac04deec4e063099fb863eb3392
@@ -678,7 +678,7 @@ jobs:
       working-directory: ./unitycatalog
       run: bin/start-uc-server -p 3000 &
     - name: Download built wheels
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v5
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -706,7 +706,7 @@ jobs:
           rm -rf daft
     # Iceberg test setup
     - uses: docker/setup-buildx-action@v3
-    - uses: docker/build-push-action@v5
+    - uses: docker/build-push-action@v6
       with:
         context: ./tests/integration/iceberg/docker-compose/
         file: ./tests/integration/iceberg/docker-compose/Dockerfile
@@ -813,7 +813,7 @@ jobs:
         DAFT_FLOTILLA: 1
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -849,12 +849,12 @@ jobs:
         - daft-runner: native
           flotilla: 1
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v5
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -889,7 +889,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -925,12 +925,12 @@ jobs:
         - daft-runner: native
           flotilla: 1
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v5
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -966,7 +966,7 @@ jobs:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         OPENAI_API_KEY: ${{ secrets.ACTIONS_OPENAI_API_KEY }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -992,12 +992,12 @@ jobs:
     env:
       package-name: daft
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v5
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -1050,7 +1050,7 @@ jobs:
         DAFT_FLOTILLA: 1
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -1097,7 +1097,7 @@ jobs:
       package-name: daft
       RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1143,13 +1143,13 @@ jobs:
         path: data/tpch-dbgen
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
     - name: Run benchmarks
-      uses: CodSpeedHQ/action@v3
+      uses: CodSpeedHQ/action@v4
       with:
         run: source .venv/bin/activate; pytest tests/benchmarks/test_local_tpch.py tests/benchmarks/test_interactive_reads.py -m benchmark --codspeed
       env:
         DAFT_RUNNER: native
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -1177,7 +1177,7 @@ jobs:
       matrix:
         os: [ubuntu, Windows]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1200,7 +1200,7 @@ jobs:
         name: coverage-reports-rust-tests-${{ runner.os }}
         path: ./report-output
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -1234,7 +1234,7 @@ jobs:
   check-unused-cargo-deps:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1250,7 +1250,7 @@ jobs:
     env:
       python-version: '3.10'
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1291,8 +1291,8 @@ jobs:
     - unit-test
     - rust-tests-platform
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/download-artifact@v4
+    - uses: actions/checkout@v5
+    - uses: actions/download-artifact@v5
       with:
         pattern: coverage-reports*
         merge-multiple: true
@@ -1303,7 +1303,7 @@ jobs:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         files: ./report-output/*
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -1332,7 +1332,7 @@ jobs:
         os: [ubuntu, Windows]
         python-version: ['3.9']
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1387,7 +1387,7 @@ jobs:
         python -c 'import daft; from daft import *'
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -1425,7 +1425,7 @@ jobs:
     env:
       python-version: '3.9'
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v6
       with:
@@ -1455,7 +1455,7 @@ jobs:
         pre-commit run --all-files -v
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
