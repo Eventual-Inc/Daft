@@ -141,12 +141,12 @@ impl FixedShapeSparseTensorArray {
 
 impl MapArray {
     pub fn get_lit(&self, idx: usize) -> Literal {
-        // assert!(
-        //     idx < self.len(),
-        //     "Out of bounds: {} vs len: {}",
-        //     idx,
-        //     self.len()
-        // );
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
 
         map_or_null(self.get(idx), |entry: Series| {
             let entry = entry.struct_().unwrap();
