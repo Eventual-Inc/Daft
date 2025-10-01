@@ -98,6 +98,80 @@ def test_url_upload():
         assert os.path.exists(os.path.join(tmp_dir, "test2.txt"))
 
 
+def test_url_upload_with_template():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        df = daft.from_pydict(
+            {
+                "data": [b"test1", b"test2"],
+            }
+        )
+
+        # Test with default template (should work as before)
+        result_default = (
+            daft.sql(
+                f"""
+            SELECT
+                url_upload(data, '{tmp_dir}') as uploaded_default
+            FROM df
+            """
+            )
+            .collect()
+            .to_pydict()
+        )
+
+        # Test with custom template
+        result_custom = (
+            daft.sql(
+                f"""
+            SELECT
+                url_upload(data, '{tmp_dir}', filename_template=>'{{}}.png') as uploaded_custom
+            FROM df
+            """
+            )
+            .collect()
+            .to_pydict()
+        )
+
+        # Test with expression API
+        expected_default = (
+            df.select(
+                col("data").url.upload(tmp_dir).alias("uploaded_default"),
+            )
+            .collect()
+            .to_pydict()
+        )
+
+        expected_custom = (
+            df.select(
+                col("data").url.upload(tmp_dir, filename_template="{}.png").alias("uploaded_custom"),
+            )
+            .collect()
+            .to_pydict()
+        )
+
+        # Verify that both methods produce the same number of results
+        assert len(result_default["uploaded_default"]) == len(expected_default["uploaded_default"])
+        assert len(result_custom["uploaded_custom"]) == len(expected_custom["uploaded_custom"])
+
+        # Verify files were created with correct extensions
+        uploaded_files_default = result_default["uploaded_default"]
+        uploaded_files_custom = result_custom["uploaded_custom"]
+        
+        for file_path in uploaded_files_default:
+            # Default template should not have an extension
+            assert not file_path.endswith((".png", ".jpg", ".txt"))
+            # Strip file:// prefix for os.path.exists check
+            local_path = file_path.replace("file://", "")
+            assert os.path.exists(local_path)
+            
+        for file_path in uploaded_files_custom:
+            # Custom template should have .png extension
+            assert file_path.endswith(".png")
+            # Strip file:// prefix for os.path.exists check
+            local_path = file_path.replace("file://", "")
+            assert os.path.exists(local_path)
+
+
 def test_url_parse():
     df = daft.from_pydict(
         {

@@ -1650,6 +1650,7 @@ class Expression:
         location: builtins.str | Expression,
         max_connections: int = 32,
         on_error: Literal["raise", "null"] = "raise",
+        filename_template: str = "{}",
         io_config: IOConfig | None = None,
     ) -> Expression:
         """Uploads a column of binary data to the provided location(s) (also supports S3, local etc).
@@ -1659,7 +1660,7 @@ class Expression:
         """
         from daft.functions import upload
 
-        return upload(self, location, max_connections, on_error, io_config)
+        return upload(self, location, max_connections, on_error, filename_template, io_config)
 
     def date(self) -> Expression:
         """Retrieves the date for a datetime column."""
@@ -2752,6 +2753,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         location: str | Expression,
         max_connections: int = 32,
         on_error: Literal["raise", "null"] = "raise",
+        filename_template: str = "{}",
         io_config: IOConfig | None = None,
     ) -> Expression:
         """(DEPRECATED) Please use `daft.functions.upload` instead."""
@@ -2763,6 +2765,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
             location=location,
             max_connections=max_connections,
             on_error=on_error,
+            filename_template=filename_template,
             io_config=io_config,
         )
 

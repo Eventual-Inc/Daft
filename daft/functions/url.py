@@ -98,6 +98,7 @@ def upload(
     location: str | Expression,
     max_connections: int = 32,
     on_error: Literal["raise", "null"] = "raise",
+    filename_template: str = "{}",
     io_config: IOConfig | None = None,
 ) -> Expression:
     """Uploads a column of binary data to the provided location(s) (also supports S3, local etc).
@@ -111,6 +112,8 @@ def upload(
         max_connections: The maximum number of connections to use per thread to use for uploading data. Defaults to 32.
         on_error: Behavior when a URL upload error is encountered - "raise" to raise the error immediately or "null" to log
             the error but fallback to a Null value. Defaults to "raise".
+        filename_template: Template string for generating filenames. Must contain "{}" which will be replaced with a UUID.
+            Defaults to "{}". Examples: "{}", "{}.png", "image_{}.jpg"
         io_config: IOConfig to use when uploading data
 
     Returns:
@@ -121,16 +124,16 @@ def upload(
         >>>
         >>> upload(df["data"], "s3://my-bucket/my-folder")  # doctest: +SKIP
 
+        Upload with custom filename template
+
+        >>> upload(df["data"], "s3://my-bucket/my-folder", filename_template="{}.png")  # doctest: +SKIP
+
         Upload to row-specific URLs
 
         >>> upload(df["data"], df["paths"])  # doctest: +SKIP
 
     """
     multi_thread = _should_use_multithreading_tokio_runtime()
-    # If the user specifies a single location via a string, we should upload to a single folder. Otherwise,
-    # if the user gave an expression, we assume that each row has a specific url to upload to.
-    # Consider moving the check for is_single_folder to a lower IR.
-    is_single_folder = isinstance(location, str)
     io_config = _override_io_config_max_connections(max_connections, io_config)
 
     return Expression._call_builtin_scalar_fn(
@@ -140,7 +143,7 @@ def upload(
         max_connections=max_connections,
         on_error=on_error,
         multi_thread=multi_thread,
-        is_single_folder=is_single_folder,
+        filename_template=filename_template,
         io_config=io_config,
     )
 
