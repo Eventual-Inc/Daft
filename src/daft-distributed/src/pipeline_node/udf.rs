@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
 use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties};
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{partitioning::translate_clustering_spec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
 
-use super::DistributedPipelineNode;
+use super::PipelineNodeImpl;
 use crate::{
     pipeline_node::{
-        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        SubmittableTaskStream,
     },
     plan::{PlanConfig, PlanExecutionContext},
 };
@@ -21,7 +21,7 @@ pub(crate) struct UDFNode {
     project: BoundExpr,
     passthrough_columns: Vec<BoundExpr>,
     udf_properties: UDFProperties,
-    child: Arc<dyn DistributedPipelineNode>,
+    child: DistributedPipelineNode,
 }
 
 impl UDFNode {
@@ -36,7 +36,7 @@ impl UDFNode {
         passthrough_columns: Vec<BoundExpr>,
         udf_properties: UDFProperties,
         schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -67,11 +67,25 @@ impl UDFNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
+    }
+}
+
+impl PipelineNodeImpl for UDFNode {
+    fn context(&self) -> &PipelineNodeContext {
+        &self.context
     }
 
-    fn multiline_display(&self) -> Vec<String> {
+    fn config(&self) -> &PipelineNodeConfig {
+        &self.config
+    }
+
+    fn children(&self) -> Vec<DistributedPipelineNode> {
+        vec![self.child.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         let mut res = vec![];
         res.push("UDF Executor:".to_string());
         res.push(format!(
@@ -92,37 +106,6 @@ impl UDFNode {
             res.push("Resource request = None".to_string());
         }
         res
-    }
-}
-
-impl TreeDisplay for UDFNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        match level {
-            DisplayLevel::Compact => self.name().to_string(),
-            _ => self.multiline_display().join("\n"),
-        }
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.name().to_string()
-    }
-}
-
-impl DistributedPipelineNode for UDFNode {
-    fn context(&self) -> &PipelineNodeContext {
-        &self.context
-    }
-
-    fn config(&self) -> &PipelineNodeConfig {
-        &self.config
-    }
-
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
-        vec![self.child.clone()]
     }
 
     fn produce_tasks(
@@ -145,9 +128,5 @@ impl DistributedPipelineNode for UDFNode {
         };
 
         input_node.pipeline_instruction(self, plan_builder)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
     }
 }

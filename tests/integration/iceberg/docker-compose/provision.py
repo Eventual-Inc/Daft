@@ -427,3 +427,143 @@ UNION ALL SELECT
 """)
 
 spark.sql("INSERT INTO default.test_snapshotting VALUES (4, 1)")
+
+
+###
+# MOR (Merge-on-Read) Complex Scenario Test Table
+# Used to test the accuracy of Count push down function in complex delete file scenarios
+###
+
+spark.sql(
+    """
+    CREATE OR REPLACE TABLE default.test_overlapping_deletes (
+        id integer,
+        name string,
+        value double,
+        category string
+    )
+    USING iceberg
+    TBLPROPERTIES (
+        'write.delete.mode'='merge-on-read',
+        'write.update.mode'='merge-on-read',
+        'write.merge.mode'='merge-on-read',
+        'format-version'='2'
+    );
+"""
+)
+
+spark.sql(
+    """
+    INSERT INTO default.test_overlapping_deletes
+    VALUES
+        (1, 'Alice', 100.0, 'A'),
+        (2, 'Bob', 200.0, 'B'),
+        (3, 'Charlie', 300.0, 'A'),
+        (4, 'David', 400.0, 'B'),
+        (5, 'Eve', 500.0, 'A'),
+        (6, 'Frank', 600.0, 'B'),
+        (7, 'Grace', 700.0, 'A'),
+        (8, 'Henry', 800.0, 'B'),
+        (9, 'Ivy', 900.0, 'A'),
+        (10, 'Jack', 1000.0, 'B'),
+        (11, 'Kate', 1100.0, 'A'),
+        (12, 'Leo', 1200.0, 'B'),
+        (13, 'Mary', 1300.0, 'A'),
+        (14, 'Nick', 1400.0, 'B'),
+        (15, 'Olivia', 1500.0, 'A');
+"""
+)
+
+spark.sql(
+    """
+    DELETE FROM default.test_overlapping_deletes WHERE id <= 5
+"""
+)
+
+spark.sql(
+    """
+    DELETE FROM default.test_overlapping_deletes WHERE id <= 3
+"""
+)
+
+spark.sql(
+    """
+    DELETE FROM default.test_overlapping_deletes WHERE id >= 4 AND id <= 8
+"""
+)
+
+# Mixed Delete Type Test Table - Testing the Mixed Processing of Position Delete and Equality Delete
+
+spark.sql(
+    """
+    CREATE OR REPLACE TABLE default.test_mixed_delete_types (
+        id integer,
+        name string,
+        age integer,
+        department string,
+        salary double,
+        active boolean
+    )
+    USING iceberg
+    TBLPROPERTIES (
+        'write.delete.mode'='merge-on-read',
+        'write.update.mode'='merge-on-read',
+        'write.merge.mode'='merge-on-read',
+        'format-version'='2'
+    );
+"""
+)
+
+spark.sql(
+    """
+    INSERT INTO default.test_mixed_delete_types
+    VALUES
+        (1, 'Alice', 25, 'Engineering', 75000.0, true),
+        (2, 'Bob', 30, 'Marketing', 65000.0, true),
+        (3, 'Charlie', 35, 'Engineering', 85000.0, true),
+        (4, 'David', 28, 'Sales', 60000.0, false),
+        (5, 'Eve', 32, 'Engineering', 90000.0, true),
+        (6, 'Frank', 45, 'Marketing', 70000.0, true),
+        (7, 'Grace', 29, 'Engineering', 80000.0, true),
+        (8, 'Henry', 38, 'Sales', 55000.0, false),
+        (9, 'Ivy', 26, 'Engineering', 78000.0, true),
+        (10, 'Jack', 33, 'Marketing', 68000.0, true),
+        (11, 'Kate', 31, 'Engineering', 82000.0, true),
+        (12, 'Leo', 27, 'Sales', 58000.0, true),
+        (13, 'Mary', 34, 'Engineering', 88000.0, true),
+        (14, 'Nick', 29, 'Marketing', 66000.0, false),
+        (15, 'Olivia', 36, 'Engineering', 92000.0, true),
+        (16, 'Paul', 40, 'Sales', 62000.0, true),
+        (17, 'Quinn', 28, 'Engineering', 76000.0, true),
+        (18, 'Rachel', 32, 'Marketing', 69000.0, true),
+        (19, 'Steve', 37, 'Engineering', 87000.0, true),
+        (20, 'Tina', 30, 'Sales', 61000.0, false);
+"""
+)
+
+spark.sql(
+    """
+    DELETE FROM default.test_mixed_delete_types WHERE id IN (2, 5, 8, 11, 14)
+"""
+)
+
+spark.sql(
+    """
+    DELETE FROM default.test_mixed_delete_types WHERE department = 'Sales' AND active = false
+"""
+)
+
+spark.sql(
+    """
+    DELETE FROM default.test_mixed_delete_types WHERE age < 30 AND salary < 70000
+"""
+)
+
+spark.sql(
+    """
+    INSERT INTO default.test_mixed_delete_types
+    VALUES
+        (2, 'Lily', 60, 'Sales', 2000.0, true),
+        (21, 'Lucy', 28, 'Engineering', 76000.0, true);
+"""
+)

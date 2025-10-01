@@ -570,7 +570,10 @@ fn pytuple_to_struct_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResul
 }
 
 fn pydecimal_to_decimal_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
-    let pystring = ob.str()?;
+    // call `format(ob, 'f')` to force decimal notation, this handles scientific notation.
+    let py = ob.py();
+    let format_func = py.import("builtins")?.getattr("format")?;
+    let pystring = format_func.call1((ob, "f"))?.str()?;
     let decimal_str = pystring.to_cow()?;
 
     // just always use max precision. we will cast if user specifies a different precision

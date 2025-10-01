@@ -194,7 +194,7 @@ def test_io_config_passed_through(mock_read_warc, mock_get_manifest_path, mock_m
     mock_read_warc.return_value = Mock()
     mock_get_manifest_path.side_effect = mock_manifest_path
 
-    mock_io_config = {"some": "config"}
+    mock_io_config = daft.IOConfig()
 
     daft.datasets.common_crawl("CC-MAIN-2025-33", io_config=mock_io_config)
 
