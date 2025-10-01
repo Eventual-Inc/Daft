@@ -364,7 +364,7 @@ dependencies = [
  "hash_hasher",
  "hashbrown 0.14.5",
  "hex",
- "indexmap 1.9.3",
+ "indexmap 2.11.4",
  "itertools 0.14.0",
  "json-deserializer",
  "lexical-core 0.8.5",

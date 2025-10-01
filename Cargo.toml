@@ -281,7 +281,7 @@ futures = "0.3.30"
 hashbrown = "0.16"
 html-escape = "0.2.13"
 image = {version = "0.25.8", default-features = false}
-indexmap = "2.9.0"
+indexmap = "2.11.4"
 indicatif = "0.18"
 itertools = "0.14"
 jaq-core = "2.2.1"
