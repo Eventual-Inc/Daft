@@ -8,12 +8,10 @@ use daft_logical_plan::{OutputFileInfo, SinkInfo, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
 
-use super::{
-    DistributedPipelineNode, SubmittableTaskStream, make_new_task_from_materialized_outputs,
-};
+use super::{PipelineNodeImpl, SubmittableTaskStream, make_new_task_from_materialized_outputs};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNodeWrapper, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -28,7 +26,7 @@ pub(crate) struct SinkNode {
     context: PipelineNodeContext,
     sink_info: Arc<SinkInfo<BoundExpr>>,
     data_schema: SchemaRef,
-    child: DistributedPipelineNodeWrapper,
+    child: DistributedPipelineNode,
 }
 
 impl SinkNode {
@@ -41,7 +39,7 @@ impl SinkNode {
         sink_info: Arc<SinkInfo<BoundExpr>>,
         file_schema: SchemaRef,
         data_schema: SchemaRef,
-        child: DistributedPipelineNodeWrapper,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -65,8 +63,8 @@ impl SinkNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
-        DistributedPipelineNodeWrapper::new(Arc::new(self))
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     fn create_sink_plan(
@@ -125,7 +123,7 @@ impl SinkNode {
         let task = make_new_task_from_materialized_outputs(
             TaskContext::from((&self.context, task_id_counter.next())),
             materialized,
-            &(self as Arc<dyn DistributedPipelineNode>),
+            &(self as Arc<dyn PipelineNodeImpl>),
             move |input| {
                 LocalPhysicalPlan::commit_write(
                     input,
@@ -141,7 +139,7 @@ impl SinkNode {
     }
 }
 
-impl DistributedPipelineNode for SinkNode {
+impl PipelineNodeImpl for SinkNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -150,7 +148,7 @@ impl DistributedPipelineNode for SinkNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
     }
 

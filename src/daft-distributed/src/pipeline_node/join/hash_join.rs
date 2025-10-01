@@ -8,8 +8,8 @@ use futures::StreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, DistributedPipelineNodeWrapper, NodeID, NodeName,
-        PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        PipelineNodeImpl, SubmittableTaskStream,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -28,8 +28,8 @@ pub(crate) struct HashJoinNode {
     null_equals_nulls: Option<Vec<bool>>,
     join_type: JoinType,
 
-    left: DistributedPipelineNodeWrapper,
-    right: DistributedPipelineNodeWrapper,
+    left: DistributedPipelineNode,
+    right: DistributedPipelineNode,
 }
 
 impl HashJoinNode {
@@ -45,8 +45,8 @@ impl HashJoinNode {
         null_equals_nulls: Option<Vec<bool>>,
         join_type: JoinType,
         num_partitions: usize,
-        left: DistributedPipelineNodeWrapper,
-        right: DistributedPipelineNodeWrapper,
+        left: DistributedPipelineNode,
+        right: DistributedPipelineNode,
         output_schema: SchemaRef,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -80,8 +80,8 @@ impl HashJoinNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
-        DistributedPipelineNodeWrapper::new(Arc::new(self))
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     fn build_hash_join_task(
@@ -120,7 +120,7 @@ impl HashJoinNode {
     }
 }
 
-impl DistributedPipelineNode for HashJoinNode {
+impl PipelineNodeImpl for HashJoinNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -129,7 +129,7 @@ impl DistributedPipelineNode for HashJoinNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.left.clone(), self.right.clone()]
     }
 

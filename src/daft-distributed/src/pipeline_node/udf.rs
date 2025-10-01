@@ -6,10 +6,10 @@ use daft_logical_plan::{partitioning::translate_clustering_spec, stats::StatsSta
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
 
-use super::DistributedPipelineNode;
+use super::PipelineNodeImpl;
 use crate::{
     pipeline_node::{
-        DistributedPipelineNodeWrapper, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
         SubmittableTaskStream,
     },
     plan::{PlanConfig, PlanExecutionContext},
@@ -21,7 +21,7 @@ pub(crate) struct UDFNode {
     project: BoundExpr,
     passthrough_columns: Vec<BoundExpr>,
     udf_properties: UDFProperties,
-    child: DistributedPipelineNodeWrapper,
+    child: DistributedPipelineNode,
 }
 
 impl UDFNode {
@@ -36,7 +36,7 @@ impl UDFNode {
         passthrough_columns: Vec<BoundExpr>,
         udf_properties: UDFProperties,
         schema: SchemaRef,
-        child: DistributedPipelineNodeWrapper,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -67,12 +67,12 @@ impl UDFNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
-        DistributedPipelineNodeWrapper::new(Arc::new(self))
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 
-impl DistributedPipelineNode for UDFNode {
+impl PipelineNodeImpl for UDFNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -81,7 +81,7 @@ impl DistributedPipelineNode for UDFNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
     }
 

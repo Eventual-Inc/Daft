@@ -5,7 +5,7 @@ use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
-use super::{DistributedPipelineNode, DistributedPipelineNodeWrapper, SubmittableTaskStream};
+use super::{DistributedPipelineNode, PipelineNodeImpl, SubmittableTaskStream};
 use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext},
@@ -15,7 +15,7 @@ pub(crate) struct FilterNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     predicate: BoundExpr,
-    child: DistributedPipelineNodeWrapper,
+    child: DistributedPipelineNode,
 }
 
 impl FilterNode {
@@ -27,7 +27,7 @@ impl FilterNode {
         plan_config: &PlanConfig,
         predicate: BoundExpr,
         schema: SchemaRef,
-        child: DistributedPipelineNodeWrapper,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -50,12 +50,12 @@ impl FilterNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
-        DistributedPipelineNodeWrapper::new(Arc::new(self))
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 
-impl DistributedPipelineNode for FilterNode {
+impl PipelineNodeImpl for FilterNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -64,7 +64,7 @@ impl DistributedPipelineNode for FilterNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
     }
 

@@ -9,8 +9,8 @@ use futures::StreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, DistributedPipelineNodeWrapper, NodeID, NodeName,
-        PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        PipelineNodeImpl, SubmittableTaskStream,
     },
     plan::{PlanConfig, PlanExecutionContext},
 };
@@ -18,8 +18,8 @@ use crate::{
 pub(crate) struct ConcatNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    child: DistributedPipelineNodeWrapper,
-    other: DistributedPipelineNodeWrapper,
+    child: DistributedPipelineNode,
+    other: DistributedPipelineNode,
 }
 
 impl ConcatNode {
@@ -30,8 +30,8 @@ impl ConcatNode {
         logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         schema: SchemaRef,
-        other: DistributedPipelineNodeWrapper,
-        child: DistributedPipelineNodeWrapper,
+        other: DistributedPipelineNode,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -59,12 +59,12 @@ impl ConcatNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
-        DistributedPipelineNodeWrapper::new(Arc::new(self))
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 
-impl DistributedPipelineNode for ConcatNode {
+impl PipelineNodeImpl for ConcatNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -73,7 +73,7 @@ impl DistributedPipelineNode for ConcatNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone(), self.other.clone()]
     }
 

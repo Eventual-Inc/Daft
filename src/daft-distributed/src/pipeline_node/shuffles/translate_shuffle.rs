@@ -3,7 +3,7 @@ use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_schema::schema::SchemaRef;
 
 use crate::pipeline_node::{
-    DistributedPipelineNodeWrapper, NodeID,
+    DistributedPipelineNode, NodeID,
     shuffles::{
         gather::GatherNode, pre_shuffle_merge::PreShuffleMergeNode, repartition::RepartitionNode,
     },
@@ -16,8 +16,8 @@ impl LogicalPlanToPipelineNodeTranslator {
         logical_node_id: Option<NodeID>,
         repartition_spec: RepartitionSpec,
         schema: SchemaRef,
-        child: DistributedPipelineNodeWrapper,
-    ) -> DaftResult<DistributedPipelineNodeWrapper> {
+        child: DistributedPipelineNode,
+    ) -> DaftResult<DistributedPipelineNode> {
         let num_partitions = match &repartition_spec {
             RepartitionSpec::Hash(config) => config
                 .num_partitions
@@ -72,7 +72,7 @@ impl LogicalPlanToPipelineNodeTranslator {
     /// Determine if we should use pre-shuffle merge strategy
     fn should_use_pre_shuffle_merge(
         &self,
-        child: &DistributedPipelineNodeWrapper,
+        child: &DistributedPipelineNode,
         target_num_partitions: usize,
     ) -> DaftResult<bool> {
         let input_num_partitions = child.config().clustering_spec.num_partitions();
@@ -96,8 +96,8 @@ impl LogicalPlanToPipelineNodeTranslator {
     pub fn gen_gather_node(
         &mut self,
         logical_node_id: Option<NodeID>,
-        input_node: DistributedPipelineNodeWrapper,
-    ) -> DistributedPipelineNodeWrapper {
+        input_node: DistributedPipelineNode,
+    ) -> DistributedPipelineNode {
         if input_node.config().clustering_spec.num_partitions() == 1 {
             return input_node;
         }

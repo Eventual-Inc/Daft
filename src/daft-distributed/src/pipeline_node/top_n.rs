@@ -5,10 +5,10 @@ use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
-use super::{DistributedPipelineNode, SubmittableTaskStream};
+use super::{PipelineNodeImpl, SubmittableTaskStream};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNodeWrapper, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
     },
     plan::{PlanConfig, PlanExecutionContext},
 };
@@ -22,7 +22,7 @@ pub(crate) struct TopNNode {
     nulls_first: Vec<bool>,
     limit: u64,
     offset: Option<u64>,
-    child: DistributedPipelineNodeWrapper,
+    child: DistributedPipelineNode,
 }
 
 impl TopNNode {
@@ -39,7 +39,7 @@ impl TopNNode {
         limit: u64,
         offset: Option<u64>,
         output_schema: SchemaRef,
-        child: DistributedPipelineNodeWrapper,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -66,12 +66,12 @@ impl TopNNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
-        DistributedPipelineNodeWrapper::new(Arc::new(self))
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 
-impl DistributedPipelineNode for TopNNode {
+impl PipelineNodeImpl for TopNNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -80,7 +80,7 @@ impl DistributedPipelineNode for TopNNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
     }
 

@@ -7,8 +7,8 @@ use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
 use super::{
-    DistributedPipelineNode, DistributedPipelineNodeWrapper, MaterializedOutput,
-    SubmittableTaskStream, make_new_task_from_materialized_outputs,
+    DistributedPipelineNode, MaterializedOutput, PipelineNodeImpl, SubmittableTaskStream,
+    make_new_task_from_materialized_outputs,
 };
 use crate::{
     pipeline_node::{
@@ -73,7 +73,7 @@ pub(crate) struct LimitNode {
     context: PipelineNodeContext,
     limit: usize,
     offset: Option<usize>,
-    child: DistributedPipelineNodeWrapper,
+    child: DistributedPipelineNode,
 }
 
 impl LimitNode {
@@ -86,7 +86,7 @@ impl LimitNode {
         limit: usize,
         offset: Option<usize>,
         schema: SchemaRef,
-        child: DistributedPipelineNodeWrapper,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -110,8 +110,8 @@ impl LimitNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
-        DistributedPipelineNodeWrapper::new(Arc::new(self))
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     fn process_materialized_output(
@@ -141,7 +141,7 @@ impl LimitNode {
                     make_new_task_from_materialized_outputs(
                         TaskContext::from((&self.context, task_id_counter.next())),
                         vec![next_input],
-                        &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                        &(self.clone() as Arc<dyn PipelineNodeImpl>),
                         move |input| {
                             if skip_num_rows > 0 {
                                 LocalPhysicalPlan::limit(
@@ -162,7 +162,7 @@ impl LimitNode {
                     let task = make_new_task_from_materialized_outputs(
                         TaskContext::from((&self.context, task_id_counter.next())),
                         vec![next_input],
-                        &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                        &(self.clone() as Arc<dyn PipelineNodeImpl>),
                         move |input| {
                             LocalPhysicalPlan::limit(
                                 input,
@@ -206,7 +206,7 @@ impl LimitNode {
                 if let Some(task) = input.next().await {
                     let task_with_limit = append_plan_to_existing_task(
                         task,
-                        &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                        &(self.clone() as Arc<dyn PipelineNodeImpl>),
                         &move |input| {
                             LocalPhysicalPlan::limit(
                                 input,
@@ -260,7 +260,7 @@ impl LimitNode {
     }
 }
 
-impl DistributedPipelineNode for LimitNode {
+impl PipelineNodeImpl for LimitNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -269,7 +269,7 @@ impl DistributedPipelineNode for LimitNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
     }
 

@@ -8,8 +8,8 @@ use futures::{StreamExt, stream::select};
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, DistributedPipelineNodeWrapper, NodeID, NodeName,
-        PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        PipelineNodeImpl, SubmittableTaskStream,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -22,8 +22,8 @@ use crate::{
 pub(crate) struct CrossJoinNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    left_node: DistributedPipelineNodeWrapper,
-    right_node: DistributedPipelineNodeWrapper,
+    left_node: DistributedPipelineNode,
+    right_node: DistributedPipelineNode,
 }
 
 impl CrossJoinNode {
@@ -34,8 +34,8 @@ impl CrossJoinNode {
         logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         num_partitions: usize,
-        left_node: DistributedPipelineNodeWrapper,
-        right_node: DistributedPipelineNodeWrapper,
+        left_node: DistributedPipelineNode,
+        right_node: DistributedPipelineNode,
         output_schema: SchemaRef,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -61,8 +61,8 @@ impl CrossJoinNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
-        DistributedPipelineNodeWrapper::new(Arc::new(self))
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn execution_loop(
@@ -146,7 +146,7 @@ impl CrossJoinNode {
     }
 }
 
-impl DistributedPipelineNode for CrossJoinNode {
+impl PipelineNodeImpl for CrossJoinNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -155,7 +155,7 @@ impl DistributedPipelineNode for CrossJoinNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.left_node.clone(), self.right_node.clone()]
     }
 

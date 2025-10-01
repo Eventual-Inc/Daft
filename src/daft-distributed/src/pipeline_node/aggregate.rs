@@ -20,10 +20,10 @@ use daft_schema::{
     schema::{Schema, SchemaRef},
 };
 
-use super::DistributedPipelineNode;
+use super::PipelineNodeImpl;
 use crate::{
     pipeline_node::{
-        DistributedPipelineNodeWrapper, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
         SubmittableTaskStream, project::ProjectNode,
         translate::LogicalPlanToPipelineNodeTranslator,
     },
@@ -35,7 +35,7 @@ pub(crate) struct AggregateNode {
     context: PipelineNodeContext,
     group_by: Vec<BoundExpr>,
     aggs: Vec<BoundAggExpr>,
-    child: DistributedPipelineNodeWrapper,
+    child: DistributedPipelineNode,
 }
 
 impl AggregateNode {
@@ -57,7 +57,7 @@ impl AggregateNode {
         group_by: Vec<BoundExpr>,
         aggs: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
-        child: DistributedPipelineNodeWrapper,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -83,12 +83,12 @@ impl AggregateNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
-        DistributedPipelineNodeWrapper::new(Arc::new(self))
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 
-impl DistributedPipelineNode for AggregateNode {
+impl PipelineNodeImpl for AggregateNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -97,7 +97,7 @@ impl DistributedPipelineNode for AggregateNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
     }
 
@@ -233,13 +233,13 @@ impl LogicalPlanToPipelineNodeTranslator {
     /// That is currently only applicable for MapGroup aggregations
     fn gen_without_pre_agg(
         &mut self,
-        input_node: DistributedPipelineNodeWrapper,
+        input_node: DistributedPipelineNode,
         logical_node_id: Option<NodeID>,
         group_by: Vec<BoundExpr>,
         aggregations: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
         partition_by: Vec<BoundExpr>,
-    ) -> DaftResult<DistributedPipelineNodeWrapper> {
+    ) -> DaftResult<DistributedPipelineNode> {
         let shuffle = if partition_by.is_empty() {
             self.gen_gather_node(logical_node_id, input_node)
         } else {
@@ -270,11 +270,11 @@ impl LogicalPlanToPipelineNodeTranslator {
     /// This is used by most other aggregations
     fn gen_with_pre_agg(
         &mut self,
-        input_node: DistributedPipelineNodeWrapper,
+        input_node: DistributedPipelineNode,
         logical_node_id: Option<NodeID>,
         split_details: GroupByAggSplit,
         output_schema: SchemaRef,
-    ) -> DaftResult<DistributedPipelineNodeWrapper> {
+    ) -> DaftResult<DistributedPipelineNode> {
         let num_partitions = input_node.config().clustering_spec.num_partitions();
         let initial_agg = AggregateNode::new(
             self.get_next_pipeline_node_id(),
@@ -348,13 +348,13 @@ impl LogicalPlanToPipelineNodeTranslator {
     /// * `partition_by` The columns to partition by. Most of the time, this will be the same as the group_by columns.
     pub fn gen_agg_nodes(
         &mut self,
-        input_node: DistributedPipelineNodeWrapper,
+        input_node: DistributedPipelineNode,
         logical_node_id: Option<NodeID>,
         group_by: Vec<BoundExpr>,
         aggregations: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
         partition_by: Vec<BoundExpr>,
-    ) -> DaftResult<DistributedPipelineNodeWrapper> {
+    ) -> DaftResult<DistributedPipelineNode> {
         let input_clustering_spec = &input_node.config().clustering_spec;
         // If there is only one partition, or the input is already partitioned by the group_by columns,
         // then we can just do a single stage aggregation and skip the shuffle.

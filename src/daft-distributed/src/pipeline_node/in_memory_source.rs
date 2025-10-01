@@ -5,9 +5,9 @@ use common_partitioning::PartitionRef;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{ClusteringSpec, InMemoryInfo, stats::StatsState};
 
-use super::{DistributedPipelineNode, PipelineNodeContext, SubmittableTaskStream};
+use super::{PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream};
 use crate::{
-    pipeline_node::{DistributedPipelineNodeWrapper, NodeID, NodeName, PipelineNodeConfig},
+    pipeline_node::{DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig},
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SubmittableTask,
@@ -57,8 +57,8 @@ impl InMemorySourceNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
-        DistributedPipelineNodeWrapper::new(Arc::new(self))
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn execution_loop(
@@ -118,7 +118,7 @@ impl InMemorySourceNode {
     }
 }
 
-impl DistributedPipelineNode for InMemorySourceNode {
+impl PipelineNodeImpl for InMemorySourceNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -127,7 +127,7 @@ impl DistributedPipelineNode for InMemorySourceNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![]
     }
 

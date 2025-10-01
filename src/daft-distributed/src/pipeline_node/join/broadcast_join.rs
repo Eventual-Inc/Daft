@@ -9,9 +9,8 @@ use futures::{StreamExt, TryStreamExt};
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, DistributedPipelineNodeWrapper, NodeID, NodeName,
-        PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
-        make_in_memory_scan_from_materialized_outputs,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        PipelineNodeImpl, SubmittableTaskStream, make_in_memory_scan_from_materialized_outputs,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -32,9 +31,9 @@ pub(crate) struct BroadcastJoinNode {
     join_type: JoinType,
     is_swapped: bool,
 
-    broadcaster: DistributedPipelineNodeWrapper,
+    broadcaster: DistributedPipelineNode,
     broadcaster_schema: SchemaRef,
-    receiver: DistributedPipelineNodeWrapper,
+    receiver: DistributedPipelineNode,
 }
 
 impl BroadcastJoinNode {
@@ -50,8 +49,8 @@ impl BroadcastJoinNode {
         null_equals_nulls: Option<Vec<bool>>,
         join_type: JoinType,
         is_swapped: bool,
-        broadcaster: DistributedPipelineNodeWrapper,
-        receiver: DistributedPipelineNodeWrapper,
+        broadcaster: DistributedPipelineNode,
+        receiver: DistributedPipelineNode,
         output_schema: SchemaRef,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -86,8 +85,8 @@ impl BroadcastJoinNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
-        DistributedPipelineNodeWrapper::new(Arc::new(self))
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn execution_loop(
@@ -157,7 +156,7 @@ impl BroadcastJoinNode {
     }
 }
 
-impl DistributedPipelineNode for BroadcastJoinNode {
+impl PipelineNodeImpl for BroadcastJoinNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -166,7 +165,7 @@ impl DistributedPipelineNode for BroadcastJoinNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.broadcaster.clone(), self.receiver.clone()]
     }
 

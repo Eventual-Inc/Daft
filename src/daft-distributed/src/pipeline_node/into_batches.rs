@@ -6,12 +6,10 @@ use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
-use super::{
-    DistributedPipelineNode, SubmittableTaskStream, make_new_task_from_materialized_outputs,
-};
+use super::{PipelineNodeImpl, SubmittableTaskStream, make_new_task_from_materialized_outputs};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNodeWrapper, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
         PipelineNodeContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -26,7 +24,7 @@ pub(crate) struct IntoBatchesNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     batch_size: usize,
-    child: DistributedPipelineNodeWrapper,
+    child: DistributedPipelineNode,
 }
 
 // The threshold at which we will emit a batch of data to the next task.
@@ -46,7 +44,7 @@ impl IntoBatchesNode {
         plan_config: &PlanConfig,
         batch_size: usize,
         schema: SchemaRef,
-        child: DistributedPipelineNodeWrapper,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -69,8 +67,8 @@ impl IntoBatchesNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
-        DistributedPipelineNodeWrapper::new(Arc::new(self))
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn execute_into_batches(
@@ -101,7 +99,7 @@ impl IntoBatchesNode {
                     let task = make_new_task_from_materialized_outputs(
                         TaskContext::from((&self_clone.context, task_id_counter.next())),
                         std::mem::take(&mut current_group),
-                        &(self_clone.clone() as Arc<dyn DistributedPipelineNode>),
+                        &(self_clone.clone() as Arc<dyn PipelineNodeImpl>),
                         move |input| {
                             LocalPhysicalPlan::into_batches(
                                 input,
@@ -124,7 +122,7 @@ impl IntoBatchesNode {
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((&self_clone.context, task_id_counter.next())),
                 current_group,
-                &(self_clone.clone() as Arc<dyn DistributedPipelineNode>),
+                &(self_clone.clone() as Arc<dyn PipelineNodeImpl>),
                 move |input| {
                     LocalPhysicalPlan::into_batches(
                         input,
@@ -141,7 +139,7 @@ impl IntoBatchesNode {
     }
 }
 
-impl DistributedPipelineNode for IntoBatchesNode {
+impl PipelineNodeImpl for IntoBatchesNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -150,7 +148,7 @@ impl DistributedPipelineNode for IntoBatchesNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
     }
 

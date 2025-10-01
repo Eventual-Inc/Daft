@@ -11,10 +11,10 @@ use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
 
-use super::{DistributedPipelineNode, SubmittableTaskStream};
+use super::{PipelineNodeImpl, SubmittableTaskStream};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNodeWrapper, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
     },
     plan::{PlanConfig, PlanExecutionContext},
 };
@@ -23,7 +23,7 @@ pub(crate) struct WindowNodeBase {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     aliases: Vec<String>,
-    child: DistributedPipelineNodeWrapper,
+    child: DistributedPipelineNode,
 }
 
 impl WindowNodeBase {
@@ -31,7 +31,7 @@ impl WindowNodeBase {
         config: PipelineNodeConfig,
         context: PipelineNodeContext,
         aliases: Vec<String>,
-        child: DistributedPipelineNodeWrapper,
+        child: DistributedPipelineNode,
     ) -> Self {
         Self {
             config,
@@ -244,7 +244,7 @@ impl WindowNode {
         window_exprs: Vec<BoundWindowExpr>,
         aliases: Vec<String>,
         schema: SchemaRef,
-        child: DistributedPipelineNodeWrapper,
+        child: DistributedPipelineNode,
     ) -> DaftResult<Self> {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -320,8 +320,8 @@ impl WindowNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
-        DistributedPipelineNodeWrapper::new(Arc::new(self))
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     fn base(&self) -> &WindowNodeBase {
@@ -341,12 +341,12 @@ impl WindowNode {
         &self.base().context
     }
 
-    fn child(&self) -> &DistributedPipelineNodeWrapper {
+    fn child(&self) -> &DistributedPipelineNode {
         &self.base().child
     }
 }
 
-impl DistributedPipelineNode for WindowNode {
+impl PipelineNodeImpl for WindowNode {
     fn context(&self) -> &PipelineNodeContext {
         self.context()
     }
@@ -355,7 +355,7 @@ impl DistributedPipelineNode for WindowNode {
         self.config()
     }
 
-    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child().clone()]
     }
 

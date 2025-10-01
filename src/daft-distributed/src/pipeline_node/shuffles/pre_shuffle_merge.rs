@@ -6,8 +6,8 @@ use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, DistributedPipelineNodeWrapper, MaterializedOutput, NodeID,
-        NodeName, PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
+        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream,
         make_in_memory_task_from_materialized_outputs,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -23,7 +23,7 @@ pub(crate) struct PreShuffleMergeNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     pre_shuffle_merge_threshold: usize,
-    child: DistributedPipelineNodeWrapper,
+    child: DistributedPipelineNode,
 }
 
 impl PreShuffleMergeNode {
@@ -35,7 +35,7 @@ impl PreShuffleMergeNode {
         plan_config: &PlanConfig,
         pre_shuffle_merge_threshold: usize,
         schema: SchemaRef,
-        child: DistributedPipelineNodeWrapper,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -59,12 +59,12 @@ impl PreShuffleMergeNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
-        DistributedPipelineNodeWrapper::new(Arc::new(self))
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 
-impl DistributedPipelineNode for PreShuffleMergeNode {
+impl PipelineNodeImpl for PreShuffleMergeNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -73,7 +73,7 @@ impl DistributedPipelineNode for PreShuffleMergeNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
     }
 
@@ -142,7 +142,7 @@ impl PreShuffleMergeNode {
                     let task = make_in_memory_task_from_materialized_outputs(
                         TaskContext::from((self.context(), task_id_counter.next())),
                         materialized_outputs,
-                        &(self_clone as Arc<dyn DistributedPipelineNode>),
+                        &(self_clone as Arc<dyn PipelineNodeImpl>),
                         Some(SchedulingStrategy::WorkerAffinity {
                             worker_id,
                             soft: false,
@@ -164,7 +164,7 @@ impl PreShuffleMergeNode {
                 let task = make_in_memory_task_from_materialized_outputs(
                     TaskContext::from((self.context(), task_id_counter.next())),
                     materialized_outputs,
-                    &(self_clone as Arc<dyn DistributedPipelineNode>),
+                    &(self_clone as Arc<dyn PipelineNodeImpl>),
                     Some(SchedulingStrategy::WorkerAffinity {
                         worker_id,
                         soft: false,

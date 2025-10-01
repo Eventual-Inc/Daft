@@ -7,9 +7,8 @@ use daft_schema::schema::SchemaRef;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, DistributedPipelineNodeWrapper, NodeID, NodeName,
-        PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
-        make_in_memory_task_from_materialized_outputs,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        PipelineNodeImpl, SubmittableTaskStream, make_in_memory_task_from_materialized_outputs,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -27,7 +26,7 @@ pub(crate) struct RepartitionNode {
     context: PipelineNodeContext,
     repartition_spec: RepartitionSpec,
     num_partitions: usize,
-    child: DistributedPipelineNodeWrapper,
+    child: DistributedPipelineNode,
 }
 
 impl RepartitionNode {
@@ -40,7 +39,7 @@ impl RepartitionNode {
         repartition_spec: RepartitionSpec,
         num_partitions: usize,
         schema: SchemaRef,
-        child: DistributedPipelineNodeWrapper,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -67,8 +66,8 @@ impl RepartitionNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
-        DistributedPipelineNodeWrapper::new(Arc::new(self))
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     // Async execution to get all partitions out
@@ -92,7 +91,7 @@ impl RepartitionNode {
             let task = make_in_memory_task_from_materialized_outputs(
                 TaskContext::from((&self_clone.context, task_id_counter.next())),
                 partition_group,
-                &(self_clone as Arc<dyn DistributedPipelineNode>),
+                &(self_clone as Arc<dyn PipelineNodeImpl>),
                 None,
             )?;
 
@@ -103,7 +102,7 @@ impl RepartitionNode {
     }
 }
 
-impl DistributedPipelineNode for RepartitionNode {
+impl PipelineNodeImpl for RepartitionNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -112,7 +111,7 @@ impl DistributedPipelineNode for RepartitionNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
     }
 

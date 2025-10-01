@@ -14,12 +14,10 @@ use futures::{TryStreamExt, future::try_join_all};
 #[cfg(feature = "python")]
 use pyo3::{Python, prelude::*};
 
-use super::{
-    DistributedPipelineNode, SubmittableTaskStream, make_new_task_from_materialized_outputs,
-};
+use super::{PipelineNodeImpl, SubmittableTaskStream, make_new_task_from_materialized_outputs};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNodeWrapper, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
         PipelineNodeContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -40,7 +38,7 @@ pub(crate) struct SortNode {
     sort_by: Vec<BoundExpr>,
     descending: Vec<bool>,
     nulls_first: Vec<bool>,
-    child: DistributedPipelineNodeWrapper,
+    child: DistributedPipelineNode,
 }
 
 impl SortNode {
@@ -55,7 +53,7 @@ impl SortNode {
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
         output_schema: SchemaRef,
-        child: DistributedPipelineNodeWrapper,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -81,8 +79,8 @@ impl SortNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
-        DistributedPipelineNodeWrapper::new(Arc::new(self))
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     #[cfg(feature = "python")]
@@ -201,7 +199,7 @@ impl SortNode {
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((&self_clone.context, task_id_counter.next())),
                 materialized_outputs,
-                &(self_clone.clone() as Arc<dyn DistributedPipelineNode>),
+                &(self_clone.clone() as Arc<dyn PipelineNodeImpl>),
                 move |input| {
                     LocalPhysicalPlan::sort(
                         input,
@@ -225,7 +223,7 @@ impl SortNode {
                 let task = make_new_task_from_materialized_outputs(
                     TaskContext::from((&self.context, task_id_counter.next())),
                     vec![mo],
-                    &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                    &(self.clone() as Arc<dyn PipelineNodeImpl>),
                     move |input| {
                         let sample = LocalPhysicalPlan::sample(
                             input,
@@ -268,7 +266,7 @@ impl SortNode {
                 let task = make_new_task_from_materialized_outputs(
                     TaskContext::from((&self.context, task_id_counter.next())),
                     vec![mo],
-                    &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                    &(self.clone() as Arc<dyn PipelineNodeImpl>),
                     move |input| {
                         LocalPhysicalPlan::repartition(
                             input,
@@ -305,7 +303,7 @@ impl SortNode {
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((&self_clone.context, task_id_counter.next())),
                 partition_group,
-                &(self_clone.clone() as Arc<dyn DistributedPipelineNode>),
+                &(self_clone.clone() as Arc<dyn PipelineNodeImpl>),
                 move |input| {
                     LocalPhysicalPlan::sort(
                         input,
@@ -323,7 +321,7 @@ impl SortNode {
     }
 }
 
-impl DistributedPipelineNode for SortNode {
+impl PipelineNodeImpl for SortNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -332,7 +330,7 @@ impl DistributedPipelineNode for SortNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
     }
 

@@ -6,8 +6,8 @@ use daft_schema::schema::SchemaRef;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, DistributedPipelineNodeWrapper, NodeID, NodeName,
-        PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        PipelineNodeImpl, SubmittableTaskStream,
     },
     plan::{PlanConfig, PlanExecutionContext},
 };
@@ -16,7 +16,7 @@ pub(crate) struct MonotonicallyIncreasingIdNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     column_name: String,
-    child: DistributedPipelineNodeWrapper,
+    child: DistributedPipelineNode,
 }
 
 impl MonotonicallyIncreasingIdNode {
@@ -28,7 +28,7 @@ impl MonotonicallyIncreasingIdNode {
         plan_config: &PlanConfig,
         column_name: String,
         schema: SchemaRef,
-        child: DistributedPipelineNodeWrapper,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -51,8 +51,8 @@ impl MonotonicallyIncreasingIdNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
-        DistributedPipelineNodeWrapper::new(Arc::new(self))
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 
@@ -64,7 +64,7 @@ impl MonotonicallyIncreasingIdNode {
 /// 2^36 ≈ 68 billion rows per partition.
 const MAX_ROWS_PER_PARTITION: u64 = 1u64 << 36;
 
-impl DistributedPipelineNode for MonotonicallyIncreasingIdNode {
+impl PipelineNodeImpl for MonotonicallyIncreasingIdNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -73,7 +73,7 @@ impl DistributedPipelineNode for MonotonicallyIncreasingIdNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
     }
 

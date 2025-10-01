@@ -6,10 +6,10 @@ use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
-use super::{DistributedPipelineNode, SubmittableTaskStream};
+use super::{PipelineNodeImpl, SubmittableTaskStream};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNodeWrapper, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
         append_plan_to_existing_task, make_in_memory_task_from_materialized_outputs,
         make_new_task_from_materialized_outputs,
     },
@@ -29,7 +29,7 @@ pub(crate) struct IntoPartitionsNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     num_partitions: usize,
-    child: DistributedPipelineNodeWrapper,
+    child: DistributedPipelineNode,
 }
 
 impl IntoPartitionsNode {
@@ -41,7 +41,7 @@ impl IntoPartitionsNode {
         plan_config: &PlanConfig,
         num_partitions: usize,
         schema: SchemaRef,
-        child: DistributedPipelineNodeWrapper,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -65,8 +65,8 @@ impl IntoPartitionsNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
-        DistributedPipelineNodeWrapper::new(Arc::new(self))
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn coalesce_tasks(
@@ -129,7 +129,7 @@ impl IntoPartitionsNode {
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((&self.context, task_id_counter.next())),
                 materialized_outputs,
-                &(self_arc as Arc<dyn DistributedPipelineNode>),
+                &(self_arc as Arc<dyn PipelineNodeImpl>),
                 move |input| {
                     LocalPhysicalPlan::into_partitions(input, 1, StatsState::NotMaterialized)
                 },
@@ -175,7 +175,7 @@ impl IntoPartitionsNode {
             }
             let into_partitions_task = append_plan_to_existing_task(
                 task,
-                &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                &(self.clone() as Arc<dyn PipelineNodeImpl>),
                 &move |plan| {
                     LocalPhysicalPlan::into_partitions(
                         plan,
@@ -202,7 +202,7 @@ impl IntoPartitionsNode {
                     let task = make_in_memory_task_from_materialized_outputs(
                         TaskContext::from((&self.context, task_id_counter.next())),
                         vec![output],
-                        &(self_arc as Arc<dyn DistributedPipelineNode>),
+                        &(self_arc as Arc<dyn PipelineNodeImpl>),
                         None,
                     )?;
                     if result_tx.send(task).await.is_err() {
@@ -248,7 +248,7 @@ impl IntoPartitionsNode {
     }
 }
 
-impl DistributedPipelineNode for IntoPartitionsNode {
+impl PipelineNodeImpl for IntoPartitionsNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -257,7 +257,7 @@ impl DistributedPipelineNode for IntoPartitionsNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
     }
 

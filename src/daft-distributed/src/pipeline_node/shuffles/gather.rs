@@ -7,9 +7,8 @@ use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, DistributedPipelineNodeWrapper, NodeID, NodeName,
-        PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
-        make_in_memory_task_from_materialized_outputs,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        PipelineNodeImpl, SubmittableTaskStream, make_in_memory_task_from_materialized_outputs,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -22,7 +21,7 @@ use crate::{
 pub(crate) struct GatherNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    child: DistributedPipelineNodeWrapper,
+    child: DistributedPipelineNode,
 }
 
 impl GatherNode {
@@ -34,7 +33,7 @@ impl GatherNode {
         logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         schema: SchemaRef,
-        child: DistributedPipelineNodeWrapper,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -56,8 +55,8 @@ impl GatherNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
-        DistributedPipelineNodeWrapper::new(Arc::new(self))
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     // Async execution to get all partitions out
@@ -78,7 +77,7 @@ impl GatherNode {
         let task = make_in_memory_task_from_materialized_outputs(
             TaskContext::from((&self_clone.context, task_id_counter.next())),
             materialized,
-            &(self_clone as Arc<dyn DistributedPipelineNode>),
+            &(self_clone as Arc<dyn PipelineNodeImpl>),
             None,
         )?;
 
@@ -87,7 +86,7 @@ impl GatherNode {
     }
 }
 
-impl DistributedPipelineNode for GatherNode {
+impl PipelineNodeImpl for GatherNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -96,7 +95,7 @@ impl DistributedPipelineNode for GatherNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
     }
 

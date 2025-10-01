@@ -10,11 +10,11 @@ use futures::StreamExt;
 use pyo3::{PyObject, Python, types::PyAnyMethods};
 
 use super::{
-    DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+    NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
     SubmittableTaskStream,
 };
 use crate::{
-    pipeline_node::{DistributedPipelineNodeWrapper, append_plan_to_existing_task},
+    pipeline_node::{DistributedPipelineNode, append_plan_to_existing_task},
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::{scheduler::SubmittableTask, task::SwordfishTask},
     utils::{
@@ -129,7 +129,7 @@ impl UDFActors {
 pub(crate) struct ActorUDF {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    child: DistributedPipelineNodeWrapper,
+    child: DistributedPipelineNode,
     projection: Vec<BoundExpr>,
     udf_properties: UDFProperties,
     actor_ready_timeout: usize,
@@ -146,7 +146,7 @@ impl ActorUDF {
         projection: Vec<BoundExpr>,
         udf_properties: UDFProperties,
         schema: SchemaRef,
-        child: DistributedPipelineNodeWrapper,
+        child: DistributedPipelineNode,
     ) -> DaftResult<Self> {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -171,8 +171,8 @@ impl ActorUDF {
         })
     }
 
-    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
-        DistributedPipelineNodeWrapper::new(Arc::new(self))
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn execution_loop_fused(
@@ -222,7 +222,7 @@ impl ActorUDF {
         let schema = self.config.schema.clone();
         append_plan_to_existing_task(
             submittable_task,
-            &(self.clone() as Arc<dyn DistributedPipelineNode>),
+            &(self.clone() as Arc<dyn PipelineNodeImpl>),
             &move |input| {
                 LocalPhysicalPlan::distributed_actor_pool_project(
                     input,
@@ -237,7 +237,7 @@ impl ActorUDF {
     }
 }
 
-impl DistributedPipelineNode for ActorUDF {
+impl PipelineNodeImpl for ActorUDF {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -246,7 +246,7 @@ impl DistributedPipelineNode for ActorUDF {
         &self.config
     }
 
-    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
     }
 

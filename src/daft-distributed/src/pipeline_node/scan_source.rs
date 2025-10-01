@@ -9,11 +9,10 @@ use daft_logical_plan::{ClusteringSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
 use super::{
-    DistributedPipelineNode, NodeName, PipelineNodeConfig, PipelineNodeContext,
-    SubmittableTaskStream,
+    NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream,
 };
 use crate::{
-    pipeline_node::{DistributedPipelineNodeWrapper, NodeID},
+    pipeline_node::{DistributedPipelineNode, NodeID},
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SubmittableTask,
@@ -63,8 +62,8 @@ impl ScanSourceNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNodeWrapper {
-        DistributedPipelineNodeWrapper::new(Arc::new(self))
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn execution_loop(
@@ -130,7 +129,7 @@ impl ScanSourceNode {
     }
 }
 
-impl DistributedPipelineNode for ScanSourceNode {
+impl PipelineNodeImpl for ScanSourceNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -139,7 +138,7 @@ impl DistributedPipelineNode for ScanSourceNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<DistributedPipelineNodeWrapper> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![]
     }
 

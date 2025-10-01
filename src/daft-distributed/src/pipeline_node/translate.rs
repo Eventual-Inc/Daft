@@ -18,7 +18,7 @@ use daft_schema::schema::Schema;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNodeWrapper, NodeID, concat::ConcatNode, distinct::DistinctNode,
+        DistributedPipelineNode, NodeID, concat::ConcatNode, distinct::DistinctNode,
         explode::ExplodeNode, filter::FilterNode, in_memory_source::InMemorySourceNode,
         into_batches::IntoBatchesNode, into_partitions::IntoPartitionsNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, pivot::PivotNode,
@@ -32,7 +32,7 @@ pub(crate) fn logical_plan_to_pipeline_node(
     plan_config: PlanConfig,
     plan: LogicalPlanRef,
     psets: Arc<HashMap<String, Vec<PartitionRef>>>,
-) -> DaftResult<DistributedPipelineNodeWrapper> {
+) -> DaftResult<DistributedPipelineNode> {
     let mut translator = LogicalPlanToPipelineNodeTranslator::new(plan_config, psets);
     let _ = plan.visit(&mut translator)?;
     Ok(translator.curr_node.pop().unwrap())
@@ -42,7 +42,7 @@ pub(crate) struct LogicalPlanToPipelineNodeTranslator {
     pub plan_config: PlanConfig,
     pipeline_node_id_counter: NodeID,
     psets: Arc<HashMap<String, Vec<PartitionRef>>>,
-    curr_node: Vec<DistributedPipelineNodeWrapper>,
+    curr_node: Vec<DistributedPipelineNode>,
 }
 
 impl LogicalPlanToPipelineNodeTranslator {

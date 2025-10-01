@@ -11,7 +11,7 @@ use daft_logical_plan::{
 use daft_schema::schema::SchemaRef;
 
 use crate::pipeline_node::{
-    DistributedPipelineNodeWrapper, NodeID,
+    DistributedPipelineNode, NodeID,
     join::{BroadcastJoinNode, CrossJoinNode, HashJoinNode},
     translate::LogicalPlanToPipelineNodeTranslator,
 };
@@ -66,14 +66,14 @@ impl LogicalPlanToPipelineNodeTranslator {
     pub(crate) fn gen_hash_join_nodes(
         &mut self,
         logical_node_id: Option<NodeID>,
-        left: DistributedPipelineNodeWrapper,
-        right: DistributedPipelineNodeWrapper,
+        left: DistributedPipelineNode,
+        right: DistributedPipelineNode,
         left_on: Vec<BoundExpr>,
         right_on: Vec<BoundExpr>,
         null_equals_nulls: Vec<bool>,
         join_type: JoinType,
         output_schema: SchemaRef,
-    ) -> DaftResult<DistributedPipelineNodeWrapper> {
+    ) -> DaftResult<DistributedPipelineNode> {
         let left_spec = left.config().clustering_spec.as_ref();
         let right_spec = right.config().clustering_spec.as_ref();
 
@@ -169,12 +169,12 @@ impl LogicalPlanToPipelineNodeTranslator {
         right_on: Vec<BoundExpr>,
         null_equals_nulls: Vec<bool>,
         join_type: JoinType,
-        left_node: DistributedPipelineNodeWrapper,
-        right_node: DistributedPipelineNodeWrapper,
+        left_node: DistributedPipelineNode,
+        right_node: DistributedPipelineNode,
         left_stats: &ApproxStats,
         right_stats: &ApproxStats,
         output_schema: SchemaRef,
-    ) -> DaftResult<DistributedPipelineNodeWrapper> {
+    ) -> DaftResult<DistributedPipelineNode> {
         // Calculate which side is larger for broadcast join logic
         let left_is_larger = right_stats.size_bytes < left_stats.size_bytes;
 
@@ -218,10 +218,10 @@ impl LogicalPlanToPipelineNodeTranslator {
     pub(crate) fn gen_cross_join_node(
         &mut self,
         logical_node_id: Option<NodeID>,
-        left_node: DistributedPipelineNodeWrapper,
-        right_node: DistributedPipelineNodeWrapper,
+        left_node: DistributedPipelineNode,
+        right_node: DistributedPipelineNode,
         output_schema: SchemaRef,
-    ) -> DaftResult<DistributedPipelineNodeWrapper> {
+    ) -> DaftResult<DistributedPipelineNode> {
         let num_partitions = {
             let left_num_partitions = left_node.config().clustering_spec.num_partitions();
             let right_num_partitions = right_node.config().clustering_spec.num_partitions();
@@ -244,9 +244,9 @@ impl LogicalPlanToPipelineNodeTranslator {
         &mut self,
         logical_node_id: Option<NodeID>,
         join: &Join,
-        left_node: DistributedPipelineNodeWrapper,
-        right_node: DistributedPipelineNodeWrapper,
-    ) -> DaftResult<DistributedPipelineNodeWrapper> {
+        left_node: DistributedPipelineNode,
+        right_node: DistributedPipelineNode,
+    ) -> DaftResult<DistributedPipelineNode> {
         let (remaining_on, left_on, right_on, null_equals_nulls) = join.on.split_eq_preds();
         if !remaining_on.is_empty() {
             todo!("FLOTILLA_MS?: Implement non-equality joins")
