@@ -272,7 +272,8 @@ impl DataType {
             | Self::Tensor(..)
             | Self::FixedShapeTensor(..)
             | Self::SparseTensor(..)
-            | Self::FixedShapeSparseTensor(..) => {
+            | Self::FixedShapeSparseTensor(..)
+            | Self::File => {
                 let physical = Box::new(self.to_physical());
                 let logical_extension = Self::Extension(
                     DAFT_SUPER_EXTENSION_NAME.into(),
@@ -292,9 +293,6 @@ impl DataType {
                 logical_extension.to_arrow()
             }
             Self::Unknown => Err(DaftError::TypeError(format!(
-                "Can not convert {self:?} into arrow type"
-            ))),
-            Self::File => Err(DaftError::TypeError(format!(
                 "Can not convert {self:?} into arrow type"
             ))),
         }
