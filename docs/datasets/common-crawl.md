@@ -219,4 +219,4 @@ from daft.functions import try_decode
 
 - When using datasets like Common Crawl for pre-training, content deduplication is essential for model performance.
 Check out our [MinHash deduplication example](../examples/minhash-dedupe.md) to see how this can be done in Daft.
-- See the [Common Crawl Dataset API reference](../../api/datasets.md#common-crawl) for complete parameter documentation
+- See the [Common Crawl Dataset API reference](../api/datasets.md#common-crawl) for complete parameter documentation
