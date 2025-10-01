@@ -2058,12 +2058,11 @@ class PyDaftPlanningConfig:
     def enable_strict_filter_pushdown(self) -> bool: ...
 
 class StatType(Enum):
-    INT = "int"
-    FLOAT = "float"
-    STRING = "string"
-    BOOL = "bool"
-    DATETIME = "datetime"
-    DURATION = "duration"
+    COUNT = 0
+    BYTES = 1
+    PERCENT = 2
+    FLOAT = 3
+    DURATION = 5
 
 class PyNodeInfo:
     # Note, these are all read-only getters
@@ -2090,8 +2089,8 @@ class PyDaftContext:
     def notify_query_start(self, query_id: str, unoptimized_plan: str) -> None: ...
     def notify_query_end(self, query_id: str) -> None: ...
     def notify_result_out(self, query_id: str, result: PartitionT) -> None: ...
-    def notify_plan_start(self, query_id: str) -> None: ...
-    def notify_plan_end(self, query_id: str, optimized_plan: str) -> None: ...
+    def notify_optimization_start(self, query_id: str) -> None: ...
+    def notify_optimization_end(self, query_id: str, optimized_plan: str) -> None: ...
 
 def set_runner_ray(
     address: str | None = None,

@@ -105,15 +105,17 @@ impl DaftContext {
 
     /// Detaches a subscriber from this context, err if does not exist.
     pub fn detach_subscriber(&self, alias: &str) -> DaftResult<()> {
-        if self.with_state(|state| !state.subscribers.contains_key(alias)) {
-            return Err(DaftError::ValueError(format!(
-                "Subscriber `{}` not found in this context",
-                alias
-            )));
-        }
+        self.with_state_mut(|state| {
+            if !state.subscribers.contains_key(alias) {
+                return Err(DaftError::ValueError(format!(
+                    "Subscriber `{}` not found in this context",
+                    alias
+                )));
+            }
 
-        self.with_state_mut(|state| state.subscribers.remove(alias));
-        Ok(())
+            state.subscribers.remove(alias);
+            Ok(())
+        })
     }
 
     pub fn notify_query_start(&self, query_id: String, unoptimized_plan: String) -> DaftResult<()> {
@@ -143,19 +145,23 @@ impl DaftContext {
         })
     }
 
-    pub fn notify_plan_start(&self, query_id: String) -> DaftResult<()> {
+    pub fn notify_optimization_start(&self, query_id: String) -> DaftResult<()> {
         self.with_state(|state| {
             for subscriber in state.subscribers.values() {
-                subscriber.on_plan_start(query_id.clone())?;
+                subscriber.on_optimization_start(query_id.clone())?;
             }
             Ok::<(), DaftError>(())
         })
     }
 
-    pub fn notify_plan_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()> {
+    pub fn notify_optimization_end(
+        &self,
+        query_id: String,
+        optimized_plan: String,
+    ) -> DaftResult<()> {
         self.with_state(|state| {
             for subscriber in state.subscribers.values() {
-                subscriber.on_plan_end(query_id.clone(), optimized_plan.clone())?;
+                subscriber.on_optimization_end(query_id.clone(), optimized_plan.clone())?;
             }
             Ok::<(), DaftError>(())
         })

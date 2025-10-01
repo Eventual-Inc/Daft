@@ -86,9 +86,9 @@ class NativeRunner(Runner[MicroPartition]):
 
         # Optimize the logical plan.
         ctx._notify_query_start(query_id, repr(builder))
-        ctx._notify_plan_start(query_id)
+        ctx._notify_optimization_start(query_id)
         builder = builder.optimize()
-        ctx._notify_plan_end(query_id, repr(builder))
+        ctx._notify_optimization_end(query_id, repr(builder))
 
         # NOTE: ENABLE FOR DAFT-PROTO TESTING
         # builder = _to_from_proto(builder)

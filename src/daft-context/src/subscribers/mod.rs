@@ -14,8 +14,8 @@ pub trait Subscriber: Send + Sync + std::fmt::Debug + 'static {
     fn on_query_start(&self, query_id: String, unoptimized_plan: String) -> DaftResult<()>;
     fn on_query_end(&self, query_id: String) -> DaftResult<()>;
     fn on_result_out(&self, query_id: String, result: MicroPartitionRef) -> DaftResult<()>;
-    fn on_plan_start(&self, query_id: String) -> DaftResult<()>;
-    fn on_plan_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()>;
+    fn on_optimization_start(&self, query_id: String) -> DaftResult<()>;
+    fn on_optimization_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()>;
     fn on_exec_start(&self, query_id: String, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()>;
     async fn on_exec_operator_start(&self, query_id: String, node_id: NodeID) -> DaftResult<()>;
     async fn on_exec_emit_stats(

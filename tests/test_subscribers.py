@@ -39,10 +39,10 @@ class MockSubscriber(Subscriber):
     def on_result_out(self, query_id: str, result: PyMicroPartition) -> None:
         self.query_results[query_id].append(result)
 
-    def on_plan_start(self, query_id: str) -> None:
+    def on_optimization_start(self, query_id: str) -> None:
         pass
 
-    def on_plan_end(self, query_id: str, optimized_plan: str) -> None:
+    def on_optimization_end(self, query_id: str, optimized_plan: str) -> None:
         self.query_optimized_plan[query_id] = optimized_plan
 
     def on_exec_start(self, query_id: str, node_infos: list[PyNodeInfo]) -> None:

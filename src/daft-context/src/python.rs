@@ -89,18 +89,18 @@ impl PyDaftContext {
         Ok(())
     }
 
-    pub fn notify_plan_start(&self, py: Python, query_id: String) -> PyResult<()> {
-        py.allow_threads(|| self.inner.notify_plan_start(query_id))?;
+    pub fn notify_optimization_start(&self, py: Python, query_id: String) -> PyResult<()> {
+        py.allow_threads(|| self.inner.notify_optimization_start(query_id))?;
         Ok(())
     }
 
-    pub fn notify_plan_end(
+    pub fn notify_optimization_end(
         &self,
         py: Python,
         query_id: String,
         optimized_plan: String,
     ) -> PyResult<()> {
-        py.allow_threads(|| self.inner.notify_plan_end(query_id, optimized_plan))?;
+        py.allow_threads(|| self.inner.notify_optimization_end(query_id, optimized_plan))?;
         Ok(())
     }
 }

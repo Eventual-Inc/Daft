@@ -16,7 +16,7 @@ class Subscriber(ABC):
 
     The engine triggers the subscriber methods as callbacks at the following points:
     - Query from start to end
-    - Planning from start to end
+    - Optimization from start to end
     - Execution from start to end
     - The execution of an operator from start to end
     - During execution, emitting current stats of all running operators at regular intervals
@@ -39,12 +39,12 @@ class Subscriber(ABC):
         pass
 
     @abstractmethod
-    def on_plan_start(self, query_id: str) -> None:
+    def on_optimization_start(self, query_id: str) -> None:
         """Called when starting to plan / optimize a query."""
         pass
 
     @abstractmethod
-    def on_plan_end(self, query_id: str, optimized_plan: str) -> None:
+    def on_optimization_end(self, query_id: str, optimized_plan: str) -> None:
         """Called when planning for a query has completed."""
         pass
 

@@ -53,12 +53,12 @@ impl Subscriber for DebugSubscriber {
         Ok(())
     }
 
-    fn on_plan_start(&self, query_id: String) -> DaftResult<()> {
+    fn on_optimization_start(&self, query_id: String) -> DaftResult<()> {
         eprintln!("Started planning query `{}`", query_id);
         Ok(())
     }
 
-    fn on_plan_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()> {
+    fn on_optimization_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()> {
         eprintln!(
             "Finished planning query `{}` with optimized plan:\n{}",
             query_id, optimized_plan

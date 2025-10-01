@@ -20,6 +20,7 @@ use common_tracing::should_enable_opentelemetry;
 use daft_context::Subscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_micropartition::MicroPartition;
+use futures::future;
 use itertools::Itertools;
 use kanal::SendError;
 use tokio::{
@@ -172,8 +173,8 @@ impl RuntimeStatsManager {
 
                     Some((node_id, is_initialize)) = node_rx.recv() => {
                         if is_initialize && active_nodes.insert(node_id) {
-                            for subscriber in &subscribers {
-                                if let Err(e) = subscriber.initialize_node(node_id).await {
+                            for res in future::join_all(subscribers.iter().map(|subscriber| subscriber.initialize_node(node_id))).await {
+                                if let Err(e) = res {
                                     log::error!("Failed to initialize node: {}", e);
                                 }
                             }
@@ -181,11 +182,12 @@ impl RuntimeStatsManager {
                             let runtime_stats = &node_stats_map[&node_id];
                             let event = runtime_stats.flush();
                             let event = [(node_id, event)];
-                            for subscriber in &subscribers {
-                                if let Err(e) = subscriber.handle_event(&event).await {
-                                    log::error!("Failed to handle event: {}", e);
-                                }
-                                if let Err(e) = subscriber.finalize_node(node_id).await {
+
+                            for res in future::join_all(subscribers.iter().map(|subscriber| async {
+                                subscriber.handle_event(&event).await?;
+                                subscriber.finalize_node(node_id).await
+                            })).await {
+                                if let Err(e) = res {
                                     log::error!("Failed to finalize node: {}", e);
                                 }
                             }
@@ -202,8 +204,10 @@ impl RuntimeStatsManager {
                             let event = runtime_stats.snapshot();
                             snapshot_container.push((*node_id, event));
                         }
-                        for subscriber in &subscribers {
-                            if let Err(e) = subscriber.handle_event(snapshot_container.as_slice()).await {
+                        for res in future::join_all(subscribers.iter().map(|subscriber| {
+                            subscriber.handle_event(snapshot_container.as_slice())
+                        })).await {
+                            if let Err(e) = res {
                                 log::error!("Failed to handle event: {}", e);
                             }
                         }

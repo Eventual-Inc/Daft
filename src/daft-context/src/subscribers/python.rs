@@ -44,18 +44,21 @@ impl Subscriber for PySubscriberWrapper {
         })
     }
 
-    fn on_plan_start(&self, query_id: String) -> DaftResult<()> {
+    fn on_optimization_start(&self, query_id: String) -> DaftResult<()> {
         Python::with_gil(|py| {
             self.0
-                .call_method1(py, intern!(py, "on_plan_start"), (query_id,))?;
+                .call_method1(py, intern!(py, "on_optimization_start"), (query_id,))?;
             Ok(())
         })
     }
 
-    fn on_plan_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()> {
+    fn on_optimization_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()> {
         Python::with_gil(|py| {
-            self.0
-                .call_method1(py, intern!(py, "on_plan_end"), (query_id, optimized_plan))?;
+            self.0.call_method1(
+                py,
+                intern!(py, "on_optimization_end"),
+                (query_id, optimized_plan),
+            )?;
             Ok(())
         })
     }

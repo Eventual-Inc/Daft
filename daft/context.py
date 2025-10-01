@@ -100,11 +100,11 @@ class DaftContext:
     def _notify_query_end(self, query_id: str) -> None:
         self._ctx.notify_query_end(query_id)
 
-    def _notify_plan_start(self, query_id: str) -> None:
-        self._ctx.notify_plan_start(query_id)
+    def _notify_optimization_start(self, query_id: str) -> None:
+        self._ctx.notify_optimization_start(query_id)
 
-    def _notify_plan_end(self, query_id: str, optimized_plan: str) -> None:
-        self._ctx.notify_plan_end(query_id, optimized_plan)
+    def _notify_optimization_end(self, query_id: str, optimized_plan: str) -> None:
+        self._ctx.notify_optimization_end(query_id, optimized_plan)
 
     def _notify_result_out(self, query_id: str, result: PartitionT) -> None:
         from daft.recordbatch.micropartition import MicroPartition
