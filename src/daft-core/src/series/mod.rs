@@ -124,6 +124,7 @@ impl Series {
     ///
     /// This function will check the provided [`Field`] (and all its associated potentially nested fields/dtypes) against
     /// the provided [`arrow2::array::Array`] for compatibility, and returns an error if they do not match.
+    #[inline]
     pub fn from_arrow(
         field: FieldRef,
         arrow_arr: Box<dyn arrow2::array::Array>,
