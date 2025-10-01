@@ -71,7 +71,6 @@ df = daft.from_pydict({
 df.filter(df["age"] > 25).show()
 EOF
 
-```bash
 # Deploy with Ray cluster
 helm install distributed-job oci://ghcr.io/eventual-inc/daft/quickstart \
   --set distributed=true \
@@ -141,9 +140,6 @@ kubectl exec deployment/my-release-quickstart-head -- python -c "import ray; ray
 ```bash
 # Scale workers using kubectl
 kubectl scale deployment my-release-quickstart-worker --replicas=10
-
-# Or using Helm upgrade
-helm upgrade my-release ./quickstart --set worker.replicas=10
 ```
 
 ## Troubleshooting
@@ -201,10 +197,10 @@ Ensure you're using `--set-file` (not `--set`):
 
 ```bash
 # Correct
-helm install my-job ./quickstart --set-file job.script=script.py
+helm install my-job oci://ghcr.io/eventual-inc/daft/quickstart --set-file job.script=script.py
 
 # Incorrect
-helm install my-job ./quickstart --set job.script=script.py
+helm install my-job oci://ghcr.io/eventual-inc/daft/quickstart --set job.script=script.py
 ```
 
 ### Ray Module Not Found (Distributed Mode)

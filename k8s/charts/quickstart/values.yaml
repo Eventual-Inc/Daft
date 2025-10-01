@@ -48,7 +48,7 @@ job:
   #
   # Method 1: Script Injection (script)
   #   - Provide Python script content via --set-file job.script=your_script.py
-  #   - Script is mounted as /usr/src/main.py in the container
+  #   - Script is mounted as /usr/src/daft/main.py in the container
   #   - Executed with: uv run --script /usr/src/daft/main.py
   #   - Best for: quick testing, simple scripts
   #   - No custom image required
@@ -62,7 +62,7 @@ job:
 
   # -- Python script content to execute (Method 1: Script Injection)
   # Populated via: helm install my-release ./quickstart --set-file job.script=path/to/script.py
-  # When provided, the script is mounted as /usr/src/main.py
+  # When provided, the script is mounted as /usr/src/daft/main.py
   # Leave empty if using Method 2 (custom image with command/args)
   script: ""
 
