@@ -124,7 +124,6 @@ impl Series {
     ///
     /// This function will check the provided [`Field`] (and all its associated potentially nested fields/dtypes) against
     /// the provided [`arrow2::array::Array`] for compatibility, and returns an error if they do not match.
-    #[inline]
     pub fn from_arrow(
         field: FieldRef,
         arrow_arr: Box<dyn arrow2::array::Array>,
@@ -207,7 +206,7 @@ impl Series {
     /// Attempts to downcast the Series to a primitive slice
     /// This will return an error if the Series is not of the physical type `T`
     /// # Example
-    /// ```rust,ignore
+    /// ```rust,no_run
     /// let i32_arr: &[i32] = series.try_as_slice::<i32>()?;
     ///
     /// let f64_arr: &[f64] = series.try_as_slice::<f64>()?;
@@ -263,7 +262,7 @@ macro_rules! series {
             // put into a vec first for compile-time type consistency checking
             let elements = vec![$($element),+];
             let elements_lit = elements.into_iter().map(Literal::from).collect::<Vec<_>>();
-            Series::from_literals(elements_lit, None).unwrap()
+            Series::from_literals(elements_lit).unwrap()
         }
     };
 }

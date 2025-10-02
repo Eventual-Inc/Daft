@@ -1,10 +1,3 @@
-use std::sync::Arc;
-
-use arrow2::{
-    array::{MutableArray, MutablePrimitiveArray},
-    trusted_len::TrustedLen,
-    types::months_days_ns,
-};
 use common_error::{DaftError, DaftResult};
 use common_image::CowImage;
 
@@ -60,220 +53,78 @@ pub(crate) fn combine_lit_types(left: &DataType, right: &DataType) -> Option<Dat
     }
 }
 
-/// How to handle errors when combining literals.
-pub enum OnError {
-    /// Errors result in Null values
-    Null,
-    /// Errors will be raised
-    Raise,
-}
-
 impl Series {
-    /// Creates a series from an iterator of `Result<Literal>`.
-    /// The `on_error` indicates how to handle the result.
+    /// Converts a vec of literals into a Series.
     ///
-    /// Unlike `from_literals`, `from_literal_iter` does not do any dtype inference.
-    /// If the datatype of `Literal` != dtype, then it will either result in a null value, or an error depending on the `on_error` setting.
-    pub fn from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>> + TrustedLen>(
-        values: I,
-        dtype: DataType,
-        on_error: OnError,
-    ) -> DaftResult<Self> {
+    /// Literals must all be the same type or null, this function does not do any casting or coercion.
+    /// If that is desired, you should handle it for each literal before converting it into a series.
+    pub fn from_literals(values: Vec<Literal>) -> DaftResult<Self> {
+        let dtype = values.iter().try_fold(DataType::Null, |acc, v| {
+            let dtype = v.get_type();
+            combine_lit_types(&acc, &dtype).ok_or_else(|| {
+                DaftError::ValueError(format!(
+                    "All literals must have the same data type or null. Found: {} vs {}",
+                    acc, dtype
+                ))
+            })
+        })?;
+
         let field = Field::new("literal", dtype.clone());
 
-        // DaftError isn't `Clone` so just using a string to store the error instead.
-        let mut errs: Vec<String> = Vec::with_capacity(values.len());
-
-        // TODO: ideally we'd want to fail fast if `OnError::Raise`, but you can't return from the outer function inside a closure, so we just push the error to the vector and continue
-        // Then we check if there are any errors at the end.
-        // Instead, we should just immediately return an error one is encountered.
-        // But this requires significant refactoring to remove the iter closures and use for loops for all variants.
-        // For now, I created the `unwrap_inner_fail_fast` that'll immediately return, but it can't be used in closures.
         macro_rules! unwrap_inner {
             ($expr:expr, $variant:ident) => {
                 match $expr {
-                    Ok(Literal::$variant(val)) => Some(val),
-                    Ok(Literal::Null) => None,
-                    Err(e) => match on_error {
-                        OnError::Null => None,
-                        OnError::Raise => {
-                            errs.push(e.to_string());
-                            None
-                        }
-                    },
-                    Ok(other) => {
-                        let ty = other.get_type();
-                        if &ty != &dtype {
-                            match on_error {
-                                OnError::Null => None,
-                                OnError::Raise => {
-                                    errs.push(format!(
-                                        "All literals must have the same data type or null. Found: {ty} vs {dtype}"
-                                    ));
-                                    None
-                                }
-                            }
-                        } else {
-                            errs.push(format!(
-                                "All literals must have the same data type or null. Found: {ty} vs {dtype}"
-                            ));
-                            None
-
-                        }
-                    }
+                    Literal::$variant(val) => Some(val),
+                    Literal::Null => None,
+                    _ => unreachable!("datatype is already checked"),
                 }
             };
 
             ($expr:expr, $literal:pat => $value:expr) => {
                 match $expr {
-                    Ok($literal) => Some($value),
-                    Ok(Literal::Null) => None,
-                    Err(e) => match on_error {
-                        OnError::Null => None,
-                        OnError::Raise => {
-                            errs.push(e.to_string());
-                            None
-                        }
-                    },
-                    Ok(other) => {
-                        let ty = other.get_type();
-                        if &ty != &dtype {
-                            match on_error {
-                                OnError::Null => None,
-                                OnError::Raise => {
-                                    errs.push(format!(
-                                        "All literals must have the same data type or null. Found: {ty} vs {dtype}"
-                                    ));
-                                    None
-                                }
-                            }
-                        } else {
-                            errs.push(format!(
-                                "All literals must have the same data type or null. Found: {ty} vs {dtype}"
-                            ));
-                            None
-                        }
-                    }
-                }
-            };
-        }
-
-        /// Same as `unwrap_inner` but immediately return out of `from_literals_iter` instead of collecting the errors.
-        /// This can't be used inside closures that don't return a Result
-        macro_rules! unwrap_inner_fail_fast {
-            ($expr:expr, $variant:ident) => {
-                match $expr {
-                    Ok(Literal::$variant(val)) => Some(val),
-                    Ok(Literal::Null) => None,
-                    Err(e) => match on_error {
-                        OnError::Null => None,
-                        OnError::Raise => {
-                            return Err(e)
-                        }
-                    },
-                    Ok(other) => {
-                        let ty = other.get_type();
-                        if &ty != &dtype {
-                            match on_error {
-                                OnError::Null => None,
-                                OnError::Raise => {
-                                   return Err(DaftError::ValueError(format!(
-                                       "All literals must have the same data type or null. Found: {} vs {}",
-                                       ty, dtype
-                                   )))
-                                }
-                            }
-                        } else {
-                            return Err(DaftError::ValueError(format!(
-                                "All literals must have the same data type or null. Found: {} vs {}",
-                                ty, dtype
-                            )))
-                        }
-                    }
-                }
-            };
-            ($expr:expr, $literal:pat => $value:expr) => {
-                match $expr {
-                    Ok($literal) => Some($value),
-                    Ok(Literal::Null) => None,
-                    Err(e) => match on_error {
-                        OnError::Null => None,
-                        OnError::Raise => {
-                            errs.push(e.to_string());
-                            None
-                        }
-                    },
-                    Ok(other) => {
-                        let ty = other.get_type();
-                        if &ty != &dtype {
-                            match on_error {
-                                OnError::Null => None,
-                                OnError::Raise => {
-                                    return Err(DaftError::ValueError(format!(
-                                        "All literals must have the same data type or null. Found: {} vs {}",
-                                        ty, dtype
-                                    )))
-                                }
-                            }
-                        } else {
-                            return Err(DaftError::ValueError(format!(
-                                "All literals must have the same data type or null. Found: {} vs {}",
-                                ty, dtype
-                            )))
-                        }
-                    }
+                    $literal => Some($value),
+                    Literal::Null => None,
+                    _ => unreachable!("datatype is already checked"),
                 }
             };
         }
 
         macro_rules! from_iter_with_str {
             ($arr_type:ty, $variant:ident) => {{
-                <$arr_type>::from_iter("literal", values.map(|lit| unwrap_inner!(lit, $variant)))
-                    .into_series()
+                <$arr_type>::from_iter(
+                    "literal",
+                    values.into_iter().map(|lit| unwrap_inner!(lit, $variant)),
+                )
+                .into_series()
             }};
         }
 
-        macro_rules! from_mutable_primitive_array {
+        macro_rules! from_iter_with_field {
             ($arr_type:ty, $variant:ident) => {{
-                let mut arr = MutablePrimitiveArray::<$arr_type>::with_capacity(values.len());
-                for value in values {
-                    let value = unwrap_inner_fail_fast!(value, $variant);
-                    arr.push(value);
-                }
-
-                Series::from_arrow(Arc::new(field), arr.as_box())?
+                <$arr_type>::from_iter(
+                    field,
+                    values.into_iter().map(|lit| unwrap_inner!(lit, $variant)),
+                )
+                .into_series()
             }};
         }
 
-        let s = match dtype {
+        Ok(match dtype {
             DataType::Null => NullArray::full_null("literal", &dtype, values.len()).into_series(),
             DataType::Boolean => from_iter_with_str!(BooleanArray, Boolean),
             DataType::Utf8 => from_iter_with_str!(Utf8Array, Utf8),
             DataType::Binary => from_iter_with_str!(BinaryArray, Binary),
-            DataType::Int8 => from_mutable_primitive_array!(i8, Int8),
-            DataType::UInt8 => from_mutable_primitive_array!(u8, UInt8),
-            DataType::Int16 => from_mutable_primitive_array!(i16, Int16),
-            DataType::UInt16 => from_mutable_primitive_array!(u16, UInt16),
-            DataType::Int32 => from_mutable_primitive_array!(i32, Int32),
-            DataType::UInt32 => from_mutable_primitive_array!(u32, UInt32),
-            DataType::Int64 => from_mutable_primitive_array!(i64, Int64),
-            DataType::UInt64 => from_mutable_primitive_array!(u64, UInt64),
-            DataType::Float32 => from_mutable_primitive_array!(f32, Float32),
-            DataType::Float64 => from_mutable_primitive_array!(f64, Float64),
-            DataType::Interval => {
-                let mut arr = MutablePrimitiveArray::<months_days_ns>::with_capacity(values.len());
-                for value in values {
-                    let value =
-                        unwrap_inner!(value, Literal::Interval(d) => months_days_ns::from(d));
-                    arr.push(value);
-                }
-
-                Self::from_arrow(
-                    Arc::new(Field::new("literal", DataType::Interval)),
-                    arr.as_box(),
-                )?
-            }
-
+            DataType::Int8 => from_iter_with_field!(Int8Array, Int8),
+            DataType::UInt8 => from_iter_with_field!(UInt8Array, UInt8),
+            DataType::Int16 => from_iter_with_field!(Int16Array, Int16),
+            DataType::UInt16 => from_iter_with_field!(UInt16Array, UInt16),
+            DataType::Int32 => from_iter_with_field!(Int32Array, Int32),
+            DataType::UInt32 => from_iter_with_field!(UInt32Array, UInt32),
+            DataType::Int64 => from_iter_with_field!(Int64Array, Int64),
+            DataType::UInt64 => from_iter_with_field!(UInt64Array, UInt64),
+            DataType::Interval => from_iter_with_str!(IntervalArray, Interval),
+            DataType::Float32 => from_iter_with_field!(Float32Array, Float32),
+            DataType::Float64 => from_iter_with_field!(Float64Array, Float64),
             DataType::Decimal128 { .. } => Decimal128Array::from_iter(
                 field,
                 values
@@ -282,28 +133,15 @@ impl Series {
             )
             .into_series(),
             DataType::Timestamp(_, _) => {
-                let mut arr = MutablePrimitiveArray::<i64>::with_capacity(values.len());
-                for value in values {
-                    let value = unwrap_inner_fail_fast!(value, Literal::Timestamp(ts, ..) => ts);
-                    arr.push(value);
-                }
-                let physical = Int64Array::from_arrow(
-                    Arc::new(Field::new("literal", DataType::Int64)),
-                    arr.as_box(),
-                )?;
+                let data = values
+                    .into_iter()
+                    .map(|lit| unwrap_inner!(lit, Literal::Timestamp(ts, ..) => ts));
+                let physical = Int64Array::from_iter(Field::new("literal", DataType::Int64), data);
                 TimestampArray::new(field, physical).into_series()
             }
             DataType::Date => {
-                let mut arr = MutablePrimitiveArray::<i32>::with_capacity(values.len());
-                for value in values {
-                    let value = unwrap_inner_fail_fast!(value, Date);
-                    arr.push(value);
-                }
-                let physical = Int32Array::from_arrow(
-                    Arc::new(Field::new("literal", DataType::Int32)),
-                    arr.as_box(),
-                )?;
-
+                let data = values.into_iter().map(|lit| unwrap_inner!(lit, Date));
+                let physical = Int32Array::from_iter(Field::new("literal", DataType::Int32), data);
                 DateArray::new(field, physical).into_series()
             }
             DataType::Time(_) => {
@@ -322,19 +160,18 @@ impl Series {
 
                 DurationArray::new(field, physical).into_series()
             }
-            DataType::List(ref child_dtype) => {
+            DataType::List(child_dtype) => {
                 let data = values
+                    .iter()
                     .map(|v| {
-                        unwrap_inner_fail_fast!(v, List)
-                            .map(|s| s.cast(child_dtype))
+                        unwrap_inner!(v, List)
+                            .map(|s| s.cast(&child_dtype))
                             .transpose()
                     })
                     .collect::<DaftResult<Vec<_>>>()?;
                 ListArray::try_from(("literal", data.as_slice()))?.into_series()
             }
-            DataType::Struct(ref fields) => {
-                let values = values.collect::<Vec<_>>();
-
+            DataType::Struct(fields) => {
                 let children = fields
                     .iter()
                     .enumerate()
@@ -347,15 +184,12 @@ impl Series {
                             })
                             .collect::<Vec<_>>();
 
-                        Ok(Self::from_literals(child_values, Some(f.dtype.clone()))?
-                            .rename(&f.name))
+                        Ok(Self::from_literals(child_values)?.rename(&f.name))
                     })
                     .collect::<DaftResult<_>>()?;
 
                 let validity = arrow2::bitmap::Bitmap::from_trusted_len_iter(
-                    values
-                        .iter()
-                        .map(|v| v.as_ref().is_ok_and(|v| v != &Literal::Null)),
+                    values.iter().map(|v| *v != Literal::Null),
                 );
 
                 StructArray::new(field, children, Some(validity)).into_series()
@@ -371,7 +205,6 @@ impl Series {
             }
             #[cfg(feature = "python")]
             DataType::File => {
-                let values = values.collect::<Vec<_>>();
                 use std::sync::Arc;
 
                 use common_file::FileReference;
@@ -439,9 +272,8 @@ impl Series {
             DataType::File => unreachable!("File type is only supported with the python feature"),
 
             DataType::Tensor(_) => {
-                let values = values.collect::<Vec<_>>();
-
-                let (data, shapes) = values.iter()
+                let (data, shapes) = values
+                    .iter()
                     .map(|v| {
                         unwrap_inner!(v, Literal::Tensor { data, shape } => (data, shape.as_slice())).unzip()
                     })
@@ -457,8 +289,6 @@ impl Series {
                 TensorArray::new(field, physical).into_series()
             }
             DataType::SparseTensor(..) => {
-                let values = values.collect::<Vec<_>>();
-
                 let (values, indices, shapes) = values
                     .iter()
                     .map(|v| {
@@ -484,20 +314,18 @@ impl Series {
 
                 SparseTensorArray::new(field, physical).into_series()
             }
-            DataType::Embedding(ref inner_dtype, ref size) => {
-                let (validity, data): (Vec<_>, Vec<_>) = values
+            DataType::Embedding(inner_dtype, size) => {
+                let validity = arrow2::bitmap::Bitmap::from_trusted_len_iter(
+                    values.iter().map(|v| *v != Literal::Null),
+                );
+
+                let data = values
                     .into_iter()
                     .map(|v| {
-                        (
-                            v.as_ref().is_ok_and(|v| v != &Literal::Null),
-                            unwrap_inner!(v, Embedding)
-                                .unwrap_or_else(|| Self::full_null("literal", inner_dtype, *size)),
-                        )
+                        unwrap_inner!(v, Embedding)
+                            .unwrap_or_else(|| Self::full_null("literal", &inner_dtype, size))
                     })
-                    .unzip();
-
-                let validity = arrow2::bitmap::Bitmap::from(validity);
-
+                    .collect::<Vec<_>>();
                 let flat_child = Self::concat(&data.iter().collect::<Vec<_>>())?;
 
                 let physical =
@@ -506,8 +334,8 @@ impl Series {
                 EmbeddingArray::new(field, physical).into_series()
             }
             DataType::Map {
-                key: ref key_dtype,
-                value: ref value_dtype,
+                key: key_dtype,
+                value: value_dtype,
             } => {
                 let data = values
                     .into_iter()
@@ -520,8 +348,8 @@ impl Series {
                                         .to_exploded_field()
                                         .expect("Expected physical type of map to be list"),
                                     vec![
-                                        k.cast(key_dtype)?.rename("key"),
-                                        v.cast(value_dtype)?.rename("value"),
+                                        k.cast(&key_dtype)?.rename("key"),
+                                        v.cast(&value_dtype)?.rename("value"),
                                     ],
                                     None,
                                 )
@@ -537,7 +365,8 @@ impl Series {
             }
             DataType::Image(image_mode) => {
                 let data = values
-                    .map(|v| unwrap_inner!(v, Image).map(|img| CowImage::from(img.0)))
+                    .iter()
+                    .map(|v| unwrap_inner!(v, Image).map(|img| CowImage::from(&img.0)))
                     .collect::<Vec<_>>();
 
                 image_array_from_img_buffers("literal", &data, image_mode)?.into_series()
@@ -550,59 +379,25 @@ impl Series {
             | DataType::FixedShapeTensor(..)
             | DataType::FixedShapeSparseTensor(..)
             | DataType::Unknown => unreachable!("Literal should never have data type: {dtype}"),
-        };
-        if errs.is_empty() {
-            Ok(s)
-        } else {
-            Err(DaftError::ComputeError(format!(
-                "Errors occurred while creating series: {:?}",
-                errs
-            )))
-        }
-    }
-
-    /// Converts a vec of literals into a Series.
-    ///
-    /// Literals must all be the same type or null, this function does not do any casting or coercion.
-    /// If that is desired, you should handle it for each literal before converting it into a series.
-    pub fn from_literals(values: Vec<Literal>, dtype: Option<DataType>) -> DaftResult<Self> {
-        let dtype = match dtype {
-            Some(dtype) => dtype,
-            None => values.iter().try_fold(DataType::Null, |acc, v| {
-                let dtype = v.get_type();
-                combine_lit_types(&acc, &dtype).ok_or_else(|| {
-                    DaftError::ValueError(format!(
-                        "All literals must have the same data type or null. Found: {} vs {}",
-                        acc, dtype
-                    ))
-                })
-            })?,
-        };
-        Self::from_literals_iter(
-            values.into_iter().map(DaftResult::Ok),
-            dtype,
-            OnError::Raise,
-        )
+        })
     }
 }
 
 impl From<Literal> for Series {
     fn from(value: Literal) -> Self {
-        let dtype = Some(value.get_type());
-        Self::from_literals(vec![value], dtype)
+        Self::from_literals(vec![value])
             .expect("Series::try_from should not fail on single literal value")
     }
 }
 
 #[cfg(test)]
 mod test {
-    use common_error::DaftError;
     use common_image::Image;
     use image::{GrayImage, RgbaImage};
     use indexmap::indexmap;
     use rstest::rstest;
 
-    use crate::{datatypes::IntervalValue, prelude::*, series, series::from_lit::OnError};
+    use crate::{datatypes::IntervalValue, prelude::*, series};
 
     #[rstest]
     #[case::null(vec![Literal::Null, Literal::Null])]
@@ -717,7 +512,7 @@ mod test {
     ])]
     fn test_literal_series_roundtrip_basics(#[case] literals: Vec<Literal>) {
         let expected = [vec![Literal::Null], literals, vec![Literal::Null]].concat();
-        let series = Series::from_literals(expected.clone(), None).unwrap();
+        let series = Series::from_literals(expected.clone()).unwrap();
         let actual = series.to_literals().collect::<Vec<_>>();
 
         assert_eq!(expected, actual)
@@ -726,70 +521,7 @@ mod test {
     #[test]
     fn test_literals_to_series_mismatched() {
         let values = vec![Literal::UInt64(1), Literal::Utf8("test".to_string())];
-        let actual = Series::from_literals(values, None);
+        let actual = Series::from_literals(values);
         assert!(actual.is_err());
-    }
-
-    #[test]
-    fn test_literals_to_series_mismatched_and_dtype() {
-        let values = vec![Literal::UInt64(1), Literal::Utf8("test".to_string())];
-        let actual = Series::from_literals(values, Some(DataType::Utf8));
-        assert!(actual.is_err());
-    }
-
-    #[test]
-    fn test_literals_to_series_ignore_errors() {
-        let values = vec![
-            Ok(Literal::Boolean(true)),
-            Err(DaftError::ValueError("null".to_string())),
-        ]
-        .into_iter();
-
-        let dtype = DataType::Boolean;
-        let res = Series::from_literals_iter(values, dtype, OnError::Null).unwrap();
-        let value = res.get_lit(1);
-        assert_eq!(value, Literal::Null);
-    }
-
-    #[test]
-    fn test_literals_to_series_mismatch_ignore() {
-        let values = vec![
-            Ok(Literal::Boolean(true)),
-            Ok(Literal::Int8(1)),
-            Err(DaftError::ValueError("null".to_string())),
-        ]
-        .into_iter();
-
-        let dtype = DataType::Boolean;
-        let res = Series::from_literals_iter(values, dtype, OnError::Null)
-            .expect("Failed to create series");
-        assert_eq!(res.get_lit(0), Literal::Boolean(true));
-        assert_eq!(res.get_lit(1), Literal::Null);
-        assert_eq!(res.get_lit(2), Literal::Null);
-    }
-
-    #[test]
-    fn test_literals_to_series_mismatch_raise() {
-        let values = vec![
-            Ok(Literal::Boolean(true)),
-            Ok(Literal::Int8(1)),
-            Err(DaftError::ValueError("null".to_string())),
-        ]
-        .into_iter();
-
-        let dtype = DataType::Boolean;
-        let res = Series::from_literals_iter(values, dtype, OnError::Raise);
-        assert!(res.is_err())
-    }
-
-    #[test]
-    fn test_literals_to_series_mismatched_and_dtype_ignore() {
-        let values = vec![Literal::UInt64(1), Literal::Utf8("test".to_string())];
-        let actual =
-            Series::from_literals_iter(values.into_iter().map(Ok), DataType::Utf8, OnError::Null);
-        assert!(actual.is_ok());
-        let actual = actual.unwrap();
-        assert_eq!(actual.get_lit(0), Literal::Null);
-        assert_eq!(actual.get_lit(1), Literal::Utf8("test".to_string()));
     }
 }
