@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -16,7 +17,7 @@ use daft_core::series::Series;
 use daft_dsl::python::PyExpr;
 use daft_dsl::{
     Column, Expr, ExprRef,
-    common_treenode::{TreeNode, TreeNodeRecursion},
+    common_treenode::{Transformed, TreeNode},
     expr::{BoundColumn, bound_expr::BoundExpr},
     functions::python::UDFProperties,
 };
@@ -37,17 +38,37 @@ use crate::{
     pipeline::{MorselSizeRequirement, NodeName},
 };
 
-fn get_required_columns(expr: &BoundExpr) -> Vec<usize> {
-    let mut cols = vec![];
-    expr.inner()
-        .apply(&mut |expr: &ExprRef| {
-            if let Expr::Column(Column::Bound(BoundColumn { index, .. })) = expr.as_ref() {
-                cols.push(*index);
+fn get_required_columns(expr: BoundExpr) -> (BoundExpr, Vec<usize>) {
+    let mut count = 0;
+    let mut cols_to_idx = HashMap::new();
+    let new_expr = expr
+        .unwrap()
+        .transform_down(|expr: ExprRef| {
+            if let Expr::Column(Column::Bound(BoundColumn { index, field })) = expr.as_ref() {
+                if !cols_to_idx.contains_key(index) {
+                    cols_to_idx.insert(*index, count);
+                    count += 1;
+                }
+
+                let new_index = cols_to_idx[index];
+                Ok(Transformed::yes(Arc::new(Expr::Column(Column::Bound(
+                    BoundColumn {
+                        index: new_index,
+                        field: field.clone(),
+                    },
+                )))))
+            } else {
+                Ok(Transformed::no(expr))
             }
-            Ok(TreeNodeRecursion::Continue)
         })
         .expect("Error occurred when visiting for required columns");
-    cols
+
+    let mut required_cols = vec![0; count];
+    for (original_idx, final_idx) in cols_to_idx {
+        required_cols[final_idx] = original_idx;
+    }
+
+    (BoundExpr::new_unchecked(new_expr.data), required_cols)
 }
 
 /// Common parameters for UDF handle and operator
@@ -159,9 +180,7 @@ impl UdfHandle {
 
         for batch in input_batches.as_ref() {
             // Prepare inputs
-            eprintln!("batch: \n{}", batch);
             let func_input = batch.get_columns(self.params.required_cols.as_slice());
-            eprintln!("func_input: \n{}", func_input);
 
             // Call the UDF
             let mut result = if let Some(handle) = &self.handle {
@@ -173,7 +192,6 @@ impl UdfHandle {
             if result.len() == 1 {
                 result = result.broadcast(batch.num_rows())?;
             }
-            eprintln!("result: \n{}", result);
 
             // Append result to passthrough
             let passthrough_input =
@@ -256,7 +274,7 @@ impl UdfOperator {
             .map(|m| m as u64)
             .unwrap_or(0);
 
-        let required_cols = get_required_columns(&expr);
+        let (expr, required_cols) = get_required_columns(expr);
 
         Ok(Self {
             params: Arc::new(UdfParams {

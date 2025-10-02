@@ -73,6 +73,10 @@ impl BoundExpr {
         &self.0
     }
 
+    pub fn unwrap(self) -> ExprRef {
+        self.0
+    }
+
     pub fn bind_all(
         exprs: &[impl Into<ExprRef> + Clone],
         schema: &Schema,
