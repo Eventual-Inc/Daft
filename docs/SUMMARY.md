@@ -35,8 +35,11 @@
         * [SQL Databases](connectors/sql.md)
         * [Turbopuffer](connectors/turbopuffer.md)
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
-    * [Scaling Out and Deployment](distributed.md)
-    * [Architecture](architecture/index.md)
+    * Scaling Out and Deployment
+        * [Running on Ray](distributed.md)
+        * [Running on Kubernetes](kubernetes.md)
+    * Architecture
+        * [Architecture](architecture/index.md)
     * Optimization and Debugging
         * [Optimization](optimization/index.md)
         * [Managing Memory Usage](optimization/memory.md)

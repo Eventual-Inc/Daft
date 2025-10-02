@@ -1,19 +1,20 @@
-use std::sync::{Arc, OnceLock, RwLock};
+pub mod partition_cache;
+#[cfg(feature = "python")]
+pub mod python;
+mod subscribers;
+
+use std::{
+    collections::HashMap,
+    sync::{Arc, OnceLock, RwLock},
+};
 
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};
+use common_error::{DaftError, DaftResult};
+use daft_micropartition::MicroPartitionRef;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
-#[cfg(feature = "python")]
-mod python;
-
-pub mod partition_cache;
-
-#[derive(Debug)]
-struct ContextState {
-    /// Shared configuration for the context
-    config: Config,
-}
+pub use crate::subscribers::Subscriber;
 
 #[derive(Debug, Default)]
 pub struct Config {
@@ -30,6 +31,13 @@ impl Config {
     }
 }
 
+#[derive(Debug)]
+struct ContextState {
+    /// Shared configuration for the context
+    config: Config,
+    subscribers: HashMap<String, Arc<dyn Subscriber>>,
+}
+
 /// Wrapper around the ContextState to provide a thread-safe interface.
 /// IMPORTANT: Do not create this directly, use `get_context` instead.
 /// This is a singleton, and should only be created once.
@@ -39,7 +47,6 @@ pub struct DaftContext {
     state: Arc<RwLock<ContextState>>,
 }
 
-#[cfg(feature = "python")]
 impl DaftContext {
     fn with_state<F, R>(&self, f: F) -> R
     where
@@ -86,26 +93,78 @@ impl DaftContext {
     pub fn io_config(&self) -> IOConfig {
         self.with_state(|state| state.config.planning.default_io_config.clone())
     }
-}
 
-#[cfg(not(feature = "python"))]
-impl DaftContext {
-    /// Execute a callback with read access to the state.
-    /// The guard is automatically released when the callback returns.
-    pub fn with_state<F, R>(&self, f: F) -> R
-    where
-        F: FnOnce(&ContextState) -> R,
-    {
-        unimplemented!()
+    pub fn subscribers(&self) -> Vec<Arc<dyn Subscriber>> {
+        self.with_state(|state| state.subscribers.values().cloned().collect())
     }
 
-    /// Execute a callback with mutable access to the state.
-    /// The guard is automatically released when the callback returns.
-    pub fn with_state_mut<F, R>(&self, f: F) -> R
-    where
-        F: FnOnce(&mut ContextState) -> R,
-    {
-        unimplemented!()
+    /// Attaches a subscriber to this context.
+    pub fn attach_subscriber(&self, alias: String, subscriber: Arc<dyn Subscriber>) {
+        self.with_state_mut(|state| state.subscribers.insert(alias, subscriber));
+    }
+
+    /// Detaches a subscriber from this context, err if does not exist.
+    pub fn detach_subscriber(&self, alias: &str) -> DaftResult<()> {
+        self.with_state_mut(|state| {
+            if !state.subscribers.contains_key(alias) {
+                return Err(DaftError::ValueError(format!(
+                    "Subscriber `{}` not found in this context",
+                    alias
+                )));
+            }
+
+            state.subscribers.remove(alias);
+            Ok(())
+        })
+    }
+
+    pub fn notify_query_start(&self, query_id: String, unoptimized_plan: String) -> DaftResult<()> {
+        self.with_state(|state| {
+            for subscriber in state.subscribers.values() {
+                subscriber.on_query_start(query_id.clone(), unoptimized_plan.clone())?;
+            }
+            Ok::<(), DaftError>(())
+        })
+    }
+
+    pub fn notify_query_end(&self, query_id: String) -> DaftResult<()> {
+        self.with_state(move |state| {
+            for subscriber in state.subscribers.values() {
+                subscriber.on_query_end(query_id.clone())?;
+            }
+            Ok::<(), DaftError>(())
+        })
+    }
+
+    pub fn notify_result_out(&self, query_id: String, result: MicroPartitionRef) -> DaftResult<()> {
+        self.with_state(|state| {
+            for subscriber in state.subscribers.values() {
+                subscriber.on_result_out(query_id.clone(), result.clone())?;
+            }
+            Ok::<(), DaftError>(())
+        })
+    }
+
+    pub fn notify_optimization_start(&self, query_id: String) -> DaftResult<()> {
+        self.with_state(|state| {
+            for subscriber in state.subscribers.values() {
+                subscriber.on_optimization_start(query_id.clone())?;
+            }
+            Ok::<(), DaftError>(())
+        })
+    }
+
+    pub fn notify_optimization_end(
+        &self,
+        query_id: String,
+        optimized_plan: String,
+    ) -> DaftResult<()> {
+        self.with_state(|state| {
+            for subscriber in state.subscribers.values() {
+                subscriber.on_optimization_end(query_id.clone(), optimized_plan.clone())?;
+            }
+            Ok::<(), DaftError>(())
+        })
     }
 }
 
@@ -116,8 +175,11 @@ pub fn get_context() -> DaftContext {
     match DAFT_CONTEXT.get() {
         Some(ctx) => ctx.clone(),
         None => {
+            use crate::subscribers::default_subscribers;
+
             let state = ContextState {
                 config: Config::from_env(),
+                subscribers: default_subscribers(),
             };
             let state = RwLock::new(state);
             let state = Arc::new(state);

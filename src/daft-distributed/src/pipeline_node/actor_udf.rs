@@ -10,11 +10,11 @@ use futures::StreamExt;
 use pyo3::{PyObject, Python, types::PyAnyMethods};
 
 use super::{
-    DisplayLevel, DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig,
-    PipelineNodeContext, SubmittableTaskStream, TreeDisplay,
+    NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
+    SubmittableTaskStream,
 };
 use crate::{
-    pipeline_node::append_plan_to_existing_task,
+    pipeline_node::{DistributedPipelineNode, append_plan_to_existing_task},
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::{scheduler::SubmittableTask, task::SwordfishTask},
     utils::{
@@ -129,7 +129,7 @@ impl UDFActors {
 pub(crate) struct ActorUDF {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    child: Arc<dyn DistributedPipelineNode>,
+    child: DistributedPipelineNode,
     projection: Vec<BoundExpr>,
     udf_properties: UDFProperties,
     actor_ready_timeout: usize,
@@ -146,7 +146,7 @@ impl ActorUDF {
         projection: Vec<BoundExpr>,
         udf_properties: UDFProperties,
         schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNode,
     ) -> DaftResult<Self> {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -171,8 +171,8 @@ impl ActorUDF {
         })
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn execution_loop_fused(
@@ -222,7 +222,7 @@ impl ActorUDF {
         let schema = self.config.schema.clone();
         append_plan_to_existing_task(
             submittable_task,
-            &(self.clone() as Arc<dyn DistributedPipelineNode>),
+            &(self.clone() as Arc<dyn PipelineNodeImpl>),
             &move |input| {
                 LocalPhysicalPlan::distributed_actor_pool_project(
                     input,
@@ -235,8 +235,22 @@ impl ActorUDF {
             },
         )
     }
+}
 
-    fn multiline_display(&self) -> Vec<String> {
+impl PipelineNodeImpl for ActorUDF {
+    fn context(&self) -> &PipelineNodeContext {
+        &self.context
+    }
+
+    fn config(&self) -> &PipelineNodeConfig {
+        &self.config
+    }
+
+    fn children(&self) -> Vec<DistributedPipelineNode> {
+        vec![self.child.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         use itertools::Itertools;
         let mut res = vec![];
         res.push("ActorUDF:".to_string());
@@ -262,20 +276,6 @@ impl ActorUDF {
         }
         res
     }
-}
-
-impl DistributedPipelineNode for ActorUDF {
-    fn context(&self) -> &PipelineNodeContext {
-        &self.context
-    }
-
-    fn config(&self) -> &PipelineNodeConfig {
-        &self.config
-    }
-
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
-        vec![self.child.clone()]
-    }
 
     fn produce_tasks(
         self: Arc<Self>,
@@ -288,34 +288,5 @@ impl DistributedPipelineNode for ActorUDF {
         plan_context.spawn(execution_loop);
 
         SubmittableTaskStream::from(result_rx)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
-    }
-}
-
-impl TreeDisplay for ActorUDF {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.name()).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.name().to_string()
     }
 }

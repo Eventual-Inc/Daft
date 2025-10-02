@@ -1165,7 +1165,7 @@ dependencies = [
 [[package]]
 name = "azure_core"
 version = "0.21.0"
-source = "git+https://github.com/Eventual-Inc/azure-sdk-for-rust?rev=25ebe5a599a88f311e28a0b63102ce318998f8b6#25ebe5a599a88f311e28a0b63102ce318998f8b6"
+source = "git+https://github.com/Eventual-Inc/azure-sdk-for-rust?tag=patched-azure-identity-2#21ff3c74094dfa44c4c4cf2392365f2f10fe192c"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1194,7 +1194,7 @@ dependencies = [
 [[package]]
 name = "azure_identity"
 version = "0.21.0"
-source = "git+https://github.com/Eventual-Inc/azure-sdk-for-rust?rev=25ebe5a599a88f311e28a0b63102ce318998f8b6#25ebe5a599a88f311e28a0b63102ce318998f8b6"
+source = "git+https://github.com/Eventual-Inc/azure-sdk-for-rust?tag=patched-azure-identity-2#21ff3c74094dfa44c4c4cf2392365f2f10fe192c"
 dependencies = [
  "async-lock",
  "async-process",
@@ -1213,7 +1213,7 @@ dependencies = [
 [[package]]
 name = "azure_storage"
 version = "0.21.0"
-source = "git+https://github.com/Eventual-Inc/azure-sdk-for-rust?rev=25ebe5a599a88f311e28a0b63102ce318998f8b6#25ebe5a599a88f311e28a0b63102ce318998f8b6"
+source = "git+https://github.com/Eventual-Inc/azure-sdk-for-rust?tag=patched-azure-identity-2#21ff3c74094dfa44c4c4cf2392365f2f10fe192c"
 dependencies = [
  "RustyXML",
  "async-lock",
@@ -1231,7 +1231,7 @@ dependencies = [
 [[package]]
 name = "azure_storage_blobs"
 version = "0.21.0"
-source = "git+https://github.com/Eventual-Inc/azure-sdk-for-rust?rev=25ebe5a599a88f311e28a0b63102ce318998f8b6#25ebe5a599a88f311e28a0b63102ce318998f8b6"
+source = "git+https://github.com/Eventual-Inc/azure-sdk-for-rust?tag=patched-azure-identity-2#21ff3c74094dfa44c4c4cf2392365f2f10fe192c"
 dependencies = [
  "RustyXML",
  "azure_core",
@@ -1251,7 +1251,7 @@ dependencies = [
 [[package]]
 name = "azure_svc_blobstorage"
 version = "0.21.0"
-source = "git+https://github.com/Eventual-Inc/azure-sdk-for-rust?rev=25ebe5a599a88f311e28a0b63102ce318998f8b6#25ebe5a599a88f311e28a0b63102ce318998f8b6"
+source = "git+https://github.com/Eventual-Inc/azure-sdk-for-rust?tag=patched-azure-identity-2#21ff3c74094dfa44c4c4cf2392365f2f10fe192c"
 dependencies = [
  "azure_core",
  "bytes",
@@ -1886,6 +1886,7 @@ name = "common-metrics"
 version = "0.3.0-dev0"
 dependencies = [
  "indicatif 0.17.11",
+ "pyo3",
  "serde",
  "smallvec",
 ]
@@ -2503,12 +2504,15 @@ name = "daft-context"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
+ "async-trait",
  "common-daft-config",
  "common-error",
+ "common-metrics",
  "daft-core",
  "daft-logical-plan",
  "daft-micropartition",
  "daft-runners",
+ "dashmap",
  "pyo3",
 ]
 
@@ -2966,6 +2970,7 @@ dependencies = [
  "common-system-info",
  "common-tracing",
  "console 0.16.1",
+ "daft-context",
  "daft-core",
  "daft-csv",
  "daft-dsl",

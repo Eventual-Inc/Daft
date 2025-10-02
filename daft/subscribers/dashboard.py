@@ -1,16 +1,13 @@
 from __future__ import annotations
 
+import json
+import os
+import uuid
 import warnings
 from urllib import request
 from urllib.error import URLError
-import uuid
-import json
-import os
-from daft.daft import dashboard as native
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from datetime import datetime
+from daft.daft import dashboard as native
 
 
 def _should_run() -> bool:
@@ -49,9 +46,6 @@ def launch(noop_if_initialized: bool = False) -> None:
 
 def broadcast_query_information(
     unoptimized_plan: str,
-    optimized_plan: str,
-    plan_time_start: datetime,
-    plan_time_end: datetime,
 ) -> None:
     import ssl
 
@@ -70,7 +64,7 @@ def broadcast_query_information(
     data = json.dumps(
         {
             "id": str(uuid.uuid4()),
-            "optimized_plan": optimized_plan,
+            "optimized_plan": unoptimized_plan,
             "run_id": os.environ.get("DAFT_DASHBOARD_RUN_ID", None),
             "logs": "",  # todo: implement logs
         }

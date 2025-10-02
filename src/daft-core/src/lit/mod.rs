@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     datatypes::IntervalValue,
     prelude::*,
+    series::from_lit::combine_lit_types,
     utils::display::{
         display_date32, display_decimal128, display_duration, display_series_in_literal,
         display_time64, display_timestamp,
@@ -583,10 +584,16 @@ impl Literal {
     ///
     /// This method is lossy, AKA it is not guaranteed that `lit.cast(dtype).get_type() == dtype`.
     /// This is because null literals always have the null data type.
-    pub fn cast(&self, dtype: &DataType) -> DaftResult<Self> {
-        Series::from(self.clone())
-            .cast(dtype)
-            .and_then(|s| Self::try_from_single_value_series(&s))
+    pub fn cast(self, dtype: &DataType) -> DaftResult<Self> {
+        if &self.get_type() == dtype
+            || (combine_lit_types(&self.get_type(), dtype).as_ref() == Some(dtype))
+        {
+            Ok(self)
+        } else {
+            Series::from(self)
+                .cast(dtype)
+                .and_then(|s| Self::try_from_single_value_series(&s))
+        }
     }
 }
 

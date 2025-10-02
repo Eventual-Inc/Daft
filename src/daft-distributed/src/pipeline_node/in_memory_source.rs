@@ -1,14 +1,13 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{ClusteringSpec, InMemoryInfo, stats::StatsState};
 
-use super::{DistributedPipelineNode, PipelineNodeContext, SubmittableTaskStream};
+use super::{PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream};
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig},
+    pipeline_node::{DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig},
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SubmittableTask,
@@ -58,8 +57,8 @@ impl InMemorySourceNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn execution_loop(
@@ -117,20 +116,9 @@ impl InMemorySourceNode {
         );
         Ok(task)
     }
-
-    fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec![];
-        res.push("InMemorySource:".to_string());
-        res.push(format!(
-            "Schema = {}",
-            self.info.source_schema.short_string()
-        ));
-        res.push(format!("Size bytes = {}", self.info.size_bytes));
-        res
-    }
 }
 
-impl DistributedPipelineNode for InMemorySourceNode {
+impl PipelineNodeImpl for InMemorySourceNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -139,8 +127,19 @@ impl DistributedPipelineNode for InMemorySourceNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        let mut res = vec![];
+        res.push("InMemorySource:".to_string());
+        res.push(format!(
+            "Schema = {}",
+            self.info.source_schema.short_string()
+        ));
+        res.push(format!("Size bytes = {}", self.info.size_bytes));
+        res
     }
 
     fn produce_tasks(
@@ -152,34 +151,5 @@ impl DistributedPipelineNode for InMemorySourceNode {
         plan_context.spawn(execution_loop);
 
         SubmittableTaskStream::from(result_rx)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
-    }
-}
-
-impl TreeDisplay for InMemorySourceNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.context.node_name).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![]
-    }
-
-    fn get_name(&self) -> String {
-        self.context.node_name.to_string()
     }
 }

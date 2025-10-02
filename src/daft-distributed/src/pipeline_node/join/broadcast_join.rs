@@ -1,6 +1,5 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::LocalPhysicalPlan;
@@ -11,7 +10,7 @@ use futures::{StreamExt, TryStreamExt};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        SubmittableTaskStream, make_in_memory_scan_from_materialized_outputs,
+        PipelineNodeImpl, SubmittableTaskStream, make_in_memory_scan_from_materialized_outputs,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -32,9 +31,9 @@ pub(crate) struct BroadcastJoinNode {
     join_type: JoinType,
     is_swapped: bool,
 
-    broadcaster: Arc<dyn DistributedPipelineNode>,
+    broadcaster: DistributedPipelineNode,
     broadcaster_schema: SchemaRef,
-    receiver: Arc<dyn DistributedPipelineNode>,
+    receiver: DistributedPipelineNode,
 }
 
 impl BroadcastJoinNode {
@@ -50,8 +49,8 @@ impl BroadcastJoinNode {
         null_equals_nulls: Option<Vec<bool>>,
         join_type: JoinType,
         is_swapped: bool,
-        broadcaster: Arc<dyn DistributedPipelineNode>,
-        receiver: Arc<dyn DistributedPipelineNode>,
+        broadcaster: DistributedPipelineNode,
+        receiver: DistributedPipelineNode,
         output_schema: SchemaRef,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -86,30 +85,8 @@ impl BroadcastJoinNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
-    }
-
-    fn multiline_display(&self) -> Vec<String> {
-        use itertools::Itertools;
-        let mut res = vec!["Broadcast Join".to_string()];
-        res.push(format!(
-            "Left on: {}",
-            self.left_on.iter().map(|e| e.to_string()).join(", ")
-        ));
-        res.push(format!(
-            "Right on: {}",
-            self.right_on.iter().map(|e| e.to_string()).join(", ")
-        ));
-        res.push(format!("Join type: {}", self.join_type));
-        res.push(format!("Is swapped: {}", self.is_swapped));
-        if let Some(null_equals_nulls) = &self.null_equals_nulls {
-            res.push(format!(
-                "Null equals nulls: [{}]",
-                null_equals_nulls.iter().map(|b| b.to_string()).join(", ")
-            ));
-        }
-        res
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn execution_loop(
@@ -179,27 +156,7 @@ impl BroadcastJoinNode {
     }
 }
 
-impl TreeDisplay for BroadcastJoinNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        match level {
-            DisplayLevel::Compact => self.get_name(),
-            _ => self.multiline_display().join("\n"),
-        }
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![
-            self.broadcaster.as_tree_display(),
-            self.receiver.as_tree_display(),
-        ]
-    }
-
-    fn get_name(&self) -> String {
-        Self::NODE_NAME.to_string()
-    }
-}
-
-impl DistributedPipelineNode for BroadcastJoinNode {
+impl PipelineNodeImpl for BroadcastJoinNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -208,8 +165,30 @@ impl DistributedPipelineNode for BroadcastJoinNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.broadcaster.clone(), self.receiver.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        use itertools::Itertools;
+        let mut res = vec!["Broadcast Join".to_string()];
+        res.push(format!(
+            "Left on: {}",
+            self.left_on.iter().map(|e| e.to_string()).join(", ")
+        ));
+        res.push(format!(
+            "Right on: {}",
+            self.right_on.iter().map(|e| e.to_string()).join(", ")
+        ));
+        res.push(format!("Join type: {}", self.join_type));
+        res.push(format!("Is swapped: {}", self.is_swapped));
+        if let Some(null_equals_nulls) = &self.null_equals_nulls {
+            res.push(format!(
+                "Null equals nulls: [{}]",
+                null_equals_nulls.iter().map(|b| b.to_string()).join(", ")
+            ));
+        }
+        res
     }
 
     fn produce_tasks(
@@ -230,9 +209,5 @@ impl DistributedPipelineNode for BroadcastJoinNode {
         plan_context.spawn(execution_loop);
 
         SubmittableTaskStream::from(result_rx)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
     }
 }

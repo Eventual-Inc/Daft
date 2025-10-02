@@ -16,9 +16,13 @@ def test_df_construct_from_file(tmp_path: Path):
     mem_file = daft.File(b"hello world from bytes")
     df = daft.from_pydict({"file": [path_file, mem_file]})
     data = df.to_pydict()["file"]
-    expected_data_0 = path_file.read()
-    actual_data_0 = data[0].read()
+    with path_file.open() as f:
+        expected_data_0 = f.read()
+    with mem_file.open() as f:
+        expected_data_1 = f.read()
+    with data[0].open() as f:
+        actual_data_0 = f.read()
     assert expected_data_0 == actual_data_0
-    expected_data_1 = mem_file.read()
-    actual_data_1 = data[1].read()
+    with data[1].open() as f:
+        actual_data_1 = f.read()
     assert expected_data_1 == actual_data_1

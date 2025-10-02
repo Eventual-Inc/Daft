@@ -180,9 +180,13 @@ impl<'py> IntoPyObject<'py> for Literal {
             Self::File(f) => {
                 let pytuple = f.into_bound_py_any(py)?;
                 let py_file = py
+                    .import(intern!(py, "daft.daft"))?
+                    .getattr(intern!(py, "PyFileReference"))?;
+                let res = py_file.call_method1(pyo3::intern!(py, "_from_tuple"), (pytuple,))?;
+                let py_file = py
                     .import(intern!(py, "daft.file"))?
                     .getattr(intern!(py, "File"))?;
-                py_file.call_method1(pyo3::intern!(py, "_from_tuple"), (pytuple,))
+                py_file.call_method1(pyo3::intern!(py, "_from_file_reference"), (res,))
             }
             Self::Map { keys, values } => {
                 assert_eq!(

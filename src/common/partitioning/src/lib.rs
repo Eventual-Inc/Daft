@@ -57,7 +57,7 @@ pub struct PartitionMetadata {
 /// So it is up to the implementation to manage any interior mutability.
 pub trait PartitionSet<T: Partition>: std::fmt::Debug + Send + Sync {
     /// Merge all micropartitions into a single micropartition
-    fn get_merged_partitions(&self) -> DaftResult<PartitionRef>;
+    fn get_merged_partitions(&self) -> DaftResult<T>;
     /// Get a preview of the micropartitions
     fn get_preview_partitions(&self, num_rows: usize) -> DaftResult<Vec<T>>;
     /// Number of partitions
@@ -85,9 +85,9 @@ pub trait PartitionSet<T: Partition>: std::fmt::Debug + Send + Sync {
 impl<P, PS> PartitionSet<P> for Arc<PS>
 where
     P: Partition + Clone,
-    PS: PartitionSet<P> + Clone,
+    PS: PartitionSet<P> + Clone + Sync,
 {
-    fn get_merged_partitions(&self) -> DaftResult<PartitionRef> {
+    fn get_merged_partitions(&self) -> DaftResult<P> {
         PS::get_merged_partitions(self)
     }
 
