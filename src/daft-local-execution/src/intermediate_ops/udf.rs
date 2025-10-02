@@ -17,7 +17,7 @@ use daft_dsl::python::PyExpr;
 use daft_dsl::{
     Column, Expr, ExprRef,
     common_treenode::{TreeNode, TreeNodeRecursion},
-    expr::bound_expr::BoundExpr,
+    expr::{BoundColumn, bound_expr::BoundExpr},
     functions::python::UDFProperties,
 };
 use daft_micropartition::MicroPartition;
@@ -37,12 +37,12 @@ use crate::{
     pipeline::{MorselSizeRequirement, NodeName},
 };
 
-fn get_required_columns(expr: &BoundExpr) -> Vec<BoundExpr> {
+fn get_required_columns(expr: &BoundExpr) -> Vec<usize> {
     let mut cols = vec![];
     expr.inner()
         .apply(&mut |expr: &ExprRef| {
-            if matches!(expr.as_ref(), Expr::Column(Column::Bound(..))) {
-                cols.push(BoundExpr::new_unchecked(expr.clone()));
+            if let Expr::Column(Column::Bound(BoundColumn { index, .. })) = expr.as_ref() {
+                cols.push(*index);
             }
             Ok(TreeNodeRecursion::Continue)
         })
@@ -56,7 +56,7 @@ struct UdfParams {
     udf_properties: UDFProperties,
     passthrough_columns: Vec<BoundExpr>,
     output_schema: SchemaRef,
-    required_cols: Vec<BoundExpr>,
+    required_cols: Vec<usize>,
 }
 
 pub(crate) struct UdfHandle {
@@ -160,7 +160,7 @@ impl UdfHandle {
         for batch in input_batches.as_ref() {
             // Prepare inputs
             eprintln!("batch: \n{}", batch);
-            let func_input = batch.eval_expression_list(self.params.required_cols.as_slice())?;
+            let func_input = batch.get_columns(self.params.required_cols.as_slice());
             eprintln!("func_input: \n{}", func_input);
 
             // Call the UDF
