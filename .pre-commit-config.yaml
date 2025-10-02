@@ -8,7 +8,11 @@ repos:
     args: ['--strict', '--ignore-missing-imports']
     additional_dependencies: [types-requests, types-PyYAML, types-tabulate, pandas-stubs]
     files: daft
-    exclude: daft/pickle/.*\.py
+    exclude: |
+      (?x)^(
+          daft/pickle/.*\.py|
+          benchmarking/.*
+      )$
 
 - repo: https://github.com/pre-commit/pre-commit-hooks
   rev: v4.6.0
@@ -20,7 +24,7 @@ repos:
     exclude: |
       (?x)^(.*\.warc)$
   - id: check-yaml
-    exclude: kubernetes-ops
+    exclude: kubernetes-ops|k8s/charts/.*/templates/.*\.ya?ml$
     args:
     - --unsafe
   - id: pretty-format-json
@@ -48,6 +52,7 @@ repos:
     exclude: Cargo.lock
   - id: pretty-format-yaml
     args: [--autofix, --preserve-quotes]
+    exclude: k8s/charts/.*/templates/.*\.ya?ml$
 
 - repo: https://github.com/codespell-project/codespell
   rev: v2.3.0
@@ -64,14 +69,24 @@ repos:
     # Run the linter.
   - id: ruff
     args: [--fix, --exit-non-zero-on-fix, --show-fixes]
+    exclude: benchmarking
     # Run the formatter.
   - id: ruff-format
     name: Python code Formatting
+    exclude: benchmarking
 
 - repo: local
   hooks:
+  - id: check-invalid-deps
+    name: Check Invalid Dependencies
+    description: Check for invalid Rust dependencies
+    entry: ./tools/check_invalid_deps.sh
+    language: system
+    types: [rust]
+    pass_filenames: false
+
   - id: fmt
-    name: Rust code Formatting
+    name: Rust Code Formatting
     description: Format files with cargo fmt.
     entry: cargo fmt --manifest-path Cargo.toml
     language: system
@@ -85,7 +100,7 @@ repos:
     language: system
     types: [rust]
     pass_filenames: false
-    args: [--workspace, --all-targets]
+    args: [--workspace, --all-targets, -v]
 
   - id: cargo-check-all-features
     name: cargo check (all features)
@@ -105,13 +120,6 @@ repos:
     types: [rust]
     pass_filenames: false
 
-  - id: check-for-openssl
-    name: check-for-openssl
-    description: Lint rust sources
-    entry: ./tools/check_for_openssl.sh
-    language: system
-    types: [rust]
-    pass_filenames: false
 
 - repo: https://github.com/abravalheri/validate-pyproject
   rev: v0.24.1

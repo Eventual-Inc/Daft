@@ -6,7 +6,7 @@ use daft_micropartition::{MicroPartition, python::PyMicroPartition};
 use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
 use pyo3::{PyObject, Python, types::PyAnyMethods};
 
-use crate::AsyncFileWriter;
+use crate::{AsyncFileWriter, WriteResult};
 
 pub struct PyArrowWriter {
     py_writer: PyObject,
@@ -182,8 +182,9 @@ impl AsyncFileWriter for PyArrowWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
-    async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {
         assert!(!self.is_closed, "Cannot write to a closed PyArrowWriter");
+        let rows_written = data.len();
         let bytes_written = Python::with_gil(|py| {
             let py_micropartition = py
                 .import(pyo3::intern!(py, "daft.recordbatch"))?
@@ -195,7 +196,10 @@ impl AsyncFileWriter for PyArrowWriter {
                 .extract::<usize>(py)
         })?;
         self.bytes_written += bytes_written;
-        Ok(bytes_written)
+        Ok(WriteResult {
+            bytes_written,
+            rows_written,
+        })
     }
 
     fn bytes_written(&self) -> usize {

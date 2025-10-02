@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 
 import pytest
+from typing_extensions import TypedDict
 
 from daft.datatype import DataType
 
@@ -64,13 +65,13 @@ def test_datatype_pickling(dtype) -> None:
         (bytes, DataType.binary()),
         (object, DataType.python()),
         (
-            {"foo": str, "bar": int},
+            TypedDict("Foobar", {"foo": str, "bar": int}),
             DataType.struct({"foo": DataType.string(), "bar": DataType.int64()}),
         ),
     ],
 )
 def test_datatype_parsing(source, expected):
-    assert DataType._infer_type(source) == expected
+    assert DataType._infer(source) == expected
 
 
 @pytest.mark.parametrize(
@@ -80,14 +81,14 @@ def test_datatype_parsing(source, expected):
         (list[str], DataType.list(DataType.string())),
         (dict[str, int], DataType.map(DataType.string(), DataType.int64())),
         (
-            {"foo": list[str], "bar": int},
+            TypedDict("Foobar", {"foo": list[str], "bar": int}),
             DataType.struct({"foo": DataType.list(DataType.string()), "bar": DataType.int64()}),
         ),
         (list[list[str]], DataType.list(DataType.list(DataType.string()))),
     ],
 )
 def test_subscripted_datatype_parsing(source, expected):
-    assert DataType._infer_type(source) == expected
+    assert DataType._infer(source) == expected
 
 
 @pytest.mark.parametrize("test_type", all_daft_types)

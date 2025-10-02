@@ -509,8 +509,11 @@ You can **group** and **aggregate** your data using the [`df.groupby()`][daft.Da
 
 ### What's Next?
 
-Now that you have a basic sense of Daft’s functionality and features, here are some more resources to help you get the most out of Daft:
+Now that you have a basic sense of Daft's functionality and features, here are some more resources to help you get the most out of Daft:
 
+!!! tip "Try this on Kubernetes"
+
+    Want to run this example on Kubernetes? Check out our [Kubernetes quickstart](kubernetes.md).
 
 **Work with your favorite table and catalog formats**:
 
@@ -535,14 +538,14 @@ Now that you have a basic sense of Daft’s functionality and features, here are
 
 </div> -->
 
-**Try your hand at some [Tutorials](resources/tutorials.md):**
+**Explore our [Examples](../examples/) to see Daft in action:**
 
 <div class="grid cards" markdown>
 
-- [:material-image-edit: **MNIST Digit Classification**](resources/tutorials.md#mnist-digit-classification)
-- [:octicons-search-16: **Running LLMs on the Red Pajamas Dataset**](resources/tutorials.md#running-llms-on-the-red-pajamas-dataset)
-- [:material-image-search: **Querying Images with UDFs**](resources/tutorials.md#querying-images-with-udfs)
-- [:material-image-sync: **Image Generation on GPUs**](resources/tutorials.md#image-generation-on-gpus)
-- [:material-window-closed-variant: **Window Functions in Daft**](resources/tutorials.md#window-functions)
+- [:material-image-edit: **MNIST Digit Classification**](../examples/mnist/)
+- [:octicons-search-16: **Running LLMs on the Red Pajamas Dataset**](../examples/llms-red-pajamas/)
+- [:material-image-search: **Querying Images with UDFs**](../examples/querying-images/)
+- [:material-image-sync: **Image Generation on GPUs**](../examples/image-generation/)
+- [:material-window-closed-variant: **Window Functions in Daft**](../examples/window-functions/)
 
 </div>

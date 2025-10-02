@@ -1,51 +1,53 @@
+use std::sync::Arc;
+
+use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::{Stat, StatSnapshotSend};
+use common_metrics::{NodeID, Stat, StatSnapshotSend, ops::NodeInfo};
 use common_tracing::flush_oltp_metrics_provider;
 use opentelemetry::{KeyValue, global, metrics::Counter};
 
-use crate::{
-    ops::NodeInfo,
-    runtime_stats::{
-        CPU_US_KEY, ROWS_EMITTED_KEY, ROWS_RECEIVED_KEY, subscribers::RuntimeStatsSubscriber,
-    },
+use crate::runtime_stats::{
+    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, subscribers::RuntimeStatsSubscriber,
 };
 
 #[derive(Debug)]
 pub struct OpenTelemetrySubscriber {
-    rows_received: Counter<u64>,
-    rows_emitted: Counter<u64>,
+    node_infos: Vec<Arc<NodeInfo>>,
+    rows_in: Counter<u64>,
+    rows_out: Counter<u64>,
     cpu_us: Counter<u64>,
 }
 
 impl OpenTelemetrySubscriber {
-    pub fn new() -> Self {
+    pub fn new(node_infos: &[Arc<NodeInfo>]) -> Self {
         let meter = global::meter("runtime_stats");
         Self {
-            rows_received: meter
-                .u64_counter("daft.runtime_stats.rows_received")
-                .build(),
-            rows_emitted: meter.u64_counter("daft.runtime_stats.rows_emitted").build(),
+            node_infos: node_infos.to_vec(),
+            rows_in: meter.u64_counter("daft.runtime_stats.rows_in").build(),
+            rows_out: meter.u64_counter("daft.runtime_stats.rows_out").build(),
             cpu_us: meter.u64_counter("daft.runtime_stats.cpu_us").build(),
         }
     }
 }
 
+#[async_trait]
 impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
     #[cfg(test)]
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 
-    fn initialize_node(&self, _: &NodeInfo) -> DaftResult<()> {
+    async fn initialize_node(&self, _: NodeID) -> DaftResult<()> {
         Ok(())
     }
 
-    fn finalize_node(&self, _: &NodeInfo) -> DaftResult<()> {
+    async fn finalize_node(&self, _: NodeID) -> DaftResult<()> {
         Ok(())
     }
 
-    fn handle_event(&self, events: &[(&NodeInfo, StatSnapshotSend)]) -> DaftResult<()> {
-        for (node_info, event) in events {
+    async fn handle_event(&self, events: &[(NodeID, StatSnapshotSend)]) -> DaftResult<()> {
+        for (node_id, event) in events {
+            let node_info = &self.node_infos[*node_id];
             let mut attributes = vec![
                 KeyValue::new("name", node_info.name.to_string()),
                 KeyValue::new("id", node_info.id.to_string()),
@@ -56,8 +58,8 @@ impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
 
             for (k, v) in event.iter() {
                 match (k, v) {
-                    (ROWS_RECEIVED_KEY, Stat::Count(v)) => self.rows_received.add(*v, &attributes),
-                    (ROWS_EMITTED_KEY, Stat::Count(v)) => self.rows_emitted.add(*v, &attributes),
+                    (ROWS_IN_KEY, Stat::Count(v)) => self.rows_in.add(*v, &attributes),
+                    (ROWS_OUT_KEY, Stat::Count(v)) => self.rows_out.add(*v, &attributes),
                     (CPU_US_KEY, Stat::Count(v)) => self.cpu_us.add(*v, &attributes),
                     _ => {}
                 }
@@ -66,7 +68,7 @@ impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
         Ok(())
     }
 
-    fn finish(self: Box<Self>) -> DaftResult<()> {
+    async fn finish(self: Box<Self>) -> DaftResult<()> {
         flush_oltp_metrics_provider();
         Ok(())
     }

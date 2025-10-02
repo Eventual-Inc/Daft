@@ -311,6 +311,7 @@ class PycastableObject:
         return False
 
 
+@pytest.mark.skip(reason="disabled ability to cast arbitrary Python objects")
 @pytest.mark.parametrize(
     ["dtype", "pytype"],
     [

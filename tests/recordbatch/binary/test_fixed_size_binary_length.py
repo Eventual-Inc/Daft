@@ -117,5 +117,7 @@ def test_fixed_size_binary_length_errors() -> None:
     )
 
     # Test length on wrong type
-    with pytest.raises(Exception, match="Expects input to length to be binary, but received a#Int64"):
+    with pytest.raises(
+        Exception, match="Expected input to 'length' function to be utf8, binary, or list, but received Int64"
+    ):
         table.eval_expression_list([col("a").binary.length()])

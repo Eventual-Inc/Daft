@@ -180,7 +180,7 @@ Daft is a high-performance data engine providing simple and reliable data proces
         <div class="description">
           <div class="stage-header">READ ANYTHING</div>
           <p>Daft reads raw unstructured and multimodal data collected from application systems</p>
-          <p>Object Store (AWS S3, GCS, R2)<br>Event Bus (Kafka)<br>Data Lake (Iceberg, Deltalake)</p>
+          <p>Object storage (AWS S3, GCS, R2)<br>Event bus (Kafka)<br>Data lake (Iceberg, Deltalake)</p>
         </div>
         <div class="pipeline-item">
           <span id="read" class="swap"></span>
@@ -205,8 +205,8 @@ Daft is a high-performance data engine providing simple and reliable data proces
       <div class="row">
         <div class="description">
           <div class="stage-header">WRITE</div>
-          <p>Daft lands data into specialized data systems for downstream use-cases</p>
-          <p>Search (full-text search and vector DBs)<br>Applications (SQL/NoSQL databases)<br>Analytics (data warehouses)<br>Model Training (S3 object storage)</p>
+          <p>Daft lands data into specialized data systems for downstream use cases</p>
+          <p>Search (full-text search and vector DBs)<br>Applications (SQL/NoSQL databases)<br>Analytics (data warehouses)<br>Model training (S3 object storage)</p>
         </div>
         <div class="pipeline-item">
           <span id="write" class="swap"></span>
@@ -474,7 +474,7 @@ setInterval(runCycle, 4600);
 
 **:octicons-image-24: Unified multimodal data processing**
 
-Break down data silos with a single framework that handles structured tables, unstructured text, and rich media like images—all with the same intuitive API. Why juggle multiple tools when one can do it all?
+While traditional dataframes struggle with anything beyond tables, Daft natively handles tables, images, text, and embeddings through a single Python API. No more stitching together specialized tools for different data types.
 
 **:material-language-python: Python-native, no JVM required**
 
@@ -504,7 +504,9 @@ Start local, scale global—without changing a line of code. Daft's Rust-powered
 
     1. [Quickstart](quickstart.md): Itching to run some Daft code? Hit the ground running with our 10 minute quickstart notebook.
 
-    2. [API Documentation](api/index.md): Searchable documentation and reference material to Daft’s public API.
+    2. [Examples](examples/index.md): See Daft in action with use cases across text, images, audio, and more.
+
+    3. [API Documentation](api/index.md): Searchable documentation and reference material to Daft's public API.
 
 ## Contribute to Daft
 

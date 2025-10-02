@@ -32,7 +32,7 @@ impl FileArray {
         urls: &Utf8Array,
         io_config: Option<IOConfig>,
     ) -> Self {
-        use crate::{prelude::PythonArray, series::IntoSeries};
+        use crate::series::IntoSeries;
 
         let discriminant = UInt8Array::from_values(
             "discriminant",
@@ -42,22 +42,22 @@ impl FileArray {
 
         let sa_field = Field::new("literal", DataType::File.to_physical());
 
-        let io_conf = io_config.map(common_io_config::python::IOConfig::from);
-        let io_conf = pyo3::Python::with_gil(|py| {
+        let io_conf = io_config.map(|c| {
+            let io_conf = common_io_config::python::IOConfig::from(c);
+
             use std::sync::Arc;
 
-            use pyo3::IntoPyObjectExt;
+            use pyo3::{IntoPyObjectExt, Python};
 
-            Arc::new(
+            Arc::new(Python::with_gil(|py| {
                 io_conf
                     .into_py_any(py)
-                    .expect("Failed to convert ioconfig to PyObject"),
-            )
+                    .expect("Failed to convert ioconfig to PyObject")
+            }))
         });
-        let io_configs = PythonArray::from((
-            "io_config",
-            std::iter::repeat_n(io_conf, urls.len()).collect::<Vec<_>>(),
-        ));
+
+        let io_configs =
+            PythonArray::from_iter("io_config", std::iter::repeat_n(io_conf, urls.len()));
 
         let data = BinaryArray::full_null("data", &DataType::Binary, urls.len()).into_series();
         let io_configs = io_configs
@@ -97,8 +97,7 @@ impl FileArray {
         let fld = Field::new("literal", DataType::File.to_physical());
         let urls = Utf8Array::full_null("url", &DataType::Utf8, values.len()).into_series();
         let io_configs =
-            crate::prelude::PythonArray::full_null("io_config", &DataType::Python, values.len())
-                .into_series();
+            PythonArray::full_null("io_config", &DataType::Python, values.len()).into_series();
         let sa = StructArray::new(
             fld,
             vec![

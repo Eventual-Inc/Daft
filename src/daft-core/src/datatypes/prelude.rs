@@ -9,9 +9,6 @@ pub use daft_schema::{
     time_unit::TimeUnit,
 };
 
-// Conditionally import PythonArray if the 'python' feature is enabled
-#[cfg(feature = "python")]
-pub use super::PythonArray;
 pub use super::{
     BinaryType, BooleanType, DaftArrayType, ExtensionType, FixedSizeBinaryType, FixedSizeListType,
     Float32Type, Float64Type, Int8Type, Int16Type, Int32Type, Int64Type, NullType, UInt8Type,

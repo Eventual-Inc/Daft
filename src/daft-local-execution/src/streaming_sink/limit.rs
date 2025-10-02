@@ -3,13 +3,14 @@ use std::{
     sync::Arc,
 };
 
+use common_metrics::ops::NodeType;
 use daft_micropartition::MicroPartition;
 use tracing::{Span, instrument};
 
 use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
-use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) struct LimitSinkState {
     // The remaining number of rows to skip

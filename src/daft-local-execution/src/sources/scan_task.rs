@@ -9,6 +9,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayAs, DisplayLevel, tree::TreeDisplay};
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
+use common_metrics::ops::NodeType;
 use common_runtime::{combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use common_scan_info::{Pushdowns, ScanTaskLike};
 use daft_core::prelude::{AsArrow, Int64Array, SchemaRef, Utf8Array};
@@ -27,7 +28,6 @@ use tracing::instrument;
 use crate::{
     TaskSet,
     channel::{Sender, create_channel},
-    ops::NodeType,
     pipeline::NodeName,
     sources::source::{Source, SourceStream},
 };

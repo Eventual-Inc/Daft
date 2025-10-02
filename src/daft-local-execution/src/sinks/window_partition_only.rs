@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
 use daft_micropartition::MicroPartition;
@@ -15,7 +16,7 @@ use super::{
     },
     window_base::{WindowBaseState, WindowSinkParams},
 };
-use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 struct WindowPartitionOnlyParams {
     agg_exprs: Vec<BoundAggExpr>,
