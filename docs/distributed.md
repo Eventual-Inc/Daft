@@ -58,6 +58,10 @@ DaftContext(_daft_execution_config=<daft.daft.PyDaftExecutionConfig object at 0x
 
 By default, if no address is specified, Daft will spin up a Ray cluster locally on your machine. If you are running Daft on a powerful machine (such as an AWS P3 machine which is equipped with multiple GPUs) this is already very useful because Daft can parallelize its execution of computation across your CPUs and GPUs.
 
+!!! tip "Deploy on Kubernetes"
+
+    Looking to try out Daft with Ray on Kubernetes? Check out our [Kubernetes quickstart](kubernetes.md).
+
 ### Connecting to Remote Ray Clusters
 
 If you already have your own Ray cluster running remotely, you can connect Daft to it by supplying an address with [`set_runner_ray`][daft.context.set_runner_ray]:
