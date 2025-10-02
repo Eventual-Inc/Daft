@@ -2,10 +2,6 @@
 
 Daft can run on Kubernetes using the Daft quickstart Helm chart. This allows you to test drive both simple single-node jobs and distributed Ray-based workloads on your Kubernetes cluster without any additional dependencies.
 
-!!! warning "Not for Production"
-
-    The Daft quickstart is designed for development and experimentation. For running production Daft workloads on Ray clusters on Kubernetes, use [KubeRay](https://ray-project.github.io/kuberay/), the official Ray operator for Kubernetes.
-
 ## Prerequisites
 
 - Kubernetes 1.19+
@@ -25,16 +21,13 @@ Run a quick Daft job on Kubernetes using the native runner:
     # ///
     import daft
 
-    # Set IO config for anonymous S3 access
-    daft.set_planning_config(
-        default_io_config=daft.io.IOConfig(s3=daft.io.S3Config(anonymous=True))
-    )
+    df = daft.from_pydict({
+        "a": [3, 2, 5, 6, 1, 4],
+        "b": [True, False, False, True, True, False]
+    })
 
-    df = daft.read_parquet(
-        "s3://daft-public-data/tutorials/10-min/sample-data-dog-owners-partitioned.pq/**"
-    )
-
-    df.where(daft.col("age") >= 40).show()
+    df = df.where(df["b"]).sort(df["a"])
+    print(df.collect())
     ```
 
 Deploy to Kubernetes:
@@ -53,7 +46,7 @@ helm uninstall my-job
 
 ## Distributed Mode
 
-Run a Daft job on a Ray cluster with multiple workers:
+Run the same Daft job on a Ray cluster with multiple workers:
 
 === "🐍 Python"
 
