@@ -42,14 +42,14 @@ impl DashboardSubscriber {
                 .timeout(std::time::Duration::from_secs(2))
                 .user_agent(USER_AGENT)
                 .build()
-                .unwrap()
+                .map_err(|e| DaftError::External(Box::new(e)))?
         } else {
             // TODO: Auth handling?
             Client::builder()
                 .timeout(std::time::Duration::from_secs(2))
                 .user_agent(USER_AGENT)
                 .build()
-                .unwrap()
+                .map_err(|e| DaftError::External(Box::new(e)))?
         };
 
         let runtime = get_io_runtime(false);

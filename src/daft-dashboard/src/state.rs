@@ -92,6 +92,7 @@ impl QueryInfo {
             }
             // Finalizing may take longer so just in case
             QueryState::Finalizing { exec_end_sec, .. } => (QueryStatus::Finalizing, *exec_end_sec),
+            // Returns duration in seconds instead of start_sec
             QueryState::Finished { end_sec, .. } => {
                 (QueryStatus::Finished, end_sec - self.start_sec)
             }

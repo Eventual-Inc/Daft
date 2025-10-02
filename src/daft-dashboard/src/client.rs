@@ -3,6 +3,7 @@ use std::sync::Arc;
 use axum::{
     Json, Router,
     extract::{Path, State},
+    http::StatusCode,
     routing::get,
 };
 use serde_json::Value;
@@ -30,9 +31,12 @@ async fn get_query_summaries(State(state): State<Arc<DashboardState>>) -> Json<V
 async fn get_query(
     State(state): State<Arc<DashboardState>>,
     Path(query_id): Path<String>,
-) -> Json<QueryInfo> {
-    let query = state.queries.get(&query_id).unwrap();
-    Json(query.value().clone())
+) -> Result<Json<QueryInfo>, StatusCode> {
+    let Some(query) = state.queries.get(&query_id) else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+
+    Ok(Json(query.value().clone()))
 }
 
 pub(crate) fn routes() -> Router<Arc<DashboardState>> {

@@ -90,12 +90,14 @@ pub fn launch(noop_if_initialized: bool) -> PyResult<ConnectionHandle> {
         shutdown_signal: Some(send),
         port,
     };
-    std::thread::spawn(move || {
-        tokio_runtime().block_on(async {
+    let _ = std::thread::spawn(move || {
+        DASHBOARD_ENABLED.store(true, Ordering::SeqCst);
+        let res = tokio_runtime().block_on(async {
             super::launch_server(port, async move { recv.await.unwrap() }).await
-        })
+        });
+        DASHBOARD_ENABLED.store(false, Ordering::SeqCst);
+        res
     });
 
-    DASHBOARD_ENABLED.store(true, Ordering::SeqCst);
     Ok(handle)
 }
