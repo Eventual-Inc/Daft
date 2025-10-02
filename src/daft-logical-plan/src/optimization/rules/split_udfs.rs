@@ -1334,8 +1334,8 @@ Project: col(a), col(c)
             indoc! {"
         Project: col(a)
           Filter: col(__SplitUDFsFromFilters_udf_0__)
-            UDFProject:
-            UDF foo = py_udf(col(a)) as __SplitUDFsFromFilters_udf_0__
+            UDF: foo
+            Expr = py_udf(col(a)) as __SplitUDFsFromFilters_udf_0__
             Passthrough Columns = col(a)
             Concurrency = None
               DummyScanOperator
@@ -1368,8 +1368,8 @@ Project: col(a), col(c)
         Project: col(a)
           Filter: col(__SplitUDFsFromFilters_udf_0__)
             Project: col(a), col(__TruncateAnyUDFChildren_0-1-0__) != lit("hello") as __SplitUDFsFromFilters_udf_0__
-              UDFProject:
-              UDF foo = py_udf(col(a)) as __TruncateAnyUDFChildren_0-1-0__
+              UDF: foo
+              Expr = py_udf(col(a)) as __TruncateAnyUDFChildren_0-1-0__
               Passthrough Columns = col(a)
               Concurrency = Some(8)
               Resource request = { num_cpus = 8, num_gpus = 1 }
