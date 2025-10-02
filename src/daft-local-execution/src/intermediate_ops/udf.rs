@@ -391,11 +391,12 @@ impl IntermediateOperator for UdfOperator {
 
         // Check if any inputs or the output are Python-dtype columns
         // Those should by default run on the same thread
+        let fields = self.input_schema.fields();
         let is_arrow_dtype = self
-            .input_schema
-            .fields()
+            .params
+            .required_cols
             .iter()
-            .all(|f| f.dtype.is_arrow())
+            .all(|idx| fields[*idx].dtype.is_arrow())
             && self
                 .params
                 .expr
@@ -404,17 +405,22 @@ impl IntermediateOperator for UdfOperator {
                 .dtype
                 .is_arrow();
 
+        let create_handle = self.params.udf_properties.is_actor_pool_udf()
+            || self.params.udf_properties.use_process.unwrap_or(false);
+
         let mut udf_handle =
             UdfHandle::no_handle(self.params.clone(), self.params.expr.clone(), worker_count);
 
-        if self.params.udf_properties.is_actor_pool_udf()
-            || self
-                .params
-                .udf_properties
-                .use_process
-                .unwrap_or(is_arrow_dtype)
-        {
-            udf_handle.create_handle()?;
+        if create_handle {
+            if is_arrow_dtype {
+                udf_handle.create_handle()?;
+            } else {
+                // Should only warn when concurrency or use_process is set
+                log::warn!(
+                    "UDF `{}` requires a non-arrow-serializable input column. The UDF will run on the same thread as the daft process.",
+                    self.params.udf_properties.name
+                );
+            }
         }
 
         Ok(UdfState { udf_handle })
