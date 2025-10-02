@@ -33,7 +33,7 @@ Internally, this becomes a simple expression attached to the `Project` operator:
 
 ## Optimization
 
-Executing the logical plan as written would be correct but often inefficient. Daft applies both rule-based and cost-based optimization when a materalizing operation such as `collect()` or `write()` is invoked.
+Executing the logical plan as written would be correct but often inefficient. Daft applies both rule-based and cost-based optimization when a materalizing operation such as `collect()` or `write_parquet()` is invoked.
 
 - **Rule-based pass.** Classical rewrite rules execute first: filter, projection, limit, and aggregation pushdowns; projection folding and splitting; pruning redundant repartitions; expression simplification; and subquery unnesting. These transform the plan structure without needing runtime statistics.
 - **Cost-based pass.** Joins are reordered using a brute-force enumerator that evaluates the cheapest ordering based on available statistics calculated from sources.
@@ -56,11 +56,11 @@ The native runner is a streaming execution engine implemented in Rust, using the
 Given a plan, the native runner constructs a graph of operators, where each operator corresponds to a node in the plan. Operators send data up the graph via async channels.
 Once the graph is constructed, the runner initiates execution, which typically follows this pattern:
 
-- Source operators read data from local files or object stores. Each file typically becomes one `ScanTask`. A semaphore limits concurrent scans.
-- Intermediate operators (e.g. Project, Filter, UDF) receive chunks of data from previous operators, immediately transform them, and send them to the next operator.
-- Sinks receive and batch up chunks of data. Streaming sinks (e.g. Limit) can emit early, while blocking sinks (e.g. Aggregate, Sort) accumulate data and only emit results once all input has been processed.
+- Source operators read data from local files or object stores, and emit them in batches at a time.
+- Intermediate operators (e.g. Project, Filter, UDF) receive batches of data from previous operators, immediately transform them, and send them to the next operator.
+- Sinks receive and accumulate batches of data. Streaming sinks (e.g. Limit) can emit early, while blocking sinks (e.g. Aggregate, Sort) only emit results once all input has been processed.
 
-Operators determine their own parallelism and batch sizing, and the engine schedules work across operators on a threadpool (Tokio).
+Operators determine their own parallelism and batching, and the engine schedules work across operators on a threadpool (Tokio). The default batch size is 131,072 rows, but certain operations such as UDFs can have custom batch sizes.
 
 ### Ray Runner (aka Flotilla)
 
@@ -70,6 +70,11 @@ The Ray runner is a distributed execution engine built on top of Ray.
 
 A Ray cluster contains a single head node, and all other nodes are worker nodes. On each worker node, Daft launches a single Ray actor that hosts an instance of the Swordfish engine.
 
-The Flotilla scheduler runs on the head node and distributes work across workers, monitors progress, and orchestrates data movement when needed. Tasks are assigned based on data locality and worker load, so computation runs close to the data while keeping cluster resources balanced.
+The Flotilla scheduler runs on the head node and distributes tasks across workers, monitors progress, and orchestrates data movement when needed. Each task corresponds to a partition of the DataFrame, and tasks are assigned based on data locality and worker load, so computation runs close to the data while keeping cluster resources balanced. The number of partitions typically corresponds to the number of input files.
 
-Each worker receives tasks and executes it using the Swordfish streaming engine with full access to the machine's resources. Outputs of the tasks are written to Ray's object store, and can be moved between workers for global operations like groupbys and joins.
+!!! tip "Controlling partitioning"
+
+    See our [Partitioning Guide](../optimization/partitioning.md) to learn how to control the number and distribution of partitions in your DataFrame
+
+
+Each worker receives tasks and executes them using the Swordfish streaming engine with full access to the machine's resources. Outputs of the tasks are written to Ray's object store, and can be moved between workers for global operations like groupbys and joins.
