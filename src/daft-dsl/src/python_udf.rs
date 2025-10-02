@@ -195,6 +195,7 @@ impl RowWisePyFn {
         args: &[Series],
         num_rows: usize,
     ) -> DaftResult<(Series, std::time::Duration)> {
+        use daft_core::python::PySeries;
         use pyo3::prelude::*;
 
         let inner_ref = self.inner.as_ref();
@@ -202,33 +203,30 @@ impl RowWisePyFn {
         let name = args[0].name();
         let start_time = std::time::Instant::now();
         Python::with_gil(|py| {
-            use daft_core::series::from_lit::OnError;
-
             let gil_contention_time = start_time.elapsed();
             let func = py
                 .import(pyo3::intern!(py, "daft.udf.row_wise"))?
                 .getattr(pyo3::intern!(py, "__call_func"))?;
 
             let mut py_args = Vec::with_capacity(args.len());
-
             // pre-allocating py_args vector so we're not creating a new vector for each iteration
-            let outputs = (0..num_rows).map(|i| {
-                for s in args {
-                    let idx = if s.len() == 1 { 0 } else { i };
-                    let lit = s.get_lit(idx);
-                    let pyarg = lit.into_pyobject(py)?;
-                    py_args.push(pyarg);
-                }
+            let outputs = (0..num_rows)
+                .map(|i| {
+                    for s in args {
+                        let idx = if s.len() == 1 { 0 } else { i };
+                        let lit = s.get_lit(idx);
+                        let pyarg = lit.into_pyobject(py)?;
+                        py_args.push(pyarg);
+                    }
 
-                let result = func.call1((inner_ref, args_ref, &py_args))?;
-                let lit = Literal::from_pyobj(&result, None)?;
+                    let result = func.call1((inner_ref, args_ref, &py_args))?;
+                    py_args.clear();
+                    DaftResult::Ok(result)
+                })
+                .collect::<DaftResult<Vec<_>>>()?;
 
-                py_args.clear();
-                DaftResult::Ok(lit)
-            });
             Ok((
-                Series::from_literals_iter(outputs, self.return_dtype.clone(), OnError::Raise)?
-                    .rename(name),
+                PySeries::from_pylist_impl(name, outputs, self.return_dtype.clone())?.series,
                 gil_contention_time,
             ))
         })
