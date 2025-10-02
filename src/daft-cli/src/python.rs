@@ -42,21 +42,18 @@ fn run_dashboard(py: Python, args: DashboardArgs) {
         .enable_all()
         .build()
         .expect("Failed to create tokio runtime");
-    let port = args.port;
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
     runtime.spawn(async move {
-        tracing::info!("Launching dashboard server");
-        daft_dashboard::launch_server(port, async move { shutdown_rx.await.unwrap() })
+        println!(
+            "✨ View the dashboard at http://{}:{}. Press Ctrl+C to shutdown",
+            daft_dashboard::DEFAULT_SERVER_ADDR,
+            args.port
+        );
+        daft_dashboard::launch_server(args.port, async move { shutdown_rx.await.unwrap() })
             .await
             .expect("Failed to launch dashboard server");
     });
-
-    println!(
-        "✨ View the Daft Dashboard at http://{}:{}",
-        daft_dashboard::DEFAULT_SERVER_ADDR,
-        port
-    );
 
     loop {
         if py.check_signals().is_err() {

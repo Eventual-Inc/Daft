@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_metrics::{NodeID, StatSnapshotView, ops::NodeInfo};
 use common_runtime::{RuntimeRef, get_io_runtime};
-use daft_core::prelude::DataType;
 use daft_io::IOStatsContext;
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use dashmap::DashMap;
@@ -58,7 +57,7 @@ impl DashboardSubscriber {
         // Validate that we can connect to the dashboard
         runtime.block_on_current_thread(async {
             client
-                .get(format!("{}/ping", url))
+                .get(format!("{}/api/ping", url))
                 .send()
                 .await
                 .map_err(|e| DaftError::ConnectTimeout(Box::new(e)))?
@@ -76,13 +75,15 @@ impl DashboardSubscriber {
     }
 }
 
+const TOTAL_ROWS: usize = 10;
+
 #[async_trait]
 impl Subscriber for DashboardSubscriber {
     fn on_query_start(&self, query_id: String, unoptimized_plan: String) -> DaftResult<()> {
         self.runtime.block_on_current_thread(async {
             self.client
-                .post(format!("{}/query/{}/start", self.url, query_id))
-                .json(&daft_dashboard::api::StartQueryArgs {
+                .post(format!("{}/engine/query/{}/start", self.url, query_id))
+                .json(&daft_dashboard::engine::StartQueryArgs {
                     start_sec: now(),
                     unoptimized_plan: unoptimized_plan.into(),
                 })
@@ -97,19 +98,25 @@ impl Subscriber for DashboardSubscriber {
     }
 
     fn on_result_out(&self, query_id: String, result: MicroPartitionRef) -> DaftResult<()> {
-        // Limit to 10 rows
+        // Limit to TOTAL_ROWS rows
         // TODO: Limit by X MB and # of rows
         let entry = self.head_rows.get_mut(&query_id);
         if entry.is_none() {
-            let result = result.head(10)?;
+            let result = result.head(TOTAL_ROWS)?;
             self.head_rows.insert(query_id, Arc::new(result));
             return Ok(());
         }
 
         let mut entry = entry.unwrap();
         let all_results = entry.value_mut();
-        let result = Arc::new(result.head(10 - all_results.len())?);
-        *all_results = Arc::new(MicroPartition::concat(vec![all_results.clone(), result])?);
+        let num_rows = all_results.len();
+        if num_rows < TOTAL_ROWS {
+            let result = result.head(TOTAL_ROWS - num_rows)?;
+            *all_results = Arc::new(MicroPartition::concat(vec![
+                all_results.clone(),
+                Arc::new(result),
+            ])?);
+        }
         Ok(())
     }
 
@@ -119,46 +126,23 @@ impl Subscriber for DashboardSubscriber {
             .view(&query_id, |_, v| v.clone())
             .unwrap_or_else(|| Arc::new(MicroPartition::empty(None)));
 
-        let (ipc_buffer, num_rows, total_bytes) = if result.is_empty() {
-            (vec![], 0, 0)
+        debug_assert!(result.len() <= TOTAL_ROWS);
+        let ipc_buffer = if result.is_empty() {
+            vec![]
         } else {
             let result = result
                 .concat_or_get(IOStatsContext::new("DashboardSubscriber::on_query_end"))?
                 .expect("Results should not be empty");
-            let num_rows = result.len();
-            let total_bytes = result.size_bytes();
-            let schema = result.schema.clone();
-
-            // Filter out Python dtype columns
-            let non_py_cols: Vec<usize>;
-            #[cfg(feature = "python")]
-            {
-                non_py_cols = schema
-                    .fields()
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, f)| f.dtype == DataType::Python)
-                    .map(|(i, _)| i)
-                    .collect::<Vec<_>>();
-            }
-            #[cfg(not(feature = "python"))]
-            {
-                non_py_cols = (0..schema.fields().len()).collect();
-            }
-
-            let result = result.get_columns(&non_py_cols);
-            (result.to_ipc_stream()?, num_rows, total_bytes)
+            result.to_ipc_stream()?
         };
 
         let end_sec = now();
         self.runtime.block_on_current_thread(async {
             self.client
-                .post(format!("{}/query/{}/end", self.url, query_id))
-                .json(&daft_dashboard::api::FinalizeArgs {
+                .post(format!("{}/engine/query/{}/end", self.url, query_id))
+                .json(&daft_dashboard::engine::FinalizeArgs {
                     end_sec,
                     results: ipc_buffer,
-                    num_rows,
-                    total_bytes,
                 })
                 .send()
                 .await
@@ -172,8 +156,8 @@ impl Subscriber for DashboardSubscriber {
     fn on_optimization_start(&self, query_id: String) -> DaftResult<()> {
         self.runtime.block_on_current_thread(async {
             self.client
-                .post(format!("{}/query/{}/plan_start", self.url, query_id))
-                .json(&daft_dashboard::api::PlanStartArgs {
+                .post(format!("{}/engine/query/{}/plan_start", self.url, query_id))
+                .json(&daft_dashboard::engine::PlanStartArgs {
                     plan_start_sec: now(),
                 })
                 .send()
@@ -189,8 +173,8 @@ impl Subscriber for DashboardSubscriber {
         let plan_end_sec = now();
         self.runtime.block_on_current_thread(async {
             self.client
-                .post(format!("{}/query/{}/plan_end", self.url, query_id))
-                .json(&daft_dashboard::api::PlanEndArgs {
+                .post(format!("{}/engine/query/{}/plan_end", self.url, query_id))
+                .json(&daft_dashboard::engine::PlanEndArgs {
                     plan_end_sec,
                     optimized_plan: optimized_plan.into(),
                 })
@@ -207,8 +191,8 @@ impl Subscriber for DashboardSubscriber {
         let exec_start_sec = now();
         self.runtime.block_on_current_thread(async {
             self.client
-                .post(format!("{}/query/{}/exec/start", self.url, query_id))
-                .json(&daft_dashboard::api::ExecStartArgs {
+                .post(format!("{}/engine/query/{}/exec/start", self.url, query_id))
+                .json(&daft_dashboard::engine::ExecStartArgs {
                     exec_start_sec,
                     node_infos: node_infos
                         .iter()
@@ -227,7 +211,7 @@ impl Subscriber for DashboardSubscriber {
     async fn on_exec_operator_start(&self, query_id: String, node_id: NodeID) -> DaftResult<()> {
         self.client
             .post(format!(
-                "{}/query/{}/exec/{}/start",
+                "{}/engine/query/{}/exec/{}/start",
                 self.url, query_id, node_id
             ))
             .send()
@@ -244,8 +228,11 @@ impl Subscriber for DashboardSubscriber {
         stats: &[(NodeID, StatSnapshotView)],
     ) -> DaftResult<()> {
         self.client
-            .post(format!("{}/query/{}/exec/emit_stats", self.url, query_id))
-            .json(&daft_dashboard::api::ExecEmitStatsArgs {
+            .post(format!(
+                "{}/engine/query/{}/exec/emit_stats",
+                self.url, query_id
+            ))
+            .json(&daft_dashboard::engine::ExecEmitStatsArgs {
                 stats: stats
                     .iter()
                     .map(|(node_id, stats)| {
@@ -270,7 +257,7 @@ impl Subscriber for DashboardSubscriber {
     async fn on_exec_operator_end(&self, query_id: String, node_id: NodeID) -> DaftResult<()> {
         self.client
             .post(format!(
-                "{}/query/{}/exec/{}/end",
+                "{}/engine/query/{}/exec/{}/end",
                 self.url, query_id, node_id
             ))
             .send()
@@ -284,8 +271,8 @@ impl Subscriber for DashboardSubscriber {
     async fn on_exec_end(&self, query_id: String) -> DaftResult<()> {
         let exec_end_sec = now();
         self.client
-            .post(format!("{}/query/{}/exec/end", self.url, query_id))
-            .json(&daft_dashboard::api::ExecEndArgs { exec_end_sec })
+            .post(format!("{}/engine/query/{}/exec/end", self.url, query_id))
+            .json(&daft_dashboard::engine::ExecEndArgs { exec_end_sec })
             .send()
             .await
             .map_err(|e| DaftError::ConnectTimeout(Box::new(e)))?

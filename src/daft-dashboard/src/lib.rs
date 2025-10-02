@@ -1,4 +1,5 @@
-pub mod api;
+pub(crate) mod client;
+pub mod engine;
 #[cfg(feature = "python")]
 pub mod python;
 pub(crate) mod state;
@@ -273,12 +274,18 @@ async fn get_dataframe_cell(
     }))
 }
 
+async fn ping() -> StatusCode {
+    StatusCode::NO_CONTENT
+}
+
 pub async fn launch_server(
     port: u16,
     shutdown_fn: impl Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
     let app = Router::new()
-        .merge(api::routes())
+        .nest("/engine", engine::routes())
+        .nest("/client", client::routes())
+        .route("/api/ping", get(ping))
         // TODO: Replace with the query subscribers stuff
         .route(
             "/api/dataframes/{dataframe_id}/cell",
