@@ -381,7 +381,7 @@ pub fn get_udf_properties(expr: &ExprRef) -> UDFProperties {
                 resource_request: None,
                 batch_size: None,
                 concurrency: None,
-                use_process: Some(true),
+                use_process: None,
             });
         }
         Ok(TreeNodeRecursion::Continue)
