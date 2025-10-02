@@ -31,7 +31,7 @@ jobs:
         command: |
           LOG="$(mktemp)"
           blc ${{ matrix.site.url }} \
-            -ro --verbose \
+            -ro \
             --exclude www.pytorch.org/ \
             --exclude https://github.com/Eventual-Inc/Daft/ \
             --exclude https://twitter.com/daftengine \
