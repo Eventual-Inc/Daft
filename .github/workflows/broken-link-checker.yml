@@ -17,15 +17,12 @@ jobs:
       matrix:
         site:
         - url: https://www.daft.ai
-          name: daft.ai
         - url: https://docs.daft.ai
-          name: docs.daft.ai
         - url: https://www.eventual.ai
-          name: eventual.ai
     steps:
     - name: setup broken link checker
       run: npm install -g broken-link-checker
-    - name: Check ${{ matrix.site.name }}
+    - name: Check ${{ matrix.site.url }}
       uses: nick-fields/retry@v3
       with:
         timeout_minutes: 10
