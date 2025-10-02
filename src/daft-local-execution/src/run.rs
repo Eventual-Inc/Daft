@@ -10,6 +10,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayLevel, mermaid::MermaidDisplayOptions};
 use common_error::DaftResult;
 use common_tracing::flush_opentelemetry_providers;
+use daft_context::{DaftContext, Subscriber};
 use daft_local_plan::{LocalPhysicalPlanRef, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
@@ -22,6 +23,7 @@ use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
+    daft_context::python::PyDaftContext,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
     pyo3::{
@@ -105,14 +107,15 @@ impl PyNativeExecutor {
         }
     }
 
-    #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None))]
+    #[pyo3(signature = (local_physical_plan, psets, daft_ctx, results_buffer_size=None, context=None))]
     pub fn run<'a>(
         &self,
         py: Python<'a>,
         local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
         psets: HashMap<String, Vec<PyMicroPartition>>,
-        cfg: PyDaftExecutionConfig,
+        daft_ctx: &PyDaftContext,
         results_buffer_size: Option<usize>,
+        context: Option<HashMap<String, String>>,
     ) -> PyResult<Bound<'a, PyAny>> {
         let native_psets: HashMap<String, Arc<MicroPartitionSet>> = psets
             .into_iter()
@@ -130,14 +133,16 @@ impl PyNativeExecutor {
             })
             .collect();
         let psets = InMemoryPartitionSetCache::new(&native_psets);
+        let daft_ctx: &DaftContext = daft_ctx.into();
         let out = py.allow_threads(|| {
             self.executor
                 .run(
                     &local_physical_plan.plan,
                     &psets,
-                    cfg.config,
+                    daft_ctx.execution_config(),
+                    daft_ctx.subscribers(),
                     results_buffer_size,
-                    None,
+                    context,
                 )
                 .map(|res| res.into_iter())
         })?;
@@ -153,13 +158,13 @@ impl PyNativeExecutor {
         Ok(part_iter.into_pyobject(py)?.into_any())
     }
 
-    #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None, context=None))]
+    #[pyo3(signature = (local_physical_plan, psets, exec_cfg, results_buffer_size=None, context=None))]
     pub fn run_async<'a>(
         &self,
         py: Python<'a>,
         local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
         psets: HashMap<String, Vec<PyMicroPartition>>,
-        cfg: PyDaftExecutionConfig,
+        exec_cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
         context: Option<HashMap<String, String>>,
     ) -> PyResult<Bound<'a, PyAny>> {
@@ -183,7 +188,8 @@ impl PyNativeExecutor {
             self.executor.run(
                 &local_physical_plan.plan,
                 &psets,
-                cfg.config,
+                exec_cfg.config,
+                vec![],
                 results_buffer_size,
                 context,
             )
@@ -276,13 +282,15 @@ impl NativeExecutor {
         &self,
         local_physical_plan: &LocalPhysicalPlanRef,
         psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
-        cfg: Arc<DaftExecutionConfig>,
+        exec_cfg: Arc<DaftExecutionConfig>,
+        subscribers: Vec<Arc<dyn Subscriber>>,
         results_buffer_size: Option<usize>,
         additional_context: Option<HashMap<String, String>>,
     ) -> DaftResult<ExecutionEngineResult> {
         let cancel = self.cancel.clone();
         let ctx = RuntimeContext::new_with_context(additional_context.unwrap_or_default());
-        let pipeline = translate_physical_plan_to_pipeline(local_physical_plan, psets, &cfg, &ctx)?;
+        let pipeline =
+            translate_physical_plan_to_pipeline(local_physical_plan, psets, &exec_cfg, &ctx)?;
 
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
 
@@ -300,7 +308,8 @@ impl NativeExecutor {
                 )
             });
 
-            let stats_manager = RuntimeStatsManager::new(runtime.handle(), &pipeline);
+            let stats_manager =
+                RuntimeStatsManager::try_new(runtime.handle(), &pipeline, subscribers)?;
             let stats_manager_handle = stats_manager.handle();
             let execution_task = async {
                 let memory_manager = get_or_init_memory_manager();

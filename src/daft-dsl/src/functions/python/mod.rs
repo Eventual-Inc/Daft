@@ -302,7 +302,7 @@ impl UDFProperties {
                 num_udfs
             )))
         } else {
-            Ok(udf_properties.unwrap())
+            Ok(udf_properties.expect("Expect a UDF to be found"))
         }
     }
 }

@@ -172,6 +172,7 @@ plugins:
       resources/benchmarks/tpch.md: benchmarks/index.md
       spark_connect.md: api/spark_connect.md
       core_concepts.md: index.md
+      ray.md: distributed.md
 - mkdocstrings:
     handlers:
       python:

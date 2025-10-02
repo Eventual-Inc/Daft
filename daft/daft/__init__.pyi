@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from daft.catalog import Catalog, Table
     from daft.expressions.visitor import ExpressionVisitor
     from daft.runners.runner import Runner
+    from daft.subscribers import Subscriber
 
 R = TypeVar("R")
 
@@ -1691,6 +1692,7 @@ class PyMicroPartition:
     ) -> PyMicroPartition: ...
 
 class PyMicroPartitionSet:
+    def __init__(self) -> None: ...
     def get_partition(self, idx: int) -> PyMicroPartition: ...
     def set_partition(self, idx: int, part: PyMicroPartition) -> None: ...
     def delete_partition(self, idx: int) -> None: ...
@@ -1699,6 +1701,9 @@ class PyMicroPartitionSet:
     def size_bytes(self) -> int | None: ...
     def num_partitions(self) -> int: ...
     def wait(self) -> None: ...
+    def get_merged_micropartition(self) -> PyMicroPartition: ...
+    def get_preview_micropartitions(self, num_rows: int) -> list[PyMicroPartition]: ...
+    def items(self) -> list[tuple[int, PyMicroPartition]]: ...
 
 class PhysicalPlanScheduler:
     """A work scheduler for physical query plans."""
@@ -1920,9 +1925,11 @@ class NativeExecutor:
         self,
         plan: LocalPhysicalPlan,
         psets: dict[str, list[PyMicroPartition]],
-        daft_execution_config: PyDaftExecutionConfig,
+        daft_ctx: PyDaftContext,
         results_buffer_size: int | None,
+        context: dict[str, str] | None = None,
     ) -> Iterator[PyMicroPartition]: ...
+    # Primarily used for Flotilla, so subscribers are unused
     def run_async(
         self,
         plan: LocalPhysicalPlan,
@@ -2055,6 +2062,21 @@ class PyDaftPlanningConfig:
     @property
     def enable_strict_filter_pushdown(self) -> bool: ...
 
+class StatType(Enum):
+    COUNT = 0
+    BYTES = 1
+    PERCENT = 2
+    FLOAT = 3
+    DURATION = 5
+
+class PyNodeInfo:
+    # Note, these are all read-only getters
+    id: int
+    name: str
+    node_type: str
+    node_category: str
+    context: dict[str, str]
+
 class PyDaftContext:
     def __init__(self) -> None: ...
 
@@ -2065,6 +2087,15 @@ class PyDaftContext:
     def daft_execution_config(self) -> PyDaftExecutionConfig: ...
     @property
     def daft_planning_config(self) -> PyDaftPlanningConfig: ...
+
+    # Subscriber methods
+    def attach_subscriber(self, alias: str, subscriber: Subscriber) -> None: ...
+    def detach_subscriber(self, alias: str) -> None: ...
+    def notify_query_start(self, query_id: str, unoptimized_plan: str) -> None: ...
+    def notify_query_end(self, query_id: str) -> None: ...
+    def notify_result_out(self, query_id: str, result: PartitionT) -> None: ...
+    def notify_optimization_start(self, query_id: str) -> None: ...
+    def notify_optimization_end(self, query_id: str, optimized_plan: str) -> None: ...
 
 def set_runner_ray(
     address: str | None = None,

@@ -2,7 +2,6 @@ mod buffer;
 mod channel;
 mod dispatcher;
 mod intermediate_ops;
-mod ops;
 mod pipeline;
 mod resource_manager;
 mod run;

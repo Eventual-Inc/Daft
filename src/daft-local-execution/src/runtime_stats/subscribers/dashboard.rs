@@ -1,23 +1,25 @@
-use std::{env, sync::Arc, time::Duration};
+use std::{collections::HashMap, env, sync::Arc, time::Duration};
 
+use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
-use common_metrics::StatSnapshotSend;
+use common_metrics::{NodeID, StatSnapshotSend, ops::NodeInfo};
 use common_runtime::get_io_runtime;
 use reqwest::{Client, header};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::{ops::NodeInfo, runtime_stats::subscribers::RuntimeStatsSubscriber};
+use crate::runtime_stats::subscribers::RuntimeStatsSubscriber;
 
 /// Similar to `RuntimeStatsEventHandler`, the `DashboardSubscriber` also has it's own internal mechanism to throttle events.
 /// Since there could be many queries broadcasting to the dashboard at the same time, we want to be conscientious about how often we send updates.
 #[derive(Debug)]
 pub struct DashboardSubscriber {
+    info_map: HashMap<NodeID, Arc<NodeInfo>>,
     event_tx: mpsc::UnboundedSender<(StatSnapshotSend, NodeInfo)>,
     flush_tx: mpsc::UnboundedSender<oneshot::Sender<()>>,
 }
 
 impl DashboardSubscriber {
-    fn new_with_throttle_interval(interval: Duration) -> Self {
+    fn new_with_throttle_interval(node_infos: &[Arc<NodeInfo>], interval: Duration) -> Self {
         let Ok(url) = env::var("DAFT_DASHBOARD_METRICS_URL") else {
             panic!(
                 "DashboardSubscriber::new must only be called after checking if it's enabled via `DashboardSubscriber::is_enabled`"
@@ -85,10 +87,20 @@ impl DashboardSubscriber {
             }
         });
 
-        Self { event_tx, flush_tx }
+        let info_map = node_infos
+            .iter()
+            .map(|info| (info.id, info.clone()))
+            .collect::<HashMap<_, _>>();
+
+        Self {
+            info_map,
+            event_tx,
+            flush_tx,
+        }
     }
-    pub fn new() -> Self {
-        Self::new_with_throttle_interval(Duration::from_secs(1))
+
+    pub fn new(node_infos: &[Arc<NodeInfo>]) -> Self {
+        Self::new_with_throttle_interval(node_infos, Duration::from_secs(1))
     }
 
     pub fn is_enabled() -> bool {
@@ -133,30 +145,32 @@ async fn send_metrics_batch(
     }
 }
 
+#[async_trait]
 impl RuntimeStatsSubscriber for DashboardSubscriber {
     #[cfg(test)]
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 
-    fn initialize_node(&self, _: &NodeInfo) -> DaftResult<()> {
+    async fn initialize_node(&self, _: NodeID) -> DaftResult<()> {
         Ok(())
     }
 
-    fn finalize_node(&self, _: &NodeInfo) -> DaftResult<()> {
+    async fn finalize_node(&self, _: NodeID) -> DaftResult<()> {
         Ok(())
     }
 
-    fn handle_event(&self, events: &[(&NodeInfo, StatSnapshotSend)]) -> DaftResult<()> {
-        for (node_info, event) in events {
+    async fn handle_event(&self, events: &[(NodeID, StatSnapshotSend)]) -> DaftResult<()> {
+        for (node_id, event) in events {
+            let node_info = &self.info_map[node_id];
             self.event_tx
-                .send((event.clone(), (*node_info).clone()))
+                .send((event.clone(), node_info.as_ref().clone()))
                 .map_err(|e| DaftError::MiscTransient(Box::new(e)))?;
         }
         Ok(())
     }
 
-    fn finish(self: Box<Self>) -> DaftResult<()> {
+    async fn finish(self: Box<Self>) -> DaftResult<()> {
         let (tx, rx) = oneshot::channel();
         self.flush_tx
             .send(tx)

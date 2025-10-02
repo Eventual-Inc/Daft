@@ -179,12 +179,7 @@ macro_rules! impl_array_get_lit {
     ($type:ty, $variant:ident) => {
         impl $type {
             pub fn get_lit(&self, idx: usize) -> Literal {
-                assert!(
-                    idx < self.len(),
-                    "Out of bounds: {} vs len: {}",
-                    idx,
-                    self.len()
-                );
+                // don't need to do assertions here because it also happens in `self.get`
                 map_or_null(self.get(idx), Literal::$variant)
             }
         }

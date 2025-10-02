@@ -8,6 +8,7 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
+use common_metrics::ops::NodeType;
 use common_resource_request::ResourceRequest;
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
@@ -34,7 +35,6 @@ use super::intermediate_op::{
 };
 use crate::{
     ExecutionTaskSpawner,
-    ops::NodeType,
     pipeline::{MorselSizeRequirement, NodeName},
 };
 
