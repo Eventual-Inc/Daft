@@ -36,9 +36,9 @@
         * [Turbopuffer](connectors/turbopuffer.md)
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
     * [Scaling Out and Deployment](distributed.md)
+    * [Architecture](architecture/index.md)
     * Optimization and Debugging
         * [Optimization](optimization/index.md)
-        * [Architecture](optimization/architecture.md)
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning](optimization/partitioning.md)
         * [Observability](optimization/observability.md)

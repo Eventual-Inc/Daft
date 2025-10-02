@@ -161,7 +161,7 @@ plugins:
       io/index.md: connectors/index.md
       sql_overview.md: sql/index.md
       sessions.md: api/sessions.md
-      resources/architecture.md: optimization/architecture.md
+      resources/architecture.md: ../architecture.md
       advanced/memory.md: optimization/memory.md
       advanced/partitioning.md: optimization/partitioning.md
       advanced/observability.md: optimization/observability.md
