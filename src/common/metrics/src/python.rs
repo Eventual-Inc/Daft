@@ -4,12 +4,18 @@ use pyo3::{Bound, IntoPyObject, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::{Stat, ops::NodeInfo};
 
-#[pyclass]
+#[pyclass(eq, eq_int)]
+#[derive(PartialEq, Eq)]
 pub enum StatType {
-    Count,
+    #[pyo3(name = "UPPERCASE")]
+    Count = 0,
+    #[pyo3(name = "UPPERCASE")]
     Bytes,
+    #[pyo3(name = "UPPERCASE")]
     Percent,
+    #[pyo3(name = "UPPERCASE")]
     Float,
+    #[pyo3(name = "UPPERCASE")]
     Duration,
 }
 

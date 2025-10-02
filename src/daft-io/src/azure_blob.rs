@@ -523,6 +523,10 @@ impl AzureBlobSource {
 
 #[async_trait]
 impl ObjectSource for AzureBlobSource {
+    async fn supports_range(&self, _: &str) -> super::Result<bool> {
+        Ok(true)
+    }
+
     async fn get(
         &self,
         uri: &str,

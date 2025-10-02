@@ -10,7 +10,7 @@ import pytest
 import daft
 from daft.daft import PyMicroPartition, PyNodeInfo
 from daft.recordbatch import MicroPartition
-from daft.subscribers import QuerySubscriber, StatType
+from daft.subscribers import StatType, Subscriber
 from tests.conftest import get_tests_daft_runner_name
 
 pytestmark = pytest.mark.skipif(
@@ -18,28 +18,31 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-class MockSubscriber(QuerySubscriber):
+class MockSubscriber(Subscriber):
     query_unoptimized_plan: dict[str, str]
     query_optimized_plan: dict[str, str]
     query_node_stats: defaultdict[str, defaultdict[int, dict[str, Any]]]
-    query_results: dict[str, list[PyMicroPartition]]
+    query_results: defaultdict[str, list[PyMicroPartition]]
 
     def __init__(self):
         self.query_unoptimized_plan = {}
         self.query_optimized_plan = {}
         self.query_node_stats = defaultdict(lambda: defaultdict(dict))
-        self.query_results = {}
+        self.query_results = defaultdict(list)
 
     def on_query_start(self, query_id: str, unoptimized_plan: str) -> None:
         self.query_unoptimized_plan[query_id] = unoptimized_plan
 
-    def on_query_end(self, query_id: str, results: list[PyMicroPartition]) -> None:
-        self.query_results[query_id] = results
-
-    def on_plan_start(self, query_id: str) -> None:
+    def on_query_end(self, query_id: str) -> None:
         pass
 
-    def on_plan_end(self, query_id: str, optimized_plan: str) -> None:
+    def on_result_out(self, query_id: str, result: PyMicroPartition) -> None:
+        self.query_results[query_id].append(result)
+
+    def on_optimization_start(self, query_id: str) -> None:
+        pass
+
+    def on_optimization_end(self, query_id: str, optimized_plan: str) -> None:
         self.query_optimized_plan[query_id] = optimized_plan
 
     def on_exec_start(self, query_id: str, node_infos: list[PyNodeInfo]) -> None:
@@ -63,7 +66,7 @@ class MockSubscriber(QuerySubscriber):
 def test_subscriber_template():
     subscriber = MockSubscriber()
     ctx = daft.context.get_context()
-    ctx.attach_subscriber(subscriber)
+    ctx.attach_subscriber("mock", subscriber)
 
     df = daft.from_pydict({"x": [1, 2, 3]})
     df = df.with_column("y", df["x"] + 1)
@@ -87,3 +90,11 @@ def test_subscriber_template():
         for stat_name, stat_value in stats.items():
             if stat_name == "rows_in" or stat_name == "rows_out":
                 assert stat_value == 3
+
+    # Verify detach
+    ctx.detach_subscriber("mock")
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    df = df.with_column("y", df["x"] + 1)
+    df.collect()
+    # Should only have the previous query
+    assert len(subscriber.query_unoptimized_plan) == 1

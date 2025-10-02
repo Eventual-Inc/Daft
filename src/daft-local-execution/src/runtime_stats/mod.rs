@@ -17,9 +17,10 @@ use common_error::DaftResult;
 use common_metrics::NodeID;
 use common_runtime::RuntimeTask;
 use common_tracing::should_enable_opentelemetry;
-use daft_context::QuerySubscriber;
+use daft_context::Subscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_micropartition::MicroPartition;
+use futures::future;
 use itertools::Itertools;
 use kanal::SendError;
 use tokio::{
@@ -35,7 +36,7 @@ use crate::{
     pipeline::PipelineNode,
     runtime_stats::subscribers::{
         RuntimeStatsSubscriber, opentelemetry::OpenTelemetrySubscriber,
-        progress_bar::make_progress_bar_manager, query::QuerySubscriberWrapper,
+        progress_bar::make_progress_bar_manager, query::SubscriberWrapper,
     },
 };
 
@@ -92,7 +93,7 @@ impl RuntimeStatsManager {
     pub fn try_new(
         handle: &Handle,
         pipeline: &Box<dyn PipelineNode>,
-        query_subscribers: Vec<Arc<dyn QuerySubscriber>>,
+        query_subscribers: Vec<Arc<dyn Subscriber>>,
     ) -> DaftResult<Self> {
         // Construct mapping between node id and their node info and runtime stats
         let mut node_stats_map = HashMap::new();
@@ -112,7 +113,7 @@ impl RuntimeStatsManager {
 
         let mut subscribers: Vec<Box<dyn RuntimeStatsSubscriber>> = Vec::new();
         for subscriber in query_subscribers {
-            subscribers.push(Box::new(QuerySubscriberWrapper::try_new(
+            subscribers.push(Box::new(SubscriberWrapper::try_new(
                 subscriber,
                 &node_infos,
             )?));
@@ -167,19 +168,21 @@ impl RuntimeStatsManager {
 
                     Some((node_id, is_initialize)) = node_rx.recv() => {
                         if is_initialize && active_nodes.insert(node_id) {
-                            for subscriber in &subscribers {
-                                if let Err(e) = subscriber.initialize_node(node_id).await {
+                            for res in future::join_all(subscribers.iter().map(|subscriber| subscriber.initialize_node(node_id))).await {
+                                if let Err(e) = res {
                                     log::error!("Failed to initialize node: {}", e);
                                 }
                             }
                         } else if !is_initialize && active_nodes.remove(&node_id) {
                             let runtime_stats = &node_stats_map[&node_id];
-                            let event = [(node_id, runtime_stats.flush())];
-                            for subscriber in &subscribers {
-                                if let Err(e) = subscriber.handle_event(&event).await {
-                                    log::error!("Failed to handle event at finalization: {}", e);
-                                }
-                                if let Err(e) = subscriber.finalize_node(node_id).await {
+                            let event = runtime_stats.flush();
+                            let event = [(node_id, event)];
+
+                            for res in future::join_all(subscribers.iter().map(|subscriber| async {
+                                subscriber.handle_event(&event).await?;
+                                subscriber.finalize_node(node_id).await
+                            })).await {
+                                if let Err(e) = res {
                                     log::error!("Failed to finalize node: {}", e);
                                 }
                             }
@@ -196,8 +199,10 @@ impl RuntimeStatsManager {
                             let event = runtime_stats.snapshot();
                             snapshot_container.push((*node_id, event));
                         }
-                        for subscriber in &subscribers {
-                            if let Err(e) = subscriber.handle_event(snapshot_container.as_slice()).await {
+                        for res in future::join_all(subscribers.iter().map(|subscriber| {
+                            subscriber.handle_event(snapshot_container.as_slice())
+                        })).await {
+                            if let Err(e) = res {
                                 log::error!("Failed to handle event: {}", e);
                             }
                         }

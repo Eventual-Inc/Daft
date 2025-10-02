@@ -6,14 +6,14 @@ use common_metrics::{StatSnapshotView, ops::NodeInfo, python::PyNodeInfo};
 use daft_micropartition::{MicroPartitionRef, python::PyMicroPartition};
 use pyo3::{IntoPyObject, PyObject, Python, intern};
 
-use crate::subscribers::{NodeID, QuerySubscriber};
+use crate::subscribers::{NodeID, Subscriber};
 
-/// Wrapper around a Python object that implements the QuerySubscriber trait
+/// Wrapper around a Python object that implements the Subscriber trait
 #[derive(Debug)]
-pub struct PyQuerySubscriberWrapper(pub(crate) PyObject);
+pub struct PySubscriberWrapper(pub(crate) PyObject);
 
 #[async_trait]
-impl QuerySubscriber for PyQuerySubscriberWrapper {
+impl Subscriber for PySubscriberWrapper {
     fn on_query_start(&self, query_id: String, unoptimized_plan: String) -> DaftResult<()> {
         Python::with_gil(|py| {
             self.0.call_method1(
@@ -25,35 +25,40 @@ impl QuerySubscriber for PyQuerySubscriberWrapper {
         })
     }
 
-    fn on_query_end(&self, query_id: String, results: Vec<MicroPartitionRef>) -> DaftResult<()> {
+    fn on_query_end(&self, query_id: String) -> DaftResult<()> {
+        Python::with_gil(|py| {
+            self.0
+                .call_method1(py, intern!(py, "on_query_end"), (query_id,))?;
+            Ok(())
+        })
+    }
+
+    fn on_result_out(&self, query_id: String, result: MicroPartitionRef) -> DaftResult<()> {
         Python::with_gil(|py| {
             self.0.call_method1(
                 py,
-                intern!(py, "on_query_end"),
-                (
-                    query_id,
-                    results
-                        .into_iter()
-                        .map(PyMicroPartition::from)
-                        .collect::<Vec<_>>(),
-                ),
+                intern!(py, "on_result_out"),
+                (query_id, PyMicroPartition::from(result)),
             )?;
             Ok(())
         })
     }
 
-    fn on_plan_start(&self, query_id: String) -> DaftResult<()> {
+    fn on_optimization_start(&self, query_id: String) -> DaftResult<()> {
         Python::with_gil(|py| {
             self.0
-                .call_method1(py, intern!(py, "on_plan_start"), (query_id,))?;
+                .call_method1(py, intern!(py, "on_optimization_start"), (query_id,))?;
             Ok(())
         })
     }
 
-    fn on_plan_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()> {
+    fn on_optimization_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()> {
         Python::with_gil(|py| {
-            self.0
-                .call_method1(py, intern!(py, "on_plan_end"), (query_id, optimized_plan))?;
+            self.0.call_method1(
+                py,
+                intern!(py, "on_optimization_end"),
+                (query_id, optimized_plan),
+            )?;
             Ok(())
         })
     }

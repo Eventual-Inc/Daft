@@ -5,7 +5,7 @@ import logging
 import threading
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from daft import runners
 from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
     from daft.runners.partitioning import PartitionT
     from daft.runners.runner import Runner
-    from daft.subscribers import QuerySubscriber
+    from daft.subscribers import Subscriber
 
 logger = logging.getLogger(__name__)
 
@@ -74,26 +74,44 @@ class DaftContext:
     def daft_planning_config(self) -> PyDaftPlanningConfig:
         return self._ctx._daft_planning_config
 
-    def attach_subscriber(self, subscriber: QuerySubscriber) -> None:
-        self._ctx.attach_subscriber(subscriber)
+    def attach_subscriber(self, alias: str, subscriber: Subscriber) -> None:
+        """Attaches a subscriber to this context.
 
-    def notify_query_start(self, query_id: str, unoptimized_plan: str) -> None:
+        Subscribers listen to events emitted during runtime, particularly during query execution.
+        See the Subscriber class for more details.
+
+        Args:
+            alias (str): alias for the subscriber
+            subscriber (Subscriber): subscriber instance
+        """
+        self._ctx.attach_subscriber(alias, subscriber)
+
+    def detach_subscriber(self, alias: str) -> None:
+        """Detaches a subscriber from this context.
+
+        Args:
+            alias (str): alias for the subscriber
+        """
+        self._ctx.detach_subscriber(alias)
+
+    def _notify_query_start(self, query_id: str, unoptimized_plan: str) -> None:
         self._ctx.notify_query_start(query_id, unoptimized_plan)
 
-    def notify_query_end(self, query_id: str, results: list[PartitionT]) -> None:
+    def _notify_query_end(self, query_id: str) -> None:
+        self._ctx.notify_query_end(query_id)
+
+    def _notify_optimization_start(self, query_id: str) -> None:
+        self._ctx.notify_optimization_start(query_id)
+
+    def _notify_optimization_end(self, query_id: str, optimized_plan: str) -> None:
+        self._ctx.notify_optimization_end(query_id, optimized_plan)
+
+    def _notify_result_out(self, query_id: str, result: PartitionT) -> None:
         from daft.recordbatch.micropartition import MicroPartition
 
-        if not isinstance(results[0], MicroPartition):
+        if not isinstance(result, MicroPartition):
             raise ValueError("Query Managers only support the Native Runner for now")
-
-        mp_results = cast("list[MicroPartition]", results)
-        self._ctx.notify_query_end(query_id, [part._micropartition for part in mp_results])
-
-    def notify_plan_start(self, query_id: str) -> None:
-        self._ctx.notify_plan_start(query_id)
-
-    def notify_plan_end(self, query_id: str, optimized_plan: str) -> None:
-        self._ctx.notify_plan_end(query_id, optimized_plan)
+        self._ctx.notify_result_out(query_id, result._micropartition)
 
 
 def get_context() -> DaftContext:

@@ -1,5 +1,5 @@
 [dependencies]
-axum = "0.7"
+axum = "0.8"
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 common-metrics = {path = "../common/metrics", default-features = false}
 tower = "0.5"
@@ -8,9 +8,10 @@ include_dir = "0.7.4"
 dashmap = "6.1"
 pyo3 = {workspace = true, optional = true}
 serde_json = {workspace = true}
-serde.workspace = true
-tokio.workspace = true
-uuid.workspace = true
+tracing = {workspace = true}
+serde = {workspace = true}
+tokio = {workspace = true}
+uuid = {workspace = true}
 
 [features]
 python = ["dep:pyo3", "daft-recordbatch/python", "common-metrics/python"]

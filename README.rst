@@ -78,7 +78,7 @@ Benchmarks
 ----------
 |Benchmark Image|
 
-To see the full benchmarks, detailed setup, and logs, check out our `benchmarking page. <https://docs.daft.ai/en/stable/resources/benchmarks/tpch/>`_
+To see the full benchmarks, detailed setup, and logs, check out our `benchmarking page. <https://docs.daft.ai/en/stable/benchmarks>`_
 
 
 More Resources
@@ -128,6 +128,8 @@ Related Projects
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
 | `Modin <https://github.com/modin-project/modin>`_ | Yes             | Python object | Yes         | No              | Some(Pandas)                | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
+| `Ray Data <https://github.com/ray-project/ray>`_  | No              | Yes           | Yes         | Yes             | Some(PyArrow)               | Yes         |
++---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
 | `PySpark <https://github.com/apache/spark>`_      | Yes             | No            | Yes         | Pandas UDF/IO   | Pandas UDF                  | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
 | `Dask DF <https://github.com/dask/dask>`_         | No              | Python object | Yes         | No              | Some(Pandas)                | Yes         |
@@ -142,8 +144,8 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
    :alt: Dataframe code to load a folder of images from AWS S3 and create thumbnails
    :height: 256
 
-.. |Benchmark Image| image:: https://github-production-user-asset-6210df.s3.amazonaws.com/2550285/243524430-338e427d-f049-40b3-b555-4059d6be7bfd.png
-   :alt: Benchmarks for SF100 TPCH
+.. |Benchmark Image| image:: https://raw.githubusercontent.com/Eventual-Inc/Daft/refs/heads/main/assets/benchmark.png
+   :alt: AI Benchmarks
 
 .. |Banner| image:: https://daft.ai/images/diagram.png
    :target: https://www.daft.ai

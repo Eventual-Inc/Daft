@@ -1,8 +1,8 @@
 from daft.subscribers.dashboard import launch
-from daft.subscribers.abc import QuerySubscriber, StatType
+from daft.subscribers.abc import Subscriber, StatType
 
 __all__ = [
-    "QuerySubscriber",
     "StatType",
+    "Subscriber",
     "launch",
 ]

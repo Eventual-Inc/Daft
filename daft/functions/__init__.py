@@ -12,6 +12,7 @@ from .agg import (
     approx_count_distinct,
     approx_percentiles,
     mean,
+    avg,
     stddev,
     min,
     max,
@@ -61,9 +62,24 @@ from .datetime import (
     to_date,
     to_datetime,
     date_trunc,
+    to_unix_epoch,
 )
 from .embedding import cosine_distance
-from .image import resize, crop, encode_image, decode_image, convert_image
+
+from .file_ import file, file_size
+
+from .image import (
+    resize,
+    crop,
+    encode_image,
+    decode_image,
+    convert_image,
+    image_attribute,
+    image_width,
+    image_height,
+    image_channel,
+    image_mode,
+)
 from .list import (
     value_counts,
     chunk,
@@ -80,12 +96,11 @@ from .list import (
     list_map,
     explode,
     list_append,
+    to_list,
 )
 from .llm import llm_generate
 from .misc import (
     monotonically_increasing_id,
-    file,
-    unnest,
     eq_null_safe,
     cast,
     is_null,
@@ -97,6 +112,10 @@ from .misc import (
     length,
     concat,
     coalesce,
+    get,
+    map_get,
+    slice,
+    when,
 )
 from .numeric import (
     abs,
@@ -134,6 +153,18 @@ from .numeric import (
     exp,
     expm1,
     between,
+    is_nan,
+    is_inf,
+    not_nan,
+    fill_nan,
+)
+from .partition import (
+    partition_days,
+    partition_hours,
+    partition_months,
+    partition_years,
+    partition_iceberg_bucket,
+    partition_iceberg_truncate,
 )
 from .str import (
     deserialize,
@@ -173,6 +204,7 @@ from .str import (
     regexp_replace,
     find,
 )
+from .struct import unnest, to_struct
 from .url import download, upload, parse_url
 from .window import (
     row_number,
@@ -195,6 +227,7 @@ __all__ = [
     "arctan",
     "arctan2",
     "arctanh",
+    "avg",
     "between",
     "bitwise_and",
     "bitwise_or",
@@ -250,14 +283,24 @@ __all__ = [
     "explode",
     "expm1",
     "file",
+    "file_size",
+    "fill_nan",
     "fill_null",
     "find",
     "floor",
     "format",
+    "get",
     "hash",
     "hour",
     "ilike",
+    "image_attribute",
+    "image_channel",
+    "image_height",
+    "image_mode",
+    "image_width",
     "is_in",
+    "is_inf",
+    "is_nan",
     "is_null",
     "jq",
     "lag",
@@ -289,6 +332,7 @@ __all__ = [
     "lower",
     "lpad",
     "lstrip",
+    "map_get",
     "max",
     "mean",
     "microsecond",
@@ -301,9 +345,16 @@ __all__ = [
     "nanosecond",
     "negate",
     "normalize",
+    "not_nan",
     "not_null",
     "over",
     "parse_url",
+    "partition_days",
+    "partition_hours",
+    "partition_iceberg_bucket",
+    "partition_iceberg_truncate",
+    "partition_months",
+    "partition_years",
     "quarter",
     "radians",
     "rank",
@@ -331,6 +382,7 @@ __all__ = [
     "sin",
     "sinh",
     "skew",
+    "slice",
     "split",
     "sqrt",
     "startswith",
@@ -344,6 +396,9 @@ __all__ = [
     "time",
     "to_date",
     "to_datetime",
+    "to_list",
+    "to_struct",
+    "to_unix_epoch",
     "tokenize_decode",
     "tokenize_encode",
     "total_days",
@@ -364,5 +419,6 @@ __all__ = [
     "upper",
     "value_counts",
     "week_of_year",
+    "when",
     "year",
 ]

@@ -33,23 +33,12 @@ pub static malloc_conf: Option<&'static libc::c_char> = Some(unsafe {
     .y
 });
 
-fn should_enable_chrome_trace() -> bool {
-    let chrome_trace_var_name = "DAFT_DEV_ENABLE_CHROME_TRACE";
-    if let Ok(val) = std::env::var(chrome_trace_var_name)
-        && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
-    {
-        true
-    } else {
-        false
-    }
-}
-
 #[cfg(feature = "python")]
 pub mod pylib {
     use std::sync::LazyLock;
 
     use common_logging::GLOBAL_LOGGER;
-    use common_tracing::{init_opentelemetry_providers, init_tracing};
+    use common_tracing::init_opentelemetry_providers;
     use pyo3::prelude::*;
 
     static LOG_RESET_HANDLE: LazyLock<pyo3_log::ResetHandle> = LazyLock::new(|| {
@@ -119,7 +108,6 @@ pub mod pylib {
     #[pymodule]
     fn daft(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         refresh_logger(py)?;
-        init_tracing(crate::should_enable_chrome_trace());
         init_opentelemetry_providers();
 
         common_daft_config::register_modules(m)?;
@@ -188,6 +176,7 @@ pub mod pylib {
 
         functions_registry.add_fn(daft_functions::coalesce::Coalesce);
         functions_registry.add_fn(daft_file::File);
+        functions_registry.add_fn(daft_file::Size);
         functions_registry
             .add_fn(daft_functions::monotonically_increasing_id::MonotonicallyIncreasingId);
         functions_registry.register::<daft_functions::distance::DistanceFunctions>();

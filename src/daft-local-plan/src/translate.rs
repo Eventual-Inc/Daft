@@ -282,13 +282,20 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             ))
         }
         LogicalPlan::Join(join) => {
-            if join
-                .join_strategy
-                .is_some_and(|x| !matches!(x, JoinStrategy::Hash))
-            {
-                log::warn!(
-                    "Only hash join strategy is supported on the native runner, falling back to hash join. Broadcast and sort merge joins are not implemented on the native runner as it is single node only."
-                );
+            if let Some(strategy) = join.join_strategy {
+                match strategy {
+                    JoinStrategy::Broadcast => {
+                        log::warn!(
+                            "Broadcast join is not supported on the native runner, falling back to hash join. Please use the ray runner, daft.set_runner_ray(), if you require broadcast joins."
+                        );
+                    }
+                    JoinStrategy::SortMerge => {
+                        log::warn!(
+                            "Sort merge join is not supported on the native runner, falling back to hash join."
+                        );
+                    }
+                    _ => {}
+                }
             }
             let left = translate(&join.left)?;
             let right = translate(&join.right)?;
@@ -318,6 +325,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     right,
                     left_on,
                     right_on,
+                    None,
                     Some(null_equals_nulls),
                     join.join_type,
                     join.output_schema.clone(),

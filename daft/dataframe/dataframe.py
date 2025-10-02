@@ -533,12 +533,6 @@ class DataFrame:
             foo: [1,2,3]
             bar: ["a","b","c"]
         """
-        for name in self.schema().column_names():
-            if self.schema()[name].dtype.is_python():
-                raise ValueError(
-                    f"Cannot convert column {name} to Arrow type, found Python type: {self.schema()[name].dtype}"
-                )
-
         if results_buffer_size == "num_cpus":
             results_buffer_size = multiprocessing.cpu_count()
         if results_buffer_size is not None and not results_buffer_size > 0:
@@ -664,7 +658,17 @@ class DataFrame:
     def _repr_html_(self) -> str:
         self._populate_preview()
         preview = PreviewFormatter(self._preview, self.schema())
-        return preview._repr_html_()
+        try:
+            if in_notebook() and self._preview.partition is not None:
+                try:
+                    interactive_html = preview._generate_interactive_html()
+                    return interactive_html
+                except Exception:
+                    pass
+
+            return preview._repr_html_()
+        except ImportError:
+            return preview._repr_html_()
 
     ###
     # Creation methods
@@ -1450,7 +1454,7 @@ class DataFrame:
         uri: Union[str, pathlib.Path],
         mode: Literal["create", "append", "overwrite"] = "create",
         io_config: Optional[IOConfig] = None,
-        schema: Optional[Schema] = None,
+        schema: Optional[Union[Schema, "pyarrow.Schema"]] = None,
         **kwargs: Any,
     ) -> "DataFrame":
         """Writes the DataFrame to a Lance table.
@@ -1459,6 +1463,13 @@ class DataFrame:
           uri: The URI of the Lance table to write to
           mode: The write mode. One of "create", "append", or "overwrite"
           io_config (IOConfig, optional): configurations to use when interacting with remote storage.
+          schema (Schema | pyarrow.Schema, optional): Desired schema to enforce during write.
+            - If omitted, Daft will use the DataFrame's current schema.
+            - If a pyarrow.Schema is provided, Daft will enforce the field order, types, and nullability
+              by casting the data to the provided schema prior to write. Table-level (dataset) metadata present
+              on the pyarrow schema is preserved during create/overwrite.
+            - If the target Lance dataset already exists, the data will be cast to the existing table schema
+              to ensure compatibility unless ``mode="overwrite"``.
           **kwargs: Additional keyword arguments to pass to the Lance writer.
 
         Note:
@@ -1467,6 +1478,10 @@ class DataFrame:
 
         Returns:
             DataFrame: A DataFrame containing metadata about the written Lance table, such as number of fragments, number of deleted rows, number of small files, and version.
+
+        Raises:
+            TypeError: If ``schema`` is provided but not a Daft Schema or a pyarrow.Schema
+            ValueError: When appending and the data schema cannot be cast to the existing table schema
 
         Examples:
             >>> import daft

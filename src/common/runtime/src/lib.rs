@@ -80,7 +80,7 @@ impl<T: Send + 'static> Future for RuntimeTask<T> {
 
 impl<T> std::fmt::Debug for RuntimeTask<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "RuntimeTask({})", self.joinset.len())
+        write!(f, "RuntimeTask(num_inflight_tasks={})", self.joinset.len())
     }
 }
 

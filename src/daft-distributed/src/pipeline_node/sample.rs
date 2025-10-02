@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
-use super::{DistributedPipelineNode, SubmittableTaskStream};
+use super::{PipelineNodeImpl, SubmittableTaskStream};
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
-    stage::{StageConfig, StageExecutionContext},
+    pipeline_node::{
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+    },
+    plan::{PlanConfig, PlanExecutionContext},
 };
 
 pub(crate) struct SampleNode {
@@ -17,7 +18,7 @@ pub(crate) struct SampleNode {
     fraction: f64,
     with_replacement: bool,
     seed: Option<u64>,
-    child: Arc<dyn DistributedPipelineNode>,
+    child: DistributedPipelineNode,
 }
 
 impl SampleNode {
@@ -27,15 +28,15 @@ impl SampleNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         fraction: f64,
         with_replacement: bool,
         seed: Option<u64>,
         schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![child.node_id()],
@@ -44,7 +45,7 @@ impl SampleNode {
         );
         let config = PipelineNodeConfig::new(
             schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             child.config().clustering_spec.clone(),
         );
         Self {
@@ -57,45 +58,12 @@ impl SampleNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
-    }
-
-    fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec![];
-        res.push(format!("Sample: {}", self.fraction));
-        res.push(format!("With replacement = {}", self.with_replacement));
-        res.push(format!("Seed = {:?}", self.seed));
-        res
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 
-impl TreeDisplay for SampleNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.name()).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.name().to_string()
-    }
-}
-
-impl DistributedPipelineNode for SampleNode {
+impl PipelineNodeImpl for SampleNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -104,15 +72,23 @@ impl DistributedPipelineNode for SampleNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!("Sample: {}", self.fraction));
+        res.push(format!("With replacement = {}", self.with_replacement));
+        res.push(format!("Seed = {:?}", self.seed));
+        res
     }
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_node = self.child.clone().produce_tasks(stage_context);
+        let input_node = self.child.clone().produce_tasks(plan_context);
 
         // Create the plan builder closure
         let fraction = self.fraction;
@@ -128,10 +104,6 @@ impl DistributedPipelineNode for SampleNode {
             )
         };
 
-        input_node.pipeline_instruction(self.clone(), plan_builder)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
+        input_node.pipeline_instruction(self, plan_builder)
     }
 }

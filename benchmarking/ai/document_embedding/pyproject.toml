@@ -1,0 +1,10 @@
+[project]
+name = "document-embedding"
+version = "0.1.0"
+description = "Benchmark for document embedding using AI models"
+readme = "README.md"
+requires-python = "==3.12"
+dependencies = [
+  "daft==0.6.2",
+  "ray[default]==2.49.2"
+]

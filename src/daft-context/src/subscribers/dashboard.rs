@@ -7,9 +7,10 @@ use common_runtime::{RuntimeRef, get_io_runtime};
 use daft_core::prelude::DataType;
 use daft_io::IOStatsContext;
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
+use dashmap::DashMap;
 use reqwest::Client;
 
-use crate::subscribers::QuerySubscriber;
+use crate::subscribers::Subscriber;
 
 fn now() -> u64 {
     SystemTime::now()
@@ -23,6 +24,7 @@ pub struct DashboardSubscriber {
     url: String,
     client: Client,
     runtime: RuntimeRef,
+    head_rows: DashMap<String, MicroPartitionRef>,
 }
 
 impl DashboardSubscriber {
@@ -69,12 +71,13 @@ impl DashboardSubscriber {
             url,
             client,
             runtime,
+            head_rows: DashMap::new(),
         }))
     }
 }
 
 #[async_trait]
-impl QuerySubscriber for DashboardSubscriber {
+impl Subscriber for DashboardSubscriber {
     fn on_query_start(&self, query_id: String, unoptimized_plan: String) -> DaftResult<()> {
         self.runtime.block_on_current_thread(async {
             self.client
@@ -93,26 +96,40 @@ impl QuerySubscriber for DashboardSubscriber {
         })
     }
 
-    fn on_query_end(&self, query_id: String, results: Vec<MicroPartitionRef>) -> DaftResult<()> {
-        // Limit the results to max 10 rows
+    fn on_result_out(&self, query_id: String, result: MicroPartitionRef) -> DaftResult<()> {
+        // Limit to 10 rows
         // TODO: Limit by X MB and # of rows
+        let entry = self.head_rows.get_mut(&query_id);
+        if entry.is_none() {
+            let result = result.head(10)?;
+            self.head_rows.insert(query_id, Arc::new(result));
+            return Ok(());
+        }
 
-        let (ipc_buffer, num_rows, total_bytes) = if results.is_empty() {
+        let mut entry = entry.unwrap();
+        let all_results = entry.value_mut();
+        let result = Arc::new(result.head(10 - all_results.len())?);
+        *all_results = Arc::new(MicroPartition::concat(vec![all_results.clone(), result])?);
+        Ok(())
+    }
+
+    fn on_query_end(&self, query_id: String) -> DaftResult<()> {
+        let result = self
+            .head_rows
+            .view(&query_id, |_, v| v.clone())
+            .unwrap_or_else(|| Arc::new(MicroPartition::empty(None)));
+
+        let (ipc_buffer, num_rows, total_bytes) = if result.is_empty() {
             (vec![], 0, 0)
         } else {
-            let results = MicroPartition::concat(results)?;
-            let num_rows = results.len();
-            let total_bytes = results.size_bytes().unwrap_or(0);
-            let schema = results.schema();
-
-            // Clean up the data to:
-            // - Limit to max 10 rows
-            let io_stats = IOStatsContext::new("DashboardSubscriber::on_query_end");
-            let results = results
-                .head(10)?
-                .concat_or_get(io_stats)?
+            let result = result
+                .concat_or_get(IOStatsContext::new("DashboardSubscriber::on_query_end"))?
                 .expect("Results should not be empty");
-            // - Filter out Python dtype columns
+            let num_rows = result.len();
+            let total_bytes = result.size_bytes();
+            let schema = result.schema.clone();
+
+            // Filter out Python dtype columns
             let non_py_cols: Vec<usize>;
             #[cfg(feature = "python")]
             {
@@ -129,7 +146,7 @@ impl QuerySubscriber for DashboardSubscriber {
                 non_py_cols = (0..schema.fields().len()).collect();
             }
 
-            let result = results.get_columns(&non_py_cols);
+            let result = result.get_columns(&non_py_cols);
             (result.to_ipc_stream()?, num_rows, total_bytes)
         };
 
@@ -152,7 +169,7 @@ impl QuerySubscriber for DashboardSubscriber {
         })
     }
 
-    fn on_plan_start(&self, query_id: String) -> DaftResult<()> {
+    fn on_optimization_start(&self, query_id: String) -> DaftResult<()> {
         self.runtime.block_on_current_thread(async {
             self.client
                 .post(format!("{}/query/{}/plan_start", self.url, query_id))
@@ -168,7 +185,7 @@ impl QuerySubscriber for DashboardSubscriber {
         })
     }
 
-    fn on_plan_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()> {
+    fn on_optimization_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()> {
         let plan_end_sec = now();
         self.runtime.block_on_current_thread(async {
             self.client

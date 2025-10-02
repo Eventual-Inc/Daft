@@ -4,37 +4,61 @@ use async_trait::async_trait;
 use common_error::DaftResult;
 use common_metrics::{NodeID, StatSnapshotView, ops::NodeInfo};
 use daft_micropartition::MicroPartitionRef;
+use dashmap::DashMap;
+
+use crate::subscribers::Subscriber;
 
 #[derive(Debug)]
-pub struct DebugSubscriber;
+pub struct DebugSubscriber {
+    rows_out: DashMap<String, usize>,
+}
 
-use crate::subscribers::QuerySubscriber;
+impl DebugSubscriber {
+    pub fn new() -> Self {
+        Self {
+            rows_out: DashMap::new(),
+        }
+    }
+}
 
 #[async_trait]
-impl QuerySubscriber for DebugSubscriber {
+impl Subscriber for DebugSubscriber {
     fn on_query_start(&self, query_id: String, unoptimized_plan: String) -> DaftResult<()> {
         eprintln!(
             "Started query `{}` with unoptimized plan:\n{}",
             query_id, unoptimized_plan
         );
+        self.rows_out.insert(query_id, 0);
         Ok(())
     }
 
-    fn on_query_end(&self, query_id: String, results: Vec<MicroPartitionRef>) -> DaftResult<()> {
+    fn on_query_end(&self, query_id: String) -> DaftResult<()> {
         eprintln!(
             "Ended query `{}` with result of {} rows",
             query_id,
-            results.iter().map(|part| part.len()).sum::<usize>()
+            self.rows_out
+                .get(&query_id)
+                .expect("Query not found")
+                .value()
         );
         Ok(())
     }
 
-    fn on_plan_start(&self, query_id: String) -> DaftResult<()> {
+    fn on_result_out(&self, query_id: String, result: MicroPartitionRef) -> DaftResult<()> {
+        *self
+            .rows_out
+            .get_mut(&query_id)
+            .expect("Query not found")
+            .value_mut() += result.len();
+        Ok(())
+    }
+
+    fn on_optimization_start(&self, query_id: String) -> DaftResult<()> {
         eprintln!("Started planning query `{}`", query_id);
         Ok(())
     }
 
-    fn on_plan_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()> {
+    fn on_optimization_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()> {
         eprintln!(
             "Finished planning query `{}` with optimized plan:\n{}",
             query_id, optimized_plan

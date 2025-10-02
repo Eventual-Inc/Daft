@@ -12,6 +12,9 @@ daft-micropartition = {path = "../daft-micropartition", default-features = false
 daft-dashboard = {path = "../daft-dashboard", default-features = false}
 daft-runners = {workspace = true}
 pyo3 = {workspace = true, optional = true}
+log = {workspace = true}
+# For debug subscriber
+dashmap = {workspace = true}
 # Client for submitting to dashboard server
 reqwest = {workspace = true, default-features = false}
 

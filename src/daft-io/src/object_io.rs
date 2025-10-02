@@ -183,6 +183,12 @@ use crate::range::GetRange;
 
 #[async_trait]
 pub trait ObjectSource: Sync + Send {
+    /// Check if the source supports range requests.
+    /// Most object sources _should_ support range requests.
+    /// Many object sources backed by http servers may not support range requests.
+    /// So we need to check if the source supports range requests.
+    async fn supports_range(&self, uri: &str) -> super::Result<bool>;
+
     /// Return the bytes with given range.
     /// Will return [`Error::InvalidRangeRequest`] if range start is greater than range end
     /// or range start is greater than object size.

@@ -40,6 +40,10 @@ Daft Expressions allow you to express some computation that needs to happen in a
     options:
         filters: ["!^_[^_]", "!over", "!lag", "!lead"]
 
+::: daft.expressions.WhenExpr
+    options:
+        filters: ["!^_"]
+
 ::: daft.expressions.expressions.ExpressionStringNamespace
     options:
         filters: ["!^_"]
