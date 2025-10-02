@@ -217,7 +217,7 @@ impl RowWisePyFn {
                 }
 
                 let result = func.call1((inner_ref, args_ref, &py_args))?;
-                let lit = Literal::from_pyobj(&result, Some(&self.return_dtype))?;
+                let lit = Literal::from_pyobj(&result, None)?;
 
                 py_args.clear();
                 DaftResult::Ok(lit)
