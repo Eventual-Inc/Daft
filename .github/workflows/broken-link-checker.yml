@@ -34,8 +34,8 @@ jobs:
             -ro \
             | tee "$LOG"
 
-          # Only fail on 404s; print other broken links too.
-          BROKEN_LINES="$(grep 'BROKEN' "$LOG" || true)"
+          # Only fail on 404s; print other broken links too (deduplicated).
+          BROKEN_LINES="$(grep 'BROKEN' "$LOG" | sort -u || true)"
           if [ -n "$BROKEN_LINES" ]; then
             NON_404="$(printf "%s\n" "$BROKEN_LINES" | grep -v 'HTTP_404' || true)"
             ONLY_404="$(printf "%s\n" "$BROKEN_LINES" | grep 'HTTP_404' || true)"
