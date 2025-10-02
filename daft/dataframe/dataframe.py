@@ -162,21 +162,13 @@ class DataFrame:
             return self._result_cache.value
 
     def _broadcast_query_plan(self) -> None:
-        from daft import dashboard
+        from daft.subscribers import dashboard
 
         if not dashboard._should_run():
             return
         unoptimized_plan = self._builder._builder.repr_json(True)
-        plan_time_start = _utc_now()
-        optimized_plan = self._builder.optimize()._builder.repr_json(True)
-        plan_time_end = _utc_now()
 
-        dashboard.broadcast_query_information(
-            unoptimized_plan=unoptimized_plan,
-            optimized_plan=optimized_plan,
-            plan_time_start=plan_time_start,
-            plan_time_end=plan_time_end,
-        )
+        dashboard.broadcast_query_information(unoptimized_plan=unoptimized_plan)
 
     def pipe(
         self,
@@ -675,7 +667,17 @@ class DataFrame:
     def _repr_html_(self) -> str:
         self._populate_preview()
         preview = PreviewFormatter(self._preview, self.schema())
-        return preview._repr_html_()
+        try:
+            if in_notebook() and self._preview.partition is not None:
+                try:
+                    interactive_html = preview._generate_interactive_html()
+                    return interactive_html
+                except Exception:
+                    pass
+
+            return preview._repr_html_()
+        except ImportError:
+            return preview._repr_html_()
 
     ###
     # Creation methods

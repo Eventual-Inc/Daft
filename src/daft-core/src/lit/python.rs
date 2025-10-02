@@ -180,9 +180,13 @@ impl<'py> IntoPyObject<'py> for Literal {
             Self::File(f) => {
                 let pytuple = f.into_bound_py_any(py)?;
                 let py_file = py
+                    .import(intern!(py, "daft.daft"))?
+                    .getattr(intern!(py, "PyFileReference"))?;
+                let res = py_file.call_method1(pyo3::intern!(py, "_from_tuple"), (pytuple,))?;
+                let py_file = py
                     .import(intern!(py, "daft.file"))?
                     .getattr(intern!(py, "File"))?;
-                py_file.call_method1(pyo3::intern!(py, "_from_tuple"), (pytuple,))
+                py_file.call_method1(pyo3::intern!(py, "_from_file_reference"), (res,))
             }
             Self::Map { keys, values } => {
                 assert_eq!(
@@ -570,7 +574,10 @@ fn pytuple_to_struct_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResul
 }
 
 fn pydecimal_to_decimal_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
-    let pystring = ob.str()?;
+    // call `format(ob, 'f')` to force decimal notation, this handles scientific notation.
+    let py = ob.py();
+    let format_func = py.import("builtins")?.getattr("format")?;
+    let pystring = format_func.call1((ob, "f"))?.str()?;
     let decimal_str = pystring.to_cow()?;
 
     // just always use max precision. we will cast if user specifies a different precision

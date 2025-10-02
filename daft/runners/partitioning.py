@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, Union
 from uuid import uuid4
 
+from daft.daft import PyMicroPartitionSet
 from daft.datatype import TimeUnit
 from daft.recordbatch import MicroPartition
 
@@ -15,7 +16,6 @@ if TYPE_CHECKING:
     import pyarrow as pa
     from ray import ObjectRef
 
-    from daft.daft import PyMicroPartitionSet
     from daft.expressions.expressions import Expression
     from daft.logical.schema import Schema
 
@@ -272,71 +272,62 @@ class PartitionSet(Generic[PartitionT]):
 
 
 class LocalPartitionSet(PartitionSet[MicroPartition]):
-    _partitions: dict[PartID, MaterializedResult[MicroPartition]]
+    _pset: PyMicroPartitionSet
 
     def __init__(self) -> None:
         super().__init__()
-        self._partitions = {}
+        self._pset = PyMicroPartitionSet()
 
-    @staticmethod
-    def _from_micropartition_set(pset: PyMicroPartitionSet) -> LocalPartitionSet:
-        s = LocalPartitionSet()
-        for idx in range(0, pset.num_partitions()):
-            s.set_partition_from_table(idx=idx, part=MicroPartition._from_pymicropartition(pset.get_partition(idx)))
+    @classmethod
+    def _from_micropartition_set(cls, pset: PyMicroPartitionSet) -> LocalPartitionSet:
+        s = cls()
+        s._pset = pset
         return s
 
-    def items(self) -> list[tuple[PartID, MaterializedResult[MicroPartition]]]:
-        return sorted(self._partitions.items())
-
-    def _get_merged_micropartition(self, schema: Schema) -> MicroPartition:
-        ids_and_partitions = self.items()
-        if len(ids_and_partitions) > 0:
-            assert ids_and_partitions[0][0] == 0
-            assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
-        return MicroPartition.concat_or_empty([part.partition() for _, part in ids_and_partitions], schema)
+    def _get_merged_micropartition(self, _schema: Schema) -> MicroPartition:
+        return MicroPartition._from_pymicropartition(self._pset.get_merged_micropartition())
 
     def _get_preview_micropartitions(self, num_rows: int) -> list[MicroPartition]:
-        ids_and_partitions = self.items()
-        preview_parts = []
-        for _, mat_result in ids_and_partitions:
-            part: MicroPartition = mat_result.partition()
-            part_len = len(part)
-            if part_len >= num_rows:  # if this part has enough rows, take what we need and break
-                preview_parts.append(part.slice(0, num_rows))
-                break
-            else:  # otherwise, take the whole part and keep going
-                num_rows -= part_len
-                preview_parts.append(part)
-        return preview_parts
+        return [
+            MicroPartition._from_pymicropartition(part) for part in self._pset.get_preview_micropartitions(num_rows)
+        ]
+
+    def items(self) -> list[tuple[PartID, MaterializedResult[MicroPartition]]]:
+        return [
+            (
+                idx,
+                LocalMaterializedResult(
+                    MicroPartition._from_pymicropartition(part),
+                    PartitionMetadata.from_table(MicroPartition._from_pymicropartition(part)),
+                ),
+            )
+            for idx, part in self._pset.items()
+        ]
 
     def get_partition(self, idx: PartID) -> MaterializedResult[MicroPartition]:
-        return self._partitions[idx]
+        part = MicroPartition._from_pymicropartition(self._pset.get_partition(idx))
+        return LocalMaterializedResult(part, PartitionMetadata.from_table(part))
 
     def set_partition(self, idx: PartID, part: MaterializedResult[MicroPartition]) -> None:
-        self._partitions[idx] = part
+        self._pset.set_partition(idx, part.partition()._micropartition)
 
     def set_partition_from_table(self, idx: PartID, part: MicroPartition) -> None:
-        self._partitions[idx] = LocalMaterializedResult(part, PartitionMetadata.from_table(part))
+        self._pset.set_partition(idx, part._micropartition)
 
     def delete_partition(self, idx: PartID) -> None:
-        del self._partitions[idx]
+        self._pset.delete_partition(idx)
 
     def has_partition(self, idx: PartID) -> bool:
-        return idx in self._partitions
+        return self._pset.has_partition(idx)
 
     def __len__(self) -> int:
-        return sum(len(partition.partition()) for partition in self._partitions.values())
+        return len(self._pset)
 
     def size_bytes(self) -> int | None:
-        size_bytes_ = [partition.partition().size_bytes() for partition in self._partitions.values()]
-        size_bytes: list[int] = [size for size in size_bytes_ if size is not None]
-        if len(size_bytes) != len(size_bytes_):
-            return None
-        else:
-            return sum(size_bytes)
+        return self._pset.size_bytes()
 
     def num_partitions(self) -> int:
-        return len(self._partitions)
+        return self._pset.num_partitions()
 
     def wait(self) -> None:
         pass

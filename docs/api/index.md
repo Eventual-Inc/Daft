@@ -17,6 +17,10 @@ Welcome to Daft Python API Documentation. For Daft User Guide, head to [User Gui
 
     Available DataFrame methods that are enqueued in the DataFrame's internal query plan and executed when Execution DataFrame methods are called.
 
+- [**Datasets**](datasets.md)
+
+    Simple, performant, and responsible ways to access useful datasets like Common Crawl.
+
 - [**Expressions**](expressions.md)
 
     Expressions allow you to express some computation that needs to happen in a DataFrame.
