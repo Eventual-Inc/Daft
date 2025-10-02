@@ -32,6 +32,9 @@ jobs:
           LOG="$(mktemp)"
           blc ${{ matrix.site.url }} \
             -ro \
+            --exclude https://scarf.sh/ \
+            --exclude https://static.scarf.sh/* \
+            --exclude http://www.allaboutcookies.org/ \
             | tee "$LOG"
 
           # Only fail on 404s; print other broken links too (deduplicated).
