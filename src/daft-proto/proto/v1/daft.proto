@@ -365,6 +365,7 @@ message ScalarFn {
       DataType return_dtype = 2;
       PyObject inner = 3;
       PyObject original_args = 4;
+      optional bool use_process = 5;
     }
   }
 }

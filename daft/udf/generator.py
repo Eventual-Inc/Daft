@@ -32,10 +32,13 @@ class GeneratorUdf(Generic[P, T]):
     If no values are yielded for an input, a null value is inserted.
     """
 
-    def __init__(self, fn: Callable[P, Iterator[T]], return_dtype: DataTypeLike | None, unnest: bool):
+    def __init__(
+        self, fn: Callable[P, Iterator[T]], return_dtype: DataTypeLike | None, unnest: bool, use_process: bool | None
+    ):
         self._inner = fn
         self.name = get_unique_function_name(fn)
         self.unnest = unnest
+        self.use_process = use_process
 
         # attempt to extract return type from an Iterator or Generator type hint
         if return_dtype is None:
@@ -85,7 +88,9 @@ class GeneratorUdf(Generic[P, T]):
         return_dtype_rowwise = DataType.list(self.return_dtype)
 
         expr = Expression._from_pyexpr(
-            row_wise_udf(self.name, inner_rowwise, return_dtype_rowwise._dtype, (args, kwargs), expr_args)
+            row_wise_udf(
+                self.name, inner_rowwise, return_dtype_rowwise._dtype, self.use_process, (args, kwargs), expr_args
+            )
         ).explode()
 
         if self.unnest:

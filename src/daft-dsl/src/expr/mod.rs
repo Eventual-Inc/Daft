@@ -1478,6 +1478,7 @@ impl Expr {
                 return_dtype,
                 original_args,
                 args: old_children,
+                use_process,
             }))) => {
                 assert!(
                     children.len() == old_children.len(),
@@ -1490,6 +1491,7 @@ impl Expr {
                     return_dtype: return_dtype.clone(),
                     original_args: original_args.clone(),
                     args: children,
+                    use_process: *use_process,
                 })))
             }
         }
