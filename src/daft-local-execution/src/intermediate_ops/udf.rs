@@ -63,10 +63,15 @@ fn get_required_columns(expr: BoundExpr) -> (BoundExpr, Vec<usize>) {
         })
         .expect("Error occurred when visiting for required columns");
 
-    let mut required_cols = vec![0; count];
-    for (original_idx, final_idx) in cols_to_idx {
-        required_cols[final_idx] = original_idx;
-    }
+    let required_cols = if cols_to_idx.is_empty() {
+        vec![0]
+    } else {
+        let mut required_cols = vec![0; count];
+        for (original_idx, final_idx) in cols_to_idx {
+            required_cols[final_idx] = original_idx;
+        }
+        required_cols
+    };
 
     (BoundExpr::new_unchecked(new_expr.data), required_cols)
 }
