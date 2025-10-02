@@ -2449,7 +2449,6 @@ dependencies = [
  "daft-dashboard",
  "pyo3",
  "tokio",
- "tracing",
  "tracing-subscriber",
 ]
 
