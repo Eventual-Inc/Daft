@@ -12,10 +12,17 @@ jobs:
   check-links:
     timeout-minutes: 45
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        site:
+        - url: https://www.daft.ai
+        - url: https://docs.daft.ai
+        - url: https://www.eventual.ai
     steps:
     - name: setup broken link checker
       run: npm install -g broken-link-checker
-    - name: Check daft.ai
+    - name: Check ${{ matrix.site.url }}
       uses: nick-fields/retry@v3
       with:
         timeout_minutes: 10
@@ -23,8 +30,8 @@ jobs:
         max_attempts: 3
         command: |
           LOG="$(mktemp)"
-          blc https://www.daft.ai \
-            -ro --verbose \
+          blc ${{ matrix.site.url }} \
+            -ro \
             --exclude www.pytorch.org/ \
             --exclude https://github.com/Eventual-Inc/Daft/ \
             --exclude https://twitter.com/daftengine \
