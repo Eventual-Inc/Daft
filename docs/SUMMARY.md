@@ -38,9 +38,10 @@
     * Scaling Out and Deployment
         * [Running on Ray](distributed.md)
         * [Running on Kubernetes](kubernetes.md)
+    * Architecture
+        * [Architecture](architecture/index.md)
     * Optimization and Debugging
         * [Optimization](optimization/index.md)
-        * [Architecture](optimization/architecture.md)
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning](optimization/partitioning.md)
         * [Observability](optimization/observability.md)
