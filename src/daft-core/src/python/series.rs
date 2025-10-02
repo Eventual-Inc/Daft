@@ -114,7 +114,7 @@ impl PySeries {
             (literals_with_supertype, supertype)
         };
 
-        let mut series = Series::from_literals(literals, None)?.cast(&dtype)?;
+        let mut series = Series::from_literals(literals)?.cast(&dtype)?;
         if let Some(name) = name {
             series = series.rename(name);
         }
