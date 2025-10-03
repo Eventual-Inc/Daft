@@ -108,7 +108,7 @@ function QueryPageInner() {
   const queryId = searchParams.get("id");
 
   const { data, isLoading, error } = useSWR<QueryInfo>(
-    queryId ? `/api/query/${queryId}` : null
+    queryId ? `/client/query/${queryId}` : null
   );
 
   if (isLoading || !data) {

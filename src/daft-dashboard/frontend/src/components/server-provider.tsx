@@ -46,7 +46,7 @@ export function ServerProvider({ children }: { children: React.ReactNode }) {
 
   // TODO: Play around with useSWRSubscription again
   useEffect(() => {
-    const es = new EventSource(genUrl("api/queries/subscribe"));
+    const es = new EventSource(genUrl("/client/queries/subscribe"));
     es.onopen = () => {
       console.warn("Connected to queries SSE endpoint");
     };
