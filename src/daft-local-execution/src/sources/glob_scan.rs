@@ -50,14 +50,14 @@ impl Source for GlobScanSource {
         &self,
         _maintain_order: bool,
         io_stats: IOStatsRef,
-        chunk_size: Option<usize>,
+        chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         // Get IO client
         let io_config = self.io_config.clone().unwrap_or_default();
         let io_client = get_io_client(true, Arc::new(io_config))?;
         let schema = self.schema.clone();
         let glob_paths = self.glob_paths.clone();
-        let chunk_size = chunk_size.unwrap_or(1000); // Default chunk size
+        let limit = self.pushdowns.limit;
 
         // Create a stream that processes files in chunks
         let stream = futures::stream::iter(glob_paths.into_iter())
@@ -65,16 +65,15 @@ impl Source for GlobScanSource {
                 let io_client = io_client.clone();
                 let schema = schema.clone();
                 let io_stats = io_stats.clone();
-                let chunk_size = chunk_size;
 
                 async move {
                     let (source, path) = io_client.get_source_and_path(&glob_path).await?;
                     let files_stream = source
                         .glob(
                             &path,
-                            None, // fanout_limit
-                            None, // page_size
-                            None, // limit
+                            None,  // fanout_limit
+                            None,  // page_size
+                            limit, // limit
                             Some(io_stats),
                             None, // file_format
                         )
@@ -131,7 +130,22 @@ impl Source for GlobScanSource {
             })
             .try_flatten();
 
-        Ok(Box::pin(stream))
+        if let Some(limit) = limit {
+            let mut remaining_rows = limit;
+            let stream =
+                stream.try_take_while(move |partition| match (partition, remaining_rows) {
+                    // Limit has been met, early-terminate.
+                    (_, rows_left) if rows_left <= 0 => futures::future::ready(Ok(false)),
+                    // Limit has not yet been met, update remaining limit slack and continue.
+                    (table, rows_left) => {
+                        remaining_rows = rows_left.saturating_sub(table.len());
+                        futures::future::ready(Ok(true))
+                    }
+                });
+            Ok(Box::pin(stream))
+        } else {
+            Ok(Box::pin(stream))
+        }
     }
 
     fn name(&self) -> NodeName {
