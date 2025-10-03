@@ -22,13 +22,12 @@ use itertools::Itertools;
 use materialize::materialize_all_pipeline_outputs;
 
 use crate::{
-    plan::PlanID,
+    plan::{PlanExecutionContext, PlanID},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SchedulingStrategy, SwordfishTask, Task, TaskContext},
         worker::WorkerId,
     },
-    stage::{StageConfig, StageExecutionContext, StageID},
     utils::channel::{Receiver, ReceiverStream},
 };
 
@@ -142,7 +141,6 @@ impl PipelineNodeConfig {
 #[derive(Clone)]
 pub(super) struct PipelineNodeContext {
     pub plan_id: PlanID,
-    pub stage_id: StageID,
     pub node_id: NodeID,
     pub node_name: NodeName,
     pub child_ids: Vec<NodeID>,
@@ -152,7 +150,7 @@ pub(super) struct PipelineNodeContext {
 
 impl PipelineNodeContext {
     pub fn new(
-        stage_config: &StageConfig,
+        plan_id: PlanID,
         node_id: NodeID,
         node_name: NodeName,
         child_ids: Vec<NodeID>,
@@ -160,8 +158,7 @@ impl PipelineNodeContext {
         logical_node_id: Option<NodeID>,
     ) -> Self {
         Self {
-            plan_id: stage_config.plan_id,
-            stage_id: stage_config.stage_id,
+            plan_id,
             node_id,
             node_name,
             child_ids,
@@ -173,7 +170,6 @@ impl PipelineNodeContext {
     pub fn to_hashmap(&self) -> HashMap<String, String> {
         HashMap::from([
             ("plan_id".to_string(), self.plan_id.to_string()),
-            ("stage_id".to_string(), self.stage_id.to_string()),
             ("node_id".to_string(), self.node_id.to_string()),
             ("node_name".to_string(), self.node_name.to_string()),
             ("child_ids".to_string(), self.child_ids.iter().join(",")),
@@ -186,16 +182,15 @@ impl PipelineNodeContext {
     }
 }
 
-pub(crate) trait DistributedPipelineNode: Send + Sync + TreeDisplay {
+pub(crate) trait PipelineNodeImpl: Send + Sync {
     fn context(&self) -> &PipelineNodeContext;
     fn config(&self) -> &PipelineNodeConfig;
     #[allow(dead_code)]
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>>;
+    fn children(&self) -> Vec<DistributedPipelineNode>;
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream;
-    fn as_tree_display(&self) -> &dyn TreeDisplay;
     fn name(&self) -> NodeName {
         self.context().node_name
     }
@@ -203,18 +198,68 @@ pub(crate) trait DistributedPipelineNode: Send + Sync + TreeDisplay {
     fn plan_id(&self) -> PlanID {
         self.context().plan_id
     }
-    #[allow(dead_code)]
-    fn stage_id(&self) -> StageID {
-        self.context().stage_id
-    }
     fn node_id(&self) -> NodeID {
         self.context().node_id
+    }
+    fn multiline_display(&self, verbose: bool) -> Vec<String>;
+}
+
+#[derive(Clone)]
+pub(crate) struct DistributedPipelineNode {
+    op: Arc<dyn PipelineNodeImpl>,
+    children: Vec<DistributedPipelineNode>,
+}
+
+impl DistributedPipelineNode {
+    pub fn new(op: Arc<dyn PipelineNodeImpl>) -> Self {
+        let children = op.children();
+        Self { op, children }
+    }
+
+    fn context(&self) -> &PipelineNodeContext {
+        self.op.context()
+    }
+    fn config(&self) -> &PipelineNodeConfig {
+        self.op.config()
+    }
+    pub fn node_id(&self) -> NodeID {
+        self.op.node_id()
+    }
+    pub fn name(&self) -> NodeName {
+        self.op.name()
+    }
+    pub fn produce_tasks(self, plan_context: &mut PlanExecutionContext) -> SubmittableTaskStream {
+        self.op.produce_tasks(plan_context)
+    }
+    fn as_tree_display(&self) -> &dyn TreeDisplay {
+        self
+    }
+}
+
+impl TreeDisplay for DistributedPipelineNode {
+    fn display_as(&self, level: DisplayLevel) -> String {
+        match level {
+            DisplayLevel::Compact => self.get_name(),
+            DisplayLevel::Default => self.op.multiline_display(false).join("\n"),
+            DisplayLevel::Verbose => self.op.multiline_display(true).join("\n"),
+        }
+    }
+
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        self.children
+            .iter()
+            .map(|child| child.as_tree_display())
+            .collect()
+    }
+
+    fn get_name(&self) -> String {
+        self.context().node_name.to_string()
     }
 }
 
 /// Visualize a distributed pipeline as Mermaid markdown
 pub fn viz_distributed_pipeline_mermaid(
-    root: &dyn DistributedPipelineNode,
+    root: &DistributedPipelineNode,
     display_type: DisplayLevel,
     bottom_up: bool,
     subgraph_options: Option<SubgraphOptions>,
@@ -222,19 +267,19 @@ pub fn viz_distributed_pipeline_mermaid(
     let mut output = String::new();
     let mut visitor =
         MermaidDisplayVisitor::new(&mut output, display_type, bottom_up, subgraph_options);
-    visitor.fmt(root.as_tree_display()).unwrap();
+    visitor.fmt(root).unwrap();
     output
 }
 
 /// Visualize a distributed pipeline as ASCII text
-pub fn viz_distributed_pipeline_ascii(root: &dyn DistributedPipelineNode, simple: bool) -> String {
+pub fn viz_distributed_pipeline_ascii(root: &DistributedPipelineNode, simple: bool) -> String {
     let mut s = String::new();
     let level = if simple {
         DisplayLevel::Compact
     } else {
         DisplayLevel::Default
     };
-    fmt_tree_gitstyle(root.as_tree_display(), 0, &mut s, level).unwrap();
+    fmt_tree_gitstyle(root, 0, &mut s, level).unwrap();
     s
 }
 
@@ -261,11 +306,7 @@ impl SubmittableTaskStream {
         materialize_all_pipeline_outputs(self.task_stream, scheduler_handle, None)
     }
 
-    pub fn pipeline_instruction<F>(
-        self,
-        node: Arc<dyn DistributedPipelineNode>,
-        plan_builder: F,
-    ) -> Self
+    pub fn pipeline_instruction<F>(self, node: Arc<dyn PipelineNodeImpl>, plan_builder: F) -> Self
     where
         F: Fn(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef + Send + Sync + 'static,
     {
@@ -317,7 +358,7 @@ fn make_in_memory_scan_from_materialized_outputs(
 fn make_new_task_from_materialized_outputs<F>(
     task_context: TaskContext,
     materialized_outputs: Vec<MaterializedOutput>,
-    node: &Arc<dyn DistributedPipelineNode>,
+    node: &Arc<dyn PipelineNodeImpl>,
     plan_builder: F,
     scheduling_strategy: Option<SchedulingStrategy>,
 ) -> DaftResult<SubmittableTask<SwordfishTask>>
@@ -350,7 +391,7 @@ where
 fn make_in_memory_task_from_materialized_outputs(
     task_context: TaskContext,
     materialized_outputs: Vec<MaterializedOutput>,
-    node: &Arc<dyn DistributedPipelineNode>,
+    node: &Arc<dyn PipelineNodeImpl>,
     scheduling_strategy: Option<SchedulingStrategy>,
 ) -> DaftResult<SubmittableTask<SwordfishTask>> {
     make_new_task_from_materialized_outputs(
@@ -364,7 +405,7 @@ fn make_in_memory_task_from_materialized_outputs(
 
 fn append_plan_to_existing_task<F>(
     submittable_task: SubmittableTask<SwordfishTask>,
-    node: &Arc<dyn DistributedPipelineNode>,
+    node: &Arc<dyn PipelineNodeImpl>,
     plan_builder: &F,
 ) -> SubmittableTask<SwordfishTask>
 where

@@ -140,7 +140,7 @@ def columns_dict(
     num_cols = draw(integers(min_value=0, max_value=2), label="Number of additional columns")
     additional_column_names = draw(
         lists(
-            text().filter(lambda name: name not in requested_columns.keys()),
+            text().filter(lambda name: name not in requested_columns.keys() and name != "*"),
             min_size=num_cols,
             max_size=num_cols,
             unique=True,

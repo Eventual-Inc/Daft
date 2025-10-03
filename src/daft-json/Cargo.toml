@@ -13,7 +13,7 @@ daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 futures = {workspace = true}
 indexmap = {workspace = true}
 memchr = "2.7.2"
-memmap2 = "0.9.5"
+memmap2 = "0.9.8"
 num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 rayon = {workspace = true}

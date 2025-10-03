@@ -13,7 +13,7 @@ daft-physical-plan = {path = "../daft-physical-plan", default-features = false}
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
-strum = {version = "0.26", features = ["derive"]}
+strum = {version = "0.27", features = ["derive"]}
 
 [features]
 python = [

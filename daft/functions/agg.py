@@ -134,6 +134,11 @@ def mean(expr: Expression) -> Expression:
     return Expression._from_pyexpr(expr._expr.mean())
 
 
+def avg(expr: Expression) -> Expression:
+    """Calculates the mean of the values in the expression. Alias for mean()."""
+    return Expression._from_pyexpr(expr._expr.mean())
+
+
 def stddev(expr: Expression) -> Expression:
     """Calculates the standard deviation of the values in the expression."""
     return Expression._from_pyexpr(expr._expr.stddev())

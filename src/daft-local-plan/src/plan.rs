@@ -7,7 +7,7 @@ use common_py_serde::{PyObjectWrapper, deserialize_py_object, serialize_py_objec
 use common_resource_request::ResourceRequest;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use common_treenode::{DynTreeNode, TreeNode, TreeNodeRecursion};
-use daft_core::prelude::*;
+use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
     Column, WindowExpr, WindowFrame, WindowSpec,
     expr::{
@@ -589,6 +589,7 @@ impl LocalPhysicalPlan {
         right: LocalPhysicalPlanRef,
         left_on: Vec<BoundExpr>,
         right_on: Vec<BoundExpr>,
+        build_on_left: Option<bool>,
         null_equals_null: Option<Vec<bool>>,
         join_type: JoinType,
         schema: SchemaRef,
@@ -599,6 +600,7 @@ impl LocalPhysicalPlan {
             right,
             left_on,
             right_on,
+            build_on_left,
             null_equals_null,
             join_type,
             schema,
@@ -1251,6 +1253,7 @@ impl LocalPhysicalPlan {
                     right_on,
                     null_equals_null,
                     join_type,
+                    build_on_left,
                     schema,
                     stats_state,
                     ..
@@ -1259,6 +1262,7 @@ impl LocalPhysicalPlan {
                     new_right.clone(),
                     left_on.clone(),
                     right_on.clone(),
+                    *build_on_left,
                     null_equals_null.clone(),
                     *join_type,
                     schema.clone(),
@@ -1522,6 +1526,7 @@ pub struct HashJoin {
     pub right: LocalPhysicalPlanRef,
     pub left_on: Vec<BoundExpr>,
     pub right_on: Vec<BoundExpr>,
+    pub build_on_left: Option<bool>,
     pub null_equals_null: Option<Vec<bool>>,
     pub join_type: JoinType,
     pub schema: SchemaRef,

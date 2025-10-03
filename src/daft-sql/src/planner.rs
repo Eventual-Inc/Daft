@@ -1512,7 +1512,7 @@ impl SQLPlanner<'_> {
                     })
                     .collect::<SQLPlannerResult<Vec<_>>>()?;
 
-                let s = Series::try_from(values)?;
+                let s = Series::from_literals(values)?;
                 let s = FixedSizeListArray::new(
                     Field::new("tuple", s.data_type().clone())
                         .to_fixed_size_list_field(exprs.len())?,
@@ -1534,8 +1534,7 @@ impl SQLPlanner<'_> {
                         let value = value.as_literal().ok_or_else(|| {
                             PlannerError::invalid_operation("Dictionary value is not a literal")
                         })?;
-                        let struct_field = Field::new(key, value.get_type());
-                        Ok((struct_field, value.clone()))
+                        Ok((key, value.clone()))
                     })
                     .collect::<SQLPlannerResult<_>>()?;
 

@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use arrow2::{
     array::{Array, Utf8Array},
     bitmap::utils::SlicesIterator,
@@ -16,55 +14,6 @@ use crate::{
     },
     prelude::Utf8Type,
 };
-
-#[cfg(feature = "python")]
-impl DaftConcatAggable for crate::datatypes::PythonArray {
-    type Output = DaftResult<Self>;
-    fn concat(&self) -> Self::Output {
-        use pyo3::{prelude::*, types::PyList};
-
-        use crate::array::pseudo_arrow::PseudoArrowArray;
-
-        let pyobj_vec = self.as_arrow().to_pyobj_vec();
-
-        let pylist: Py<PyList> = Python::with_gil(|py| -> PyResult<Py<PyList>> {
-            let pylist = PyList::empty(py);
-            for pyobj in pyobj_vec {
-                if !pyobj.is_none(py) {
-                    pylist.call_method1(pyo3::intern!(py, "extend"), (pyobj.clone_ref(py),))?;
-                }
-            }
-            Ok(pylist.into())
-        })?;
-        let arrow_array = PseudoArrowArray::from_pyobj_vec(vec![Arc::new(pylist.into())]);
-        Self::new(self.field().clone().into(), Box::new(arrow_array))
-    }
-    fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {
-        use pyo3::{prelude::*, types::PyList};
-
-        use crate::array::pseudo_arrow::PseudoArrowArray;
-
-        let mut result_pylists: Vec<Arc<PyObject>> = Vec::with_capacity(groups.len());
-
-        Python::with_gil(|py| -> DaftResult<()> {
-            for group in groups {
-                let indices_as_array = crate::datatypes::UInt64Array::from(("", group.clone()));
-                let group_pyobjs = self.take(&indices_as_array)?.as_arrow().to_pyobj_vec();
-                let pylist = PyList::empty(py);
-                for pyobj in group_pyobjs {
-                    if !pyobj.is_none(py) {
-                        pylist.call_method1(pyo3::intern!(py, "extend"), (pyobj.clone_ref(py),))?;
-                    }
-                }
-                result_pylists.push(Arc::new(pylist.into()));
-            }
-            Ok(())
-        })?;
-
-        let arrow_array = PseudoArrowArray::from_pyobj_vec(result_pylists);
-        Self::new(self.field().clone().into(), Box::new(arrow_array))
-    }
-}
 
 impl DaftConcatAggable for ListArray {
     type Output = DaftResult<Self>;
