@@ -93,7 +93,7 @@ pub struct GlobScanInfo {
 
 impl GlobScanInfo {
     #[must_use]
-    pub fn new(glob_paths: Vec<String>, pushdowns: Pushdowns, io_config: Option<IOConfig>) -> Self {
+    pub fn new(glob_paths: Vec<String>, io_config: Option<IOConfig>) -> Self {
         let schema = Schema::new([
             Field::new("path", DataType::Utf8),
             Field::new("size", DataType::Int64),
@@ -103,7 +103,7 @@ impl GlobScanInfo {
         Self {
             glob_paths,
             schema,
-            pushdowns,
+            pushdowns: Pushdowns::default(),
             io_config,
         }
     }

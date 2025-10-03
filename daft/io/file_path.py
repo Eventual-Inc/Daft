@@ -52,7 +52,6 @@ def from_glob_path(path: Union[str, list[str]], io_config: Optional[IOConfig] = 
     # Use the new lazy glob scan
     builder = LogicalPlanBuilder.from_glob_scan(
         glob_paths=path,
-        pushdowns=None,
         io_config=io_config,
     )
     return DataFrame(builder)

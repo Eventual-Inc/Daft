@@ -1764,7 +1764,6 @@ class LogicalPlanBuilder:
     @staticmethod
     def from_glob_scan(
         glob_paths: list[str],
-        pushdowns: PyPushdowns | None = None,
         io_config: IOConfig | None = None,
     ) -> LogicalPlanBuilder: ...
     def with_planning_config(self, daft_planning_config: PyDaftPlanningConfig) -> LogicalPlanBuilder: ...

@@ -27,7 +27,6 @@ use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
     common_daft_config::PyDaftPlanningConfig,
     common_io_config::python::IOConfig as PyIOConfig,
-    common_scan_info::python::pylib::PyPushdowns,
     daft_dsl::python::PyExpr,
     // daft_scan::python::pylib::ScanOperatorHandle,
     daft_schema::python::schema::PySchema,
@@ -169,11 +168,9 @@ impl LogicalPlanBuilder {
     /// Creates a `LogicalPlan::Source` from glob paths.
     pub fn from_glob_scan(
         glob_paths: Vec<String>,
-        pushdowns: Option<Pushdowns>,
         io_config: Option<IOConfig>,
     ) -> DaftResult<Self> {
-        let glob_scan_info =
-            GlobScanInfo::new(glob_paths, pushdowns.unwrap_or_default(), io_config);
+        let glob_scan_info = GlobScanInfo::new(glob_paths, io_config);
         let schema = glob_scan_info.schema.clone();
         let logical_plan: LogicalPlan =
             ops::Source::new(schema, SourceInfo::GlobScan(glob_scan_info).into()).into();
@@ -1074,15 +1071,9 @@ impl PyLogicalPlanBuilder {
     #[staticmethod]
     pub fn from_glob_scan(
         glob_paths: Vec<String>,
-        pushdowns: Option<PyPushdowns>,
         io_config: Option<PyIOConfig>,
     ) -> PyResult<Self> {
-        Ok(LogicalPlanBuilder::from_glob_scan(
-            glob_paths,
-            pushdowns.map(|p| p.0.as_ref().clone()),
-            io_config.map(|c| c.config),
-        )?
-        .into())
+        Ok(LogicalPlanBuilder::from_glob_scan(glob_paths, io_config.map(|c| c.config))?.into())
     }
 
     pub fn with_planning_config(
