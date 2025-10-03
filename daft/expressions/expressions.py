@@ -46,7 +46,7 @@ def lit(value: object) -> Expression:
     """Creates an Expression representing a column with every value set to the provided value.
 
     Args:
-        val: value of column
+        value: value of the literal
 
     Returns:
         Expression: Expression representing the value provided

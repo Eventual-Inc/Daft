@@ -43,7 +43,7 @@ from daft.functions import llm_generate
 
 What this does:
 
-- Uses [`llm_generate()`](../../api/functions/llm_generate) to express inference.
+- Uses [`llm_generate()`][daft.functions.llm_generate] to express inference.
 - Streams rows through OpenAI concurrently while reading from Hugging Face and writing to Parquet.
 - Requires no explicit async, batching, rate limiting, or retry code in your script.
 
