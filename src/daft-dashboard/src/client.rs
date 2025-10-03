@@ -36,7 +36,6 @@ async fn subscribe_queries_updates(
     // Consecutive events of all query status updates
     let stream = BroadcastStream::new(rx).filter_map(|event| match event {
         Ok((id, summary)) => {
-            eprintln!("id: {:?}, summary: {:?}", id, summary);
             let event = Event::default()
                 .id(id.to_string())
                 .event("status_update")
@@ -52,7 +51,6 @@ async fn subscribe_queries_updates(
         .iter()
         .map(|entry| (entry.key().clone(), entry.value().summarize()))
         .collect::<HashMap<_, _>>();
-    eprintln!("queries: {:?}", queries);
     let stream = futures::stream::once(ok(Event::default()
         .event("initial_state")
         .data(serde_json::to_string(&queries).unwrap())))

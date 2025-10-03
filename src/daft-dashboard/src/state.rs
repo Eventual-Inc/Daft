@@ -137,6 +137,7 @@ impl DashboardState {
         Self {
             queries: Default::default(),
             dataframe_previews: Default::default(),
+            // TODO: Ideally this should never drop events, we need an unbounded broadcast channel
             clients: broadcast::Sender::new(256),
             event_counter: AtomicUsize::new(0),
         }

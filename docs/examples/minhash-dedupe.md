@@ -60,7 +60,7 @@ LSH_THRESHOLD = 0.7 # Jaccard Similarity Threshold for LSH
 
 ## Loading HTML Documents from Common Crawl
 
-We will be accessing Common Crawl through [WARC files](https://commoncrawl.org/blog/navigating-the-warc-file-format) since [Daft supports the format natively](../api/io/#daft.read_warc).
+We will be accessing Common Crawl through [WARC files](https://commoncrawl.org/blog/navigating-the-warc-file-format) since [Daft supports the format natively](../../api/io/#daft.read_warc).
 
 ### (Optional) AWS Authentication
 
@@ -194,7 +194,7 @@ So far we have extracted the text out of each html document into blocks. Now we 
 
 *Note: It is recommended to run your preprocessing pipeline separately from your MinHash deduplication workload.*
 
-See docs: [normalize](../api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.normalize)
+See docs: [normalize](../../api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.normalize)
 
 ```python
 # Normalize text
@@ -213,7 +213,7 @@ df_norm.select(index_col, content_col, "content_normalized").show(3)
 
 Normally when you perform a MinHash on text data, you have to define the shingling strategy, hash functions, and permutation parameters manually.
 
-Luckily, Daft has a built-in [MinHash expression](../api/expressions/#daft.expressions.Expression.minhash).
+Luckily, Daft has a built-in [MinHash expression](../../api/expressions/#daft.expressions.Expression.minhash).
 
 ```python
 # Calculate the MinHash vectors

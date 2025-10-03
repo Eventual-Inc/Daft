@@ -509,8 +509,11 @@ You can **group** and **aggregate** your data using the [`df.groupby()`][daft.Da
 
 ### What's Next?
 
-Now that you have a basic sense of Daft’s functionality and features, here are some more resources to help you get the most out of Daft:
+Now that you have a basic sense of Daft's functionality and features, here are some more resources to help you get the most out of Daft:
 
+!!! tip "Try this on Kubernetes"
+
+    Want to run this example on Kubernetes? Check out our [Kubernetes quickstart](kubernetes.md).
 
 **Work with your favorite table and catalog formats**:
 
