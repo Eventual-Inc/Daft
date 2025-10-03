@@ -1889,7 +1889,6 @@ dependencies = [
  "pyo3",
  "serde",
  "smallvec",
- "uuid 1.18.1",
 ]
 
 [[package]]
