@@ -48,9 +48,13 @@ macro_rules! impl_array_arrow_get {
         impl $ArrayT {
             #[inline]
             pub fn get(&self, idx: usize) -> Option<$output> {
-                if idx >= self.len() {
-                    panic!("Out of bounds: {} vs len: {}", idx, self.len())
-                }
+                assert!(
+                    idx < self.len(),
+                    "Out of bounds: {} vs len: {}",
+                    idx,
+                    self.len()
+                );
+
                 let arrow_array = self.as_arrow();
                 let is_valid = arrow_array
                     .validity()

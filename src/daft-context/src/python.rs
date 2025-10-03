@@ -77,7 +77,7 @@ impl PyDaftContext {
         Ok(())
     }
 
-    pub fn notify_query_end(&self, py: Python, query_id: &str) -> PyResult<()> {
+    pub fn notify_query_end(&self, py: Python, query_id: String) -> PyResult<()> {
         py.allow_threads(|| self.inner.notify_query_end(query_id.into()))?;
         Ok(())
     }

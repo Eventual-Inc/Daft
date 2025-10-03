@@ -379,7 +379,7 @@ pub fn get_udf_properties(expr: &ExprRef) -> UDFProperties {
             udf_properties = Some(UDFProperties {
                 name: py.name().to_string(),
                 resource_request: None,
-                batch_size: Some(512),
+                batch_size: None,
                 concurrency: None,
                 use_process: None,
             });

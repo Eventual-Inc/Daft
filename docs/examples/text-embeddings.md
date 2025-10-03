@@ -232,7 +232,7 @@ Now we'll execute the complete data processing pipeline:
 5. **Generate embeddings**: Apply embedding UDF to text
 6. **Create IDs**: Generate unique IDs combining URL and chunk_id
 7. **Select columns**: Keep only the necessary columns
-8. **Write to Turbopuffer**: Store data and vectors in Turbopuffer using Daft's [`DataFrame.write_turbopuffer`](../api/dataframe#daft.DataFrame.write_turbopuffer) method
+8. **Write to Turbopuffer**: Store data and vectors in Turbopuffer using Daft's [`DataFrame.write_turbopuffer`][daft.DataFrame.write_turbopuffer] method
 
 If all works out well, when you run this script on your cluster, you should notice that network I/O, CPU work, and GPU work are pipelined to run in parallel, and you should see high GPU utilization :)
 
