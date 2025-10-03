@@ -1,8 +1,10 @@
 use std::hash::{Hash, Hasher};
 
+use common_io_config::IOConfig;
 use common_partitioning::PartitionCacheEntry;
 use common_scan_info::{PhysicalScanInfo, Pushdowns};
-use daft_schema::schema::SchemaRef;
+use daft_core::prelude::Schema;
+use daft_schema::{dtype::DataType, field::Field, schema::SchemaRef};
 use serde::{Deserialize, Serialize};
 
 use crate::partitioning::ClusteringSpecRef;
@@ -84,22 +86,23 @@ impl PlaceHolderInfo {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct GlobScanInfo {
     pub glob_paths: Vec<String>,
-    pub source_schema: SchemaRef,
+    pub schema: SchemaRef,
     pub pushdowns: Pushdowns,
-    pub io_config: Option<common_io_config::IOConfig>,
+    pub io_config: Option<IOConfig>,
 }
 
 impl GlobScanInfo {
     #[must_use]
-    pub fn new(
-        glob_paths: Vec<String>,
-        source_schema: SchemaRef,
-        pushdowns: Pushdowns,
-        io_config: Option<common_io_config::IOConfig>,
-    ) -> Self {
+    pub fn new(glob_paths: Vec<String>, pushdowns: Pushdowns, io_config: Option<IOConfig>) -> Self {
+        let schema = Schema::new([
+            Field::new("path", DataType::Utf8),
+            Field::new("size", DataType::Int64),
+            Field::new("rows", DataType::Int64),
+        ])
+        .into();
         Self {
             glob_paths,
-            source_schema,
+            schema,
             pushdowns,
             io_config,
         }
@@ -109,7 +112,7 @@ impl GlobScanInfo {
     pub fn with_pushdowns(&self, pushdowns: Pushdowns) -> Self {
         Self {
             glob_paths: self.glob_paths.clone(),
-            source_schema: self.source_schema.clone(),
+            schema: self.schema.clone(),
             pushdowns,
             io_config: self.io_config.clone(),
         }

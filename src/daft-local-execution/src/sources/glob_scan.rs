@@ -3,6 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use common_error::DaftResult;
 use common_io_config::IOConfig;
+use common_metrics::ops::NodeType;
 use common_scan_info::Pushdowns;
 use daft_core::prelude::*;
 use daft_io::{IOStatsRef, get_io_client};
@@ -12,8 +13,9 @@ use futures::{StreamExt, TryStreamExt};
 use tracing::instrument;
 
 use super::source::Source;
-use crate::{ops::NodeType, pipeline::NodeName, sources::source::SourceStream};
+use crate::{pipeline::NodeName, sources::source::SourceStream};
 
+#[allow(dead_code)]
 pub struct GlobScanSource {
     glob_paths: Vec<String>,
     pushdowns: Pushdowns,

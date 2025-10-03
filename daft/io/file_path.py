@@ -7,9 +7,7 @@ from daft.api_annotations import PublicAPI
 from daft.context import get_context
 from daft.daft import IOConfig
 from daft.dataframe import DataFrame
-from daft.datatype import DataType
 from daft.logical.builder import LogicalPlanBuilder
-from daft.schema import Schema
 
 
 @PublicAPI
@@ -51,19 +49,9 @@ def from_glob_path(path: Union[str, list[str]], io_config: Optional[IOConfig] = 
     context = get_context()
     io_config = context.daft_planning_config.default_io_config if io_config is None else io_config
 
-    # Create schema for glob scan results
-    schema = Schema._from_field_name_and_types(
-        [
-            ("path", DataType.string()),
-            ("size", DataType.int64()),
-            ("rows", DataType.int64()),
-        ]
-    )
-
     # Use the new lazy glob scan
     builder = LogicalPlanBuilder.from_glob_scan(
         glob_paths=path,
-        schema=schema,
         pushdowns=None,
         io_config=io_config,
     )

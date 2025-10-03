@@ -169,17 +169,14 @@ impl LogicalPlanBuilder {
     /// Creates a `LogicalPlan::Source` from glob paths.
     pub fn from_glob_scan(
         glob_paths: Vec<String>,
-        schema: Arc<Schema>,
-        pushdowns: Option<common_scan_info::Pushdowns>,
-        io_config: Option<common_io_config::IOConfig>,
+        pushdowns: Option<Pushdowns>,
+        io_config: Option<IOConfig>,
     ) -> DaftResult<Self> {
-        let source_info = SourceInfo::GlobScan(GlobScanInfo::new(
-            glob_paths,
-            schema.clone(),
-            pushdowns.unwrap_or_default(),
-            io_config,
-        ));
-        let logical_plan: LogicalPlan = ops::Source::new(schema, source_info.into()).into();
+        let glob_scan_info =
+            GlobScanInfo::new(glob_paths, pushdowns.unwrap_or_default(), io_config);
+        let schema = glob_scan_info.schema.clone();
+        let logical_plan: LogicalPlan =
+            ops::Source::new(schema, SourceInfo::GlobScan(glob_scan_info).into()).into();
 
         Ok(Self::from(Arc::new(logical_plan)))
     }
@@ -1077,13 +1074,11 @@ impl PyLogicalPlanBuilder {
     #[staticmethod]
     pub fn from_glob_scan(
         glob_paths: Vec<String>,
-        schema: PySchema,
         pushdowns: Option<PyPushdowns>,
         io_config: Option<PyIOConfig>,
     ) -> PyResult<Self> {
         Ok(LogicalPlanBuilder::from_glob_scan(
             glob_paths,
-            schema.into(),
             pushdowns.map(|p| p.0.as_ref().clone()),
             io_config.map(|c| c.config),
         )?

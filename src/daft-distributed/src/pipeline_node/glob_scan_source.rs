@@ -12,12 +12,12 @@ use super::{
     SubmittableTaskStream,
 };
 use crate::{
-    pipeline_node::NodeID,
+    pipeline_node::{NodeID, PipelineNodeImpl},
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SubmittableTask,
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
     },
-    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::channel::{Sender, create_channel},
 };
 
@@ -34,7 +34,7 @@ impl GlobScanSourceNode {
 
     pub fn new(
         node_id: NodeID,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         glob_paths: Vec<String>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
@@ -42,7 +42,7 @@ impl GlobScanSourceNode {
         io_config: Option<IOConfig>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![],
@@ -51,7 +51,7 @@ impl GlobScanSourceNode {
         );
         let config = PipelineNodeConfig::new(
             schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             Arc::new(ClusteringSpec::unknown_with_num_partitions(1)),
         );
         Self {
@@ -63,8 +63,8 @@ impl GlobScanSourceNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn execution_loop(
@@ -101,7 +101,7 @@ impl GlobScanSourceNode {
     }
 }
 
-impl DistributedPipelineNode for GlobScanSourceNode {
+impl PipelineNodeImpl for GlobScanSourceNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -110,16 +110,16 @@ impl DistributedPipelineNode for GlobScanSourceNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![]
     }
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
         let (tx, rx) = create_channel(1000);
-        let task_id_counter = stage_context.task_id_counter().clone();
+        let task_id_counter = plan_context.task_id_counter().clone();
         tokio::spawn(async move {
             if let Err(e) = self.execution_loop(tx, task_id_counter).await {
                 eprintln!("Error in glob scan execution loop: {}", e);
@@ -128,20 +128,11 @@ impl DistributedPipelineNode for GlobScanSourceNode {
         rx.into()
     }
 
-    fn as_tree_display(&self) -> &dyn common_display::tree::TreeDisplay {
-        self
-    }
-}
-
-impl common_display::tree::TreeDisplay for GlobScanSourceNode {
-    fn display_as(&self, _level: common_display::DisplayLevel) -> String {
-        format!(
-            "GlobScanSource(glob_paths={:?}, pushdowns={:?})",
-            self.glob_paths, self.pushdowns
-        )
-    }
-
-    fn get_children(&self) -> Vec<&dyn common_display::tree::TreeDisplay> {
-        vec![]
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        vec![
+            "GlobScanSource".to_string(),
+            format!("Glob paths = {:?}", self.glob_paths),
+            format!("Pushdowns = {:?}", self.pushdowns),
+        ]
     }
 }

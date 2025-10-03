@@ -102,14 +102,14 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     }
                     SourceInfo::GlobScan(info) => GlobScanSourceNode::new(
                         self.get_next_pipeline_node_id(),
-                        &self.stage_config,
+                        &self.plan_config,
                         info.glob_paths.clone(),
                         info.pushdowns.clone(),
                         source.output_schema.clone(),
                         logical_node_id,
                         info.io_config.clone(),
                     )
-                    .arced(),
+                    .into_node(),
                     SourceInfo::PlaceHolder(_) => unreachable!(
                         "PlaceHolder should not be present in the logical plan for pipeline node translation"
                     ),

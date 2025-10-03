@@ -11,12 +11,14 @@ from daft.daft import (
     JoinStrategy,
     JoinType,
     PyDaftExecutionConfig,
+    PyPushdowns,
     ScanOperatorHandle,
     WriteMode,
     logical_plan_table_scan,
 )
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
 from daft.expressions import Expression, col
+
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
@@ -29,6 +31,7 @@ if TYPE_CHECKING:
         AdaptivePhysicalPlanScheduler,
         PhysicalPlanScheduler,
     )
+    from daft.io.pushdowns import Pushdowns
     from daft.runners.partitioning import PartitionCacheEntry
 
 
@@ -155,12 +158,9 @@ class LogicalPlanBuilder:
     def from_glob_scan(
         cls,
         glob_paths: list[str],
-        schema: Schema,
         pushdowns: Pushdowns | None = None,
         io_config: IOConfig | None = None,
     ) -> LogicalPlanBuilder:
-        from daft.io.pushdowns import Pushdowns as PyPushdowns
-
         # Convert Python types to Rust types
         pushdowns_rust = None
         if pushdowns is not None:
@@ -176,7 +176,6 @@ class LogicalPlanBuilder:
 
         builder = _LogicalPlanBuilder.from_glob_scan(
             glob_paths,
-            schema._schema,
             pushdowns_rust,
             io_config,
         )
