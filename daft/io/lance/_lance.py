@@ -58,9 +58,6 @@ def read_lance(
             page equals the combination of the pq code (``np.array([n,pq], dtype=uint8))``
             Approximately, ``n = Total Rows / number of IVF partitions``.
             ``pq = number of PQ sub-vectors``.
-        storage_options : optional, dict
-            Extra options that make sense for a particular storage connection. This is
-            used to store connection parameters like credentials, endpoint, etc.
         default_scan_options : optional, dict
             Default scan options that are used when scanning the dataset.  This accepts
             the same arguments described in :py:meth:`lance.LanceDataset.scanner`.  The
