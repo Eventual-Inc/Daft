@@ -165,7 +165,7 @@ impl LocalPhysicalPlan {
     }
 
     pub fn glob_scan(
-        glob_paths: Vec<String>,
+        glob_paths: Arc<Vec<String>>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
         stats_state: StatsState,
@@ -1344,7 +1344,7 @@ pub struct PhysicalScan {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GlobScan {
-    pub glob_paths: Vec<String>,
+    pub glob_paths: Arc<Vec<String>>,
     pub pushdowns: Pushdowns,
     pub schema: SchemaRef,
     pub stats_state: StatsState,

@@ -187,7 +187,7 @@ def test_glob_files_from_multiple_path(tmpdir):
     assert_df_equals(daft_df.to_pandas(), pd_df, sort_key="path")
 
     with pytest.raises(FileNotFoundError):
-        daft.from_glob_path(str(pathlib.Path(tmpdir)))
+        daft.from_glob_path(str(pathlib.Path(tmpdir))).collect()
 
     with pytest.raises(FileNotFoundError):
-        daft.from_glob_path("/not_exists")
+        daft.from_glob_path("/not_exists").collect()

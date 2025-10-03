@@ -1,4 +1,7 @@
-use std::hash::{Hash, Hasher};
+use std::{
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use common_io_config::IOConfig;
 use common_partitioning::PartitionCacheEntry;
@@ -85,7 +88,7 @@ impl PlaceHolderInfo {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct GlobScanInfo {
-    pub glob_paths: Vec<String>,
+    pub glob_paths: Arc<Vec<String>>,
     pub schema: SchemaRef,
     pub pushdowns: Pushdowns,
     pub io_config: Option<IOConfig>,
@@ -97,11 +100,11 @@ impl GlobScanInfo {
         let schema = Schema::new([
             Field::new("path", DataType::Utf8),
             Field::new("size", DataType::Int64),
-            Field::new("rows", DataType::Int64),
+            Field::new("num_rows", DataType::Int64),
         ])
         .into();
         Self {
-            glob_paths,
+            glob_paths: Arc::new(glob_paths),
             schema,
             pushdowns: Pushdowns::default(),
             io_config,

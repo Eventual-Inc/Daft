@@ -24,7 +24,7 @@ use crate::{
 pub struct GlobScanSourceNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    glob_paths: Vec<String>,
+    glob_paths: Arc<Vec<String>>,
     pushdowns: Pushdowns,
     io_config: Option<IOConfig>,
 }
@@ -35,7 +35,7 @@ impl GlobScanSourceNode {
     pub fn new(
         node_id: NodeID,
         plan_config: &PlanConfig,
-        glob_paths: Vec<String>,
+        glob_paths: Arc<Vec<String>>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
         logical_node_id: Option<NodeID>,
