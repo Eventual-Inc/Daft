@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use common_metrics::{NodeID, QueryID, QueryPlan, Stat, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotRecv, ops::NodeInfo};
 use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;
 use serde::Serialize;
@@ -20,7 +20,7 @@ pub(crate) enum OperatorStatus {
 pub(crate) struct OperatorInfo {
     pub status: OperatorStatus,
     pub node_info: NodeInfo,
-    pub stats: HashMap<String, Stat>,
+    pub stats: StatSnapshotRecv,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

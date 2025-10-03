@@ -126,7 +126,7 @@ impl DaftContext {
     ) -> DaftResult<()> {
         self.with_state(|state| {
             for subscriber in state.subscribers.values() {
-                subscriber.on_query_start(query_id.clone(), unoptimized_plan.clone())?;
+                subscriber.on_query_start(&query_id, unoptimized_plan.clone())?;
             }
             Ok::<(), DaftError>(())
         })
@@ -135,7 +135,7 @@ impl DaftContext {
     pub fn notify_query_end(&self, query_id: QueryID) -> DaftResult<()> {
         self.with_state(move |state| {
             for subscriber in state.subscribers.values() {
-                subscriber.on_query_end(query_id.clone())?;
+                subscriber.on_query_end(&query_id)?;
             }
             Ok::<(), DaftError>(())
         })
@@ -148,7 +148,7 @@ impl DaftContext {
     ) -> DaftResult<()> {
         self.with_state(|state| {
             for subscriber in state.subscribers.values() {
-                subscriber.on_result_out(query_id.clone(), result.clone())?;
+                subscriber.on_result_out(&query_id, result.clone())?;
             }
             Ok::<(), DaftError>(())
         })
@@ -157,7 +157,7 @@ impl DaftContext {
     pub fn notify_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
         self.with_state(|state| {
             for subscriber in state.subscribers.values() {
-                subscriber.on_optimization_start(query_id.clone())?;
+                subscriber.on_optimization_start(&query_id)?;
             }
             Ok::<(), DaftError>(())
         })
@@ -170,7 +170,7 @@ impl DaftContext {
     ) -> DaftResult<()> {
         self.with_state(|state| {
             for subscriber in state.subscribers.values() {
-                subscriber.on_optimization_end(query_id.clone(), optimized_plan.clone())?;
+                subscriber.on_optimization_end(&query_id, optimized_plan.clone())?;
             }
             Ok::<(), DaftError>(())
         })

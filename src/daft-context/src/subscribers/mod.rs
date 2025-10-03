@@ -7,25 +7,25 @@ use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotSend, ops::NodeInfo};
 use daft_micropartition::MicroPartitionRef;
 
 #[async_trait]
 pub trait Subscriber: Send + Sync + std::fmt::Debug + 'static {
-    fn on_query_start(&self, query_id: QueryID, unoptimized_plan: QueryPlan) -> DaftResult<()>;
-    fn on_query_end(&self, query_id: QueryID) -> DaftResult<()>;
-    fn on_result_out(&self, query_id: QueryID, result: MicroPartitionRef) -> DaftResult<()>;
-    fn on_optimization_start(&self, query_id: QueryID) -> DaftResult<()>;
-    fn on_optimization_end(&self, query_id: QueryID, optimized_plan: QueryPlan) -> DaftResult<()>;
-    fn on_exec_start(&self, query_id: QueryID, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()>;
-    async fn on_exec_operator_start(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()>;
+    fn on_query_start(&self, query_id: &QueryID, unoptimized_plan: QueryPlan) -> DaftResult<()>;
+    fn on_query_end(&self, query_id: &QueryID) -> DaftResult<()>;
+    fn on_result_out(&self, query_id: &QueryID, result: MicroPartitionRef) -> DaftResult<()>;
+    fn on_optimization_start(&self, query_id: &QueryID) -> DaftResult<()>;
+    fn on_optimization_end(&self, query_id: &QueryID, optimized_plan: QueryPlan) -> DaftResult<()>;
+    fn on_exec_start(&self, query_id: &QueryID, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()>;
+    async fn on_exec_operator_start(&self, query_id: &QueryID, node_id: NodeID) -> DaftResult<()>;
     async fn on_exec_emit_stats(
         &self,
-        query_id: QueryID,
-        stats: &[(NodeID, StatSnapshotView)],
+        query_id: &QueryID,
+        stats: &[(NodeID, StatSnapshotSend)],
     ) -> DaftResult<()>;
-    async fn on_exec_operator_end(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()>;
-    async fn on_exec_end(&self, query_id: QueryID) -> DaftResult<()>;
+    async fn on_exec_operator_end(&self, query_id: &QueryID, node_id: NodeID) -> DaftResult<()>;
+    async fn on_exec_end(&self, query_id: &QueryID) -> DaftResult<()>;
 }
 
 pub fn default_subscribers() -> HashMap<String, Arc<dyn Subscriber>> {
