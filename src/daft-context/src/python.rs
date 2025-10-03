@@ -101,7 +101,7 @@ impl PyDaftContext {
         &self,
         py: Python,
         query_id: &str,
-        optimized_plan: String,
+        optimized_plan: &str,
     ) -> PyResult<()> {
         py.allow_threads(|| {
             self.inner
