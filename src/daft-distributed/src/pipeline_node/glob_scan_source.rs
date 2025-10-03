@@ -72,7 +72,6 @@ impl GlobScanSourceNode {
         result_tx: Sender<SubmittableTask<SwordfishTask>>,
         task_id_counter: TaskIDCounter,
     ) -> DaftResult<()> {
-        // For now, return a placeholder task
         let task =
             self.make_glob_scan_task(TaskContext::from((&self.context, task_id_counter.next())))?;
         let _ = result_tx.send(SubmittableTask::new(task)).await;
@@ -80,7 +79,6 @@ impl GlobScanSourceNode {
     }
 
     fn make_glob_scan_task(&self, task_context: TaskContext) -> DaftResult<SwordfishTask> {
-        // Create a LocalPhysicalPlan::glob_scan task
         let physical_glob_scan = LocalPhysicalPlan::glob_scan(
             self.glob_paths.clone(),
             self.pushdowns.clone(),
@@ -118,14 +116,10 @@ impl PipelineNodeImpl for GlobScanSourceNode {
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let (tx, rx) = create_channel(1000);
-        let task_id_counter = plan_context.task_id_counter();
-        tokio::spawn(async move {
-            if let Err(e) = self.execution_loop(tx, task_id_counter).await {
-                eprintln!("Error in glob scan execution loop: {}", e);
-            }
-        });
-        rx.into()
+        let (result_tx, result_rx) = create_channel(1);
+        let execution_loop = self.execution_loop(result_tx, plan_context.task_id_counter());
+        plan_context.spawn(execution_loop);
+        SubmittableTaskStream::from(result_rx)
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
