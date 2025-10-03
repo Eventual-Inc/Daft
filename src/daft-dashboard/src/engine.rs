@@ -142,15 +142,20 @@ async fn exec_op_end(
     StatusCode::OK
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ExecEmitStatsArgs {
+#[derive(Debug, Clone, Serialize)]
+pub struct ExecEmitStatsArgsSend<'a> {
+    pub stats: Vec<(usize, HashMap<&'a str, Stat>)>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExecEmitStatsArgsRecv {
     pub stats: Vec<(usize, HashMap<String, Stat>)>,
 }
 
 async fn exec_emit_stats(
     State(state): State<Arc<DashboardState>>,
     Path(query_id): Path<QueryID>,
-    Json(args): Json<ExecEmitStatsArgs>,
+    Json(args): Json<ExecEmitStatsArgsRecv>,
 ) -> StatusCode {
     let mut query_info = state.queries.get_mut(&query_id).unwrap();
     let QueryState::Executing { exec_info, .. } = &mut query_info.status else {

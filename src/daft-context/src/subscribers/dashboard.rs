@@ -228,7 +228,7 @@ impl Subscriber for DashboardSubscriber {
                     "{}/engine/query/{}/exec/emit_stats",
                     self.url, query_id
                 ))
-                .json(&daft_dashboard::engine::ExecEmitStatsArgs {
+                .json(&daft_dashboard::engine::ExecEmitStatsArgsSend {
                     stats: stats
                         .iter()
                         .map(|(node_id, stats)| {
@@ -236,7 +236,7 @@ impl Subscriber for DashboardSubscriber {
                                 *node_id,
                                 stats
                                     .into_iter()
-                                    .map(|(name, stat)| ((*name).to_string(), stat.clone()))
+                                    .map(|(name, stat)| (*name, stat.clone()))
                                     .collect(),
                             )
                         })
