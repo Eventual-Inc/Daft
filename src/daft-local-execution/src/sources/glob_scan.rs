@@ -136,9 +136,7 @@ impl Source for GlobScanSource {
                     let mut stream =
                         stream.try_take_while(move |partition| match (partition, remaining_rows) {
                             // Limit has been met, early-terminate.
-                            (_, Some(rows_left)) if rows_left <= 0 => {
-                                futures::future::ready(Ok(false))
-                            }
+                            (_, Some(0)) => futures::future::ready(Ok(false)),
                             // Limit has not yet been met, update remaining remaining_rows and continue.
                             (table, Some(rows_left)) => {
                                 remaining_rows = Some(rows_left.saturating_sub(table.len()));

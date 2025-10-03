@@ -46,7 +46,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     info.pushdowns.clone(),
                     source.output_schema.clone(),
                     source.stats_state.clone(),
-                    info.io_config.clone(),
+                    info.io_config.clone().map(|c| *c),
                 )),
                 SourceInfo::PlaceHolder(ph) => Ok(LocalPhysicalPlan::placeholder_scan(
                     ph.source_schema.clone(),

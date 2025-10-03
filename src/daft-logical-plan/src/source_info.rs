@@ -91,7 +91,7 @@ pub struct GlobScanInfo {
     pub glob_paths: Arc<Vec<String>>,
     pub schema: SchemaRef,
     pub pushdowns: Pushdowns,
-    pub io_config: Option<IOConfig>,
+    pub io_config: Option<Box<IOConfig>>,
 }
 
 impl GlobScanInfo {
@@ -107,7 +107,7 @@ impl GlobScanInfo {
             glob_paths: Arc::new(glob_paths),
             schema,
             pushdowns: Pushdowns::default(),
-            io_config,
+            io_config: io_config.map(Box::new),
         }
     }
 

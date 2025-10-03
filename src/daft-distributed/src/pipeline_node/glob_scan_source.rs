@@ -119,7 +119,7 @@ impl PipelineNodeImpl for GlobScanSourceNode {
         plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
         let (tx, rx) = create_channel(1000);
-        let task_id_counter = plan_context.task_id_counter().clone();
+        let task_id_counter = plan_context.task_id_counter();
         tokio::spawn(async move {
             if let Err(e) = self.execution_loop(tx, task_id_counter).await {
                 eprintln!("Error in glob scan execution loop: {}", e);

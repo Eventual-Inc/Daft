@@ -107,7 +107,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         info.pushdowns.clone(),
                         source.output_schema.clone(),
                         logical_node_id,
-                        info.io_config.clone(),
+                        info.io_config.clone().map(|c| *c),
                     )
                     .into_node(),
                     SourceInfo::PlaceHolder(_) => unreachable!(
