@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import shutil
+import tempfile
+from typing import TYPE_CHECKING
 
-from daft.daft import PyDaftFile
+from daft.daft import PyDaftFile, PyFileReference
 
 if TYPE_CHECKING:
+    from tempfile import _TemporaryFileWrapper
+
     from daft.io import IOConfig
 
 
@@ -12,8 +16,7 @@ class File:
     """A file-like object for working with file contents in Daft.
 
     This is an abstract base class that provides a standard file interface compatible
-    with Python's file protocol. It handles both filesystem-based files and in-memory
-    data through its concrete subclasses PathFile and MemoryFile.
+    with Python's file protocol.
 
     The File object can be used with most Python libraries that accept file-like objects,
     and implements the standard read/seek/tell interface. Files are read-only in the
@@ -28,62 +31,29 @@ class File:
         >>> @daft.func
         >>> def read_json(file: daft.File) -> str:
         >>>     import json
-        >>>     data = json.load(file)
-        >>>     return data["text"]
+        >>>     with file.open() as f:
+        >>>         data = json.load(f)
+        >>>         return data["text"]
     """
 
-    _inner: PyDaftFile
+    _inner: PyFileReference
+
+    @staticmethod
+    def _from_file_reference(reference: PyFileReference) -> File:
+        instance = File.__new__(File)
+        instance._inner = reference
+        return instance
 
     def __init__(self, str_or_bytes: str | bytes, io_config: IOConfig | None = None) -> None:
         if isinstance(str_or_bytes, str):
-            self._inner = PyDaftFile._from_path(str_or_bytes, io_config)
+            self._inner = PyFileReference._from_tuple((str_or_bytes, io_config))  # type: ignore
         elif isinstance(str_or_bytes, bytes):
-            self._inner = PyDaftFile._from_bytes(str_or_bytes)
+            self._inner = PyFileReference._from_tuple((str_or_bytes, io_config))  # type: ignore
         else:
             raise TypeError("str_or_bytes must be a string or bytes")
 
-    @staticmethod
-    def _from_py_daft_file(f: PyDaftFile) -> File:
-        file = File.__new__(File)
-        file._inner = f
-        return file
-
-    @staticmethod
-    def _from_path(path: str, io_config: IOConfig | None = None) -> File:
-        inner = PyDaftFile._from_path(path, io_config)
-        file = PathFile.__new__(PathFile)
-        file._inner = inner
-        return file
-
-    @staticmethod
-    def _from_bytes(bytes: bytes) -> File:
-        inner = PyDaftFile._from_bytes(bytes)
-        file = MemoryFile.__new__(MemoryFile)
-        file._inner = inner
-        return file
-
-    def read(self, size: int = -1) -> bytes:
-        return self._inner.read(size)
-
-    def seek(self, offset: int, whence: int = 0) -> int:
-        return self._inner.seek(offset, whence)
-
-    def tell(self) -> int:
-        return self._inner.tell()
-
-    def close(self) -> None:
-        self._inner.close()
-
-    def open(self) -> File:
-        raise NotImplementedError("File.open() not yet supported")
-
-    def __enter__(self) -> File:
-        inner = self._inner.__enter__()
-        self._inner = inner
-        return self
-
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        self._inner.__exit__(exc_type, exc_val, exc_tb)
+    def open(self) -> PyDaftFile:
+        return PyDaftFile._from_file_reference(self._inner)
 
     def __str__(self) -> str:
         return self._inner.__str__()
@@ -100,24 +70,38 @@ class File:
     def isatty(self) -> bool:
         return False
 
-    def closed(self) -> bool:
-        return self._inner.closed()
+    def size(self) -> int:
+        return PyDaftFile._from_file_reference(self._inner).size()
 
+    def to_tempfile(self) -> _TemporaryFileWrapper[bytes]:
+        """Create a temporary file with the contents of this file.
 
-class PathFile(File):
-    """File object backed by a filesystem or object store path."""
+        Returns:
+            _TemporaryFileWrapper[bytes]: The temporary file object.
 
-    ...
+        The temporary file will be automatically deleted when the returned context manager is closed.
 
+        It's important to note that `to_tempfile` closes the original file object, so it CANNOT be used after calling this method.
 
-class MemoryFile(File):
-    """File object backed by in-memory data.
+        Example:
+            >>> with file.to_tempfile() as temp_path:
+            >>> # Do something with the temporary file
+            >>>     pass
+        """
+        with self.open() as f:
+            temp_file = tempfile.NamedTemporaryFile(
+                prefix="daft_",
+            )
+            f.seek(0)
 
-    A concrete implementation of File that represents data stored in memory.
-    MemoryFile provides a file-like interface to in-memory binary data,
-    useful for working with data that doesn't exist on disk.
+            size = f.size()
+            # if its either a really small file, or doesn't support range requests. Just read it normally
+            if not f._supports_range_requests() or size < 1024:
+                temp_file.write(f.read())
+            else:
+                shutil.copyfileobj(f, temp_file, length=size)
+            # close it as `to_tempfile` is a consuming method
+            f.close()
+            temp_file.seek(0)
 
-    """
-
-    def get_bytes(self) -> bytes:
-        return self._inner.read()
+            return temp_file

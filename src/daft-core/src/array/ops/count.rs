@@ -3,6 +3,8 @@ use std::{iter::repeat_n, sync::Arc};
 use common_error::DaftResult;
 
 use super::{DaftCountAggable, GroupIndices};
+#[cfg(feature = "python")]
+use crate::prelude::PythonArray;
 use crate::{
     array::{ListArray, StructArray},
     count_mode::CountMode,
@@ -96,7 +98,7 @@ where
     }
 }
 
-macro_rules! impl_daft_count_aggable_nested_array {
+macro_rules! impl_daft_count_aggable {
     ($arr:ident) => {
         impl DaftCountAggable for &$arr {
             type Output = DaftResult<DataArray<UInt64Type>>;
@@ -106,7 +108,7 @@ macro_rules! impl_daft_count_aggable_nested_array {
                 let result_arrow_array =
                     Box::new(arrow2::array::PrimitiveArray::from([Some(count)]));
                 DataArray::<UInt64Type>::new(
-                    Arc::new(Field::new(self.field.name.clone(), DataType::UInt64)),
+                    Arc::new(Field::new(self.field().name.clone(), DataType::UInt64)),
                     result_arrow_array,
                 )
             }
@@ -115,7 +117,7 @@ macro_rules! impl_daft_count_aggable_nested_array {
                 let counts_per_group: Vec<_> =
                     grouped_count_arrow_bitmap(groups, &mode, self.validity());
                 Ok(DataArray::<UInt64Type>::from((
-                    self.field.name.as_ref(),
+                    self.field().name.as_ref(),
                     counts_per_group,
                 )))
             }
@@ -123,6 +125,9 @@ macro_rules! impl_daft_count_aggable_nested_array {
     };
 }
 
-impl_daft_count_aggable_nested_array!(FixedSizeListArray);
-impl_daft_count_aggable_nested_array!(ListArray);
-impl_daft_count_aggable_nested_array!(StructArray);
+impl_daft_count_aggable!(FixedSizeListArray);
+impl_daft_count_aggable!(ListArray);
+impl_daft_count_aggable!(StructArray);
+
+#[cfg(feature = "python")]
+impl_daft_count_aggable!(PythonArray);

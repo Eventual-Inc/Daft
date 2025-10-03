@@ -161,7 +161,7 @@ plugins:
       io/index.md: connectors/index.md
       sql_overview.md: sql/index.md
       sessions.md: api/sessions.md
-      resources/architecture.md: optimization/architecture.md
+      resources/architecture.md: architecture/index.md
       advanced/memory.md: optimization/memory.md
       advanced/partitioning.md: optimization/partitioning.md
       advanced/observability.md: optimization/observability.md
@@ -172,6 +172,7 @@ plugins:
       resources/benchmarks/tpch.md: benchmarks/index.md
       spark_connect.md: api/spark_connect.md
       core_concepts.md: index.md
+      ray.md: distributed.md
 - mkdocstrings:
     handlers:
       python:

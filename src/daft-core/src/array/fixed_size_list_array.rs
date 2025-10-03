@@ -110,6 +110,10 @@ impl FixedSizeListArray {
         self.len() == 0
     }
 
+    pub fn field(&self) -> &Field {
+        &self.field
+    }
+
     pub fn name(&self) -> &str {
         &self.field.name
     }
@@ -232,6 +236,7 @@ impl<'a> IntoIterator for &'a FixedSizeListArray {
     }
 }
 
+#[derive(Clone)]
 pub struct FixedSizeListArrayIter<'a> {
     array: &'a FixedSizeListArray,
     idx: usize,

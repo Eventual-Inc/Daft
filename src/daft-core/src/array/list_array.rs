@@ -119,6 +119,10 @@ impl ListArray {
         self.len() == 0
     }
 
+    pub fn field(&self) -> &Field {
+        &self.field
+    }
+
     pub fn name(&self) -> &str {
         &self.field.name
     }
@@ -216,6 +220,7 @@ impl ListArray {
     }
 }
 
+#[derive(Clone)]
 pub struct ListArrayIter<'a> {
     array: &'a ListArray,
     idx: usize,

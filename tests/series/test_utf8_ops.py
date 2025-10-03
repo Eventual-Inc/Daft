@@ -1603,3 +1603,39 @@ def test_series_utf8_count_matches_overlap(whole_words, case_sensitive):
     p = ["hello world", "hello", "world"]
     res = s.str.count_matches(p, whole_words=whole_words, case_sensitive=case_sensitive).to_pylist()
     assert res == [1]
+
+
+def test_series_utf8_regexp_count() -> None:
+    s = Series.from_arrow(pa.array(["hello world", "foo bar baz", "test123test456", None]))
+
+    # Test word pattern
+    result = s.regexp_count(r"\w+")
+    assert result.to_pylist() == [2, 3, 1, None]
+
+    # Test digit pattern
+    result = s.regexp_count(r"\d+")
+    assert result.to_pylist() == [0, 0, 2, None]
+
+    # Test single character pattern
+    result = s.regexp_count("o")
+    assert result.to_pylist() == [2, 2, 0, None]
+
+
+def test_series_utf8_regexp_count_edge_cases() -> None:
+    s = Series.from_arrow(pa.array(["", "a", "aa", "aaa", None]))
+
+    # Test empty string pattern - empty pattern matches every position
+    result = s.regexp_count("")
+    assert result.to_pylist() == [1, 2, 3, 4, None]
+
+    # Test word boundary pattern
+    result = s.regexp_count(r"\ba\b")
+    assert result.to_pylist() == [0, 1, 0, 0, None]
+
+
+def test_series_utf8_regexp_count_invalid_pattern() -> None:
+    s = Series.from_arrow(pa.array(["test"]))
+
+    # Test invalid regex pattern
+    with pytest.raises(Exception):
+        s.regexp_count("[invalid")

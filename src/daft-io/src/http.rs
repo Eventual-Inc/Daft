@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use common_io_config::HTTPConfig;
 use futures::{TryStreamExt, stream::BoxStream};
 use regex::Regex;
+use reqwest::header::ACCEPT_RANGES;
 use reqwest_middleware::{
     ClientBuilder, ClientWithMiddleware,
     reqwest::header::{self, CONTENT_LENGTH, RANGE},
@@ -223,6 +224,27 @@ impl HttpSource {
 
 #[async_trait]
 impl ObjectSource for HttpSource {
+    async fn supports_range(&self, uri: &str) -> super::Result<bool> {
+        let head_res = self
+            .client
+            .head(uri)
+            .send()
+            .await
+            .context(UnableToConnectSnafu::<String> { path: uri.into() })?;
+        let res = head_res
+            .error_for_status()
+            .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
+
+        let headers = res.headers();
+
+        let accept_range = headers
+            .get(ACCEPT_RANGES)
+            .map(|v| v.to_str().unwrap_or_default().to_lowercase())
+            .unwrap_or_default();
+
+        Ok(&accept_range == "bytes")
+    }
+
     async fn get(
         &self,
         uri: &str,

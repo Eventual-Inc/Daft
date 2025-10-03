@@ -19,7 +19,6 @@ pub trait SeriesListExtension: Sized {
     fn list_count(&self, mode: CountMode) -> DaftResult<UInt64Array>;
     fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array>;
     fn list_get(&self, idx: &Self, default: &Self) -> DaftResult<Self>;
-    fn list_slice(&self, start: &Self, end: &Self) -> DaftResult<Self>;
     fn list_chunk(&self, size: usize) -> DaftResult<Self>;
     fn list_sum(&self) -> DaftResult<Self>;
     fn list_mean(&self) -> DaftResult<Self>;
@@ -137,26 +136,6 @@ impl SeriesListExtension for Series {
             dt => Err(DaftError::TypeError(format!(
                 "Get not implemented for {}",
                 dt
-            ))),
-        }
-    }
-
-    fn list_slice(&self, start: &Self, end: &Self) -> DaftResult<Self> {
-        let start = start.cast(&DataType::Int64)?;
-        let start_arr = start.i64().unwrap();
-        let end_arr = if end.data_type().is_integer() {
-            let end = end.cast(&DataType::Int64)?;
-            Some(end.i64().unwrap().clone())
-        } else {
-            None
-        };
-        match self.data_type() {
-            DataType::List(_) => self.list()?.get_slices(start_arr, end_arr.as_ref()),
-            DataType::FixedSizeList(..) => self
-                .fixed_size_list()?
-                .get_slices(start_arr, end_arr.as_ref()),
-            dt => Err(DaftError::TypeError(format!(
-                "list slice not implemented for {dt}"
             ))),
         }
     }

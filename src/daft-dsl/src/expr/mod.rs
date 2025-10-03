@@ -757,10 +757,8 @@ impl AggExpr {
                 match field.dtype {
                     DataType::List(..) => Ok(field),
                     DataType::Utf8 => Ok(field),
-                    #[cfg(feature = "python")]
-                    DataType::Python => Ok(field),
                     _ => Err(DaftError::TypeError(format!(
-                        "We can only perform List Concat Agg on List or Python Types, got dtype {} for column \"{}\"",
+                        "We can only perform Concat Agg on List or Utf8 types, got dtype {} for column \"{}\"",
                         field.dtype, field.name
                     ))),
                 }

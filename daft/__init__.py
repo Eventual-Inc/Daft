@@ -141,6 +141,7 @@ from daft.io import (
     read_huggingface,
     read_mcap,
 )
+from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_runner_native, set_runner_ray
 from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
@@ -148,6 +149,9 @@ from daft.file import File
 
 import daft.context as context
 import daft.io as io
+import daft.runners as runners
+import daft.datasets as datasets
+import daft.functions as functions
 
 __all__ = [
     "Catalog",
@@ -187,6 +191,7 @@ __all__ = [
     "current_namespace",
     "current_provider",
     "current_session",
+    "datasets",
     "detach_catalog",
     "detach_function",
     "detach_provider",
@@ -203,7 +208,10 @@ __all__ = [
     "from_pylist",
     "from_ray_dataset",
     "func",
+    "functions",
     "get_catalog",
+    "get_or_create_runner",
+    "get_or_infer_runner_type",
     "get_provider",
     "get_table",
     "has_catalog",
@@ -233,6 +241,7 @@ __all__ = [
     "read_warc",
     "refresh_logger",
     "register_viz_hook",
+    "runners",
     "session",
     "set_catalog",
     "set_execution_config",
@@ -240,6 +249,8 @@ __all__ = [
     "set_namespace",
     "set_planning_config",
     "set_provider",
+    "set_runner_native",
+    "set_runner_ray",
     "set_session",
     "sql",
     "sql_expr",

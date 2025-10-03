@@ -1,0 +1,118 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "daft.fullname" . }}-job
+  labels:
+    {{- include "daft.labels" . | nindent 4 }}
+    app.kubernetes.io/component: job
+spec:
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: "main"
+      labels:
+        {{- include "daft.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: job
+    spec:
+      serviceAccountName: {{ include "daft.serviceAccountName" . }}
+      initContainers:
+      {{- if .Values.distributed }}
+      - name: wait-for-ray-head
+        image: "{{ .Values.image }}"
+        imagePullPolicy: "{{ .Values.imagePullPolicy }}"
+        command:
+          - /bin/sh
+          - -c
+          - --
+        args:
+          - |
+            until ray health-check --address $(FQ_RAY_IP):6379 > /dev/null 2>&1; do
+              echo "Waiting for GCS to be ready."
+              sleep 1
+            done
+            echo "GCS is ready."
+        env:
+        - name: FQ_RAY_IP
+          value: "{{ include "daft.headServiceName" . }}.{{ .Release.Namespace }}.svc.cluster.local"
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 200m
+            memory: 256Mi
+      {{- end }}
+      containers:
+      - name: main
+        image: "{{ .Values.image }}"
+        imagePullPolicy: "{{ .Values.imagePullPolicy }}"
+        {{- if .Values.job.script }}
+        command: ["uv", "run", "--script", "/usr/src/daft/main.py"]
+        {{- else }}
+        {{- with .Values.job.command }}
+        command:
+        {{- range . }}
+        - {{ . | quote }}
+        {{- end }}
+        {{- end }}
+        {{- end }}
+        {{- with .Values.job.args }}
+        args:
+        {{- range . }}
+        - {{ . | quote }}
+        {{- end }}
+        {{- end }}
+        env:
+        {{- if .Values.distributed }}
+        - name: RAY_ADDRESS
+          value: "ray://{{ include "daft.headServiceName" . }}:10001"
+        - name: DAFT_RUNNER
+          value: ray
+        {{- end }}
+        {{- with .Values.job.env }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.job.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        volumeMounts:
+        {{- if .Values.job.script }}
+        - name: daft-job-script
+          mountPath: /usr/src/daft/main.py
+          subPath: main.py
+          readOnly: true
+        {{- end }}
+        - mountPath: /dev/shm
+          name: shm
+        {{- with .Values.job.volumeMounts }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      restartPolicy: {{ .Values.job.restartPolicy }}
+      volumes:
+      {{- if .Values.job.script }}
+      - name: daft-job-script
+        configMap:
+          name: {{ include "daft.fullname" . }}-job-script
+          defaultMode: 0644
+      {{- end }}
+      - name: shm
+        emptyDir:
+          medium: Memory
+      {{- with .Values.volumes }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- with .Values.job.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.job.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.job.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  backoffLimit: {{ .Values.job.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.job.activeDeadlineSeconds }}

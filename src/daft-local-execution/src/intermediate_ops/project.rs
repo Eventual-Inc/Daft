@@ -1,6 +1,7 @@
 use std::{cmp::max, sync::Arc};
 
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use common_runtime::get_compute_pool_num_threads;
 use daft_dsl::{
     Expr,
@@ -18,7 +19,6 @@ use super::intermediate_op::{
 };
 use crate::{
     ExecutionTaskSpawner,
-    ops::NodeType,
     pipeline::{MorselSizeRequirement, NodeName},
 };
 fn num_parallel_exprs(projection: &[BoundExpr]) -> usize {

@@ -13,12 +13,7 @@ use daft_core::{
     prelude::*,
     python::{PyDataType, PyField, PySchema, PySeries, PyTimeUnit},
 };
-use pyo3::{
-    exceptions::PyValueError,
-    prelude::*,
-    pyclass::CompareOp,
-    types::{PyBool, PyBytes, PyFloat, PyInt, PyString},
-};
+use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -177,43 +172,7 @@ pub fn list_lit(series: PySeries) -> PyResult<PyExpr> {
 
 #[pyfunction]
 pub fn lit(item: Bound<PyAny>) -> PyResult<PyExpr> {
-    literal_value(item).map(Expr::Literal).map(Into::into)
-}
-
-pub fn literal_value(item: Bound<PyAny>) -> PyResult<Literal> {
-    if item.is_instance_of::<PyBool>() {
-        let val = item.extract::<bool>()?;
-        Ok(val.into())
-    } else if let Ok(int) = item.downcast::<PyInt>() {
-        match int.extract::<i64>() {
-            Ok(val) => {
-                if val >= 0 && val < i32::MAX as i64 || val <= 0 && val > i32::MIN as i64 {
-                    Ok((val as i32).into())
-                } else {
-                    Ok(val.into())
-                }
-            }
-            _ => {
-                let val = int.extract::<u64>()?;
-                Ok(val.into())
-            }
-        }
-    } else if let Ok(float) = item.downcast::<PyFloat>() {
-        let val = float.extract::<f64>()?;
-        Ok(val.into())
-    } else if let Ok(pystr) = item.downcast::<PyString>() {
-        Ok(pystr
-            .extract::<String>()
-            .expect("could not transform Python string to Rust Unicode")
-            .into())
-    } else if let Ok(pybytes) = item.downcast::<PyBytes>() {
-        let bytes = pybytes.as_bytes();
-        Ok(bytes.into())
-    } else if item.is_none() {
-        Ok(Literal::Null)
-    } else {
-        Ok(PyObject::from(item).into())
-    }
+    Literal::from_pyobj(&item, None).map(|l| Expr::Literal(l).into())
 }
 
 #[pyfunction]

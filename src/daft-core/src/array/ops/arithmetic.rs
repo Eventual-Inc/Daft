@@ -7,8 +7,11 @@ use super::{as_arrow::AsArrow, full::FullNull};
 use crate::{
     array::{DataArray, FixedSizeListArray},
     datatypes::{DaftNumericType, DaftPrimitiveType, DataType, Field, Utf8Array},
-    kernels::utf8::add_utf8_arrays,
-    prelude::Decimal128Array,
+    kernels::{
+        binary::{add_binary_arrays, add_fixed_size_binary_arrays},
+        utf8::add_utf8_arrays,
+    },
+    prelude::{BinaryArray, Decimal128Array, FixedSizeBinaryArray},
     series::Series,
 };
 // Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -122,6 +125,25 @@ impl Mul for &Decimal128Array {
             arrow2::compute::arithmetics::decimal::mul,
             |l, r| (l * r) / scale,
         )
+    }
+}
+
+impl Add for &BinaryArray {
+    type Output = DaftResult<BinaryArray>;
+    fn add(self, rhs: Self) -> Self::Output {
+        let result = Box::new(add_binary_arrays(self.as_arrow(), rhs.as_arrow())?);
+        Ok(BinaryArray::from((self.name(), result)))
+    }
+}
+
+impl Add for &FixedSizeBinaryArray {
+    type Output = DaftResult<FixedSizeBinaryArray>;
+    fn add(self, rhs: Self) -> Self::Output {
+        let result = Box::new(add_fixed_size_binary_arrays(
+            self.as_arrow(),
+            rhs.as_arrow(),
+        )?);
+        Ok(FixedSizeBinaryArray::from((self.name(), result)))
     }
 }
 

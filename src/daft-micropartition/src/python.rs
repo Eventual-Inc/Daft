@@ -1141,7 +1141,16 @@ pub fn read_pyfunc_into_table_iter(
     }).collect::<crate::Result<Vec<_>>>()?;
 
     let scan_task_limit = scan_task.pushdowns.limit;
-    let scan_task_filters = scan_task.pushdowns.filters.clone();
+    // If aggregation pushdown is present, the Python factory function is expected to have applied
+    // the filtering semantics already (e.g., filter+count pushdown), so we should not re-apply
+    // post-scan filters here to avoid double filtering on pre-aggregated results.
+    // This removes reliance on any hard-coded Python function names and makes the behavior generic
+    // for all sources that surface aggregation pushdowns.
+    let scan_task_filters = if scan_task.pushdowns.aggregation.is_some() {
+        None
+    } else {
+        scan_task.pushdowns.filters.clone()
+    };
     let res = table_iterators
         .into_iter()
         .flat_map(move |iter| {
@@ -1231,22 +1240,26 @@ impl From<PyMicroPartition> for Arc<MicroPartition> {
     }
 }
 
-/// TODO chore: cutover LocalPartitionSet to use this pyclass.
-#[pyclass(module = "daft.daft")]
+#[pyclass(frozen, module = "daft.daft")]
 #[derive(Clone, Debug)]
 pub struct PyMicroPartitionSet(Arc<MicroPartitionSet>);
 
 #[pymethods]
 impl PyMicroPartitionSet {
+    #[new]
+    fn new() -> Self {
+        Self(Arc::new(MicroPartitionSet::empty()))
+    }
+
     fn get_partition(&self, idx: PartitionId) -> PyResult<PyMicroPartition> {
         Ok(self.0.get_partition(&idx)?.into())
     }
 
-    fn set_partition(&mut self, idx: PartitionId, part: PyMicroPartition) -> PyResult<()> {
+    fn set_partition(&self, idx: PartitionId, part: PyMicroPartition) -> PyResult<()> {
         Ok(self.0.set_partition(idx, &part.inner)?)
     }
 
-    fn delete_partition(&mut self, idx: PartitionId) -> PyResult<()> {
+    fn delete_partition(&self, idx: PartitionId) -> PyResult<()> {
         Ok(self.0.delete_partition(&idx)?)
     }
 
@@ -1268,6 +1281,28 @@ impl PyMicroPartitionSet {
 
     fn wait(&self) -> PyResult<()> {
         Ok(())
+    }
+
+    fn get_merged_micropartition(&self) -> PyResult<PyMicroPartition> {
+        Ok(self.0.get_merged_partitions()?.into())
+    }
+
+    fn get_preview_micropartitions(&self, num_rows: usize) -> PyResult<Vec<PyMicroPartition>> {
+        Ok(self
+            .0
+            .get_preview_partitions(num_rows)?
+            .into_iter()
+            .map(|p| p.into())
+            .collect())
+    }
+
+    fn items(&self) -> PyResult<Vec<(PartitionId, PyMicroPartition)>> {
+        Ok(self
+            .0
+            .items()
+            .into_iter()
+            .map(|(k, v)| (k, v.into()))
+            .collect())
     }
 }
 

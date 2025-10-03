@@ -11,4 +11,4 @@
 - [ ] Documented in API Docs (if applicable)
 - [ ] Documented in User Guide (if applicable)
 - [ ] If adding a new documentation page, doc is added to `docs/mkdocs.yml` navigation
-- [ ] Documentation builds and is formatted properly (tag @/ccmao1130 for docs review)
+- [ ] Documentation builds and is formatted properly
