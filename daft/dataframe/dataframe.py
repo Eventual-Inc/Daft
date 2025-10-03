@@ -161,15 +161,6 @@ class DataFrame:
         else:
             return self._result_cache.value
 
-    def _broadcast_query_plan(self) -> None:
-        from daft.subscribers import dashboard
-
-        if not dashboard._should_run():
-            return
-        unoptimized_plan = self._builder._builder.repr_json(True)
-
-        dashboard.broadcast_query_information(unoptimized_plan=unoptimized_plan)
-
     def pipe(
         self,
         function: Callable[Concatenate["DataFrame", P], T],
@@ -4011,7 +4002,6 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
-        self._broadcast_query_plan()
         self._materialize_results()
         assert self._result is not None
         dataframe_len = len(self._result)

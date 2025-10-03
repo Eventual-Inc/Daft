@@ -1,15 +1,22 @@
 [dependencies]
 async-trait = {workspace = true}
 arrow2 = {workspace = true}
+common-runtime = {path = "../common/runtime", default-features = false}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-metrics = {path = "../common/metrics", default-features = false}
+daft-io = {path = "../daft-io", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
+daft-dashboard = {path = "../daft-dashboard", default-features = false}
 daft-runners = {workspace = true}
 pyo3 = {workspace = true, optional = true}
+log = {workspace = true}
+# For debug subscriber
 dashmap = {workspace = true}
+# Client for submitting to dashboard server
+reqwest = {workspace = true, default-features = false}
 
 [features]
 python = [
@@ -17,6 +24,7 @@ python = [
   "common-daft-config/python",
   "common-error/python",
   "common-metrics/python",
+  "daft-io/python",
   "daft-core/python",
   "daft-logical-plan/python",
   "daft-micropartition/python",

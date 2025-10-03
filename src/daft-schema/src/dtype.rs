@@ -374,6 +374,7 @@ impl DataType {
     }
 
     #[inline]
+    /// Is this DataType convertible to Arrow?
     pub fn is_arrow(&self) -> bool {
         self.to_arrow().is_ok()
     }
