@@ -36,7 +36,7 @@ const STATUS: string = "state";
 const statusPriority: Record<string, number> = {
   Pending: 1,
   Planning: 2,
-  SetupExec: 3,
+  Setup: 3,
   Executing: 4,
   Finalizing: 5,
   Finished: 6,

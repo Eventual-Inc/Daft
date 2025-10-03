@@ -70,7 +70,7 @@ type QueryState =
       plan_start_sec: number;
     }
   | {
-      status: "Planned";
+      status: "Setup";
       plan_info: PlanInfo;
     }
   | {

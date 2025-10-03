@@ -70,7 +70,7 @@ const Planning = ({ state }: { state: PlanningStatus }) => {
   );
 };
 
-const SetupExec = () => (
+const Setup = () => (
   <StatusBadgeInner
     icon={
       <LoaderCircle size={16} strokeWidth={3} className="text-magenta-500" />
@@ -142,8 +142,8 @@ export default function Status({ state }: StatusBadgeProps) {
       return <Pending />;
     case "Planning":
       return <Planning state={state} />;
-    case "SetupExec":
-      return <SetupExec />;
+    case "Setup":
+      return <Setup />;
     case "Executing":
       return <Running state={state} />;
     case "Finalizing":

@@ -10,8 +10,8 @@ export type PlanningStatus = {
   plan_start_sec: number;
 };
 
-export type SetupExecStatus = {
-  status: "SetupExec";
+export type SetupStatus = {
+  status: "Setup";
 };
 
 export type ExecutingStatus = {
@@ -31,7 +31,7 @@ export type FinishedStatus = {
 export type QueryStatus =
   | PendingStatus
   | PlanningStatus
-  | SetupExecStatus
+  | SetupStatus
   | ExecutingStatus
   | FinalizingStatus
   | FinishedStatus;
