@@ -36,17 +36,6 @@ where
 
 /// An Arc'd reference to a [`Partition`]
 pub type PartitionRef = Arc<dyn Partition>;
-impl Partition for PartitionRef {
-    fn as_any(&self) -> &dyn Any {
-        (**self).as_any()
-    }
-    fn size_bytes(&self) -> DaftResult<Option<usize>> {
-        (**self).size_bytes()
-    }
-    fn num_rows(&self) -> DaftResult<usize> {
-        (**self).num_rows()
-    }
-}
 
 /// Key used to identify a partition
 pub type PartitionId = usize;

@@ -6,6 +6,7 @@ use axum::{
     http::StatusCode,
     routing::get,
 };
+use common_metrics::QueryID;
 use serde_json::Value;
 
 use crate::state::{DashboardState, QueryInfo};
@@ -30,7 +31,7 @@ async fn get_query_summaries(State(state): State<Arc<DashboardState>>) -> Json<V
 
 async fn get_query(
     State(state): State<Arc<DashboardState>>,
-    Path(query_id): Path<String>,
+    Path(query_id): Path<QueryID>,
 ) -> Result<Json<QueryInfo>, StatusCode> {
     let Some(query) = state.queries.get(&query_id) else {
         return Err(StatusCode::NOT_FOUND);

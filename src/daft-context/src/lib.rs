@@ -10,13 +10,14 @@ use std::{
 
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};
 use common_error::{DaftError, DaftResult};
+use common_metrics::{QueryID, QueryPlan};
 use daft_micropartition::MicroPartitionRef;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
 pub use crate::subscribers::Subscriber;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Config {
     pub execution: Arc<DaftExecutionConfig>,
     pub planning: Arc<DaftPlanningConfig>,
@@ -118,7 +119,11 @@ impl DaftContext {
         })
     }
 
-    pub fn notify_query_start(&self, query_id: String, unoptimized_plan: String) -> DaftResult<()> {
+    pub fn notify_query_start(
+        &self,
+        query_id: QueryID,
+        unoptimized_plan: QueryPlan,
+    ) -> DaftResult<()> {
         self.with_state(|state| {
             for subscriber in state.subscribers.values() {
                 subscriber.on_query_start(query_id.clone(), unoptimized_plan.clone())?;
@@ -127,7 +132,7 @@ impl DaftContext {
         })
     }
 
-    pub fn notify_query_end(&self, query_id: String) -> DaftResult<()> {
+    pub fn notify_query_end(&self, query_id: QueryID) -> DaftResult<()> {
         self.with_state(move |state| {
             for subscriber in state.subscribers.values() {
                 subscriber.on_query_end(query_id.clone())?;
@@ -136,7 +141,11 @@ impl DaftContext {
         })
     }
 
-    pub fn notify_result_out(&self, query_id: String, result: MicroPartitionRef) -> DaftResult<()> {
+    pub fn notify_result_out(
+        &self,
+        query_id: QueryID,
+        result: MicroPartitionRef,
+    ) -> DaftResult<()> {
         self.with_state(|state| {
             for subscriber in state.subscribers.values() {
                 subscriber.on_result_out(query_id.clone(), result.clone())?;
@@ -145,7 +154,7 @@ impl DaftContext {
         })
     }
 
-    pub fn notify_optimization_start(&self, query_id: String) -> DaftResult<()> {
+    pub fn notify_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
         self.with_state(|state| {
             for subscriber in state.subscribers.values() {
                 subscriber.on_optimization_start(query_id.clone())?;
@@ -156,8 +165,8 @@ impl DaftContext {
 
     pub fn notify_optimization_end(
         &self,
-        query_id: String,
-        optimized_plan: String,
+        query_id: QueryID,
+        optimized_plan: QueryPlan,
     ) -> DaftResult<()> {
         self.with_state(|state| {
             for subscriber in state.subscribers.values() {

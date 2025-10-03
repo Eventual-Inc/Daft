@@ -6,7 +6,7 @@ use axum::{
     http::StatusCode,
     routing::post,
 };
-use common_metrics::{Stat, ops::NodeInfo};
+use common_metrics::{QueryID, QueryPlan, Stat, ops::NodeInfo};
 use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
 
@@ -17,12 +17,12 @@ use crate::state::{
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StartQueryArgs {
     pub start_sec: u64,
-    pub unoptimized_plan: Arc<str>,
+    pub unoptimized_plan: QueryPlan,
 }
 
 async fn query_start(
     State(state): State<Arc<DashboardState>>,
-    Path(query_id): Path<String>,
+    Path(query_id): Path<QueryID>,
     Json(args): Json<StartQueryArgs>,
 ) -> StatusCode {
     state.queries.insert(
@@ -44,10 +44,10 @@ pub struct PlanStartArgs {
 
 async fn plan_start(
     State(state): State<Arc<DashboardState>>,
-    Path(query_id): Path<String>,
+    Path(query_id): Path<QueryID>,
     Json(args): Json<PlanStartArgs>,
 ) -> StatusCode {
-    state.queries.get_mut(&query_id).unwrap().value_mut().status = QueryState::Planning {
+    state.queries.get_mut(&query_id).unwrap().value_mut().status = QueryState::Optimizing {
         plan_start_sec: args.plan_start_sec,
     };
     StatusCode::OK
@@ -56,20 +56,20 @@ async fn plan_start(
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PlanEndArgs {
     pub plan_end_sec: u64,
-    pub optimized_plan: Arc<str>,
+    pub optimized_plan: QueryPlan,
 }
 
 async fn plan_end(
     State(state): State<Arc<DashboardState>>,
-    Path(query_id): Path<String>,
+    Path(query_id): Path<QueryID>,
     Json(args): Json<PlanEndArgs>,
 ) -> StatusCode {
     let mut query_info = state.queries.get_mut(&query_id).unwrap();
-    let QueryState::Planning { plan_start_sec } = &query_info.status else {
+    let QueryState::Optimizing { plan_start_sec } = &query_info.status else {
         return StatusCode::BAD_REQUEST;
     };
 
-    query_info.value_mut().status = QueryState::Planned(PlanInfo {
+    query_info.value_mut().status = QueryState::Setup(PlanInfo {
         plan_start_sec: *plan_start_sec,
         plan_end_sec: args.plan_end_sec,
         optimized_plan: args.optimized_plan,
@@ -85,11 +85,11 @@ pub struct ExecStartArgs {
 
 async fn exec_start(
     State(state): State<Arc<DashboardState>>,
-    Path(query_id): Path<String>,
+    Path(query_id): Path<QueryID>,
     Json(args): Json<ExecStartArgs>,
 ) -> StatusCode {
     let mut query_info = state.queries.get_mut(&query_id).unwrap();
-    let QueryState::Planned(plan_info) = &query_info.status else {
+    let QueryState::Setup(plan_info) = &query_info.status else {
         return StatusCode::BAD_REQUEST;
     };
 
@@ -118,7 +118,7 @@ async fn exec_start(
 
 async fn exec_op_start(
     State(state): State<Arc<DashboardState>>,
-    Path((query_id, op_id)): Path<(String, usize)>,
+    Path((query_id, op_id)): Path<(QueryID, usize)>,
 ) -> StatusCode {
     let mut query_info = state.queries.get_mut(&query_id).unwrap();
     let QueryState::Executing { exec_info, .. } = &mut query_info.status else {
@@ -131,7 +131,7 @@ async fn exec_op_start(
 
 async fn exec_op_end(
     State(state): State<Arc<DashboardState>>,
-    Path((query_id, op_id)): Path<(String, usize)>,
+    Path((query_id, op_id)): Path<(QueryID, usize)>,
 ) -> StatusCode {
     let mut query_info = state.queries.get_mut(&query_id).unwrap();
     let QueryState::Executing { exec_info, .. } = &mut query_info.status else {
@@ -149,7 +149,7 @@ pub struct ExecEmitStatsArgs {
 
 async fn exec_emit_stats(
     State(state): State<Arc<DashboardState>>,
-    Path(query_id): Path<String>,
+    Path(query_id): Path<QueryID>,
     Json(args): Json<ExecEmitStatsArgs>,
 ) -> StatusCode {
     let mut query_info = state.queries.get_mut(&query_id).unwrap();
@@ -170,7 +170,7 @@ pub struct ExecEndArgs {
 
 async fn exec_end(
     State(state): State<Arc<DashboardState>>,
-    Path(query_id): Path<String>,
+    Path(query_id): Path<QueryID>,
     Json(args): Json<ExecEndArgs>,
 ) -> StatusCode {
     let mut query_info = state.queries.get_mut(&query_id).unwrap();
@@ -199,7 +199,7 @@ pub struct FinalizeArgs {
 
 async fn query_end(
     State(state): State<Arc<DashboardState>>,
-    Path(query_id): Path<String>,
+    Path(query_id): Path<QueryID>,
     Json(args): Json<FinalizeArgs>,
 ) -> StatusCode {
     let mut query_info = state.queries.get_mut(&query_id).unwrap();

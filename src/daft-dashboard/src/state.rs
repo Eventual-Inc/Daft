@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use common_metrics::{Stat, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryPlan, Stat, ops::NodeInfo};
 use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;
 use serde::Serialize;
@@ -27,21 +27,21 @@ pub(crate) struct OperatorInfo {
 pub(crate) struct PlanInfo {
     pub plan_start_sec: u64,
     pub plan_end_sec: u64,
-    pub optimized_plan: Arc<str>,
+    pub optimized_plan: QueryPlan,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ExecInfo {
     pub exec_start_sec: u64,
-    // TODO: Replace usize with NodeID
-    pub operators: HashMap<usize, OperatorInfo>,
+    pub operators: HashMap<NodeID, OperatorInfo>,
     // TODO: Logs
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) enum QueryStatus {
     Pending,
-    Planning,
+    Optimizing,
+    Setup,
     Executing,
     Finalizing,
     Finished,
@@ -50,10 +50,10 @@ pub(crate) enum QueryStatus {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) enum QueryState {
     Pending,
-    Planning {
+    Optimizing {
         plan_start_sec: u64,
     },
-    Planned(PlanInfo),
+    Setup(PlanInfo),
     Executing {
         plan_info: PlanInfo,
         exec_info: ExecInfo,
@@ -74,9 +74,9 @@ pub(crate) enum QueryState {
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct QueryInfo {
-    pub id: Arc<str>,
+    pub id: QueryID,
     pub start_sec: u64,
-    pub unoptimized_plan: Arc<str>,
+    pub unoptimized_plan: QueryPlan,
     pub status: QueryState,
 }
 
@@ -84,9 +84,9 @@ impl QueryInfo {
     pub fn summarize(&self) -> (QueryStatus, u64) {
         match &self.status {
             QueryState::Pending => (QueryStatus::Pending, self.start_sec),
-            QueryState::Planning { plan_start_sec } => (QueryStatus::Planning, *plan_start_sec),
+            QueryState::Optimizing { plan_start_sec } => (QueryStatus::Optimizing, *plan_start_sec),
             // Pending between planning and execution
-            QueryState::Planned(plan_info) => (QueryStatus::Pending, plan_info.plan_end_sec),
+            QueryState::Setup(plan_info) => (QueryStatus::Setup, plan_info.plan_end_sec),
             QueryState::Executing { exec_info, .. } => {
                 (QueryStatus::Executing, exec_info.exec_start_sec)
             }
@@ -103,7 +103,7 @@ impl QueryInfo {
 #[derive(Debug)]
 pub(crate) struct DashboardState {
     // Mapping from query id to query info
-    pub queries: DashMap<String, QueryInfo>,
+    pub queries: DashMap<QueryID, QueryInfo>,
     pub dataframe_previews: DashMap<String, RecordBatch>,
 }
 
