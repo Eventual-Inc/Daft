@@ -1,4 +1,5 @@
 use common_image::Image;
+use uuid;
 
 use crate::{
     array::ops::image::AsImageObj, datatypes::FileArray, file::DaftMediaType, lit::Literal,
@@ -165,6 +166,23 @@ impl MapArray {
 
             Literal::Map { keys, values }
         })
+    }
+}
+
+impl UuidArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+
+        if self.physical.is_valid(idx) {
+            Literal::Uuid(uuid::Uuid::from_slice(self.physical.get(idx).unwrap()).unwrap())
+        } else {
+            Literal::Null
+        }
     }
 }
 

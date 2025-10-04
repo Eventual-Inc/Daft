@@ -1,5 +1,6 @@
 use common_display::table_display::StrValue;
 use common_error::DaftResult;
+use uuid;
 
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
@@ -12,7 +13,7 @@ use crate::{
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
-            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray, UuidArray,
         },
     },
     file::DaftMediaType,
@@ -481,6 +482,22 @@ where
     }
 }
 
+impl UuidArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let val = self.physical.get(idx);
+        match val {
+            None => Ok("None".to_string()),
+            Some(bytes) => {
+                if let Ok(uuid) = uuid::Uuid::from_slice(bytes) {
+                    Ok(uuid.to_string())
+                } else {
+                    Ok("invalid-uuid".to_string())
+                }
+            }
+        }
+    }
+}
+
 // Truncate strings so they do not crash the browser when rendering HTML
 fn truncate_for_html(s: &str) -> String {
     // Limit string length to 1MB to prevent browser crashes
@@ -535,6 +552,7 @@ impl_array_html_value!(BooleanArray);
 impl_array_html_value!(NullArray);
 impl_array_html_value!(BinaryArray);
 impl_array_html_value!(FixedSizeBinaryArray);
+impl_array_html_value!(UuidArray);
 impl_array_html_value!(ListArray);
 impl_array_html_value!(FixedSizeListArray);
 impl_array_html_value!(MapArray);

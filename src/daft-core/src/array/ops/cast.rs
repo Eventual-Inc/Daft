@@ -11,6 +11,7 @@ use common_error::{DaftError, DaftResult};
 use indexmap::IndexMap;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+use uuid;
 
 #[cfg(feature = "python")]
 use crate::lit::Literal;
@@ -29,7 +30,7 @@ use crate::{
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
-            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray, UuidArray,
         },
     },
     file::{DaftMediaType, MediaTypeAudio, MediaTypeUnknown, MediaTypeVideo},
@@ -1639,6 +1640,50 @@ impl ListArray {
 impl MapArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         self.physical.cast(dtype)
+    }
+}
+
+impl UuidArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            DataType::Null => {
+                Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
+            }
+            DataType::Uuid => Ok(self.clone().into_series()),
+            DataType::Utf8 => {
+                // Convert UUID to string representation
+                let uuid_strings = self.physical.iter().map(|opt_bytes| {
+                    opt_bytes.map(|bytes| {
+                        if let Ok(uuid) = uuid::Uuid::from_slice(bytes) {
+                            uuid.to_string()
+                        } else {
+                            "invalid-uuid".to_string()
+                        }
+                    })
+                });
+                Ok(Utf8Array::from_iter(self.name(), uuid_strings).into_series())
+            }
+            DataType::Binary => {
+                // Convert UUID to binary representation
+                let binary_values = self
+                    .physical
+                    .iter()
+                    .map(|opt_bytes| opt_bytes.map(|bytes| bytes.to_vec()));
+                Ok(
+                    DataArray::<crate::datatypes::BinaryType>::from_iter(
+                        self.name(),
+                        binary_values,
+                    )
+                    .into_series(),
+                )
+            }
+            #[cfg(feature = "python")]
+            DataType::Python => self.clone().into_series().cast_to_python(),
+            _ => Err(DaftError::TypeError(format!(
+                "Cannot cast UUID to {}",
+                dtype
+            ))),
+        }
     }
 }
 

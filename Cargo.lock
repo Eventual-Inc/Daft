@@ -2435,6 +2435,7 @@ dependencies = [
  "rstest",
  "serde",
  "sketches-ddsketch",
+ "uuid",
  "xxhash-rust",
 ]
 

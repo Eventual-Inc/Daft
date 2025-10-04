@@ -24,7 +24,7 @@ use crate::{
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
-            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray, UuidArray,
         },
     },
     file::DaftMediaType,
@@ -602,6 +602,13 @@ impl DurationArray {
 }
 
 impl TimestampArray {
+    pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
+        let new_array = self.physical.sort(descending, nulls_first)?;
+        Ok(Self::new(self.field.clone(), new_array))
+    }
+}
+
+impl UuidArray {
     pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
         let new_array = self.physical.sort(descending, nulls_first)?;
         Ok(Self::new(self.field.clone(), new_array))

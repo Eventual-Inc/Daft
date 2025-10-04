@@ -1,7 +1,7 @@
 use common_error::{DaftError, DaftResult};
 use logical::{
     EmbeddingArray, FixedShapeSparseTensorArray, FixedShapeTensorArray, SparseTensorArray,
-    TensorArray,
+    TensorArray, UuidArray,
 };
 
 use self::logical::{DurationArray, ImageArray, MapArray};
@@ -90,6 +90,10 @@ impl Series {
     }
 
     pub fn fixed_size_binary(&self) -> DaftResult<&FixedSizeBinaryArray> {
+        self.downcast()
+    }
+
+    pub fn uuid(&self) -> DaftResult<&UuidArray> {
         self.downcast()
     }
 

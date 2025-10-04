@@ -331,6 +331,9 @@ impl<'d> serde::Deserialize<'d> for Series {
                             .unwrap()
                             .into_series())
                     }
+                    DataType::Uuid => {
+                        panic!("Unable to deserialize Uuid DataType");
+                    }
                     DataType::Unknown => {
                         panic!("Unable to deserialize Unknown DataType");
                     }

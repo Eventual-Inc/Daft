@@ -247,6 +247,12 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
 
             DurationArray::new(field, physical).into_series()
         }
+        DataType::Uuid => {
+            let data = values.map(|(i, lit)| unwrap_inner!(lit, i, Literal::Uuid(uuid) => uuid));
+            let physical = FixedSizeBinaryArray::from_iter("literal", data, 16);
+            
+            UuidArray::new(field, physical).into_series()
+        }
         DataType::List(ref child_dtype) => {
             let data = values
                 .map(|(i, lit)| {
