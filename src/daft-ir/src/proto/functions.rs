@@ -40,6 +40,7 @@ pub fn from_proto_function(message: proto::ScalarFn) -> ProtoResult<ir::Expr> {
                     return_dtype: from_proto(row_wise_fn.return_dtype)?,
                     original_args: from_proto(row_wise_fn.original_args)?,
                     args: args.into_inner(),
+                    use_process: row_wise_fn.use_process,
                 };
                 ir::rex::from_py_rowwise_func(func)
             }
@@ -100,6 +101,7 @@ pub fn scalar_fn_to_proto(sf: &ir::functions::scalar::ScalarFn) -> ProtoResult<p
                             return_dtype: Some(row_wise_fn.return_dtype.to_proto()?),
                             inner: Some(row_wise_fn.inner.to_proto()?),
                             original_args: Some(row_wise_fn.original_args.to_proto()?),
+                            use_process: row_wise_fn.use_process,
                         },
                     )),
                 })),

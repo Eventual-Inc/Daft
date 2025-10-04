@@ -238,6 +238,7 @@ pub fn row_wise_udf(
     name: &str,
     inner: PyObject,
     return_dtype: PyDataType,
+    use_process: Option<bool>,
     original_args: PyObject,
     expr_args: Vec<PyExpr>,
 ) -> PyExpr {
@@ -250,6 +251,7 @@ pub fn row_wise_udf(
             name,
             inner.into(),
             return_dtype.into(),
+            use_process,
             original_args.into(),
             args,
         )

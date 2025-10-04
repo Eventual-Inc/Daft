@@ -1343,6 +1343,7 @@ def row_wise_udf(
     name: str,
     inner: Callable[..., Any],
     return_dtype: PyDataType,
+    use_process: bool | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
 ) -> PyExpr: ...

@@ -28,6 +28,7 @@ class _PartialUdf:
 
     return_dtype: DataTypeLike | None
     unnest: bool
+    use_process: bool | None
 
     @overload
     def __call__(self, fn: Callable[P, Iterator[T]]) -> GeneratorUdf[P, T]: ...  # type: ignore[overload-overlap]
@@ -36,9 +37,9 @@ class _PartialUdf:
 
     def __call__(self, fn: Callable[P, Any]) -> GeneratorUdf[P, Any] | RowWiseUdf[P, Any]:
         if isgeneratorfunction(fn):
-            return GeneratorUdf(fn, return_dtype=self.return_dtype, unnest=self.unnest)
+            return GeneratorUdf(fn, return_dtype=self.return_dtype, unnest=self.unnest, use_process=self.use_process)
         else:
-            return RowWiseUdf(fn, return_dtype=self.return_dtype, unnest=self.unnest)
+            return RowWiseUdf(fn, return_dtype=self.return_dtype, unnest=self.unnest, use_process=self.use_process)
 
 
 class _DaftFuncDecorator:
@@ -212,20 +213,41 @@ class _DaftFuncDecorator:
     """
 
     @overload
-    def __new__(cls, *, return_dtype: DataTypeLike | None = None, unnest: bool = False) -> _PartialUdf: ...  # type: ignore[misc]
+    def __new__(  # type: ignore[misc]
+        cls,
+        *,
+        return_dtype: DataTypeLike | None = None,
+        unnest: bool = False,
+        use_process: bool | None = None,
+    ) -> _PartialUdf: ...
     @overload
     def __new__(  # type: ignore[misc]
-        cls, fn: Callable[P, Iterator[T]], *, return_dtype: DataTypeLike | None = None, unnest: bool = False
+        cls,
+        fn: Callable[P, Iterator[T]],
+        *,
+        return_dtype: DataTypeLike | None = None,
+        unnest: bool = False,
+        use_process: bool | None = None,
     ) -> GeneratorUdf[P, T]: ...
     @overload
     def __new__(  # type: ignore[misc]
-        cls, fn: Callable[P, T], *, return_dtype: DataTypeLike | None = None, unnest: bool = False
+        cls,
+        fn: Callable[P, T],
+        *,
+        return_dtype: DataTypeLike | None = None,
+        unnest: bool = False,
+        use_process: bool | None = None,
     ) -> RowWiseUdf[P, T]: ...
 
     def __new__(  # type: ignore[misc]
-        cls, fn: Callable[P, Any] | None = None, *, return_dtype: DataTypeLike | None = None, unnest: bool = False
+        cls,
+        fn: Callable[P, Any] | None = None,
+        *,
+        return_dtype: DataTypeLike | None = None,
+        unnest: bool = False,
+        use_process: bool | None = None,
     ) -> _PartialUdf | GeneratorUdf[P, Any] | RowWiseUdf[P, Any]:
-        partial_udf = _PartialUdf(return_dtype=return_dtype, unnest=unnest)
+        partial_udf = _PartialUdf(return_dtype=return_dtype, unnest=unnest, use_process=use_process)
         return partial_udf if fn is None else partial_udf(fn)
 
 

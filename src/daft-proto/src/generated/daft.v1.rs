@@ -533,6 +533,8 @@ pub mod scalar_fn {
             pub inner: ::core::option::Option<super::super::PyObject>,
             #[prost(message, optional, tag = "4")]
             pub original_args: ::core::option::Option<super::super::PyObject>,
+            #[prost(bool, optional, tag = "5")]
+            pub use_process: ::core::option::Option<bool>,
         }
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Variant {

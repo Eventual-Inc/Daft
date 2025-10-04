@@ -33,10 +33,11 @@ class RowWiseUdf(Generic[P, T]):
     Row-wise functions are called with data from one row at a time, and map that to a single output value for that row.
     """
 
-    def __init__(self, fn: Callable[P, T], return_dtype: DataTypeLike | None, unnest: bool):
+    def __init__(self, fn: Callable[P, T], return_dtype: DataTypeLike | None, unnest: bool, use_process: bool | None):
         self._inner = fn
         self.name = get_unique_function_name(fn)
         self.unnest = unnest
+        self.use_process = use_process
 
         if return_dtype is None:
             type_hints = get_type_hints(fn)
@@ -69,7 +70,7 @@ class RowWiseUdf(Generic[P, T]):
             return self._inner(*args, **kwargs)
 
         expr = Expression._from_pyexpr(
-            row_wise_udf(self.name, self._inner, self.return_dtype._dtype, (args, kwargs), expr_args)
+            row_wise_udf(self.name, self._inner, self.return_dtype._dtype, self.use_process, (args, kwargs), expr_args)
         )
 
         if self.unnest:

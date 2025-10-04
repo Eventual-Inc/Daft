@@ -399,6 +399,7 @@ fn translate_clustering_spec_expr(
             return_dtype,
             original_args,
             args: children,
+            use_process,
         }))) => {
             let new_children = children
                 .iter()
@@ -411,6 +412,7 @@ fn translate_clustering_spec_expr(
                     return_dtype: return_dtype.clone(),
                     original_args: original_args.clone(),
                     args: new_children,
+                    use_process: *use_process,
                 }),
             ))))
         }
