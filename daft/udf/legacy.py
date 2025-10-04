@@ -23,7 +23,6 @@ from daft.udf._internal import check_fn_serializable
 if TYPE_CHECKING:
     from collections.abc import Generator
 
-
 InitArgsType: TypeAlias = Optional[tuple[tuple[Any, ...], dict[str, Any]]]
 UdfReturnType: TypeAlias = Union[Series, list[Any], "np.ndarray[Any, Any]", "pa.Array", "pa.ChunkedArray"]
 UserDefinedPyFunc: TypeAlias = Callable[..., UdfReturnType]
@@ -258,6 +257,7 @@ class UDF:
     resource_request: ResourceRequest | None = None
     batch_size: int | None = None
     use_process: bool | None = None
+    runtime_env: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         # Analogous to the @functools.wraps(self.inner) pattern
@@ -273,6 +273,7 @@ class UDF:
 
     def __call__(self, *args: Any, **kwargs: Any) -> Expression:
         self._validate_init_args()
+        self._validate_runtime_env()
 
         check_fn_serializable(self.inner, "@daft.udf")
         bound_args = self._bind_args(*args, **kwargs)
@@ -289,6 +290,7 @@ class UDF:
             batch_size=self.batch_size,
             concurrency=self.concurrency,
             use_process=self.use_process,
+            runtime_env=self.runtime_env,
         )
 
     def override_options(
@@ -298,6 +300,7 @@ class UDF:
         num_gpus: float | None = _UnsetMarker,
         memory_bytes: int | None = _UnsetMarker,
         batch_size: int | None = _UnsetMarker,
+        runtime_env: dict[str, Any] | None = _UnsetMarker,
     ) -> UDF:
         """Replace the resource requests for running each instance of your UDF.
 
@@ -309,6 +312,8 @@ class UDF:
             memory_bytes: Amount of memory to allocate each running instance of your UDF in bytes. If your UDF is experiencing out-of-memory errors,
                 this parameter can help hint Daft that each UDF requires a certain amount of heap memory for execution.
             batch_size: Enables batching of the input into batches of at most this size. Results between batches are concatenated.
+            runtime_env: Used to define the runtime environment for UDF.
+                Note: Currently only supports setting conda env in flotilla engine.
 
         Examples:
             For instance, if your UDF requires 4 CPUs to run, you can configure it like so:
@@ -333,8 +338,11 @@ class UDF:
             new_resource_request = new_resource_request.with_memory_bytes(memory_bytes)
 
         new_batch_size = self.batch_size if batch_size is _UnsetMarker else batch_size
+        new_runtime_env = self.runtime_env if runtime_env is _UnsetMarker else runtime_env
 
-        return dataclasses.replace(self, resource_request=new_resource_request, batch_size=new_batch_size)
+        return dataclasses.replace(
+            self, resource_request=new_resource_request, batch_size=new_batch_size, runtime_env=new_runtime_env
+        )
 
     def _validate_init_args(self) -> None:
         if isinstance(self.inner, type):
@@ -350,6 +358,47 @@ class UDF:
         else:
             if self.init_args is not None:
                 raise ValueError("Function UDFs cannot have init args.")
+
+    def _validate_runtime_env(self) -> None:
+        """Validate runtime_env parameter."""
+        from daft import get_or_infer_runner_type
+        from daft.context import get_context
+
+        if self.runtime_env is None:
+            return
+
+        # TODO(zhenchao) Support @udf(runtime_env=...) in native runner and legacy ray runner if necessary
+        if get_or_infer_runner_type() == "native":
+            raise ValueError("'@udf(runtime_env=...)' doesn't currently support Native Runner.")
+
+        if get_context().daft_execution_config.use_legacy_ray_runner:
+            raise ValueError("'@udf(runtime_env=...)' doesn't currently support Legacy Ray Runner.")
+
+        # TODO(zhenchao) Support setting @udf(runtime_env=...) without concurrency parameter
+        if self.concurrency is None:
+            raise ValueError("The 'concurrency' must also be set when using 'runtime_env' option.")
+
+        unsupported_keys = [key for key in self.runtime_env.keys() if key != "conda"]
+        if unsupported_keys:
+            unsupported_keys_str = ", ".join(unsupported_keys)
+            raise ValueError(
+                f"'@udf(runtime_env=...)' currently only supports 'conda' option, but got '{unsupported_keys_str}'"
+            )
+
+        conda = self.runtime_env.get("conda")
+        if conda is None:
+            return
+
+        if not isinstance(conda, str) and not isinstance(conda, dict):
+            raise ValueError("The 'conda' option in 'runtime_env' must be a string or dict.")
+
+        if isinstance(conda, dict):
+            allowed_keys = {"name", "channels", "dependencies"}
+            invalid_keys = [key for key in conda if key not in allowed_keys]
+            if invalid_keys:
+                raise ValueError(
+                    f"The 'conda' option in 'runtime_env' currently only supports '{', '.join(allowed_keys)}'"
+                )
 
     def _bind_args(self, *args: Any, **kwargs: Any) -> BoundUDFArgs:
         if isinstance(self.inner, type):
@@ -464,6 +513,7 @@ def udf(
     batch_size: int | None = None,
     concurrency: int | None = None,
     use_process: bool | None = None,
+    runtime_env: dict[str, Any] | None = None,
 ) -> Callable[[UserDefinedPyFuncLike], UDF]:
     """`@udf` Decorator to convert a Python function/class into a `UDF`.
 
@@ -487,6 +537,8 @@ def udf(
             This is not necessary for UDFs that run C-extension code, like NumPy or PyTorch.
             Defaults to `None` where Daft will automatically choose based on runtime performance.
             Note: Users should generally never set this flag manually.
+        runtime_env: Used to define the runtime environment for UDF.
+            Note: Currently only supports setting conda env in flotilla engine.
 
     Returns:
         Callable[[UserDefinedPyFuncLike], UDF]: UDF decorator - converts a user-provided Python function as a UDF that can be called on Expressions
@@ -632,6 +684,7 @@ def udf(
             batch_size=batch_size,
             concurrency=concurrency,
             use_process=use_process,
+            runtime_env=runtime_env,
         )
 
         daft.attach_function(udf)
