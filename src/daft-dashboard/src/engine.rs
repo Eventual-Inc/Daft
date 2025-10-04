@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use axum::{
     Json, Router,
@@ -6,7 +6,7 @@ use axum::{
     http::StatusCode,
     routing::post,
 };
-use common_metrics::{QueryID, QueryPlan, Stat, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotRecv, ops::NodeInfo};
 use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
 
@@ -106,7 +106,7 @@ async fn exec_start(
                         OperatorInfo {
                             status: OperatorStatus::Pending,
                             node_info,
-                            stats: HashMap::new(),
+                            stats: StatSnapshotRecv::default(),
                         },
                     )
                 })
@@ -142,27 +142,17 @@ async fn exec_op_end(
     StatusCode::OK
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct ExecEmitStatsArgsSend<'a> {
-    pub stats: Vec<(usize, HashMap<&'a str, Stat>)>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct ExecEmitStatsArgsRecv {
-    pub stats: Vec<(usize, HashMap<String, Stat>)>,
-}
-
 async fn exec_emit_stats(
     State(state): State<Arc<DashboardState>>,
     Path(query_id): Path<QueryID>,
-    Json(args): Json<ExecEmitStatsArgsRecv>,
+    Json(args): Json<Vec<(NodeID, StatSnapshotRecv)>>,
 ) -> StatusCode {
     let mut query_info = state.queries.get_mut(&query_id).unwrap();
     let QueryState::Executing { exec_info, .. } = &mut query_info.status else {
         return StatusCode::BAD_REQUEST;
     };
 
-    for (operator_id, stats) in args.stats {
+    for (operator_id, stats) in args {
         exec_info.operators.get_mut(&operator_id).unwrap().stats = stats;
     }
     StatusCode::OK
