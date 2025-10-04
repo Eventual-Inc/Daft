@@ -191,3 +191,17 @@ def test_glob_files_from_multiple_path(tmpdir):
 
     with pytest.raises(FileNotFoundError):
         daft.from_glob_path("/not_exists").collect()
+
+
+@pytest.mark.parametrize("batch_size", list(range(1, 10)))
+def test_glob_files_with_limit(batch_size, tmpdir):
+    folder = pathlib.Path(tmpdir) / "glob_files_with_limit"
+    folder.mkdir()
+    filepaths = []
+    for i in range(10):
+        filepath = folder / f"file_{i}.foo"
+        filepath.write_text("a" * i)
+        filepaths.append(str(filepath))
+
+    daft_df = daft.from_glob_path(filepaths).limit(5).into_batches(batch_size).collect()
+    assert len(daft_df) == 5

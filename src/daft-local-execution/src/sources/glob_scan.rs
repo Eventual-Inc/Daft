@@ -55,7 +55,6 @@ impl Source for GlobScanSource {
         io_stats: IOStatsRef,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
-        // Get IO client
         let io_config = self.io_config.clone().unwrap_or_default();
         let io_client = get_io_client(true, Arc::new(io_config))?;
         let io_runtime = get_io_runtime(true);
@@ -63,15 +62,25 @@ impl Source for GlobScanSource {
         let glob_paths = self.glob_paths.clone();
         let limit = self.pushdowns.limit;
 
+        // Spawn a task to stream out the record batches from the glob paths
         let (tx, rx) = create_channel(0);
-        // Create a stream that processes files in chunks
         let task = io_runtime
             .spawn(async move {
                 let io_client = io_client.clone();
                 let io_stats = io_stats.clone();
 
-                let mut seen_paths = HashSet::new();
-                for glob_path in glob_paths.iter().unique() {
+                let mut remaining_rows = limit;
+
+                // Iterate over the unique glob paths and stream out the record batches
+                let unique_glob_paths = glob_paths.iter().unique().collect::<Vec<_>>();
+                // Only need to keep track of seen paths if there are multiple glob paths
+                let mut seen_paths = if unique_glob_paths.len() > 1 {
+                    Some(HashSet::new())
+                } else {
+                    None
+                };
+                let mut has_results = false;
+                for glob_path in unique_glob_paths {
                     let (source, path) = io_client.get_source_and_path(glob_path).await?;
                     let io_stats = io_stats.clone();
                     let schema = schema.clone();
@@ -94,10 +103,17 @@ impl Source for GlobScanSource {
                             for file_result in files_chunk {
                                 match file_result {
                                     Ok(file_metadata) => {
-                                        if seen_paths.contains(&file_metadata.filepath) {
+                                        has_results = true;
+                                        if seen_paths
+                                            .as_ref()
+                                            .map(|paths| paths.contains(&file_metadata.filepath))
+                                            .unwrap_or(false)
+                                        {
                                             continue;
                                         }
-                                        seen_paths.insert(file_metadata.filepath.clone());
+                                        seen_paths.as_mut().map(|paths| {
+                                            paths.insert(file_metadata.filepath.clone())
+                                        });
                                         paths.push(file_metadata.filepath.clone());
                                         sizes.push(file_metadata.size.map(|s| s as i64));
                                     }
@@ -132,9 +148,8 @@ impl Source for GlobScanSource {
                             )))
                         });
 
-                    let mut remaining_rows = limit;
-                    let mut stream =
-                        stream.try_take_while(move |partition| match (partition, remaining_rows) {
+                    let mut stream = stream.try_take_while(|partition| {
+                        match (partition, remaining_rows) {
                             // Limit has been met, early-terminate.
                             (_, Some(0)) => futures::future::ready(Ok(false)),
                             // Limit has not yet been met, update remaining remaining_rows and continue.
@@ -144,14 +159,20 @@ impl Source for GlobScanSource {
                             }
                             // No limit, never early-terminate.
                             (_, None) => futures::future::ready(Ok(true)),
-                        });
+                        }
+                    });
                     while let Some(batch) = stream.next().await {
                         if tx.send(batch).await.is_err() {
                             break;
                         }
                     }
+                    // If the limit has been met, break out of the loop
+                    if remaining_rows == Some(0) {
+                        break;
+                    }
                 }
-                if seen_paths.is_empty() {
+                // If no files were found, return an error
+                if !has_results {
                     return Err(common_error::DaftError::FileNotFound {
                         path: glob_paths.join(","),
                         source: "No files found".into(),
