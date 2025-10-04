@@ -73,7 +73,7 @@ impl BoundExpr {
         &self.0
     }
 
-    pub fn unwrap(self) -> ExprRef {
+    pub fn into_inner(self) -> ExprRef {
         self.0
     }
 

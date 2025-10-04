@@ -1,17 +1,13 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_core::prelude::Schema;
 use daft_dsl::{ExprRef, functions::python::UDFProperties};
-use daft_schema::{dtype::DataType, schema::SchemaRef};
+use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    LogicalPlan,
-    logical_plan::{Error, Result},
-    stats::StatsState,
-};
+use crate::{LogicalPlan, logical_plan::Result, stats::StatsState};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct UDFProject {
@@ -46,35 +42,6 @@ impl UDFProject {
     ) -> Result<Self> {
         let udf_properties = UDFProperties::from_expr(&expr)?;
         let output_field = expr.to_field(&input.schema())?;
-
-        // Check if any inputs or outputs are Python-dtype columns
-        // and that use_process != true
-        #[cfg(feature = "python")]
-        {
-            if matches!(udf_properties.use_process, Some(true)) {
-                if let Some(col) = input
-                    .schema()
-                    .fields()
-                    .iter()
-                    .find(|f| matches!(f.dtype, DataType::Python))
-                {
-                    return Err(Error::CreationError {
-                        source: DaftError::InternalError(format!(
-                            "UDF `{}` can not set `use_process=True` because it has a Python-dtype input column `{}`. Please unset `use_process` or cast the input to a non-Python dtype if possible.",
-                            udf_properties.name, col.name
-                        )),
-                    });
-                }
-                if output_field.dtype == DataType::Python {
-                    return Err(Error::CreationError {
-                        source: DaftError::InternalError(format!(
-                            "UDF `{}` can not set `use_process=True` because it returns a Python-dtype value. Please unset `use_process` or specify the `return_dtype` to another dtype if possible.",
-                            udf_properties.name
-                        )),
-                    });
-                }
-            }
-        }
 
         let fields = passthrough_columns
             .iter()

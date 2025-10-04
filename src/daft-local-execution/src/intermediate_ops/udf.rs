@@ -38,11 +38,16 @@ use crate::{
     pipeline::{MorselSizeRequirement, NodeName},
 };
 
-fn get_required_columns(expr: BoundExpr) -> (BoundExpr, Vec<usize>) {
+/// Given an expression, extract the indexes of used columns and remap them to
+/// new indexes from 0...count-1, where count is the # of used columns.
+///
+/// Note that if there are no used columns, we just return the first
+/// because we can't execute UDFs on empty recordbatches.
+fn remap_used_cols(expr: BoundExpr) -> (BoundExpr, Vec<usize>) {
     let mut count = 0;
     let mut cols_to_idx = HashMap::new();
     let new_expr = expr
-        .unwrap()
+        .into_inner()
         .transform_down(|expr: ExprRef| {
             if let Expr::Column(Column::Bound(BoundColumn { index, field })) = expr.as_ref() {
                 if !cols_to_idx.contains_key(index) {
@@ -142,7 +147,7 @@ impl UdfHandle {
 
         use crate::STDOUT;
 
-        let (rb, outs) = Python::with_gil(|py| {
+        let (result, stdout_lines) = Python::with_gil(|py| {
             handle
                 .bind(py)
                 .call_method1(
@@ -156,12 +161,16 @@ impl UdfHandle {
             "[`{}` Worker #{}]",
             self.params.udf_properties.name, self.worker_idx
         );
-        for line in outs {
+        for line in stdout_lines {
             STDOUT.print(&label, &line);
         }
 
-        let rb: RecordBatch = rb.into();
-        Ok(rb.get_column(0).clone())
+        let result: RecordBatch = result.into();
+        debug_assert!(
+            result.num_columns() == 1,
+            "UDF should return a single column"
+        );
+        Ok(result.get_column(0).clone())
     }
 
     #[cfg(feature = "python")]
@@ -201,7 +210,8 @@ impl UdfHandle {
             // Append result to passthrough
             let passthrough_input =
                 batch.eval_expression_list(self.params.passthrough_columns.as_slice())?;
-            let output_batch = passthrough_input.append_column(result)?;
+            let output_batch =
+                passthrough_input.append_column(self.params.output_schema.clone(), result)?;
             output_batches.push(output_batch);
         }
 
@@ -279,7 +289,7 @@ impl UdfOperator {
             .map(|m| m as u64)
             .unwrap_or(0);
 
-        let (expr, required_cols) = get_required_columns(expr);
+        let (expr, required_cols) = remap_used_cols(expr);
 
         Ok(Self {
             params: Arc::new(UdfParams {

@@ -185,6 +185,9 @@ pub fn try_get_udf_name(expr: &ExprRef) -> Option<String> {
         {
             udf_name = Some(name.as_ref().clone());
             return Ok(TreeNodeRecursion::Stop);
+        } else if let Expr::ScalarFn(ScalarFn::Python(py)) = e.as_ref() {
+            udf_name = Some(py.name().to_string());
+            return Ok(TreeNodeRecursion::Stop);
         }
 
         Ok(TreeNodeRecursion::Continue)
@@ -252,10 +255,6 @@ pub struct UDFProperties {
 }
 
 impl UDFProperties {
-    pub fn is_actor_pool_udf(&self) -> bool {
-        self.concurrency.is_some()
-    }
-
     pub fn from_expr(expr: &ExprRef) -> DaftResult<Self> {
         let mut udf_properties = None;
         let mut num_udfs = 0;
@@ -287,7 +286,7 @@ impl UDFProperties {
                 udf_properties = Some(Self {
                     name: py.name().to_string(),
                     resource_request: None,
-                    batch_size: Some(512),
+                    batch_size: None,
                     concurrency: None,
                     use_process: None,
                 });
@@ -304,5 +303,9 @@ impl UDFProperties {
         } else {
             Ok(udf_properties.expect("Expect a UDF to be found"))
         }
+    }
+
+    pub fn is_actor_pool_udf(&self) -> bool {
+        self.concurrency.is_some()
     }
 }
