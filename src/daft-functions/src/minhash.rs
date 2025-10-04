@@ -1,9 +1,7 @@
-use std::hash::BuildHasherDefault;
-
 use common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::functions::prelude::*;
-use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
+use daft_hash::HashFunctionKind;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -41,20 +39,7 @@ impl ScalarUDF for MinHashFunction {
             .transpose()?
             .unwrap_or_default();
 
-        match hash_function {
-            HashFunctionKind::MurmurHash3 => {
-                let hasher = MurBuildHasher::new(seed);
-                input.minhash(num_hashes, ngram_size, seed, &hasher)
-            }
-            HashFunctionKind::XxHash64 => {
-                let hasher = xxhash_rust::xxh64::Xxh64Builder::new(seed as u64);
-                input.minhash(num_hashes, ngram_size, seed, &hasher)
-            }
-            HashFunctionKind::Sha1 => {
-                let hasher = BuildHasherDefault::<Sha1Hasher>::default();
-                input.minhash(num_hashes, ngram_size, seed, &hasher)
-            }
-        }
+        input.minhash(num_hashes, ngram_size, seed, hash_function)
     }
     fn get_return_field(
         &self,

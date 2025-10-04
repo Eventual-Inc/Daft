@@ -302,7 +302,7 @@ def minhash(
     num_hashes: int,
     ngram_size: int,
     seed: int = 1,
-    hash_function: Literal["murmurhash3", "xxhash", "xxhash32", "xxhash64", "xxhash3", "sha1"] = "murmurhash3",
+    hash_function: Literal["murmurhash3", "xxhash", "xxhash32", "xxhash64", "xxhash3_64", "sha1"] = "murmurhash3",
 ) -> Expression:
     """Runs the MinHash algorithm on the series.
 
@@ -318,7 +318,7 @@ def minhash(
         num_hashes (int): The number of hash permutations to compute.
         ngram_size (int): The number of tokens in each shingle/ngram.
         seed (int, default=1): Seed used for generating permutations and the initial string hashes. Defaults to 1.
-        hash_function (str, default="murmurhash3"): Hash function to use for initial string hashing. One of "murmurhash3", (alias for "xxhash3"), "xxhash32", "xxhash64", "xxhash3", or "sha1". Defaults to "murmurhash3".
+        hash_function (str, default="murmurhash3"): Hash function to use for initial string hashing. One of "murmurhash3", "xxhash" (alias for "xxhash3_64"), "xxhash32", "xxhash64", "xxhash3_64", or "sha1". Defaults to "murmurhash3".
 
     Returns:
         Expression (FixedSizedList[UInt32, num_hashes] Expression):
