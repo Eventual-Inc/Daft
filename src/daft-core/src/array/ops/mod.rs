@@ -44,6 +44,7 @@ mod merge_sketch;
 mod minhash;
 mod null;
 mod pairwise;
+mod pow;
 mod repr;
 mod round;
 mod search_sorted;
