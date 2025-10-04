@@ -12,14 +12,14 @@ daft-io = {path = "../daft-io", default-features = false}
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 futures = {workspace = true}
 indexmap = {workspace = true}
-memchr = "2.7.2"
+memchr = "2.7.6"
 memmap2 = "0.9.8"
 num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 rayon = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true, features = ["raw_value"]}
-simd-json = {version = "0.13", features = ["known-key"]}
+simd-json = {version = "0.16", features = ["known-key"]}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true, features = ["io-util"]}
