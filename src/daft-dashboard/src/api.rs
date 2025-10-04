@@ -6,23 +6,26 @@ use axum::{
     http::StatusCode,
     routing::post,
 };
-use common_metrics::{QueryID, QueryPlan, Stat, ops::NodeInfo};
+use common_metrics::{Stat, ops::NodeInfo};
 use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
 
-use crate::state::{
-    DashboardState, ExecInfo, OperatorInfo, OperatorStatus, PlanInfo, QueryInfo, QueryState,
+use crate::{
+    client,
+    state::{
+        DashboardState, ExecInfo, OperatorInfo, OperatorStatus, PlanInfo, QueryInfo, QueryState,
+    },
 };
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StartQueryArgs {
     pub start_sec: u64,
-    pub unoptimized_plan: QueryPlan,
+    pub unoptimized_plan: Arc<str>,
 }
 
 async fn query_start(
     State(state): State<Arc<DashboardState>>,
-    Path(query_id): Path<QueryID>,
+    Path(query_id): Path<String>,
     Json(args): Json<StartQueryArgs>,
 ) -> StatusCode {
     if state.queries.contains_key(&query_id) {
@@ -49,18 +52,15 @@ pub struct PlanStartArgs {
 
 async fn plan_start(
     State(state): State<Arc<DashboardState>>,
-    Path(query_id): Path<QueryID>,
+    Path(query_id): Path<String>,
     Json(args): Json<PlanStartArgs>,
 ) -> StatusCode {
-    let query_info = state.queries.get_mut(&query_id);
-    let Some(mut query_info) = query_info else {
-        return StatusCode::BAD_REQUEST;
-    };
+    let mut query_info = state.queries.get_mut(&query_id).expect("Query not found");
     if !matches!(query_info.state, QueryState::Pending) {
         return StatusCode::BAD_REQUEST;
     }
 
-    query_info.state = QueryState::Optimizing {
+    query_info.state = QueryState::Planning {
         plan_start_sec: args.plan_start_sec,
     };
     let summary = query_info.summarize();
@@ -72,23 +72,20 @@ async fn plan_start(
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PlanEndArgs {
     pub plan_end_sec: u64,
-    pub optimized_plan: QueryPlan,
+    pub optimized_plan: Arc<str>,
 }
 
 async fn plan_end(
     State(state): State<Arc<DashboardState>>,
-    Path(query_id): Path<QueryID>,
+    Path(query_id): Path<String>,
     Json(args): Json<PlanEndArgs>,
 ) -> StatusCode {
-    let query_info = state.queries.get_mut(&query_id);
-    let Some(mut query_info) = query_info else {
-        return StatusCode::BAD_REQUEST;
-    };
-    let QueryState::Optimizing { plan_start_sec } = query_info.state else {
+    let mut query_info = state.queries.get_mut(&query_id).expect("Query not found");
+    let QueryState::Planning { plan_start_sec } = query_info.state else {
         return StatusCode::BAD_REQUEST;
     };
 
-    query_info.state = QueryState::Setup {
+    query_info.state = QueryState::Planned {
         plan_info: PlanInfo {
             plan_start_sec,
             plan_end_sec: args.plan_end_sec,
@@ -109,14 +106,11 @@ pub struct ExecStartArgs {
 
 async fn exec_start(
     State(state): State<Arc<DashboardState>>,
-    Path(query_id): Path<QueryID>,
+    Path(query_id): Path<String>,
     Json(args): Json<ExecStartArgs>,
 ) -> StatusCode {
-    let query_info = state.queries.get_mut(&query_id);
-    let Some(mut query_info) = query_info else {
-        return StatusCode::BAD_REQUEST;
-    };
-    let QueryState::Setup { plan_info } = &query_info.state else {
+    let mut query_info = state.queries.get_mut(&query_id).unwrap();
+    let QueryState::Planned { plan_info } = &query_info.state else {
         return StatusCode::BAD_REQUEST;
     };
 
@@ -147,12 +141,9 @@ async fn exec_start(
 
 async fn exec_op_start(
     State(state): State<Arc<DashboardState>>,
-    Path((query_id, op_id)): Path<(QueryID, usize)>,
+    Path((query_id, op_id)): Path<(String, usize)>,
 ) -> StatusCode {
-    let query_info = state.queries.get_mut(&query_id);
-    let Some(mut query_info) = query_info else {
-        return StatusCode::BAD_REQUEST;
-    };
+    let mut query_info = state.queries.get_mut(&query_id).unwrap();
     let QueryState::Executing { exec_info, .. } = &mut query_info.state else {
         return StatusCode::BAD_REQUEST;
     };
@@ -163,12 +154,9 @@ async fn exec_op_start(
 
 async fn exec_op_end(
     State(state): State<Arc<DashboardState>>,
-    Path((query_id, op_id)): Path<(QueryID, usize)>,
+    Path((query_id, op_id)): Path<(String, usize)>,
 ) -> StatusCode {
-    let query_info = state.queries.get_mut(&query_id);
-    let Some(mut query_info) = query_info else {
-        return StatusCode::BAD_REQUEST;
-    };
+    let mut query_info = state.queries.get_mut(&query_id).unwrap();
     let QueryState::Executing { exec_info, .. } = &mut query_info.state else {
         return StatusCode::BAD_REQUEST;
     };
@@ -177,25 +165,17 @@ async fn exec_op_end(
     StatusCode::OK
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct ExecEmitStatsArgsSend<'a> {
-    pub stats: Vec<(usize, HashMap<&'a str, Stat>)>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct ExecEmitStatsArgsRecv {
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ExecEmitStatsArgs {
     pub stats: Vec<(usize, HashMap<String, Stat>)>,
 }
 
 async fn exec_emit_stats(
     State(state): State<Arc<DashboardState>>,
-    Path(query_id): Path<QueryID>,
-    Json(args): Json<ExecEmitStatsArgsRecv>,
+    Path(query_id): Path<String>,
+    Json(args): Json<ExecEmitStatsArgs>,
 ) -> StatusCode {
-    let query_info = state.queries.get_mut(&query_id);
-    let Some(mut query_info) = query_info else {
-        return StatusCode::BAD_REQUEST;
-    };
+    let mut query_info = state.queries.get_mut(&query_id).unwrap();
     let QueryState::Executing { exec_info, .. } = &mut query_info.state else {
         return StatusCode::BAD_REQUEST;
     };
@@ -213,13 +193,10 @@ pub struct ExecEndArgs {
 
 async fn exec_end(
     State(state): State<Arc<DashboardState>>,
-    Path(query_id): Path<QueryID>,
+    Path(query_id): Path<String>,
     Json(args): Json<ExecEndArgs>,
 ) -> StatusCode {
-    let query_info = state.queries.get_mut(&query_id);
-    let Some(mut query_info) = query_info else {
-        return StatusCode::BAD_REQUEST;
-    };
+    let mut query_info = state.queries.get_mut(&query_id).unwrap();
     let QueryState::Executing {
         exec_info,
         plan_info,
@@ -247,13 +224,10 @@ pub struct FinalizeArgs {
 
 async fn query_end(
     State(state): State<Arc<DashboardState>>,
-    Path(query_id): Path<QueryID>,
+    Path(query_id): Path<String>,
     Json(args): Json<FinalizeArgs>,
 ) -> StatusCode {
-    let query_info = state.queries.get_mut(&query_id);
-    let Some(mut query_info) = query_info else {
-        return StatusCode::BAD_REQUEST;
-    };
+    let mut query_info = state.queries.get_mut(&query_id).unwrap();
     let QueryState::Finalizing {
         exec_info,
         plan_info,
@@ -280,8 +254,8 @@ async fn query_end(
 
 pub(crate) fn routes() -> Router<Arc<DashboardState>> {
     Router::new()
+        .merge(client::routes())
         // Query lifecycle
-        // TODO: Consider replacing with websocket for active engine -> server communication
         .route("/query/{query_id}/start", post(query_start))
         .route("/query/{query_id}/plan_start", post(plan_start))
         .route("/query/{query_id}/plan_end", post(plan_end))

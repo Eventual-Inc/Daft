@@ -24,6 +24,11 @@ fn ci_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn default_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if cfg!(debug_assertions) {
+        println!("cargo:warning=Running in debug mode, skipping dashboard build.");
+        return Ok(());
+    }
+
     println!("cargo:rerun-if-changed=frontend/src/");
     println!("cargo:rerun-if-changed=frontend/bun.lockb");
     println!("cargo:rerun-if-changed=build.rs");

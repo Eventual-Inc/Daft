@@ -99,5 +99,6 @@ pub fn launch(noop_if_initialized: bool) -> PyResult<ConnectionHandle> {
         res
     });
 
+    DASHBOARD_ENABLED.store(true, Ordering::SeqCst);
     Ok(handle)
 }

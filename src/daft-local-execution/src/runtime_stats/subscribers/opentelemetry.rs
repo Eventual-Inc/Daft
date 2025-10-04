@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use common_error::DaftResult;
@@ -12,20 +12,25 @@ use crate::runtime_stats::{
 
 #[derive(Debug)]
 pub struct OpenTelemetrySubscriber {
-    node_infos: Vec<Arc<NodeInfo>>,
     rows_in: Counter<u64>,
     rows_out: Counter<u64>,
     cpu_us: Counter<u64>,
+    id_to_info: HashMap<NodeID, Arc<NodeInfo>>,
 }
 
 impl OpenTelemetrySubscriber {
     pub fn new(node_infos: &[Arc<NodeInfo>]) -> Self {
+        let id_to_info = node_infos
+            .iter()
+            .map(|node_info| (node_info.id, node_info.clone()))
+            .collect();
+
         let meter = global::meter("runtime_stats");
         Self {
-            node_infos: node_infos.to_vec(),
             rows_in: meter.u64_counter("daft.runtime_stats.rows_in").build(),
             rows_out: meter.u64_counter("daft.runtime_stats.rows_out").build(),
             cpu_us: meter.u64_counter("daft.runtime_stats.cpu_us").build(),
+            id_to_info,
         }
     }
 }
@@ -47,12 +52,14 @@ impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
 
     async fn handle_event(&self, events: &[(NodeID, StatSnapshotSend)]) -> DaftResult<()> {
         for (node_id, event) in events {
-            let node_info = &self.node_infos[*node_id];
             let mut attributes = vec![
-                KeyValue::new("name", node_info.name.to_string()),
+                KeyValue::new(
+                    "name",
+                    self.id_to_info.get(node_id).unwrap().name.to_string(),
+                ),
                 KeyValue::new("id", node_id.to_string()),
             ];
-            for (k, v) in &node_info.context {
+            for (k, v) in &self.id_to_info.get(node_id).unwrap().context {
                 attributes.push(KeyValue::new(k.clone(), v.clone()));
             }
 

@@ -295,7 +295,7 @@ pub async fn launch_server(
         .layer(
             ServiceBuilder::new()
                 .layer(
-                    TraceLayer::new_for_http().on_request(()).on_response(
+                    TraceLayer::new_for_http().on_response(
                         DefaultOnResponse::new()
                             .level(Level::INFO)
                             .latency_unit(LatencyUnit::Micros),
