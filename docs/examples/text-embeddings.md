@@ -180,7 +180,7 @@ This UDF:
 
 ## Step 4: Configure Distributed Processing
 
-You can run this script locally, but if you're interested in running this pipeline on a cluster, check out our guide on [scaling up](../distributed.md). In this example,
+You can run this script locally, but if you're interested in running this pipeline on a cluster, check out our guide on [scaling up](../distributed/index.md). In this example,
 we ran on a ray cluster with 8 [g5.2xlarge](https://aws.amazon.com/ec2/instance-types/g5/) workers (each comes with an A10G GPU). To configure our Daft script to use the ray cluster, we added:
 
 ```python
