@@ -52,11 +52,21 @@ def load_transformers(name: str | None = None, **options: Any) -> Provider:
         raise ProviderImportError(["torch", "torchvision", "transformers", "Pillow"]) from e
 
 
+def load_vllm(name: str | None = None, **options: Any) -> Provider:
+    try:
+        from daft.ai.vllm.provider import VLLMProvider
+
+        return VLLMProvider(name, **options)
+    except ImportError as e:
+        raise ProviderImportError(["vllm"]) from e
+
+
 PROVIDERS: dict[str, Callable[..., Provider]] = {
     "lm_studio": load_lm_studio,
     "openai": load_openai,
     "sentence_transformers": load_sentence_transformers,
     "transformers": load_transformers,
+    "vllm": load_vllm,
 }
 
 

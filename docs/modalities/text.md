@@ -122,6 +122,35 @@ model = "text-embedding-nomic-embed-text-v1.5"  # Select a text embedding model 
 )
 ```
 
+#### Using vLLM
+
+[vLLM](https://docs.vllm.ai/en/latest/) is a fast and easy-to-use library for LLM inference and serving.
+
+First install the optional vLLM dependency for Daft.
+
+```bash
+pip install -U "daft[vllm]"
+```
+
+Then use the `vllm` provider with any desired open model hosted on [Hugging Face](https://huggingface.co/) such as [`Qwen/Qwen3-Embedding-0.6B`](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B).
+
+
+```python
+
+import daft
+from daft.functions.ai import embed_text
+
+provider = "vllm"
+model = "Qwen/Qwen3-Embedding-0.6B"
+
+(
+    daft.read_huggingface("Open-Orca/OpenOrca")
+    .with_column("embedding", embed_text(daft.col("response"), provider=provider, model=model))
+    .show()
+)
+
+```
+
 ### How to work with embeddings
 
 It's common to use embeddings for various tasks like similarity search or retrieval with a vector database.
