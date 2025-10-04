@@ -9,6 +9,12 @@ from daft.daft import ImageMode, PyDataType, PyTimeUnit, sql_datatype
 from daft.dependencies import np, pa
 from daft.runners import get_or_create_runner
 
+__all__: tuple[str, ...] = (
+    "DataType",
+    "TimeUnit",
+    "get_super_ext_type",
+)
+
 if TYPE_CHECKING:
     import builtins
 
