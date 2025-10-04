@@ -36,8 +36,9 @@
         * [Turbopuffer](connectors/turbopuffer.md)
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
     * Scaling Out and Deployment
-        * [Running on Ray](distributed.md)
-        * [Running on Kubernetes](kubernetes.md)
+        * [Distributed Execution](distributed/index.md)
+        * [Running on Kubernetes](distributed/kubernetes.md)
+        * [Running on Ray](distributed/ray.md)
     * Architecture
         * [Architecture](architecture/index.md)
     * Optimization and Debugging
