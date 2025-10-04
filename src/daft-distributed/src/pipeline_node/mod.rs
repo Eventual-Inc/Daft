@@ -38,6 +38,7 @@ mod concat;
 mod distinct;
 mod explode;
 mod filter;
+mod glob_scan_source;
 mod in_memory_source;
 mod into_batches;
 mod into_partitions;

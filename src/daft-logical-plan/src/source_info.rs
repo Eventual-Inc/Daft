@@ -1,8 +1,13 @@
-use std::hash::{Hash, Hasher};
+use std::{
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
+use common_io_config::IOConfig;
 use common_partitioning::PartitionCacheEntry;
-use common_scan_info::PhysicalScanInfo;
-use daft_schema::schema::SchemaRef;
+use common_scan_info::{PhysicalScanInfo, Pushdowns};
+use daft_core::prelude::Schema;
+use daft_schema::{dtype::DataType, field::Field, schema::SchemaRef};
 use serde::{Deserialize, Serialize};
 
 use crate::partitioning::ClusteringSpecRef;
@@ -11,6 +16,7 @@ use crate::partitioning::ClusteringSpecRef;
 pub enum SourceInfo {
     InMemory(InMemoryInfo),
     Physical(PhysicalScanInfo),
+    GlobScan(GlobScanInfo),
     PlaceHolder(PlaceHolderInfo),
 }
 
@@ -76,6 +82,42 @@ impl PlaceHolderInfo {
         Self {
             source_schema,
             clustering_spec,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct GlobScanInfo {
+    pub glob_paths: Arc<Vec<String>>,
+    pub schema: SchemaRef,
+    pub pushdowns: Pushdowns,
+    pub io_config: Option<Box<IOConfig>>,
+}
+
+impl GlobScanInfo {
+    #[must_use]
+    pub fn new(glob_paths: Vec<String>, io_config: Option<IOConfig>) -> Self {
+        let schema = Schema::new([
+            Field::new("path", DataType::Utf8),
+            Field::new("size", DataType::Int64),
+            Field::new("num_rows", DataType::Int64),
+        ])
+        .into();
+        Self {
+            glob_paths: Arc::new(glob_paths),
+            schema,
+            pushdowns: Pushdowns::default(),
+            io_config: io_config.map(Box::new),
+        }
+    }
+
+    #[must_use]
+    pub fn with_pushdowns(&self, pushdowns: Pushdowns) -> Self {
+        Self {
+            glob_paths: self.glob_paths.clone(),
+            schema: self.schema.clone(),
+            pushdowns,
+            io_config: self.io_config.clone(),
         }
     }
 }

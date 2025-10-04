@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult, ensure};
+use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use common_py_serde::{PyObjectWrapper, deserialize_py_object, serialize_py_object};
 use common_resource_request::ResourceRequest;
@@ -27,6 +28,7 @@ pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
 pub enum LocalPhysicalPlan {
     InMemoryScan(InMemoryScan),
     PhysicalScan(PhysicalScan),
+    GlobScan(GlobScan),
     EmptyScan(EmptyScan),
     PlaceholderScan(PlaceholderScan),
     Project(Project),
@@ -94,6 +96,7 @@ impl LocalPhysicalPlan {
         match self {
             Self::InMemoryScan(InMemoryScan { stats_state, .. })
             | Self::PhysicalScan(PhysicalScan { stats_state, .. })
+            | Self::GlobScan(GlobScan { stats_state, .. })
             | Self::PlaceholderScan(PlaceholderScan { stats_state, .. })
             | Self::EmptyScan(EmptyScan { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
@@ -157,6 +160,23 @@ impl LocalPhysicalPlan {
             pushdowns,
             schema,
             stats_state,
+        })
+        .arced()
+    }
+
+    pub fn glob_scan(
+        glob_paths: Arc<Vec<String>>,
+        pushdowns: Pushdowns,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        io_config: Option<IOConfig>,
+    ) -> LocalPhysicalPlanRef {
+        Self::GlobScan(GlobScan {
+            glob_paths,
+            pushdowns,
+            schema,
+            stats_state,
+            io_config,
         })
         .arced()
     }
@@ -738,6 +758,7 @@ impl LocalPhysicalPlan {
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
+            | Self::GlobScan(GlobScan { schema, .. })
             | Self::PlaceholderScan(PlaceholderScan { schema, .. })
             | Self::EmptyScan(EmptyScan { schema, .. })
             | Self::Filter(Filter { schema, .. })
@@ -810,6 +831,7 @@ impl LocalPhysicalPlan {
     fn children(&self) -> Vec<LocalPhysicalPlanRef> {
         match self {
             Self::PhysicalScan(_)
+            | Self::GlobScan(_)
             | Self::PlaceholderScan(_)
             | Self::EmptyScan(_)
             | Self::InMemoryScan(_) => vec![],
@@ -1221,6 +1243,9 @@ impl LocalPhysicalPlan {
                 Self::Concat(_) => {
                     panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children")
                 }
+                Self::GlobScan(_) => {
+                    panic!("LocalPhysicalPlan::with_new_children: GlobScan does not have children")
+                }
             },
             [new_left, new_right] => match self {
                 Self::HashJoin(HashJoin {
@@ -1315,6 +1340,15 @@ pub struct PhysicalScan {
     pub pushdowns: Pushdowns,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GlobScan {
+    pub glob_paths: Arc<Vec<String>>,
+    pub pushdowns: Pushdowns,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub io_config: Option<common_io_config::IOConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
