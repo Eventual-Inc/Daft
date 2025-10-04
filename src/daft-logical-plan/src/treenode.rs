@@ -8,7 +8,7 @@ use daft_dsl::ExprRef;
 
 use crate::{
     LogicalPlan, SourceInfo,
-    ops::Source,
+    ops::{Source, UDFProject},
     partitioning::{HashRepartitionConfig, RepartitionSpec},
 };
 
@@ -42,7 +42,7 @@ impl LogicalPlan {
         self: Arc<Self>,
         mut f: F,
     ) -> DaftResult<Transformed<Arc<Self>>> {
-        use crate::ops::{Explode, Filter, Project, Repartition, Sort, UDFProject};
+        use crate::ops::{Explode, Filter, Project, Repartition, Sort};
 
         // TODO: support mapping join predicate once we can have duplicate columns in schema
         // This is because we would pass in the combined schema of the left and right sides into `f`
@@ -116,17 +116,17 @@ impl LogicalPlan {
                 plan_id,
                 node_id,
                 input,
-                project,
+                expr,
                 passthrough_columns,
                 projected_schema,
                 udf_properties,
                 stats_state,
-            }) => f(project.clone(), &input.schema())?.update_data(|new_project| {
+            }) => f(expr.clone(), &input.schema())?.update_data(|new_expr| {
                 Self::UDFProject(UDFProject {
                     plan_id: *plan_id,
                     node_id: *node_id,
                     input: input.clone(),
-                    project: new_project,
+                    expr: new_expr,
                     passthrough_columns: passthrough_columns.clone(),
                     projected_schema: projected_schema.clone(),
                     udf_properties: udf_properties.clone(),

@@ -15,9 +15,9 @@ pub use common_treenode;
 pub use expr::{
     AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, Operator, PlanRef, ResolvedColumn,
     SketchType, Subquery, SubqueryPlan, UnresolvedColumn, WindowExpr, binary_op, bound_col,
-    count_actor_pool_udfs, deduplicate_expr_names, estimated_selectivity, exprs_to_schema, has_agg,
-    is_actor_pool_udf, is_partition_compatible, is_udf, left_col, lit, null_lit, resolved_col,
-    right_col, unresolved_col,
+    deduplicate_expr_names, estimated_selectivity, exprs_to_schema, has_agg, is_actor_pool_udf,
+    is_partition_compatible, is_udf, left_col, lit, null_lit, resolved_col, right_col,
+    unresolved_col,
     window::{WindowBoundary, WindowFrame, WindowSpec, window_to_agg_exprs},
 };
 #[cfg(feature = "python")]

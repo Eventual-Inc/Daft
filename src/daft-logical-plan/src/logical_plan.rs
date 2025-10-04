@@ -181,7 +181,7 @@ impl LogicalPlan {
                 RequiredCols::new(res, None)
             }
             Self::UDFProject(UDFProject {
-                project,
+                expr,
                 passthrough_columns,
                 ..
             }) => {
@@ -190,7 +190,7 @@ impl LogicalPlan {
                     .flat_map(get_required_columns)
                     .collect::<IndexSet<_>>();
 
-                res.extend(get_required_columns(project).into_iter());
+                res.extend(get_required_columns(expr).into_iter());
                 RequiredCols::new(res, None)
             }
             Self::Filter(filter) => RequiredCols::new(
@@ -499,16 +499,12 @@ impl LogicalPlan {
                     Self::Project(Project::try_new(input.clone(), projection.clone()).unwrap())
                 }
                 Self::UDFProject(UDFProject {
-                    project,
+                    expr,
                     passthrough_columns,
                     ..
                 }) => Self::UDFProject(
-                    UDFProject::try_new(
-                        input.clone(),
-                        project.clone(),
-                        passthrough_columns.clone(),
-                    )
-                    .unwrap(),
+                    UDFProject::try_new(input.clone(), expr.clone(), passthrough_columns.clone())
+                        .unwrap(),
                 ),
                 Self::Filter(Filter { predicate, .. }) => {
                     Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap())
@@ -605,6 +601,7 @@ impl LogicalPlan {
                     value_name.clone(),
                     output_schema.clone(),
                 )),
+
                 Self::Sample(Sample {
                     fraction,
                     with_replacement,
