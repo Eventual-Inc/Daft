@@ -52,16 +52,16 @@ jobs:
       contents: read
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v5
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
     - name: Assume GitHub Actions AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v5
       with:
         aws-region: ${{ env.AWS_REGION }}
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
@@ -91,7 +91,7 @@ jobs:
     if: ${{ failure() }}
 
     steps:
-    - uses: slackapi/slack-github-action@v2.0.0
+    - uses: slackapi/slack-github-action@v2.1.1
       with:
         payload: |
           {
@@ -120,13 +120,13 @@ jobs:
         runner-name: [ubuntu-latest, ubuntu-24.04-arm]
         daft-runner: [ray, native]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
         fetch-depth: 0
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v4
+      uses: astral-sh/setup-uv@v6
       with:
         version: "0.6.17"
     - name: Setup Python and uv
@@ -163,7 +163,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -199,7 +199,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
         fetch-depth: 0
@@ -233,13 +233,13 @@ jobs:
         mkdir -p /tmp/daft-integration-testing/nginx
         chmod +rw /tmp/daft-integration-testing/nginx
     - name: Assume GitHub Actions AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v5
       with:
         aws-region: us-west-2
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
         role-session-name: DaftPythonPackageGitHubWorkflow
     - name: Spin up IO services
-      uses: isbang/compose-action@v2.0.2
+      uses: isbang/compose-action@v2.4.0
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes
@@ -250,7 +250,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -282,7 +282,7 @@ jobs:
     if: ${{ failure() && (github.ref == 'refs/heads/main') }}
 
     steps:
-    - uses: slackapi/slack-github-action@v2.0.0
+    - uses: slackapi/slack-github-action@v2.1.1
       with:
         payload: |
           {
@@ -315,7 +315,7 @@ jobs:
     if: ${{ failure() && (github.ref == 'refs/heads/main') }}
 
     steps:
-    - uses: slackapi/slack-github-action@v2.0.0
+    - uses: slackapi/slack-github-action@v2.1.1
       with:
         payload: |
           {
