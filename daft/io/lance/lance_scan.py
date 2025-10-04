@@ -156,6 +156,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 size_bytes=None,
                 pushdowns=pushdowns,
                 stats=None,
+                source_type=self.name(),
             )
         # Check if there is a limit pushdown and no filters
         elif pushdowns.limit is not None and self._pushed_filters is None:
@@ -197,6 +198,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     size_bytes=None,
                     pushdowns=pushdowns,
                     stats=None,
+                    source_type=self.name(),
                 )
 
     def _create_regular_scan_tasks(
@@ -224,6 +226,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     size_bytes=size_bytes,
                     pushdowns=pushdowns,
                     stats=stats,
+                    source_type=self.name(),
                 )
         else:
             # Group fragments
@@ -258,6 +261,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     size_bytes=size_bytes,
                     pushdowns=pushdowns,
                     stats=stats,
+                    source_type=self.name(),
                 )
 
     def _combine_filters_to_arrow(self) -> Optional["pa.compute.Expression"]:
