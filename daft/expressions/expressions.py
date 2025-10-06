@@ -1263,7 +1263,7 @@ class Expression:
             return_dtype=inferred_return_dtype,
         )(self)
 
-    def is_null(self) -> Expression:
+    def is_null(self) -> BooleanExpr:
         """Checks if values in the Expression are Null (a special value indicating missing data).
 
         Tip: See Also
@@ -1273,7 +1273,7 @@ class Expression:
 
         return is_null(self)
 
-    def not_null(self) -> Expression:
+    def not_null(self) -> BooleanExpr:
         """Checks if values in the Expression are not Null (a special value indicating missing data).
 
         Tip: See Also
@@ -1293,7 +1293,7 @@ class Expression:
 
         return fill_null(self, fill_value)
 
-    def is_in(self, other: Any) -> Expression:
+    def is_in(self, other: Any) -> BooleanExpr:
         """Checks if values in the Expression are in the provided list.
 
         Tip: See Also
@@ -1303,7 +1303,7 @@ class Expression:
 
         return is_in(self, other)
 
-    def between(self, lower: int | builtins.float, upper: int | builtins.float) -> Expression:
+    def between(self, lower: int | builtins.float, upper: int | builtins.float) -> BooleanExpr:
         """Checks if values in the Expression are between lower and upper, inclusive.
 
         Tip: See Also
@@ -1315,7 +1315,7 @@ class Expression:
 
     def hash(
         self, seed: Any | None = None, hash_function: Literal["xxhash", "murmurhash3", "sha1"] | None = "xxhash"
-    ) -> Expression:
+    ) -> IntExpr:
         """Hashes the values in the Expression.
 
         Tip: See Also
@@ -1442,7 +1442,7 @@ class Expression:
 
         return try_deserialize(self, format=format, dtype=dtype)
 
-    def serialize(self, format: Literal["json"]) -> Expression:
+    def serialize(self, format: Literal["json"]) -> StringExpr:
         """Serializes the expression as a string using the specified format.
 
         Tip: See Also
@@ -1452,7 +1452,7 @@ class Expression:
 
         return serialize(self, format=format)
 
-    def jq(self, filter: builtins.str) -> Expression:
+    def jq(self, filter: builtins.str) -> StringExpr:
         """Applies a [jq](https://jqlang.github.io/jq/manual/) filter to the expression (string), returning the results as a string.
 
         Tip: See Also
@@ -1554,7 +1554,7 @@ class Expression:
 
         return cosine_distance(self, other)
 
-    def length(self) -> Expression:
+    def length(self) -> IntExpr:
         """Retrieves the length of the given expression.
 
         Tip: See Also
@@ -1579,7 +1579,7 @@ class Expression:
         max_connections: int = 32,
         on_error: Literal["raise", "null"] = "raise",
         io_config: IOConfig | None = None,
-    ) -> Expression:
+    ) -> BinaryExpr:
         """Treats each string as a URL, and downloads the bytes contents as a bytes column.
 
         Tip: See Also
@@ -1591,11 +1591,11 @@ class Expression:
 
     def upload(
         self,
-        location: builtins.str | Expression,
+        location: builtins.str | StringExpr,
         max_connections: int = 32,
         on_error: Literal["raise", "null"] = "raise",
         io_config: IOConfig | None = None,
-    ) -> Expression:
+    ) -> StringExpr:
         """Uploads a column of binary data to the provided location(s) (also supports S3, local etc).
 
         Tip: See Also
@@ -1611,7 +1611,7 @@ class Expression:
 
         return date(self)
 
-    def day(self) -> Expression:
+    def day(self) -> IntExpr:
         """Retrieves the day for a datetime column.
 
         Tip: See Also
@@ -1621,7 +1621,7 @@ class Expression:
 
         return day(self)
 
-    def hour(self) -> Expression:
+    def hour(self) -> IntExpr:
         """Retrieves the hour for a datetime column.
 
         Tip: See Also
@@ -1631,7 +1631,7 @@ class Expression:
 
         return hour(self)
 
-    def minute(self) -> Expression:
+    def minute(self) -> IntExpr:
         """Retrieves the minute for a datetime column.
 
         Tip: See Also
@@ -1641,7 +1641,7 @@ class Expression:
 
         return minute(self)
 
-    def second(self) -> Expression:
+    def second(self) -> IntExpr:
         """Retrieves the second for a datetime column.
 
         Tip: See Also
@@ -1651,7 +1651,7 @@ class Expression:
 
         return second(self)
 
-    def millisecond(self) -> Expression:
+    def millisecond(self) -> IntExpr:
         """Retrieves the millisecond for a datetime column.
 
         Tip: See Also
@@ -1661,7 +1661,7 @@ class Expression:
 
         return millisecond(self)
 
-    def microsecond(self) -> Expression:
+    def microsecond(self) -> IntExpr:
         """Retrieves the microsecond for a datetime column.
 
         Tip: See Also
@@ -1671,7 +1671,7 @@ class Expression:
 
         return microsecond(self)
 
-    def nanosecond(self) -> Expression:
+    def nanosecond(self) -> IntExpr:
         """Retrieves the nanosecond for a datetime column.
 
         Tip: See Also
@@ -1681,7 +1681,7 @@ class Expression:
 
         return nanosecond(self)
 
-    def unix_date(self) -> Expression:
+    def unix_date(self) -> IntExpr:
         """Retrieves the number of days since 1970-01-01 00:00:00 UTC.
 
         Tip: See Also
@@ -1697,7 +1697,7 @@ class Expression:
 
         return time(self)
 
-    def month(self) -> Expression:
+    def month(self) -> IntExpr:
         """Retrieves the month for a datetime column.
 
         Tip: See Also
@@ -1707,7 +1707,7 @@ class Expression:
 
         return month(self)
 
-    def quarter(self) -> Expression:
+    def quarter(self) -> IntExpr:
         """Retrieves the quarter for a datetime column.
 
         Tip: See Also
@@ -1717,7 +1717,7 @@ class Expression:
 
         return quarter(self)
 
-    def year(self) -> Expression:
+    def year(self) -> IntExpr:
         """Retrieves the year for a datetime column.
 
         Tip: See Also
@@ -1727,7 +1727,7 @@ class Expression:
 
         return year(self)
 
-    def day_of_week(self) -> Expression:
+    def day_of_week(self) -> IntExpr:
         """Retrieves the day of the week for a datetime column, starting at 0 for Monday and ending at 6 for Sunday.
 
         Tip: See Also
@@ -1737,7 +1737,7 @@ class Expression:
 
         return day_of_week(self)
 
-    def day_of_month(self) -> Expression:
+    def day_of_month(self) -> IntExpr:
         """Retrieves the day of the month for a datetime column.
 
         Tip: See Also
@@ -1747,7 +1747,7 @@ class Expression:
 
         return day_of_month(self)
 
-    def day_of_year(self) -> Expression:
+    def day_of_year(self) -> IntExpr:
         """Retrieves the ordinal day for a datetime column. Starting at 1 for January 1st and ending at 365 or 366 for December 31st.
 
         Tip: See Also
@@ -1757,7 +1757,7 @@ class Expression:
 
         return day_of_year(self)
 
-    def week_of_year(self) -> Expression:
+    def week_of_year(self) -> IntExpr:
         """Retrieves the week of the year for a datetime column.
 
         Tip: See Also
@@ -1767,7 +1767,7 @@ class Expression:
 
         return week_of_year(self)
 
-    def strftime(self, format: builtins.str | None = None) -> Expression:
+    def strftime(self, format: builtins.str | None = None) -> StringExpr:
         """Converts a datetime/date column to a string column.
 
         Tip: See Also
@@ -1777,7 +1777,7 @@ class Expression:
 
         return strftime(self, format)
 
-    def total_seconds(self) -> Expression:
+    def total_seconds(self) -> IntExpr:
         """Calculates the total number of seconds for a duration column.
 
         Tip: See Also
@@ -1787,7 +1787,7 @@ class Expression:
 
         return total_seconds(self)
 
-    def total_milliseconds(self) -> Expression:
+    def total_milliseconds(self) -> IntExpr:
         """Calculates the total number of milliseconds for a duration column.
 
         Tip: See Also
@@ -1797,7 +1797,7 @@ class Expression:
 
         return total_milliseconds(self)
 
-    def total_microseconds(self) -> Expression:
+    def total_microseconds(self) -> IntExpr:
         """Calculates the total number of microseconds for a duration column.
 
         Tip: See Also
@@ -1807,7 +1807,7 @@ class Expression:
 
         return total_microseconds(self)
 
-    def total_nanoseconds(self) -> Expression:
+    def total_nanoseconds(self) -> IntExpr:
         """Calculates the total number of nanoseconds for a duration column.
 
         Tip: See Also
@@ -1817,7 +1817,7 @@ class Expression:
 
         return total_nanoseconds(self)
 
-    def total_minutes(self) -> Expression:
+    def total_minutes(self) -> IntExpr:
         """Calculates the total number of minutes for a duration column.
 
         Tip: See Also
@@ -1827,7 +1827,7 @@ class Expression:
 
         return total_minutes(self)
 
-    def total_hours(self) -> Expression:
+    def total_hours(self) -> IntExpr:
         """Calculates the total number of hours for a duration column.
 
         Tip: See Also
@@ -1837,7 +1837,7 @@ class Expression:
 
         return total_hours(self)
 
-    def total_days(self) -> Expression:
+    def total_days(self) -> IntExpr:
         """Calculates the total number of days for a duration column.
 
         Tip: See Also
@@ -1867,7 +1867,7 @@ class Expression:
 
         return to_datetime(self, format, timezone)
 
-    def contains(self, substr: builtins.str | Expression) -> Expression:
+    def contains(self, substr: builtins.str | Expression) -> BooleanExpr:
         """Checks whether each string contains the given pattern in a string column.
 
         Tip: See Also
@@ -1877,7 +1877,7 @@ class Expression:
 
         return contains(self, substr)
 
-    def split(self, split_on: builtins.str | Expression) -> Expression:
+    def split(self, split_on: builtins.str | StringExpr) -> StringExpr:
         """Splits each string on the given string, into a list of strings.
 
         Tip: See Also
@@ -1887,7 +1887,7 @@ class Expression:
 
         return split(self, split_on)
 
-    def regexp_split(self, pattern: builtins.str | Expression) -> Expression:
+    def regexp_split(self, pattern: builtins.str | StringExpr) -> StringExpr:
         """Splits each string on the given regex pattern, into a list of strings.
 
         Tip: See Also
@@ -1897,7 +1897,7 @@ class Expression:
 
         return regexp_split(self, pattern)
 
-    def lower(self) -> Expression:
+    def lower(self) -> StringExpr:
         """Convert UTF-8 string to all lowercase.
 
         Tip: See Also
@@ -1907,7 +1907,7 @@ class Expression:
 
         return lower(self)
 
-    def upper(self) -> Expression:
+    def upper(self) -> StringExpr:
         """Convert UTF-8 string to all upper.
 
         Tip: See Also
@@ -1917,7 +1917,7 @@ class Expression:
 
         return upper(self)
 
-    def lstrip(self) -> Expression:
+    def lstrip(self) -> StringExpr:
         """Strip whitespace from the left side of a UTF-8 string.
 
         Tip: See Also
@@ -1927,7 +1927,7 @@ class Expression:
 
         return lstrip(self)
 
-    def rstrip(self) -> Expression:
+    def rstrip(self) -> StringExpr:
         """Strip whitespace from the right side of a UTF-8 string.
 
         Tip: See Also
@@ -1937,7 +1937,7 @@ class Expression:
 
         return rstrip(self)
 
-    def reverse(self) -> Expression:
+    def reverse(self) -> StringExpr:
         """Reverse a UTF-8 string.
 
         Tip: See Also
@@ -1947,7 +1947,7 @@ class Expression:
 
         return reverse(self)
 
-    def capitalize(self) -> Expression:
+    def capitalize(self) -> StringExpr:
         """Capitalize a UTF-8 string.
 
         Tip: See Also
@@ -1957,7 +1957,7 @@ class Expression:
 
         return capitalize(self)
 
-    def left(self, nchars: int | Expression) -> Expression:
+    def left(self, nchars: int | IntExpr) -> StringExpr:
         """Gets the n (from nchars) left-most characters of each string.
 
         Tip: See Also
@@ -1967,7 +1967,7 @@ class Expression:
 
         return left(self, nchars)
 
-    def right(self, nchars: int | Expression) -> Expression:
+    def right(self, nchars: int | IntExpr) -> StringExpr:
         """Gets the n (from nchars) right-most characters of each string.
 
         Tip: See Also
@@ -1977,7 +1977,7 @@ class Expression:
 
         return right(self, nchars)
 
-    def rpad(self, length: int | Expression, pad: builtins.str | Expression) -> Expression:
+    def rpad(self, length: int | IntExpr, pad: builtins.str | StringExpr) -> StringExpr:
         """Right-pads each string by truncating or padding with the character.
 
         Tip: See Also
@@ -1987,7 +1987,7 @@ class Expression:
 
         return rpad(self, length, pad)
 
-    def lpad(self, length: int | Expression, pad: builtins.str | Expression) -> Expression:
+    def lpad(self, length: int | IntExpr, pad: builtins.str | StringExpr) -> StringExpr:
         """Left-pads each string by truncating or padding with the character.
 
         Tip: See Also
@@ -1997,7 +1997,7 @@ class Expression:
 
         return lpad(self, length, pad)
 
-    def repeat(self, n: int | Expression) -> Expression:
+    def repeat(self, n: int | IntExpr) -> StringExpr:
         """Repeats each string n times.
 
         Tip: See Also
@@ -2007,7 +2007,7 @@ class Expression:
 
         return repeat(self, n)
 
-    def like(self, pattern: builtins.str | Expression) -> Expression:
+    def like(self, pattern: builtins.str | StringExpr) -> StringExpr:
         """Checks whether each string matches the given SQL LIKE pattern, case sensitive.
 
         Tip: See Also
@@ -2017,7 +2017,7 @@ class Expression:
 
         return like(self, pattern)
 
-    def ilike(self, pattern: builtins.str | Expression) -> Expression:
+    def ilike(self, pattern: builtins.str | StringExpr) -> StringExpr:
         """Checks whether each string matches the given SQL ILIKE pattern, case insensitive.
 
         Tip: See Also
@@ -2027,7 +2027,7 @@ class Expression:
 
         return ilike(self, pattern)
 
-    def substr(self, start: int | Expression, length: int | Expression | None = None) -> Expression:
+    def substr(self, start: int | IntExpr, length: int | IntExpr | None = None) -> StringExpr:
         """Extract a substring from a string, starting at a specified index and extending for a given length.
 
         Tip: See Also
@@ -2037,7 +2037,7 @@ class Expression:
 
         return substr(self, start, length)
 
-    def endswith(self, suffix: builtins.str | Expression) -> Expression:
+    def endswith(self, suffix: builtins.str | StringExpr) -> StringExpr:
         """Checks whether each string ends with the given pattern in a string column.
 
         Tip: See Also
@@ -2047,7 +2047,7 @@ class Expression:
 
         return endswith(self, suffix)
 
-    def startswith(self, prefix: builtins.str | Expression) -> Expression:
+    def startswith(self, prefix: builtins.str | StringExpr) -> StringExpr:
         """Checks whether each string starts with the given pattern in a string column.
 
         Tip: See Also
@@ -2064,7 +2064,7 @@ class Expression:
         lowercase: bool = False,
         nfd_unicode: bool = False,
         white_space: bool = False,
-    ) -> Expression:
+    ) -> StringExpr:
         """Normalizes a string for more useful deduplication.
 
         Tip: See Also
@@ -2084,7 +2084,7 @@ class Expression:
         pattern: builtins.str | None = None,
         special_tokens: builtins.str | None = None,
         use_special_tokens: bool | None = None,
-    ) -> Expression:
+    ) -> FixedSizeListExpr:
         """Encodes each string as a list of integer tokens using a tokenizer.
 
         Tip: See Also
@@ -2108,7 +2108,7 @@ class Expression:
         io_config: IOConfig | None = None,
         pattern: builtins.str | None = None,
         special_tokens: builtins.str | None = None,
-    ) -> Expression:
+    ) -> StringExpr:
         """Decodes each list of integer tokens into a string using a tokenizer.
 
         Tip: See Also
@@ -2130,7 +2130,7 @@ class Expression:
         *,
         whole_words: bool = False,
         case_sensitive: bool = True,
-    ) -> Expression:
+    ) -> IntExpr:
         """Counts the number of times a pattern, or multiple patterns, appear in a string.
 
         Tip: See Also
@@ -2142,8 +2142,8 @@ class Expression:
 
     def regexp_count(
         self,
-        pattern: builtins.str | Expression,
-    ) -> Expression:
+        pattern: builtins.str | StringExpr,
+    ) -> IntExpr:
         """Counts the number of times a regex pattern appears in a string.
 
         Tip: See Also
@@ -2153,7 +2153,7 @@ class Expression:
 
         return regexp_count(self, pattern)
 
-    def length_bytes(self) -> Expression:
+    def length_bytes(self) -> IntExpr:
         """Retrieves the length for a UTF-8 string column in bytes.
 
         Tip: See Also
@@ -2163,7 +2163,7 @@ class Expression:
 
         return length_bytes(self)
 
-    def value_counts(self) -> Expression:
+    def value_counts(self) -> IntExpr:
         """Counts the occurrences of each distinct value in the list.
 
         Tip: See Also
@@ -2183,7 +2183,7 @@ class Expression:
 
         return chunk(self, size)
 
-    def resize(self, w: int, h: int) -> Expression:
+    def resize(self, w: int, h: int) -> ImageExpr:
         """Resize image into the provided width and height.
 
         Tip: See Also
@@ -2193,7 +2193,7 @@ class Expression:
 
         return resize(self, w, h)
 
-    def crop(self, bbox: tuple[int, int, int, int] | Expression) -> Expression:
+    def crop(self, bbox: tuple[int, int, int, int] | Expression) -> ImageExpr:
         """Crops images with the provided bounding box.
 
         Tip: See Also
@@ -2203,7 +2203,7 @@ class Expression:
 
         return crop(self, bbox)
 
-    def list_join(self, delimiter: builtins.str | Expression) -> Expression:
+    def list_join(self, delimiter: builtins.str | StringExpr) -> ListExpr:
         """Joins every element of a list using the specified string delimiter.
 
         Tip: See Also
@@ -2213,7 +2213,7 @@ class Expression:
 
         return list_join(self, delimiter)
 
-    def list_count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
+    def list_count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> IntExpr:
         """Counts the number of elements in each list.
 
         Tip: See Also
@@ -2315,7 +2315,7 @@ class Expression:
 
         return list_map(self, mapper)
 
-    def encode_image(self, image_format: builtins.str | ImageFormat) -> Expression:
+    def encode_image(self, image_format: builtins.str | ImageFormat) -> BinaryExpr:
         """Encode an image column as the provided image file format, returning a binary column of encoded bytes.
 
         Tip: See Also
@@ -2329,7 +2329,7 @@ class Expression:
         self,
         on_error: Literal["raise", "null"] = "raise",
         mode: builtins.str | ImageMode | None = None,
-    ) -> Expression:
+    ) -> ImageExpr:
         """Decodes the binary data in this column into images.
 
         Tip: See Also
@@ -2359,7 +2359,7 @@ class Expression:
 
         return date_trunc(interval, self, relative_to=relative_to)
 
-    def regexp(self, pattern: builtins.str | Expression) -> Expression:
+    def regexp(self, pattern: builtins.str | StringExpr) -> BooleanExpr:
         """Check whether each string matches the given regular expression pattern in a string column.
 
         Tip: See Also
@@ -2369,7 +2369,7 @@ class Expression:
 
         return regexp(self, pattern)
 
-    def regexp_extract(self, pattern: builtins.str | Expression, index: int = 0) -> Expression:
+    def regexp_extract(self, pattern: builtins.str | StringExpr, index: int = 0) -> StringExpr:
         """Extracts the specified match group from the first regex match in each string in a string column.
 
         Tip: See Also
@@ -2379,7 +2379,7 @@ class Expression:
 
         return regexp_extract(self, pattern, index=index)
 
-    def regexp_extract_all(self, pattern: builtins.str | Expression, index: int = 0) -> Expression:
+    def regexp_extract_all(self, pattern: builtins.str | StringExpr, index: int = 0) -> ListExpr:
         r"""Extracts the specified match group from all regex matches in each string in a string column.
 
         Tip: See Also
@@ -2391,9 +2391,9 @@ class Expression:
 
     def replace(
         self,
-        search: builtins.str | Expression,
-        replacement: builtins.str | Expression,
-    ) -> Expression:
+        search: builtins.str | StringExpr,
+        replacement: builtins.str | StringExpr,
+    ) -> StringExpr:
         """Replaces all occurrences of a substring in a string with a replacement string.
 
         Tip: See Also
@@ -2405,9 +2405,9 @@ class Expression:
 
     def regexp_replace(
         self,
-        pattern: builtins.str | Expression,
-        replacement: builtins.str | Expression,
-    ) -> Expression:
+        pattern: builtins.str | StringExpr,
+        replacement: builtins.str | StringExpr,
+    ) -> StringExpr:
         """Replaces all occurrences of a regex pattern in a string column with a replacement string.
 
         Tip: See Also
@@ -2417,7 +2417,7 @@ class Expression:
 
         return regexp_replace(self, pattern, replacement)
 
-    def find(self, substr: builtins.str | Expression) -> Expression:
+    def find(self, substr: builtins.str | StringExpr) -> IntExpr:
         """Returns the index of the first occurrence of the substring in each string.
 
         Tip: See Also
@@ -2427,7 +2427,7 @@ class Expression:
 
         return find(self, substr)
 
-    def convert_image(self, mode: builtins.str | ImageMode) -> Expression:
+    def convert_image(self, mode: builtins.str | ImageMode) -> ImageExpr:
         """Convert an image expression to the specified mode.
 
         Tip: See Also
