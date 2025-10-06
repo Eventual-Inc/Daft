@@ -2547,7 +2547,7 @@ class Expression:
 
         return partition_iceberg_truncate(self, w)
 
-    def is_nan(self) -> Expression:
+    def is_nan(self) -> BooleanExpr:
         """Checks if values are NaN (a special float value indicating not-a-number).
 
         Tip: See Also
@@ -2557,7 +2557,7 @@ class Expression:
 
         return is_nan(self)
 
-    def is_inf(self) -> Expression:
+    def is_inf(self) -> BooleanExpr:
         """Checks if values in the Expression are Infinity.
 
         Tip: See Also
@@ -2567,7 +2567,7 @@ class Expression:
 
         return is_inf(self)
 
-    def not_nan(self) -> Expression:
+    def not_nan(self) -> BooleanExpr:
         """Checks if values are not NaN (a special float value indicating not-a-number).
 
         Tip: See Also
@@ -2597,7 +2597,7 @@ class Expression:
 
         return image_attribute(self, name)
 
-    def image_width(self) -> Expression:
+    def image_width(self) -> IntExpr:
         """Gets the width of an image in pixels.
 
         Tip: See Also
@@ -2607,7 +2607,7 @@ class Expression:
 
         return image_width(self)
 
-    def image_height(self) -> Expression:
+    def image_height(self) -> IntExpr:
         """Gets the height of an image in pixels.
 
         Tip: See Also
@@ -2617,7 +2617,7 @@ class Expression:
 
         return image_height(self)
 
-    def image_channel(self) -> Expression:
+    def image_channel(self) -> IntExpr:
         """Gets the number of channels in an image.
 
         Tip: See Also
@@ -2627,7 +2627,7 @@ class Expression:
 
         return image_channel(self)
 
-    def image_mode(self) -> Expression:
+    def image_mode(self) -> StringExpr:
         """Gets the mode of an image as a string.
 
         Tip: See Also
@@ -2637,7 +2637,7 @@ class Expression:
 
         return image_mode(self)
 
-    def file_size(self) -> Expression:
+    def file_size(self) -> IntExpr:
         """Gets the size of a file in bytes.
 
         Tip: See Also
