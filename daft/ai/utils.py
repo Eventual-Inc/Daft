@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from daft.ai.typing import UDFOptions
+from daft.daft import get_or_infer_runner_type
 
 if TYPE_CHECKING:
     import torch
@@ -26,8 +27,6 @@ def get_torch_device() -> torch.device:
 
 def get_gpu_udf_options() -> UDFOptions:
     """Get UDF options for GPU-based providers."""
-    from daft.daft import get_or_infer_runner_type
-
     runner = get_or_infer_runner_type()
 
     # If native runner, use the number of GPUs visible to the current process
@@ -43,7 +42,7 @@ def get_gpu_udf_options() -> UDFOptions:
         for node in ray.nodes():
             if "Resources" in node:
                 if "GPU" in node["Resources"] and node["Resources"]["GPU"] > 0:
-                    num_gpus += 1
+                    num_gpus += int(node["Resources"]["GPU"])
     else:
         raise ValueError(f"Invalid runner type: {runner}, expected 'native' or 'ray'")
 
@@ -58,8 +57,6 @@ def get_gpu_udf_options() -> UDFOptions:
 
 def get_http_udf_options() -> UDFOptions:
     """Get UDF options for HTTP-based providers."""
-    from daft.daft import get_or_infer_runner_type
-
     runner = get_or_infer_runner_type()
 
     if runner == "native":
