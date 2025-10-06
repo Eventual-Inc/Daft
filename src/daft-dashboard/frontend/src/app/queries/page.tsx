@@ -97,7 +97,6 @@ export default function QueryList() {
     `px-[20px] ${obj.column.columnDef.accessorKey === STATUS ? "w-[60%]" : undefined}`;
 
   const handleRowClick = (queryId: string) => {
-    console.log("handleRowClick", queryId);
     router.push(`/query?id=${queryId}`);
   };
 

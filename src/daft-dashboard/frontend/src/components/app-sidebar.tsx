@@ -92,7 +92,7 @@ export function AppSidebar() {
                       className="transition-colors rounded-none"
                     >
                       <Link href={`/query?id=${query.id}`} className="">
-                        <div className="flex items-center gap-2 w-full h-[40px] ali">
+                        <div className="flex items-center gap-2 w-full h-[40px]">
                           <AnimatedFish />
                           <span className="font-mono text-sm truncate flex-1">
                             {query.id}

@@ -35,7 +35,6 @@ export function fetcher(
   options?: RequestInit
 ): Promise<Response> {
   const url = genUrl(path);
-  console.log("fetching", url);
   return fetch(url, options).then(res => res.json());
 }
 
@@ -65,7 +64,6 @@ export function ServerProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => {
-      console.log("Closing queries SSE endpoint");
       es.close();
     };
   }, [setQueries]);
@@ -81,7 +79,9 @@ export function ServerProvider({ children }: { children: React.ReactNode }) {
         errorRetryInterval: 1000,
       }}
     >
-      <QueriesContext value={queries}>{children}</QueriesContext>
+      <QueriesContext value={queries}>
+        {children}
+      </QueriesContext>
     </SWRConfig>
   );
 }
