@@ -80,3 +80,56 @@ impl FileArray {
         FileArray::new(Field::new(name, DataType::File), sa)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common_file::FileReference;
+    use common_io_config::IOConfig;
+
+    use crate::{
+        datatypes::FileArray,
+        lit::Literal,
+        prelude::{BinaryArray, FromArrow},
+        series::Series,
+    };
+
+    #[test]
+    fn test_arrow_roundtrip_data_variant() {
+        let data = vec![1, 2, 3];
+        let bin_arr = BinaryArray::from_iter("data", std::iter::once(Some(data.clone())));
+
+        let arr = FileArray::new_from_data_array("data", &bin_arr);
+        let arrow_data = arr.to_arrow();
+
+        let new_arr = FileArray::from_arrow(arr.field.clone(), arrow_data)
+            .expect("Failed to create FileArray from arrow data");
+        let new_arr = new_arr.data_array();
+
+        let new_data = new_arr.get(0).expect("Failed to get data");
+        assert_eq!(new_data, &data);
+    }
+
+    #[test]
+    fn test_arrow_roundtrip_url_variant() {
+        let io_conf = Some(IOConfig::default());
+        let url = "file://example.com";
+
+        let urls: Series = Literal::Utf8(url.to_string()).into();
+        let urls = urls.utf8().unwrap();
+
+        let arr = FileArray::new_from_reference_array("urls", urls, io_conf.clone());
+        let arrow_data = arr.to_arrow();
+
+        let new_arr = FileArray::from_arrow(arr.field.clone(), arrow_data)
+            .expect("Failed to create FileArray from arrow data");
+        let FileReference::Reference(url, io_config) = new_arr.get(0).expect("Failed to get data")
+        else {
+            unreachable!("Expected FileReference::Reference")
+        };
+
+        assert_eq!(url, "file://example.com");
+        assert_eq!(io_config, io_conf.map(Arc::new));
+    }
+}

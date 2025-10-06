@@ -206,7 +206,7 @@ impl FileArray {
                 let io_config = io_config_array.get(idx);
                 let io_config: Option<common_io_config::IOConfig> = {
                     io_config
-                        .map(|io_config| bincode::deserialize(io_config))
+                        .map(bincode::deserialize)
                         .transpose()
                         .ok()
                         .flatten()
