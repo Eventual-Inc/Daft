@@ -15,11 +15,11 @@ def encode(expr: StringExpr | BinaryExpr, charset: ENCODING_CHARSET) -> StringEx
     """Encode binary or string values using the specified character set.
 
     Args:
-        expr: The expression to encode.
+        expr: `Binary` or `Utf8` expression to encode.
         charset: The encoding character set (utf-8, base64).
 
     Returns:
-        Expression: A binary expression with the encoded value.
+        Expression: A `Binary` expression with the encoded value.
 
     Note:
         This inputs either a string or binary and returns a binary.
@@ -33,11 +33,11 @@ def decode(expr: BinaryExpr, charset: ENCODING_CHARSET) -> Expression:
     """Decodes binary values using the specified character set.
 
     Args:
-        expr: The expression to decode.
+        expr: The `Binary` expression to decode.
         charset: The decoding character set (utf-8, base64).
 
     Returns:
-        Expression: A string expression with the decoded values.
+        Expression: A `String` expression with the decoded values.
 
     Examples:
         >>> import daft
@@ -79,11 +79,11 @@ def compress(expr: StringExpr | BinaryExpr, codec: COMPRESSION_CODEC) -> BinaryE
     r"""Compress binary or string values using the specified codec.
 
     Args:
-        expr: The expression to compress.
+        expr: The `Binary` or String expression to compress.
         codec: The compression codec (deflate, gzip, or zlib)
 
     Returns:
-        Expression: A binary expression with the compressed value.
+        Expression: A `Binary` expression with the compressed value.
 
     Examples:
         >>> import daft
@@ -120,11 +120,11 @@ def decompress(expr: BinaryExpr, codec: COMPRESSION_CODEC) -> BinaryExpr:
     """Decompress binary values using the specified codec.
 
     Args:
-        expr: The expression to decompress.
+        expr: The `Binary` expression to decompress.
         codec: The decompression codec (deflate, gzip, zlib)
 
     Returns:
-        Expression: A binary expression with the decoded values.
+        Expression: A `Binary` expression with the decoded values.
 
     Examples:
         >>> import zlib
