@@ -44,8 +44,6 @@ if TYPE_CHECKING:
     COMPRESSION_CODEC = Literal["deflate", "gzip", "gz", "zlib"]
 
 
-T = TypeVar("T", bound="Expression", default="Expression", covariant=True)
-
 StringExpr: TypeAlias = "Expression"
 FileExpr: TypeAlias = "Expression"
 BinaryExpr: TypeAlias = "Expression"
