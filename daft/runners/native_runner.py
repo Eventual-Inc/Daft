@@ -70,8 +70,8 @@ class NativeRunner(Runner[MicroPartition]):
     def runner_io(self) -> NativeRunnerIO:
         return NativeRunnerIO()
 
-    def run(self, builder: LogicalPlanBuilder) -> PartitionCacheEntry:
-        results = list(self.run_iter(builder))
+    def run(self, builder: LogicalPlanBuilder, query_name: str | None = None) -> PartitionCacheEntry:
+        results = list(self.run_iter(builder, query_name=query_name))
 
         result_pset = LocalPartitionSet()
         for i, result in enumerate(results):
@@ -84,6 +84,7 @@ class NativeRunner(Runner[MicroPartition]):
         self,
         builder: LogicalPlanBuilder,
         results_buffer_size: int | None = None,
+        query_name: str | None = None,
     ) -> Iterator[LocalMaterializedResult]:
         track_runner_on_scarf(runner=self.name)
 
@@ -93,7 +94,7 @@ class NativeRunner(Runner[MicroPartition]):
         output_schema = builder.schema()
 
         # Optimize the logical plan.
-        ctx._notify_query_start(query_id, PyQueryMetadata(output_schema._schema, repr(builder)))
+        ctx._notify_query_start(query_id, PyQueryMetadata(query_name, output_schema._schema, repr(builder)))
         ctx._notify_optimization_start(query_id)
         builder = builder.optimize()
         ctx._notify_optimization_end(query_id, repr(builder))

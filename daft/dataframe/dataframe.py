@@ -769,6 +769,7 @@ class DataFrame:
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
         partition_cols: Optional[list[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
+        _query_name: Optional[str] = None,
     ) -> "DataFrame":
         """Writes the DataFrame as parquet files, returning a new DataFrame with paths to the files that were written.
 
@@ -819,7 +820,7 @@ class DataFrame:
         )
         # Block and write, then retrieve data
         write_df = DataFrame(builder)
-        write_df.collect()
+        write_df.collect(_query_name=_query_name)
         assert write_df._result is not None
 
         if len(write_df) > 0:
@@ -849,6 +850,7 @@ class DataFrame:
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
         partition_cols: Optional[list[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
+        _query_name: Optional[str] = None,
     ) -> "DataFrame":
         """Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written.
 
@@ -899,7 +901,7 @@ class DataFrame:
 
         # Block and write, then retrieve data
         write_df = DataFrame(builder)
-        write_df.collect()
+        write_df.collect(_query_name=_query_name)
         assert write_df._result is not None
 
         if len(write_df) > 0:
@@ -927,6 +929,7 @@ class DataFrame:
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
         partition_cols: Optional[list[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
+        _query_name: Optional[str] = None,
     ) -> "DataFrame":
         """Writes the DataFrame as JSON files, returning a new DataFrame with paths to the files that were written.
 
@@ -974,7 +977,7 @@ class DataFrame:
         )
         # Block and write, then retrieve data
         write_df = DataFrame(builder)
-        write_df.collect()
+        write_df.collect(_query_name=_query_name)
         assert write_df._result is not None
 
         if len(write_df) > 0:
@@ -997,7 +1000,11 @@ class DataFrame:
 
     @DataframePublicAPI
     def write_iceberg(
-        self, table: "pyiceberg.table.Table", mode: str = "append", io_config: Optional[IOConfig] = None
+        self,
+        table: "pyiceberg.table.Table",
+        mode: str = "append",
+        io_config: Optional[IOConfig] = None,
+        _query_name: Optional[str] = None,
     ) -> "DataFrame":
         """Writes the DataFrame to an [Iceberg](https://iceberg.apache.org/docs/nightly/) table, returning a new DataFrame with the operations that occurred.
 
@@ -1055,7 +1062,7 @@ class DataFrame:
 
         builder = self._builder.write_iceberg(table, io_config)
         write_df = DataFrame(builder)
-        write_df.collect()
+        write_df.collect(_query_name=_query_name)
 
         write_result = write_df.to_pydict()
         assert "data_file" in write_result
@@ -1170,6 +1177,7 @@ class DataFrame:
         dynamo_table_name: Optional[str] = None,
         allow_unsafe_rename: bool = False,
         io_config: Optional[IOConfig] = None,
+        _query_name: Optional[str] = None,
     ) -> "DataFrame":
         """Writes the DataFrame to a [Delta Lake](https://docs.delta.io/latest/index.html) table, returning a new DataFrame with the operations that occurred.
 
@@ -1341,7 +1349,7 @@ class DataFrame:
             partition_cols=partition_cols,
         )
         write_df = DataFrame(builder)
-        write_df.collect()
+        write_df.collect(_query_name=_query_name)
 
         write_result = write_df.to_pydict()
         assert "add_action" in write_result
@@ -1410,7 +1418,7 @@ class DataFrame:
         return with_operations
 
     @DataframePublicAPI
-    def write_sink(self, sink: "DataSink[WriteResultType]") -> "DataFrame":
+    def write_sink(self, sink: "DataSink[WriteResultType]", _query_name: Optional[str] = None) -> "DataFrame":
         """Writes the DataFrame to the given DataSink.
 
         Args:
@@ -1426,7 +1434,7 @@ class DataFrame:
 
         builder = self._builder.write_datasink(sink.name(), sink)
         write_df = DataFrame(builder)
-        write_df.collect()
+        write_df.collect(_query_name=_query_name)
 
         results = write_df.to_pydict()
         assert "write_results" in results
@@ -1447,6 +1455,7 @@ class DataFrame:
         mode: Literal["create", "append", "overwrite"] = "create",
         io_config: Optional[IOConfig] = None,
         schema: Optional[Union[Schema, "pyarrow.Schema"]] = None,
+        _query_name: Optional[str] = None,
         **kwargs: Any,
     ) -> "DataFrame":
         """Writes the DataFrame to a Lance table.
@@ -1522,7 +1531,7 @@ class DataFrame:
         if schema is None:
             schema = self.schema()
         sink = LanceDataSink(uri, schema, mode, io_config, **kwargs)
-        return self.write_sink(sink)
+        return self.write_sink(sink, _query_name=_query_name)
 
     @DataframePublicAPI
     def write_turbopuffer(
@@ -1536,6 +1545,7 @@ class DataFrame:
         vector_column: Optional[str] = None,
         client_kwargs: Optional[dict[str, Any]] = None,
         write_kwargs: Optional[dict[str, Any]] = None,
+        _query_name: Optional[str] = None,
     ) -> "DataFrame":
         """Writes the DataFrame to a Turbopuffer namespace.
 
@@ -1571,7 +1581,7 @@ class DataFrame:
         sink = TurbopufferDataSink(
             namespace, api_key, region, distance_metric, schema, id_column, vector_column, client_kwargs, write_kwargs
         )
-        return self.write_sink(sink)
+        return self.write_sink(sink, _query_name=_query_name)
 
     @DataframePublicAPI
     def write_clickhouse(
@@ -1585,6 +1595,7 @@ class DataFrame:
         database: Optional[str] = None,
         client_kwargs: Optional[dict[str, Any]] = None,
         write_kwargs: Optional[dict[str, Any]] = None,
+        _query_name: Optional[str] = None,
     ) -> "DataFrame":
         """Writes the DataFrame to a ClickHouse table.
 
@@ -1622,7 +1633,7 @@ class DataFrame:
             client_kwargs=client_kwargs,
             write_kwargs=write_kwargs,
         )
-        return self.write_sink(sink)
+        return self.write_sink(sink, _query_name=_query_name)
 
     def write_huggingface(
         self,
@@ -1634,6 +1645,7 @@ class DataFrame:
         commit_message: str = "Upload dataset using Daft",
         commit_description: Optional[str] = None,
         io_config: Optional[IOConfig] = None,
+        _query_name: Optional[str] = None,
     ) -> "DataFrame":
         """Write a DataFrame into a Hugging Face dataset.
 
@@ -1654,7 +1666,7 @@ class DataFrame:
         sink = HuggingFaceSink(
             repo, split, data_dir, revision, overwrite, commit_message, commit_description, io_config.hf
         )
-        return self.write_sink(sink)
+        return self.write_sink(sink, _query_name=_query_name)
 
     ###
     # DataFrame operations
@@ -3945,16 +3957,16 @@ class DataFrame:
         builder = self._builder.except_all(other._builder)
         return DataFrame(builder)
 
-    def _materialize_results(self) -> None:
+    def _materialize_results(self, _query_name: Optional[str] = None) -> None:
         """Materializes the results of for this DataFrame and hold a pointer to the results."""
         if self._result is None:
-            self._result_cache = get_or_create_runner().run(self._builder)
+            self._result_cache = get_or_create_runner().run(self._builder, _query_name=_query_name)
             result = self._result
             assert result is not None
             result.wait()
 
     @DataframePublicAPI
-    def collect(self, num_preview_rows: Optional[int] = 8) -> "DataFrame":
+    def collect(self, num_preview_rows: Optional[int] = 8, _query_name: Optional[str] = None) -> "DataFrame":
         """Executes the entire DataFrame and materializes the results.
 
         Args:
@@ -3985,7 +3997,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
-        self._materialize_results()
+        self._materialize_results(_query_name=_query_name)
         assert self._result is not None
         dataframe_len = len(self._result)
         if num_preview_rows is not None:
@@ -4162,7 +4174,7 @@ class DataFrame:
         return col_name in self.column_names
 
     @DataframePublicAPI
-    def to_pandas(self, coerce_temporal_nanoseconds: bool = False) -> "pandas.DataFrame":
+    def to_pandas(self, coerce_temporal_nanoseconds: bool = False, _query_name: Optional[str] = None) -> "pandas.DataFrame":
         """Converts the current DataFrame to a [pandas DataFrame](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html).
 
         If results have not computed yet, collect will be called.
@@ -4186,7 +4198,7 @@ class DataFrame:
             1  2  5
             2  3  6
         """
-        self.collect()
+        self.collect(_query_name=_query_name)
         result = self._result
         assert result is not None
 
@@ -4230,7 +4242,7 @@ class DataFrame:
         return pa.Table.from_batches(arrow_rb_iter, schema=self.schema().to_pyarrow_schema())
 
     @DataframePublicAPI
-    def to_pydict(self) -> dict[str, list[Any]]:
+    def to_pydict(self, _query_name: Optional[str] = None) -> dict[str, list[Any]]:
         """Converts the current DataFrame to a python dictionary. The dictionary contains Python lists of Python objects for each column.
 
         If results have not computed yet, collect will be called.
@@ -4251,7 +4263,7 @@ class DataFrame:
             See also [DataFrame.to_pylist()][daft.DataFrame.to_pylist] for
             a convenience method that converts the DataFrame to a list of Python dict objects.
         """
-        self.collect()
+        self.collect(_query_name=_query_name)
         result = self._result
         assert result is not None
         return result.to_pydict(schema=self.schema())
@@ -4387,7 +4399,7 @@ class DataFrame:
         return DaftTorchIterableDataset(df)
 
     @DataframePublicAPI
-    def to_ray_dataset(self) -> "ray.data.dataset.DataSet":
+    def to_ray_dataset(self, _query_name: Optional[str] = None) -> "ray.data.dataset.DataSet":
         """Converts the current DataFrame to a [Ray Dataset](https://docs.ray.io/en/latest/data/api/dataset.html#ray.data.Dataset) which is useful for running distributed ML model training in Ray.
 
         Returns:
@@ -4404,7 +4416,7 @@ class DataFrame:
         """
         from daft.runners.ray_runner import RayPartitionSet
 
-        self.collect()
+        self.collect(_query_name=_query_name)
         partition_set = self._result
         assert partition_set is not None
         if not isinstance(partition_set, RayPartitionSet):
@@ -4478,6 +4490,7 @@ class DataFrame:
             tuple[Any],
             None,
         ] = None,
+        _query_name: Optional[str] = None,
     ) -> "dask.DataFrame":
         """Converts the current Daft DataFrame to a Dask DataFrame.
 
@@ -4510,7 +4523,7 @@ class DataFrame:
         """
         from daft.runners.ray_runner import RayPartitionSet
 
-        self.collect()
+        self.collect(_query_name=_query_name)
         partition_set = self._result
         assert partition_set is not None
         # TODO(Clark): Support Dask DataFrame conversion for the local runner if

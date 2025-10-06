@@ -2095,10 +2095,17 @@ class PyNodeInfo:
     context: dict[str, str]
 
 class PyQueryMetadata:
+    name: str
     output_schema: PySchema
     unoptimized_plan: str
 
-    def __init__(self, output_schema: PySchema, unoptimized_plan: str) -> None: ...
+    def __init__(self, name: str | None, output_schema: PySchema, unoptimized_plan: str) -> None:
+        """
+        Create a new query metadata object.
+
+        If a name is provided (not `None`), it will be provided to subscribers. Otherwise, a name will be generated
+        """
+        ...
 
 class PyDaftContext:
     def __init__(self) -> None: ...

@@ -41,11 +41,12 @@ class Runner(Generic[PartitionT]):
     def runner_io(self) -> RunnerIO: ...
 
     @abstractmethod
-    def run(self, builder: LogicalPlanBuilder) -> PartitionCacheEntry: ...
+    def run(self, builder: LogicalPlanBuilder, query_name: str | None = None) -> PartitionCacheEntry: ...
 
     @abstractmethod
     def run_iter(
-        self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
+        self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None,
+        query_name: str | None = None
     ) -> Iterator[MaterializedResult[PartitionT]]:
         """Similar to run(), but yield the individual partitions as they are completed.
 

@@ -17,6 +17,8 @@ pub use smallvec::smallvec;
 
 /// Unique identifier for a query.
 pub type QueryID = Arc<str>;
+/// User-assigned or generated name of a query
+pub type QueryName = Arc<str>;
 /// String representation of a query plan
 pub type QueryPlan = Arc<str>;
 /// Unique identifier for a node in the execution plan.

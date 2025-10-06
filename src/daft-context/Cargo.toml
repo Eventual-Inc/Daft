@@ -13,6 +13,7 @@ daft-micropartition = {path = "../daft-micropartition", default-features = false
 daft-dashboard = {path = "../daft-dashboard", default-features = false}
 daft-runners = {workspace = true}
 pyo3 = {workspace = true, optional = true}
+petname = {version = "2", default-features = false, features = ["default-words", "default-rng"]}
 log = {workspace = true}
 # For debug subscriber
 dashmap = {workspace = true}

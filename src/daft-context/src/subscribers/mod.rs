@@ -7,11 +7,12 @@ use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryName, QueryPlan, StatSnapshotView, ops::NodeInfo};
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartitionRef;
 
 pub struct QueryMetadata {
+    pub name: QueryName,
     pub output_schema: SchemaRef,
     pub unoptimized_plan: QueryPlan,
 }

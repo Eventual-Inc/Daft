@@ -1318,7 +1318,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 self.scheduler.stop_plan(result_uuid)
 
     def run_iter(
-        self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
+        self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None, query_name: str | None = None
     ) -> Iterator[RayMaterializedResult]:
         track_runner_on_scarf(runner=self.name)
 
@@ -1407,7 +1407,7 @@ class RayRunner(Runner[ray.ObjectRef]):
 
         return pset_entry
 
-    def run(self, builder: LogicalPlanBuilder) -> PartitionCacheEntry:
+    def run(self, builder: LogicalPlanBuilder, query_name: str | None = None) -> PartitionCacheEntry:
         results_iter = self.run_iter(builder)
         return self._collect_into_cache(results_iter)
 
