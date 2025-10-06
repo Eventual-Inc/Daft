@@ -24,8 +24,10 @@ fn ci_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn default_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
-    if cfg!(debug_assertions) {
-        println!("cargo:warning=Running in debug mode, skipping dashboard build.");
+    if cfg!(debug_assertions) && std::env::var("DAFT_DASHBOARD_SKIP_BUILD").is_ok() {
+        println!(
+            "cargo:warning=Running in debug mode and DAFT_DASHBOARD_SKIP_BUILD is set, skipping dashboard build."
+        );
         return Ok(());
     }
 

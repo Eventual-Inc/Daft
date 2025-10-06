@@ -14,6 +14,9 @@ tokio = {workspace = true}
 uuid = {workspace = true}
 futures = {workspace = true}
 tokio-stream = {workspace = true, features = ["sync"]}
+# Ideally want to use the same versions as Axum
+mime = "*"
+mime_guess = "*"
 
 [features]
 python = ["dep:pyo3", "daft-recordbatch/python", "common-metrics/python"]

@@ -1,6 +1,6 @@
 "use client";
 
-import { AppSidebar } from "@/components/app-sidebar";
+import { AppSidebar } from "@/components/sidebar/app-sidebar";
 import "./globals.css";
 import { ServerProvider } from "@/components/server-provider";
 import { main } from "@/lib/utils";

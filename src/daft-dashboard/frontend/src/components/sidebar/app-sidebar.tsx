@@ -19,8 +19,8 @@ import {
 import Logo from "./logo";
 import { ConnectionStatus } from "./connection-status";
 import { useActiveQueries } from "@/hooks/use-queries";
-import { BookOpenTextIcon } from "./ui/BookOpenTextIcon";
-import AnimatedFish from "./animated-fish";
+import { BookOpenTextIcon } from "../ui/BookOpenTextIcon";
+import AnimatedFish from "../animated-fish";
 
 export function AppSidebar() {
   const pathName = usePathname();

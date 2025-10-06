@@ -1,6 +1,8 @@
+use std::str::FromStr;
+
 use clap::{Args, Parser, Subcommand, arg};
 use pyo3::prelude::*;
-use tracing_subscriber::{self, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{self, filter::Directive, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, Args)]
 struct DashboardArgs {
@@ -30,11 +32,15 @@ struct Cli {
 fn run_dashboard(py: Python, args: DashboardArgs) {
     println!("🚀 Launching the Daft Dashboard!");
 
-    let filter = if args.verbose { "DEBUG" } else { "ERROR" };
+    let filter = Directive::from_str(if args.verbose { "INFO" } else { "ERROR" }).unwrap();
 
     // Set the subscriber for the detached run
     tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::new(filter))
+        .with(
+            tracing_subscriber::EnvFilter::builder()
+                .with_default_directive(filter)
+                .from_env_lossy(),
+        )
         .with(tracing_subscriber::fmt::layer())
         .init();
 

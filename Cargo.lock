@@ -2600,6 +2600,8 @@ dependencies = [
  "dashmap",
  "futures",
  "include_dir",
+ "mime",
+ "mime_guess",
  "pyo3",
  "serde",
  "serde_json",

@@ -10,19 +10,15 @@ import { QuerySummaryMap, QueriesContext } from "@/hooks/use-queries";
  * Get the API base URL from environment variables or use default
  */
 export function genUrl(path: string): string {
-  // console.log("API_URL:", process.env.API_URL, window, window.location.origin);
-  // // Check for API_URL (for server-side usage)
-  // if (typeof window !== 'undefined' && process.env.API_URL) {
-  //   return process.env.API_URL;
-  // }
+  let base;
 
   // For same-port deployment (Axum serving both frontend and API)
-  if (typeof window !== 'undefined') {
-    return window.location.origin; // Uses current host and port
+  if (typeof window !== "undefined") {
+    base = window.location.origin; // Uses current host and port
+  } else {
+    // Default fallback for development
+    base = "http://localhost:3238";
   }
-
-  // Default fallback for development
-  const base = "http://localhost:3238";
 
   return new URL(path, base).toString();
 }
@@ -79,9 +75,7 @@ export function ServerProvider({ children }: { children: React.ReactNode }) {
         errorRetryInterval: 1000,
       }}
     >
-      <QueriesContext value={queries}>
-        {children}
-      </QueriesContext>
+      <QueriesContext value={queries}>{children}</QueriesContext>
     </SWRConfig>
   );
 }
