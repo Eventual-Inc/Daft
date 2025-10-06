@@ -50,7 +50,7 @@ jobs:
 
   benchmark:
     needs: build
-    if: ${{ !failure() && !cancelled() && (inputs.benchmark_type == 'all' || inputs.benchmark_type == matrix.benchmark) }}
+    if: ${{ !failure() && !cancelled() }}
     runs-on: [self-hosted, linux, x64, job-runner]
     strategy:
       matrix:
@@ -76,6 +76,11 @@ jobs:
       id-token: write
       contents: read
     steps:
+    - name: Check if benchmark should run
+      if: ${{ inputs.benchmark_type != 'all' && inputs.benchmark_type != matrix.benchmark }}
+      run: |
+        echo "Skipping benchmark ${{ matrix.benchmark }} as it doesn't match the selected benchmark type: ${{ inputs.benchmark_type }}"
+        exit 1
     - uses: actions/checkout@v4
       with:
         submodules: true
