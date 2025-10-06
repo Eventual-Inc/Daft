@@ -203,12 +203,8 @@ impl Series {
 
                 PythonArray::from_iter("literal", iter).into_series()
             }
-            #[cfg(feature = "python")]
             DataType::File => {
-                use std::sync::Arc;
-
                 use common_file::FileReference;
-                use pyo3::IntoPyObjectExt;
 
                 let discriminant = UInt8Array::from_iter(
                     Field::new("discriminant", DataType::UInt8),
@@ -219,41 +215,32 @@ impl Series {
                 .into_series();
                 let validity = discriminant.validity().cloned();
 
-                let (files_and_configs, data): (Vec<_>, Vec<Option<Vec<u8>>>) =
-                    pyo3::Python::with_gil(|py| {
-                        values
-                            .into_iter()
-                            .map(|lit| {
-                                let Some(f) = unwrap_inner!(lit, File) else {
-                                    return ((None, None), None);
-                                };
+                let (files_and_configs, data): (Vec<_>, Vec<Option<Vec<u8>>>) = values
+                    .into_iter()
+                    .map(|lit| {
+                        let Some(f) = unwrap_inner!(lit, File) else {
+                            return ((None, None), None);
+                        };
 
-                                match f {
-                                    FileReference::Reference(file, ioconfig) => {
-                                        let io_conf = ioconfig.as_ref().map(|conf| {
-                                            common_io_config::python::IOConfig::from(
-                                                conf.as_ref().clone(),
-                                            )
-                                        });
-                                        let io_config =
-                                            io_conf.map(|io_conf| {
-                                                Arc::new(io_conf.into_py_any(py).expect(
-                                                    "Failed to convert ioconfig to PyObject",
-                                                ))
-                                            });
-                                        ((Some(file), io_config), None)
-                                    }
-                                    FileReference::Data(items) => {
-                                        ((None, None), Some(items.as_ref().clone()))
-                                    }
-                                }
-                            })
-                            .unzip()
-                    });
+                        match f {
+                            FileReference::Reference(file, ioconfig) => {
+                                let io_conf = ioconfig.map(|c| {
+                                    bincode::serialize(&c)
+                                        .expect("Failed to serialize IO configuration")
+                                });
+
+                                ((Some(file), io_conf), None)
+                            }
+                            FileReference::Data(items) => {
+                                ((None, None), Some(items.as_ref().clone()))
+                            }
+                        }
+                    })
+                    .unzip();
                 let (files, io_confs): (Vec<Option<String>>, Vec<_>) =
                     files_and_configs.into_iter().unzip();
                 let sa_field = Field::new("literal", DataType::File.to_physical());
-                let io_configs = PythonArray::from_iter("io_config", io_confs.into_iter());
+                let io_configs = BinaryArray::from_iter("io_config", io_confs.into_iter());
                 let urls = Utf8Array::from_iter("url", files.into_iter());
                 let data = BinaryArray::from_iter("data", data.into_iter());
                 let sa = StructArray::new(
@@ -268,9 +255,6 @@ impl Series {
                 );
                 FileArray::new(Field::new("literal", DataType::File), sa).into_series()
             }
-            #[cfg(not(feature = "python"))]
-            DataType::File => unreachable!("File type is only supported with the python feature"),
-
             DataType::Tensor(_) => {
                 let (data, shapes) = values
                     .iter()

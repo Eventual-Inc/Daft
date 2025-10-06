@@ -363,8 +363,7 @@ impl DataType {
                 Field::new("discriminant", UInt8),
                 Field::new("data", Binary),
                 Field::new("url", Utf8),
-                #[cfg(feature = "python")]
-                Field::new("io_config", Python),
+                Field::new("io_config", Binary),
             ]),
             _ => {
                 assert!(self.is_physical());
