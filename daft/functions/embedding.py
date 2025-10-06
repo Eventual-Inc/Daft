@@ -13,8 +13,12 @@ if TYPE_CHECKING:
 def cosine_distance(left: EmbeddingExpr, right: EmbeddingExpr) -> FloatExpr:
     """Compute the cosine distance between two embeddings.
 
+    Args:
+        left: `Embedding` expression.
+        right: `Embedding` expression.
+
     Returns:
-        Expression: a Float64 Expression with the cosine distance between the two embeddings.
+        Expression: a `Float64` Expression with the cosine distance between the two embeddings.
 
     Examples:
         >>> import daft

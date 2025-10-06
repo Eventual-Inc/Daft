@@ -48,7 +48,7 @@ def chunk(expr: Expression, size: int) -> Expression:
     """Splits each list into chunks of the given size.
 
     Args:
-        expr: Expression to chunk
+        expr: List expression to chunk
         size: size of chunks to split the list into. Must be greater than 0
     Returns:
         Expression: an expression with lists of fixed size lists of the type of the list values
@@ -60,7 +60,7 @@ def list_join(expr: Expression, delimiter: str | Expression) -> Expression:
     """Joins every element of a list using the specified string delimiter.
 
     Args:
-        expr: The list expression to join.
+        expr: The List expression to join.
         delimiter (str | Expression): the delimiter to use to join lists with
 
     Returns:
@@ -73,7 +73,7 @@ def list_count(expr: Expression, mode: Literal["all", "valid", "null"] | CountMo
     """Counts the number of elements in each list.
 
     Args:
-        expr: The list expression to count elements of.
+        expr: The List expression to count elements of.
         mode: A string ("all", "valid", or "null") that represents whether to count all values, non-null (valid) values, or null values. Defaults to "valid".
 
     Returns:

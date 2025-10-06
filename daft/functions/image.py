@@ -16,7 +16,7 @@ def resize(expr: ImageExpr, w: int, h: int) -> ImageExpr:
     """Resize image into the provided width and height.
 
     Args:
-        expr: Expression to resize.
+        expr: Image expression to resize.
         w: Desired width of the resized image.
         h: Desired height of the resized image.
 
@@ -30,7 +30,7 @@ def crop(expr: ImageExpr, bbox: tuple[int, int, int, int] | ListExpr | FixedSize
     """Crops images with the provided bounding box.
 
     Args:
-        expr: Expression to crop.
+        expr: Image expression to crop.
         bbox (tuple[int, int, int, int] | Expression): Either a tuple of (x, y, width, height)
             parameters for cropping, or a List Expression where each element is a length 4 List
             which represents the bounding box for the crop
@@ -49,7 +49,7 @@ def encode_image(expr: ImageExpr, image_format: str | ImageFormat) -> BinaryExpr
     """Encode an image column as the provided image file format, returning a binary column of encoded bytes.
 
     Args:
-        expr: The image expression to encode.
+        expr: The Image expression to encode.
         image_format: The image file format into which the images will be encoded.
 
     Returns:
@@ -72,7 +72,7 @@ def decode_image(
     This can only be applied to binary columns that contain encoded images (e.g. PNG, JPEG, etc.)
 
     Args:
-        expr: The binary expression to decode.
+        expr: The Binary expression to decode.
         on_error: Whether to raise when encountering an error, or log a warning and return a null
         mode: What mode to convert the images into before storing it in the column. This may prevent
             errors relating to unsupported types.
@@ -96,7 +96,7 @@ def image_attribute(expr: ImageExpr, name: Literal["width", "height", "channel",
     """Get a property of the image, such as 'width', 'height', 'channel', or 'mode'.
 
     Args:
-        expr: The image expression to retrieve the property from.
+        expr: The Image expression to retrieve the property from.
         name: The name of the property to retrieve.
 
     Returns:

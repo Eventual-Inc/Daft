@@ -26,6 +26,8 @@ def llm_generate(
     By default, it uses vLLM for efficient local inference.
 
     Args:
+        input_column: Expression
+            The input column to generate text from. If None, the input column will be inferred from the expression.
         model: str, default="facebook/opt-125m"
             The model identifier to use for generation
         provider: str, default="vllm"

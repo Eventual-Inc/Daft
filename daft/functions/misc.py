@@ -21,7 +21,7 @@ def monotonically_increasing_id() -> IntExpr:
     in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and 2^36 ≈ 68 billion rows per partition.
 
     Returns:
-        Expression: An expression that generates monotonically increasing IDs
+        Expression: A UInt64 expression that generates monotonically increasing IDs
 
     Examples:
         >>> import daft
@@ -61,7 +61,7 @@ def eq_null_safe(left: Expression, right: Expression) -> BooleanExpr:
     - Behaves like regular equality for non-NULL values
 
     Returns:
-        Expression: A boolean expression indicating if the values are equal
+        Expression: A Boolean expression indicating if the values are equal
     """
     left = Expression._to_expression(left)
     right = Expression._to_expression(right)
@@ -283,6 +283,9 @@ def hash(
         seed (optional): Seed used for generating the hash. Defaults to 0.
         hash_function (optional): Hash function to use. One of "xxhash", "murmurhash3", or "sha1". Defaults to "xxhash".
 
+    Returns:
+        Expression: A UInt64 expression representing the hash values.
+
     Note:
         Null values will produce a hash value instead of being propagated as null.
 
@@ -320,6 +323,9 @@ def minhash(
         seed (optional): Seed used for generating permutations and the initial string hashes. Defaults to 1.
         hash_function (optional): Hash function to use for initial string hashing. One of "murmurhash3", "xxhash", or "sha1". Defaults to "murmurhash3".
 
+    Returns:
+        Expression: A FixedSizeList[UInt32, n] expression representing the hash values where `n` = num_hashes.
+
     """
     return Expression._call_builtin_scalar_fn(
         "minhash", expr, num_hashes=num_hashes, ngram_size=ngram_size, seed=seed, hash_function=hash_function
@@ -335,7 +341,7 @@ def length(expr: StringExpr | BinaryExpr | ListExpr) -> IntExpr:
     - For lists, returns the number of elements.
 
     Returns:
-        Expression: an UInt64 expression with the length
+        Expression: a UInt64 expression with the length
 
     Examples:
         String length:
