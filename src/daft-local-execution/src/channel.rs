@@ -27,7 +27,7 @@ impl<T> Receiver<T> {
     }
 }
 
-pub(crate) fn create_channel<T: Clone>(buffer_size: usize) -> (Sender<T>, Receiver<T>) {
+pub(crate) fn create_channel<T>(buffer_size: usize) -> (Sender<T>, Receiver<T>) {
     let (tx, rx) = kanal::bounded_async::<T>(buffer_size);
     (Sender(tx), Receiver(rx))
 }
