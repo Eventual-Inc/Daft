@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 import daft
-from daft.daft import get_context
+from daft.context import get_context
 from tests.conftest import assert_df_equals
 from tests.cookbook.assets import COOKBOOK_DATA_CSV
 
