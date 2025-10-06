@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 import daft
+from daft.daft import get_context
 from tests.conftest import assert_df_equals
 from tests.cookbook.assets import COOKBOOK_DATA_CSV
 
@@ -193,6 +194,10 @@ def test_glob_files_from_multiple_path(tmpdir):
         daft.from_glob_path("/not_exists").collect()
 
 
+@pytest.mark.skipif(
+    get_context().daft_execution_config.use_legacy_ray_runner is True,
+    reason="resource requests are not fully supported in Flotilla",
+)
 @pytest.mark.parametrize("batch_size", list(range(1, 10)))
 def test_glob_files_with_limit(batch_size, tmpdir):
     folder = pathlib.Path(tmpdir) / "glob_files_with_limit"
