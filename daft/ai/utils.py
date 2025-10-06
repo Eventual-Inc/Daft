@@ -63,10 +63,10 @@ def get_http_udf_options() -> UDFOptions:
     runner = get_or_infer_runner_type()
 
     if runner == "native":
-        # For native runner, use CPU threads (no specific node concept)
-        return UDFOptions(concurrency=None, num_gpus=None)
+        # For native runner, use 1 concurrency
+        return UDFOptions(concurrency=1, num_gpus=None)
     elif runner == "ray":
-        # For ray runner, use number of nodes
+        # For ray runner, use number of nodes as concurrency
         import ray
 
         num_nodes = len(
