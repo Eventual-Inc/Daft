@@ -2,6 +2,11 @@
 
 A key piece of functionality in Daft is the ability to flexibly define custom functions that can run computations on any data in your dataframe. This section walks you through the different types of UDFs that Daft allows you to run.
 
+!!! info "Next-Generation UDFs with `@daft.func`"
+    Daft now offers a next-generation UDF interface via the [`@daft.func`](func.md) decorator. This new decorator is currently in active development and provides a cleaner interface for many use cases, with features like type inference, async functions, and generator functions.
+
+    While `@daft.func` is still being refined, it represents the direction we're moving toward, with the goal of eventually phasing out the legacy `@daft.udf` decorator documented on this page. For new projects, consider trying [`@daft.func`](func.md) first, and fall back to `@daft.udf` if you need advanced features that are not yet supported by `@daft.func`.
+
 Let's first create a dataframe that will be used as a running example throughout this tutorial!
 
 === "🐍 Python"
