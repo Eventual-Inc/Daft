@@ -66,7 +66,7 @@ type QueryState =
       status: "Pending";
     }
   | {
-      status: "Planning";
+      status: "Optimizing";
       plan_start_sec: number;
     }
   | {

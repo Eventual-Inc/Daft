@@ -6,7 +6,7 @@ export type PendingStatus = {
 };
 
 export type PlanningStatus = {
-  status: "Planning";
+  status: "Optimizing";
   plan_start_sec: number;
 };
 

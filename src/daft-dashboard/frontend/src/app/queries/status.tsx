@@ -63,7 +63,7 @@ const Planning = ({ state }: { state: PlanningStatus }) => {
       icon={
         <LoaderCircle size={16} strokeWidth={3} className="text-orange-500" />
       }
-      label="Planning"
+      label="Optimizing"
       text={` for ${toHumanReadableDuration(duration)}`}
       textColor="text-orange-500"
     />
@@ -140,7 +140,7 @@ export default function Status({ state }: StatusBadgeProps) {
   switch (state.status) {
     case "Pending":
       return <Pending />;
-    case "Planning":
+    case "Optimizing":
       return <Planning state={state} />;
     case "Setup":
       return <Setup />;
