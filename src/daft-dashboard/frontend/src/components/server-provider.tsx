@@ -2,7 +2,7 @@
 
 import { SWRConfig } from "swr";
 import React, { useEffect, useState } from "react";
-import { QuerySummaryMap, QueriesContext } from "@/hooks/use-queries";
+import { QuerySummaryMap, QueriesContext, QuerySummary } from "@/hooks/use-queries";
 
 // ---------------------- Utils ---------------------- //
 
@@ -50,12 +50,13 @@ export function ServerProvider({ children }: { children: React.ReactNode }) {
     };
 
     es.addEventListener("initial_state", event => {
-      setQueries(JSON.parse(event.data));
+      const allQueries: QuerySummaryMap = JSON.parse(event.data);
+      setQueries(allQueries);
     });
     es.addEventListener("status_update", event => {
-      const newQueries = JSON.parse(event.data);
+      const queryUpdate: QuerySummary = JSON.parse(event.data);
       setQueries(prev => {
-        return { ...prev, newQueries };
+        return { ...prev, [queryUpdate.id]: queryUpdate };
       });
     });
 

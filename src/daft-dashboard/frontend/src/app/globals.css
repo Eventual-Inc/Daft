@@ -57,31 +57,8 @@ body {
   }
 
   .dark {
-    /* Same as root since we're using dark theme by default */
-    --background: 0 0% 7%;
-    --foreground: 0 0% 100%;
-    --card: 0 0% 12%;
-    --card-foreground: 0 0% 100%;
-    --popover: 0 0% 12%;
-    --popover-foreground: 0 0% 100%;
-    --primary: 300 100% 50%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 0 0% 8%;
-    --secondary-foreground: 0 0% 100%;
-    --muted: 0 0% 8%;
-    --muted-foreground: 0 0% 65%;
-    --accent: 300 100% 50%;
-    --accent-foreground: 0 0% 100%;
+    /* Override only the properties that differ from root */
     --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 25%;
-    --input: 0 0% 25%;
-    --ring: 300 100% 50%;
-    --chart-1: 300 100% 50%;
-    --chart-2: 200 100% 50%;
-    --chart-3: 120 100% 50%;
-    --chart-4: 30 100% 50%;
-    --chart-5: 270 100% 50%;
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
     --sidebar-primary: 224.3 76.3% 48%;
@@ -89,18 +66,6 @@ body {
     --sidebar-accent: 240 3.7% 15.9%;
     --sidebar-accent-foreground: 240 4.8% 95.9%;
     --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
-
-    /* Daft-specific colors for dark theme */
-    --daft-accent: #ff00ff;
-    --daft-bg-primary: 0 0% 7%; /* #121212 */
-    --daft-bg-secondary: 0 0% 12%; /* #1f2128 */
-    --daft-bg-accent: 0 0% 8%; /* #14151a */
-    --daft-text-primary: 0 0% 100%; /* #ffffff */
-    --daft-text-secondary: 0 0% 82%; /* #d0d0d0 */
-    --daft-text-muted: 0 0% 65%; /* #a0a0a0 */
-    --daft-border-primary: 0 0% 25%; /* #404040 */
-    --daft-border-secondary: 0 0% 32%; /* #525252 */
   }
 }
 
