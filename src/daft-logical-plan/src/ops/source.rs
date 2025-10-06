@@ -6,7 +6,7 @@ use daft_schema::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo},
+    source_info::{GlobScanInfo, InMemoryInfo, PlaceHolderInfo, SourceInfo},
     stats::{ApproxStats, PlanStats, StatsState},
 };
 
@@ -100,6 +100,7 @@ impl Source {
                     approx_stats
                 }
             },
+            SourceInfo::GlobScan(_) => ApproxStats::empty(),
             SourceInfo::PlaceHolder(_) => ApproxStats::empty(),
         };
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
@@ -129,6 +130,15 @@ impl Source {
             SourceInfo::InMemory(InMemoryInfo { num_partitions, .. }) => {
                 res.push("Source:".to_string());
                 res.push(format!("Number of partitions = {}", num_partitions));
+            }
+            SourceInfo::GlobScan(GlobScanInfo {
+                glob_paths,
+                pushdowns,
+                ..
+            }) => {
+                res.push("GlobScan:".to_string());
+                res.push(format!("Glob paths = {:?}", glob_paths));
+                res.extend(pushdowns.multiline_display());
             }
             SourceInfo::PlaceHolder(PlaceHolderInfo {
                 clustering_spec, ..
