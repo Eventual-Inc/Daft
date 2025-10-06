@@ -5,11 +5,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from daft.expressions import Expression
+    from daft.expressions import BinaryExpr, FileExpr, IntExpr, StringExpr
     from daft.io import IOConfig
 
 
-def file(expr: Expression, io_config: IOConfig | None = None) -> Expression:
+def file(expr: StringExpr | BinaryExpr, io_config: IOConfig | None = None) -> FileExpr:
     """Converts either a string containing a file reference, or a binary column to a `daft.File` reference.
 
     If the input is a string, it is assumed to be a file path and is converted to a `daft.File`.
@@ -18,7 +18,7 @@ def file(expr: Expression, io_config: IOConfig | None = None) -> Expression:
     return expr._eval_expressions("file", io_config=io_config)
 
 
-def file_size(expr: Expression) -> Expression:
+def file_size(expr: FileExpr) -> IntExpr:
     """Returns the size of the file in bytes.
 
     Args:

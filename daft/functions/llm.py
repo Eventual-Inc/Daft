@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from daft import DataType, Expression, Series, udf
+
+if TYPE_CHECKING:
+    from daft.expressions import StringExpr
 
 
 def llm_generate(
@@ -16,7 +19,7 @@ def llm_generate(
     num_cpus: int | None = None,
     num_gpus: int | None = None,
     **generation_config: dict[str, Any],
-) -> Expression:
+) -> StringExpr:
     """A UDF for running LLM inference over an input column of strings.
 
     This UDF provides a flexible interface for text generation using various LLM providers.

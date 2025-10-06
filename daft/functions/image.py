@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from daft.daft import ImageFormat, ImageMode, ImageProperty
 from daft.datatype import DataType
 from daft.expressions import Expression
 
+if TYPE_CHECKING:
+    from daft.expressions import BinaryExpr, FixedSizeListExpr, ImageExpr, IntExpr, ListExpr
 
-def resize(expr: Expression, w: int, h: int) -> Expression:
+
+def resize(expr: ImageExpr, w: int, h: int) -> ImageExpr:
     """Resize image into the provided width and height.
 
     Args:
@@ -23,7 +26,7 @@ def resize(expr: Expression, w: int, h: int) -> Expression:
     return Expression._call_builtin_scalar_fn("image_resize", expr, w=w, h=h)
 
 
-def crop(expr: Expression, bbox: tuple[int, int, int, int] | Expression) -> Expression:
+def crop(expr: ImageExpr, bbox: tuple[int, int, int, int] | ListExpr | FixedSizeListExpr) -> ImageExpr:
     """Crops images with the provided bounding box.
 
     Args:
@@ -42,7 +45,7 @@ def crop(expr: Expression, bbox: tuple[int, int, int, int] | Expression) -> Expr
     return Expression._call_builtin_scalar_fn("image_crop", expr, bbox)
 
 
-def encode_image(expr: Expression, image_format: str | ImageFormat) -> Expression:
+def encode_image(expr: ImageExpr, image_format: str | ImageFormat) -> BinaryExpr:
     """Encode an image column as the provided image file format, returning a binary column of encoded bytes.
 
     Args:
@@ -60,10 +63,10 @@ def encode_image(expr: Expression, image_format: str | ImageFormat) -> Expressio
 
 
 def decode_image(
-    expr: Expression,
+    expr: BinaryExpr,
     on_error: Literal["raise", "null"] = "raise",
     mode: str | ImageMode | None = None,
-) -> Expression:
+) -> ImageExpr:
     """Decodes the binary data in this column into images.
 
     This can only be applied to binary columns that contain encoded images (e.g. PNG, JPEG, etc.)
@@ -80,7 +83,7 @@ def decode_image(
     return Expression._call_builtin_scalar_fn("image_decode", expr, on_error=on_error, mode=mode)
 
 
-def convert_image(expr: Expression, mode: str | ImageMode) -> Expression:
+def convert_image(expr: ImageExpr, mode: str | ImageMode) -> ImageExpr:
     """Convert an image expression to the specified mode."""
     if isinstance(mode, str):
         mode = ImageMode.from_mode_string(mode.upper())
@@ -89,9 +92,7 @@ def convert_image(expr: Expression, mode: str | ImageMode) -> Expression:
     return Expression._call_builtin_scalar_fn("to_mode", expr, mode=mode)
 
 
-def image_attribute(
-    expr: Expression, name: Literal["width", "height", "channel", "mode"] | ImageProperty
-) -> Expression:
+def image_attribute(expr: ImageExpr, name: Literal["width", "height", "channel", "mode"] | ImageProperty) -> IntExpr:
     """Get a property of the image, such as 'width', 'height', 'channel', or 'mode'.
 
     Args:
@@ -106,7 +107,7 @@ def image_attribute(
     return Expression._call_builtin_scalar_fn("image_attribute", expr, name)
 
 
-def image_width(expr: Expression) -> Expression:
+def image_width(expr: ImageExpr) -> IntExpr:
     """Gets the width of an image in pixels.
 
     Example:
@@ -119,7 +120,7 @@ def image_width(expr: Expression) -> Expression:
     return image_attribute(expr, "width")
 
 
-def image_height(expr: Expression) -> Expression:
+def image_height(expr: ImageExpr) -> IntExpr:
     """Gets the height of an image in pixels.
 
     Example:
@@ -132,7 +133,7 @@ def image_height(expr: Expression) -> Expression:
     return image_attribute(expr, "height")
 
 
-def image_channel(expr: Expression) -> Expression:
+def image_channel(expr: ImageExpr) -> IntExpr:
     """Gets the number of channels in an image.
 
     Example:
@@ -145,7 +146,7 @@ def image_channel(expr: Expression) -> Expression:
     return image_attribute(expr, "channel")
 
 
-def image_mode(expr: Expression) -> Expression:
+def image_mode(expr: ImageExpr) -> IntExpr:
     """Gets the mode of an image as a string.
 
     Example:

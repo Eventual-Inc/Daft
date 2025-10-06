@@ -13,6 +13,8 @@ from typing import (
     overload,
 )
 
+from typing_extensions import TypeAlias
+
 import daft.daft as native
 from daft.daft import (
     CountMode,
@@ -40,6 +42,20 @@ if TYPE_CHECKING:
 
     ENCODING_CHARSET = Literal["utf-8", "utf8", "base64"]
     COMPRESSION_CODEC = Literal["deflate", "gzip", "gz", "zlib"]
+
+
+T = TypeVar("T", bound="Expression", default="Expression", covariant=True)
+
+StringExpr: TypeAlias = "Expression"
+FileExpr: TypeAlias = "Expression"
+BinaryExpr: TypeAlias = "Expression"
+BooleanExpr: TypeAlias = "Expression"
+IntExpr: TypeAlias = "Expression"
+FloatExpr: TypeAlias = "Expression"
+ImageExpr: TypeAlias = "Expression"
+EmbeddingExpr: TypeAlias = "Expression"
+ListExpr: TypeAlias = "Expression"
+FixedSizeListExpr: TypeAlias = "Expression"
 
 
 def lit(value: object) -> Expression:
@@ -1318,7 +1334,7 @@ class Expression:
         ngram_size: int,
         seed: int = 1,
         hash_function: Literal["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
-    ) -> Expression:
+    ) -> FixedSizeListExpr:
         """Runs the MinHash algorithm on the series.
 
         Tip: See Also
@@ -1328,7 +1344,7 @@ class Expression:
 
         return minhash(self, num_hashes=num_hashes, ngram_size=ngram_size, seed=seed, hash_function=hash_function)
 
-    def encode(self, charset: ENCODING_CHARSET) -> Expression:
+    def encode(self, charset: ENCODING_CHARSET) -> BinaryExpr:
         """Encode binary or string values using the specified character set.
 
         Tip: See Also
@@ -1348,7 +1364,7 @@ class Expression:
 
         return decode(self, charset=charset)
 
-    def try_encode(self, charset: ENCODING_CHARSET) -> Expression:
+    def try_encode(self, charset: ENCODING_CHARSET) -> BinaryExpr:
         """Encode or null if unsuccessful.
 
         Tip: See Also
@@ -1368,7 +1384,7 @@ class Expression:
 
         return try_decode(self, charset=charset)
 
-    def compress(self, codec: COMPRESSION_CODEC) -> Expression:
+    def compress(self, codec: COMPRESSION_CODEC) -> BinaryExpr:
         """Compress binary or string values using the specified codec.
 
         Tip: See Also
@@ -1388,7 +1404,7 @@ class Expression:
 
         return decompress(self, codec=codec)
 
-    def try_compress(self, codec: COMPRESSION_CODEC) -> Expression:
+    def try_compress(self, codec: COMPRESSION_CODEC) -> BinaryExpr:
         """Compress or null if unsuccessful.
 
         Tip: See Also

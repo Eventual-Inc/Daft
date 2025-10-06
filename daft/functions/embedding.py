@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from daft.expressions import Expression
 
+if TYPE_CHECKING:
+    from daft.expressions import EmbeddingExpr, FloatExpr
 
-def cosine_distance(left: Expression, right: Expression) -> Expression:
+
+def cosine_distance(left: EmbeddingExpr, right: EmbeddingExpr) -> FloatExpr:
     """Compute the cosine distance between two embeddings.
 
     Returns:

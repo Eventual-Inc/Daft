@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 import daft.daft as native
 from daft.datatype import DataType, DataTypeLike
@@ -10,8 +10,11 @@ from daft.expressions import Expression
 from daft.expressions.expressions import WhenExpr
 from daft.series import item_to_series
 
+if TYPE_CHECKING:
+    from daft.expressions import BinaryExpr, BooleanExpr, FixedSizeListExpr, IntExpr, ListExpr, StringExpr
 
-def monotonically_increasing_id() -> Expression:
+
+def monotonically_increasing_id() -> IntExpr:
     """Generates a column of monotonically increasing unique ids.
 
     The implementation puts the partition number in the upper 28 bits, and the row number in each partition
@@ -49,7 +52,7 @@ def monotonically_increasing_id() -> Expression:
     return Expression._from_pyexpr(f())
 
 
-def eq_null_safe(left: Expression, right: Expression) -> Expression:
+def eq_null_safe(left: Expression, right: Expression) -> BooleanExpr:
     """Performs a null-safe equality comparison between two expressions.
 
     Unlike regular equality (==), null-safe equality (<=> or IS NOT DISTINCT FROM):
@@ -129,7 +132,7 @@ def cast(expr: Expression, dtype: DataTypeLike) -> Expression:
     return Expression._from_pyexpr(expr._expr.cast(dtype._dtype))
 
 
-def is_null(expr: Expression) -> Expression:
+def is_null(expr: Expression) -> BooleanExpr:
     """Checks if values in the Expression are Null (a special value indicating missing data).
 
     Returns:
@@ -161,7 +164,7 @@ def is_null(expr: Expression) -> Expression:
     return Expression._from_pyexpr(expr._expr.is_null())
 
 
-def not_null(expr: Expression) -> Expression:
+def not_null(expr: Expression) -> BooleanExpr:
     """Checks if values in the Expression are not Null (a special value indicating missing data).
 
     Returns:
@@ -226,7 +229,7 @@ def fill_null(expr: Expression, fill_value: Expression) -> Expression:
     return Expression._from_pyexpr(expr._expr.fill_null(fill_value._expr))
 
 
-def is_in(expr: Expression, other: Any) -> Expression:
+def is_in(expr: Expression, other: Any) -> BooleanExpr:
     """Checks if values in the Expression are in the provided list.
 
     Returns:
@@ -270,7 +273,7 @@ def hash(
     expr: Expression,
     seed: Any | None = None,
     hash_function: Literal["xxhash", "murmurhash3", "sha1"] | None = "xxhash",
-) -> Expression:
+) -> IntExpr:
     """Hashes the values in the Expression.
 
     Uses the specified hash function to hash the values in the expression. Default to [XXH3_64bits](https://xxhash.com/) non-cryptographic hash function.
@@ -300,7 +303,7 @@ def minhash(
     ngram_size: int,
     seed: int = 1,
     hash_function: Literal["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
-) -> Expression:
+) -> FixedSizeListExpr:
     """Runs the MinHash algorithm on the series.
 
     For a string, calculates the minimum hash over all its ngrams,
@@ -323,7 +326,7 @@ def minhash(
     )
 
 
-def length(expr: Expression) -> Expression:
+def length(expr: StringExpr | BinaryExpr | ListExpr) -> IntExpr:
     """Retrieves the length of the given expression.
 
     The behavior depends on the input type:
@@ -395,6 +398,10 @@ def length(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("length", expr)
 
 
+@overload
+def concat(left: BinaryExpr | bytes, right: BinaryExpr | bytes) -> BinaryExpr: ...
+@overload
+def concat(left: StringExpr | str, right: StringExpr | str) -> StringExpr: ...
 def concat(left: Expression | str | bytes, right: Expression | str | bytes) -> Expression:
     r"""Concatenates two string or binary values.
 
@@ -643,7 +650,7 @@ def map_get(expr: Expression, key: Expression) -> Expression:
     return Expression._from_pyexpr(expr._expr.map_get(key_expr._expr))
 
 
-def slice(expr: Expression, start: int | Expression, end: int | Expression | None = None) -> Expression:
+def slice(expr: ListExpr | BinaryExpr, start: int | IntExpr, end: int | IntExpr | None = None) -> ListExpr | BinaryExpr:
     r"""Get a subset of each list or binary value.
 
     Args:
@@ -698,7 +705,7 @@ def slice(expr: Expression, start: int | Expression, end: int | Expression | Non
     return Expression._call_builtin_scalar_fn("slice", expr, start, end=end)
 
 
-def when(condition: Expression | bool, then: Expression | Any) -> WhenExpr:
+def when(condition: BooleanExpr | bool, then: Expression | Any) -> WhenExpr:
     """Start a conditional expression, similar to SQL CASE WHEN.
 
     If the condition is true, the `then` value will be returned. Otherwise, the next `when` condition will be evaluated.
