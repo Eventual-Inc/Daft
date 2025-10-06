@@ -2,7 +2,7 @@ pub mod ops;
 #[cfg(feature = "python")]
 pub mod python;
 
-use std::{ops::Index, time::Duration};
+use std::{ops::Index, sync::Arc, time::Duration};
 
 use indicatif::{HumanBytes, HumanCount, HumanDuration, HumanFloatCount};
 #[cfg(feature = "python")]
@@ -13,8 +13,13 @@ use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 pub use smallvec::smallvec;
 
-/// Unique identifier for a node in the execution plan.
 // TODO: Make this global for all plans and executions
+
+/// Unique identifier for a query.
+pub type QueryID = Arc<str>;
+/// String representation of a query plan
+pub type QueryPlan = Arc<str>;
+/// Unique identifier for a node in the execution plan.
 pub type NodeID = usize;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
