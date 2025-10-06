@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from daft.expressions.expressions import COMPRESSION_CODEC, ENCODING_CHARSET
 
 
-def encode(expr: StringExpr | BinaryExpr, charset: ENCODING_CHARSET) -> BinaryExpr:
+def encode(expr: StringExpr | BinaryExpr, charset: ENCODING_CHARSET) -> StringExpr | BinaryExpr:
     """Encode binary or string values using the specified character set.
 
     Args:
@@ -57,7 +57,7 @@ def decode(expr: BinaryExpr, charset: ENCODING_CHARSET) -> Expression:
     return Expression._call_builtin_scalar_fn("decode", expr, codec=charset)
 
 
-def try_encode(expr: StringExpr | BinaryExpr, charset: ENCODING_CHARSET) -> BinaryExpr:
+def try_encode(expr: StringExpr | BinaryExpr, charset: ENCODING_CHARSET) -> StringExpr | BinaryExpr:
     """Encode or null if unsuccessful.
 
     Tip: See Also
