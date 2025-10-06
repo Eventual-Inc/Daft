@@ -35,9 +35,8 @@ use crate::{
     channel::{Receiver, Sender},
     pipeline::PipelineNode,
     runtime_stats::subscribers::{
-        RuntimeStatsSubscriber, dashboard::DashboardSubscriber,
-        opentelemetry::OpenTelemetrySubscriber, progress_bar::make_progress_bar_manager,
-        query::SubscriberWrapper,
+        RuntimeStatsSubscriber, opentelemetry::OpenTelemetrySubscriber,
+        progress_bar::make_progress_bar_manager, query::SubscriberWrapper,
     },
 };
 
@@ -126,10 +125,6 @@ impl RuntimeStatsManager {
 
         if should_enable_opentelemetry() {
             subscribers.push(Box::new(OpenTelemetrySubscriber::new(&node_infos)));
-        }
-
-        if DashboardSubscriber::is_enabled() {
-            subscribers.push(Box::new(DashboardSubscriber::new(&node_infos)));
         }
 
         let throttle_interval = Duration::from_millis(200);

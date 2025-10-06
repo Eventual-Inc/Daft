@@ -513,7 +513,7 @@ Now that you have a basic sense of Daft's functionality and features, here are s
 
 !!! tip "Try this on Kubernetes"
 
-    Want to run this example on Kubernetes? Check out our [Kubernetes quickstart](kubernetes.md).
+    Want to run this example on Kubernetes? Check out our [Kubernetes quickstart](distributed/kubernetes.md).
 
 **Work with your favorite table and catalog formats**:
 
@@ -538,14 +538,14 @@ Now that you have a basic sense of Daft's functionality and features, here are s
 
 </div> -->
 
-**Explore our [Examples](../examples/) to see Daft in action:**
+**Explore our [Examples](examples/index.md) to see Daft in action:**
 
 <div class="grid cards" markdown>
 
-- [:material-image-edit: **MNIST Digit Classification**](../examples/mnist/)
-- [:octicons-search-16: **Running LLMs on the Red Pajamas Dataset**](../examples/llms-red-pajamas/)
-- [:material-image-search: **Querying Images with UDFs**](../examples/querying-images/)
-- [:material-image-sync: **Image Generation on GPUs**](../examples/image-generation/)
-- [:material-window-closed-variant: **Window Functions in Daft**](../examples/window-functions/)
+- [:material-image-edit: **MNIST Digit Classification**](examples/mnist.md)
+- [:octicons-search-16: **Running LLMs on the Red Pajamas Dataset**](examples/llms-red-pajamas.md)
+- [:material-image-search: **Querying Images with UDFs**](examples/querying-images.md)
+- [:material-image-sync: **Image Generation on GPUs**](examples/image-generation.md)
+- [:material-window-closed-variant: **Window Functions in Daft**](examples/window-functions.md)
 
 </div>

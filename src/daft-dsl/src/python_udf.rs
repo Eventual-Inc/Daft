@@ -58,6 +58,7 @@ pub fn row_wise_udf(
     name: &str,
     inner: RuntimePyObject,
     return_dtype: DataType,
+    use_process: Option<bool>,
     original_args: RuntimePyObject,
     args: Vec<ExprRef>,
 ) -> Expr {
@@ -67,6 +68,7 @@ pub fn row_wise_udf(
         return_dtype,
         original_args,
         args,
+        use_process,
     })))
 }
 
@@ -77,6 +79,7 @@ pub struct RowWisePyFn {
     pub return_dtype: DataType,
     pub original_args: RuntimePyObject,
     pub args: Vec<ExprRef>,
+    pub use_process: Option<bool>,
 }
 
 impl Display for RowWisePyFn {
@@ -101,6 +104,7 @@ impl RowWisePyFn {
             return_dtype: self.return_dtype.clone(),
             original_args: self.original_args.clone(),
             args: children,
+            use_process: self.use_process,
         }
     }
 

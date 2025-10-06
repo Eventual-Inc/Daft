@@ -13,10 +13,8 @@
         * [Videos](modalities/videos.md)
         * [JSON and Nested Data](modalities/json.md)
     * Running Custom Python Code
-        * [Custom Code](custom-code/index.md)
         * [User-Defined Functions (UDFs)](custom-code/udfs.md)
-        * [Working with GPUs](custom-code/gpu.md)
-        * [External APIs](custom-code/apis.md)
+        * [Next-Generation UDFs with `@daft.func`](custom-code/func.md)
     * Models and Providers
         * [Models and Providers](models/index.md)
     * Datasets
@@ -36,11 +34,13 @@
         * [Turbopuffer](connectors/turbopuffer.md)
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
     * Scaling Out and Deployment
-        * [Running on Ray](distributed.md)
-        * [Running on Kubernetes](kubernetes.md)
+        * [Distributed Execution](distributed/index.md)
+        * [Running on Kubernetes](distributed/kubernetes.md)
+        * [Running on Ray](distributed/ray.md)
+    * Architecture
+        * [Architecture](architecture/index.md)
     * Optimization and Debugging
         * [Optimization](optimization/index.md)
-        * [Architecture](optimization/architecture.md)
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning](optimization/partitioning.md)
         * [Observability](optimization/observability.md)
@@ -73,6 +73,7 @@
     * Data Types
         * [DataType](api/datatypes/index.md)
         * [Type Conversions](api/datatypes/type_conversions.md)
+        * [Casting](api/datatypes/casting.md)
     * [Window](api/window.md)
     * [Sessions](api/sessions.md)
     * [Catalogs & Tables](api/catalogs_tables.md)

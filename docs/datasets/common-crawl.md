@@ -184,7 +184,7 @@ Find the most common MIME types in a crawl:
 
 ### Extracting text for language models
 
-Content in Common Crawl WARC files are UTF-8 encoded. Use Daft's [try_decode](../../api/functions/try_decode) function to extract clean text content for training:
+Content in Common Crawl WARC files are UTF-8 encoded. Use Daft's [try_decode][daft.functions.try_decode] function to extract clean text content for training:
 
 ```python
 from daft.functions import try_decode

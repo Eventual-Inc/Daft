@@ -1343,6 +1343,7 @@ def row_wise_udf(
     name: str,
     inner: Callable[..., Any],
     return_dtype: PyDataType,
+    use_process: bool | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
 ) -> PyExpr: ...
@@ -1765,6 +1766,11 @@ class LogicalPlanBuilder:
         num_partitions: int,
         size_bytes: int,
         num_rows: int,
+    ) -> LogicalPlanBuilder: ...
+    @staticmethod
+    def from_glob_scan(
+        glob_paths: list[str],
+        io_config: IOConfig | None = None,
     ) -> LogicalPlanBuilder: ...
     def with_planning_config(self, daft_planning_config: PyDaftPlanningConfig) -> LogicalPlanBuilder: ...
     def select(self, to_select: list[PyExpr]) -> LogicalPlanBuilder: ...

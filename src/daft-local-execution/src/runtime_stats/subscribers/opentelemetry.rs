@@ -50,7 +50,7 @@ impl RuntimeStatsSubscriber for OpenTelemetrySubscriber {
             let node_info = &self.node_infos[*node_id];
             let mut attributes = vec![
                 KeyValue::new("name", node_info.name.to_string()),
-                KeyValue::new("id", node_info.id.to_string()),
+                KeyValue::new("id", node_id.to_string()),
             ];
             for (k, v) in &node_info.context {
                 attributes.push(KeyValue::new(k.clone(), v.clone()));

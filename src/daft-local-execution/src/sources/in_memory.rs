@@ -41,7 +41,7 @@ impl Source for InMemorySource {
         &self,
         _maintain_order: bool,
         _io_stats: IOStatsRef,
-        _chunk_size: Option<usize>,
+        _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         Ok(self
             .data

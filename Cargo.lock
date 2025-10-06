@@ -2449,7 +2449,6 @@ dependencies = [
  "daft-dashboard",
  "pyo3",
  "tokio",
- "tracing",
  "tracing-subscriber",
 ]
 
@@ -2508,12 +2507,17 @@ dependencies = [
  "common-daft-config",
  "common-error",
  "common-metrics",
+ "common-runtime",
  "daft-core",
+ "daft-dashboard",
+ "daft-io",
  "daft-logical-plan",
  "daft-micropartition",
  "daft-runners",
  "dashmap",
+ "log",
  "pyo3",
+ "reqwest",
 ]
 
 [[package]]
@@ -2591,11 +2595,13 @@ name = "daft-dashboard"
 version = "0.3.0-dev0"
 dependencies = [
  "axum 0.8.4",
+ "common-metrics",
  "daft-recordbatch",
+ "dashmap",
  "include_dir",
- "parking_lot 0.12.4",
  "pyo3",
  "serde",
+ "serde_json",
  "tokio",
  "tower 0.5.2",
  "tower-http",
@@ -2623,6 +2629,7 @@ dependencies = [
  "common-display",
  "common-error",
  "common-file-formats",
+ "common-io-config",
  "common-partitioning",
  "common-py-serde",
  "common-resource-request",
@@ -2906,6 +2913,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "bincode",
  "common-error",
+ "common-io-config",
  "common-resource-request",
  "common-scan-info",
  "daft-core",
@@ -2961,6 +2969,7 @@ dependencies = [
  "common-display",
  "common-error",
  "common-file-formats",
+ "common-io-config",
  "common-logging",
  "common-metrics",
  "common-py-serde",
@@ -2998,7 +3007,6 @@ dependencies = [
  "pyo3",
  "pyo3-async-runtimes",
  "rand 0.8.5",
- "reqwest",
  "snafu",
  "tokio",
  "tokio-util",
@@ -3012,6 +3020,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-error",
  "common-file-formats",
+ "common-io-config",
  "common-py-serde",
  "common-resource-request",
  "common-scan-info",

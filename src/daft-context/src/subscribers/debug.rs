@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::{NodeID, StatSnapshotView, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo};
 use daft_micropartition::MicroPartitionRef;
 use dashmap::DashMap;
 
@@ -10,7 +10,7 @@ use crate::subscribers::Subscriber;
 
 #[derive(Debug)]
 pub struct DebugSubscriber {
-    rows_out: DashMap<String, usize>,
+    rows_out: DashMap<QueryID, usize>,
 }
 
 impl DebugSubscriber {
@@ -23,7 +23,7 @@ impl DebugSubscriber {
 
 #[async_trait]
 impl Subscriber for DebugSubscriber {
-    fn on_query_start(&self, query_id: String, unoptimized_plan: String) -> DaftResult<()> {
+    fn on_query_start(&self, query_id: QueryID, unoptimized_plan: QueryPlan) -> DaftResult<()> {
         eprintln!(
             "Started query `{}` with unoptimized plan:\n{}",
             query_id, unoptimized_plan
@@ -32,7 +32,7 @@ impl Subscriber for DebugSubscriber {
         Ok(())
     }
 
-    fn on_query_end(&self, query_id: String) -> DaftResult<()> {
+    fn on_query_end(&self, query_id: QueryID) -> DaftResult<()> {
         eprintln!(
             "Ended query `{}` with result of {} rows",
             query_id,
@@ -44,7 +44,7 @@ impl Subscriber for DebugSubscriber {
         Ok(())
     }
 
-    fn on_result_out(&self, query_id: String, result: MicroPartitionRef) -> DaftResult<()> {
+    fn on_result_out(&self, query_id: QueryID, result: MicroPartitionRef) -> DaftResult<()> {
         *self
             .rows_out
             .get_mut(&query_id)
@@ -53,12 +53,12 @@ impl Subscriber for DebugSubscriber {
         Ok(())
     }
 
-    fn on_optimization_start(&self, query_id: String) -> DaftResult<()> {
+    fn on_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
         eprintln!("Started planning query `{}`", query_id);
         Ok(())
     }
 
-    fn on_optimization_end(&self, query_id: String, optimized_plan: String) -> DaftResult<()> {
+    fn on_optimization_end(&self, query_id: QueryID, optimized_plan: QueryPlan) -> DaftResult<()> {
         eprintln!(
             "Finished planning query `{}` with optimized plan:\n{}",
             query_id, optimized_plan
@@ -66,7 +66,7 @@ impl Subscriber for DebugSubscriber {
         Ok(())
     }
 
-    fn on_exec_start(&self, query_id: String, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()> {
+    fn on_exec_start(&self, query_id: QueryID, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()> {
         eprintln!("Started executing query `{}`", query_id);
         for node_info in node_infos {
             eprintln!("  - Node {}: {}", node_info.id, node_info.name);
@@ -74,7 +74,7 @@ impl Subscriber for DebugSubscriber {
         Ok(())
     }
 
-    async fn on_exec_operator_start(&self, query_id: String, node_id: NodeID) -> DaftResult<()> {
+    async fn on_exec_operator_start(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
         eprintln!(
             "Started executing operator `{}` in query `{}`",
             node_id, query_id
@@ -84,7 +84,7 @@ impl Subscriber for DebugSubscriber {
 
     async fn on_exec_emit_stats(
         &self,
-        query_id: String,
+        query_id: QueryID,
         stats: &[(NodeID, StatSnapshotView)],
     ) -> DaftResult<()> {
         eprintln!("Emitting execution stats for query `{}`", query_id);
@@ -97,7 +97,7 @@ impl Subscriber for DebugSubscriber {
         Ok(())
     }
 
-    async fn on_exec_operator_end(&self, query_id: String, node_id: NodeID) -> DaftResult<()> {
+    async fn on_exec_operator_end(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
         eprintln!(
             "Finished executing operator `{}` in query `{}`",
             node_id, query_id
@@ -105,7 +105,7 @@ impl Subscriber for DebugSubscriber {
         Ok(())
     }
 
-    async fn on_exec_end(&self, query_id: String) -> DaftResult<()> {
+    async fn on_exec_end(&self, query_id: QueryID) -> DaftResult<()> {
         eprintln!("Finished executing query `{}`", query_id);
         Ok(())
     }

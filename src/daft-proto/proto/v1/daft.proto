@@ -365,6 +365,7 @@ message ScalarFn {
       DataType return_dtype = 2;
       PyObject inner = 3;
       PyObject original_args = 4;
+      optional bool use_process = 5;
     }
   }
 }
@@ -650,6 +651,7 @@ message SourceInfo {
   oneof variant {
     CacheInfo cache_info = 1;
     ScanInfo scan_info = 2;
+    GlobInfo glob_info = 3;
   }
 
   message CacheInfo {
@@ -667,6 +669,96 @@ message SourceInfo {
     Pushdowns pushdowns = 3;
     ScanTasks tasks = 4;
   }
+
+  message GlobInfo {
+    repeated string glob_paths = 1;
+    Schema schema = 2;
+    Pushdowns pushdowns = 3;
+    IOConfig io_config = 4;
+  }
+}
+
+message IOConfig {
+  S3Config s3 = 1;
+  AzureConfig azure = 2;
+  GCSConfig gcs = 3;
+  HTTPConfig http = 4;
+  UnityConfig unity = 5;
+  HuggingFaceConfig hf = 6;
+}
+
+message S3Config {
+  optional string region_name = 1;
+  optional string endpoint_url = 2;
+  optional string key_id = 3;
+  optional string session_token = 4;
+  optional string access_key = 5;
+  optional string credentials_provider = 6;
+  optional uint64 buffer_time = 7;
+  uint32 max_connections_per_io_thread = 8;
+  uint64 retry_initial_backoff_ms = 9;
+  uint64 connect_timeout_ms = 10;
+  uint64 read_timeout_ms = 11;
+  uint32 num_tries = 12;
+  optional string retry_mode = 13;
+  bool anonymous = 14;
+  bool use_ssl = 15;
+  bool verify_ssl = 16;
+  bool check_hostname_ssl = 17;
+  bool requester_pays = 18;
+  bool force_virtual_addressing = 19;
+  optional string profile_name = 20;
+  uint64 multipart_size = 21;
+  uint32 multipart_max_concurrency = 22;
+}
+
+message AzureConfig {
+  optional string storage_account = 1;
+  optional string access_key = 2;
+  optional string sas_token = 3;
+  optional string bearer_token = 4;
+  optional string tenant_id = 5;
+  optional string client_id = 6;
+  optional string client_secret = 7;
+  bool use_fabric_endpoint = 8;
+  bool anonymous = 9;
+  optional string endpoint_url = 10;
+  bool use_ssl = 11;
+}
+
+message GCSConfig {
+  optional string project_id = 1;
+  optional string credentials = 2;
+  optional string token = 3;
+  bool anonymous = 4;
+  uint32 max_connections_per_io_thread = 5;
+  uint64 retry_initial_backoff_ms = 6;
+  uint64 connect_timeout_ms = 7;
+  uint64 read_timeout_ms = 8;
+  uint32 num_tries = 9;
+}
+
+message HTTPConfig {
+  string user_agent = 1;
+  optional string bearer_token = 2;
+  uint64 retry_initial_backoff_ms = 3;
+  uint64 connect_timeout_ms = 4;
+  uint64 read_timeout_ms = 5;
+  uint32 num_tries = 6;
+}
+
+message UnityConfig {
+  optional string endpoint = 1;
+  optional string token = 2;
+}
+
+message HuggingFaceConfig {
+  optional string token = 1;
+  bool anonymous = 2;
+  optional bool use_content_defined_chunking = 3;
+  optional uint64 row_group_size = 4;
+  uint64 target_filesize = 5;
+  uint64 max_operations_per_commit = 6;
 }
 
 message PartitionFields {

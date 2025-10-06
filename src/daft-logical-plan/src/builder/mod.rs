@@ -26,6 +26,7 @@ use resolve_expr::ExprResolver;
 use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
     common_daft_config::PyDaftPlanningConfig,
+    common_io_config::python::IOConfig as PyIOConfig,
     daft_dsl::python::PyExpr,
     // daft_scan::python::pylib::ScanOperatorHandle,
     daft_schema::python::schema::PySchema,
@@ -46,7 +47,7 @@ use crate::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
     sink_info::{OutputFileInfo, SinkInfo},
-    source_info::{InMemoryInfo, SourceInfo},
+    source_info::{GlobScanInfo, InMemoryInfo, SourceInfo},
 };
 
 /// A logical plan builder, which simplifies constructing logical plans via
@@ -160,6 +161,19 @@ impl LogicalPlanBuilder {
             None,
         ));
         let logical_plan: LogicalPlan = ops::Source::new(schema, source_info.into()).into();
+
+        Ok(Self::from(Arc::new(logical_plan)))
+    }
+
+    /// Creates a `LogicalPlan::Source` from glob paths.
+    pub fn from_glob_scan(
+        glob_paths: Vec<String>,
+        io_config: Option<IOConfig>,
+    ) -> DaftResult<Self> {
+        let glob_scan_info = GlobScanInfo::new(glob_paths, io_config);
+        let schema = glob_scan_info.schema.clone();
+        let logical_plan: LogicalPlan =
+            ops::Source::new(schema, SourceInfo::GlobScan(glob_scan_info).into()).into();
 
         Ok(Self::from(Arc::new(logical_plan)))
     }
@@ -1052,6 +1066,14 @@ impl PyLogicalPlanBuilder {
             num_rows,
         )?
         .into())
+    }
+
+    #[staticmethod]
+    pub fn from_glob_scan(
+        glob_paths: Vec<String>,
+        io_config: Option<PyIOConfig>,
+    ) -> PyResult<Self> {
+        Ok(LogicalPlanBuilder::from_glob_scan(glob_paths, io_config.map(|c| c.config))?.into())
     }
 
     pub fn with_planning_config(

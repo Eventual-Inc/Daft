@@ -110,7 +110,7 @@ class DataFrame:
         Users are expected instead to call the classmethods on DataFrame to create a DataFrame.
 
         Args:
-            plan: LogicalPlan describing the steps required to arrive at this DataFrame
+            builder: LogicalPlan describing the steps required to arrive at this DataFrame
         """
         if not isinstance(builder, LogicalPlanBuilder):
             if isinstance(builder, dict):
@@ -160,15 +160,6 @@ class DataFrame:
             return None
         else:
             return self._result_cache.value
-
-    def _broadcast_query_plan(self) -> None:
-        from daft.subscribers import dashboard
-
-        if not dashboard._should_run():
-            return
-        unoptimized_plan = self._builder._builder.repr_json(True)
-
-        dashboard.broadcast_query_information(unoptimized_plan=unoptimized_plan)
 
     def pipe(
         self,
@@ -326,9 +317,6 @@ class DataFrame:
         and then inspects the resulting physical plan scheduler to determine how many partitions
         the execution will use.
 
-        Args:
-            None
-
         Returns:
             int: The number of partitions in the optimized physical execution plan.
 
@@ -355,9 +343,6 @@ class DataFrame:
     @DataframePublicAPI
     def schema(self) -> Schema:
         """Returns the Schema of the DataFrame, which provides information about each column, as a Python object.
-
-        Args:
-            None
 
         Returns:
             Schema: schema of the DataFrame
@@ -400,8 +385,6 @@ class DataFrame:
     def __iter__(self) -> Iterator[dict[str, Any]]:
         """Alias of `self.iter_rows()` with default arguments for convenient access of data.
 
-        Args:
-            None
         Returns:
             Iterator[dict[str, Any]]: An iterator over the rows of the DataFrame, where each row is a dictionary
             mapping column names to values.
@@ -1874,9 +1857,6 @@ class DataFrame:
     def describe(self) -> "DataFrame":
         """Returns the Schema of the DataFrame, which provides information about each column, as a new DataFrame.
 
-        Args:
-            None
-
         Returns:
             DataFrame: A dataframe where each row is a column name and its corresponding type.
 
@@ -1902,9 +1882,6 @@ class DataFrame:
     @DataframePublicAPI
     def summarize(self) -> "DataFrame":
         """Returns column statistics for the DataFrame.
-
-        Args:
-            None
 
         Returns:
             DataFrame: new DataFrame with the computed column statistics.
@@ -2363,7 +2340,7 @@ class DataFrame:
         """Sorts DataFrame globally.
 
         Args:
-            column (Union[ColumnInputType, List[ColumnInputType]]): column to sort by. Can be `str` or expression as well as a list of either.
+            by (Union[ColumnInputType, List[ColumnInputType]]): column to sort by. Can be `str` or expression as well as a list of either.
             desc (Union[bool, List[bool]), optional): Sort by descending order. Defaults to False.
             nulls_first (Union[bool, List[bool]), optional): Sort by nulls first. Defaults to nulls being treated as the greatest value.
 
@@ -2547,9 +2524,6 @@ class DataFrame:
     def count_rows(self) -> int:
         """Executes the Dataframe to count the number of rows.
 
-        Args:
-            None
-
         Returns:
             int: count of the number of rows in this DataFrame.
 
@@ -2689,7 +2663,7 @@ class DataFrame:
 
         Args:
             other (DataFrame): the right DataFrame to join on.
-            on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on [use if the keys on the left and right side match.]. Defaults to None.
+            on (Optional[Union[List[ColumnInputType], ColumnInputType]]): key or keys to join on [use if the keys on the left and right side match.]. Defaults to None.
             left_on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on left DataFrame. Defaults to None.
             right_on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on right DataFrame. Defaults to None.
             how (str, optional): what type of join to perform; currently "inner", "left", "right", "outer", "anti", "semi", and "cross" are supported. Defaults to "inner".
@@ -4011,7 +3985,6 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
-        self._broadcast_query_plan()
         self._materialize_results()
         assert self._result is not None
         dataframe_len = len(self._result)
@@ -4093,13 +4066,10 @@ class DataFrame:
         Args:
             n: number of rows to show. Defaults to 8.
             format (PreviewFormat): the box-drawing format e.g. "fancy" or "markdown".
-            **options: keyword arguments to modify the formatting, please see the options section.
-
-        Options:
-            verbose     (bool)                      : verbose will print header info
-            max_width   (int)                       : global max column width
-            align       (PreviewAlign)              : global column align
-            columns     (list[PreviewColumn])       : column overrides
+            verbose (bool): verbose will print header info
+            max_width (int): global max column width
+            align (PreviewAlign): global column align
+            columns (list[PreviewColumn]): column overrides
 
         Note:
             This call is **blocking** and will execute the DataFrame when called
@@ -4151,9 +4121,6 @@ class DataFrame:
         """Returns the count of rows when dataframe is materialized.
 
         If dataframe is not materialized yet, raises a runtime error.
-
-        Args:
-            None
 
         Returns:
             int: count of rows.
@@ -4293,9 +4260,6 @@ class DataFrame:
     def to_pylist(self) -> list[Any]:
         """Converts the current Dataframe into a python list.
 
-        Args:
-            None
-
         Returns:
             List[dict[str, Any]]: List of python dict objects.
 
@@ -4425,9 +4389,6 @@ class DataFrame:
     @DataframePublicAPI
     def to_ray_dataset(self) -> "ray.data.dataset.DataSet":
         """Converts the current DataFrame to a [Ray Dataset](https://docs.ray.io/en/latest/data/api/dataset.html#ray.data.Dataset) which is useful for running distributed ML model training in Ray.
-
-        Args:
-            None
 
         Returns:
             ray.data.dataset.DataSet: [Ray dataset](https://docs.ray.io/en/latest/data/api/dataset.html#ray.data.Dataset)
