@@ -16,10 +16,10 @@ export function genUrl(path: string): string {
   //   return process.env.API_URL;
   // }
 
-  // // For same-port deployment (Axum serving both frontend and API)
-  // if (typeof window !== 'undefined') {
-  //   return window.location.origin; // Uses current host and port
-  // }
+  // For same-port deployment (Axum serving both frontend and API)
+  if (typeof window !== 'undefined') {
+    return window.location.origin; // Uses current host and port
+  }
 
   // Default fallback for development
   const base = "http://localhost:3238";

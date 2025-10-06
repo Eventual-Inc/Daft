@@ -51,8 +51,6 @@ const Logo = ({ onComplete, textColor = "text-white" }: LogoProps) => {
         className="inline-block h-[18px] w-[12px]"
         style={{ marginLeft: "4px", backgroundColor: "#ff00ff" }}
       />
-      <br />
-
       <style jsx global>{`
         @keyframes terminal-text {
           0% {
