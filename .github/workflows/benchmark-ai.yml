@@ -79,8 +79,9 @@ jobs:
     - name: Check if benchmark should run
       if: ${{ inputs.benchmark_type != 'all' && inputs.benchmark_type != matrix.benchmark }}
       run: |
-        echo "Skipping benchmark ${{ matrix.benchmark }} as it doesn't match the selected benchmark type: ${{ inputs.benchmark_type }}"
-        exit 1
+        echo "🚫 CANCELLED: ${{ matrix.benchmark }} benchmark (selected: ${{ inputs.benchmark_type }})"
+        echo "This job was cancelled because it doesn't match the selected benchmark type"
+        exit 0
     - uses: actions/checkout@v4
       with:
         submodules: true
