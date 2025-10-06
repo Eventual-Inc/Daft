@@ -191,7 +191,7 @@ df = df.select(fetch_url(df["urls"]))
 
 ### Generator Functions
 
-Generator functions use `yield` to produce multiple output rows per input row. Other columns in the DataFrame are automatically broadcast to match the number of generated values.
+Generator functions use `yield` to produce multiple output rows per input row. Other columns in the DataFrame are automatically broadcast to match the number of generated values. You may only use one generator function per DataFrame operation.
 
 ```python
 import daft
@@ -387,5 +387,7 @@ The newer `@daft.func` decorator provides a cleaner interface for many use cases
 | Concurrency control | ❌ No | ✅ Yes (class UDFs) |
 | Resource requests (GPUs) | ❌ No | ✅ Yes |
 | Multi-column batching | ❌ No | ✅ Yes |
+
+If the new `@daft.func` decorator is missing a feature you need, we would love to hear from you! Please open an issue on our [GitHub repository](https://github.com/Eventual-Inc/Daft/issues).
 
 See the [User-Defined Functions (UDFs)](udfs.md) documentation for details on `@daft.udf`.
