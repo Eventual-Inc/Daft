@@ -99,13 +99,14 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
         LogicalPlan::UDFProject(udf_project) => {
             let input = translate(&udf_project.input)?;
 
-            let project = BoundExpr::try_new(udf_project.project.clone(), input.schema())?;
             let passthrough_columns =
                 BoundExpr::bind_all(&udf_project.passthrough_columns, input.schema())?;
+            let expr = BoundExpr::try_new(udf_project.expr.clone(), input.schema())?;
 
             Ok(LocalPhysicalPlan::udf_project(
                 input,
-                project,
+                expr,
+                udf_project.udf_properties.clone(),
                 passthrough_columns,
                 udf_project.projected_schema.clone(),
                 udf_project.stats_state.clone(),

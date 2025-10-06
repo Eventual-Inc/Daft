@@ -698,10 +698,12 @@ mod tests {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
 
         // Create an actor pool project expression.
+        let inputs = vec![resolved_col("a").into()];
         let actor_pool_expr = Arc::new(Expr::Function {
             func: FunctionExpr::Python(LegacyPythonUDF::new_testing_udf()),
-            inputs: vec![resolved_col("a").into()],
-        });
+            inputs: inputs.clone(),
+        })
+        .alias("a");
 
         // Create a plan with Select using actor pool project followed by Limit.
         let plan = dummy_scan_node(scan_op.clone())
@@ -719,7 +721,7 @@ mod tests {
         let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected.clone(),
             // Internally, splitting an actor pool project always re-aliases the column to its original name.
-            actor_pool_expr.alias("a"),
+            actor_pool_expr.clone(),
             vec![],
         )?)
         .arced();
@@ -755,10 +757,12 @@ mod tests {
     fn filter_commutes_with_actor_pool_project() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
         // Create an actor pool project expression.
+        let inputs = vec![resolved_col("a").into()];
         let actor_pool_expr = Arc::new(Expr::Function {
             func: FunctionExpr::Python(LegacyPythonUDF::new_testing_udf()),
-            inputs: vec![resolved_col("a").into()],
-        });
+            inputs,
+        })
+        .alias("renamed_col");
 
         // Create a plan with Select using actor pool project followed by Filter.
         let plan = dummy_scan_node(scan_op.clone())
@@ -778,7 +782,7 @@ mod tests {
         let expected = LogicalPlan::UDFProject(UDFProject::try_new(
             expected.clone(),
             // Internally, splitting an actor pool project always re-aliases the column to its original name.
-            actor_pool_expr.alias("renamed_col"),
+            actor_pool_expr.clone(),
             vec![resolved_col("a")],
         )?)
         .arced();

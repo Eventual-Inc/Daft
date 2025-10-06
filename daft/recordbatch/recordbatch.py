@@ -146,6 +146,10 @@ class RecordBatch:
             series_dict[k] = series._series
         return RecordBatch._from_pyrecordbatch(_PyRecordBatch.from_pylist_series(series_dict))
 
+    @staticmethod
+    def from_ipc_stream(bytes: bytes) -> RecordBatch:
+        return RecordBatch._from_pyrecordbatch(_PyRecordBatch.from_ipc_stream(bytes))
+
     @classmethod
     def concat(cls, to_merge: list[RecordBatch]) -> RecordBatch:
         tables = []
@@ -229,6 +233,9 @@ class RecordBatch:
                 return arrow_table.to_pandas()
             else:
                 return arrow_table.to_pandas(coerce_temporal_nanoseconds=coerce_temporal_nanoseconds)
+
+    def to_ipc_stream(self) -> bytes:
+        return self._recordbatch.to_ipc_stream()
 
     ###
     # Compute methods (Table -> Table)

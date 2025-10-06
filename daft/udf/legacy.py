@@ -33,13 +33,18 @@ UserDefinedPyFuncLike: TypeAlias = Union[UserDefinedPyFunc, type]
 @dataclasses.dataclass(frozen=True)
 class UninitializedUdf:
     inner: Callable[..., UserDefinedPyFunc]
+    name: str
 
     def initialize(self, init_args: InitArgsType) -> UserDefinedPyFunc:
-        if init_args is None:
-            return self.inner()
-        else:
-            args, kwargs = init_args
-            return self.inner(*args, **kwargs)
+        try:
+            if init_args is None:
+                return self.inner()
+            else:
+                args, kwargs = init_args
+                return self.inner(*args, **kwargs)
+        except Exception as init_exc:
+            error_note = f"User-defined function `{self.name}` failed to initialize"
+            raise UDFException(error_note) from init_exc
 
 
 @dataclasses.dataclass(frozen=True)
@@ -267,9 +272,9 @@ class UDF:
 
         # construct the UninitializedUdf here so that the constructed expressions can maintain equality
         if isinstance(self.inner, type):
-            self.wrapped_inner = UninitializedUdf(self.inner)
+            self.wrapped_inner = UninitializedUdf(self.inner, self.name)
         else:
-            self.wrapped_inner = UninitializedUdf(lambda: self.inner)
+            self.wrapped_inner = UninitializedUdf(lambda: self.inner, self.name)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Expression:
         self._validate_init_args()

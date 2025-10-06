@@ -514,7 +514,7 @@ impl ToFromProto for UDFProject {
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
         let input = self.input.to_proto()?.into();
-        let project = self.project.to_proto()?;
+        let project = self.expr.to_proto()?;
         let passthrough_columns = to_protos(&self.passthrough_columns)?;
         Ok(proto::RelUdfProject {
             input: Some(input),
