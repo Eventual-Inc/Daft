@@ -950,7 +950,15 @@ impl Expr {
     }
 
     pub fn alias<S: Into<Arc<str>>>(self: &ExprRef, name: S) -> ExprRef {
-        Self::Alias(self.clone(), name.into()).into()
+        Self::Alias(
+            if let Self::Alias(inner, _) = self.as_ref() {
+                inner.clone()
+            } else {
+                self.clone()
+            },
+            name.into(),
+        )
+        .into()
     }
 
     pub fn if_else(self: ExprRef, if_true: ExprRef, if_false: ExprRef) -> ExprRef {
@@ -2092,40 +2100,6 @@ pub fn is_udf(expr: &ExprRef) -> bool {
             ..
         } | Expr::ScalarFn(ScalarFn::Python(_))
     )
-}
-
-/// Count the number of UDFs anywhere in the expression tree
-pub fn count_udfs(expr: &ExprRef) -> usize {
-    let mut count = 0;
-    expr.apply(|e| {
-        if is_udf(e) {
-            count += 1;
-        }
-
-        Ok(common_treenode::TreeNodeRecursion::Continue)
-    })
-    .unwrap();
-
-    count
-}
-
-pub fn count_actor_pool_udfs(exprs: &[ExprRef]) -> usize {
-    exprs
-        .iter()
-        .map(|expr| {
-            let mut count = 0;
-            expr.apply(|e| {
-                if is_actor_pool_udf(e) {
-                    count += 1;
-                }
-
-                Ok(common_treenode::TreeNodeRecursion::Continue)
-            })
-            .unwrap();
-
-            count
-        })
-        .sum()
 }
 
 pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {

@@ -22,7 +22,7 @@ impl PyScalarFn {
             Self::RowWise(RowWisePyFn { function_name, .. }) => function_name,
         }
     }
-    pub fn call(&self, args: &[Series]) -> DaftResult<(Series, std::time::Duration)> {
+    pub fn call(&self, args: &[Series]) -> DaftResult<Series> {
         match self {
             Self::RowWise(func) => func.call(args),
         }
@@ -109,12 +109,12 @@ impl RowWisePyFn {
     }
 
     #[cfg(not(feature = "python"))]
-    pub fn call(&self, _args: &[Series]) -> DaftResult<(Series, std::time::Duration)> {
+    pub fn call(&self, _args: &[Series]) -> DaftResult<Series> {
         panic!("Cannot evaluate a RowWisePyFn without compiling for Python");
     }
 
     #[cfg(feature = "python")]
-    pub fn call(&self, args: &[Series]) -> DaftResult<(Series, std::time::Duration)> {
+    pub fn call(&self, args: &[Series]) -> DaftResult<Series> {
         use pyo3::prelude::*;
 
         let num_rows = args
@@ -147,21 +147,14 @@ impl RowWisePyFn {
     }
 
     #[cfg(feature = "python")]
-    fn call_async(
-        &self,
-        args: &[Series],
-        num_rows: usize,
-    ) -> DaftResult<(Series, std::time::Duration)> {
+    fn call_async(&self, args: &[Series], num_rows: usize) -> DaftResult<Series> {
         use daft_core::python::PySeries;
         use pyo3::prelude::*;
         let py_return_type = daft_core::python::PyDataType::from(self.return_dtype.clone());
         let inner_ref = self.inner.as_ref();
         let args_ref = self.original_args.as_ref();
-        let start_time = std::time::Instant::now();
 
         Ok(pyo3::Python::with_gil(|py| {
-            let gil_contention_time = start_time.elapsed();
-
             let f = py
                 .import(pyo3::intern!(py, "daft.udf.row_wise"))?
                 .getattr(pyo3::intern!(py, "__call_async_batch"))?;
@@ -185,31 +178,26 @@ impl RowWisePyFn {
 
             let result_series = res.extract::<PySeries>()?.series;
 
-            Ok::<_, PyErr>((result_series.rename(name), gil_contention_time))
+            Ok::<_, PyErr>(result_series.rename(name))
         })?)
     }
 
     #[cfg(feature = "python")]
-    fn call_serial(
-        &self,
-        args: &[Series],
-        num_rows: usize,
-    ) -> DaftResult<(Series, std::time::Duration)> {
+    fn call_serial(&self, args: &[Series], num_rows: usize) -> DaftResult<Series> {
         use daft_core::python::PySeries;
         use pyo3::prelude::*;
 
         let inner_ref = self.inner.as_ref();
         let args_ref = self.original_args.as_ref();
         let name = args[0].name();
-        let start_time = std::time::Instant::now();
+
         Python::with_gil(|py| {
-            let gil_contention_time = start_time.elapsed();
             let func = py
                 .import(pyo3::intern!(py, "daft.udf.row_wise"))?
                 .getattr(pyo3::intern!(py, "__call_func"))?;
 
-            let mut py_args = Vec::with_capacity(args.len());
             // pre-allocating py_args vector so we're not creating a new vector for each iteration
+            let mut py_args = Vec::with_capacity(args.len());
             let outputs = (0..num_rows)
                 .map(|i| {
                     for s in args {
@@ -225,10 +213,7 @@ impl RowWisePyFn {
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
 
-            Ok((
-                PySeries::from_pylist_impl(name, outputs, self.return_dtype.clone())?.series,
-                gil_contention_time,
-            ))
+            Ok(PySeries::from_pylist_impl(name, outputs, self.return_dtype.clone())?.series)
         })
     }
 }

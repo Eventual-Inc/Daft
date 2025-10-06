@@ -18,9 +18,9 @@ use crate::{
 pub(crate) struct UDFNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    project: BoundExpr,
-    passthrough_columns: Vec<BoundExpr>,
+    expr: BoundExpr,
     udf_properties: UDFProperties,
+    passthrough_columns: Vec<BoundExpr>,
     child: DistributedPipelineNode,
 }
 
@@ -32,9 +32,9 @@ impl UDFNode {
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
-        project: BoundExpr,
-        passthrough_columns: Vec<BoundExpr>,
+        expr: BoundExpr,
         udf_properties: UDFProperties,
+        passthrough_columns: Vec<BoundExpr>,
         schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> Self {
@@ -60,9 +60,9 @@ impl UDFNode {
         Self {
             config,
             context,
-            project,
-            passthrough_columns,
+            expr,
             udf_properties,
+            passthrough_columns,
             child,
         }
     }
@@ -86,16 +86,14 @@ impl PipelineNodeImpl for UDFNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        let mut res = vec![];
-        res.push("UDF Executor:".to_string());
-        res.push(format!(
-            "UDF {} = {}",
-            self.udf_properties.name, self.project
-        ));
-        res.push(format!(
-            "Passthrough Columns = [{}]",
-            self.passthrough_columns.iter().join(", ")
-        ));
+        let mut res = vec![
+            format!("UDF: {}", self.udf_properties.name),
+            format!("Expr = {}", self.expr),
+            format!(
+                "Passthrough Columns = [{}]",
+                self.passthrough_columns.iter().join(", ")
+            ),
+        ];
         if let Some(resource_request) = &self.udf_properties.resource_request {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
@@ -114,13 +112,15 @@ impl PipelineNodeImpl for UDFNode {
     ) -> SubmittableTaskStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
 
-        let project = self.project.clone();
+        let expr = self.expr.clone();
+        let udf_properties = self.udf_properties.clone();
         let passthrough_columns = self.passthrough_columns.clone();
         let schema = self.config.schema.clone();
         let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
             LocalPhysicalPlan::udf_project(
                 input,
-                project.clone(),
+                expr.clone(),
+                udf_properties.clone(),
                 passthrough_columns.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,
