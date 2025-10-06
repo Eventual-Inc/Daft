@@ -200,7 +200,7 @@ impl FileArray {
                 let url_array = self.physical.get("url").expect("url exists");
                 let io_config_array = self.physical.get("io_config").expect("io_config exists");
                 let url_array = url_array.utf8().expect("url is utf8");
-                let io_config_array = io_config_array.binary().expect("io_config is python");
+                let io_config_array = io_config_array.binary().expect("io_config is binary");
 
                 let data = url_array.get(idx)?;
                 let io_config = io_config_array.get(idx);
