@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from daft.lazy_import import LazyImport
 
 if TYPE_CHECKING:
+    import av
     import fsspec
     import numpy as np
     import pandas as pd
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
     import pyarrow.json as pajson
     import pyarrow.parquet as pq
 else:
+    av = LazyImport("av")
     fsspec = LazyImport("fsspec")
     np = LazyImport("numpy")
     pd = LazyImport("pandas")
@@ -34,6 +36,7 @@ else:
 unity_catalog = LazyImport("daft.unity_catalog")
 
 __all__ = [
+    "av",
     "flight",
     "fsspec",
     "np",

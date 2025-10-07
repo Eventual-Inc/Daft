@@ -5,9 +5,13 @@ import tempfile
 from typing import TYPE_CHECKING
 
 from daft.daft import PyDaftFile, PyFileReference
+from daft.dependencies import av
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from tempfile import _TemporaryFileWrapper
+
+    import PIL
 
     from daft.io import IOConfig
 
@@ -105,3 +109,64 @@ class File:
             temp_file.seek(0)
 
             return temp_file
+
+    def is_video(self) -> bool:
+        # Check magic bytes - most are in first 16 bytes
+        try:
+            with self.open() as f:
+                header = f.read(16)
+
+                if header.startswith(b"\x00\x00\x00"):  # MP4 variants
+                    return b"ftyp" in header
+                if header.startswith(b"\x1a\x45\xdf\xa3"):  # Matroska/MKV
+                    return True
+                if header.startswith(b"RIFF"):  # AVI
+                    return header[8:12] == b"AVI "
+                if header.startswith(b"FLV"):  # FLV
+                    return True
+
+                return False
+
+        except Exception:
+            return False
+
+    class VideoFile:
+        """A video-specific file interface that provides video operations."""
+
+        def __init__(self, file: File):
+            self.file = file
+
+        def keyframes(self, start_time: float = 0, end_time: float | None = None) -> Iterator[PIL.Image.Image]:
+            """Lazy iterator of keyframes as PIL Images within time range."""
+            with self.file.open() as f:
+                container = av.open(f)
+                stream = container.streams.video[0]
+
+                # Seek to start time
+                if start_time > 0:
+                    seek_timestamp = int(start_time * av.time_base)
+                    container.seek(seek_timestamp)
+
+                for frame in container.decode(stream):
+                    if not frame.key_frame:
+                        continue
+
+                    # Check end time if specified
+                    if end_time is not None:
+                        frame_time = frame.time
+                        if frame_time and frame_time > end_time:
+                            break
+
+                    yield frame.to_image()
+
+                container.close()
+
+    def as_video(self) -> VideoFile:
+        """Convert to VideoFile if this file contains video data."""
+        if not av.module_available():
+            raise ImportError("The 'av' module is required to convert files to video.")
+
+        if not self.is_video():
+            raise ValueError(f"File {self} is not a video file")
+
+        return File.VideoFile(self)
