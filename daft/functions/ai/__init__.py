@@ -67,7 +67,7 @@ def embed_text(
     """Returns an expression that embeds text using the specified embedding model and provider.
 
     Args:
-        text (Expression): The input text column expression.
+        text (String Expression): The input text column expression.
         provider (str | Provider | None): The provider to use for the embedding model. If None, the default provider is used.
         model (str | None): The embedding model to use. Can be a model instance or a model name. If None, the default model is used.
         **options: Any additional options to pass for the model.
@@ -106,7 +106,7 @@ def embed_image(
     """Returns an expression that embeds images using the specified image model and provider.
 
     Args:
-        image (Expression): The input image column expression.
+        image (Image Expression): The input image column expression.
         provider (str | Provider | None): The provider to use for the image model. If None, the default provider is used.
         model (str | None): The image model to use. Can be a model instance or a model name. If None, the default model is used.
         **options: Any additional options to pass for the model.
@@ -150,7 +150,7 @@ def classify_text(
     """Returns an expression that classifies text using the specified model and provider.
 
     Args:
-        text (Expression): The input text column expression.
+        text (String Expression): The input text column expression.
         labels (str | list[str]): Label(s) for classification.
         provider (str | Provider | None): The provider to use for the embedding model. If None, the default provider is used.
         model (str | None): The embedding model to use. Can be a model instance or a model name. If None, the default model is used.
