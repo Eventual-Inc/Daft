@@ -18,6 +18,12 @@ OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/audio
 
 daft.context.set_runner_ray()
 
+# Wait for Ray cluster to be ready
+@ray.remote
+def warmup():
+    pass
+ray.get([warmup.remote() for _ in range(64)])
+
 
 def resample(audio_bytes):
     waveform, sampling_rate = torchaudio.load(io.BytesIO(audio_bytes), format="flac")
@@ -71,6 +77,8 @@ def decoder(token_ids):
     return transcription
 
 
+start_time = time.time()
+
 df = daft.read_parquet(INPUT_PATH)
 df = df.with_column(
     "resampled",
@@ -82,3 +90,6 @@ df = df.with_column("transcription", decoder(df["token_ids"]))
 df = df.with_column("transcription_length", df["transcription"].str.length())
 df = df.exclude("token_ids", "extracted_features", "resampled")
 df.write_parquet(OUTPUT_PATH)
+
+end_time = time.time()
+print(f"Time taken: {end_time - start_time} seconds")
