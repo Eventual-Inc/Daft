@@ -54,7 +54,7 @@ setup_commands:
 - echo 'export RAY_TMPDIR=/opt/ray/tmp' >> ~/.bashrc
 - echo 'export RAY_object_spilling_directory=/opt/ray/spill' >> ~/.bashrc
 - source /opt/pytorch/bin/activate && pip install ray[default]==2.49.2 numpy==1.26.4 accelerate==1.10.1 transformers==4.56.2 torchaudio==2.7.0+cu128 soundfile==0.13.1
-- source /opt/pytorch/bin/activate && pip install daft --no-progress --pre --extra-index-url ${DAFT_INDEX_URL}
+- source /opt/pytorch/bin/activate && pip install daft --pre --extra-index-url ${DAFT_INDEX_URL}
 
 head_setup_commands:
 - source /opt/pytorch/bin/activate && pip install 'boto3>=1.4.8'
