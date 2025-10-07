@@ -33,9 +33,9 @@ def llm_generate(
             The number of concurrent instances of the model to run
         batch_size (int, default=None):
             The batch size for the UDF. If None, the batch size will be determined by defaults based on the provider.
-        num_cpus (float, default=None):
+        num_cpus (int, default=None):
             The number of CPUs to use for the UDF
-        num_gpus (float, default=None):
+        num_gpus (int, default=None):
             The number of GPUs to use for the UDF
         generation_config (dict, default={}):
             Configuration parameters for text generation (e.g., temperature, max_tokens)
