@@ -99,7 +99,7 @@ def test_instantiate():
 
 
 @pytest.mark.integration()
-def test_classify_text_with_default(mock_provider):
+def test_classify_text_with_default():
     """Test text classification using the expression."""
     import daft
     from daft.functions import classify_text
