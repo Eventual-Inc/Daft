@@ -67,7 +67,7 @@ def main():
     metadata = get_run_metadata()
 
     print(f"Starting {benchmark_name} benchmark...")
-    print(f"Daft version: {metadata['daft_version']}")
+    print(f"Daft version: {metadata['daft version']}")
 
     # Run benchmark
     execution_time = run_benchmark(benchmark_name)
