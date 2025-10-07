@@ -12,12 +12,13 @@ def value_counts(list_expr: Expression) -> Expression:
     """Counts the occurrences of each distinct value in the list.
 
     Args:
-        list_expr: (List Expression) to count the occurrences of each distinct value in.
+        list_expr (List Expression): expression to count the occurrences of each distinct value in.
 
     Returns:
-        Expression: A Map<X, UInt64> expression where the keys are distinct elements from the
-                    original list of type X, and the values are UInt64 counts representing
-                    the number of times each element appears in the list.
+        Expression (Map Expression):
+            A Map<X, UInt64> expression where the keys are distinct elements from the
+            original list of type X, and the values are UInt64 counts representing
+            the number of times each element appears in the list.
 
     Note:
         This function does not work for nested types. For example, it will not produce a map
@@ -51,10 +52,12 @@ def chunk(list_expr: Expression, size: int) -> Expression:
     """Splits each list into chunks of the given size.
 
     Args:
-        list_expr: (List Expression) to chunk
-        size: size of chunks to split the list into. Must be greater than 0
+        list_expr (List Expression): expression to chunk
+        size (int): size of chunks to split the list into. Must be greater than 0
+
     Returns:
-        Expression: a List[FixedSizedList] expression with lists of fixed size lists of the type of the list values
+        Expression (List[FixedSizedList] Expression):
+            expression with lists of fixed size lists of the type of the list values
     """
     return Expression._call_builtin_scalar_fn("list_chunk", list_expr, size)
 
@@ -63,11 +66,11 @@ def list_join(list_expr: Expression, delimiter: str | Expression) -> Expression:
     """Joins every element of a list using the specified string delimiter.
 
     Args:
-        list_expr: (List Expression) to join
+        list_expr (List Expression): expression to join
         delimiter (str | String Expression): the delimiter to use to join lists with
 
     Returns:
-        Expression: a String expression which is every element of the list joined on the delimiter
+        Expression (String Expression): an expression which is every element of the list joined on the delimiter
     """
     return Expression._call_builtin_scalar_fn("list_join", list_expr, delimiter)
 
@@ -78,11 +81,12 @@ def list_count(
     """Counts the number of elements in each list.
 
     Args:
-        list_expr: The list expression to count elements of.
-        mode: A string ("all", "valid", or "null") that represents whether to count all values, non-null (valid) values, or null values. Defaults to "valid".
+        list_expr (List Expression): The list expression to count elements of.
+        mode (str | CountMode, default=CountMode.Valid):
+            A string ("all", "valid", or "null") that represents whether to count all values, non-null (valid) values, or null values. Defaults to "valid".
 
     Returns:
-        Expression: a UInt64 expression which is the length of each list
+        Expression (UInt64 Expression): an expression which is the length of each list
     """
     return Expression._call_builtin_scalar_fn("list_count", list_expr, mode=mode)
 
@@ -91,7 +95,7 @@ def list_sum(list_expr: Expression) -> Expression:
     """Sums each list. Empty lists and lists with all nulls yield null.
 
     Args:
-        list_expr: (List Expression) to sum elements of.
+        list_expr (List Expression): expression to sum elements of.
 
     Returns:
         Expression: an expression with the type of the list values
@@ -103,10 +107,10 @@ def list_mean(list_expr: Expression) -> Expression:
     """Calculates the mean of each list. If no non-null values in a list, the result is null.
 
     Args:
-        list_expr: (List Expression) to calculate the mean of.
+        list_expr (List Expression): expression to calculate the mean of.
 
     Returns:
-        Expression: a Float64 expression with the type of the list values
+        Expression (Float64 Expression): an expression with the calculated mean of the list values
     """
     return Expression._call_builtin_scalar_fn("list_mean", list_expr)
 
@@ -115,10 +119,11 @@ def list_min(list_expr: Expression) -> Expression:
     """Calculates the minimum of each list. If no non-null values in a list, the result is null.
 
     Args:
-        list_expr: (List Expression) to calculate the minimum of.
+        list_expr (List Expression): expression to calculate the minimum of.
 
     Returns:
-        Expression: a Float64 expression with the type of the list values
+        Expression:
+            an expression with the type of the list values representing the minimum value in the list
     """
     return Expression._call_builtin_scalar_fn("list_min", list_expr)
 
@@ -127,10 +132,11 @@ def list_max(list_expr: Expression) -> Expression:
     """Calculates the maximum of each list. If no non-null values in a list, the result is null.
 
     Args:
-        list_expr: (List Expression) to calculate the maximum of.
+        list_expr (List Expression): expression to calculate the maximum of.
 
     Returns:
-        Expression: a Float64 expression with the type of the list values
+        Expression:
+            an expression with the type of the list values representing the maximum value in the list
     """
     return Expression._call_builtin_scalar_fn("list_max", list_expr)
 
@@ -144,10 +150,10 @@ def list_bool_and(list_expr: Expression) -> Expression:
     - Returns null if the list is empty or contains only null values
 
     Args:
-        list_expr: (List Expression) to calculate the boolean AND of.
+        list_expr (List Expression): expression to calculate the boolean AND of.
 
     Returns:
-        Expression: a Boolean expression with the result of the boolean AND operation.
+        Expression (Boolean Expression): an expression with the result of the boolean AND operation.
 
     Examples:
         >>> import daft
@@ -182,10 +188,10 @@ def list_bool_or(list_expr: Expression) -> Expression:
     - Returns null if the list is empty or contains only null values
 
     Args:
-        list_expr: (List Expression) to calculate the boolean OR of.
+        list_expr (List Expression): expression to calculate the boolean OR of.
 
     Returns:
-        Expression: a Boolean expression with the result of the boolean OR operation.
+         Expression (Boolean Expression): an expression with the result of the boolean OR operation.
 
     Examples:
         >>> import daft
@@ -217,12 +223,12 @@ def list_sort(
     """Sorts the inner lists of a list column.
 
     Args:
-        list_expr: (List Expression) to sort
+        list_expr (List Expression): expression to sort
         desc: (bool | Boolean Expression) Whether to sort in descending order. Defaults to false. Pass in a boolean column to control for each row.
         nulls_first: (bool | Boolean Expression) Whether to put nulls first. Defaults to false (nulls last). Pass in a boolean column to control for each row.
 
     Returns:
-        Expression: A List expression with the sorted lists
+        Expression (List Expression): an expression with the sorted lists
 
     Examples:
         >>> import daft
@@ -254,7 +260,7 @@ def list_distinct(list_expr: Expression) -> Expression:
         list_expr (List Expression): The input list expression
 
     Returns:
-        Expression: A List expression with lists containing only unique elements
+        Expression (List Expression): an expression with lists containing only unique elements
 
     Examples:
         >>> import daft
@@ -303,11 +309,11 @@ def list_map(list_expr: Expression, mapper: Expression) -> Expression:
     """Evaluates an expression on all elements in the list.
 
     Args:
-        list_expr: (List Expression) to map over.
+        list_expr (List Expression): expression to map over.
         mapper: Expression to run. You can select the element with `daft.element()`
 
     Returns:
-        Expression: List Expression representing the mapped list.
+        Expression (List Expression): an expression representing the mapped list.
 
     Examples:
         >>> import daft
@@ -336,8 +342,12 @@ def explode(list_expr: Expression) -> Expression:
 
     If exploding multiple columns at once, all list lengths must match.
 
+    Note:
+        Since this changes the cardinality of the dataframe, We only allow a single explode per projection (`select`, `with_columns`)
+        If you need to do multiple explodes, each one must be done separately.
+
     Args:
-        list_expr: (List Expression) to explode.
+        list_expr (List Expression): expression to explode.
 
     Returns:
         Expression: Expression representing the exploded list.
@@ -421,11 +431,11 @@ def list_append(list_expr: Expression, other: Expression) -> Expression:
     """Appends a value to each list in the column.
 
     Args:
-        list_expr: (List Expression) to append to
-        other: A value or column of values to append to each list
+        list_expr (List Expression): expression to append to
+        other (Expression): A value or column of values to append to each list
 
     Returns:
-        Expression: A List Expression with the updated lists
+        Expression (List Expression): an expression with the updated lists
 
     Examples:
         >>> import daft
@@ -455,7 +465,7 @@ def to_list(*items: Expression) -> Expression:
         *items: item expressions to construct the list
 
     Returns:
-        Expression: List Expression representing the constructed list
+        Expression (List Expression): expression representing the constructed list
 
     Examples:
         >>> import daft
