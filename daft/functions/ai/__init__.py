@@ -79,7 +79,7 @@ def embed_text(
         Make sure the required provider packages are installed (e.g. vllm, transformers, openai).
 
     Returns:
-        Expression (Embedding): A Embedding expression representing the embedded text vectors.
+        Expression (Embedding Expression): An expression representing the embedded text vectors.
     """
     from daft.ai._expressions import _TextEmbedderExpression
     from daft.ai.protocols import TextEmbedder
@@ -118,7 +118,7 @@ def embed_image(
         Make sure the required provider packages are installed (e.g. vllm, transformers, openai).
 
     Returns:
-        Expression: An expression representing the embedded image vectors.
+        Expression (Embedding Expression): An expression representing the embedded image vectors.
     """
     from daft.ai._expressions import _ImageEmbedderExpression
     from daft.ai.protocols import ImageEmbedder
@@ -163,7 +163,7 @@ def classify_text(
         Make sure the required provider packages are installed (e.g. vllm, transformers, openai).
 
     Returns:
-        Expression: An expression representing the most-probable label string.
+        Expression (String Expression): An expression representing the most-probable label string.
     """
     from daft.ai._expressions import _TextClassificationExpression
     from daft.ai.protocols import TextClassifier
