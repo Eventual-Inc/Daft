@@ -37,7 +37,7 @@ available_node_types:
     node_config:
       KeyName: ci-github-actions-ray-cluster-key
       InstanceType: g6.xlarge
-      ImageId: ami-0976479b866d22613
+      ImageId: arn:aws:iam::941892620273:instance-profile/
       IamInstanceProfile:
         Name: ray-autoscaler-v1
       BlockDeviceMappings:
