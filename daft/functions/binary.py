@@ -14,7 +14,7 @@ def encode(expr: Expression, charset: ENCODING_CHARSET) -> Expression:
     """Encode binary or string values using the specified character set.
 
     Args:
-        text_or_binary: The String or Binary expression to encode.
+        expr: The String or Binary expression to encode.
         charset: The encoding character set (utf-8, base64).
 
     Returns:

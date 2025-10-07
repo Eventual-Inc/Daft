@@ -13,7 +13,7 @@ def file(filepath_or_bytes: Expression, io_config: IOConfig | None = None) -> Ex
     """Converts either a string containing a file reference, or a binary column to a `daft.File` reference.
 
     Args:
-        expr: (String or Binary Expression) to evaluate.
+        filepath_or_bytes: (String or Binary Expression) to evaluate.
         io_config: The IO configuration to use.
 
     If the input is a string, it is assumed to be a file path and is converted to a `daft.File`.
@@ -30,7 +30,7 @@ def file_size(file: Expression) -> Expression:
     """Returns the size of the file in bytes.
 
     Args:
-        expr: (File Expression) to evaluate.
+        file: (File Expression) to evaluate.
 
     Returns:
         Expression: A UInt64 expression containing the file size in bytes
