@@ -8,7 +8,7 @@ from daft import DataType, Expression, Series, udf
 
 
 def llm_generate(
-    input_column: Expression,
+    text: Expression,
     model: str = "facebook/opt-125m",
     provider: Literal["vllm", "openai"] = "vllm",
     concurrency: int = 1,
@@ -23,6 +23,8 @@ def llm_generate(
     By default, it uses vLLM for efficient local inference.
 
     Args:
+        text: String Expression
+            The input text column to generate from
         model: str, default="facebook/opt-125m"
             The model identifier to use for generation
         provider: str, default="vllm"
@@ -99,7 +101,7 @@ def llm_generate(
         generation_config=generation_config,
     )
 
-    return llm_generator(input_column)
+    return llm_generator(text)
 
 
 class _vLLMGenerator:
