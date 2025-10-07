@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from daft.io import IOConfig
 
 
-def file(expr: Expression, io_config: IOConfig | None = None) -> Expression:
+def file(filepath_or_bytes: Expression, io_config: IOConfig | None = None) -> Expression:
     """Converts either a string containing a file reference, or a binary column to a `daft.File` reference.
 
     Args:
@@ -23,10 +23,10 @@ def file(expr: Expression, io_config: IOConfig | None = None) -> Expression:
         Expression: An expression containing the file reference.
 
     """
-    return expr._eval_expressions("file", io_config=io_config)
+    return filepath_or_bytes._eval_expressions("file", io_config=io_config)
 
 
-def file_size(expr: Expression) -> Expression:
+def file_size(file: Expression) -> Expression:
     """Returns the size of the file in bytes.
 
     Args:
@@ -35,4 +35,4 @@ def file_size(expr: Expression) -> Expression:
     Returns:
         Expression: A UInt64 expression containing the file size in bytes
     """
-    return expr._eval_expressions("file_size")
+    return file._eval_expressions("file_size")

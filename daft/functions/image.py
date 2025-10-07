@@ -9,7 +9,7 @@ from daft.datatype import DataType
 from daft.expressions import Expression
 
 
-def resize(expr: Expression, w: int, h: int) -> Expression:
+def resize(image: Expression, w: int, h: int) -> Expression:
     """Resize image into the provided width and height.
 
     Args:
@@ -20,7 +20,7 @@ def resize(expr: Expression, w: int, h: int) -> Expression:
     Returns:
         Expression: An Image expression representing an image column of the resized images.
     """
-    return Expression._call_builtin_scalar_fn("image_resize", expr, w=w, h=h)
+    return Expression._call_builtin_scalar_fn("image_resize", image, w=w, h=h)
 
 
 def crop(expr: Expression, bbox: tuple[int, int, int, int] | Expression) -> Expression:
