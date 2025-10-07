@@ -23,22 +23,25 @@ def llm_generate(
     By default, it uses vLLM for efficient local inference.
 
     Args:
-        text: String Expression
+        text (String Expression):
             The input text column to generate from
-        model: str, default="facebook/opt-125m"
+        model (str, default="facebook/opt-125m"):
             The model identifier to use for generation
-        provider: str, default="vllm"
+        provider (str, default="vllm"):
             The LLM provider to use for generation. Supported values: "vllm", "openai"
-        concurrency: int, default=1
+        concurrency (int, default=1):
             The number of concurrent instances of the model to run
-        batch_size: int, default=None
+        batch_size (int, default=None):
             The batch size for the UDF. If None, the batch size will be determined by defaults based on the provider.
-        num_cpus: float, default=None
+        num_cpus (float, default=None):
             The number of CPUs to use for the UDF
-        num_gpus: float, default=None
+        num_gpus (float, default=None):
             The number of GPUs to use for the UDF
-        generation_config: dict, default={}
+        generation_config (dict, default={}):
             Configuration parameters for text generation (e.g., temperature, max_tokens)
+
+    Returns:
+        Expression (String): The generated text column
 
     Examples:
         Use vLLM provider:

@@ -67,16 +67,19 @@ def embed_text(
     """Returns an expression that embeds text using the specified embedding model and provider.
 
     Args:
-        text (String Expression): The input text column expression.
-        provider (str | Provider | None): The provider to use for the embedding model. If None, the default provider is used.
-        model (str | None): The embedding model to use. Can be a model instance or a model name. If None, the default model is used.
+        text (String Expression):
+            The input text column expression.
+        provider (str | Provider | None):
+            The provider to use for the embedding model. If None, the default provider is used.
+        model (str | None):
+            The embedding model to use. Can be a model instance or a model name. If None, the default model is used.
         **options: Any additional options to pass for the model.
 
     Note:
         Make sure the required provider packages are installed (e.g. vllm, transformers, openai).
 
     Returns:
-        Expression: An expression representing the embedded text vectors.
+        Expression (Embedding): A Embedding expression representing the embedded text vectors.
     """
     from daft.ai._expressions import _TextEmbedderExpression
     from daft.ai.protocols import TextEmbedder

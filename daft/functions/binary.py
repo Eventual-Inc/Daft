@@ -14,11 +14,11 @@ def encode(expr: Expression, charset: ENCODING_CHARSET) -> Expression:
     """Encode binary or string values using the specified character set.
 
     Args:
-        expr: The String or Binary expression to encode.
-        charset: The encoding character set (utf-8, base64).
+        expr (Binary | String Expression): The expression to encode.
+        charset (str): The encoding character set (utf-8, base64).
 
     Returns:
-        Expression: A binary expression with the encoded value.
+        Expression (Binary Expression): A binary expression with the encoded value.
 
     Note:
         This inputs either a string or binary and returns a binary.
@@ -32,11 +32,11 @@ def decode(bytes: Expression, charset: ENCODING_CHARSET) -> Expression:
     """Decodes binary values using the specified character set.
 
     Args:
-        bytes: The Binary expression to decode.
-        charset: The decoding character set (utf-8, base64).
+        bytes (Binary Expression): The expression to decode.
+        charset (str): The decoding character set (utf-8, base64).
 
     Returns:
-        Expression: A string expression with the decoded values.
+        Expression (Binary Expression): A binary expression with the decoded values.
 
     Examples:
         >>> import daft
@@ -78,11 +78,11 @@ def compress(expr: Expression, codec: COMPRESSION_CODEC) -> Expression:
     r"""Compress binary or string values using the specified codec.
 
     Args:
-        expr: The String or Binary expression to compress.
-        codec: The compression codec (deflate, gzip, or zlib)
+        expr (String | Binary Expression): The expression to compress.
+        codec (str) The compression codec (deflate, gzip, or zlib)
 
     Returns:
-        Expression: A binary expression with the compressed value.
+        Expression (Binary Expression): A binary expression with the compressed value.
 
     Examples:
         >>> import daft
@@ -119,8 +119,8 @@ def decompress(bytes: Expression, codec: COMPRESSION_CODEC) -> Expression:
     """Decompress binary values using the specified codec.
 
     Args:
-        bytes: The binary expression to decompress.
-        codec: The decompression codec (deflate, gzip, zlib)
+        bytes (Binray Expression): The binary expression to decompress.
+        codec (str): The decompression codec (deflate, gzip, zlib)
 
     Returns:
         Expression: A binary expression with the decoded values.
