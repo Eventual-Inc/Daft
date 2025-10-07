@@ -121,7 +121,7 @@ jobs:
     - name: Run AI benchmark
       run: |
         source .venv/bin/activate
-        PYTHONPATH=. python .github/ci-scripts/run_ai_benchmark_direct.py ${{ matrix.benchmark }}
+        PYTHONPATH=. python .github/ci-scripts/run_ai_benchmark.py ${{ matrix.benchmark }}
     - name: Spin down ray cluster
       if: always()
       run: |
