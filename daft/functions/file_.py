@@ -12,8 +12,16 @@ if TYPE_CHECKING:
 def file(expr: Expression, io_config: IOConfig | None = None) -> Expression:
     """Converts either a string containing a file reference, or a binary column to a `daft.File` reference.
 
+    Args:
+        expr: (String or Binary Expression) to evaluate.
+        io_config: The IO configuration to use.
+
     If the input is a string, it is assumed to be a file path and is converted to a `daft.File`.
     If the input is a binary column, it is converted to a `daft.File` where the entire contents are buffered in memory.
+
+    Returns:
+        Expression: An expression containing the file reference.
+
     """
     return expr._eval_expressions("file", io_config=io_config)
 
@@ -22,9 +30,9 @@ def file_size(expr: Expression) -> Expression:
     """Returns the size of the file in bytes.
 
     Args:
-        expr: The expression to evaluate.
+        expr: (File Expression) to evaluate.
 
     Returns:
-        Expression: An expression containing the file size in bytes
+        Expression: A UInt64 expression containing the file size in bytes
     """
     return expr._eval_expressions("file_size")
