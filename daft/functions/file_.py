@@ -30,7 +30,7 @@ def file_size(file: Expression) -> Expression:
     """Returns the size of the file in bytes.
 
     Args:
-        expr: (File Expression) to evaluate.
+        file: (File Expression) to evaluate.
 
     Returns:
         Expression: A UInt64 expression containing the file size in bytes
