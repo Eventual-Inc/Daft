@@ -236,10 +236,6 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         }
     }
 
-    fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(self.actor_handles.len() * 2)
-    }
-
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
         self.batch_size.map(MorselSizeRequirement::Strict)
     }
