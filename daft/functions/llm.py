@@ -41,7 +41,7 @@ def llm_generate(
             Configuration parameters for text generation (e.g., temperature, max_tokens)
 
     Returns:
-        Expression (String): The generated text column
+        Expression (String Expression): The generated text column
 
     Examples:
         Use vLLM provider:

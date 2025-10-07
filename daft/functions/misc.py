@@ -18,7 +18,7 @@ def monotonically_increasing_id() -> Expression:
     in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and 2^36 ≈ 68 billion rows per partition.
 
     Returns:
-        Expression: A UInt64 expression that generates monotonically increasing IDs
+        Expression (UInt64 Expression): An expression that generates monotonically increasing IDs
 
     Examples:
         >>> import daft
@@ -58,7 +58,7 @@ def eq_null_safe(left: Expression, right: Expression) -> Expression:
     - Behaves like regular equality for non-NULL values
 
     Returns:
-        Expression: A boolean expression indicating if the values are equal
+        Expression (Boolean Expression): A boolean expression indicating if the values are equal
     """
     left = Expression._to_expression(left)
     right = Expression._to_expression(right)
@@ -133,7 +133,7 @@ def is_null(expr: Expression) -> Expression:
     """Checks if values in the Expression are Null (a special value indicating missing data).
 
     Returns:
-        Expression: Boolean Expression indicating whether values are missing
+        Expression (Boolean Expression): expression indicating whether values are missing
 
     Examples:
         >>> import daft
@@ -165,7 +165,7 @@ def not_null(expr: Expression) -> Expression:
     """Checks if values in the Expression are not Null (a special value indicating missing data).
 
     Returns:
-        Expression: Boolean Expression indicating whether values are not missing
+        Expression (Boolean Expression): expression indicating whether values are not missing
 
     Examples:
         >>> import daft
@@ -230,7 +230,7 @@ def is_in(expr: Expression, other: Any) -> Expression:
     """Checks if values in the Expression are in the provided list.
 
     Returns:
-        Expression: Boolean Expression indicating whether values are in the provided list
+        Expression (Boolean Expression): expression indicating whether values are in the provided list
 
     Examples:
         >>> import daft
@@ -280,6 +280,9 @@ def hash(
         seed (optional): Seed used for generating the hash. Defaults to 0.
         hash_function (optional): Hash function to use. One of "xxhash", "murmurhash3", or "sha1". Defaults to "xxhash".
 
+    Returns:
+        Expression (UInt64 Expression): The hashed expression.
+
     Note:
         Null values will produce a hash value instead of being propagated as null.
 
@@ -311,14 +314,15 @@ def minhash(
     to normalize the strings yourself.
 
     Args:
-        text: (String Expression) to hash.
-        num_hashes: The number of hash permutations to compute.
-        ngram_size: The number of tokens in each shingle/ngram.
-        seed (optional): Seed used for generating permutations and the initial string hashes. Defaults to 1.
-        hash_function (optional): Hash function to use for initial string hashing. One of "murmurhash3", "xxhash", or "sha1". Defaults to "murmurhash3".
+        text (String Expression): expression to hash.
+        num_hashes (int): The number of hash permutations to compute.
+        ngram_size (int): The number of tokens in each shingle/ngram.
+        seed (int, default=1): Seed used for generating permutations and the initial string hashes. Defaults to 1.
+        hash_function (str, default="murmurhash3"): Hash function to use for initial string hashing. One of "murmurhash3", "xxhash", or "sha1". Defaults to "murmurhash3".
 
     Returns:
-        Expression: A FixedSizedList[UInt32, num_hashes] Expression representing the MinHash values.
+        Expression (FixedSizedList[UInt32, num_hashes] Expression):
+            expression representing the MinHash values.
 
     """
     return Expression._call_builtin_scalar_fn(
@@ -330,7 +334,7 @@ def length(expr: Expression) -> Expression:
     """Retrieves the length of the given expression.
 
     Args:
-        expr: (List | Binary | String Expression) to compute the length of.
+        expr (List | Binary | String Expression): expression to compute the length of.
 
     The behavior depends on the input type:
     - For strings, returns the number of characters.
@@ -338,7 +342,7 @@ def length(expr: Expression) -> Expression:
     - For lists, returns the number of elements.
 
     Returns:
-        Expression: an UInt64 expression with the length
+        Expression (UInt64 Expression): an expression with the length
 
     Examples:
         String length:
@@ -497,7 +501,7 @@ def get(expr: Expression, key: int | str | Expression, default: Any = None) -> E
     """Get an index from a list expression or a field from a struct expression.
 
     Args:
-        expr: (List | Struct Expression) to get value from
+        expr (List | Struct Expression): to get value from
         key: integer index for list or string field for struct. List index can be negative to index from the end of the list.
         default: default value if out of bounds. Only supported for list get
 

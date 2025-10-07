@@ -13,12 +13,12 @@ def resize(image: Expression, w: int, h: int) -> Expression:
     """Resize image into the provided width and height.
 
     Args:
-        image: (Image Expression) to resize.
-        w: Desired width of the resized image.
-        h: Desired height of the resized image.
+        image (Image Expression): expression to resize.
+        w (int): Desired width of the resized image.
+        h (int): Desired height of the resized image.
 
     Returns:
-        Expression: An Image expression representing an image column of the resized images.
+        Expression (Image Expression): An expression representing an image column of the resized images.
     """
     return Expression._call_builtin_scalar_fn("image_resize", image, w=w, h=h)
 
@@ -27,13 +27,14 @@ def crop(image: Expression, bbox: tuple[int, int, int, int] | Expression) -> Exp
     """Crops images with the provided bounding box.
 
     Args:
-        image: (Image Expression) to crop.
-        bbox (tuple[int, int, int, int] | Expression): Either a tuple of (x, y, width, height)
+        image (Image Expression): to crop.
+        bbox (tuple[int, int, int, int] | List Expression):
+            Either a tuple of (x, y, width, height)
             parameters for cropping, or a List Expression where each element is a length 4 List
             which represents the bounding box for the crop
 
     Returns:
-        Expression: An Image expression representing the cropped image
+        Expression (Image Expression): An expression representing the cropped image
     """
     if not isinstance(bbox, Expression):
         if len(bbox) != 4 or not all([isinstance(x, int) for x in bbox]):
@@ -46,11 +47,11 @@ def encode_image(image: Expression, image_format: str | ImageFormat) -> Expressi
     """Encode an image column as the provided image file format, returning a binary column of encoded bytes.
 
     Args:
-        image: (Image Expression) to encode.
-        image_format: The image file format into which the images will be encoded.
+        image (Image Expression): The image to encode.
+        image_format (str | ImageFormat): The image file format into which the images will be encoded.
 
     Returns:
-        Expression: A Binary expression representing a binary column of encoded image bytes.
+        Expression (Binary Expression): An expression representing a binary column of encoded image bytes.
     """
     if isinstance(image_format, str):
         image_format = ImageFormat.from_format_string(image_format.upper())
@@ -69,13 +70,15 @@ def decode_image(
     This can only be applied to binary columns that contain encoded images (e.g. PNG, JPEG, etc.)
 
     Args:
-        bytes: (Binary Expression) to decode.
-        on_error: Whether to raise when encountering an error, or log a warning and return a null
-        mode: What mode to convert the images into before storing it in the column. This may prevent
+        bytes (Binary Expression): image to decode.
+        on_error (str, default="raise"):
+            Whether to raise when encountering an error, or log a warning and return a null
+        mode (str | ImageMode, default=None):
+            What mode to convert the images into before storing it in the column. This may prevent
             errors relating to unsupported types.
 
     Returns:
-        Expression: An Image expression representing an image column.
+        Expression (Image Expression): An expression representing the decoded image.
     """
     return Expression._call_builtin_scalar_fn("image_decode", bytes, on_error=on_error, mode=mode)
 
@@ -84,11 +87,11 @@ def convert_image(image: Expression, mode: str | ImageMode) -> Expression:
     """Convert an image expression to the specified mode.
 
     Args:
-        image: (Image Expression) to convert.
-        mode: The mode to convert the image into.
+        image (Image Expression): image to convert.
+        mode (str | ImageMode): The mode to convert the image into.
 
     Returns:
-        Expression: An Image expression representing the converted image.
+        Expression (Image Expression): An expression representing the converted image.
 
     """
     if isinstance(mode, str):
@@ -104,7 +107,7 @@ def image_attribute(
     """Get a property of the image, such as 'width', 'height', 'channel', or 'mode'.
 
     Args:
-        image: (Image Expression) to retrieve the property from.
+        image (Image Expression): to retrieve the property from.
         name: The name of the property to retrieve.
 
     Returns:
@@ -119,7 +122,10 @@ def image_width(image: Expression) -> Expression:
     """Gets the width of an image in pixels.
 
     Args:
-        image: (Image Expression) to retrieve the width from.
+        image (Image Expression): image to retrieve the width from.
+
+    Returns:
+        Expression (UInt32 Expression): An Expression representing the width of the image.
 
     Example:
         >>> import daft
@@ -135,7 +141,10 @@ def image_height(image: Expression) -> Expression:
     """Gets the height of an image in pixels.
 
     Args:
-        image: (Image Expression) to retrieve the height from.
+        image (Image Expression): image to retrieve the height from.
+
+    Returns:
+        Expression (UInt32 Expression): An Expression representing the height of the image.
 
     Example:
         >>> import daft
@@ -151,7 +160,10 @@ def image_channel(image: Expression) -> Expression:
     """Gets the number of channels in an image.
 
     Args:
-        image: (Image Expression) to retrieve the number of channels from.
+        image (Image Expression): image to retrieve the number of channels from.
+
+    Returns:
+        Expression (UInt32 Expression): An Expression representing the number of channels in the image.
 
     Example:
         >>> import daft
@@ -164,10 +176,13 @@ def image_channel(image: Expression) -> Expression:
 
 
 def image_mode(image: Expression) -> Expression:
-    """Gets the mode of an image as a string.
+    """Gets the mode of an image.
 
     Args:
-        image: (Image Expression) to retrieve the mode from.
+        image (Image Expression): image to retrieve the mode from.
+
+    Returns:
+        Expression (UInt32 Expression): An Expression representing the mode of the image.
 
     Example:
         >>> import daft

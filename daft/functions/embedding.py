@@ -13,7 +13,7 @@ def cosine_distance(left_embedding: Expression, right_embedding: Expression) -> 
         right_embedding (FixedSizeList or Embedding Expression): The right embedding
 
     Returns:
-        Expression: a Float64 Expression with the cosine distance between the two embeddings.
+        Expression (Float64 Expression): an expression with the cosine distance between the two embeddings.
 
     Examples:
         >>> import daft
