@@ -53,18 +53,7 @@ setup_commands:
 - sudo chown -R ec2-user:ec2-user /opt/ray
 - echo 'export RAY_TMPDIR=/opt/ray/tmp' >> ~/.bashrc
 - echo 'export RAY_object_spilling_directory=/opt/ray/spill' >> ~/.bashrc
-- source /opt/pytorch/bin/activate && pip install ray[default]==2.49.2 numpy==1.26.4 accelerate==1.10.1 transformers==4.56.2 sentence-transformers==5.1.1 langchain==0.3.27 pymupdf==1.26.4
-- source /opt/pytorch/bin/activate && pip install daft --pre --extra-index-url ${DAFT_INDEX_URL}
-
-head_setup_commands:
-- source /opt/pytorch/bin/activate && pip install 'boto3>=1.4.8'
-
-worker_setup_commands: []
-
-head_start_ray_commands:
-- source /opt/pytorch/bin/activate && ray stop
-- ulimit -n 65536; source /opt/pytorch/bin/activate && ray start --head --port=6379 --object-manager-port=8076 --autoscaling-config=~/ray_bootstrap_config.yaml
-
-worker_start_ray_commands:
-- source /opt/pytorch/bin/activate && ray stop
-- ulimit -n 65536; source /opt/pytorch/bin/activate && ray start --address=$RAY_HEAD_IP:6379 --object-manager-port=8076
+- echo 'export PATH=/opt/pytorch/bin:$PATH' >> ~/.bashrc
+- export PATH=/opt/pytorch/bin:$PATH
+- pip install ray[default]==2.49.2 numpy==1.26.4 accelerate==1.10.1 transformers==4.56.2 sentence-transformers==5.1.1 langchain==0.3.27 pymupdf==1.26.4
+- pip install daft --pre --extra-index-url ${DAFT_INDEX_URL}
