@@ -49,7 +49,6 @@ impl<W: Worker> SchedulerActor<W, DefaultScheduler<W::Task>> {
     }
 }
 
-#[allow(dead_code)]
 impl<W: Worker> SchedulerActor<W, LinearScheduler<W::Task>> {
     fn linear_scheduler(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
         Self {
@@ -198,7 +197,23 @@ where
     }
 }
 
-pub(crate) fn spawn_default_scheduler_actor<W: Worker>(
+pub(crate) fn spawn_scheduler_actor<W: Worker>(
+    worker_manager: Arc<dyn WorkerManager<Worker = W>>,
+    joinset: &mut JoinSet<DaftResult<()>>,
+    statistics_manager: StatisticsManagerRef,
+) -> SchedulerHandle<W::Task> {
+    // Check for environment variable to use linear scheduler
+    if std::env::var("DAFT_SCHEDULER_LINEAR")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+    {
+        spawn_linear_scheduler_actor(worker_manager, joinset, statistics_manager)
+    } else {
+        spawn_default_scheduler_actor(worker_manager, joinset, statistics_manager)
+    }
+}
+
+fn spawn_default_scheduler_actor<W: Worker>(
     worker_manager: Arc<dyn WorkerManager<Worker = W>>,
     joinset: &mut JoinSet<DaftResult<()>>,
     statistics_manager: StatisticsManagerRef,
@@ -209,8 +224,7 @@ pub(crate) fn spawn_default_scheduler_actor<W: Worker>(
     SchedulerActor::spawn_scheduler_actor(scheduler, joinset, statistics_manager)
 }
 
-#[allow(dead_code)]
-pub(crate) fn spawn_linear_scheduler_actor<W: Worker>(
+fn spawn_linear_scheduler_actor<W: Worker>(
     worker_manager: Arc<dyn WorkerManager<Worker = W>>,
     joinset: &mut JoinSet<DaftResult<()>>,
     statistics_manager: StatisticsManagerRef,

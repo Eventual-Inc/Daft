@@ -6,7 +6,6 @@ use crate::scheduling::{
     worker::WorkerId,
 };
 
-#[allow(dead_code)]
 pub(super) struct LinearScheduler<T: Task> {
     worker_snapshots: HashMap<WorkerId, WorkerSnapshot>,
     pending_tasks: BinaryHeap<PendingTask<T>>,
@@ -18,7 +17,6 @@ impl<T: Task> Default for LinearScheduler<T> {
     }
 }
 
-#[allow(dead_code)]
 impl<T: Task> LinearScheduler<T> {
     pub fn new() -> Self {
         Self {
