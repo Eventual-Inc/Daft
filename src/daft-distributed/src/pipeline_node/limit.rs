@@ -14,7 +14,7 @@ use crate::{
     pipeline_node::{
         NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, append_plan_to_existing_task,
     },
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{QueryConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SwordfishTask, TaskContext},
@@ -82,18 +82,16 @@ impl LimitNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        plan_config: &PlanConfig,
+        plan_config: &QueryConfig,
         limit: usize,
         offset: Option<usize>,
         schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
             logical_node_id,
         );
         let config = PipelineNodeConfig::new(

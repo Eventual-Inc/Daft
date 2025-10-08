@@ -3,7 +3,7 @@ use pyo3::{PyObject, PyResult, Python, types::PyAnyMethods};
 
 use crate::{
     scheduling::task::TaskContext,
-    statistics::{StatisticsEvent, StatisticsSubscriber},
+    statistics::{TaskEvent},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -11,15 +11,15 @@ struct BarId(i64);
 
 impl From<&TaskContext> for BarId {
     fn from(task_context: &TaskContext) -> Self {
-        Self(((task_context.plan_id as i64) << 32) | (task_context.node_id as i64))
+        Self(((task_context.query_idx as i64) << 32) | (task_context.node_id as i64))
     }
 }
 
-pub(crate) struct FlotillaProgressBar {
+pub struct ProgressBar {
     progress_bar_pyobject: PyObject,
 }
 
-impl FlotillaProgressBar {
+impl ProgressBar {
     pub fn try_new(py: Python) -> PyResult<Self> {
         let progress_bar_module = py.import(pyo3::intern!(py, "daft.runners.progress_bar"))?;
         let progress_bar_class = progress_bar_module.getattr(pyo3::intern!(py, "ProgressBar"))?;
@@ -58,38 +58,33 @@ impl FlotillaProgressBar {
             progress_bar.call0(py).expect("Failed to call close method");
         });
     }
-}
 
-impl Drop for FlotillaProgressBar {
-    fn drop(&mut self) {
-        self.close();
-    }
-}
-
-impl StatisticsSubscriber for FlotillaProgressBar {
-    fn handle_event(&mut self, event: &StatisticsEvent) -> DaftResult<()> {
+    pub fn handle_event(&mut self, event: &TaskEvent) -> DaftResult<()> {
         match event {
-            StatisticsEvent::TaskSubmitted { context, name } => {
+            TaskEvent::TaskSubmitted { context, name } => {
                 self.make_bar_or_update_total(BarId::from(context), name)?;
                 Ok(())
             }
             // For progress bar we don't care if it is scheduled, for now.
-            StatisticsEvent::TaskScheduled { .. } => Ok(()),
-            StatisticsEvent::TaskStarted { .. } => Ok(()), // Progress bar doesn't need to handle task start separately
-            StatisticsEvent::TaskCompleted { context } => {
+            TaskEvent::TaskScheduled { .. } => Ok(()),
+            TaskEvent::TaskStarted { .. } => Ok(()), // Progress bar doesn't need to handle task start separately
+            TaskEvent::TaskCompleted { context } => {
                 self.update_bar(BarId::from(context))?;
                 Ok(())
             }
             // We don't care about failed tasks as they will be retried
-            StatisticsEvent::TaskFailed { .. } => Ok(()),
+            TaskEvent::TaskFailed { .. } => Ok(()),
             // We consider cancelled tasks as finished tasks
-            StatisticsEvent::TaskCancelled { context } => {
+            TaskEvent::TaskCancelled { context } => {
                 self.update_bar(BarId::from(context))?;
                 Ok(())
             }
-            StatisticsEvent::PlanSubmitted { .. } => Ok(()),
-            StatisticsEvent::PlanStarted { .. } => Ok(()),
-            StatisticsEvent::PlanFinished { .. } => Ok(()),
         }
+    }
+}
+
+impl Drop for ProgressBar {
+    fn drop(&mut self) {
+        self.close();
     }
 }

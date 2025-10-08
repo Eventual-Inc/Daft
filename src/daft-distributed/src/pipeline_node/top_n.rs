@@ -10,7 +10,7 @@ use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
     },
-    plan::{PlanConfig, PlanExecutionContext},
+    plan::{QueryConfig, PlanExecutionContext},
 };
 
 pub(crate) struct TopNNode {
@@ -32,7 +32,7 @@ impl TopNNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        plan_config: &PlanConfig,
+        plan_config: &QueryConfig,
         sort_by: Vec<BoundExpr>,
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
@@ -42,11 +42,9 @@ impl TopNNode {
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
             logical_node_id,
         );
         let config = PipelineNodeConfig::new(

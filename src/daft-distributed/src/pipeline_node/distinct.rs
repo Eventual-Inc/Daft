@@ -8,7 +8,7 @@ use daft_schema::schema::SchemaRef;
 use super::{DistributedPipelineNode, PipelineNodeImpl, SubmittableTaskStream};
 use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
-    plan::{PlanConfig, PlanExecutionContext},
+    plan::{QueryConfig, PlanExecutionContext},
 };
 
 pub(crate) struct DistinctNode {
@@ -25,17 +25,15 @@ impl DistinctNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        plan_config: &PlanConfig,
+        plan_config: &QueryConfig,
         columns: Vec<BoundExpr>,
         schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
             logical_node_id,
         );
         let config = PipelineNodeConfig::new(

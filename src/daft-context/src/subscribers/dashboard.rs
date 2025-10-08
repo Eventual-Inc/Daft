@@ -3,12 +3,13 @@ use std::{sync::Arc, time::SystemTime};
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo};
-use common_runtime::{RuntimeRef, get_io_runtime};
+use common_runtime::{get_io_runtime};
 use daft_io::IOStatsContext;
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;
 use reqwest::{Client, RequestBuilder};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::subscribers::{QueryMetadata, Subscriber};
 
@@ -20,12 +21,59 @@ fn secs_from_epoch() -> u64 {
         .as_secs()
 }
 
-#[derive(Debug)]
+fn create_client(url: &str) -> DaftResult<Client> {
+    const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
+
+    if url.contains("localhost") || url.contains("127.0.0.1") {
+        Client::builder()
+            // If it's a localhost uri we can skip ssl verification
+            .danger_accept_invalid_certs(true)
+            .danger_accept_invalid_hostnames(true)
+            .timeout(std::time::Duration::from_secs(2))
+            .user_agent(USER_AGENT)
+            .build()
+            .map_err(|e| DaftError::External(Box::new(e)))
+    } else {
+        // TODO: Auth handling?
+        Client::builder()
+            .timeout(std::time::Duration::from_secs(2))
+            .user_agent(USER_AGENT)
+            .build()
+            .map_err(|e| DaftError::External(Box::new(e)))
+    }
+}
+
+#[derive(Debug, Serialize)]
 pub struct DashboardSubscriber {
     url: String,
+    #[serde(skip)]
     client: Client,
-    runtime: RuntimeRef,
     preview_rows: DashMap<QueryID, MicroPartitionRef>,
+}
+
+impl<'de> Deserialize<'de> for DashboardSubscriber {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct DashboardSubscriberHelper {
+            url: String,
+            preview_rows: DashMap<QueryID, MicroPartitionRef>,
+        }
+
+        let helper = DashboardSubscriberHelper::deserialize(deserializer)?;
+        
+        // Create the client using the URL from the deserialized data
+        let client = create_client(&helper.url)
+            .map_err(serde::de::Error::custom)?;
+
+        Ok(DashboardSubscriber {
+            url: helper.url,
+            client,
+            preview_rows: helper.preview_rows,
+        })
+    }
 }
 
 impl DashboardSubscriber {
@@ -34,29 +82,10 @@ impl DashboardSubscriber {
             return Ok(None);
         };
 
-        const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
-
-        let client = if url.contains("localhost") || url.contains("127.0.0.1") {
-            Client::builder()
-                // if it's a localhost uri we can skip ssl verification
-                .danger_accept_invalid_certs(true)
-                .danger_accept_invalid_hostnames(true)
-                .timeout(std::time::Duration::from_secs(2))
-                .user_agent(USER_AGENT)
-                .build()
-                .map_err(|e| DaftError::External(Box::new(e)))?
-        } else {
-            // TODO: Auth handling?
-            Client::builder()
-                .timeout(std::time::Duration::from_secs(2))
-                .user_agent(USER_AGENT)
-                .build()
-                .map_err(|e| DaftError::External(Box::new(e)))?
-        };
-
-        let runtime = get_io_runtime(false);
+        let client = create_client(&url)?;
 
         // Validate that we can connect to the dashboard
+        let runtime = get_io_runtime(false);
         runtime.block_on_current_thread(async {
             client
                 .get(format!("{}/api/ping", url))
@@ -71,7 +100,6 @@ impl DashboardSubscriber {
         Ok(Some(Self {
             url,
             client,
-            runtime,
             preview_rows: DashMap::new(),
         }))
     }
@@ -92,7 +120,7 @@ const TOTAL_ROWS: usize = 10;
 #[async_trait]
 impl Subscriber for DashboardSubscriber {
     fn on_query_start(&self, query_id: QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()> {
-        self.runtime.block_on_current_thread(async {
+        get_io_runtime(false).block_on_current_thread(async {
             Self::handle_request(
                 self.client
                     .post(format!("{}/engine/query/{}/start", self.url, query_id))
@@ -149,7 +177,7 @@ impl Subscriber for DashboardSubscriber {
             .concat_or_get(io_stats)?
             .unwrap_or_else(|| RecordBatch::empty(Some(results.schema())));
 
-        self.runtime.block_on_current_thread(async {
+        get_io_runtime(false).block_on_current_thread(async {
             Self::handle_request(
                 self.client
                     .post(format!("{}/engine/query/{}/end", self.url, query_id))
@@ -164,7 +192,7 @@ impl Subscriber for DashboardSubscriber {
     }
 
     fn on_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
-        self.runtime.block_on_current_thread(async {
+        get_io_runtime(false).block_on_current_thread(async {
             Self::handle_request(
                 self.client
                     .post(format!("{}/engine/query/{}/plan_start", self.url, query_id))
@@ -179,7 +207,7 @@ impl Subscriber for DashboardSubscriber {
 
     fn on_optimization_end(&self, query_id: QueryID, optimized_plan: QueryPlan) -> DaftResult<()> {
         let plan_end_sec = secs_from_epoch();
-        self.runtime.block_on_current_thread(async {
+        get_io_runtime(false).block_on_current_thread(async {
             Self::handle_request(
                 self.client
                     .post(format!("{}/engine/query/{}/plan_end", self.url, query_id))
@@ -195,7 +223,7 @@ impl Subscriber for DashboardSubscriber {
 
     fn on_exec_start(&self, query_id: QueryID, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()> {
         let exec_start_sec = secs_from_epoch();
-        self.runtime.block_on_current_thread(async {
+        get_io_runtime(false).block_on_current_thread(async {
             Self::handle_request(
                 self.client
                     .post(format!("{}/engine/query/{}/exec/start", self.url, query_id))

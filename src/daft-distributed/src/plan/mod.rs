@@ -1,10 +1,10 @@
 use std::sync::{
-    Arc,
-    atomic::{AtomicU16, Ordering},
+    Arc, atomic::{AtomicU16, Ordering}
 };
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
+use common_metrics::QueryID;
 use common_partitioning::PartitionRef;
 use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder};
 use futures::{Stream, StreamExt, stream};
@@ -20,14 +20,15 @@ use crate::{
 };
 
 mod runner;
-pub(crate) use runner::{PlanConfig, PlanExecutionContext, PlanRunner, TaskIDCounter};
+pub(crate) use runner::{QueryConfig, PlanExecutionContext, PlanRunner, TaskIDCounter};
 
-static PLAN_ID_COUNTER: AtomicU16 = AtomicU16::new(0);
-pub(crate) type PlanID = u16;
+static QUERY_COUNTER: AtomicU16 = AtomicU16::new(0);
+pub(crate) type QueryIdx = u16;
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct DistributedPhysicalPlan {
-    id: PlanID,
+    query_id: QueryID,
+    query_idx: QueryIdx,
     logical_plan: Arc<LogicalPlan>,
     config: Arc<DaftExecutionConfig>,
 }
@@ -35,19 +36,27 @@ pub(crate) struct DistributedPhysicalPlan {
 impl DistributedPhysicalPlan {
     pub fn from_logical_plan_builder(
         builder: &LogicalPlanBuilder,
+        query_id: QueryID,
         config: Arc<DaftExecutionConfig>,
     ) -> DaftResult<Self> {
         let logical_plan = builder.build();
 
         Ok(Self {
-            id: PLAN_ID_COUNTER.fetch_add(1, Ordering::Relaxed),
+            query_id,
+            query_idx: QUERY_COUNTER.fetch_add(1, Ordering::SeqCst),
             logical_plan,
             config,
         })
     }
 
-    pub fn id(&self) -> PlanID {
-        self.id
+    /// Unique query id
+    pub fn query_id(&self) -> QueryID {
+        self.query_id.clone()
+    }
+
+    /// Local query index based on # of queries run before
+    pub fn query_idx(&self) -> QueryIdx {
+        self.query_idx
     }
 
     pub fn logical_plan(&self) -> &daft_logical_plan::LogicalPlanRef {

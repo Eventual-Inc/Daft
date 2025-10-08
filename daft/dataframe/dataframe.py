@@ -293,7 +293,7 @@ class DataFrame:
                     from daft.daft import DistributedPhysicalPlan
 
                     distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
-                        builder._builder, daft_execution_config
+                        builder._builder, "", daft_execution_config
                     )
                     if format == "ascii":
                         print_to_file(distributed_plan.repr_ascii(simple))

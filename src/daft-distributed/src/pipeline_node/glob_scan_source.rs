@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     pipeline_node::{NodeID, PipelineNodeImpl},
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{QueryConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SubmittableTask,
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
@@ -34,7 +34,7 @@ impl GlobScanSourceNode {
 
     pub fn new(
         node_id: NodeID,
-        plan_config: &PlanConfig,
+        plan_config: &QueryConfig,
         glob_paths: Arc<Vec<String>>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
@@ -42,11 +42,9 @@ impl GlobScanSourceNode {
         io_config: Option<IOConfig>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
             node_id,
             Self::NODE_NAME,
-            vec![],
-            vec![],
             logical_node_id,
         );
         let config = PipelineNodeConfig::new(

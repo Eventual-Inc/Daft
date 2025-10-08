@@ -8,6 +8,7 @@ use std::{
     sync::{Arc, OnceLock, RwLock},
 };
 
+use serde::{Deserialize, Serialize};
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};
 use common_error::{DaftError, DaftResult};
 use common_metrics::{QueryID, QueryPlan};
@@ -15,10 +16,12 @@ use daft_micropartition::MicroPartitionRef;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
-use crate::subscribers::QueryMetadata;
-pub use crate::subscribers::Subscriber;
+#[cfg(feature = "python")]
+use crate::subscribers::{python::PySubscriberWrapper};
+use crate::subscribers::{QueryMetadata};
+pub use crate::subscribers::{Subscribers, Subscriber};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Config {
     pub execution: Arc<DaftExecutionConfig>,
     pub planning: Arc<DaftPlanningConfig>,
@@ -33,17 +36,17 @@ impl Config {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 struct ContextState {
     /// Shared configuration for the context
     config: Config,
-    subscribers: HashMap<String, Arc<dyn Subscriber>>,
+    subscribers: HashMap<String, Arc<Subscribers>>,
 }
 
 /// Wrapper around the ContextState to provide a thread-safe interface.
 /// IMPORTANT: Do not create this directly, use `get_context` instead.
 /// This is a singleton, and should only be created once.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DaftContext {
     /// Private state field - access only through state() and state_mut() methods
     state: Arc<RwLock<ContextState>>,
@@ -96,13 +99,15 @@ impl DaftContext {
         self.with_state(|state| state.config.planning.default_io_config.clone())
     }
 
-    pub fn subscribers(&self) -> Vec<Arc<dyn Subscriber>> {
+    pub fn subscribers(&self) -> Vec<Arc<Subscribers>> {
         self.with_state(|state| state.subscribers.values().cloned().collect())
     }
 
     /// Attaches a subscriber to this context.
-    pub fn attach_subscriber(&self, alias: String, subscriber: Arc<dyn Subscriber>) {
-        self.with_state_mut(|state| state.subscribers.insert(alias, subscriber));
+    pub fn attach_subscriber(&self, alias: String, subscriber: PySubscriberWrapper) {
+        self.with_state_mut(|state| {
+            state.subscribers.insert(alias, Arc::new(Subscribers::Python(subscriber)));
+        });
     }
 
     /// Detaches a subscriber from this context, err if does not exist.

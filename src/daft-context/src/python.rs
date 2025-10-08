@@ -2,10 +2,13 @@ use std::sync::Arc;
 
 use common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
 use daft_core::python::PySchema;
+use common_py_serde::impl_bincode_py_state_serialization;
 use daft_micropartition::python::PyMicroPartition;
 use pyo3::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::{DaftContext, subscribers, subscribers::QueryMetadata};
+use subscribers::python::PySubscriberWrapper;
 
 #[pyclass(frozen)]
 #[derive(Clone)]
@@ -50,6 +53,7 @@ impl<'a> From<&'a PyQueryMetadata> for &'a Arc<QueryMetadata> {
 }
 
 #[pyclass(frozen)]
+#[derive(Serialize, Deserialize)]
 pub struct PyDaftContext {
     inner: DaftContext,
 }
@@ -97,7 +101,7 @@ impl PyDaftContext {
         py.allow_threads(|| {
             self.inner.attach_subscriber(
                 alias,
-                Arc::new(subscribers::python::PySubscriberWrapper(subscriber)),
+                PySubscriberWrapper::new(subscriber)
             );
         });
     }
@@ -171,6 +175,8 @@ impl<'a> From<&'a PyDaftContext> for &'a DaftContext {
         &ctx.inner
     }
 }
+
+impl_bincode_py_state_serialization!(PyDaftContext);
 
 #[pyfunction]
 pub fn get_context() -> PyDaftContext {

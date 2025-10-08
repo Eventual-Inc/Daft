@@ -8,11 +8,12 @@ use std::{
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
+use common_metrics::QueryID;
 use common_partitioning::PartitionRef;
 use daft_logical_plan::LogicalPlanRef;
 use futures::{Stream, StreamExt};
 
-use super::{DistributedPhysicalPlan, PlanID, PlanResult};
+use super::{DistributedPhysicalPlan, QueryIdx, PlanResult};
 use crate::{
     pipeline_node::{
         MaterializedOutput, SubmittableTaskStream, logical_plan_to_pipeline_node,
@@ -23,7 +24,7 @@ use crate::{
         task::{SwordfishTask, TaskID},
         worker::{Worker, WorkerManager},
     },
-    statistics::{StatisticsEvent, StatisticsManagerRef},
+    statistics::{StatisticsManagerRef},
     utils::{
         channel::{Sender, create_channel},
         joinset::{JoinSet, create_join_set},
@@ -78,14 +79,15 @@ impl PlanExecutionContext {
 }
 
 #[derive(Clone)]
-pub(crate) struct PlanConfig {
-    pub plan_id: PlanID,
+pub(crate) struct QueryConfig {
+    pub query_id: QueryID,
+    pub query_idx: QueryIdx,
     pub config: Arc<DaftExecutionConfig>,
 }
 
-impl PlanConfig {
-    pub fn new(plan_id: PlanID, config: Arc<DaftExecutionConfig>) -> Self {
-        Self { plan_id, config }
+impl QueryConfig {
+    pub fn new(query_id: QueryID, query_idx: QueryIdx, config: Arc<DaftExecutionConfig>) -> Self {
+        Self { query_id, query_idx, config }
     }
 }
 
@@ -123,7 +125,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
 
     async fn execute_plan(
         &self,
-        plan_config: PlanConfig,
+        query_config: QueryConfig,
         logical_plan: LogicalPlanRef,
         psets: HashMap<String, Vec<PartitionRef>>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
@@ -131,12 +133,14 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         statistics_manager: StatisticsManagerRef,
     ) -> DaftResult<()> {
         let mut plan_context = PlanExecutionContext::new(scheduler_handle.clone());
-        let plan_id = plan_config.plan_id;
+        let query_id = query_config.query_id.clone();
 
-        let pipeline_node =
-            logical_plan_to_pipeline_node(plan_config, logical_plan.clone(), Arc::new(psets))?;
-        let running_node = pipeline_node.produce_tasks(&mut plan_context);
-        let running_stage = RunningPlan::new(running_node, plan_context);
+        let head_pipeline_node =
+            logical_plan_to_pipeline_node(query_config, logical_plan.clone(), Arc::new(psets))?;
+
+        statistics_manager.handle_start(query_id.clone())?;
+        let head_running_node = head_pipeline_node.produce_tasks(&mut plan_context);
+        let running_stage = RunningPlan::new(head_running_node, plan_context);
 
         let mut materialized_result_stream = running_stage.materialize(scheduler_handle);
         while let Some(result) = materialized_result_stream.next().await {
@@ -144,7 +148,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
                 break;
             }
         }
-        statistics_manager.handle_event(StatisticsEvent::PlanFinished { plan_id })?;
+        statistics_manager.handle_finish(query_id).await?;
         Ok(())
     }
 
@@ -154,19 +158,13 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         psets: HashMap<String, Vec<PartitionRef>>,
         statistics_manager: StatisticsManagerRef,
     ) -> DaftResult<PlanResult> {
-        let plan_id = plan.id();
-        let query_id = uuid::Uuid::new_v4().to_string();
+        let query_id = plan.query_id();
+        let query_idx = plan.query_idx();
         let config = plan.execution_config().clone();
         let logical_plan = plan.logical_plan().clone();
-        let plan_config = PlanConfig::new(plan_id, config);
+        let plan_config = QueryConfig::new(query_id, query_idx, config);
 
         let runtime = get_or_init_runtime();
-        statistics_manager.handle_event(StatisticsEvent::PlanSubmitted {
-            plan_id,
-            query_id,
-            logical_plan: logical_plan.clone(),
-        })?;
-
         let (result_sender, result_receiver) = create_channel(1);
 
         let this = self.clone();

@@ -10,7 +10,7 @@ use crate::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
         PipelineNodeImpl, SubmittableTaskStream, make_in_memory_task_from_materialized_outputs,
     },
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{QueryConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SwordfishTask, TaskContext},
@@ -31,16 +31,14 @@ impl GatherNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        plan_config: &PlanConfig,
+        plan_config: &QueryConfig,
         schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
             logical_node_id,
         );
         let config = PipelineNodeConfig::new(

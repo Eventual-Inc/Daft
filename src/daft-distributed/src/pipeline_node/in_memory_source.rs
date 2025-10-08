@@ -8,7 +8,7 @@ use daft_logical_plan::{ClusteringSpec, InMemoryInfo, stats::StatsState};
 use super::{PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream};
 use crate::{
     pipeline_node::{DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig},
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{QueryConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SubmittableTask,
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
@@ -28,17 +28,15 @@ impl InMemorySourceNode {
 
     pub fn new(
         node_id: NodeID,
-        plan_config: &PlanConfig,
+        plan_config: &QueryConfig,
         info: InMemoryInfo,
         input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
         logical_node_id: Option<NodeID>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
             node_id,
             Self::NODE_NAME,
-            vec![],
-            vec![],
             logical_node_id,
         );
 

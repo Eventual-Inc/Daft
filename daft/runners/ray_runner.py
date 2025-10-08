@@ -1325,9 +1325,13 @@ class RayRunner(Runner[ray.ObjectRef]):
         # Grab and freeze the current context
         ctx = get_context()
         daft_execution_config = ctx.daft_execution_config
+        query_id = str(uuid.uuid4())
+        ctx._notify_query_start(query_id, repr(builder))
 
         # Optimize the logical plan.
+        ctx._notify_optimization_start(query_id)
         builder = builder.optimize()
+        ctx._notify_optimization_end(query_id, repr(builder))
 
         if daft_execution_config.use_legacy_ray_runner:
             if daft_execution_config.enable_aqe:
@@ -1382,14 +1386,15 @@ class RayRunner(Runner[ray.ObjectRef]):
                 yield from self._stream_plan(result_uuid)
         else:
             distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
-                builder._builder, daft_execution_config
+                builder._builder, query_id, daft_execution_config
             )
             if self.flotilla_plan_runner is None:
                 self.flotilla_plan_runner = FlotillaRunner()
 
             yield from self.flotilla_plan_runner.stream_plan(
-                distributed_plan, self._part_set_cache.get_all_partition_sets()
+                distributed_plan, self._part_set_cache.get_all_partition_sets(), ctx
             )
+            ctx._notify_query_end(query_id)
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None

@@ -11,7 +11,7 @@ use crate::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
         PipelineNodeImpl, SubmittableTaskStream,
     },
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{QueryConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SubmittableTask,
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
@@ -32,18 +32,16 @@ impl CrossJoinNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        plan_config: &PlanConfig,
+        plan_config: &QueryConfig,
         num_partitions: usize,
         left_node: DistributedPipelineNode,
         right_node: DistributedPipelineNode,
         output_schema: SchemaRef,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
             node_id,
             Self::NODE_NAME,
-            vec![left_node.node_id(), right_node.node_id()],
-            vec![left_node.name(), right_node.name()],
             logical_node_id,
         );
 

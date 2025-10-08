@@ -27,7 +27,7 @@ use crate::{
         SubmittableTaskStream, project::ProjectNode,
         translate::LogicalPlanToPipelineNodeTranslator,
     },
-    plan::{PlanConfig, PlanExecutionContext},
+    plan::{QueryConfig, PlanExecutionContext},
 };
 
 pub(crate) struct AggregateNode {
@@ -53,18 +53,16 @@ impl AggregateNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        plan_config: &PlanConfig,
+        plan_config: &QueryConfig,
         group_by: Vec<BoundExpr>,
         aggs: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
             node_id,
             Self::node_name(&group_by),
-            vec![child.node_id()],
-            vec![child.name()],
             logical_node_id,
         );
         let config = PipelineNodeConfig::new(

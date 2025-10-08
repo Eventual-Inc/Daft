@@ -2507,6 +2507,7 @@ dependencies = [
  "common-daft-config",
  "common-error",
  "common-metrics",
+ "common-py-serde",
  "common-runtime",
  "daft-core",
  "daft-dashboard",
@@ -2519,6 +2520,7 @@ dependencies = [
  "log",
  "pyo3",
  "reqwest",
+ "serde",
 ]
 
 [[package]]
@@ -2635,12 +2637,14 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-io-config",
+ "common-metrics",
  "common-partitioning",
  "common-py-serde",
  "common-resource-request",
  "common-runtime",
  "common-scan-info",
  "common-treenode",
+ "daft-context",
  "daft-dsl",
  "daft-io",
  "daft-local-plan",
@@ -3108,6 +3112,7 @@ dependencies = [
  "futures",
  "parquet2",
  "pyo3",
+ "serde",
  "snafu",
  "tokio",
  "tracing",
@@ -3499,6 +3504,7 @@ dependencies = [
  "lock_api",
  "once_cell",
  "parking_lot_core 0.9.11",
+ "serde",
 ]
 
 [[package]]

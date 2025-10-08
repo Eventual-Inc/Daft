@@ -1,4 +1,3 @@
-mod progress_bar;
 pub mod ray;
 use std::{collections::HashMap, sync::Arc};
 
@@ -6,9 +5,9 @@ use common_daft_config::PyDaftExecutionConfig;
 use common_display::DisplayLevel;
 use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
+use daft_context::{python::PyDaftContext, DaftContext};
 use daft_logical_plan::PyLogicalPlanBuilder;
 use futures::StreamExt;
-use progress_bar::FlotillaProgressBar;
 use pyo3::prelude::*;
 use ray::{RayPartitionRef, RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
 use serde::{Deserialize, Serialize};
@@ -19,9 +18,9 @@ use crate::{
         logical_plan_to_pipeline_node, viz_distributed_pipeline_ascii,
         viz_distributed_pipeline_mermaid,
     },
-    plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
+    plan::{DistributedPhysicalPlan, QueryConfig, PlanResultStream, PlanRunner},
     python::ray::RayTaskResult,
-    statistics::{HttpSubscriber, StatisticsManager, StatisticsSubscriber},
+    statistics::{ProgressBar, StatisticsManager},
 };
 
 #[pyclass(frozen)]
@@ -71,23 +70,29 @@ impl PyDistributedPhysicalPlan {
     #[staticmethod]
     fn from_logical_plan_builder(
         builder: &PyLogicalPlanBuilder,
+        query_id: &str,
         config: &PyDaftExecutionConfig,
     ) -> PyResult<Self> {
         let plan = DistributedPhysicalPlan::from_logical_plan_builder(
             &builder.builder,
+            query_id.into(),
             config.config.clone(),
         )?;
         Ok(Self { plan })
     }
 
-    fn id(&self) -> String {
-        self.plan.id().to_string()
+    fn query_id(&self) -> String {
+        self.plan.query_id().to_string()
+    }
+
+    fn query_idx(&self) -> String {
+        self.plan.query_idx().to_string()
     }
 
     /// Visualize the distributed pipeline as ASCII text
     fn repr_ascii(&self, simple: bool) -> PyResult<String> {
         // Create pipeline nodes from the logical plan
-        let plan_config = PlanConfig::new(self.plan.id(), self.plan.execution_config().clone());
+        let plan_config = QueryConfig::new(self.plan.query_id(), self.plan.query_idx(), self.plan.execution_config().clone());
         let pipeline_node = logical_plan_to_pipeline_node(
             plan_config,
             self.plan.logical_plan().clone(),
@@ -100,7 +105,7 @@ impl PyDistributedPhysicalPlan {
     /// Visualize the distributed pipeline as Mermaid markdown
     fn repr_mermaid(&self, simple: bool, bottom_up: bool) -> PyResult<String> {
         // Create a pipeline node from the stage plan
-        let plan_config = PlanConfig::new(self.plan.id(), self.plan.execution_config().clone());
+        let plan_config = QueryConfig::new(self.plan.query_id(), self.plan.query_idx(), self.plan.execution_config().clone());
         let pipeline_node = logical_plan_to_pipeline_node(
             plan_config,
             self.plan.logical_plan().clone(),
@@ -142,6 +147,7 @@ impl PyDistributedPhysicalPlanRunner {
         py: Python,
         plan: &PyDistributedPhysicalPlan,
         psets: HashMap<String, Vec<RayPartitionRef>>,
+        ctx: &PyDaftContext,
     ) -> PyResult<PythonPartitionRefStream> {
         let psets = psets
             .into_iter()
@@ -155,22 +161,10 @@ impl PyDistributedPhysicalPlanRunner {
             })
             .collect();
 
-        let mut subscribers: Vec<Box<dyn StatisticsSubscriber>> =
-            vec![Box::new(FlotillaProgressBar::try_new(py)?)];
+        let pbar = ProgressBar::try_new(py)?;
+        let ctx: &DaftContext = ctx.into();
 
-        tracing::info!("Checking DAFT_DASHBOARD_URL environment variable");
-        match std::env::var("DAFT_DASHBOARD_URL") {
-            Ok(url) => {
-                tracing::info!("DAFT_DASHBOARD_URL is set to: {}", url);
-                tracing::info!("Adding HttpSubscriber to statistics manager");
-                subscribers.push(Box::new(HttpSubscriber::new()));
-            }
-            Err(_) => {
-                tracing::info!("DAFT_DASHBOARD_URL not set, skipping HttpSubscriber");
-            }
-        }
-
-        let statistics_manager = StatisticsManager::new(subscribers);
+        let statistics_manager = StatisticsManager::new(Some(pbar), ctx.subscribers());
         let plan_result = self
             .runner
             .run_plan(&plan.plan, psets, statistics_manager)?;
