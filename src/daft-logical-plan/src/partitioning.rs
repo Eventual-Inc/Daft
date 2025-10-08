@@ -400,7 +400,7 @@ fn translate_clustering_spec_expr(
                 .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Arc::new(Expr::ScalarFn(ScalarFn::Python(
-                PyScalarFn::RowWise(row_wise_py_fn.with_new_children(new_children)).into(),
+                PyScalarFn::RowWise(row_wise_py_fn.with_new_children(new_children)),
             ))))
         }
         // Cannot have agg exprs or references to other tables in clustering specs.

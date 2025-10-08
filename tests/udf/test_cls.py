@@ -64,7 +64,6 @@ def test_cls_multiple_instances():
         adder_1.add(df["a"]).alias("plus_1"),
         adder_10.add(df["a"]).alias("plus_10"),
     )
-    result.explain(True)
     assert result.to_pydict() == {
         "plus_1": [11, 21, 31],
         "plus_10": [20, 30, 40],
@@ -80,7 +79,7 @@ def test_cls_async_method():
             self.delay = delay
 
         async def process(self, x: int) -> int:
-            await asyncio.sleep(0)  # simulate async work
+            await asyncio.sleep(self.delay)
             return x * 2
 
     processor = AsyncProcessor(0.01)

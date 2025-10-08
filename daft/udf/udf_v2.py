@@ -3,6 +3,7 @@ from __future__ import annotations
 import functools
 import inspect
 import sys
+import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Generator, Iterator
 from dataclasses import dataclass, field
@@ -108,8 +109,6 @@ class Func(Generic[P, T, C]):
 
     def _derive_function_name(self) -> str:
         """Compute a unique name for the function using its module and qualified name."""
-        import uuid
-
         module_name = getattr(self, "__module__")
         qual_name: str = getattr(self, "__qualname__")
         if module_name:
