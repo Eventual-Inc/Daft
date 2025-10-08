@@ -278,12 +278,11 @@ def cls(
         >>>
         >>> # Use class methods as Daft functions.
         >>> df = df.with_columns(
-        ...     "generated",
-        ...     my_model.generate(df["prompt"]),
-        ...     "classified",
-        ...     my_model.classify(df["prompt"]),
+        ...     {
+        ...         "generated": my_model.generate(df["prompt"]),
+        ...         "classified": my_model.classify(df["prompt"]),
+        ...     }
         ... )
-        >>>
         >>> # Call methods with scalar arguments to run locally. `__init__` will be called locally first.
         >>> my_model.generate("hello")
     """
