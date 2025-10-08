@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from daft.context import get_context
 from daft.daft import (
@@ -32,14 +32,16 @@ if TYPE_CHECKING:
     from daft.runners.partitioning import PartitionCacheEntry
 
 
-def _apply_daft_planning_config_to_initializer(classmethod_func: Callable[..., LogicalPlanBuilder]):
+def _apply_daft_planning_config_to_initializer(
+    classmethod_func: Callable[..., LogicalPlanBuilder],
+) -> Callable[..., LogicalPlanBuilder]:
     """Decorator to be applied to any @classmethod instantiation method on LogicalPlanBuilder.
 
     This decorator ensures that the current DaftPlanningConfig is applied to the instantiated LogicalPlanBuilder
     """
 
     @functools.wraps(classmethod_func)
-    def wrapper(cls: type[LogicalPlanBuilder], *args, **kwargs):
+    def wrapper(cls: type[LogicalPlanBuilder], *args: Any, **kwargs: Any) -> LogicalPlanBuilder:
         instantiated_logical_plan_builder = classmethod_func(cls, *args, **kwargs)
 
         # Parametrize the builder with the current DaftPlanningConfig
@@ -148,6 +150,19 @@ class LogicalPlanBuilder:
         builder = logical_plan_table_scan(scan_operator)
         return cls(builder)
 
+    @classmethod
+    @_apply_daft_planning_config_to_initializer
+    def from_glob_scan(
+        cls,
+        glob_paths: list[str],
+        io_config: IOConfig | None = None,
+    ) -> LogicalPlanBuilder:
+        builder = _LogicalPlanBuilder.from_glob_scan(
+            glob_paths,
+            io_config,
+        )
+        return cls(builder)
+
     def select(
         self,
         to_select: list[Expression],
@@ -182,6 +197,14 @@ class LogicalPlanBuilder:
         builder = self._builder.limit(num_rows, eager)
         return LogicalPlanBuilder(builder)
 
+    def offset(self, num_rows: int) -> LogicalPlanBuilder:
+        builder = self._builder.offset(num_rows)
+        return LogicalPlanBuilder(builder)
+
+    def shard(self, strategy: str, world_size: int, rank: int) -> LogicalPlanBuilder:
+        builder = self._builder.shard(strategy, world_size, rank)
+        return LogicalPlanBuilder(builder)
+
     def explode(self, explode_expressions: list[Expression]) -> LogicalPlanBuilder:
         explode_pyexprs = [expr._expr for expr in explode_expressions]
         builder = self._builder.explode(explode_pyexprs)
@@ -200,14 +223,18 @@ class LogicalPlanBuilder:
         return LogicalPlanBuilder(builder)
 
     def count(self) -> LogicalPlanBuilder:
-        # TODO(Clark): Add dedicated logical/physical ops when introducing metadata-based count optimizations.
-        first_col = col(self.schema().column_names()[0])
-        builder = self._builder.aggregate([first_col.count(CountMode.All)._expr], [])
-        builder = builder.select([first_col.alias("count")._expr])
+        cheapest_col_name = self.schema()._schema.min_estimated_size_column()
+        if cheapest_col_name is None:
+            cheapest_col_name = self.schema().column_names()[0]
+
+        cheapest_col = col(cheapest_col_name)
+        builder = self._builder.aggregate([cheapest_col.count(CountMode.All)._expr], [])
+        builder = builder.select([cheapest_col.alias("count")._expr])
         return LogicalPlanBuilder(builder)
 
-    def distinct(self) -> LogicalPlanBuilder:
-        builder = self._builder.distinct()
+    def distinct(self, on: list[Expression]) -> LogicalPlanBuilder:
+        on_pyexprs = [expr._expr for expr in on]
+        builder = self._builder.distinct(on_pyexprs)
         return LogicalPlanBuilder(builder)
 
     def sample(self, fraction: float, with_replacement: bool, seed: int | None) -> LogicalPlanBuilder:
@@ -243,6 +270,10 @@ class LogicalPlanBuilder:
         builder = self._builder.into_partitions(num_partitions)
         return LogicalPlanBuilder(builder)
 
+    def into_batches(self, batch_size: int) -> LogicalPlanBuilder:
+        builder = self._builder.into_batches(batch_size)
+        return LogicalPlanBuilder(builder)
+
     def agg(
         self,
         to_agg: list[Expression],
@@ -269,7 +300,7 @@ class LogicalPlanBuilder:
         builder = self._builder.pivot(group_by_pyexprs, pivot_col._expr, value_col._expr, agg_fn._expr, names)
         return LogicalPlanBuilder(builder)
 
-    def join(  # type: ignore[override]
+    def join(
         self,
         right: LogicalPlanBuilder,
         left_on: list[Expression],
@@ -290,7 +321,7 @@ class LogicalPlanBuilder:
         )
         return LogicalPlanBuilder(builder)
 
-    def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:  # type: ignore[override]
+    def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:
         builder = self._builder.concat(other._builder)
         return LogicalPlanBuilder(builder)
 
@@ -327,8 +358,6 @@ class LogicalPlanBuilder:
         partition_cols: list[Expression] | None = None,
         compression: str | None = None,
     ) -> LogicalPlanBuilder:
-        if file_format != FileFormat.Csv and file_format != FileFormat.Parquet:
-            raise ValueError(f"Writing is only supported for Parquet and CSV file formats, but got: {file_format}")
         part_cols_pyexprs = [expr._expr for expr in partition_cols] if partition_cols is not None else None
         builder = self._builder.table_write(
             str(root_dir), write_mode, file_format, part_cols_pyexprs, compression, io_config
@@ -336,10 +365,10 @@ class LogicalPlanBuilder:
         return LogicalPlanBuilder(builder)
 
     def write_iceberg(self, table: IcebergTable, io_config: IOConfig) -> LogicalPlanBuilder:
-        from daft.iceberg.iceberg_write import get_missing_columns, partition_field_to_expr
+        from daft.io.iceberg.iceberg_write import get_missing_columns, partition_field_to_expr
 
         name = ".".join(table.name())
-        location = f"{table.location()}/data"
+        location = table.metadata.properties.get("write.data.path", f"{table.location()}/data")
         partition_spec = table.spec()
         schema = table.schema()
         missing_columns = get_missing_columns(self.schema().to_pyarrow_schema(), schema)
@@ -382,7 +411,7 @@ class LogicalPlanBuilder:
         path: str | pathlib.Path,
         mode: str,
         io_config: IOConfig,
-        kwargs: dict | None,
+        kwargs: dict[str, Any] | None,
     ) -> LogicalPlanBuilder:
         columns_name = self.schema().column_names()
         builder = self._builder.lance_write(
@@ -394,6 +423,6 @@ class LogicalPlanBuilder:
         )
         return LogicalPlanBuilder(builder)
 
-    def write_datasink(self, name: str, sink: DataSink) -> LogicalPlanBuilder:
+    def write_datasink(self, name: str, sink: DataSink[Any]) -> LogicalPlanBuilder:
         builder = self._builder.datasink_write(name, sink)
         return LogicalPlanBuilder(builder)

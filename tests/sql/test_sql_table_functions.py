@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import pytest
 
 import daft
@@ -30,6 +32,19 @@ def test_sql_read_json():
     assert_eq(actual, expect)
 
 
+def test_sql_read_json_array():
+    import json
+
+    actual = daft.sql("SELECT * FROM read_json('tests/assets/json-data/sample1.json')")
+    df = daft.read_json("tests/assets/json-data/sample1.json")
+    with open("tests/assets/json-data/sample1.json") as f:
+        expected = json.load(f)
+
+    assert actual.to_pylist() == df.to_pylist()
+    assert df.to_pylist() == expected
+    assert actual.to_pylist() == df.to_pylist()
+
+
 def test_sql_read_json_path():
     actual = daft.sql("SELECT * FROM 'tests/assets/json-data/sample1.jsonl'")
     expect = daft.read_json("tests/assets/json-data/sample1.jsonl")
@@ -40,6 +55,16 @@ def test_sql_read_json_paths():
     paths = [
         "tests/assets/json-data/sample1.jsonl",
         "tests/assets/json-data/sample2.jsonl",
+    ]
+    actual = daft.sql(f"SELECT * FROM read_json({to_sql_array(paths)})")
+    expect = daft.read_json(paths)
+    assert_eq(actual, expect)
+
+
+def test_sql_read_json_array_paths():
+    paths = [
+        "tests/assets/json-data/sample1.json",
+        "tests/assets/json-data/sample2.json",
     ]
     actual = daft.sql(f"SELECT * FROM read_json({to_sql_array(paths)})")
     expect = daft.read_json(paths)

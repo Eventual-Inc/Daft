@@ -1,7 +1,7 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-
-from typing import TYPE_CHECKING, Callable, Dict, Optional, Union
+from typing import TYPE_CHECKING, Callable, Optional, Union
 
 from daft import context, from_pydict
 from daft.api_annotations import PublicAPI
@@ -26,7 +26,7 @@ def read_sql(
     disable_pushdowns_to_sql: bool = False,
     infer_schema: bool = True,
     infer_schema_length: int = 10,
-    schema: Optional[Dict[str, DataType]] = None,
+    schema: Optional[dict[str, DataType]] = None,
 ) -> DataFrame:
     """Create a DataFrame from the results of a SQL query.
 

@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import pytest
 
 import daft
+from tests.utils import sort_pydict
 
 
 def spark_to_daft(spark_df):
@@ -19,7 +22,7 @@ def test_multicol_joins(join_type, make_spark_df):
 
     joined = df.join(df, on=["A", "B"], how=join_type)
     joined_data = spark_to_daft(joined).to_pydict()
-    assert joined_data == {
+    assert sort_pydict(joined_data, "A", "B", ascending=True) == {
         "A": [1, 2, 3],
         "B": ["a", "b", "c"],
         "C": [True, False, True],

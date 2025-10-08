@@ -11,6 +11,8 @@ pub(crate) struct Options {
     pub identifier_mode: IdentifierMode,
     pub curr_catalog: Option<String>,
     pub curr_namespace: Option<Vec<String>>,
+    pub curr_provider: Option<String>,
+    pub curr_model: Option<String>,
 }
 
 /// Identifier mode controls identifier resolution and name binding logic (tables, columns, views, etc).
@@ -29,7 +31,7 @@ pub enum IdentifierMode {
 /// Options helpers to convert session
 impl Options {
     /// Returns the binding `LookupMode` for the current `IdentifierMode`.
-    pub fn find_mode(&self) -> LookupMode {
+    pub fn lookup_mode(&self) -> LookupMode {
         match self.identifier_mode {
             IdentifierMode::Insensitive => LookupMode::Insensitive,
             IdentifierMode::Sensitive => LookupMode::Sensitive,

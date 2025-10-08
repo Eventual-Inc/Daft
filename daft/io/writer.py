@@ -1,21 +1,25 @@
+from __future__ import annotations
+
 import uuid
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
-from daft.daft import IOConfig
-from daft.delta_lake.delta_lake_write import make_deltalake_add_action, make_deltalake_fs, sanitize_table_for_deltalake
-from daft.dependencies import pa, pacsv, pq
+from daft.dependencies import pa, pacsv, pafs, pq
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
     canonicalize_protocol,
     get_protocol_from_path,
 )
-from daft.iceberg.iceberg_write import (
+from daft.io.delta_lake.delta_lake_write import (
+    make_deltalake_add_action,
+    make_deltalake_fs,
+    sanitize_table_for_deltalake,
+)
+from daft.io.iceberg.iceberg_write import (
     coerce_pyarrow_table_to_schema,
     make_iceberg_data_file,
     make_iceberg_record,
 )
-from daft.recordbatch.micropartition import MicroPartition
 from daft.recordbatch.partitioning import (
     partition_strings_to_path,
     partition_values_to_str_mapping,
@@ -27,6 +31,9 @@ if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
+    from daft.daft import IOConfig
+    from daft.recordbatch.micropartition import MicroPartition
+
 
 class FileWriterBase(ABC):
     def __init__(
@@ -34,11 +41,11 @@ class FileWriterBase(ABC):
         root_dir: str,
         file_idx: int,
         file_format: str,
-        partition_values: Optional[RecordBatch] = None,
-        compression: Optional[str] = None,
-        io_config: Optional[IOConfig] = None,
-        version: Optional[int] = None,
-        default_partition_fallback: Optional[str] = None,
+        partition_values: RecordBatch | None = None,
+        compression: str | None = None,
+        io_config: IOConfig | None = None,
+        version: int | None = None,
+        default_partition_fallback: str | None = None,
     ):
         self.resolved_path, self.fs = self.resolve_path_and_fs(root_dir, io_config=io_config)
         self.protocol = get_protocol_from_path(root_dir)
@@ -76,7 +83,7 @@ class FileWriterBase(ABC):
         self.compression = compression if compression is not None else "none"
         self.position = 0
 
-    def resolve_path_and_fs(self, root_dir: str, io_config: Optional[IOConfig] = None):
+    def resolve_path_and_fs(self, root_dir: str, io_config: IOConfig | None = None) -> tuple[str, pafs.FileSystem]:
         [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
         return resolved_path, fs
 
@@ -107,12 +114,12 @@ class ParquetFileWriter(FileWriterBase):
         self,
         root_dir: str,
         file_idx: int,
-        partition_values: Optional[RecordBatch] = None,
-        compression: Optional[str] = None,
-        io_config: Optional[IOConfig] = None,
-        version: Optional[int] = None,
-        default_partition_fallback: Optional[str] = None,
-        metadata_collector: Optional[List[pq.FileMetaData]] = None,
+        partition_values: RecordBatch | None = None,
+        compression: str | None = None,
+        io_config: IOConfig | None = None,
+        version: int | None = None,
+        default_partition_fallback: str | None = None,
+        metadata_collector: list[pq.FileMetaData] | None = None,
     ):
         super().__init__(
             root_dir=root_dir,
@@ -125,8 +132,8 @@ class ParquetFileWriter(FileWriterBase):
             default_partition_fallback=default_partition_fallback,
         )
         self.is_closed = False
-        self.current_writer: Optional[pq.ParquetWriter] = None
-        self.metadata_collector: Optional[List[pq.FileMetaData]] = metadata_collector
+        self.current_writer: pq.ParquetWriter | None = None
+        self.metadata_collector: list[pq.FileMetaData] | None = metadata_collector
 
     def _create_writer(self, schema: pa.Schema) -> pq.ParquetWriter:
         opts = {}
@@ -138,6 +145,11 @@ class ParquetFileWriter(FileWriterBase):
             compression=self.compression,
             use_compliant_nested_type=False,
             filesystem=self.fs,
+            # When using Arrow 8, it defaults to parquet version 1.
+            # This hits a known bug where Arrow cannot correctly write u32 values in Parquet files:
+            # https://issues.apache.org/jira/browse/ARROW-12201
+            # The fix is to always use at least Parquet version 2.
+            version="2.6",
             **opts,
         )
 
@@ -169,8 +181,8 @@ class CSVFileWriter(FileWriterBase):
         self,
         root_dir: str,
         file_idx: int,
-        partition_values: Optional[RecordBatch] = None,
-        io_config: Optional[IOConfig] = None,
+        partition_values: RecordBatch | None = None,
+        io_config: IOConfig | None = None,
     ):
         super().__init__(
             root_dir=root_dir,
@@ -180,7 +192,7 @@ class CSVFileWriter(FileWriterBase):
             io_config=io_config,
         )
         self.file_handle = None
-        self.current_writer: Optional[pacsv.CSVWriter] = None
+        self.current_writer: pacsv.CSVWriter | None = None
         self.is_closed = False
 
     def _create_writer(self, schema: pa.Schema) -> pacsv.CSVWriter:
@@ -220,11 +232,11 @@ class IcebergWriter(ParquetFileWriter):
         self,
         root_dir: str,
         file_idx: int,
-        schema: "IcebergSchema",
-        properties: "IcebergTableProperties",
+        schema: IcebergSchema,
+        properties: IcebergTableProperties,
         partition_spec_id: int,
-        partition_values: Optional[RecordBatch] = None,
-        io_config: Optional[IOConfig] = None,
+        partition_values: RecordBatch | None = None,
+        io_config: IOConfig | None = None,
     ):
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
@@ -287,8 +299,8 @@ class DeltalakeWriter(ParquetFileWriter):
         file_idx: int,
         version: int,
         large_dtypes: bool,
-        partition_values: Optional[RecordBatch] = None,
-        io_config: Optional[IOConfig] = None,
+        partition_values: RecordBatch | None = None,
+        io_config: IOConfig | None = None,
     ):
         super().__init__(
             root_dir=root_dir,
@@ -303,7 +315,7 @@ class DeltalakeWriter(ParquetFileWriter):
 
         self.large_dtypes = large_dtypes
 
-    def resolve_path_and_fs(self, root_dir: str, io_config: Optional[IOConfig] = None):
+    def resolve_path_and_fs(self, root_dir: str, io_config: IOConfig | None = None) -> tuple[str, pafs.PyFileSystem]:
         return "", make_deltalake_fs(root_dir, io_config)
 
     def write(self, table: MicroPartition) -> int:

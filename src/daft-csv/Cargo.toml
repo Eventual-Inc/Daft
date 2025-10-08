@@ -18,7 +18,7 @@ parking_lot = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 rayon = {workspace = true}
 serde = {workspace = true}
-smallvec = "1.13.2"
+smallvec = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-util = {workspace = true}

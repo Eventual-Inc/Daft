@@ -20,7 +20,10 @@ DATA = {
 TABLE = MicroPartition.from_pydict({k: data for k, (data, _) in DATA.items()})
 EXPECTED_TYPES = {k: t for k, (_, t) in DATA.items()}
 
-from tests.utils import ANSI_ESCAPE, TD_STYLE, TH_STYLE
+from tests.utils import ANSI_ESCAPE
+
+SCHEMA_TD_STYLE = 'style="text-align:left; max-width:192px; max-height:64px; overflow:auto"'
+SCHEMA_TH_STYLE = 'style="text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left"'
 
 
 def test_schema_len():
@@ -85,7 +88,7 @@ def test_truncated_repr_html():
     assert (
         out_repr
         == f"""<table class="dataframe">
-<thead><tr><th {TH_STYLE}>int<br />Int64</th><th {TH_STYLE}>float<br />Float64</th><th {TH_STYLE}>string<br />Utf8</th><th {TH_STYLE}>bool<br />Boolean</th></tr></thead>
+<thead><tr><th {SCHEMA_TH_STYLE}>int<br />Int64</th><th {SCHEMA_TH_STYLE}>float<br />Float64</th><th {SCHEMA_TH_STYLE}>string<br />Utf8</th><th {SCHEMA_TH_STYLE}>bool<br />Boolean</th></tr></thead>
 </table>"""
     )
 
@@ -117,12 +120,12 @@ def test_repr_html():
     assert (
         out_repr
         == f"""<table class="dataframe">
-<thead><tr><th {TH_STYLE}>column_name</th><th {TH_STYLE}>type</th></tr></thead>
+<thead><tr><th {SCHEMA_TH_STYLE}>column_name</th><th {SCHEMA_TH_STYLE}>type</th></tr></thead>
 <tbody>
-<tr><td {TD_STYLE}>int</td><td {TD_STYLE}>Int64</td></tr>
-<tr><td {TD_STYLE}>float</td><td {TD_STYLE}>Float64</td></tr>
-<tr><td {TD_STYLE}>string</td><td {TD_STYLE}>Utf8</td></tr>
-<tr><td {TD_STYLE}>bool</td><td {TD_STYLE}>Boolean</td></tr>
+<tr><td {SCHEMA_TD_STYLE}>int</td><td {SCHEMA_TD_STYLE}>Int64</td></tr>
+<tr><td {SCHEMA_TD_STYLE}>float</td><td {SCHEMA_TD_STYLE}>Float64</td></tr>
+<tr><td {SCHEMA_TD_STYLE}>string</td><td {SCHEMA_TD_STYLE}>Utf8</td></tr>
+<tr><td {SCHEMA_TD_STYLE}>bool</td><td {SCHEMA_TD_STYLE}>Boolean</td></tr>
 </tbody>
 </table>"""
     )
@@ -220,3 +223,31 @@ def test_schema_pyarrow_roundtrip():
     )
 
     assert Schema.from_pyarrow_schema(pa_schema).to_pyarrow_schema() == roundtrip_pa_schema
+
+
+def test_schema_pyarrow_roundtrip_with_metadata():
+    metadata = {
+        "lance-encoding:compression": "zstd",
+        "lance-encoding:compression-level": "3",
+        "lance-encoding:structural-encoding": "miniblock",
+        "lance-encoding:packed": "true",
+    }
+    pa_schema = pa.schema(
+        [
+            pa.field("compressible_strings", pa.string(), metadata=metadata),
+            pa.field("uncompressed_stuff", pa.int64()),
+        ]
+    )
+
+    # Daft seems to default to large_string on conversion, so we create an expected schema with large_string
+    expected_roundtrip_pa_schema = pa.schema(
+        [
+            pa.field("compressible_strings", pa.large_string(), metadata=metadata),
+            pa.field("uncompressed_stuff", pa.int64()),
+        ]
+    )
+
+    daft_schema = Schema.from_pyarrow_schema(pa_schema)
+    roundtrip_pa_schema = daft_schema.to_pyarrow_schema()
+
+    assert roundtrip_pa_schema == expected_roundtrip_pa_schema

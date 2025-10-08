@@ -1,19 +1,20 @@
 use std::sync::Arc;
 
-use daft_dsl::ExprRef;
+use common_error::DaftResult;
+use common_metrics::ops::NodeType;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
-    IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 struct UnpivotParams {
-    ids: Vec<ExprRef>,
-    values: Vec<ExprRef>,
+    ids: Vec<BoundExpr>,
+    values: Vec<BoundExpr>,
     variable_name: String,
     value_name: String,
 }
@@ -23,8 +24,8 @@ pub struct UnpivotOperator {
 
 impl UnpivotOperator {
     pub fn new(
-        ids: Vec<ExprRef>,
-        values: Vec<ExprRef>,
+        ids: Vec<BoundExpr>,
+        values: Vec<BoundExpr>,
         variable_name: String,
         value_name: String,
     ) -> Self {
@@ -40,13 +41,15 @@ impl UnpivotOperator {
 }
 
 impl IntermediateOperator for UnpivotOperator {
+    type State = ();
+
     #[instrument(skip_all, name = "UnpivotOperator::execute")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        state: Box<dyn IntermediateOpState>,
+        state: Self::State,
         task_spawner: &ExecutionTaskSpawner,
-    ) -> IntermediateOpExecuteResult {
+    ) -> IntermediateOpExecuteResult<Self> {
         let params = self.params.clone();
         task_spawner
             .spawn(
@@ -82,7 +85,15 @@ impl IntermediateOperator for UnpivotOperator {
         res
     }
 
-    fn name(&self) -> &'static str {
-        "Unpivot"
+    fn name(&self) -> NodeName {
+        "Unpivot".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::Unpivot
+    }
+
+    async fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(())
     }
 }

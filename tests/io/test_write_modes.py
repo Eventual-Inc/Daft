@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 import os
 import pathlib
 import shutil
 import uuid
-from typing import List, Optional
 
 import pytest
 import s3fs
@@ -43,8 +44,8 @@ def write(
     path: str,
     format: str,
     write_mode: str,
-    partition_cols: Optional[List[str]] = None,
-    io_config: Optional[daft.io.IOConfig] = None,
+    partition_cols: list[str] | None = None,
+    io_config: daft.io.IOConfig | None = None,
 ):
     if format == "parquet":
         return df.write_parquet(
@@ -64,7 +65,7 @@ def write(
         raise ValueError(f"Unsupported format: {format}")
 
 
-def read(path: str, format: str, io_config: Optional[daft.io.IOConfig] = None):
+def read(path: str, format: str, io_config: daft.io.IOConfig | None = None):
     if format == "parquet":
         return daft.read_parquet(path, io_config=io_config)
     elif format == "csv":
@@ -73,16 +74,25 @@ def read(path: str, format: str, io_config: Optional[daft.io.IOConfig] = None):
         raise ValueError(f"Unsupported format: {format}")
 
 
-def arrange_write_mode_test(existing_data, new_data, path, format, write_mode, partition_cols, io_config):
+def arrange_write_mode_test(
+    existing_data,
+    new_data,
+    path,
+    format,
+    write_mode,
+    partition_cols,
+    io_config,
+    sort_cols=None,
+):
     # Write some existing_data
     write(existing_data, path, format, "append", partition_cols, io_config)
-
     # Write some new data
     write(new_data, path, format, write_mode, partition_cols, io_config)
 
     # Read back the data
     read_path = path + "/**" if partition_cols is not None else path
-    read_back = read(read_path, format, io_config).sort(["a", "b"]).to_pydict()
+    read_back = read(read_path, format, io_config).collect()
+    read_back = read_back.sort(sort_cols).to_pydict()
 
     return read_back
 
@@ -95,37 +105,33 @@ def _run_append_overwrite_test(
     partition_cols,
     io_config,
 ):
-    existing_data = {"a": ["a", "a", "b", "b"], "b": [1, 2, 3, 4]}
-    new_data = {
-        "a": ["a", "a", "b", "b"],
-        "b": [5, 6, 7, 8],
-    }
+    existing_data = daft.range(0, 15, partitions=num_partitions)
+    new_data = daft.range(15, 30, partitions=num_partitions)
 
     read_back = arrange_write_mode_test(
-        daft.from_pydict(existing_data).into_partitions(num_partitions),
-        daft.from_pydict(new_data).into_partitions(num_partitions),
+        existing_data,
+        new_data,
         path,
         format,
         write_mode,
         partition_cols,
         io_config,
+        sort_cols=["id"],
     )
 
     # Check the data
     if write_mode == "append":
-        assert read_back["a"] == ["a"] * 4 + ["b"] * 4
-        assert read_back["b"] == [1, 2, 5, 6, 3, 4, 7, 8]
+        assert read_back["id"] == list(range(30))
     elif write_mode == "overwrite":
-        assert read_back["a"] == ["a", "a", "b", "b"]
-        assert read_back["b"] == [5, 6, 7, 8]
+        assert read_back["id"] == list(range(15, 30))
     else:
         raise ValueError(f"Unsupported write_mode: {write_mode}")
 
 
 @pytest.mark.parametrize("write_mode", ["append", "overwrite"])
 @pytest.mark.parametrize("format", ["csv", "parquet"])
-@pytest.mark.parametrize("num_partitions", [1, 2])
-@pytest.mark.parametrize("partition_cols", [None, ["a"]])
+@pytest.mark.parametrize("num_partitions", [1, 10])
+@pytest.mark.parametrize("partition_cols", [None, ["id"]])
 def test_append_and_overwrite_local(tmp_path, write_mode, format, num_partitions, partition_cols):
     _run_append_overwrite_test(
         path=str(tmp_path),
@@ -139,8 +145,8 @@ def test_append_and_overwrite_local(tmp_path, write_mode, format, num_partitions
 
 @pytest.mark.parametrize("write_mode", ["append", "overwrite"])
 @pytest.mark.parametrize("format", ["csv", "parquet"])
-@pytest.mark.parametrize("num_partitions", [1, 2])
-@pytest.mark.parametrize("partition_cols", [None, ["a"]])
+@pytest.mark.parametrize("num_partitions", [1, 10])
+@pytest.mark.parametrize("partition_cols", [None, ["id"]])
 def test_append_and_overwrite_local_relative_path(
     tmp_relative_path, write_mode, format, num_partitions, partition_cols
 ):
@@ -157,8 +163,8 @@ def test_append_and_overwrite_local_relative_path(
 @pytest.mark.integration()
 @pytest.mark.parametrize("write_mode", ["append", "overwrite"])
 @pytest.mark.parametrize("format", ["csv", "parquet"])
-@pytest.mark.parametrize("num_partitions", [1, 2])
-@pytest.mark.parametrize("partition_cols", [None, ["a"]])
+@pytest.mark.parametrize("num_partitions", [1, 10])
+@pytest.mark.parametrize("partition_cols", [None, ["id"]])
 def test_append_and_overwrite_s3_minio(
     minio_io_config,
     bucket,
@@ -197,6 +203,7 @@ def _run_write_modes_empty_test(
         write_mode,
         None,
         io_config,
+        sort_cols=["a", "b"],
     )
 
     # Check the data
@@ -242,35 +249,29 @@ def test_write_modes_s3_minio_empty_data(
 
 OVERWRITE_PARTITION_TEST_CASES = [
     pytest.param(
+        daft.range(0, 4, partitions=4).with_column("a", daft.lit("a")),
+        daft.range(0, 4, partitions=4).with_column("a", daft.lit("b")),
         {
-            "a": ["a", "a", "b", "b"],
-            "b": [5, 6, 7, 8],
-        },
-        {
-            "a": ["a", "a", "b", "b"],
-            "b": [5, 6, 7, 8],
+            "id": [0, 1, 2, 3],
+            "a": ["b", "b", "b", "b"],
         },
         id="overwrite-all",
     ),
     pytest.param(
+        daft.range(0, 4, partitions=4).with_column("a", daft.lit("a")),
+        daft.range(0, 2, partitions=4).with_column("a", daft.lit("b")),
         {
-            "a": ["a", "a"],
-            "b": [5, 6],
-        },
-        {
-            "a": ["a", "a", "b", "b"],
-            "b": [5, 6, 3, 4],
+            "id": [0, 1, 2, 3],
+            "a": ["b", "b", "a", "a"],
         },
         id="overwrite-some",
     ),
     pytest.param(
+        daft.range(0, 4, partitions=4).with_column("a", daft.lit("a")),
+        daft.range(2, 6, partitions=4).with_column("a", daft.lit("b")),
         {
-            "a": ["b", "b", "c", "c"],
-            "b": [9, 10, 11, 12],
-        },
-        {
-            "a": ["a", "a", "b", "b", "c", "c"],
-            "b": [1, 2, 9, 10, 11, 12],
+            "id": [0, 1, 2, 3, 4, 5],
+            "a": ["a", "a", "b", "b", "b", "b"],
         },
         id="overwrite-and-append",
     ),
@@ -280,20 +281,20 @@ OVERWRITE_PARTITION_TEST_CASES = [
 def _run_overwrite_partitions_test(
     path,
     format,
+    existing_data,
     new_data,
     expected_read_back,
     io_config,
 ):
-    existing_data = {"a": ["a", "a", "b", "b"], "b": [1, 2, 3, 4]}
-
     read_back = arrange_write_mode_test(
-        daft.from_pydict(existing_data),
-        daft.from_pydict(new_data),
+        existing_data,
+        new_data,
         path,
         format,
         "overwrite-partitions",
-        ["a"],
+        ["id"],
         io_config,
+        sort_cols=["id"],
     )
 
     # Check the data
@@ -302,11 +303,12 @@ def _run_overwrite_partitions_test(
 
 
 @pytest.mark.parametrize("format", ["csv", "parquet"])
-@pytest.mark.parametrize("new_data, expected_read_back", OVERWRITE_PARTITION_TEST_CASES)
-def test_overwrite_partitions_local(tmp_path, format, new_data, expected_read_back):
+@pytest.mark.parametrize("existing_data, new_data, expected_read_back", OVERWRITE_PARTITION_TEST_CASES)
+def test_overwrite_partitions_local(tmp_path, format, existing_data, new_data, expected_read_back):
     _run_overwrite_partitions_test(
         path=str(tmp_path),
         format=format,
+        existing_data=existing_data,
         new_data=new_data,
         expected_read_back=expected_read_back,
         io_config=None,
@@ -314,11 +316,14 @@ def test_overwrite_partitions_local(tmp_path, format, new_data, expected_read_ba
 
 
 @pytest.mark.parametrize("format", ["csv", "parquet"])
-@pytest.mark.parametrize("new_data, expected_read_back", OVERWRITE_PARTITION_TEST_CASES)
-def test_overwrite_partitions_local_relative_path(tmp_relative_path, format, new_data, expected_read_back):
+@pytest.mark.parametrize("existing_data, new_data, expected_read_back", OVERWRITE_PARTITION_TEST_CASES)
+def test_overwrite_partitions_local_relative_path(
+    tmp_relative_path, format, existing_data, new_data, expected_read_back
+):
     _run_overwrite_partitions_test(
         path=str(tmp_relative_path),
         format=format,
+        existing_data=existing_data,
         new_data=new_data,
         expected_read_back=expected_read_back,
         io_config=None,
@@ -327,17 +332,19 @@ def test_overwrite_partitions_local_relative_path(tmp_relative_path, format, new
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("format", ["csv", "parquet"])
-@pytest.mark.parametrize("new_data, expected_read_back", OVERWRITE_PARTITION_TEST_CASES)
+@pytest.mark.parametrize("existing_data, new_data, expected_read_back", OVERWRITE_PARTITION_TEST_CASES)
 def test_overwrite_partitions_s3_minio(
     minio_io_config,
     bucket,
     format,
+    existing_data,
     new_data,
     expected_read_back,
 ):
     _run_overwrite_partitions_test(
         path=f"s3://{bucket}/{uuid.uuid4()!s}",
         format=format,
+        existing_data=existing_data,
         new_data=new_data,
         expected_read_back=expected_read_back,
         io_config=minio_io_config,

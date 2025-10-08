@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import math
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Iterator, overload
+from typing import TYPE_CHECKING, overload
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -156,6 +158,19 @@ class RangeSource(DataSource):
             step (int, optional): The step size of the range. Defaults to 1.
             partitions (int, optional): The number of partitions to split the range into. Defaults to 1.
         """
+        if step == 0:
+            raise ValueError("daft.range() step parameter cannot be zero - use a positive or negative integer")
+
+        if step > 0 and start >= end:
+            raise ValueError(
+                f"daft.range() with positive step {step} requires start ({start}) to be less than end ({end})"
+            )
+
+        if step < 0 and start <= end:
+            raise ValueError(
+                f"daft.range() with negative step {step} requires start ({start}) to be greater than end ({end})"
+            )
+
         self._start = start
         self._end = end
         self._step = step
@@ -171,14 +186,33 @@ class RangeSource(DataSource):
 
     def get_tasks(self, pushdowns: Pushdowns) -> Iterator[RangeSourceTask]:
         step = self._step
-        size = (self._end - self._start) // self._partitions
+
+        # Calculate the total number of elements in the range using ceiling division
+        if step > 0:
+            total_elements = math.ceil((self._end - self._start) / step)
+        else:
+            total_elements = math.ceil((self._start - self._end) / abs(step))
+
+        # Calculate elements per partition
+        elements_per_partition = total_elements // self._partitions
+        remainder = total_elements % self._partitions
+
         curr_s = self._start
-        curr_e = self._start + size
-        while curr_e <= self._end:
+        for i in range(self._partitions):
+            # Add one extra element to early partitions if there's a remainder
+            partition_elements = elements_per_partition + (1 if i < remainder else 0)
+            curr_e = curr_s + (partition_elements * step)
+
+            # Ensure we don't exceed the end boundary
+            if step > 0:
+                if curr_e > self._end:
+                    curr_e = self._end
+            else:
+                if curr_e < self._end:
+                    curr_e = self._end
+
             yield RangeSourceTask(curr_s, curr_e, step)
-            # update to the next chunk
-            curr_s = curr_e + step
-            curr_e = curr_s + size
+            curr_s = curr_e
 
 
 @dataclass

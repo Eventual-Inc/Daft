@@ -4,12 +4,13 @@ use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode};
 use daft_core::prelude::Schema;
 use derive_more::derive::Display;
+use serde::{Deserialize, Serialize};
 
 use super::{
-    bound_col, AggExpr, Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowExpr,
+    AggExpr, Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowExpr, bound_col,
 };
 
-#[derive(Clone, Display)]
+#[derive(Clone, Display, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 /// A simple newtype around ExprRef that ensures that all of the columns in the held expression are bound.
 ///
 /// We have several column variants: unresolved, resolved, and bound.
@@ -20,35 +21,38 @@ pub struct BoundExpr(ExprRef);
 
 impl BoundExpr {
     /// Create a BoundExpr by attempting to bind all unbound columns.
-    pub fn try_new(expr: ExprRef, schema: &Schema) -> DaftResult<Self> {
-        expr.transform(|e| {
-            if let Expr::Column(column) = e.as_ref() {
-                match column {
-                    Column::Bound(_) => Ok(Transformed::no(e)),
+    pub fn try_new(expr: impl Into<ExprRef>, schema: &Schema) -> DaftResult<Self> {
+        expr.into()
+            .transform(|e| {
+                if let Expr::Column(column) = e.as_ref() {
+                    match column {
+                        Column::Bound(_) => Ok(Transformed::no(e)),
 
-                    // TODO: remove ability to bind unresolved columns once we fix all tests
-                    Column::Unresolved(UnresolvedColumn { name, .. })
-                    | Column::Resolved(ResolvedColumn::Basic(name)) => {
-                        let index = schema.get_index(name)?;
-                        let field = schema.get_field(name)?.clone();
+                        // TODO: remove ability to bind unresolved columns once we fix all tests
+                        Column::Unresolved(UnresolvedColumn { name, .. })
+                        | Column::Resolved(ResolvedColumn::Basic(name)) => {
+                            let index = schema.get_index(name)?;
+                            let field = schema.get_field(name)?.clone();
 
-                        Ok(Transformed::yes(bound_col(index, field)))
+                            Ok(Transformed::yes(bound_col(index, field)))
+                        }
+
+                        Column::Resolved(ResolvedColumn::JoinSide(..)) => {
+                            Err(DaftError::InternalError(format!(
+                                "Join side columns cannot be bound: {e}"
+                            )))
+                        }
+                        Column::Resolved(ResolvedColumn::OuterRef(..)) => {
+                            Err(DaftError::InternalError(format!(
+                                "Outer reference columns cannot be bound: {e}"
+                            )))
+                        }
                     }
-
-                    Column::Resolved(ResolvedColumn::JoinSide(..)) => Err(
-                        DaftError::InternalError(format!("Join side columns cannot be bound: {e}")),
-                    ),
-                    Column::Resolved(ResolvedColumn::OuterRef(..)) => {
-                        Err(DaftError::InternalError(format!(
-                            "Outer reference columns cannot be bound: {e}"
-                        )))
-                    }
+                } else {
+                    Ok(Transformed::no(e))
                 }
-            } else {
-                Ok(Transformed::no(e))
-            }
-        })
-        .map(|t| Self(t.data))
+            })
+            .map(|t| Self(t.data))
     }
 
     /// Create a BoundExpr without binding columns.
@@ -68,6 +72,32 @@ impl BoundExpr {
     pub fn inner(&self) -> &ExprRef {
         &self.0
     }
+
+    pub fn into_inner(self) -> ExprRef {
+        self.0
+    }
+
+    pub fn bind_all(
+        exprs: &[impl Into<ExprRef> + Clone],
+        schema: &Schema,
+    ) -> DaftResult<Vec<Self>> {
+        exprs
+            .iter()
+            .map(|expr| Self::try_new(expr.clone(), schema))
+            .collect()
+    }
+}
+
+impl From<BoundExpr> for ExprRef {
+    fn from(value: BoundExpr) -> Self {
+        value.0
+    }
+}
+
+impl<'a> From<&'a BoundExpr> for &'a ExprRef {
+    fn from(value: &'a BoundExpr) -> &'a ExprRef {
+        &value.0
+    }
 }
 
 impl AsRef<Expr> for BoundExpr {
@@ -78,7 +108,7 @@ impl AsRef<Expr> for BoundExpr {
 
 macro_rules! impl_bound_wrapper {
     ($name:ident, $inner:ty, $expr_variant:ident) => {
-        #[derive(Clone, Display)]
+        #[derive(Clone, Display, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
         /// See [`BoundExpr`] for details about how this newtype pattern.
         pub struct $name($inner);
 
@@ -107,11 +137,33 @@ macro_rules! impl_bound_wrapper {
 
                 Self(inner)
             }
+
+            pub fn bind_all(exprs: &[$inner], schema: &Schema) -> DaftResult<Vec<Self>> {
+                exprs.iter()
+                    .map(|expr| Self::try_new(expr.clone(), schema))
+                    .collect()
+            }
+
+            pub fn inner(&self) -> &$inner {
+                &self.0
+            }
         }
 
         impl AsRef<$inner> for $name {
             fn as_ref(&self) -> &$inner {
                 &self.0
+            }
+        }
+
+        impl From<$name> for $inner {
+            fn from(value: $name) -> Self {
+                value.0
+            }
+        }
+
+        impl<'a> From<&'a $name> for &'a $inner {
+            fn from(value: &'a $name) -> Self {
+                &value.0
             }
         }
     };

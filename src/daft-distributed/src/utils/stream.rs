@@ -9,8 +9,7 @@ use futures::{Stream, StreamExt};
 use crate::utils::joinset::JoinSet;
 
 #[derive(Debug)]
-#[allow(dead_code)]
-enum ForwardingStreamState<S> {
+enum ForwardingStreamState<S: Stream + Send + Unpin + 'static> {
     // Active: Forwarding results from input stream and tracking background tasks
     Active {
         input_stream: S,
@@ -22,13 +21,14 @@ enum ForwardingStreamState<S> {
     Complete,
 }
 
-#[allow(dead_code)]
-pub(crate) struct JoinableForwardingStream<S> {
+pub(crate) struct JoinableForwardingStream<S: Stream + Send + Unpin + 'static> {
     state: ForwardingStreamState<S>,
 }
 
-#[allow(dead_code)]
-impl<S> JoinableForwardingStream<S> {
+impl<S> JoinableForwardingStream<S>
+where
+    S: Stream + Send + Unpin + 'static,
+{
     pub fn new(input_stream: S, joinset: JoinSet<DaftResult<()>>) -> Self {
         Self {
             state: ForwardingStreamState::Active {
@@ -39,19 +39,19 @@ impl<S> JoinableForwardingStream<S> {
     }
 }
 
-impl<S, T> Stream for JoinableForwardingStream<S>
+impl<S> Stream for JoinableForwardingStream<S>
 where
-    S: Stream<Item = T> + Send + Unpin + 'static,
+    S: Stream + Send + Unpin + 'static,
 {
-    type Item = DaftResult<T>;
+    type Item = DaftResult<S::Item>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        fn poll_inner<S, T>(
+        fn poll_inner<S>(
             state: &mut ForwardingStreamState<S>,
             cx: &mut Context<'_>,
-        ) -> Option<Poll<Option<DaftResult<T>>>>
+        ) -> Option<Poll<Option<DaftResult<S::Item>>>>
         where
-            S: Stream<Item = T> + Send + Unpin + 'static,
+            S: Stream + Send + Unpin + 'static,
         {
             match state {
                 // Active: Forwarding results from input stream and tracking background tasks

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import ftfy
 import ray
 from bs4 import BeautifulSoup

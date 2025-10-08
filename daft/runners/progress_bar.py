@@ -1,11 +1,7 @@
 from __future__ import annotations
 
 import os
-import time
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from daft.execution.execution_step import PartitionTask
+from typing import Any
 
 
 def get_tqdm(use_ray_tqdm: bool) -> Any:
@@ -26,13 +22,14 @@ def get_tqdm(use_ray_tqdm: bool) -> Any:
             # source: https://github.com/tqdm/tqdm/blob/74722959a8626fd2057be03e14dcf899c25a3fd5/tqdm/autonotebook.py#L14
             if ipython is not None and "IPKernelApp" in ipython.config:
 
-                class tqdm(_tqdm):  # type: ignore[no-redef]
-                    def __init__(self, *args, **kwargs):
+                class tqdm(_tqdm):  # type: ignore
+                    def __init__(self, *args: Any, **kwargs: Any) -> None:
                         kwargs = kwargs.copy()
                         if "file" not in kwargs:
                             kwargs["file"] = sys.stdout  # avoid the red block in IPython
 
                         super().__init__(*args, **kwargs)
+
             else:
                 tqdm = _tqdm
         except ImportError:
@@ -56,20 +53,20 @@ class ProgressBar:
             or not bool(int(os.environ.get("DAFT_PROGRESS_BAR", "1")))
         )
 
-    def _make_new_bar(self, stage_id: int, name: str):
+    def _make_new_bar(self, bar_id: int, bar_name: str) -> None:
         if self.use_ray_tqdm:
-            self.pbars[stage_id] = self.tqdm_mod(total=1, desc=name, position=len(self.pbars))
+            self.pbars[bar_id] = self.tqdm_mod(total=1, desc=bar_name, position=len(self.pbars))
         else:
-            self.pbars[stage_id] = self.tqdm_mod(
+            self.pbars[bar_id] = self.tqdm_mod(
                 total=1,
-                desc=name,
+                desc=bar_name,
                 position=len(self.pbars),
                 leave=False,
                 mininterval=1.0,
                 maxinterval=self._maxinterval,
             )
 
-    def mark_task_start(self, step: PartitionTask[Any]) -> None:
+    def make_bar_or_update_total(self, bar_id: int, bar_name: str) -> None:
         if self.disable:
             return
         if self.show_tasks_bar:
@@ -79,24 +76,22 @@ class ProgressBar:
                 task_pbar = self.pbars[-1]
                 task_pbar.total += 1
 
-        stage_id = step.stage_id
-
-        if stage_id not in self.pbars:
-            name = step.name()
-            self._make_new_bar(stage_id, name)
+        if bar_id not in self.pbars:
+            self._make_new_bar(bar_id, bar_name)
+            pb = self.pbars[bar_id]
         else:
-            pb = self.pbars[stage_id]
+            pb = self.pbars[bar_id]
             pb.total += 1
-            if hasattr(pb, "last_print_t"):
-                dt = time.time() - pb.last_print_t
-                if dt >= self._maxinterval:
-                    pb.refresh()
 
-    def mark_task_done(self, step: PartitionTask[Any]) -> None:
+        if self.use_ray_tqdm and hasattr(pb, "_dump_state"):
+            pb._dump_state(True)
+        else:
+            pb.refresh()
+
+    def update_bar(self, bar_id: int) -> None:
         if self.disable:
             return
-        stage_id = step.stage_id
-        self.pbars[stage_id].update(1)
+        self.pbars[bar_id].update(1)
         if self.show_tasks_bar:
             self.pbars[-1].update(1)
 

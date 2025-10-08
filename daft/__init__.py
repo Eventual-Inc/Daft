@@ -49,31 +49,7 @@ __version__ = get_version()
 # Initialize analytics
 ###
 
-from daft.analytics import init_analytics
-
-user_opted_out = os.getenv("DAFT_ANALYTICS_ENABLED") == "0"
-analytics_client = init_analytics(get_version(), get_build_type(), user_opted_out)
-analytics_client.track_import()
 track_import_on_scarf()
-
-###
-# Warn if using the old package name
-###
-try:
-    if sys.version_info < (3, 10):
-        from importlib_metadata import packages_distributions
-    else:
-        from importlib.metadata import packages_distributions
-
-    package_map = packages_distributions()
-    if "getdaft" in package_map["daft"]:
-        import warnings
-
-        warnings.warn(
-            "The 'getdaft' PyPI package is migrating to `daft` and will no longer will receive updates v0.5.0 onwards.\nPlease install Daft via\n\t'pip install daft'"
-        )
-except Exception:
-    pass
 
 ###
 # Daft top-level imports
@@ -83,9 +59,13 @@ from daft.catalog import (
     Catalog,
     Identifier,
     Table,
-    register_table,
 )
-from daft.context import set_execution_config, set_planning_config, execution_config_ctx, planning_config_ctx
+from daft.context import (
+    set_execution_config,
+    set_planning_config,
+    execution_config_ctx,
+    planning_config_ctx,
+)
 from daft.convert import (
     from_arrow,
     from_dask_dataframe,
@@ -94,14 +74,58 @@ from daft.convert import (
     from_pylist,
     from_ray_dataset,
 )
-from daft.daft import ImageFormat, ImageMode, ResourceRequest
+from daft.daft import ImageFormat, ImageMode, ImageProperty, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.schema import Schema
 from daft.datatype import DataType, TimeUnit
-from daft.expressions import Expression, col, list_, lit, interval, struct, coalesce
+from daft.expressions import Expression, col, element, list_, lit, interval, struct, coalesce
+from daft.series import Series
+from daft.session import (
+    Session,
+    attach,
+    attach_catalog,
+    attach_provider,
+    attach_function,
+    attach_table,
+    create_namespace,
+    create_namespace_if_not_exists,
+    create_table,
+    create_table_if_not_exists,
+    create_temp_table,
+    current_catalog,
+    current_model,
+    current_namespace,
+    current_provider,
+    current_session,
+    detach_catalog,
+    detach_function,
+    detach_provider,
+    detach_table,
+    drop_namespace,
+    drop_table,
+    get_catalog,
+    get_provider,
+    get_table,
+    has_catalog,
+    has_namespace,
+    has_provider,
+    has_table,
+    list_catalogs,
+    list_tables,
+    read_table,
+    session,
+    set_catalog,
+    set_model,
+    set_namespace,
+    set_provider,
+    set_session,
+    write_table,
+)
+from daft.udf import udf, _DaftFuncDecorator as func
 from daft.io import (
     DataCatalogTable,
     DataCatalogType,
+    IOConfig,
     from_glob_path,
     _range as range,
     read_csv,
@@ -112,47 +136,22 @@ from daft.io import (
     read_parquet,
     read_sql,
     read_lance,
+    read_video_frames,
     read_warc,
+    read_huggingface,
+    read_mcap,
 )
-from daft.series import Series
-from daft.session import (
-    Session,
-    attach,
-    attach_catalog,
-    attach_table,
-    create_namespace,
-    create_namespace_if_not_exists,
-    create_table,
-    create_table_if_not_exists,
-    create_temp_table,
-    current_catalog,
-    current_namespace,
-    current_session,
-    detach_catalog,
-    detach_table,
-    drop_namespace,
-    drop_table,
-    get_catalog,
-    get_table,
-    has_catalog,
-    has_namespace,
-    has_table,
-    list_catalogs,
-    list_tables,
-    read_table,
-    set_catalog,
-    set_namespace,
-    set_session,
-    write_table,
-    attach_function,
-    detach_function,
-)
+from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_runner_native, set_runner_ray
 from daft.sql import sql, sql_expr
-from daft.udf import udf
 from daft.viz import register_viz_hook
 from daft.window import Window
+from daft.file import File
 
-to_struct = Expression.to_struct
+import daft.context as context
+import daft.io as io
+import daft.runners as runners
+import daft.datasets as datasets
+import daft.functions as functions
 
 __all__ = [
     "Catalog",
@@ -161,9 +160,12 @@ __all__ = [
     "DataFrame",
     "DataType",
     "Expression",
+    "File",
+    "IOConfig",
     "Identifier",
     "ImageFormat",
     "ImageMode",
+    "ImageProperty",
     "ResourceRequest",
     "Schema",
     "Series",
@@ -174,22 +176,29 @@ __all__ = [
     "attach",
     "attach_catalog",
     "attach_function",
+    "attach_provider",
     "attach_table",
     "coalesce",
     "col",
+    "context",
     "create_namespace",
     "create_namespace_if_not_exists",
     "create_table",
     "create_table_if_not_exists",
     "create_temp_table",
     "current_catalog",
+    "current_model",
     "current_namespace",
+    "current_provider",
     "current_session",
+    "datasets",
     "detach_catalog",
     "detach_function",
+    "detach_provider",
     "detach_table",
     "drop_namespace",
     "drop_table",
+    "element",
     "execution_config_ctx",
     "from_arrow",
     "from_dask_dataframe",
@@ -198,12 +207,19 @@ __all__ = [
     "from_pydict",
     "from_pylist",
     "from_ray_dataset",
+    "func",
+    "functions",
     "get_catalog",
+    "get_or_create_runner",
+    "get_or_infer_runner_type",
+    "get_provider",
     "get_table",
     "has_catalog",
     "has_namespace",
+    "has_provider",
     "has_table",
     "interval",
+    "io",
     "list_",
     "list_catalogs",
     "list_tables",
@@ -213,25 +229,32 @@ __all__ = [
     "read_csv",
     "read_deltalake",
     "read_hudi",
+    "read_huggingface",
     "read_iceberg",
     "read_json",
     "read_lance",
+    "read_mcap",
     "read_parquet",
     "read_sql",
     "read_table",
+    "read_video_frames",
     "read_warc",
     "refresh_logger",
-    "register_table",
     "register_viz_hook",
+    "runners",
+    "session",
     "set_catalog",
     "set_execution_config",
+    "set_model",
     "set_namespace",
     "set_planning_config",
+    "set_provider",
+    "set_runner_native",
+    "set_runner_ray",
     "set_session",
     "sql",
     "sql_expr",
     "struct",
-    "to_struct",
     "udf",
     "write_table",
 ]

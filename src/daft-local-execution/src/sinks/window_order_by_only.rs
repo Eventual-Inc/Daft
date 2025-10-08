@@ -1,22 +1,27 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use common_metrics::ops::NodeType;
 use daft_core::prelude::*;
-use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef, WindowExpr};
+use daft_dsl::{
+    WindowExpr,
+    expr::bound_expr::{BoundExpr, BoundWindowExpr},
+};
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 struct WindowOrderByOnlyParams {
-    window_exprs: Vec<WindowExpr>,
+    window_exprs: Vec<BoundWindowExpr>,
     aliases: Vec<String>,
-    order_by: Vec<ExprRef>,
+    order_by: Vec<BoundExpr>,
     descending: Vec<bool>,
+    nulls_first: Vec<bool>,
     original_schema: SchemaRef,
 }
 
@@ -26,10 +31,11 @@ pub struct WindowOrderByOnlySink {
 
 impl WindowOrderByOnlySink {
     pub fn new(
-        window_exprs: &[WindowExpr],
+        window_exprs: &[BoundWindowExpr],
         aliases: &[String],
-        order_by: &[ExprRef],
+        order_by: &[BoundExpr],
         descending: &[bool],
+        nulls_first: &[bool],
         schema: &SchemaRef,
     ) -> DaftResult<Self> {
         Ok(Self {
@@ -38,13 +44,14 @@ impl WindowOrderByOnlySink {
                 aliases: aliases.to_vec(),
                 order_by: order_by.to_vec(),
                 descending: descending.to_vec(),
+                nulls_first: nulls_first.to_vec(),
                 original_schema: schema.clone(),
             }),
         })
     }
 }
 
-struct WindowOrderByOnlyState {
+pub(crate) struct WindowOrderByOnlyState {
     partitions: Vec<Arc<MicroPartition>>,
 }
 
@@ -61,32 +68,20 @@ impl WindowOrderByOnlyState {
     }
 }
 
-impl BlockingSinkState for WindowOrderByOnlyState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
 impl BlockingSink for WindowOrderByOnlySink {
+    type State = WindowOrderByOnlyState;
     #[instrument(skip_all, name = "WindowOrderByOnlySink::sink")]
     fn sink(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn BlockingSinkState>,
+        mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkSinkResult {
+    ) -> BlockingSinkSinkResult<Self> {
         let sink_name = self.name().to_string();
         spawner
             .spawn(
                 async move {
-                    let window_state = state
-                        .as_any_mut()
-                        .downcast_mut::<WindowOrderByOnlyState>()
-                        .unwrap_or_else(|| {
-                            panic!("{} should have WindowOrderByOnlyState", sink_name)
-                        });
-
-                    window_state.push(input, &sink_name)?;
+                    state.push(input, &sink_name)?;
                     Ok(super::blocking_sink::BlockingSinkStatus::NeedMoreInput(
                         state,
                     ))
@@ -99,9 +94,9 @@ impl BlockingSink for WindowOrderByOnlySink {
     #[instrument(skip_all, name = "WindowOrderByOnlySink::finalize")]
     fn finalize(
         &self,
-        states: Vec<Box<dyn BlockingSinkState>>,
+        states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
         let params = self.params.clone();
 
         spawner
@@ -110,13 +105,7 @@ impl BlockingSink for WindowOrderByOnlySink {
                     // Gather all partitions from all states
                     let all_partitions = states
                         .into_iter()
-                        .flat_map(|mut state| {
-                            let state = state
-                                .as_any_mut()
-                                .downcast_mut::<WindowOrderByOnlyState>()
-                                .expect("WindowOrderByOnlySink should have WindowOrderByOnlyState");
-                            std::mem::take(&mut state.partitions)
-                        })
+                        .flat_map(|mut state| std::mem::take(&mut state.partitions))
                         .collect::<Vec<_>>();
 
                     // Concatenate all partitions
@@ -126,13 +115,15 @@ impl BlockingSink for WindowOrderByOnlySink {
                     let sorted = concatenated.sort(
                         &params.order_by,
                         &params.descending,
-                        &params.descending, // Use descending for nulls_first as well, matching the sort behavior
+                        &params.nulls_first,
                     )?;
 
                     if sorted.is_empty() {
                         let empty_result =
                             MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(Some(Arc::new(empty_result)));
+                        return Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
+                            empty_result,
+                        )]));
                     }
 
                     // Convert to RecordBatch for window operations
@@ -147,25 +138,22 @@ impl BlockingSink for WindowOrderByOnlySink {
 
                         let mut result_batch = batch;
 
-                        // Prepare the order_by expressions for window functions
-                        let order_by = params
-                            .order_by
-                            .iter()
-                            .map(|expr| BoundExpr::try_new(expr.clone(), &result_batch.schema))
-                            .collect::<DaftResult<Vec<_>>>()?;
-
                         // Apply each window expression
                         for (wexpr, name) in params.window_exprs.iter().zip(&params.aliases) {
-                            result_batch = match wexpr {
+                            result_batch = match wexpr.as_ref() {
                                 WindowExpr::RowNumber => {
                                     result_batch.window_row_number(name.clone())?
                                 }
-                                WindowExpr::Rank => {
-                                    result_batch.window_rank(name.clone(), &order_by, false)?
-                                }
-                                WindowExpr::DenseRank => {
-                                    result_batch.window_rank(name.clone(), &order_by, true)?
-                                }
+                                WindowExpr::Rank => result_batch.window_rank(
+                                    name.clone(),
+                                    &params.order_by,
+                                    false,
+                                )?,
+                                WindowExpr::DenseRank => result_batch.window_rank(
+                                    name.clone(),
+                                    &params.order_by,
+                                    true,
+                                )?,
                                 _ => {
                                     return Err(DaftError::ValueError(
                                         format!(
@@ -191,15 +179,19 @@ impl BlockingSink for WindowOrderByOnlySink {
                         )
                     };
 
-                    Ok(Some(Arc::new(output)))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(output)]))
                 },
                 Span::current(),
             )
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "WindowOrderByOnly"
+    fn name(&self) -> NodeName {
+        "WindowOrderByOnly".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::WindowOrderByOnly
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -218,13 +210,19 @@ impl BlockingSink for WindowOrderByOnlySink {
                 .order_by
                 .iter()
                 .zip(self.params.descending.iter())
-                .map(|(e, d)| format!("{} {}", e, if *d { "desc" } else { "asc" }))
+                .zip(self.params.nulls_first.iter())
+                .map(|((e, d), n)| format!(
+                    "{} {} {}",
+                    e,
+                    if *d { "desc" } else { "asc" },
+                    if *n { "nulls first" } else { "nulls last" }
+                ))
                 .join(", ")
         ));
         display
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        Ok(Box::new(WindowOrderByOnlyState::new()))
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(WindowOrderByOnlyState::new())
     }
 }

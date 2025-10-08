@@ -1,7 +1,7 @@
-#![expect(non_local_definitions, reason = "we want to remove this...")]
 use std::str::FromStr;
 
 use common_error::{DaftError, DaftResult};
+use common_py_serde::impl_bincode_py_state_serialization;
 use derive_more::Display;
 use num_derive::FromPrimitive;
 #[cfg(feature = "python")]
@@ -73,11 +73,14 @@ impl ImageMode {
             "LA" => Ok(LA),
             "RGB" => Ok(RGB),
             "RGBA" => Ok(RGBA),
-            "1" | "P" | "CMYK" | "YCbCr" | "LAB" | "HSV" | "I" | "F" | "PA" | "RGBX" | "RGBa" | "La" | "I;16" | "I;16L" | "I;16B" | "I;16N" | "BGR;15" | "BGR;16" | "BGR;24" => Err(DaftError::TypeError(format!(
-                "PIL image mode {} is not supported; only the following modes are supported: {:?}",
-                mode,
-                Self::iterator().as_slice()
-            ))),
+            "1" | "P" | "CMYK" | "YCbCr" | "LAB" | "HSV" | "I" | "F" | "PA" | "RGBX" | "RGBa"
+            | "La" | "I;16" | "I;16L" | "I;16B" | "I;16N" | "BGR;15" | "BGR;16" | "BGR;24" => {
+                Err(DaftError::TypeError(format!(
+                    "PIL image mode {} is not supported; only the following modes are supported: {:?}",
+                    mode,
+                    Self::iterator().as_slice()
+                )))
+            }
             _ => Err(DaftError::TypeError(format!(
                 "Image mode {} is not a valid PIL image mode; see https://pillow.readthedocs.io/en/stable/handbook/concepts.html#modes for valid PIL image modes. Of these, only the following modes are supported by Daft: {:?}",
                 mode,
@@ -153,3 +156,5 @@ impl FromStr for ImageMode {
         }
     }
 }
+
+impl_bincode_py_state_serialization!(ImageMode);

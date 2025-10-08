@@ -2,7 +2,29 @@ name: Build dev package and publish to S3
 
 on:
   workflow_dispatch:
+    inputs:
+      use_lto:
+        description: Enable link-time optimization
+        type: boolean
+        default: true
+        required: false
+      run_tests:
+        description: Run tests
+        type: boolean
+        default: false
+        required: false
   workflow_call:
+    inputs:
+      use_lto:
+        description: Enable link-time optimization
+        type: boolean
+        default: true
+        required: false
+      run_tests:
+        description: Run tests
+        type: boolean
+        default: false
+        required: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -12,6 +34,8 @@ env:
   S3_KEY: builds/dev/${{ github.sha }}
   AWS_REGION: us-west-2
   CLOUDFRONT_DIST_ID: E3H8WN738AJ1D4
+  DAFT_ANALYTICS_ENABLED: '0'
+  DAFT_PROGRESS_BAR: 0
 
 jobs:
   check-exists:
@@ -40,7 +64,7 @@ jobs:
         echo "build_exists=$OBJECT_EXISTS" >> "$GITHUB_OUTPUT"
 
   build:
-    name: 'Build Daft wheel for ${{ matrix.os }}-${{ matrix.arch }}-lts=${{ matrix.lts }}'
+    name: 'Build Daft wheel for ${{ matrix.os }}-${{ matrix.arch }}-lts=${{ matrix.lts }}-lto=${{ inputs.use_lto }}'
     needs: check-exists
     if: ${{ needs.check-exists.outputs.build_exists == 'false' }}
     uses: ./.github/workflows/build-wheel.yml
@@ -48,15 +72,15 @@ jobs:
       os: ${{ matrix.os }}
       arch: ${{ matrix.arch }}
       lts: ${{ matrix.lts }}
+      use_lto: ${{ inputs.use_lto }}
       build_type: release
-      use_old_name: ${{ matrix.use_old_name }}
+      run_tests: ${{ inputs.run_tests }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu]
         arch: [x86_64, aarch64]
         lts: [false]
-        use_old_name: [false, true]
 
   publish:
     name: Publish wheels to S3

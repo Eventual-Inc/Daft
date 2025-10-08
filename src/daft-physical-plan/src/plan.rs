@@ -31,6 +31,7 @@ pub enum PhysicalPlan {
     Sample(Sample),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
     Aggregate(Aggregate),
+    Dedup(Dedup),
     Pivot(Pivot),
     Concat(Concat),
     HashJoin(HashJoin),
@@ -140,6 +141,7 @@ impl PhysicalPlan {
                     input.clustering_spec()
                 }
             }
+            Self::Dedup(Dedup { input, .. }) => input.clustering_spec(),
             Self::Pivot(Pivot { input, .. }) => input.clustering_spec(),
             Self::Concat(Concat { input, other }) => {
                 ClusteringSpec::Unknown(UnknownClusteringConfig::new(
@@ -253,9 +255,20 @@ impl PhysicalPlan {
                     acc_selectivity: input_stats.acc_selectivity * estimated_selectivity,
                 }
             }
-            Self::Limit(Limit { input, limit, .. }) | Self::TopN(TopN { input, limit, .. }) => {
+            Self::Limit(Limit {
+                input,
+                limit,
+                offset,
+                ..
+            })
+            | Self::TopN(TopN {
+                input,
+                limit,
+                offset,
+                ..
+            }) => {
                 let input_stats = input.approximate_stats();
-                let limit = *limit as usize;
+                let limit = (*limit + offset.unwrap_or(0)) as usize;
                 let limit_selectivity = if input_stats.num_rows > limit {
                     if input_stats.num_rows == 0 {
                         0.0
@@ -365,6 +378,19 @@ impl PhysicalPlan {
                     }
                 }
             }
+            Self::Dedup(Dedup { input, .. }) => {
+                let input_stats = input.approximate_stats();
+                // TODO we should use schema inference here
+                let est_bytes_per_row = input_stats.size_bytes / (input_stats.num_rows.max(1));
+                // Assume high cardinality for group by columns, and 80% of rows are unique.
+                let est_num_groups = input_stats.num_rows * 4 / 5;
+                ApproxStats {
+                    num_rows: est_num_groups,
+                    size_bytes: est_bytes_per_row * est_num_groups,
+                    acc_selectivity: input_stats.acc_selectivity * est_num_groups as f64
+                        / input_stats.num_rows as f64,
+                }
+            }
             Self::Unpivot(Unpivot { input, values, .. }) => {
                 let input_stats = input.approximate_stats();
                 let num_values = values.len();
@@ -401,6 +427,7 @@ impl PhysicalPlan {
             Self::Sort(Sort { input, .. }) => vec![input],
             Self::TopN(TopN { input, .. }) => vec![input],
             Self::Aggregate(Aggregate { input, .. }) => vec![input],
+            Self::Dedup(Dedup { input, .. }) => vec![input],
             Self::Pivot(Pivot { input, .. }) => vec![input],
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => vec![input],
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => vec![input],
@@ -434,46 +461,246 @@ impl PhysicalPlan {
     pub fn with_new_children(&self, children: &[PhysicalPlanRef]) -> Self {
         match children {
             [input] => match self {
-                Self::InMemoryScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
-                Self::TabularScan(..)
-                | Self::EmptyScan(..)
-                | Self::PreviousStageScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
-                Self::Project(Project { projection, clustering_spec, .. }) =>
-                    Self::Project(Project::new_with_clustering_spec(
-                    input.clone(), projection.clone(), clustering_spec.clone(),
-                ).unwrap()),
+                Self::InMemoryScan(..) => panic!(
+                    "Source nodes don't have children, with_new_children() should never be called for source ops"
+                ),
+                Self::TabularScan(..) | Self::EmptyScan(..) | Self::PreviousStageScan(..) => {
+                    panic!(
+                        "Source nodes don't have children, with_new_children() should never be called for source ops"
+                    )
+                }
+                Self::Project(Project {
+                    projection,
+                    clustering_spec,
+                    ..
+                }) => Self::Project(
+                    Project::new_with_clustering_spec(
+                        input.clone(),
+                        projection.clone(),
+                        clustering_spec.clone(),
+                    )
+                    .unwrap(),
+                ),
 
-                Self::ActorPoolProject(ActorPoolProject {projection, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone()).unwrap()),
-                Self::Filter(Filter { predicate, estimated_selectivity,.. }) => Self::Filter(Filter::new(input.clone(), predicate.clone(), *estimated_selectivity)),
-                Self::Limit(Limit { limit, eager, num_partitions, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager, *num_partitions)),
-                Self::TopN(TopN { sort_by, descending, nulls_first, limit, num_partitions, .. }) => Self::TopN(TopN::new(input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit, *num_partitions)),
-                Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
-                Self::Unpivot(Unpivot { ids, values, variable_name, value_name, .. }) => Self::Unpivot(Unpivot::new(input.clone(), ids.clone(), values.clone(), variable_name, value_name)),
-                Self::Pivot(Pivot { group_by, pivot_column, value_column, names, .. }) => Self::Pivot(Pivot::new(input.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), names.clone())),
-                Self::Sample(Sample { fraction, with_replacement, seed, .. }) => Self::Sample(Sample::new(input.clone(), *fraction, *with_replacement, *seed)),
-                Self::Sort(Sort { sort_by, descending, nulls_first,  num_partitions, .. }) => Self::Sort(Sort::new(input.clone(), sort_by.clone(), descending.clone(),nulls_first.clone(), *num_partitions)),
-                Self::ShuffleExchange(ShuffleExchange { strategy, .. }) => Self::ShuffleExchange(ShuffleExchange { input: input.clone(), strategy: strategy.clone() }),
-                Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::new(input.clone(), aggregations.clone(), groupby.clone())),
-                Self::TabularWriteParquet(TabularWriteParquet { schema, file_info, .. }) => Self::TabularWriteParquet(TabularWriteParquet::new(schema.clone(), file_info.clone(), input.clone())),
-                Self::TabularWriteCsv(TabularWriteCsv { schema, file_info, .. }) => Self::TabularWriteCsv(TabularWriteCsv::new(schema.clone(), file_info.clone(), input.clone())),
-                Self::TabularWriteJson(TabularWriteJson { schema, file_info, .. }) => Self::TabularWriteJson(TabularWriteJson::new(schema.clone(), file_info.clone(), input.clone())),
-                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { column_name, .. }) => Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId::new(input.clone(), column_name)),
+                Self::ActorPoolProject(ActorPoolProject {
+                    projection,
+                    udf_properties,
+                    ..
+                }) => Self::ActorPoolProject(
+                    ActorPoolProject::try_new(
+                        input.clone(),
+                        projection.clone(),
+                        udf_properties.clone(),
+                    )
+                    .unwrap(),
+                ),
+                Self::Filter(Filter {
+                    predicate,
+                    estimated_selectivity,
+                    ..
+                }) => Self::Filter(Filter::new(
+                    input.clone(),
+                    predicate.clone(),
+                    *estimated_selectivity,
+                )),
+                Self::Limit(Limit {
+                    limit,
+                    offset,
+                    eager,
+                    num_partitions,
+                    ..
+                }) => Self::Limit(Limit::new(
+                    input.clone(),
+                    *limit,
+                    *offset,
+                    *eager,
+                    *num_partitions,
+                )),
+                Self::TopN(TopN {
+                    sort_by,
+                    descending,
+                    nulls_first,
+                    limit,
+                    offset,
+                    num_partitions,
+                    ..
+                }) => Self::TopN(TopN::new(
+                    input.clone(),
+                    sort_by.clone(),
+                    descending.clone(),
+                    nulls_first.clone(),
+                    *limit,
+                    *offset,
+                    *num_partitions,
+                )),
+                Self::Explode(Explode { to_explode, .. }) => {
+                    Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap())
+                }
+                Self::Unpivot(Unpivot {
+                    ids,
+                    values,
+                    variable_name,
+                    value_name,
+                    ..
+                }) => Self::Unpivot(Unpivot::new(
+                    input.clone(),
+                    ids.clone(),
+                    values.clone(),
+                    variable_name,
+                    value_name,
+                )),
+                Self::Pivot(Pivot {
+                    group_by,
+                    pivot_column,
+                    value_column,
+                    names,
+                    ..
+                }) => Self::Pivot(Pivot::new(
+                    input.clone(),
+                    group_by.clone(),
+                    pivot_column.clone(),
+                    value_column.clone(),
+                    names.clone(),
+                )),
+                Self::Sample(Sample {
+                    fraction,
+                    with_replacement,
+                    seed,
+                    ..
+                }) => Self::Sample(Sample::new(
+                    input.clone(),
+                    *fraction,
+                    *with_replacement,
+                    *seed,
+                )),
+                Self::Sort(Sort {
+                    sort_by,
+                    descending,
+                    nulls_first,
+                    num_partitions,
+                    ..
+                }) => Self::Sort(Sort::new(
+                    input.clone(),
+                    sort_by.clone(),
+                    descending.clone(),
+                    nulls_first.clone(),
+                    *num_partitions,
+                )),
+                Self::ShuffleExchange(ShuffleExchange { strategy, .. }) => {
+                    Self::ShuffleExchange(ShuffleExchange {
+                        input: input.clone(),
+                        strategy: strategy.clone(),
+                    })
+                }
+                Self::Aggregate(Aggregate {
+                    aggregations,
+                    groupby,
+                    ..
+                }) => Self::Aggregate(Aggregate::new(
+                    input.clone(),
+                    aggregations.clone(),
+                    groupby.clone(),
+                )),
+                Self::Dedup(Dedup { columns, .. }) => {
+                    Self::Dedup(Dedup::new(input.clone(), columns.clone()))
+                }
+                Self::TabularWriteParquet(TabularWriteParquet {
+                    schema, file_info, ..
+                }) => Self::TabularWriteParquet(TabularWriteParquet::new(
+                    schema.clone(),
+                    file_info.clone(),
+                    input.clone(),
+                )),
+                Self::TabularWriteCsv(TabularWriteCsv {
+                    schema, file_info, ..
+                }) => Self::TabularWriteCsv(TabularWriteCsv::new(
+                    schema.clone(),
+                    file_info.clone(),
+                    input.clone(),
+                )),
+                Self::TabularWriteJson(TabularWriteJson {
+                    schema, file_info, ..
+                }) => Self::TabularWriteJson(TabularWriteJson::new(
+                    schema.clone(),
+                    file_info.clone(),
+                    input.clone(),
+                )),
+                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
+                    column_name, ..
+                }) => Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId::new(
+                    input.clone(),
+                    column_name,
+                )),
                 #[cfg(feature = "python")]
-                Self::IcebergWrite(IcebergWrite { schema, iceberg_info, .. }) => Self::IcebergWrite(IcebergWrite::new(schema.clone(), iceberg_info.clone(), input.clone())),
+                Self::IcebergWrite(IcebergWrite {
+                    schema,
+                    iceberg_info,
+                    ..
+                }) => Self::IcebergWrite(IcebergWrite::new(
+                    schema.clone(),
+                    iceberg_info.clone(),
+                    input.clone(),
+                )),
                 #[cfg(feature = "python")]
-                Self::DeltaLakeWrite(DeltaLakeWrite {schema, delta_lake_info, .. }) => Self::DeltaLakeWrite(DeltaLakeWrite::new(schema.clone(), delta_lake_info.clone(), input.clone())),
+                Self::DeltaLakeWrite(DeltaLakeWrite {
+                    schema,
+                    delta_lake_info,
+                    ..
+                }) => Self::DeltaLakeWrite(DeltaLakeWrite::new(
+                    schema.clone(),
+                    delta_lake_info.clone(),
+                    input.clone(),
+                )),
                 #[cfg(feature = "python")]
-                Self::LanceWrite(LanceWrite { schema, lance_info, .. }) => Self::LanceWrite(LanceWrite::new(schema.clone(), lance_info.clone(), input.clone())),
+                Self::LanceWrite(LanceWrite {
+                    schema, lance_info, ..
+                }) => Self::LanceWrite(LanceWrite::new(
+                    schema.clone(),
+                    lance_info.clone(),
+                    input.clone(),
+                )),
                 #[cfg(feature = "python")]
-                Self::DataSink(DataSink { schema, data_sink_info, .. }) => Self::DataSink(DataSink::new(schema.clone(), data_sink_info.clone(), input.clone())),
-                Self::Concat(_) | Self::HashJoin(_) | Self::SortMergeJoin(_) | Self::BroadcastJoin(_) | Self::CrossJoin(_) => panic!("{} requires more than 1 input, but received: {}", self, children.len()),
+                Self::DataSink(DataSink {
+                    schema,
+                    data_sink_info,
+                    ..
+                }) => Self::DataSink(DataSink::new(
+                    schema.clone(),
+                    data_sink_info.clone(),
+                    input.clone(),
+                )),
+                Self::Concat(_)
+                | Self::HashJoin(_)
+                | Self::SortMergeJoin(_)
+                | Self::BroadcastJoin(_)
+                | Self::CrossJoin(_) => panic!(
+                    "{} requires more than 1 input, but received: {}",
+                    self,
+                    children.len()
+                ),
             },
             [input1, input2] => match self {
                 #[cfg(feature = "python")]
-                Self::InMemoryScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
-                Self::TabularScan(..)
-                | Self::EmptyScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
-                Self::HashJoin(HashJoin { left_on, right_on, null_equals_nulls, join_type, .. }) => Self::HashJoin(HashJoin::new(input1.clone(), input2.clone(), left_on.clone(), right_on.clone(), null_equals_nulls.clone(), *join_type)),
+                Self::InMemoryScan(..) => panic!(
+                    "Source nodes don't have children, with_new_children() should never be called for source ops"
+                ),
+                Self::TabularScan(..) | Self::EmptyScan(..) => panic!(
+                    "Source nodes don't have children, with_new_children() should never be called for source ops"
+                ),
+                Self::HashJoin(HashJoin {
+                    left_on,
+                    right_on,
+                    null_equals_nulls,
+                    join_type,
+                    ..
+                }) => Self::HashJoin(HashJoin::new(
+                    input1.clone(),
+                    input2.clone(),
+                    left_on.clone(),
+                    right_on.clone(),
+                    null_equals_nulls.clone(),
+                    *join_type,
+                )),
                 Self::BroadcastJoin(BroadcastJoin {
                     left_on,
                     right_on,
@@ -481,13 +708,47 @@ impl PhysicalPlan {
                     join_type,
                     is_swapped,
                     ..
-                }) => Self::BroadcastJoin(BroadcastJoin::new(input1.clone(), input2.clone(), left_on.clone(), right_on.clone(), null_equals_nulls.clone(), *join_type, *is_swapped)),
-                Self::SortMergeJoin(SortMergeJoin { left_on, right_on, join_type, num_partitions, left_is_larger, needs_presort, .. }) => Self::SortMergeJoin(SortMergeJoin::new(input1.clone(), input2.clone(), left_on.clone(), right_on.clone(), *join_type, *num_partitions, *left_is_larger, *needs_presort)),
-                Self::CrossJoin(CrossJoin { outer_loop_side, .. }) => Self::CrossJoin(CrossJoin::new(input1.clone(), input2.clone(), *outer_loop_side)),
+                }) => Self::BroadcastJoin(BroadcastJoin::new(
+                    input1.clone(),
+                    input2.clone(),
+                    left_on.clone(),
+                    right_on.clone(),
+                    null_equals_nulls.clone(),
+                    *join_type,
+                    *is_swapped,
+                )),
+                Self::SortMergeJoin(SortMergeJoin {
+                    left_on,
+                    right_on,
+                    join_type,
+                    num_partitions,
+                    left_is_larger,
+                    needs_presort,
+                    ..
+                }) => Self::SortMergeJoin(SortMergeJoin::new(
+                    input1.clone(),
+                    input2.clone(),
+                    left_on.clone(),
+                    right_on.clone(),
+                    *join_type,
+                    *num_partitions,
+                    *left_is_larger,
+                    *needs_presort,
+                )),
+                Self::CrossJoin(CrossJoin {
+                    outer_loop_side, ..
+                }) => Self::CrossJoin(CrossJoin::new(
+                    input1.clone(),
+                    input2.clone(),
+                    *outer_loop_side,
+                )),
                 Self::Concat(_) => Self::Concat(Concat::new(input1.clone(), input2.clone())),
                 _ => panic!("Physical op {:?} has one input, but got two", self),
             },
-            _ => panic!("Physical ops should never have more than 2 inputs, but got: {}", children.len())
+            _ => panic!(
+                "Physical ops should never have more than 2 inputs, but got: {}",
+                children.len()
+            ),
         }
     }
 
@@ -508,6 +769,7 @@ impl PhysicalPlan {
             Self::Sort(..) => "Sort",
             Self::ShuffleExchange(..) => "ShuffleExchange",
             Self::Aggregate(..) => "Aggregate",
+            Self::Dedup(..) => "Dedup",
             Self::Pivot(..) => "Pivot",
             Self::HashJoin(..) => "HashJoin",
             Self::BroadcastJoin(..) => "BroadcastJoin",
@@ -547,6 +809,7 @@ impl PhysicalPlan {
             Self::Sort(sort) => sort.multiline_display(),
             Self::ShuffleExchange(shuffle_exchange) => shuffle_exchange.multiline_display(),
             Self::Aggregate(aggregate) => aggregate.multiline_display(),
+            Self::Dedup(dedup) => dedup.multiline_display(),
             Self::Pivot(pivot) => pivot.multiline_display(),
             Self::HashJoin(hash_join) => hash_join.multiline_display(),
             Self::BroadcastJoin(broadcast_join) => broadcast_join.multiline_display(),

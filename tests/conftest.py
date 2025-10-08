@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Literal
+from collections.abc import Generator
+from typing import Any, Literal, Protocol
 
 import pandas as pd
 import pyarrow as pa
@@ -29,13 +30,13 @@ def pytest_configure(config):
     )
 
 
-def get_tests_daft_runner_name() -> Literal["ray"] | Literal["py"] | Literal["native"]:
+def get_tests_daft_runner_name() -> Literal["ray"] | Literal["native"]:
     """Test utility that checks the environment variable for the runner that is being used for the test."""
     name = os.getenv("DAFT_RUNNER")
     assert name is not None, "Tests must be run with $DAFT_RUNNER env var"
     name = name.lower()
 
-    assert name in {"ray", "py", "native"}, f"Runner name not recognized: {name}"
+    assert name in {"ray", "native"}, f"Runner name not recognized: {name}"
     return name
 
 
@@ -57,7 +58,7 @@ class UuidType(pa.ExtensionType):
 
 
 @pytest.fixture
-def uuid_ext_type() -> UuidType:
+def uuid_ext_type() -> Generator[UuidType, None, None]:
     ext_type = UuidType()
     pa.register_extension_type(ext_type)
     yield ext_type
@@ -115,8 +116,14 @@ def assert_spark_equals(spark_session):
     yield _assert_spark_dfs_eq
 
 
+class MakeDF(Protocol):
+    def __call__(
+        self, data: pa.Table | dict | list, repartition: int = 1, repartition_columns: list[str] = []
+    ) -> daft.DataFrame: ...
+
+
 @pytest.fixture(scope="function")
-def make_df(data_source, tmp_path) -> daft.Dataframe:
+def make_df(data_source, tmp_path) -> Generator[MakeDF, None, None]:
     """Makes a dataframe when provided with data."""
 
     def _make_df(

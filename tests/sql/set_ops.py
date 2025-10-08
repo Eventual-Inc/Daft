@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 import pytest
 
 import daft
 from daft import col
-from daft.sql import SQLCatalog
 
 
 def test_simple_intersect(make_df):
@@ -81,27 +82,27 @@ def test_union_with_nulls(make_df):
     df2 = make_df({"foo": [None]})
 
     expected = {"foo": [1, 2, 3, None]}
-    catalog = SQLCatalog({"df1": df1, "df2": df2})
-    actual = daft.sql("select * from df1 union select * from df2", catalog).to_pydict()
+    bindings = {"df1": df1, "df2": df2}
+    actual = daft.sql("select * from df1 union select * from df2", **bindings).to_pydict()
     assert actual == expected
 
 
 def test_union_with_implicit_type_coercion(make_df):
     df1 = make_df({"foo": [1, 2, 3, 0, 1, 1]})
     df2 = make_df({"foo": ["hello", "1"]})
-    catalog = SQLCatalog({"df1": df1, "df2": df2})
+    bindings = {"df1": df1, "df2": df2}
     expected = {"foo": ["0", "1", "2", "3", "hello"]}
-    actual = daft.sql("select * from df1 union select * from df2", catalog).sort(by="foo").to_pydict()
+    actual = daft.sql("select * from df1 union select * from df2", **bindings).sort(by="foo").to_pydict()
 
     expected = {"foo": ["0", "1", "1", "1", "1", "2", "3", "hello"]}
-    actual = daft.sql("select * from df1 union all select * from df2", catalog).sort(by="foo").to_pydict()
+    actual = daft.sql("select * from df1 union all select * from df2", **bindings).sort(by="foo").to_pydict()
     assert actual == expected
 
 
 def test_union_with_failed_implicit_type_coercion(make_df):
     df1 = make_df({"foo": [[1, 2, 3, 0, 1, 1], [None]]})
     df2 = make_df({"foo": ["hello", "1"]})
-    catalog = SQLCatalog({"df1": df1, "df2": df2})
+    bindings = {"df1": df1, "df2": df2}
 
     with pytest.raises(Exception, match=r"unable to find a common supertype for union"):
-        daft.sql("select * from df1 union all select * from df2", catalog).sort(by="foo").to_pydict()
+        daft.sql("select * from df1 union all select * from df2", **bindings).sort(by="foo").to_pydict()

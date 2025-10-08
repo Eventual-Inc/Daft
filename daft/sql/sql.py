@@ -1,42 +1,18 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
 import inspect
-from typing import Optional
 
 import daft
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
-from daft.daft import PyCatalog as _PyCatalog
-from daft.daft import sql as _sql
+from daft.daft import LogicalPlanBuilder as _PyLogicalPlanBuilder
+from daft.daft import sql_exec as _sql_exec
 from daft.daft import sql_expr as _sql_expr
 from daft.dataframe import DataFrame
 from daft.exceptions import DaftCoreException
 from daft.expressions import Expression
 from daft.logical.builder import LogicalPlanBuilder
-
-
-class SQLCatalog:
-    """SQLCatalog is a simple map from table names to dataframes used in query planning.
-
-    EXPERIMENTAL: This features is early in development and will change.
-    """
-
-    _catalog: _PyCatalog = None  # type: ignore
-
-    def __init__(self, tables: dict) -> None:
-        """Create a new SQLCatalog from a dictionary of table names to dataframes."""
-        self._catalog = _PyCatalog.new()
-        for name, df in tables.items():
-            self._catalog.register_table(name, df._get_current_builder()._builder)
-
-    def __str__(self) -> str:
-        return str(self._catalog)
-
-    def register_table(self, name: str, df: DataFrame):
-        self._catalog.register_table(name, df._get_current_builder()._builder)
-
-    def _copy_from(self, other: "SQLCatalog") -> None:
-        self._catalog.copy_from(other._catalog)
 
 
 @PublicAPI
@@ -98,17 +74,19 @@ def sql_expr(sql: str) -> Expression:
 
 
 @PublicAPI
-def sql(sql: str, catalog: Optional[SQLCatalog] = None, register_globals: bool = True) -> DataFrame:
+def sql(
+    sql: str,
+    register_globals: bool = True,
+    **bindings: DataFrame,
+) -> DataFrame:
     """Run a SQL query, returning the results as a DataFrame.
 
     Args:
         sql (str): SQL query to execute
-        catalog (SQLCatalog, optional): Catalog of tables to use in the query.
-            Defaults to None, in which case a catalog will be built from variables
-            in the callers scope.
         register_globals (bool, optional): Whether to incorporate global
             variables into the supplied catalog, in which case a copy of the
             catalog will be made and the original not modified. Defaults to True.
+        **bindings: (DataFrame): Additional DataFrame bindings (CTEs) to use for this query.
 
     Returns:
         DataFrame: Dataframe containing the results of the query
@@ -142,17 +120,16 @@ def sql(sql: str, catalog: Optional[SQLCatalog] = None, register_globals: bool =
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
-        A more complex example using a SQLCatalog to create a named table called `"my_table"`, which can then be referenced from inside your SQL statement.
+        A more complex example using CTE bindings to create a named subquery (DataFrame) called `"my_df"`, which can then be referenced from inside your SQL statement.
 
         >>> import daft
-        >>> from daft.sql import SQLCatalog
         >>>
         >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
         >>>
-        >>> # Register dataframes as tables in SQL explicitly with names
-        >>> catalog = SQLCatalog({"my_table": df})
+        >>> # Register dataframes as table expressions using a python dictionary.
+        >>> bindings = {"my_df": df}
         >>>
-        >>> daft.sql("SELECT a FROM my_table", catalog=catalog).show()
+        >>> daft.sql("SELECT a FROM my_df", **bindings).show()
         ╭───────╮
         │ a     │
         │ ---   │
@@ -167,27 +144,37 @@ def sql(sql: str, catalog: Optional[SQLCatalog] = None, register_globals: bool =
         <BLANKLINE>
         (Showing first 3 of 3 rows)
     """
+    # This the CTE bindings map which is built in the order globals->catalog->ctes.
+    py_ctes: dict[str, _PyLogicalPlanBuilder] = {}
+
+    # 1. Add all python DataFrame variables which are in scope.
     if register_globals:
         try:
-            # Caller is back from func, analytics, annotation
-            caller_frame = inspect.currentframe().f_back.f_back.f_back  # type: ignore
+            # Caller is back from func, annotation
+            caller_frame = inspect.currentframe().f_back.f_back  # type: ignore
             caller_vars = {**caller_frame.f_globals, **caller_frame.f_locals}  # type: ignore
         except AttributeError as exc:
             # some interpreters might not implement currentframe; all reasonable
             # errors above should be AttributeError
-            raise DaftCoreException("Cannot get caller environment, please provide a catalog") from exc
-        catalog_ = SQLCatalog({k: v for k, v in caller_vars.items() if isinstance(v, DataFrame)})
-        if catalog is not None:
-            catalog_._copy_from(catalog)
-        catalog = catalog_
-    elif catalog is None:
-        raise DaftCoreException("Must supply a catalog if register_globals is False")
+            raise DaftCoreException(
+                "Cannot get caller environment, please provide CTEs and set `register_globals=False`."
+            ) from exc
+        for alias, variable in caller_vars.items():
+            if isinstance(variable, DataFrame):
+                py_ctes[alias] = variable._builder._builder
 
-    planning_config = get_context().daft_planning_config
+    # 2. Add explicit CTEs last so these can't be shadowed.
+    for alias, df in bindings.items():
+        py_ctes[alias] = df._builder._builder
 
-    _py_catalog = catalog._catalog
+    py_sess = daft.current_session()._session
+    py_config = get_context().daft_planning_config
+    py_object = _sql_exec(sql, py_sess, py_ctes, py_config)
 
-    sess = daft.current_session()._session
-
-    _py_logical = _sql(sql, _py_catalog, sess, planning_config)
-    return DataFrame(LogicalPlanBuilder(_py_logical))
+    if py_object is None:
+        # for backwards compatibility on the return type i.e. don't introduce nullability
+        return DataFrame._from_pydict({})
+    elif isinstance(py_object, _PyLogicalPlanBuilder):
+        return DataFrame(LogicalPlanBuilder(py_object))
+    else:
+        raise ValueError(f"Unsupported return type from sql exec: {type(py_object)}")

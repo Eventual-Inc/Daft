@@ -1,14 +1,14 @@
-use std::{ops::Range, sync::Arc, time::Duration};
+use std::{any::Any, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use common_io_config::GCSConfig;
 use common_runtime::get_io_pool_num_threads;
-use futures::{stream::BoxStream, TryStreamExt};
+use futures::{TryStreamExt, stream::BoxStream};
 use google_cloud_storage::{
-    client::{google_cloud_auth::credentials::CredentialsFile, Client, ClientConfig},
+    client::{Client, ClientConfig, google_cloud_auth::credentials::CredentialsFile},
     http::{
-        objects::{get::GetObjectRequest, list::ListObjectsRequest},
         Error as GError,
+        objects::{get::GetObjectRequest, list::ListObjectsRequest},
     },
 };
 use google_cloud_token::{TokenSource, TokenSourceProvider};
@@ -17,11 +17,12 @@ use snafu::{IntoError, ResultExt, Snafu};
 use tokio::sync::Semaphore;
 
 use crate::{
+    FileFormat, GetResult, InvalidRangeRequestSnafu,
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
+    range::GetRange,
     retry::{ExponentialBackoff, RetryError},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
-    FileFormat, GetResult,
 };
 
 const GCS_DELIMITER: &str = "/";
@@ -56,45 +57,51 @@ enum Error {
     },
 }
 
+#[allow(clippy::fallible_impl_from)]
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::{
             NotAFile, NotFound, UnableToCreateClient, UnableToGrabSemaphore, UnableToListObjects,
             UnableToLoadCredentials, UnableToOpenFile, UnableToReadBytes,
         };
+
+        fn from_reqwest_err(path: String, err: reqwest::Error) -> super::Error {
+            match err.status().map(|s| s.as_u16()) {
+                Some(404 | 410) => super::Error::NotFound {
+                    path,
+                    source: err.into(),
+                },
+                Some(401) => super::Error::Unauthorized {
+                    store: super::SourceType::GCS,
+                    path,
+                    source: err.into(),
+                },
+                _ => {
+                    if err.is_connect() {
+                        super::Error::ConnectTimeout {
+                            path,
+                            source: err.into(),
+                        }
+                    } else if err.is_timeout() {
+                        super::Error::ReadTimeout {
+                            path,
+                            source: err.into(),
+                        }
+                    } else {
+                        super::Error::UnableToOpenFile {
+                            path,
+                            source: err.into(),
+                        }
+                    }
+                }
+            }
+        }
+
         match error {
             UnableToReadBytes { path, source }
             | UnableToOpenFile { path, source }
             | UnableToListObjects { path, source } => match source {
-                GError::HttpClient(err) => match err.status().map(|s| s.as_u16()) {
-                    Some(404 | 410) => Self::NotFound {
-                        path,
-                        source: err.into(),
-                    },
-                    Some(401) => Self::Unauthorized {
-                        store: super::SourceType::GCS,
-                        path,
-                        source: err.into(),
-                    },
-                    _ => {
-                        if err.is_connect() {
-                            Self::ConnectTimeout {
-                                path,
-                                source: err.into(),
-                            }
-                        } else if err.is_timeout() {
-                            Self::ReadTimeout {
-                                path,
-                                source: err.into(),
-                            }
-                        } else {
-                            Self::UnableToOpenFile {
-                                path,
-                                source: err.into(),
-                            }
-                        }
-                    }
-                },
+                GError::HttpClient(err) => from_reqwest_err(path, err),
                 GError::Response(err) => match err.code {
                     404 | 410 => Self::NotFound {
                         path,
@@ -114,12 +121,26 @@ impl From<Error> for super::Error {
                     store: super::SourceType::GCS,
                     source: err,
                 },
-                err @ GError::HttpMiddleware(_) | err @ GError::InvalidRangeHeader(_) => {
-                    Self::UnableToOpenFile {
-                        path,
-                        source: err.into(),
+                GError::HttpMiddleware(err) if err.is::<reqwest_retry::RetryError>() => {
+                    let err = err.downcast::<reqwest_retry::RetryError>().unwrap();
+
+                    let inner_err = match err {
+                        reqwest_retry::RetryError::Error(e)
+                        | reqwest_retry::RetryError::WithRetries { err: e, .. } => e,
+                    };
+
+                    match inner_err {
+                        reqwest_middleware::Error::Reqwest(e) => from_reqwest_err(path, e),
+                        reqwest_middleware::Error::Middleware(_) => Self::UnableToOpenFile {
+                            path,
+                            source: inner_err.into(),
+                        },
                     }
                 }
+                err => Self::UnableToOpenFile {
+                    path,
+                    source: err.into(),
+                },
             },
             NotFound { ref path } => Self::NotFound {
                 path: path.into(),
@@ -169,7 +190,7 @@ impl GCSClientWrapper {
     async fn get(
         &self,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
         let (bucket, key) = parse_raw_uri(uri)?;
@@ -188,14 +209,19 @@ impl GCSClientWrapper {
             object: key.into(),
             ..Default::default()
         };
-        use google_cloud_storage::http::objects::download::Range as GRange;
+        use google_cloud_storage::http::objects::download::Range as GcsRange;
         let (grange, size) = if let Some(range) = range {
-            (
-                GRange(Some(range.start as u64), Some(range.end as u64)),
-                Some(range.len()),
-            )
+            range.validate().context(InvalidRangeRequestSnafu)?;
+            match range {
+                GetRange::Bounded(r) => (
+                    GcsRange(Some(r.start as u64), Some(r.end as u64 - 1)),
+                    Some(r.len()),
+                ),
+                GetRange::Offset(o) => (GcsRange(Some(o as u64), None), None),
+                GetRange::Suffix(n) => (GcsRange(None, Some(n as u64)), Some(n)),
+            }
         } else {
-            (GRange::default(), None)
+            (GcsRange::default(), None)
         };
         let owned_uri = uri.to_string();
         let response = client
@@ -274,6 +300,7 @@ impl GCSClientWrapper {
             include_trailing_delimiter: Some(false), // This will not populate "directories" in the response's .item[]
             projection: None,
             versions: None,
+            match_glob: None,
         };
         let ls_response = client
             .list_objects(&req)
@@ -461,7 +488,9 @@ impl GCSSource {
             match attempted {
                 Ok(attempt) => attempt,
                 Err(err) => {
-                    log::warn!("Google Cloud Storage Credentials not provided or found when making client. Reverting to Anonymous mode.\nDetails\n{err}");
+                    log::warn!(
+                        "Google Cloud Storage Credentials not provided or found when making client. Reverting to Anonymous mode.\nDetails\n{err}"
+                    );
                     ClientConfig::default().anonymous()
                 }
             }
@@ -472,7 +501,7 @@ impl GCSSource {
         }
         client_config.http = Some({
             use reqwest_middleware::ClientBuilder;
-            use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
+            use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
             use retry_policies::Jitter;
             let retry_policy = ExponentialBackoff::builder()
                 .base(2)
@@ -519,10 +548,14 @@ impl GCSSource {
 
 #[async_trait]
 impl ObjectSource for GCSSource {
+    async fn supports_range(&self, _: &str) -> super::Result<bool> {
+        Ok(true)
+    }
+
     async fn get(
         &self,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
         self.client.get(uri, range, io_stats).await
@@ -577,5 +610,38 @@ impl ObjectSource for GCSSource {
         self.client
             .ls(path, posix, continuation_token, page_size, io_stats)
             .await
+    }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common_io_config::GCSConfig;
+
+    use crate::{google_cloud::GCSSource, integrations::test_full_get, object_io::ObjectSource};
+
+    #[tokio::test]
+    async fn test_full_get_from_gcs() -> crate::Result<()> {
+        let test_file_path = "gs://covid19-open-data/dm-c19-data/raw/SAPE22DT6a-mid-2019-ccg-2020-estimates-unformatted.xlsx";
+        let expected_md5 = "c4ed100cd2f99fd368c846317abcdaf5";
+
+        // TODO it's wired that will read 254635 bytes from the file, but the file size is 25933 bytes
+        // let test_file_path = "gs://covid19-open-data/v3/location/AF_BDG.json";
+
+        let config = GCSConfig {
+            anonymous: true,
+            ..Default::default()
+        };
+        let client = GCSSource::get_client(&config).await?;
+        let test_file = client.get(test_file_path, None, None).await?;
+        let bytes = test_file.bytes().await?;
+        let all_bytes = bytes.as_ref();
+        let checksum = format!("{:x}", md5::compute(all_bytes));
+        assert_eq!(checksum, expected_md5);
+
+        test_full_get(client, &test_file_path, &bytes).await
     }
 }

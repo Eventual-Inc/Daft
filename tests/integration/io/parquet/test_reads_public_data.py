@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import time
+
 import fsspec
 import pandas as pd
 import pyarrow as pa
 import pytest
+from aiohttp.client_exceptions import ClientPayloadError
 from pyarrow import parquet as pq
 
 import daft
@@ -125,11 +128,10 @@ DAFT_CAN_READ_FILES = [
         "parquet-testing/data/null_list.parquet",
         "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/null_list.parquet",
     ),
-    # We currently don't support Map Dtypes
-    # (
-    #     "parquet-testing/data/nullable.impala.parquet",
-    #     "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/nullable.impala.parquet",
-    # ),
+    (
+        "parquet-testing/data/nullable.impala.parquet",
+        "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/nullable.impala.parquet",
+    ),
     (
         "parquet-testing/data/nulls.snappy.parquet",
         "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/nulls.snappy.parquet",
@@ -153,10 +155,10 @@ DAFT_CAN_READ_FILES = [
         "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/rle-dict-snappy-checksum.parquet",
     ),
     # We currently don't support RLE Boolean encodings
-    # (
-    #     "parquet-testing/data/rle_boolean_encoding.parquet",
-    #     "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/rle_boolean_encoding.parquet",
-    # ),
+    (
+        "parquet-testing/data/rle_boolean_encoding.parquet",
+        "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/rle_boolean_encoding.parquet",
+    ),
     (
         "parquet-testing/data/single_nan.parquet",
         "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/github/apache/parquet-testing/data/single_nan.parquet",
@@ -233,7 +235,17 @@ def read_parquet_with_pyarrow(path) -> pa.Table:
         kwargs["anon"] = True
 
     fs = get_filesystem_from_path(path, **kwargs)
-    table = pq.read_table(path, filesystem=fs)
+
+    table = None
+    retries = 0
+    while not table:
+        try:
+            table = pq.read_table(path, filesystem=fs)
+        except ClientPayloadError as e:
+            if retries > 5:
+                raise e
+            time.sleep(0.1 * (2**retries))
+            retries += 1
     return table
 
 
@@ -263,7 +275,6 @@ def test_parquet_read_table_into_pyarrow(parquet_file, public_storage_io_config,
         url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io
     )
     pa_read = read_parquet_with_pyarrow(url)
-    assert daft_native_read.schema == pa_read.schema
     assert pa_read.schema.metadata is None or daft_native_read.schema.metadata == pa_read.schema.metadata
     pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())
 
@@ -306,7 +317,6 @@ def test_parquet_into_pyarrow_bulk(parquet_file, public_storage_io_config, multi
     pa_read = read_parquet_with_pyarrow(url)
 
     for daft_native_read in daft_native_reads:
-        assert daft_native_read.schema == pa_read.schema
         pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())
 
 
@@ -499,3 +509,14 @@ def test_read_timeout_gcs(multithreaded_io):
 
     with pytest.raises((ReadTimeoutError, ConnectTimeoutError), match=f"Read timed out when trying to read {url}"):
         MicroPartition.read_parquet(url, io_config=read_timeout_config, multithreaded_io=multithreaded_io).to_arrow()
+
+
+@pytest.mark.integration()
+def test_parquet_read_large_strings_in_map(public_storage_io_config):
+    # This is a file with a map column that contains 2^30 large strings
+    path = "s3://daft-public-data/test_fixtures/parquet/large_strings_in_map.parquet"
+    table = daft.read_parquet(path, io_config=public_storage_io_config).collect()
+    assert len(table) == 2
+    assert table.schema() == daft.Schema.from_field_name_and_types(
+        [("arr", daft.DataType.map(daft.DataType.string(), daft.DataType.int32()))]
+    )

@@ -3,15 +3,17 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_scan_info::{PhysicalScanInfo, ScanState};
 use daft_schema::schema::SchemaRef;
+use serde::{Deserialize, Serialize};
 
 use crate::{
-    source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo},
+    source_info::{GlobScanInfo, InMemoryInfo, PlaceHolderInfo, SourceInfo},
     stats::{ApproxStats, PlanStats, StatsState},
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Source {
     pub plan_id: Option<usize>,
+    pub node_id: Option<usize>,
     /// The schema of the output of this node (the source data schema).
     /// May be a subset of the source data schema; executors should push down this projection if possible.
     pub output_schema: SchemaRef,
@@ -25,6 +27,7 @@ impl Source {
     pub fn new(output_schema: SchemaRef, source_info: Arc<SourceInfo>) -> Self {
         Self {
             plan_id: None,
+            node_id: None,
             output_schema,
             source_info,
             stats_state: StatsState::NotMaterialized,
@@ -33,6 +36,11 @@ impl Source {
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
         self.plan_id = Some(plan_id);
+        self
+    }
+
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
         self
     }
 
@@ -92,6 +100,7 @@ impl Source {
                     approx_stats
                 }
             },
+            SourceInfo::GlobScan(_) => ApproxStats::empty(),
             SourceInfo::PlaceHolder(_) => ApproxStats::empty(),
         };
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
@@ -121,6 +130,15 @@ impl Source {
             SourceInfo::InMemory(InMemoryInfo { num_partitions, .. }) => {
                 res.push("Source:".to_string());
                 res.push(format!("Number of partitions = {}", num_partitions));
+            }
+            SourceInfo::GlobScan(GlobScanInfo {
+                glob_paths,
+                pushdowns,
+                ..
+            }) => {
+                res.push("GlobScan:".to_string());
+                res.push(format!("Glob paths = {:?}", glob_paths));
+                res.extend(pushdowns.multiline_display());
             }
             SourceInfo::PlaceHolder(PlaceHolderInfo {
                 clustering_spec, ..

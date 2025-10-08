@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use num_traits::Float;
 
-use super::{as_arrow::AsArrow, DaftIsInf, DaftIsNan, DaftNotNan};
+use super::{DaftIsInf, DaftIsNan, DaftNotNan, as_arrow::AsArrow};
 use crate::{
     array::DataArray,
     datatypes::{BooleanArray, BooleanType, DaftFloatType, DaftNumericType, NullType},

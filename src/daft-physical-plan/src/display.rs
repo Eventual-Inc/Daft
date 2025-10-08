@@ -1,6 +1,6 @@
 use std::fmt::{self, Display};
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 
 use super::PhysicalPlan;
 
@@ -23,6 +23,7 @@ impl TreeDisplay for PhysicalPlan {
             Self::MonotonicallyIncreasingId(id) => id.display_as(level),
             Self::ShuffleExchange(shuffle_exchange) => shuffle_exchange.display_as(level),
             Self::Aggregate(aggr) => aggr.display_as(level),
+            Self::Dedup(dedup) => dedup.display_as(level),
             Self::Pivot(pivot) => pivot.display_as(level),
             Self::Concat(concat) => concat.display_as(level),
             Self::HashJoin(join) => join.display_as(level),

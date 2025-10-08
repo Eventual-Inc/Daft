@@ -1,25 +1,31 @@
 use std::{
+    any::Any,
     num::ParseIntError,
-    ops::Range,
     string::FromUtf8Error,
     sync::{Arc, LazyLock},
+    time::Duration,
 };
 
 use async_trait::async_trait;
 use common_io_config::HTTPConfig;
-use futures::{stream::BoxStream, TryStreamExt};
-use hyper::header;
+use futures::{TryStreamExt, stream::BoxStream};
 use regex::Regex;
-use reqwest::header::{CONTENT_LENGTH, RANGE};
+use reqwest::header::ACCEPT_RANGES;
+use reqwest_middleware::{
+    ClientBuilder, ClientWithMiddleware,
+    reqwest::header::{self, CONTENT_LENGTH, RANGE},
+};
+use reqwest_retry::{Jitter, RetryTransientMiddleware, policies::ExponentialBackoff};
 use snafu::{IntoError, ResultExt, Snafu};
 use url::Position;
 
 use super::object_io::{GetResult, ObjectSource};
 use crate::{
+    FileFormat, InvalidRangeRequestSnafu,
     object_io::{FileMetadata, FileType, LSResult},
+    range::GetRange,
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
-    FileFormat,
 };
 
 const HTTP_DELIMITER: &str = "/";
@@ -33,13 +39,13 @@ enum Error {
     #[snafu(display("Unable to connect to {}: {}", path, source))]
     UnableToConnect {
         path: String,
-        source: reqwest::Error,
+        source: reqwest_middleware::Error,
     },
 
     #[snafu(display("Unable to open {}: {}", path, source))]
     UnableToOpenFile {
         path: String,
-        source: reqwest::Error,
+        source: reqwest_middleware::reqwest::Error,
     },
 
     #[snafu(display("Unable to determine size of {}", path))]
@@ -48,11 +54,13 @@ enum Error {
     #[snafu(display("Unable to read data from {}: {}", path, source))]
     UnableToReadBytes {
         path: String,
-        source: reqwest::Error,
+        source: reqwest_middleware::reqwest::Error,
     },
 
     #[snafu(display("Unable to create Http Client {}", source))]
-    UnableToCreateClient { source: reqwest::Error },
+    UnableToCreateClient {
+        source: reqwest_middleware::reqwest::Error,
+    },
 
     #[snafu(display("Unable to parse URL: \"{}\"", path))]
     InvalidUrl {
@@ -65,12 +73,10 @@ enum Error {
     ))]
     UnableToParseUtf8Header { path: String, source: FromUtf8Error },
 
-    #[snafu(display(
-        "Unable to parse data as Utf8 while reading body for file: {path}. {source}"
-    ))]
+    #[snafu(display("Unable to parse data as Utf8 while reading body for file: {path}. {source}"))]
     UnableToParseUtf8Body {
         path: String,
-        source: reqwest::Error,
+        source: reqwest_middleware::reqwest::Error,
     },
 
     #[snafu(display(
@@ -140,8 +146,9 @@ fn get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<File
     Ok(metas.into_iter().flatten().collect())
 }
 
+#[derive(Debug)]
 pub struct HttpSource {
-    pub(crate) client: reqwest::Client,
+    pub(crate) client: ClientWithMiddleware,
 }
 
 impl From<Error> for super::Error {
@@ -176,32 +183,81 @@ impl HttpSource {
                 .context(UnableToCreateHeaderSnafu)?,
         );
 
-        Ok(Self {
-            client: reqwest::ClientBuilder::default()
-                .pool_max_idle_per_host(70)
-                .default_headers(default_headers)
-                .build()
-                .context(UnableToCreateClientSnafu)?,
+        if let Some(token) = &config.bearer_token {
+            default_headers.append(
+                "Authorization",
+                header::HeaderValue::from_str(&format!("Bearer {}", token.as_string()))
+                    .context(UnableToCreateHeaderSnafu)?,
+            );
         }
-        .into())
+
+        let retry_policy = ExponentialBackoff::builder()
+            .base(2)
+            .jitter(Jitter::Bounded)
+            .retry_bounds(
+                Duration::from_millis(config.retry_initial_backoff_ms),
+                Duration::from_secs(60),
+            )
+            .build_with_max_retries(config.num_tries);
+
+        let base_client = reqwest_middleware::reqwest::ClientBuilder::default()
+            .pool_idle_timeout(Duration::from_secs(60))
+            .pool_max_idle_per_host(70)
+            .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
+            .read_timeout(Duration::from_millis(config.read_timeout_ms))
+            .default_headers(default_headers)
+            .build()
+            .context(UnableToCreateClientSnafu)?;
+
+        // reqwest-retry already comes with a default retry strategy that matches http standards
+        // override it only if you need a custom one due to non standard behavior
+        let retry_middleware = RetryTransientMiddleware::new_with_policy(retry_policy)
+            .with_retry_log_level(tracing::Level::DEBUG);
+
+        let client = ClientBuilder::new(base_client)
+            .with(retry_middleware)
+            .build();
+
+        Ok(Self { client }.into())
     }
 }
 
 #[async_trait]
 impl ObjectSource for HttpSource {
+    async fn supports_range(&self, uri: &str) -> super::Result<bool> {
+        let head_res = self
+            .client
+            .head(uri)
+            .send()
+            .await
+            .context(UnableToConnectSnafu::<String> { path: uri.into() })?;
+        let res = head_res
+            .error_for_status()
+            .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
+
+        let headers = res.headers();
+
+        let accept_range = headers
+            .get(ACCEPT_RANGES)
+            .map(|v| v.to_str().unwrap_or_default().to_lowercase())
+            .unwrap_or_default();
+
+        Ok(&accept_range == "bytes")
+    }
+
     async fn get(
         &self,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
         let request = self.client.get(uri);
         let request = match range {
             None => request,
-            Some(range) => request.header(
-                RANGE,
-                format!("bytes={}-{}", range.start, range.end.saturating_sub(1)),
-            ),
+            Some(range) => {
+                range.validate().context(InvalidRangeRequestSnafu)?;
+                request.header(RANGE, range.to_string())
+            }
         };
 
         let response = request
@@ -326,9 +382,7 @@ impl ObjectSource for HttpSource {
                 let text = response
                     .text()
                     .await
-                    .with_context(|_| UnableToParseUtf8BodySnafu {
-                        path: path.to_string(),
-                    })?;
+                    .with_context(|_| UnableToParseUtf8BodySnafu { path: path.clone() })?;
                 let file_metadatas = get_file_metadata_from_html(path.as_str(), text.as_str())?;
                 Ok(LSResult {
                     files: file_metadatas,
@@ -338,7 +392,7 @@ impl ObjectSource for HttpSource {
             // All other forms of content-type is treated as a raw file
             _ => Ok(LSResult {
                 files: vec![FileMetadata {
-                    filepath: path.to_string(),
+                    filepath: path.clone(),
                     filetype: FileType::File,
                     size: response.content_length(),
                 }],
@@ -346,14 +400,17 @@ impl ObjectSource for HttpSource {
             }),
         }
     }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
+    }
 }
 
 #[cfg(test)]
 mod tests {
-
     use std::default;
 
-    use crate::{object_io::ObjectSource, HttpSource, Result};
+    use crate::{HttpSource, Result, integrations::test_full_get, object_io::ObjectSource};
 
     #[tokio::test]
     async fn test_full_get_from_http() -> Result<()> {
@@ -367,36 +424,6 @@ mod tests {
         let checksum = format!("{:x}", md5::compute(all_bytes));
         assert_eq!(checksum, parquet_expected_md5);
 
-        let first_bytes = client
-            .get(parquet_file_path, Some(0..10), None)
-            .await?
-            .bytes()
-            .await?;
-        assert_eq!(first_bytes.len(), 10);
-        assert_eq!(first_bytes.as_ref(), &all_bytes[..10]);
-
-        let first_bytes = client
-            .get(parquet_file_path, Some(10..100), None)
-            .await?
-            .bytes()
-            .await?;
-        assert_eq!(first_bytes.len(), 90);
-        assert_eq!(first_bytes.as_ref(), &all_bytes[10..100]);
-
-        let last_bytes = client
-            .get(
-                parquet_file_path,
-                Some((all_bytes.len() - 10)..(all_bytes.len() + 10)),
-                None,
-            )
-            .await?
-            .bytes()
-            .await?;
-        assert_eq!(last_bytes.len(), 10);
-        assert_eq!(last_bytes.as_ref(), &all_bytes[(all_bytes.len() - 10)..]);
-
-        let size_from_get_size = client.get_size(parquet_file_path, None).await?;
-        assert_eq!(size_from_get_size, all_bytes.len());
-        Ok(())
+        test_full_get(client, &parquet_file_path, &bytes).await
     }
 }

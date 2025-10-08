@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{prelude::*, utils::supertype::try_get_supertype};
-use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::IOStatsContext;
 
 use crate::micropartition::MicroPartition;
@@ -10,8 +10,8 @@ use crate::micropartition::MicroPartition;
 impl MicroPartition {
     pub fn unpivot(
         &self,
-        ids: &[ExprRef],
-        values: &[ExprRef],
+        ids: &[BoundExpr],
+        values: &[BoundExpr],
         variable_name: &str,
         value_name: &str,
     ) -> DaftResult<Self> {
@@ -19,8 +19,8 @@ impl MicroPartition {
 
         let tables = self.concat_or_get(io_stats)?;
 
-        match tables.as_slice() {
-            [] => {
+        match tables {
+            None => {
                 if values.is_empty() {
                     return Err(DaftError::ValueError(
                         "Unpivot requires at least one value column".to_string(),
@@ -29,13 +29,13 @@ impl MicroPartition {
 
                 let values_dtype = values
                     .iter()
-                    .map(|e| e.to_field(&self.schema).map(|f| f.dtype))
+                    .map(|e| e.inner().to_field(&self.schema).map(|f| f.dtype))
                     .reduce(|l, r| try_get_supertype(&l?, &r?))
                     .unwrap()?;
 
                 let fields = ids
                     .iter()
-                    .map(|e| e.to_field(&self.schema))
+                    .map(|e| e.inner().to_field(&self.schema))
                     .chain(vec![
                         Ok(Field::new(variable_name, DataType::Utf8)),
                         Ok(Field::new(value_name, values_dtype)),
@@ -44,25 +44,14 @@ impl MicroPartition {
 
                 Ok(Self::empty(Some(Arc::new(Schema::new(fields)))))
             }
-            [t] => {
-                let ids = ids
-                    .iter()
-                    .map(|expr| BoundExpr::try_new(expr.clone(), &self.schema))
-                    .try_collect::<Vec<_>>()?;
-
-                let values = values
-                    .iter()
-                    .map(|expr| BoundExpr::try_new(expr.clone(), &self.schema))
-                    .try_collect::<Vec<_>>()?;
-
-                let unpivoted = t.unpivot(&ids, &values, variable_name, value_name)?;
+            Some(t) => {
+                let unpivoted = t.unpivot(ids, values, variable_name, value_name)?;
                 Ok(Self::new_loaded(
                     unpivoted.schema.clone(),
                     vec![unpivoted].into(),
                     None,
                 ))
             }
-            _ => unreachable!(),
         }
     }
 }

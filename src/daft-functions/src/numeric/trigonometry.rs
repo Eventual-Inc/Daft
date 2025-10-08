@@ -1,16 +1,14 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    array::ops::{trigonometry::TrigonometricFunction, DaftAtan2},
+    array::ops::{DaftAtan2, trigonometry::TrigonometricFunction},
     prelude::{DataType, Field, Schema},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF, UnaryArg, scalar::ScalarFn},
 };
 use serde::{Deserialize, Serialize};
-
-use super::evaluate_single_numeric;
 
 // super annoying, but using an enum with typetag::serde doesn't work with bincode because it uses Deserializer::deserialize_identifier
 macro_rules! trigonometry {
@@ -20,26 +18,24 @@ macro_rules! trigonometry {
 
         #[typetag::serde]
         impl ScalarUDF for $variant {
-            fn evaluate(
-                &self,
-                inputs: daft_dsl::functions::FunctionArgs<Series>,
-            ) -> DaftResult<Series> {
-                let inner = inputs.into_inner();
-                self.evaluate_from_series(&inner)
+            fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+                let UnaryArg { input } = inputs.try_into()?;
+
+                trigonometry(input, &TrigonometricFunction::$variant)
             }
 
             fn name(&self) -> &'static str {
                 TrigonometricFunction::$variant.fn_name()
             }
 
-            fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-                if inputs.len() != 1 {
-                    return Err(DaftError::SchemaMismatch(format!(
-                        "Expected 1 input arg, got {}",
-                        inputs.len()
-                    )));
-                };
-                let field = inputs.first().unwrap().to_field(schema)?;
+            fn get_return_field(
+                &self,
+                inputs: FunctionArgs<ExprRef>,
+                schema: &Schema,
+            ) -> DaftResult<Field> {
+                let UnaryArg { input } = inputs.try_into()?;
+                let field = input.to_field(schema)?;
+
                 let dtype = match field.dtype {
                     DataType::Float32 => DataType::Float32,
                     dt if dt.is_numeric() => DataType::Float64,
@@ -47,17 +43,12 @@ macro_rules! trigonometry {
                         return Err(DaftError::TypeError(format!(
                             "Expected input to trigonometry to be numeric, got {}",
                             field.dtype
-                        )))
+                        )));
                     }
                 };
                 Ok(Field::new(field.name, dtype))
             }
 
-            fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-                evaluate_single_numeric(inputs, |s| {
-                    trigonometry(s, &TrigonometricFunction::$variant)
-                })
-            }
             fn docstring(&self) -> &'static str {
                 $docstring
             }
@@ -65,7 +56,7 @@ macro_rules! trigonometry {
 
         #[must_use]
         pub fn $name(input: ExprRef) -> ExprRef {
-            ScalarFunction::new($variant, vec![input]).into()
+            ScalarFn::builtin($variant, vec![input]).into()
         }
     };
 }
@@ -135,11 +126,16 @@ trigonometry!(
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Atan2;
 
+#[derive(FunctionArgs)]
+struct Atan2Args<T> {
+    x: T,
+    y: T,
+}
+
 #[typetag::serde]
 impl ScalarUDF for Atan2 {
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let x = inputs.required((0, "x"))?;
-        let y = inputs.required((1, "y"))?;
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+        let Atan2Args { x, y } = inputs.try_into()?;
 
         atan2_impl(x, y)
     }
@@ -152,25 +148,25 @@ impl ScalarUDF for Atan2 {
         &["arctan2"]
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        if inputs.len() != 2 {
-            return Err(DaftError::SchemaMismatch(format!(
-                "Expected 2 input args, got {}",
-                inputs.len()
-            )));
-        }
-        let field1 = inputs.first().unwrap().to_field(schema)?;
-        let field2 = inputs.get(1).unwrap().to_field(schema)?;
-        let dtype = match (field1.dtype, field2.dtype) {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        let Atan2Args { x, y } = inputs.try_into()?;
+
+        let x_field = x.to_field(schema)?;
+        let y_field = y.to_field(schema)?;
+        let dtype = match (x_field.dtype, y_field.dtype) {
             (DataType::Float32, DataType::Float32) => DataType::Float32,
             (dt1, dt2) if dt1.is_numeric() && dt2.is_numeric() => DataType::Float64,
             (dt1, dt2) => {
                 return Err(DaftError::TypeError(format!(
                     "Expected inputs to atan2 to be numeric, got {dt1} and {dt2}"
-                )))
+                )));
             }
         };
-        Ok(Field::new(field1.name, dtype))
+        Ok(Field::new(x_field.name, dtype))
     }
 
     fn docstring(&self) -> &'static str {
@@ -180,10 +176,10 @@ impl ScalarUDF for Atan2 {
 
 #[must_use]
 pub fn atan2(x: ExprRef, y: ExprRef) -> ExprRef {
-    ScalarFunction::new(Atan2 {}, vec![x, y]).into()
+    ScalarFn::builtin(Atan2 {}, vec![x, y]).into()
 }
 
-fn trigonometry(s: &Series, trig_function: &TrigonometricFunction) -> DaftResult<Series> {
+fn trigonometry(s: Series, trig_function: &TrigonometricFunction) -> DaftResult<Series> {
     match s.data_type() {
         DataType::Float32 => {
             let ca = s.f32().unwrap();
@@ -204,7 +200,7 @@ fn trigonometry(s: &Series, trig_function: &TrigonometricFunction) -> DaftResult
         ))),
     }
 }
-fn atan2_impl(s: &Series, rhs: &Series) -> DaftResult<Series> {
+fn atan2_impl(s: Series, rhs: Series) -> DaftResult<Series> {
     match (s.data_type(), rhs.data_type()) {
         (DataType::Float32, DataType::Float32) => {
             let lhs_ca = s.f32().unwrap();
@@ -219,16 +215,16 @@ fn atan2_impl(s: &Series, rhs: &Series) -> DaftResult<Series> {
         // avoid extra casting if one side is already f64
         (DataType::Float64, rhs_dt) if rhs_dt.is_numeric() => {
             let rhs_s = rhs.cast(&DataType::Float64)?;
-            atan2_impl(s, &rhs_s)
+            atan2_impl(s, rhs_s)
         }
         (lhs_dt, DataType::Float64) if lhs_dt.is_numeric() => {
             let lhs_s = s.cast(&DataType::Float64)?;
-            atan2_impl(&lhs_s, rhs)
+            atan2_impl(lhs_s, rhs)
         }
         (lhs_dt, rhs_dt) if lhs_dt.is_numeric() && rhs_dt.is_numeric() => {
             let lhs_s = s.cast(&DataType::Float64)?;
             let rhs_s = rhs.cast(&DataType::Float64)?;
-            atan2_impl(&lhs_s, &rhs_s)
+            atan2_impl(lhs_s, rhs_s)
         }
         (lhs_dt, rhs_dt) => Err(DaftError::TypeError(format!(
             "Expected inputs to trigonometry to be numeric, got {} and {}",

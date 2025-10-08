@@ -1,52 +1,54 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_resource_request::ResourceRequest;
 use common_treenode::TreeNode;
 use daft_dsl::{
-    count_actor_pool_udfs,
-    functions::{
-        python::{get_concurrency, get_resource_request, PythonUDF},
-        FunctionExpr,
-    },
     Expr, ExprRef,
+    functions::{
+        FunctionExpr,
+        python::{LegacyPythonUDF, UDFProperties},
+    },
 };
-use daft_logical_plan::partitioning::{translate_clustering_spec, ClusteringSpec};
+use daft_logical_plan::partitioning::{ClusteringSpec, translate_clustering_spec};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-use crate::{impl_default_tree_display, PhysicalPlanRef};
+use crate::{PhysicalPlanRef, impl_default_tree_display};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ActorPoolProject {
     pub input: PhysicalPlanRef,
     pub projection: Vec<ExprRef>,
+    pub udf_properties: UDFProperties,
     pub clustering_spec: Arc<ClusteringSpec>,
 }
 
 impl ActorPoolProject {
-    pub(crate) fn try_new(input: PhysicalPlanRef, projection: Vec<ExprRef>) -> DaftResult<Self> {
+    pub(crate) fn try_new(
+        input: PhysicalPlanRef,
+        projection: Vec<ExprRef>,
+        udf_properties: UDFProperties,
+    ) -> DaftResult<Self> {
         let clustering_spec = translate_clustering_spec(input.clustering_spec(), &projection);
-
-        let num_actor_pool_udfs: usize = count_actor_pool_udfs(&projection);
-        if !num_actor_pool_udfs == 1 {
-            return Err(DaftError::InternalError(format!("Expected ActorPoolProject to have exactly 1 actor pool UDF expression but found: {num_actor_pool_udfs}")));
-        }
 
         Ok(Self {
             input,
             projection,
+            udf_properties,
             clustering_spec,
         })
     }
 
     pub fn resource_request(&self) -> Option<ResourceRequest> {
-        get_resource_request(self.projection.as_slice())
+        self.udf_properties.resource_request.clone()
     }
 
     /// Retrieves the concurrency of this ActorPoolProject
     pub fn concurrency(&self) -> usize {
-        get_concurrency(self.projection.as_slice())
+        self.udf_properties
+            .concurrency
+            .expect("ActorPoolProject should have concurrency specified")
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -65,7 +67,7 @@ impl ActorPoolProject {
                     proj.apply(|e| {
                         if let Expr::Function {
                             func:
-                                FunctionExpr::Python(PythonUDF {
+                                FunctionExpr::Python(LegacyPythonUDF {
                                     name,
                                     concurrency: Some(_),
                                     ..

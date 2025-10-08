@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import abc
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from daft.expressions import Expression
+from daft.expressions.visitor import _ColumnVisitor
 
 if TYPE_CHECKING:
-    from daft.daft import PyPushdowns
+    from daft.daft import PyExpr, PyPushdowns
 
 
 @dataclass(frozen=True)
@@ -35,3 +37,23 @@ class Pushdowns:
             columns=pushdowns.columns,
             limit=pushdowns.limit,
         )
+
+    def filter_required_column_names(self) -> set[str]:
+        """Returns a set of field names that are required by the filter predicate."""
+        return set() if self.filters is None else _ColumnVisitor().visit(self.filters)
+
+    @classmethod
+    def empty(cls) -> Pushdowns:
+        return cls()
+
+
+class SupportsPushdownFilters(abc.ABC):
+    """Mixin interface for ScanBuilder to enable filter pushdown functionality."""
+
+    @abc.abstractmethod
+    def push_filters(self, filters: list[PyExpr]) -> tuple[list[PyExpr], list[PyExpr]]:
+        """Pushes down filters and returns filters that need post-scan evaluation.
+
+        return tuple : (pushed_filters, post_filters)
+        """
+        raise NotImplementedError

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use {
     daft_core::python::PySchema,
     daft_dsl::python::PyExpr,
-    pyo3::{pyclass, pyclass::CompareOp, pymethods, PyObject, PyResult, Python},
+    pyo3::{PyObject, PyResult, Python, pyclass, pyclass::CompareOp, pymethods},
 };
 
 /// Options for converting JSON data to Daft data.

@@ -5,7 +5,7 @@ use daft_logical_plan::LogicalPlanBuilder;
 use daft_scan::builder::ParquetScanBuilder;
 use sqlparser::ast::TableFunctionArgs;
 
-use super::{try_coerce_list, SQLTableFunction};
+use super::{SQLTableFunction, try_coerce_list};
 use crate::{
     error::{PlannerError, SQLPlannerResult},
     functions::SQLFunctionArguments,
@@ -92,7 +92,7 @@ impl SQLTableFunction for ReadParquetFunction {
 
         let runtime = common_runtime::get_io_runtime(true);
 
-        let result = runtime.block_on(builder.finish())??;
+        let result = runtime.block_within_async_context(builder.finish())??;
         Ok(result)
     }
 }

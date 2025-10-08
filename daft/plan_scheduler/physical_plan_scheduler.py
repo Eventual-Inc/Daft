@@ -57,7 +57,7 @@ class PhysicalPlanScheduler:
         psets: dict[str, list[PartitionT]],
         actor_pool_manager: physical_plan.ActorPoolManager,
         results_buffer_size: int | None,
-    ) -> physical_plan.MaterializedPhysicalPlan:
+    ) -> physical_plan.MaterializedPhysicalPlan[PartitionT]:
         return iter(
             physical_plan.Materialize(
                 self._scheduler.to_partition_tasks(psets, actor_pool_manager), results_buffer_size
@@ -83,7 +83,7 @@ class AdaptivePhysicalPlanScheduler:
     def is_done(self) -> bool:
         return self._scheduler.is_done()
 
-    def update(self, stage_id: int, cache_entry: PartitionCacheEntry):
+    def update(self, stage_id: int, cache_entry: PartitionCacheEntry) -> None:
         num_partitions = cache_entry.num_partitions()
         assert num_partitions is not None
         size_bytes = cache_entry.size_bytes()

@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use common_error::{DaftError, DaftResult};
 use common_partitioning::{Partition, PartitionId, PartitionSet};
 use daft_core::{
     join::JoinSide,
@@ -7,22 +8,26 @@ use daft_core::{
     python::{PySchema, PySeries, PyTimeUnit},
 };
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_dsl::{expr::bound_expr::BoundExpr, python::PyExpr};
-use daft_io::{python::IOConfig, IOStatsContext};
+use daft_dsl::{
+    Expr,
+    expr::bound_expr::{BoundAggExpr, BoundExpr},
+    python::PyExpr,
+};
+use daft_io::{IOStatsContext, python::IOConfig};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
-use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
+use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
 use daft_scan::{
-    python::pylib::PyScanTask, storage_config::StorageConfig, DataSource, ScanTask, ScanTaskRef,
+    DataSource, ScanTask, ScanTaskRef, python::pylib::PyScanTask, storage_config::StorageConfig,
 };
 use daft_stats::{TableMetadata, TableStatistics};
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes, PyTypeInfo};
+use pyo3::{PyTypeInfo, exceptions::PyValueError, prelude::*, types::PyBytes};
 use snafu::ResultExt;
 
 use crate::{
+    DaftCoreComputeSnafu, PyIOSnafu,
     micropartition::{MicroPartition, TableState},
     partitioning::MicroPartitionSet,
-    DaftCoreComputeSnafu, PyIOSnafu,
 };
 
 #[pyclass(module = "daft.daft", frozen)]
@@ -50,52 +55,48 @@ impl PyMicroPartition {
         let tables = py.allow_threads(|| {
             let io_stats =
                 IOStatsContext::new(format!("PyMicroPartition::get_column_by_name: {name}"));
-            self.inner.concat_or_get(io_stats)
+            self.inner.concat_or_get_update(io_stats)
         })?;
-        let columns = tables
-            .iter()
-            .map(|t| t.get_column(index))
-            .collect::<Vec<_>>();
-        match columns.as_slice() {
-            [] => Ok(Series::empty(name, &self.inner.schema.get_field(name)?.dtype).into()),
-            columns => Ok(Series::concat(columns)?.into()),
+        match tables {
+            None => Ok(Series::empty(name, &self.inner.schema.get_field(name)?.dtype).into()),
+            Some(t) => Ok(t.get_column(index).clone().into()),
         }
     }
 
     pub fn get_column(&self, idx: usize, py: Python) -> PyResult<PySeries> {
         let tables = py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("PyMicroPartition::get_column: {idx}"));
-            self.inner.concat_or_get(io_stats)
+            self.inner.concat_or_get_update(io_stats)
         })?;
 
-        if tables.is_empty() {
-            let field = &self.inner.schema()[idx];
-            Ok(Series::empty(&field.name, &field.dtype).into())
-        } else {
-            let columns = tables.iter().map(|t| t.get_column(idx)).collect::<Vec<_>>();
-
-            Ok(Series::concat(&columns)?.into())
+        match tables {
+            None => {
+                let field = &self.inner.schema()[idx];
+                Ok(Series::empty(&field.name, &field.dtype).into())
+            }
+            Some(t) => Ok(t.get_column(idx).clone().into()),
         }
     }
 
     pub fn columns(&self, py: Python) -> PyResult<Vec<PySeries>> {
         let tables = py.allow_threads(|| {
             let io_stats = IOStatsContext::new("PyMicroPartition::columns");
-            self.inner.concat_or_get(io_stats)
+            self.inner.concat_or_get_update(io_stats)
         })?;
 
-        (0..self.inner.schema().len())
-            .map(|idx| {
-                if tables.is_empty() {
-                    let field = &self.inner.schema()[idx];
-                    Ok(Series::empty(&field.name, &field.dtype).into())
-                } else {
-                    let columns = tables.iter().map(|t| t.get_column(idx)).collect::<Vec<_>>();
-
-                    Ok(Series::concat(&columns)?.into())
-                }
-            })
-            .collect()
+        match tables {
+            None => {
+                let series = self
+                    .inner
+                    .schema()
+                    .fields()
+                    .iter()
+                    .map(|f| Series::empty(&f.name, &f.dtype).into())
+                    .collect::<Vec<_>>();
+                Ok(series)
+            }
+            Some(t) => Ok(t.columns().iter().map(|s| s.clone().into()).collect()),
+        }
     }
 
     pub fn get_record_batches(&self, py: Python) -> PyResult<Vec<PyRecordBatch>> {
@@ -191,14 +192,11 @@ impl PyMicroPartition {
     pub fn to_record_batch(&self, py: Python) -> PyResult<PyRecordBatch> {
         let concatted = py.allow_threads(|| {
             let io_stats = IOStatsContext::new("PyMicroPartition::to_record_batch");
-            self.inner.concat_or_get(io_stats)
+            self.inner.concat_or_get_update(io_stats)
         })?;
-        match &concatted.as_ref()[..] {
-            [] => PyRecordBatch::empty(Some(self.schema()?)),
-            [batch] => Ok(PyRecordBatch {
-                record_batch: batch.clone(),
-            }),
-            [..] => unreachable!("concat_or_get should return one or none"),
+        match concatted {
+            None => Ok(PyRecordBatch::empty(Some(self.schema()?))),
+            Some(record_batch) => Ok(PyRecordBatch { record_batch }),
         }
     }
 
@@ -208,6 +206,12 @@ impl PyMicroPartition {
     pub fn concat(py: Python, to_concat: Vec<Self>) -> PyResult<Self> {
         let mps_iter = to_concat.iter().map(|t| t.inner.as_ref());
         py.allow_threads(|| Ok(MicroPartition::concat(mps_iter)?.into()))
+    }
+
+    #[staticmethod]
+    pub fn concat_or_empty(py: Python, to_concat: Vec<Self>, schema: PySchema) -> PyResult<Self> {
+        let mps_iter = to_concat.iter().map(|t| t.inner.as_ref());
+        py.allow_threads(|| Ok(MicroPartition::concat_or_empty(mps_iter, schema.schema)?.into()))
     }
 
     pub fn slice(&self, py: Python, start: i64, end: i64) -> PyResult<Self> {
@@ -220,8 +224,7 @@ impl PyMicroPartition {
     }
 
     pub fn eval_expression_list(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_exprs: Vec<daft_dsl::ExprRef> =
-            exprs.into_iter().map(std::convert::Into::into).collect();
+        let converted_exprs = BoundExpr::bind_all(&exprs, &self.inner.schema)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -231,12 +234,19 @@ impl PyMicroPartition {
     }
 
     pub fn take(&self, py: Python, idx: &PySeries) -> PyResult<Self> {
-        py.allow_threads(|| Ok(self.inner.take(&idx.series)?.into()))
+        py.allow_threads(|| {
+            let taken = self.inner.take(&idx.series)?;
+            let mp = MicroPartition::new_loaded(
+                taken.schema.clone(),
+                Arc::new(vec![taken]),
+                self.inner.statistics.clone(),
+            );
+            Ok(mp.into())
+        })
     }
 
     pub fn filter(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_exprs: Vec<daft_dsl::ExprRef> =
-            exprs.into_iter().map(std::convert::Into::into).collect();
+        let converted_exprs = BoundExpr::bind_all(&exprs, &self.inner.schema)?;
         py.allow_threads(|| Ok(self.inner.filter(converted_exprs.as_slice())?.into()))
     }
 
@@ -247,10 +257,7 @@ impl PyMicroPartition {
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
     ) -> PyResult<Self> {
-        let converted_exprs: Vec<daft_dsl::ExprRef> = sort_keys
-            .into_iter()
-            .map(std::convert::Into::into)
-            .collect();
+        let converted_exprs = BoundExpr::bind_all(&sort_keys, &self.inner.schema)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -270,10 +277,7 @@ impl PyMicroPartition {
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
     ) -> PyResult<PySeries> {
-        let converted_exprs: Vec<daft_dsl::ExprRef> = sort_keys
-            .into_iter()
-            .map(std::convert::Into::into)
-            .collect();
+        let converted_exprs = BoundExpr::bind_all(&sort_keys, &self.inner.schema)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -287,16 +291,30 @@ impl PyMicroPartition {
     }
 
     pub fn agg(&self, py: Python, to_agg: Vec<PyExpr>, group_by: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_to_agg: Vec<daft_dsl::ExprRef> =
-            to_agg.into_iter().map(std::convert::Into::into).collect();
-        let converted_group_by: Vec<daft_dsl::ExprRef> =
-            group_by.into_iter().map(std::convert::Into::into).collect();
+        let converted_to_agg: Vec<_> = BoundExpr::bind_all(&to_agg, &self.inner.schema)?
+            .into_iter()
+            .map(|expr| {
+                if let Expr::Agg(agg_expr) = expr.as_ref() {
+                    Ok(BoundAggExpr::new_unchecked(agg_expr.clone()))
+                } else {
+                    Err(DaftError::ValueError(
+                        format!("RecordBatch.agg requires all to_agg inputs to be aggregation expressions, found: {expr}"),
+                    ))
+                }
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+        let converted_group_by: Vec<_> = BoundExpr::bind_all(&group_by, &self.inner.schema)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
                 .agg(converted_to_agg.as_slice(), converted_group_by.as_slice())?
                 .into())
         })
+    }
+
+    pub fn dedup(&self, py: Python, columns: Vec<PyExpr>) -> PyResult<Self> {
+        let converted_columns = BoundExpr::bind_all(&columns, &self.inner.schema)?;
+        py.allow_threads(|| Ok(self.inner.dedup(converted_columns.as_slice())?.into()))
     }
 
     pub fn pivot(
@@ -307,10 +325,9 @@ impl PyMicroPartition {
         values_col: PyExpr,
         names: Vec<String>,
     ) -> PyResult<Self> {
-        let converted_group_by: Vec<daft_dsl::ExprRef> =
-            group_by.into_iter().map(std::convert::Into::into).collect();
-        let converted_pivot_col: daft_dsl::ExprRef = pivot_col.into();
-        let converted_values_col: daft_dsl::ExprRef = values_col.into();
+        let converted_group_by = BoundExpr::bind_all(&group_by, &self.inner.schema)?;
+        let converted_pivot_col = BoundExpr::try_new(pivot_col, &self.inner.schema)?;
+        let converted_values_col = BoundExpr::try_new(values_col, &self.inner.schema)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -340,10 +357,8 @@ impl PyMicroPartition {
         how: JoinType,
         null_equals_nulls: Option<Vec<bool>>,
     ) -> PyResult<Self> {
-        let left_exprs: Vec<daft_dsl::ExprRef> =
-            left_on.into_iter().map(std::convert::Into::into).collect();
-        let right_exprs: Vec<daft_dsl::ExprRef> =
-            right_on.into_iter().map(std::convert::Into::into).collect();
+        let left_exprs = BoundExpr::bind_all(&left_on, &self.inner.schema)?;
+        let right_exprs = BoundExpr::bind_all(&right_on, &right.inner.schema)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -366,10 +381,8 @@ impl PyMicroPartition {
         right_on: Vec<PyExpr>,
         is_sorted: bool,
     ) -> PyResult<Self> {
-        let left_exprs: Vec<daft_dsl::ExprRef> =
-            left_on.into_iter().map(std::convert::Into::into).collect();
-        let right_exprs: Vec<daft_dsl::ExprRef> =
-            right_on.into_iter().map(std::convert::Into::into).collect();
+        let left_exprs = BoundExpr::bind_all(&left_on, &self.inner.schema)?;
+        let right_exprs = BoundExpr::bind_all(&right_on, &right.inner.schema)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -393,8 +406,7 @@ impl PyMicroPartition {
     }
 
     pub fn explode(&self, py: Python, to_explode: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_to_explode: Vec<daft_dsl::ExprRef> =
-            to_explode.into_iter().map(|e| e.expr).collect();
+        let converted_to_explode = BoundExpr::bind_all(&to_explode, &self.inner.schema)?;
 
         py.allow_threads(|| Ok(self.inner.explode(converted_to_explode.as_slice())?.into()))
     }
@@ -407,10 +419,8 @@ impl PyMicroPartition {
         variable_name: &str,
         value_name: &str,
     ) -> PyResult<Self> {
-        let converted_ids: Vec<daft_dsl::ExprRef> =
-            ids.into_iter().map(std::convert::Into::into).collect();
-        let converted_values: Vec<daft_dsl::ExprRef> =
-            values.into_iter().map(std::convert::Into::into).collect();
+        let converted_ids = BoundExpr::bind_all(&ids, &self.inner.schema)?;
+        let converted_values = BoundExpr::bind_all(&values, &self.inner.schema)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -504,8 +514,7 @@ impl PyMicroPartition {
                 "Can not partition into negative number of partitions: {num_partitions}"
             )));
         }
-        let exprs: Vec<daft_dsl::ExprRef> =
-            exprs.into_iter().map(std::convert::Into::into).collect();
+        let exprs = BoundExpr::bind_all(&exprs, &self.inner.schema)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -550,10 +559,7 @@ impl PyMicroPartition {
         boundaries: &PyRecordBatch,
         descending: Vec<bool>,
     ) -> PyResult<Vec<Self>> {
-        let exprs: Vec<daft_dsl::ExprRef> = partition_keys
-            .into_iter()
-            .map(std::convert::Into::into)
-            .collect();
+        let exprs = BoundExpr::bind_all(&partition_keys, &self.inner.schema)?;
         py.allow_threads(|| {
             Ok(self
                 .inner
@@ -573,10 +579,7 @@ impl PyMicroPartition {
         py: Python,
         partition_keys: Vec<PyExpr>,
     ) -> PyResult<(Vec<Self>, Self)> {
-        let exprs: Vec<daft_dsl::ExprRef> = partition_keys
-            .into_iter()
-            .map(std::convert::Into::into)
-            .collect();
+        let exprs = BoundExpr::bind_all(&partition_keys, &self.inner.schema)?;
         py.allow_threads(|| {
             let (mps, values) = self.inner.partition_by_value(exprs.as_slice())?;
             let mps = mps
@@ -755,6 +758,7 @@ impl PyMicroPartition {
                 None,
                 None,
                 None,
+                None,
             )
         })?;
         Ok(mp.into())
@@ -815,6 +819,7 @@ impl PyMicroPartition {
                 None,
                 None,
                 chunk_size,
+                None,
                 None,
             )
         })?;
@@ -1110,7 +1115,7 @@ pub fn read_sql_into_py_table(
 }
 
 pub fn read_pyfunc_into_table_iter(
-    scan_task: &ScanTaskRef,
+    scan_task: ScanTaskRef,
 ) -> crate::Result<impl Iterator<Item = crate::Result<RecordBatch>>> {
     let table_iterators = scan_task.sources.iter().map(|source| {
         // Call Python function to create an Iterator (Grabs the GIL and then releases it)
@@ -1136,7 +1141,16 @@ pub fn read_pyfunc_into_table_iter(
     }).collect::<crate::Result<Vec<_>>>()?;
 
     let scan_task_limit = scan_task.pushdowns.limit;
-    let scan_task_filters = scan_task.pushdowns.filters.clone();
+    // If aggregation pushdown is present, the Python factory function is expected to have applied
+    // the filtering semantics already (e.g., filter+count pushdown), so we should not re-apply
+    // post-scan filters here to avoid double filtering on pre-aggregated results.
+    // This removes reliance on any hard-coded Python function names and makes the behavior generic
+    // for all sources that surface aggregation pushdowns.
+    let scan_task_filters = if scan_task.pushdowns.aggregation.is_some() {
+        None
+    } else {
+        scan_task.pushdowns.filters.clone()
+    };
     let res = table_iterators
         .into_iter()
         .flat_map(move |iter| {
@@ -1226,22 +1240,26 @@ impl From<PyMicroPartition> for Arc<MicroPartition> {
     }
 }
 
-/// TODO chore: cutover LocalPartitionSet to use this pyclass.
-#[pyclass(module = "daft.daft")]
+#[pyclass(frozen, module = "daft.daft")]
 #[derive(Clone, Debug)]
 pub struct PyMicroPartitionSet(Arc<MicroPartitionSet>);
 
 #[pymethods]
 impl PyMicroPartitionSet {
+    #[new]
+    fn new() -> Self {
+        Self(Arc::new(MicroPartitionSet::empty()))
+    }
+
     fn get_partition(&self, idx: PartitionId) -> PyResult<PyMicroPartition> {
         Ok(self.0.get_partition(&idx)?.into())
     }
 
-    fn set_partition(&mut self, idx: PartitionId, part: PyMicroPartition) -> PyResult<()> {
+    fn set_partition(&self, idx: PartitionId, part: PyMicroPartition) -> PyResult<()> {
         Ok(self.0.set_partition(idx, &part.inner)?)
     }
 
-    fn delete_partition(&mut self, idx: PartitionId) -> PyResult<()> {
+    fn delete_partition(&self, idx: PartitionId) -> PyResult<()> {
         Ok(self.0.delete_partition(&idx)?)
     }
 
@@ -1263,6 +1281,28 @@ impl PyMicroPartitionSet {
 
     fn wait(&self) -> PyResult<()> {
         Ok(())
+    }
+
+    fn get_merged_micropartition(&self) -> PyResult<PyMicroPartition> {
+        Ok(self.0.get_merged_partitions()?.into())
+    }
+
+    fn get_preview_micropartitions(&self, num_rows: usize) -> PyResult<Vec<PyMicroPartition>> {
+        Ok(self
+            .0
+            .get_preview_partitions(num_rows)?
+            .into_iter()
+            .map(|p| p.into())
+            .collect())
+    }
+
+    fn items(&self) -> PyResult<Vec<(PartitionId, PyMicroPartition)>> {
+        Ok(self
+            .0
+            .items()
+            .into_iter()
+            .map(|(k, v)| (k, v.into()))
+            .collect())
     }
 }
 

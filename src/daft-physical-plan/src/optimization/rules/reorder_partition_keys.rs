@@ -1,15 +1,15 @@
 use common_error::DaftResult;
 use common_treenode::{ConcreteTreeNode, Transformed, TreeNode};
-use daft_dsl::{is_partition_compatible, ExprRef};
+use daft_dsl::{ExprRef, is_partition_compatible};
 use daft_logical_plan::partitioning::{ClusteringSpec, HashClusteringConfig};
 
 use crate::{
+    PhysicalPlan, PhysicalPlanRef,
     ops::{
         ActorPoolProject, Aggregate, Explode, HashJoin, Project, ShuffleExchange,
         ShuffleExchangeStrategy, Unpivot,
     },
     optimization::{plan_context::PlanContext, rules::PhysicalOptimizerRule},
-    PhysicalPlan, PhysicalPlanRef,
 };
 
 pub struct ReorderPartitionKeys {}
@@ -88,11 +88,12 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                     )?);
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }
-                PhysicalPlan::ActorPoolProject(ActorPoolProject { input, projection, clustering_spec: _ }) => {
+                PhysicalPlan::ActorPoolProject(ActorPoolProject { input, projection, clustering_spec: _, udf_properties }) => {
                     let new_plan = PhysicalPlan::ActorPoolProject(ActorPoolProject {
                         input: input.clone(),
                         projection: projection.clone(),
                         clustering_spec: new_spec.into(),
+                        udf_properties: udf_properties.clone(),
                     });
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }
@@ -148,6 +149,7 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                 }
 
                 // these depend solely on their input
+                PhysicalPlan::Dedup(..) |
                 PhysicalPlan::Filter(..) |
                 PhysicalPlan::Limit(..) |
                 PhysicalPlan::Sample(..) |
@@ -186,15 +188,15 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::{resolved_col, ExprRef};
+    use daft_dsl::{ExprRef, resolved_col};
     use daft_logical_plan::partitioning::{ClusteringSpec, UnknownClusteringConfig};
 
     use crate::{
+        PhysicalPlan, PhysicalPlanRef,
         ops::{EmptyScan, HashJoin, ShuffleExchangeFactory},
         optimization::rules::{
-            reorder_partition_keys::ReorderPartitionKeys, PhysicalOptimizerRule,
+            PhysicalOptimizerRule, reorder_partition_keys::ReorderPartitionKeys,
         },
-        PhysicalPlan, PhysicalPlanRef,
     };
 
     fn create_dummy_plan(schema: SchemaRef, num_partitions: usize) -> PhysicalPlanRef {

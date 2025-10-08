@@ -357,7 +357,8 @@ fn timestamp_tz_serializer<'a>(
     }
 }
 
-pub(crate) fn new_serializer<'a>(
+/// Creates a new serializer
+pub fn new_serializer<'a>(
     array: &'a dyn Array,
     offset: usize,
     take: usize,
@@ -499,7 +500,7 @@ fn serialize_item(buffer: &mut Vec<u8>, record: &[(&str, &[u8])], is_first_row: 
 /// Serializes `array` to a valid JSON to `buffer`
 /// # Implementation
 /// This operation is CPU-bounded
-pub(crate) fn serialize(array: &dyn Array, buffer: &mut Vec<u8>) {
+pub(crate) fn serialize_array(array: &dyn Array, buffer: &mut Vec<u8>) {
     let mut serializer = new_serializer(array, 0, usize::MAX);
 
     (0..array.len()).for_each(|i| {

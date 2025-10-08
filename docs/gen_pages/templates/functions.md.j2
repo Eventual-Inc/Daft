@@ -1,0 +1,19 @@
+# daft.functions
+Built-in Daft Functions
+
+{% for cat in categories %}
+## {{ cat.title }}
+
+{{ cat.description }}
+
+<table>
+  {%- for fn in cat.functions %}
+  {%- set page_name = 'index_' if fn.name == 'index' else fn.name %}
+  <tr>
+    <td><a href="{{ page_name }}/">{{ fn.name }}</a>({{ fn.signature }})</td>
+    <td>{{ fn.description }}</td>
+  </tr>
+  {%- endfor %}
+</table>
+
+{% endfor %}

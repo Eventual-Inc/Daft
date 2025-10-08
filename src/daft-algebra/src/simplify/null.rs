@@ -1,10 +1,11 @@
 use common_error::DaftResult;
 use common_treenode::Transformed;
-use daft_dsl::{lit, null_lit, Expr, ExprRef, LiteralValue, Operator};
+use daft_core::lit::Literal;
+use daft_dsl::{Expr, ExprRef, Operator, lit, null_lit};
 use daft_schema::schema::SchemaRef;
 
 fn is_null(expr: &Expr) -> bool {
-    matches!(expr, Expr::Literal(LiteralValue::Null))
+    matches!(expr, Expr::Literal(Literal::Null))
 }
 
 /// Simplify expressions with null
@@ -41,7 +42,7 @@ pub(crate) fn simplify_expr_with_null(
                 Expr::Literal(l) => {
                     match l {
                         // is_null(NULL) -> true
-                        LiteralValue::Null => Transformed::yes(lit(true)),
+                        Literal::Null => Transformed::yes(lit(true)),
                         // is_null(lit(x)) -> false
                         _ => Transformed::yes(lit(false)),
                     }
@@ -54,7 +55,7 @@ pub(crate) fn simplify_expr_with_null(
                 Expr::Literal(l) => {
                     match l {
                         // not_null(NULL) -> false
-                        LiteralValue::Null => Transformed::yes(lit(false)),
+                        Literal::Null => Transformed::yes(lit(false)),
                         // not_null(lit(x)) -> true
                         _ => Transformed::yes(lit(true)),
                     }

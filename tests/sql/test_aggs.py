@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 import pytest
 
 import daft
 from daft import col
-from daft.sql import SQLCatalog
 
 
 def test_aggs_sql():
@@ -18,6 +19,7 @@ def test_aggs_sql():
             [
                 col("values").sum().alias("sum"),
                 col("values").mean().alias("mean"),
+                col("values").avg().alias("avg"),
                 col("values").min().alias("min"),
                 col("values").max().alias("max"),
                 col("values").count().alias("count"),
@@ -34,6 +36,7 @@ def test_aggs_sql():
     SELECT
         sum(values) as sum,
         mean(values) as mean,
+        avg(values) as avg,
         min(values) as min,
         max(values) as max,
         count(values) as count,
@@ -57,8 +60,16 @@ def test_aggs_sql():
         ("sum(values) as sum_v", "sum_v > 10", {"sum_v": [22.0, 29.5]}),
         ("count(*) as cnt", "cnt > 2", {"cnt": [4, 5]}),
         ("count(*) as cnt", "count(*) > 2", {"cnt": [4, 5]}),
+        ("count(1) as cnt", "cnt > 2", {"cnt": [4, 5]}),
+        ("count(1) as cnt", "count(1) > 2", {"cnt": [4, 5]}),
         ("count(*)", "count(*) > 2", {"count": [4, 5]}),
+        ("count(1)", "count(1) > 2", {"count": [4, 5]}),
         ("count(*) as cnt", "sum(values) > 10", {"cnt": [4, 5]}),
+        ("count(1) as cnt", "sum(values) > 10", {"cnt": [4, 5]}),
+        ("count(true) as cnt", "sum(values) > 10", {"cnt": [4, 5]}),
+        ("count(false) as cnt", "sum(values) > 10", {"cnt": [4, 5]}),
+        ("count([1]) as cnt", "sum(values) > 10", {"cnt": [4, 5]}),
+        ("count(null) as null", "sum(values) > 10", {"null": [0, 0]}),
         # duplicates of the above 4 `count` tests but for count-distinct
         ("count(distinct values) as count_distinct", "count_distinct > 2", {"count_distinct": [3, 5]}),
         ("count(distinct values) as count_distinct", "count(distinct values) > 2", {"count_distinct": [3, 5]}),
@@ -74,7 +85,7 @@ def test_having(agg, cond, expected):
             "values": [1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 1.5],
         }
     )
-    catalog = SQLCatalog({"df": df})
+    bindings = {"df": df}
 
     actual = daft.sql(
         f"""
@@ -85,7 +96,7 @@ def test_having(agg, cond, expected):
     having {cond}
     order by id
     """,
-        catalog,
+        **bindings,
     ).to_pydict()
 
     assert actual == expected
@@ -99,7 +110,7 @@ def test_having_non_grouped():
             "floats": [0.01, 0.011, 0.01047, 0.02, 0.019, 0.018, 0.017, 0.016, 0.015, 0.014],
         }
     )
-    catalog = SQLCatalog({"df": df})
+    bindings = {"df": df}
 
     actual = daft.sql(
         """
@@ -108,7 +119,7 @@ def test_having_non_grouped():
     from df
     having sum(values) > 40
     """,
-        catalog,
+        **bindings,
     ).to_pydict()
 
     assert actual == {"count": [10]}
@@ -118,7 +129,7 @@ def test_simple_rollup():
     data = {"dept": ["IT", "IT", "HR", "HR"], "year": [2022, 2023, 2022, 2023], "cost": [100, 200, 300, 400]}
     expected = {"dept": ["HR", "IT", None], "year": [None, None, None], "total": [700, 300, 1000]}
     df = daft.from_pydict(data)
-    catalog = SQLCatalog({"df": df})
+    bindings = {"df": df}
     sql = """
     SELECT
         dept,
@@ -129,7 +140,7 @@ def test_simple_rollup():
     HAVING year IS NULL
     ORDER BY dept NULLS LAST
     """
-    actual = daft.sql(sql, catalog).to_pydict()
+    actual = daft.sql(sql, **bindings).to_pydict()
     assert actual == expected
 
 
@@ -137,7 +148,7 @@ def test_rollup_null_handling():
     data = {"dept": ["IT", "IT", "HR", "HR"], "year": [2022, 2023, 2022, 2023], "cost": [100, 200, 300, 400]}
     expected = {"dept": ["HR", "IT", None], "year": [None, None, None], "total": [700, 300, 1000]}
     df = daft.from_pydict(data)
-    catalog = SQLCatalog({"df": df})
+    bindings = {"df": df}
 
     sql = """
     SELECT dept, year, SUM(cost) as total
@@ -146,7 +157,7 @@ def test_rollup_null_handling():
     HAVING year IS NULL
     ORDER BY dept NULLS LAST
     """
-    actual = daft.sql(sql, catalog).to_pydict()
+    actual = daft.sql(sql, **bindings).to_pydict()
     assert actual == expected
 
 
@@ -160,7 +171,7 @@ def test_rollup_multiple_aggs():
     expected = {"region": ["East", "West", None], "total_qty": [30, 70, 100], "avg_price": [6.5, 7.5, 7.0]}
 
     df = daft.from_pydict(data)
-    catalog = SQLCatalog({"df": df})
+    bindings = {"df": df}
 
     sql = """
     SELECT
@@ -172,7 +183,7 @@ def test_rollup_multiple_aggs():
     HAVING product IS NULL
     ORDER BY region NULLS LAST
     """
-    actual = daft.sql(sql, catalog).to_pydict()
+    actual = daft.sql(sql, **bindings).to_pydict()
     assert actual == expected
 
 
@@ -194,7 +205,7 @@ def test_groupby_rollup():
         "roi": [2.5, 2.4705882352941178],
     }
     df = daft.from_pydict(data)
-    catalog = SQLCatalog({"sales": df})
+    bindings = {"sales": df}
 
     sql = """
     SELECT
@@ -210,7 +221,7 @@ def test_groupby_rollup():
     HAVING SUM(sales) > 1000
     ORDER BY region, product, channel;
     """
-    actual = daft.sql(sql, catalog).to_pydict()
+    actual = daft.sql(sql, **bindings).to_pydict()
     assert actual == expected
 
 
@@ -225,11 +236,123 @@ def test_groupby_rollup():
 )
 def test_various_groupby_positions(query):
     data = daft.from_pydict({"strings": ["foo", "bar"]})
-
-    res = daft.sql(query, catalog=SQLCatalog({"data": data}))
+    res = daft.sql(query, **{"data": data})
     if "s" in res.column_names:
         res = res.sort("s").to_pydict()
         assert res == {"s": ["Bar", "Foo"], "count": [1, 1]}
     else:
         res = res.sort("strings").to_pydict()
         assert res == {"strings": ["Bar", "Foo"], "count": [1, 1]}
+
+
+def test_group_by_with_lit_selection():
+    df = daft.from_pydict({"ids": [1, 1, 2, 2, 3, 4], "values": [10, 20, 30, 40, 50, 60]})
+
+    res = daft.sql("select 0 from df group by ids", df=df)
+    expected = {"literal": [0, 0, 0, 0]}
+    assert res.to_pydict() == expected
+
+
+def test_group_by_ordinal_1():
+    df = daft.from_pydict(
+        {
+            "a": ["foo", "foo", "bar", "bar", "foo"],
+            "b": [1, 2, 1, 2, 1],
+            "c": [10, 20, 30, 40, 50],
+        }
+    )
+    expected = df.groupby("a").agg([col("c").sum().alias("total")]).sort("a").collect().to_pydict()
+    actual = daft.sql("SELECT a, SUM(c) as total FROM df GROUP BY 1", df=df).sort("a").collect().to_pydict()
+    assert actual == expected
+
+
+def test_group_by_ordinal_2():
+    df = daft.from_pydict(
+        {
+            "a": ["foo", "foo", "bar", "bar", "foo"],
+            "b": [1, 2, 1, 2, 1],
+            "c": [10, 20, 30, 40, 50],
+        }
+    )
+    expected = df.groupby("b").agg([col("c").sum().alias("total")]).sort("b").collect().to_pydict()
+    actual = daft.sql("SELECT b, SUM(c) as total FROM df GROUP BY 1", df=df).sort("b").collect().to_pydict()
+    assert actual == expected
+
+
+def test_group_by_ordinal_1_2():
+    df = daft.from_pydict(
+        {
+            "a": ["foo", "foo", "bar", "bar", "foo"],
+            "b": [1, 2, 1, 2, 1],
+            "c": [10, 20, 30, 40, 50],
+        }
+    )
+    expected = df.groupby(["a", "b"]).agg([col("c").sum().alias("total")]).sort(["a", "b"]).collect().to_pydict()
+    actual = daft.sql("SELECT a, b, SUM(c) as total FROM df GROUP BY 1,2", df=df).sort(["a", "b"]).collect().to_pydict()
+    assert actual == expected
+
+
+def test_group_by_ordinal_with_expression():
+    df = daft.from_pydict(
+        {
+            "a": ["foo", "foo", "bar", "bar", "foo"],
+            "b": [1, 2, 1, 2, 1],
+            "c": [10, 20, 30, 40, 50],
+        }
+    )
+    expected = (
+        df.with_column("b1", col("b") + 1)
+        .groupby(["a", "b1"])
+        .agg([col("c").sum().alias("total")])
+        .sort(["a", "b1"])
+        .collect()
+        .to_pydict()
+    )
+
+    actual = (
+        daft.sql("SELECT a, b+1 as b1, SUM(c) as total FROM df GROUP BY 1,2", df=df)
+        .sort(["a", "b1"])
+        .collect()
+        .to_pydict()
+    )
+
+    assert actual == expected
+
+
+def test_group_by_ordinal_zero_raises():
+    df = daft.from_pydict(
+        {
+            "a": ["foo", "foo", "bar", "bar", "foo"],
+            "b": [1, 2, 1, 2, 1],
+            "c": [10, 20, 30, 40, 50],
+        }
+    )
+    with pytest.raises(Exception) as excinfo:
+        daft.sql("SELECT a FROM df GROUP BY 0", df=df).collect()
+    assert "GROUP BY position must be >= 1" in str(excinfo.value) or "out of range" in str(excinfo.value)
+
+
+def test_group_by_ordinal_out_of_range_raises():
+    df = daft.from_pydict(
+        {
+            "a": ["foo", "foo", "bar", "bar", "foo"],
+            "b": [1, 2, 1, 2, 1],
+            "c": [10, 20, 30, 40, 50],
+        }
+    )
+    with pytest.raises(Exception) as excinfo:
+        daft.sql("SELECT a FROM df GROUP BY 100", df=df).collect()
+    assert "GROUP BY position 100 is out of range" in str(excinfo.value) or "out of range" in str(excinfo.value)
+
+
+def test_group_by_ordinal_non_integer_raises():
+    df = daft.from_pydict(
+        {
+            "a": ["foo", "foo", "bar", "bar", "foo"],
+            "b": [1, 2, 1, 2, 1],
+            "c": [10, 20, 30, 40, 50],
+        }
+    )
+    with pytest.raises(Exception) as excinfo:
+        daft.sql("SELECT count(1) FROM df GROUP BY 1.5", df=df).collect()
+    assert "GROUP BY position" in str(excinfo.value) or "not a valid non-negative integer" in str(excinfo.value)

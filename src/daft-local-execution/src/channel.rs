@@ -1,3 +1,5 @@
+use futures::Stream;
+
 #[derive(Clone)]
 pub(crate) struct Sender<T>(kanal::AsyncSender<T>);
 impl<T> Sender<T> {
@@ -16,9 +18,16 @@ impl<T> Receiver<T> {
     pub(crate) fn into_inner(self) -> kanal::AsyncReceiver<T> {
         self.0
     }
+
+    pub(crate) fn into_stream(self) -> impl Stream<Item = T> {
+        futures::stream::unfold(
+            self,
+            |rx| async move { rx.recv().await.map(|item| (item, rx)) },
+        )
+    }
 }
 
-pub(crate) fn create_channel<T: Clone>(buffer_size: usize) -> (Sender<T>, Receiver<T>) {
+pub(crate) fn create_channel<T>(buffer_size: usize) -> (Sender<T>, Receiver<T>) {
     let (tx, rx) = kanal::bounded_async::<T>(buffer_size);
     (Sender(tx), Receiver(rx))
 }

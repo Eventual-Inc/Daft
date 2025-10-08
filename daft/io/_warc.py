@@ -1,8 +1,9 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import List, Optional, Union
+from typing import Optional, Union
 
-from daft import context
+from daft import context, runners
 from daft.api_annotations import PublicAPI
 from daft.daft import (
     FileFormatConfig,
@@ -17,7 +18,7 @@ from daft.io.common import get_tabular_files_scan
 
 @PublicAPI
 def read_warc(
-    path: Union[str, List[str]],
+    path: Union[str, list[str]],
     io_config: Optional[IOConfig] = None,
     file_path_column: Optional[str] = None,
     _multithreaded_io: Optional[bool] = None,
@@ -53,12 +54,13 @@ def read_warc(
     # If running on Ray, we want to limit the amount of concurrency and requests being made.
     # This is because each Ray worker process receives its own pool of thread workers and connections.
     multithreaded_io = (
-        (context.get_context().get_or_create_runner().name != "ray") if _multithreaded_io is None else _multithreaded_io
+        (runners.get_or_create_runner().name != "ray") if _multithreaded_io is None else _multithreaded_io
     )
     storage_config = StorageConfig(multithreaded_io, io_config)
 
     schema = {
         "WARC-Record-ID": DataType.string(),
+        "WARC-Target-URI": DataType.string(),
         "WARC-Type": DataType.string(),
         "WARC-Date": DataType.timestamp(TimeUnit.ns(), timezone="Etc/UTC"),
         "Content-Length": DataType.int64(),
@@ -78,5 +80,6 @@ def read_warc(
         storage_config=storage_config,
         file_path_column=file_path_column,
         hive_partitioning=False,
+        skip_glob=True,
     )
     return DataFrame(builder)

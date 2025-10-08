@@ -1,12 +1,14 @@
-use daft_dsl::{binary_op, Operator};
+use std::sync::Arc;
+
+use daft_dsl::{Operator, binary_op, null_lit};
 use daft_functions::{coalesce::Coalesce, float::IsNan};
 use daft_sql::sql_expr;
 use spark_connect::Expression;
 
-use super::{BinaryFunction, FunctionModule, SparkFunction, UnaryFunction, TODO_FUNCTION};
+use super::{BinaryFunction, FunctionModule, SparkFunction, UnaryFunction};
 use crate::{
     error::{ConnectError, ConnectResult},
-    invalid_argument_err,
+    invalid_argument_err, not_yet_implemented,
     spark_analyzer::expr_analyzer::analyze_expr,
 };
 
@@ -36,22 +38,22 @@ impl FunctionModule for CoreFunctions {
         // https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/functions.html#normal-functions
 
         parent.add_fn("coalesce", Coalesce {});
-        parent.add_fn("input_file_name", TODO_FUNCTION);
+        parent.add_todo_fn("input_file_name");
         parent.add_fn("isnan", IsNan {});
         parent.add_fn("isnull", UnaryFunction(|arg| arg.is_null()));
 
-        parent.add_fn("monotically_increasing_id", TODO_FUNCTION);
-        parent.add_fn("named_struct", TODO_FUNCTION);
-        parent.add_fn("nanvl", TODO_FUNCTION);
-        parent.add_fn("rand", TODO_FUNCTION);
-        parent.add_fn("randn", TODO_FUNCTION);
-        parent.add_fn("spark_partition_id", TODO_FUNCTION);
-        parent.add_fn("when", TODO_FUNCTION);
-        parent.add_fn("bitwise_not", TODO_FUNCTION);
-        parent.add_fn("bitwiseNOT", TODO_FUNCTION);
+        parent.add_todo_fn("monotically_increasing_id");
+        parent.add_todo_fn("named_struct");
+        parent.add_todo_fn("nanvl");
+        parent.add_todo_fn("rand");
+        parent.add_todo_fn("randn");
+        parent.add_todo_fn("spark_partition_id");
+        parent.add_fn("when", WhenFunction);
+        parent.add_todo_fn("bitwise_not");
+        parent.add_todo_fn("bitwiseNOT");
         parent.add_fn("expr", SqlExpr);
-        parent.add_fn("greatest", TODO_FUNCTION);
-        parent.add_fn("least", TODO_FUNCTION);
+        parent.add_todo_fn("greatest");
+        parent.add_todo_fn("least");
 
         // parent.add_fn("isnan", UnaryFunction(|arg| arg.is_nan()));
 
@@ -59,6 +61,37 @@ impl FunctionModule for CoreFunctions {
         parent.add_fn("isnull", UnaryFunction(|arg| arg.is_null()));
         parent.add_fn("not", UnaryFunction(|arg| arg.not()));
         parent.add_fn("and", BinaryFunction(|arg1, arg2| arg1.and(arg2)));
+    }
+}
+
+pub struct WhenFunction;
+impl SparkFunction for WhenFunction {
+    fn to_expr(&self, args: &[Expression]) -> ConnectResult<daft_dsl::ExprRef> {
+        let args = args
+            .iter()
+            .map(analyze_expr)
+            .collect::<ConnectResult<Vec<_>>>()?;
+
+        let predicate = args[0].clone();
+
+        let (if_true, if_false) = match args.len() {
+            // when(predicate, then)
+            2 => (args[1].clone(), null_lit()),
+            // when(predicate, then).otherwise(fallback)
+            3 => (args[2].clone(), args[1].clone()),
+
+            // when(predicate, then)($.when(<predicate>, <then>)*)
+            _ => {
+                not_yet_implemented!("multiple .when conditions not yet supported")
+            }
+        };
+
+        Ok(Arc::new(daft_dsl::Expr::IfElse {
+            if_true,
+            if_false,
+            predicate,
+        })
+        .alias(args[0].name()))
     }
 }
 

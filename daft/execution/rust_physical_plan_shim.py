@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from daft.context import get_context
 from daft.daft import (
@@ -169,6 +169,20 @@ def local_aggregate(
     )
 
 
+def local_dedup(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    columns: list[PyExpr],
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    dedup_step = execution_step.Dedup(
+        columns=ExpressionsProjection([Expression._from_pyexpr(pyexpr) for pyexpr in columns]),
+    )
+    return physical_plan.pipeline_instruction(
+        child_plan=input,
+        pipeable_instruction=dedup_step,
+        resource_request=ResourceRequest(),
+    )
+
+
 def pivot(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     group_by: list[PyExpr],
@@ -223,6 +237,7 @@ def top_n(
     descending: list[bool],
     nulls_first: list[bool],
     limit: int,
+    offset: int,
     num_partitions: int,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in sort_by])
@@ -232,6 +247,7 @@ def top_n(
         descending=descending,
         nulls_first=nulls_first,
         limit=limit,
+        offset=offset,
         num_partitions=num_partitions,
     )
 
@@ -395,7 +411,7 @@ def write_deltalake(
     path: str,
     large_dtypes: bool,
     version: int,
-    partition_cols: list[str] | None,
+    partition_cols: list[PyExpr] | None,
     io_config: IOConfig | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.deltalake_write(
@@ -403,7 +419,7 @@ def write_deltalake(
         path,
         large_dtypes,
         version,
-        partition_cols,
+        ExpressionsProjection([Expression._from_pyexpr(expr) for expr in partition_cols]) if partition_cols else None,
         io_config,
     )
 
@@ -413,13 +429,13 @@ def write_lance(
     path: str,
     mode: str,
     io_config: IOConfig | None,
-    kwargs: dict | None,
+    kwargs: dict[str, Any] | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.lance_write(input, path, mode, io_config, kwargs)
 
 
 def write_data_sink(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
-    sink: DataSink,
+    sink: DataSink[Any],
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.data_sink_write(input, sink)

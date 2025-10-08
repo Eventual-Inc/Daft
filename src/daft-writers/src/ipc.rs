@@ -9,7 +9,7 @@ use daft_core::{
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
-use crate::{AsyncFileWriter, WriterFactory, RETURN_PATHS_COLUMN_NAME};
+use crate::{AsyncFileWriter, RETURN_PATHS_COLUMN_NAME, WriteResult, WriterFactory};
 
 pub struct IPCWriter {
     is_closed: bool,
@@ -52,10 +52,11 @@ impl AsyncFileWriter for IPCWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
-    async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {
         assert!(!self.is_closed, "Writer is closed");
 
-        let size_bytes = data.size_bytes()?.unwrap_or(0);
+        let size_bytes = data.size_bytes().unwrap_or(0);
+        let rows_written = data.len();
         let writer = self.get_or_create_writer(&data.schema())?;
         let tables = data.get_tables()?;
         for table in tables.iter() {
@@ -63,7 +64,10 @@ impl AsyncFileWriter for IPCWriter {
             writer.write(&chunk, None)?;
         }
         self.bytes_written += writer.bytes_written();
-        Ok(size_bytes)
+        Ok(WriteResult {
+            bytes_written: size_bytes,
+            rows_written,
+        })
     }
 
     async fn close(&mut self) -> DaftResult<Self::Result> {

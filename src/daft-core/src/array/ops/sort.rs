@@ -6,18 +6,18 @@ use common_error::DaftResult;
 
 use super::{arrow2::sort::primitive::common::multi_column_idx_sort, as_arrow::AsArrow};
 #[cfg(feature = "python")]
-use crate::datatypes::PythonArray;
+use crate::prelude::PythonArray;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
+        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, Decimal128Array,
+        ExtensionArray, FileArray, FixedSizeBinaryArray, Float32Array, Float64Array, IntervalArray,
+        NullArray, Utf8Array,
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, Decimal128Array,
-        ExtensionArray, FixedSizeBinaryArray, Float32Array, Float64Array, IntervalArray, NullArray,
-        Utf8Array,
     },
     kernels::search_sorted::{build_nulls_first_compare_with_nulls, cmp_float},
     series::Series,
@@ -813,5 +813,11 @@ impl FixedShapeSparseTensorArray {
 impl FixedShapeTensorArray {
     pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         todo!("impl sort for FixedShapeTensorArray")
+    }
+}
+
+impl FileArray {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
+        todo!("impl sort for FileArray")
     }
 }

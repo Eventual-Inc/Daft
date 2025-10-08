@@ -15,9 +15,11 @@ def io_config_to_storage_options(io_config: IOConfig, table_uri: str) -> dict[st
 
     This function takes as input the table_uri, which it uses to determine the backend to be used.
     """
-    scheme = urlparse(table_uri).scheme
+    parsed = urlparse(table_uri)
+    scheme = parsed.scheme
     if scheme == "s3" or scheme == "s3a":
-        return _s3_config_to_storage_options(io_config.s3)
+        bucket = parsed.netloc
+        return _s3_config_to_storage_options(io_config.s3, bucket)
     elif scheme == "gcs" or scheme == "gs":
         return _gcs_config_to_storage_options(io_config.gcs)
     elif scheme == "az" or scheme == "abfs" or scheme == "abfss":
@@ -26,7 +28,7 @@ def io_config_to_storage_options(io_config: IOConfig, table_uri: str) -> dict[st
         return None
 
 
-def _s3_config_to_storage_options(s3_config: S3Config) -> dict[str, str]:
+def _s3_config_to_storage_options(s3_config: S3Config, bucket: str) -> dict[str, str]:
     storage_options: dict[str, str] = {}
     if s3_config.region_name is not None:
         storage_options["region"] = s3_config.region_name
@@ -48,6 +50,12 @@ def _s3_config_to_storage_options(s3_config: S3Config) -> dict[str, str]:
         storage_options["skip_signature"] = "true"
     if s3_config.force_virtual_addressing:
         storage_options["virtual_hosted_style_request"] = "true"
+        if s3_config.endpoint_url and bucket not in s3_config.endpoint_url:
+            # Note: Add bucket into endpoint url in case the third party service require the
+            # consistency between endpoint and virtual-hosted style, for example, lance or arrow-object-store.
+            # Refer to: https://github.com/apache/arrow-rs-object-store/blob/release/0.12/src/aws/builder.rs#L724
+            parsed = urlparse(s3_config.endpoint_url)
+            storage_options["endpoint_url"] = f"{parsed.scheme}://{bucket}.{parsed.netloc}{parsed.path}"
     return storage_options
 
 

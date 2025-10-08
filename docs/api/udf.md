@@ -4,7 +4,7 @@ User-Defined Functions (UDFs) are a mechanism to run Python code on the data tha
 
 To write a UDF, you should use the `@udf` decorator, which can decorate either a Python function or a Python class, producing a UDF.
 
-Learn more about [UDFs](../core_concepts.md#user-defined-functions-udf) in Daft User Guide.
+Learn more about [UDFs](../custom-code/udfs.md) in Daft User Guide.
 
 ## Creating UDFs
 
@@ -19,3 +19,15 @@ Learn more about [UDFs](../core_concepts.md#user-defined-functions-udf) in Daft 
 ::: daft.udf.UDF
     options:
         filters: ["!^_", "__call__"]
+
+## `@daft.func` (Next-Generation UDFs)
+
+`@daft.func` is a next-generation interface for creating user-defined functions (UDFs) in Daft. It provides a streamlined way to turn Python functions into Daft operations that work seamlessly with DataFrame expressions.
+
+Learn more about [`@daft.func`](../custom-code/func.md) in Daft User Guide.
+
+::: daft.func
+
+::: daft.udf.row_wise.RowWiseUdf
+
+::: daft.udf.generator.GeneratorUdf

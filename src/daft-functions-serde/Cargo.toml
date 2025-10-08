@@ -1,0 +1,21 @@
+[dependencies]
+arrow2 = {workspace = true, features = ["io_json_read", "io_json_write"]}
+common-error = {path = "../common/error", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+serde = {workspace = true}
+typetag = {workspace = true}
+
+[features]
+python = [
+  "common-error/python",
+  "daft-core/python",
+  "daft-dsl/python"
+]
+
+[lints]
+workspace = true
+
+[package]
+name = "daft-functions-serde"
+edition.workspace = true

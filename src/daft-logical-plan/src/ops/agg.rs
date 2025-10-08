@@ -1,18 +1,20 @@
 use std::sync::Arc;
 
-use daft_dsl::{exprs_to_schema, ExprRef};
+use daft_dsl::{ExprRef, exprs_to_schema};
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 
 use crate::{
+    LogicalPlan,
     logical_plan::{self},
     stats::{ApproxStats, PlanStats, StatsState},
-    LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Aggregate {
     pub plan_id: Option<usize>,
+    pub node_id: Option<usize>,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
 
@@ -43,6 +45,7 @@ impl Aggregate {
 
         Ok(Self {
             plan_id: None,
+            node_id: None,
             input,
             aggregations,
             groupby,
@@ -53,6 +56,11 @@ impl Aggregate {
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
         self.plan_id = Some(plan_id);
+        self
+    }
+
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
         self
     }
 

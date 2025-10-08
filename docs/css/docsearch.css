@@ -8,8 +8,8 @@
 
 
 :root{
-    --docsearch-primary-color:#ad9fff !important;
-    --docsearch-logo-color:#ad9fff !important;
+    --docsearch-primary-color: var(--daft-magenta) !important;
+    --docsearch-logo-color: var(--daft-magenta) !important;
 }
 
 .DocSearch-Button{
@@ -66,4 +66,22 @@
 
 .DocSearch-Help {
     font-size: 1em !important
+}
+
+/* DARK MODE OVERRIDES */
+[data-md-color-scheme="slate"][data-md-color-primary="black"] {
+    --docsearch-text-color: var(--md-default-fg-color);
+    --docsearch-container-background: rgba(0, 0, 0, 0.6);
+    --docsearch-modal-background: var(--md-default-bg-color);
+    --docsearch-modal-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+    --docsearch-searchbox-background: var(--md-code-bg-color);
+    --docsearch-searchbox-focus-background: var(--md-code-bg-color);
+    --docsearch-hit-color: var(--md-default-fg-color);
+    --docsearch-hit-active-color: var(--md-default-bg-color);
+    --docsearch-hit-background: transparent;
+    --docsearch-hit-shadow: none;
+    --docsearch-footer-background: var(--md-default-bg-color);
+    --docsearch-footer-shadow: inset 0 1px 0 0 rgba(73, 76, 106, 0.2);
+    --docsearch-spacing: 12px;
+    --docsearch-muted-color: var(--md-default-fg-color--light);
 }

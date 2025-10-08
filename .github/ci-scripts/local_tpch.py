@@ -3,6 +3,8 @@
 Expects tables as Parquet files in "/tmp/tpch-data/"
 """
 
+from __future__ import annotations
+
 import time
 
 import daft

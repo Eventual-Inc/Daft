@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
-use daft_dsl::{Column, Expr, ExprRef, ResolvedColumn};
+use daft_dsl::{Column, Expr, ExprRef, ResolvedColumn, functions::scalar::ScalarFn};
 
 use crate::{
     logical_plan::{LogicalPlan, Project},
@@ -30,7 +30,7 @@ impl DetectMonotonicId {
     /// Helper function to detect if an expression is a monotonically_increasing_id() call
     fn is_monotonic_id_expr(expr: &ExprRef) -> bool {
         match expr.as_ref() {
-            Expr::ScalarFunction(func) => func.name() == "monotonically_increasing_id",
+            Expr::ScalarFn(ScalarFn::Builtin(func)) => func.name() == "monotonically_increasing_id",
             _ => expr.children().iter().any(Self::is_monotonic_id_expr),
         }
     }
@@ -45,7 +45,9 @@ impl DetectMonotonicId {
         Ok(expr
             .clone()
             .transform(|e| match e.as_ref() {
-                Expr::ScalarFunction(func) if func.name() == "monotonically_increasing_id" => {
+                Expr::ScalarFn(ScalarFn::Builtin(func))
+                    if func.name() == "monotonically_increasing_id" =>
+                {
                     Ok(Transformed::yes(
                         Expr::Column(Column::Resolved(ResolvedColumn::Basic(Arc::from(
                             column_name,
@@ -86,6 +88,7 @@ impl OptimizerRule for DetectMonotonicId {
                             MonotonicallyIncreasingId::try_new(
                                 project.input.clone(),
                                 Some(column_name),
+                                None, // No starting offset specified since there isn't a way to specify one in an expression, at the moment
                             )?,
                         ));
 
@@ -116,7 +119,7 @@ impl OptimizerRule for DetectMonotonicId {
 mod tests {
     use common_error::DaftResult;
     use common_scan_info::Pushdowns;
-    use daft_functions::sequence::monotonically_increasing_id::monotonically_increasing_id;
+    use daft_functions::monotonically_increasing_id::monotonically_increasing_id;
     use daft_schema::{dtype::DataType, field::Field};
 
     use crate::{

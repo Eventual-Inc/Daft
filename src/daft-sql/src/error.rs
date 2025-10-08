@@ -1,5 +1,5 @@
 use common_error::DaftError;
-use daft_catalog::error::Error as CatalogError;
+use daft_catalog::error::CatalogError;
 use snafu::Snafu;
 use sqlparser::{parser::ParserError, tokenizer::TokenizerError};
 
@@ -143,7 +143,7 @@ impl From<PlannerError> for DaftError {
 pub type SQLPlannerResult<T> = Result<T, PlannerError>;
 
 #[cfg(feature = "python")]
-use pyo3::{create_exception, exceptions::PyException, PyErr};
+use pyo3::{PyErr, create_exception, exceptions::PyException};
 
 #[cfg(feature = "python")]
 create_exception!(daft.exceptions, InvalidSQLException, PyException);

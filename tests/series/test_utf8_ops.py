@@ -8,6 +8,8 @@ import unicodedata
 import pyarrow as pa
 import pytest
 
+import daft
+import daft.exceptions
 from daft import DataType, Series
 
 
@@ -127,7 +129,10 @@ def test_series_utf8_compare_invalid_inputs(funcname, bad_series) -> None:
 def test_series_utf8_split_broadcast_pattern(data, patterns, expected, regex) -> None:
     s = Series.from_arrow(pa.array(data))
     patterns = Series.from_arrow(pa.array(patterns))
-    result = s.str.split(patterns, regex=regex)
+    if regex:
+        result = s.str.regexp_split(patterns)
+    else:
+        result = s.str.split(patterns)
     assert result.to_pylist() == expected
 
 
@@ -153,7 +158,10 @@ def test_series_utf8_split_broadcast_pattern(data, patterns, expected, regex) ->
 def test_series_utf8_split_multi_pattern(data, patterns, expected, regex) -> None:
     s = Series.from_arrow(pa.array(data))
     patterns = Series.from_arrow(pa.array(patterns))
-    result = s.str.split(patterns, regex=regex)
+    if regex:
+        result = s.str.regexp_split(patterns)
+    else:
+        result = s.str.split(patterns)
     assert result.to_pylist() == expected
 
 
@@ -177,7 +185,10 @@ def test_series_utf8_split_multi_pattern(data, patterns, expected, regex) -> Non
 def test_series_utf8_split_broadcast_arr(data, patterns, expected, regex) -> None:
     s = Series.from_arrow(pa.array(data))
     patterns = Series.from_arrow(pa.array(patterns))
-    result = s.str.split(patterns, regex=regex)
+    if regex:
+        result = s.str.regexp_split(patterns)
+    else:
+        result = s.str.split(patterns)
     assert result.to_pylist() == expected
 
 
@@ -200,7 +211,10 @@ def test_series_utf8_split_broadcast_arr(data, patterns, expected, regex) -> Non
 def test_series_utf8_split_nulls(data, patterns, expected, regex) -> None:
     s = Series.from_arrow(pa.array(data, type=pa.string()))
     patterns = Series.from_arrow(pa.array(patterns, type=pa.string()))
-    result = s.str.split(patterns, regex=regex)
+    if regex:
+        result = s.str.regexp_split(patterns)
+    else:
+        result = s.str.split(patterns)
     assert result.to_pylist() == expected
 
 
@@ -216,7 +230,10 @@ def test_series_utf8_split_empty_arrs(data, patterns, regex) -> None:
     s = Series.from_arrow(pa.array(data, type=pa.string()))
     patterns = Series.from_arrow(pa.array(patterns, type=pa.string()))
     with pytest.raises(ValueError):
-        s.str.split(patterns, regex=regex)
+        if regex:
+            s.str.regexp_split(patterns)
+        else:
+            s.str.split(patterns)
 
 
 def test_series_utf8_split_empty_input() -> None:
@@ -238,7 +255,10 @@ def test_series_utf8_split_empty_input() -> None:
 def test_series_utf8_split_invalid_inputs(patterns, regex) -> None:
     s = Series.from_arrow(pa.array(["a,b,c", "d, e", "f"]))
     with pytest.raises(ValueError):
-        s.str.split(patterns, regex=regex)
+        if regex:
+            s.str.regexp_split(patterns)
+        else:
+            s.str.split(patterns)
 
 
 def test_series_utf8_length() -> None:
@@ -470,7 +490,7 @@ def test_series_utf8_left(data, nchars, expected) -> None:
 def test_series_utf8_left_empty_arrs(data, nchars) -> None:
     s = Series.from_arrow(pa.array(data, type=pa.string()))
     nchars = Series.from_arrow(pa.array(nchars, type=pa.uint32()))
-    with pytest.raises(ValueError):
+    with pytest.raises(daft.exceptions.DaftCoreException):
         s.str.left(nchars)
 
 
@@ -483,27 +503,21 @@ def test_series_utf8_left_empty_inputs() -> None:
 def test_series_utf8_left_mismatch_len() -> None:
     s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
     nchars = Series.from_arrow(pa.array([1, 2], type=pa.uint32()))
-    with pytest.raises(ValueError):
+    with pytest.raises(daft.exceptions.DaftCoreException):
         s.str.left(nchars)
-
-
-def test_series_utf8_left_bad_nchars() -> None:
-    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
-    with pytest.raises(ValueError):
-        s.str.left(1)
 
 
 def test_series_utf8_left_bad_nchars_dtype() -> None:
     s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
     nchars = Series.from_arrow(pa.array(["1", "2", "3"]))
-    with pytest.raises(ValueError):
+    with pytest.raises(daft.exceptions.DaftTypeError):
         s.str.left(nchars)
 
 
 def test_series_utf8_left_bad_dtype() -> None:
     s = Series.from_arrow(pa.array([1, 2, 3]))
     nchars = Series.from_arrow(pa.array([1, 2, 3]))
-    with pytest.raises(ValueError):
+    with pytest.raises(daft.exceptions.DaftTypeError):
         s.str.left(nchars)
 
 
@@ -550,12 +564,6 @@ def test_series_utf8_right_mismatch_len() -> None:
     nchars = Series.from_arrow(pa.array([1, 2], type=pa.uint32()))
     with pytest.raises(ValueError):
         s.str.right(nchars)
-
-
-def test_series_utf8_right_bad_nchars() -> None:
-    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
-    with pytest.raises(ValueError):
-        s.str.right(1)
 
 
 def test_series_utf8_right_bad_nchars_dtype() -> None:
@@ -1571,22 +1579,20 @@ def test_series_utf8_count_matches():
             "    fox     dog        over    ",
         ]
     )
-    p = Series.from_pylist(
-        [
-            "fox",
-            "over",
-            "lazy dog",
-            "dog",
-        ]
-    )
+    p = [
+        "fox",
+        "over",
+        "lazy dog",
+        "dog",
+    ]
 
-    res = s.str.count_matches(p, False, False).to_pylist()
+    res = s.str.count_matches(p, whole_words=False, case_sensitive=False).to_pylist()
     assert res == [3, 0, 7, 3, 3, 3, 3, 3]
-    res = s.str.count_matches(p, True, False).to_pylist()
+    res = s.str.count_matches(p, whole_words=True, case_sensitive=False).to_pylist()
     assert res == [3, 0, 7, 0, 3, 0, 3, 3]
-    res = s.str.count_matches(p, False, True).to_pylist()
+    res = s.str.count_matches(p, whole_words=False, case_sensitive=True).to_pylist()
     assert res == [3, 0, 7, 3, 3, 3, 1, 3]
-    res = s.str.count_matches(p, True, True).to_pylist()
+    res = s.str.count_matches(p, whole_words=True, case_sensitive=True).to_pylist()
     assert res == [3, 0, 7, 0, 3, 0, 1, 3]
 
 
@@ -1594,6 +1600,42 @@ def test_series_utf8_count_matches():
 @pytest.mark.parametrize("case_sensitive", [False, True])
 def test_series_utf8_count_matches_overlap(whole_words, case_sensitive):
     s = Series.from_pylist(["hello world"])
-    p = Series.from_pylist(["hello world", "hello", "world"])
-    res = s.str.count_matches(p, whole_words, case_sensitive).to_pylist()
+    p = ["hello world", "hello", "world"]
+    res = s.str.count_matches(p, whole_words=whole_words, case_sensitive=case_sensitive).to_pylist()
     assert res == [1]
+
+
+def test_series_utf8_regexp_count() -> None:
+    s = Series.from_arrow(pa.array(["hello world", "foo bar baz", "test123test456", None]))
+
+    # Test word pattern
+    result = s.regexp_count(r"\w+")
+    assert result.to_pylist() == [2, 3, 1, None]
+
+    # Test digit pattern
+    result = s.regexp_count(r"\d+")
+    assert result.to_pylist() == [0, 0, 2, None]
+
+    # Test single character pattern
+    result = s.regexp_count("o")
+    assert result.to_pylist() == [2, 2, 0, None]
+
+
+def test_series_utf8_regexp_count_edge_cases() -> None:
+    s = Series.from_arrow(pa.array(["", "a", "aa", "aaa", None]))
+
+    # Test empty string pattern - empty pattern matches every position
+    result = s.regexp_count("")
+    assert result.to_pylist() == [1, 2, 3, 4, None]
+
+    # Test word boundary pattern
+    result = s.regexp_count(r"\ba\b")
+    assert result.to_pylist() == [0, 1, 0, 0, None]
+
+
+def test_series_utf8_regexp_count_invalid_pattern() -> None:
+    s = Series.from_arrow(pa.array(["test"]))
+
+    # Test invalid regex pattern
+    with pytest.raises(Exception):
+        s.regexp_count("[invalid")

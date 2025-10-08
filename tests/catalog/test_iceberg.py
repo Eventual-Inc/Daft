@@ -6,6 +6,7 @@ import pytest
 import daft
 from daft import Catalog, Session
 from daft.catalog import NotFoundError
+from daft.io.partitioning import PartitionField, PartitionTransform
 from daft.logical.schema import DataType as dt
 from daft.logical.schema import Field, Schema
 
@@ -86,11 +87,13 @@ def test_create_namespace(catalog: Catalog):
     c.create_namespace(f"{n}.a")
     c.create_namespace(f"{n}.a.b")
     c.create_namespace(f"{n}.b")
-    #
-    # bug? iceberg sql catalog does not include child namespace
-    # assert len(c.list_namespaces(f"{n}")) == 3
-    assert len(c.list_namespaces(f"{n}.a")) == 1
-    assert len(c.list_namespaces(f"{n}.b")) == 1
+
+    # pyiceberg's sql catalog has inconsistent namespace listing behavior
+    # This was fixed in 0.10.0rc1
+    # https://github.com/apache/iceberg-python/issues/1627
+    # assert len(c.list_namespaces(pattern=n)) == 2
+    # assert len(c.list_namespaces(f"{n}.a")) == 1
+    # assert len(c.list_namespaces(f"{n}.b")) == 0
 
     # existence checks
     assert c.has_namespace(n)
@@ -154,6 +157,160 @@ def test_create_table(catalog: Catalog):
     # cleanup
     c.drop_table(f"{n}.tbl1")
     c.drop_namespace(n)
+
+
+def test_create_partitioned_table_identity(catalog):
+    c = catalog
+    n = "test_partitioned_identity"
+    c.create_namespace(n)
+    sch = schema({"a": dt.int64(), "b": dt.string()})
+    pf = PartitionField.create(
+        field=Field.create("a", dt.int64()),
+        source_field=Field.create("a", dt.int64()),
+        transform=PartitionTransform.identity(),
+    )
+    c.create_table(f"{n}.tbl", sch, partition_fields=[pf])
+    tbl = c.get_table(f"{n}.tbl")
+    partition_spec = tbl._inner.spec()
+    field = partition_spec.fields[0]
+    assert field.name == "a"
+    assert field.transform.__class__.__name__.lower().startswith("identity")
+    if c.has_table(f"{n}.tbl"):
+        c.drop_table(f"{n}.tbl")
+    if c.has_namespace(n):
+        c.drop_namespace(n)
+
+
+def test_create_partitioned_table_bucket(catalog):
+    c = catalog
+    n = "test_partitioned_bucket"
+    c.create_namespace(n)
+    sch = schema({"a": dt.int64(), "b": dt.string()})
+    pf = PartitionField.create(
+        field=Field.create("a", dt.int64()),
+        source_field=Field.create("a", dt.int64()),
+        transform=PartitionTransform.iceberg_bucket(n=10),
+    )
+    c.create_table(f"{n}.tbl", sch, partition_fields=[pf])
+    tbl = c.get_table(f"{n}.tbl")
+    partition_spec = tbl._inner.spec()
+    field = partition_spec.fields[0]
+    assert field.name == "a"
+    assert field.transform.__class__.__name__.lower().startswith("buckettransform")
+    if c.has_table(f"{n}.tbl"):
+        c.drop_table(f"{n}.tbl")
+    if c.has_namespace(n):
+        c.drop_namespace(n)
+
+
+def test_create_partitioned_table_truncate(catalog):
+    c = catalog
+    n = "test_partitioned_truncate"
+    c.create_namespace(n)
+    sch = schema({"a": dt.int64(), "b": dt.string()})
+    pf = PartitionField.create(
+        field=Field.create("a", dt.int64()),
+        source_field=Field.create("a", dt.int64()),
+        transform=PartitionTransform.iceberg_truncate(w=10),
+    )
+    c.create_table(f"{n}.tbl", sch, partition_fields=[pf])
+    tbl = c.get_table(f"{n}.tbl")
+    partition_spec = tbl._inner.spec()
+    field = partition_spec.fields[0]
+    assert field.name == "a"
+    assert field.transform.__class__.__name__.lower().startswith("truncatetransform")
+    if c.has_table(f"{n}.tbl"):
+        c.drop_table(f"{n}.tbl")
+    if c.has_namespace(n):
+        c.drop_namespace(n)
+
+
+def test_create_partitioned_table_Year(catalog):
+    c = catalog
+    n = "test_partitioned_year"
+    c.create_namespace(n)
+    sch = schema({"a": dt.date(), "b": dt.string()})
+    pf = PartitionField.create(
+        field=Field.create("a", dt.date()),
+        source_field=Field.create("a", dt.date()),
+        transform=PartitionTransform.year(),
+    )
+    c.create_table(f"{n}.tbl", sch, partition_fields=[pf])
+    tbl = c.get_table(f"{n}.tbl")
+    partition_spec = tbl._inner.spec()
+    field = partition_spec.fields[0]
+    assert field.name == "a"
+    assert field.transform.__class__.__name__.lower().startswith("yeartransform")
+    if c.has_table(f"{n}.tbl"):
+        c.drop_table(f"{n}.tbl")
+    if c.has_namespace(n):
+        c.drop_namespace(n)
+
+
+def test_create_partitioned_table_Month(catalog):
+    c = catalog
+    n = "test_partitioned_month"
+    c.create_namespace(n)
+    sch = schema({"a": dt.date(), "b": dt.string()})
+    pf = PartitionField.create(
+        field=Field.create("a", dt.date()),
+        source_field=Field.create("a", dt.date()),
+        transform=PartitionTransform.month(),
+    )
+    c.create_table(f"{n}.tbl", sch, partition_fields=[pf])
+    tbl = c.get_table(f"{n}.tbl")
+    partition_spec = tbl._inner.spec()
+    field = partition_spec.fields[0]
+    assert field.name == "a"
+    assert field.transform.__class__.__name__.lower().startswith("monthtransform")
+    if c.has_table(f"{n}.tbl"):
+        c.drop_table(f"{n}.tbl")
+    if c.has_namespace(n):
+        c.drop_namespace(n)
+
+
+def test_create_partitioned_table_Day(catalog):
+    c = catalog
+    n = "test_partitioned_day"
+    c.create_namespace(n)
+    sch = schema({"a": dt.date(), "b": dt.string()})
+    pf = PartitionField.create(
+        field=Field.create("a", dt.date()),
+        source_field=Field.create("a", dt.date()),
+        transform=PartitionTransform.day(),
+    )
+    c.create_table(f"{n}.tbl", sch, partition_fields=[pf])
+    tbl = c.get_table(f"{n}.tbl")
+    partition_spec = tbl._inner.spec()
+    field = partition_spec.fields[0]
+    assert field.name == "a"
+    assert field.transform.__class__.__name__.lower().startswith("daytransform")
+    if c.has_table(f"{n}.tbl"):
+        c.drop_table(f"{n}.tbl")
+    if c.has_namespace(n):
+        c.drop_namespace(n)
+
+
+def test_create_partitioned_table_Hour(catalog):
+    c = catalog
+    n = "test_partitioned_hour"
+    c.create_namespace(n)
+    sch = schema({"a": dt.timestamp(timeunit="s"), "b": dt.string()})
+    pf = PartitionField.create(
+        field=Field.create("a", dt.timestamp(timeunit="s")),
+        source_field=Field.create("a", dt.timestamp(timeunit="s")),
+        transform=PartitionTransform.hour(),
+    )
+    c.create_table(f"{n}.tbl", sch, partition_fields=[pf])
+    tbl = c.get_table(f"{n}.tbl")
+    partition_spec = tbl._inner.spec()
+    field = partition_spec.fields[0]
+    assert field.name == "a"
+    assert field.transform.__class__.__name__.lower().startswith("hourtransform")
+    if c.has_table(f"{n}.tbl"):
+        c.drop_table(f"{n}.tbl")
+    if c.has_namespace(n):
+        c.drop_namespace(n)
 
 
 def test_create_table_if_not_exists(catalog: Catalog):

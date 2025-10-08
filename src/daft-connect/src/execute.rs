@@ -1,46 +1,46 @@
 use std::{future::ready, sync::Arc};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
 use daft_catalog::TableSource;
-use daft_context::get_context;
-use daft_dsl::{literals_to_series, LiteralValue};
+use daft_core::prelude::*;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use futures::{
-    stream::{self, BoxStream},
     StreamExt, TryStreamExt,
+    stream::{self, BoxStream},
 };
 use pyo3::Python;
 use spark_connect::{
-    relation::RelType,
-    write_operation::{SaveMode, SaveType},
     CreateDataFrameViewCommand, ExecutePlanResponse, Relation, ShowString, SqlCommand,
     WriteOperation,
+    relation::RelType,
+    write_operation::{SaveMode, SaveType},
 };
-use tonic::{codegen::tokio_stream::wrappers::ReceiverStream, Status};
+use tonic::{Status, codegen::tokio_stream::wrappers::ReceiverStream};
 use tracing::debug;
 
 use crate::{
+    ExecuteStream,
     error::{ConnectError, ConnectResult, Context},
     not_yet_implemented,
     response_builder::ResponseBuilder,
     session::ConnectSession,
     spark_analyzer::SparkAnalyzer,
     util::FromOptionalField,
-    ExecuteStream,
 };
 
 impl ConnectSession {
     pub async fn run_query(
         &self,
         lp: LogicalPlanBuilder,
-    ) -> ConnectResult<BoxStream<DaftResult<Arc<MicroPartition>>>> {
-        let runner = get_context().get_or_create_runner()?;
-
+    ) -> ConnectResult<BoxStream<'_, DaftResult<Arc<MicroPartition>>>> {
+        let runner = daft_runners::get_or_create_runner()?;
         let result_set = tokio::task::spawn_blocking(move || {
-            Python::with_gil(|py| runner.run_iter_tables(py, lp, None))
+            Python::with_gil(|py| {
+                Ok::<_, DaftError>(runner.run_iter_tables(py, lp, None)?.collect::<Vec<_>>())
+            })
         })
         .await??;
 
@@ -353,7 +353,7 @@ impl ConnectSession {
         let input = input.required("input")?;
 
         let plan = Box::pin(translator.to_logical_plan(*input)).await?;
-        let plan = plan.limit(num_rows as i64, true)?;
+        let plan = plan.limit(num_rows as u64, true)?;
 
         let results = translator.session.run_query(plan).await?;
         let results = results.try_collect::<Vec<_>>().await?;
@@ -366,7 +366,7 @@ impl ConnectSession {
         let tbl = RecordBatch::concat(&tbls)?;
         let output = tbl.to_comfy_table(None).to_string();
 
-        let s = literals_to_series(&[LiteralValue::Utf8(output)])?.rename("show_string");
+        let s = Series::from(Literal::Utf8(output)).rename("show_string");
 
         let tbl = RecordBatch::from_nonempty_columns(vec![s])?;
         response_builder.arrow_batch_response(&tbl)

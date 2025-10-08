@@ -2,21 +2,21 @@ use std::{borrow::Cow, collections::HashSet, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
-use daft_dsl::{expr::bound_expr::BoundExpr, Expr};
+use daft_dsl::{Expr, ExprRef, expr::bound_expr::BoundExpr};
 use daft_recordbatch::RecordBatch;
 use indexmap::IndexMap;
 use num_traits::Pow;
-use rayon::{prelude::*, ThreadPoolBuilder};
+use rayon::{ThreadPoolBuilder, prelude::*};
 use serde_json::value::RawValue;
 use snafu::ResultExt;
 
 use crate::{
+    ArrowSnafu, JsonConvertOptions, JsonParseOptions, JsonReadOptions, RayonThreadPoolSnafu,
+    StdIOSnafu,
     decoding::{allocate_array, deserialize_into},
     deserializer::Value,
     inference::{column_types_map_to_fields, infer_records_schema},
     read::tables_concat,
-    ArrowSnafu, JsonConvertOptions, JsonParseOptions, JsonReadOptions, RayonThreadPoolSnafu,
-    StdIOSnafu,
 };
 
 const NEWLINE: u8 = b'\n';
@@ -36,14 +36,119 @@ pub fn read_json_local(
     let mmap = unsafe { memmap2::Mmap::map(&file) }.context(StdIOSnafu)?;
 
     let bytes = &mmap[..];
-    let reader = JsonReader::try_new(
-        bytes,
-        convert_options,
-        parse_options,
-        read_options,
-        max_chunks_in_flight,
-    )?;
-    reader.finish()
+    if bytes.is_empty() {
+        return Err(super::Error::JsonDeserializationError {
+            string: "Invalid JSON format - file is empty".to_string(),
+        }
+        .into());
+    }
+    if bytes[0] == b'[' {
+        let schema = infer_schema(bytes, None, None)?;
+
+        let predicate = convert_options
+            .as_ref()
+            .and_then(|options| options.predicate.clone());
+        read_json_array_impl(bytes, schema.into(), predicate)
+    } else {
+        let reader = JsonReader::try_new(
+            bytes,
+            convert_options,
+            parse_options,
+            read_options,
+            max_chunks_in_flight,
+        )?;
+        reader.finish()
+    }
+}
+
+pub fn read_json_array_impl(
+    bytes: &[u8],
+    schema: Schema,
+    predicate: Option<ExprRef>,
+) -> DaftResult<RecordBatch> {
+    let mut scratch = vec![];
+    let scratch = &mut scratch;
+
+    let daft_fields = schema.into_iter().cloned().map(Arc::new);
+
+    let arrow_schema = schema.to_arrow()?;
+
+    let iter =
+        serde_json::Deserializer::from_slice(bytes).into_iter::<&serde_json::value::RawValue>();
+
+    let mut columns = arrow_schema
+        .fields
+        .iter()
+        .map(|f| (Cow::Owned(f.name.clone()), allocate_array(f, bytes.len())))
+        .collect::<IndexMap<_, _>>();
+
+    let mut num_rows = 0;
+    for record in iter {
+        let value = record.map_err(|e| super::Error::JsonDeserializationError {
+            string: e.to_string(),
+        })?;
+        let v = parse_raw_value(value, scratch)?;
+
+        match v {
+            Value::Array(arr) => {
+                for value in arr {
+                    if let Value::Object(record) = value {
+                        for (s, inner) in &mut columns {
+                            match record.get(s) {
+                                Some(value) => {
+                                    deserialize_into(inner, &[value]);
+                                }
+                                None => {
+                                    inner.push_null();
+                                }
+                            }
+                        }
+                    } else {
+                        Err(super::Error::JsonDeserializationError {
+                            string: "Expected JSON object".to_string(),
+                        })?;
+                    }
+                    num_rows += 1;
+                }
+            }
+            Value::Object(record) => {
+                for (s, inner) in &mut columns {
+                    match record.get(s) {
+                        Some(value) => {
+                            deserialize_into(inner, &[value]);
+                        }
+                        None => {
+                            inner.push_null();
+                        }
+                    }
+                }
+                num_rows += 1;
+            }
+            _ => {
+                return Err(super::Error::JsonDeserializationError {
+                    string: "Expected JSON object".to_string(),
+                }
+                .into());
+            }
+        }
+    }
+    let columns = columns
+        .into_values()
+        .zip(daft_fields)
+        .map(|(mut ma, fld)| {
+            let arr = ma.as_box();
+            Series::try_from_field_and_arrow_array(fld, cast_array_for_daft_if_needed(arr))
+        })
+        .collect::<DaftResult<Vec<_>>>()?;
+
+    let tbl = RecordBatch::new_unchecked(schema.clone(), columns, num_rows);
+
+    if let Some(pred) = &predicate {
+        let pred = BoundExpr::try_new(pred.clone(), &schema)?;
+        tbl.filter(&[pred])
+    } else {
+        Ok(tbl)
+    }
 }
 
 struct JsonReader<'a> {
@@ -125,10 +230,10 @@ impl<'a> JsonReader<'a> {
                 // the guessed upper bound of the no. of bytes in the file
                 let n_bytes = (line_length_upper_bound * (n_rows as f32)) as usize;
 
-                if n_bytes < bytes.len() {
-                    if let Some(pos) = next_line_position(&bytes[n_bytes..]) {
-                        bytes = &bytes[..n_bytes + pos];
-                    }
+                if n_bytes < bytes.len()
+                    && let Some(pos) = next_line_position(&bytes[n_bytes..])
+                {
+                    bytes = &bytes[..n_bytes + pos];
                 }
             }
         }
@@ -154,10 +259,10 @@ impl<'a> JsonReader<'a> {
         let tbl = tables_concat(tbls)?;
 
         // The `limit` is not guaranteed to be fully applied from the byte slice, so we need to properly apply the limit after concatenating the tables
-        if let Some(limit) = self.n_rows {
-            if tbl.len() > limit {
-                return tbl.head(limit);
-            }
+        if let Some(limit) = self.n_rows
+            && tbl.len() > limit
+        {
+            return tbl.head(limit);
         }
         Ok(tbl)
     }
@@ -180,12 +285,7 @@ impl<'a> JsonReader<'a> {
         let mut columns = arrow_schema
             .fields
             .iter()
-            .map(|f| {
-                (
-                    Cow::Owned(f.name.to_string()),
-                    allocate_array(f, chunk_size),
-                )
-            })
+            .map(|f| (Cow::Owned(f.name.clone()), allocate_array(f, chunk_size)))
             .collect::<IndexMap<_, _>>();
 
         let mut num_rows = 0;
@@ -203,9 +303,7 @@ impl<'a> JsonReader<'a> {
                                 deserialize_into(inner, &[value]);
                             }
                             None => {
-                                Err(super::Error::JsonDeserializationError {
-                                    string: "Field not found in schema".to_string(),
-                                })?;
+                                inner.push_null();
                             }
                         }
                     }
@@ -229,7 +327,7 @@ impl<'a> JsonReader<'a> {
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let tbl = RecordBatch::new_unchecked(self.schema.clone(), columns, num_rows);
+        let tbl = RecordBatch::new_with_size(self.schema.clone(), columns, num_rows)?;
 
         if let Some(pred) = &self.predicate {
             let pred = BoundExpr::try_new(pred.clone(), &self.schema)?;

@@ -13,18 +13,13 @@ use daft_core::{
     prelude::*,
     python::{PyDataType, PyField, PySchema, PySeries, PyTimeUnit},
 };
-use pyo3::{
-    exceptions::PyValueError,
-    prelude::*,
-    pyclass::CompareOp,
-    types::{PyBool, PyBytes, PyFloat, PyInt, PyString},
-};
+use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    ExprRef, Operator,
     expr::{Expr, WindowExpr},
     visitor::accept,
-    ExprRef, LiteralValue, Operator,
 };
 
 #[pyfunction]
@@ -38,26 +33,31 @@ pub fn resolved_col(name: &str) -> PyExpr {
 }
 
 #[pyfunction]
+pub fn bound_col(index: usize, field: PyField) -> PyExpr {
+    crate::bound_col(index, field.field).into()
+}
+
+#[pyfunction]
 pub fn date_lit(item: i32) -> PyResult<PyExpr> {
-    let expr = Expr::Literal(LiteralValue::Date(item));
+    let expr = Expr::Literal(Literal::Date(item));
     Ok(expr.into())
 }
 
 #[pyfunction]
 pub fn time_lit(item: i64, tu: PyTimeUnit) -> PyResult<PyExpr> {
-    let expr = Expr::Literal(LiteralValue::Time(item, tu.timeunit));
+    let expr = Expr::Literal(Literal::Time(item, tu.timeunit));
     Ok(expr.into())
 }
 
 #[pyfunction(signature = (val, tu, tz=None))]
 pub fn timestamp_lit(val: i64, tu: PyTimeUnit, tz: Option<String>) -> PyResult<PyExpr> {
-    let expr = Expr::Literal(LiteralValue::Timestamp(val, tu.timeunit, tz));
+    let expr = Expr::Literal(Literal::Timestamp(val, tu.timeunit, tz));
     Ok(expr.into())
 }
 
 #[pyfunction]
 pub fn duration_lit(val: i64, tu: PyTimeUnit) -> PyResult<PyExpr> {
-    let expr = Expr::Literal(LiteralValue::Duration(val, tu.timeunit));
+    let expr = Expr::Literal(Literal::Duration(val, tu.timeunit));
     Ok(expr.into())
 }
 
@@ -111,7 +111,7 @@ pub fn interval_lit(
         nanoseconds: nanos,
     };
     let iv = IntervalValue::try_new(opts)?;
-    let expr = Expr::Literal(LiteralValue::Interval(iv));
+    let expr = Expr::Literal(Literal::Interval(iv));
     Ok(expr.into())
 }
 
@@ -156,7 +156,7 @@ pub fn decimal_lit(sign: bool, digits: Vec<u8>, exp: i32) -> PyResult<PyExpr> {
     if sign {
         v = -v;
     }
-    let expr = Expr::Literal(LiteralValue::Decimal(
+    let expr = Expr::Literal(Literal::Decimal(
         v,
         u8::try_from(precision)?,
         i8::try_from(scale)?,
@@ -165,57 +165,14 @@ pub fn decimal_lit(sign: bool, digits: Vec<u8>, exp: i32) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
-pub fn series_lit(series: PySeries) -> PyResult<PyExpr> {
-    let expr = Expr::Literal(LiteralValue::Series(series.series));
+pub fn list_lit(series: PySeries) -> PyResult<PyExpr> {
+    let expr = Expr::Literal(Literal::List(series.series));
     Ok(expr.into())
 }
 
 #[pyfunction]
 pub fn lit(item: Bound<PyAny>) -> PyResult<PyExpr> {
-    if item.is_instance_of::<PyBool>() {
-        let val = item.extract::<bool>()?;
-        Ok(crate::lit(val).into())
-    } else if let Ok(int) = item.downcast::<PyInt>() {
-        match int.extract::<i64>() {
-            Ok(val) => {
-                if val >= 0 && val < i32::MAX as i64 || val <= 0 && val > i32::MIN as i64 {
-                    Ok(crate::lit(val as i32).into())
-                } else {
-                    Ok(crate::lit(val).into())
-                }
-            }
-            _ => {
-                let val = int.extract::<u64>()?;
-                Ok(crate::lit(val).into())
-            }
-        }
-    } else if let Ok(float) = item.downcast::<PyFloat>() {
-        let val = float.extract::<f64>()?;
-        Ok(crate::lit(val).into())
-    } else if let Ok(pystr) = item.downcast::<PyString>() {
-        Ok(crate::lit(
-            pystr
-                .extract::<String>()
-                .expect("could not transform Python string to Rust Unicode"),
-        )
-        .into())
-    } else if let Ok(pybytes) = item.downcast::<PyBytes>() {
-        let bytes = pybytes.as_bytes();
-        Ok(crate::lit(bytes).into())
-    } else if item.is_instance_of::<common_io_config::python::IOConfig>() {
-        let py_ioconfig = item.extract::<common_io_config::python::IOConfig>()?;
-        Ok(crate::lit(py_ioconfig.config).into())
-    } else if item.is_instance_of::<ImageMode>() {
-        let image_mode = item.extract::<ImageMode>()?;
-        Ok(crate::lit(image_mode).into())
-    } else if item.is_instance_of::<ImageFormat>() {
-        let fmt = item.extract::<ImageFormat>()?;
-        Ok(crate::lit(fmt).into())
-    } else if item.is_none() {
-        Ok(crate::null_lit().into())
-    } else {
-        Ok(crate::lit::<PyObject>(item.into()).into())
-    }
+    Literal::from_pyobj(&item, None).map(|l| Expr::Literal(l).into())
 }
 
 #[pyfunction]
@@ -233,7 +190,8 @@ pub fn list_(items: Vec<PyExpr>) -> PyExpr {
     init_args,
     resource_request=None,
     batch_size=None,
-    concurrency=None
+    concurrency=None,
+    use_process=None
 ))]
 pub fn udf(
     name: &str,
@@ -245,15 +203,16 @@ pub fn udf(
     resource_request: Option<ResourceRequest>,
     batch_size: Option<usize>,
     concurrency: Option<usize>,
+    use_process: Option<bool>,
 ) -> PyResult<PyExpr> {
     use crate::functions::python::udf;
 
-    if let Some(batch_size) = batch_size {
-        if batch_size == 0 {
-            return Err(PyValueError::new_err(format!(
-                "Error creating UDF: batch size must be positive (got {batch_size})"
-            )));
-        }
+    if let Some(batch_size) = batch_size
+        && batch_size == 0
+    {
+        return Err(PyValueError::new_err(format!(
+            "Error creating UDF: batch size must be positive (got {batch_size})"
+        )));
     }
 
     let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
@@ -268,9 +227,36 @@ pub fn udf(
             resource_request,
             batch_size,
             concurrency,
+            use_process,
         )?
         .into(),
     })
+}
+
+#[pyfunction]
+pub fn row_wise_udf(
+    name: &str,
+    inner: PyObject,
+    return_dtype: PyDataType,
+    use_process: Option<bool>,
+    original_args: PyObject,
+    expr_args: Vec<PyExpr>,
+) -> PyExpr {
+    use crate::python_udf::row_wise_udf;
+
+    let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
+
+    PyExpr {
+        expr: row_wise_udf(
+            name,
+            inner.into(),
+            return_dtype.into(),
+            use_process,
+            original_args.into(),
+            args,
+        )
+        .into(),
+    }
 }
 
 /// Initializes all uninitialized UDFs in the expression
@@ -281,10 +267,11 @@ pub fn initialize_udfs(expr: PyExpr) -> PyResult<PyExpr> {
 }
 
 /// Get the names of all UDFs in expression
+// TODO: Remove with the old Ray Runner
 #[pyfunction]
-pub fn get_udf_names(expr: PyExpr) -> Vec<String> {
-    use crate::functions::python::get_udf_names;
-    get_udf_names(&expr.expr)
+pub fn try_get_udf_name(expr: PyExpr) -> Option<String> {
+    use crate::functions::python::try_get_udf_name;
+    try_get_udf_name(&expr.expr)
 }
 
 #[pyclass(module = "daft.daft")]
@@ -464,7 +451,7 @@ impl PyExpr {
     }
 
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {
-        use crate::{binary_op, Operator};
+        use crate::{Operator, binary_op};
         match op {
             CompareOp::Lt => Ok(binary_op(Operator::Lt, self.into(), other.into()).into()),
             CompareOp::Le => Ok(binary_op(Operator::LtEq, self.into(), other.into()).into()),
@@ -574,7 +561,7 @@ impl PyExpr {
     pub fn over(&self, window_spec: &crate::expr::window::WindowSpec) -> PyResult<Self> {
         let window_expr = WindowExpr::try_from(self.expr.clone())?;
         Ok(Self {
-            expr: Arc::new(Expr::Over(window_expr, window_spec.clone())),
+            expr: Arc::new(Expr::Over(window_expr, Arc::new(window_spec.clone()))),
         })
     }
 
@@ -607,6 +594,17 @@ impl PyExpr {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         self.expr.hash(&mut hasher);
         hasher.finish()
+    }
+
+    pub fn as_py<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        if let Expr::Literal(lit) = self.expr.as_ref() {
+            lit.clone().into_pyobject(py)
+        } else {
+            Err(PyValueError::new_err(format!(
+                "The method .py_any() was called on a non literal value! Got: {}",
+                &self.expr
+            )))
+        }
     }
 }
 

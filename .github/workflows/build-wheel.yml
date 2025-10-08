@@ -1,5 +1,5 @@
 name: Build Daft wheel
-run-name: 'Build Daft wheel for ${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-newname=${{ inputs.use_old_name }}'
+run-name: 'Build Daft wheel for ${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-lto=${{ inputs.use_lto }}'
 
 on:
   workflow_call:
@@ -16,14 +16,18 @@ on:
       build_type:
         description: Value to set RUST_DAFT_PKG_BUILD_TYPE to (release, dev, nightly, etc.)
         type: string
-      use_old_name:
-        description: Set to true to build as `getdaft` instead of `daft`
+      use_lto:
+        description: Whether to use link-time optimization (release-lto profile)
         type: boolean
+        default: true
+      run_tests:
+        description: Whether to run tests on the built wheels
+        type: boolean
+        default: false
 
 env:
   PYTHON_VERSION: 3.11
   DAFT_ANALYTICS_ENABLED: '0'
-  UV_SYSTEM_PYTHON: 1
   RUST_DAFT_PKG_BUILD_TYPE: ${{ inputs.build_type }}
 
 defaults:
@@ -32,20 +36,35 @@ defaults:
 
 jobs:
   build:
-    runs-on: ${{ inputs.os }}-latest
+    runs-on: ${{ inputs.os == 'ubuntu' && 'buildjet-16vcpu-ubuntu-2204' || format('{0}-latest', inputs.os) }}
 
     steps:
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
-    - uses: actions/setup-python@v5
+
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ env.PYTHON_VERSION }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
+
+    - name: Setup Virtual Env
+      run: |
+        uv venv --seed .venv
+        if [[ "${{ inputs.os }}" == "windows" ]]; then
+          echo "$GITHUB_WORKSPACE/.venv/Scripts" >> $GITHUB_PATH
+          source .venv/Scripts/activate
+        else
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+          source .venv/bin/activate
+        fi
+        uv pip install twine yq setuptools_scm
+
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest
-    - run: pip install uv
-    - run: uv pip install twine yq setuptools_scm
 
     - name: Patch package version
       run: |
@@ -53,10 +72,6 @@ jobs:
         echo "Setting package version to: $VERSION"
         tomlq -i -t ".package.version = \"$VERSION\"" Cargo.toml
         tomlq -i -t ".workspace.package.version = \"$VERSION\"" Cargo.toml
-
-    - name: Patch name to daft if using new name
-      if: ${{ inputs.use_old_name }}
-      run: tomlq -i -t ".project.name = \"getdaft\"" pyproject.toml
 
     - name: Patch name to daft-lts if LTS
       if: ${{ inputs.lts }}
@@ -84,7 +99,9 @@ jobs:
       uses: PyO3/maturin-action@v1
       with:
         target: x86_64
-        args: --profile release-lto --out dist
+        args: --profile ${{ inputs.use_lto && 'release-lto' || 'release' }} --out dist
+      env:
+        GITHUB_ACTIONS: true
 
     - name: Build wheels - Linux x86
       if: ${{ (inputs.os == 'ubuntu') && (inputs.arch == 'x86_64') }}
@@ -93,7 +110,9 @@ jobs:
         target: x86_64
         manylinux: 2_24
         # only produce sdist for linux x86 to avoid multiple copies
-        args: --profile release-lto --out dist --sdist
+        args: --profile ${{ inputs.use_lto && 'release-lto' || 'release' }} --out dist --sdist
+      env:
+        GITHUB_ACTIONS: true
 
     - name: Build wheels - Linux aarch64
       if: ${{ (inputs.os == 'ubuntu') && (inputs.arch == 'aarch64') }}
@@ -102,21 +121,67 @@ jobs:
         target: aarch64-unknown-linux-gnu
         manylinux: 2_24
         # only produce sdist for linux x86 to avoid multiple copies
-        args: --profile release-lto --out dist --sdist
+        args: --profile ${{ inputs.use_lto && 'release-lto' || 'release' }} --out dist --sdist
         before-script-linux: export JEMALLOC_SYS_WITH_LG_PAGE=16
+      env:
+        GITHUB_ACTIONS: true
 
     - name: Build wheels - Mac aarch64
       if: ${{ (inputs.os == 'macos') && (inputs.arch == 'aarch64')  }}
       uses: PyO3/maturin-action@v1
       with:
         target: aarch64
-        args: --profile release-lto --out dist
+        args: --profile ${{ inputs.use_lto && 'release-lto' || 'release' }} --out dist
       env:
         RUSTFLAGS: -Ctarget-cpu=apple-m1
         CFLAGS: -mtune=apple-m1
+        GITHUB_ACTIONS: true
 
     - name: Upload wheels
       uses: actions/upload-artifact@v4
       with:
-        name: wheels-${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-newname=${{ inputs.use_old_name }}
+        name: wheels-${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-lto=${{ inputs.use_lto }}
         path: dist
+
+  test-wheels:
+    name: Test built wheels
+    runs-on: ubuntu-latest
+    needs: build
+    if: ${{ inputs.run_tests && inputs.os == 'ubuntu' && inputs.arch == 'x86_64' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [native, ray]
+        python-version: ['3.9', '3.11']
+    env:
+      package-name: daft
+    steps:
+    - uses: actions/checkout@v4
+    - name: Download built wheels
+      uses: actions/download-artifact@v4
+      with:
+        pattern: wheels-${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-lto=${{ inputs.use_lto }}
+        merge-multiple: true
+        path: dist
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Setup Virtual Env
+      run: |
+        python -m venv venv
+        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+    - name: Install wheel and test dependencies
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          source venv/bin/activate
+          pip install ray pytest pandas dist/*.whl --force-reinstall
+          rm -rf daft
+    - name: Run dataframe tests
+      run: |
+        source venv/bin/activate
+        DAFT_RUNNER=${{ matrix.runner }} pytest tests/dataframe --durations=50

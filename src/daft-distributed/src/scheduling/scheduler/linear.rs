@@ -1,15 +1,15 @@
 use std::collections::{BinaryHeap, HashMap};
 
-use super::{SchedulableTask, ScheduledTask, Scheduler, WorkerSnapshot};
+use super::{PendingTask, ScheduledTask, Scheduler, WorkerSnapshot};
 use crate::scheduling::{
-    task::{SchedulingStrategy, Task},
+    task::{SchedulingStrategy, Task, TaskDetails, TaskResourceRequest},
     worker::WorkerId,
 };
 
 #[allow(dead_code)]
 pub(super) struct LinearScheduler<T: Task> {
     worker_snapshots: HashMap<WorkerId, WorkerSnapshot>,
-    pending_tasks: BinaryHeap<SchedulableTask<T>>,
+    pending_tasks: BinaryHeap<PendingTask<T>>,
 }
 
 impl<T: Task> Default for LinearScheduler<T> {
@@ -27,47 +27,56 @@ impl<T: Task> LinearScheduler<T> {
         }
     }
 
-    // Spread scheduling: Schedule task to the first worker with available slots
-    fn try_schedule_spread_task(&self) -> Option<WorkerId> {
+    fn try_schedule_spread_task(&self, task: &T) -> Option<WorkerId> {
         self.worker_snapshots
             .iter()
-            .find(|(_, worker)| worker.active_task_ids.len() < worker.num_cpus)
+            .filter(|(_, worker)| worker.can_schedule_task(task))
+            .max_by_key(|(_, worker)| {
+                (worker.available_num_cpus() + worker.available_num_gpus()) as usize
+            })
             .map(|(id, _)| id.clone())
     }
 
-    // Soft worker affinity scheduling: Schedule task to the worker if it has capacity
-    // Otherwise, try to schedule to any worker with capacity
-    fn try_schedule_soft_worker_affinity_task(&self, worker_id: &WorkerId) -> Option<WorkerId> {
-        if let Some(worker) = self.worker_snapshots.get(worker_id) {
-            if worker.active_task_ids.len() < worker.num_cpus {
-                return Some(worker.worker_id.clone());
-            }
+    fn try_schedule_worker_affinity_task(
+        &self,
+        task: &T,
+        worker_id: &WorkerId,
+        soft: bool,
+    ) -> Option<WorkerId> {
+        if let Some(worker) = self.worker_snapshots.get(worker_id)
+            && worker.can_schedule_task(task)
+        {
+            return Some(worker.worker_id.clone());
         }
-        self.worker_snapshots
-            .iter()
-            .find(|(_, worker)| worker.active_task_ids.len() < worker.num_cpus)
-            .map(|(id, _)| id.clone())
+        // Fallback to spread scheduling if soft is true
+        if soft {
+            self.try_schedule_spread_task(task)
+        } else {
+            None
+        }
     }
 
-    // Hard worker affinity scheduling: Schedule task to the worker if it has capacity
-    // Otherwise, return None
-    fn try_schedule_hard_worker_affinity_task(&self, worker_id: &WorkerId) -> Option<WorkerId> {
-        if let Some(worker) = self.worker_snapshots.get(worker_id) {
-            if worker.active_task_ids.len() < worker.num_cpus {
-                return Some(worker.worker_id.clone());
-            }
-        }
-        None
-    }
-
-    fn try_schedule_task(&self, task: &SchedulableTask<T>) -> Option<WorkerId> {
+    fn try_schedule_task(&self, task: &PendingTask<T>) -> Option<WorkerId> {
         match task.strategy() {
-            SchedulingStrategy::Spread => self.try_schedule_spread_task(),
-            SchedulingStrategy::WorkerAffinity { worker_id, soft } => match soft {
-                true => self.try_schedule_soft_worker_affinity_task(worker_id),
-                false => self.try_schedule_hard_worker_affinity_task(worker_id),
-            },
+            SchedulingStrategy::Spread => self.try_schedule_spread_task(&task.task),
+            SchedulingStrategy::WorkerAffinity { worker_id, soft } => {
+                self.try_schedule_worker_affinity_task(&task.task, worker_id, *soft)
+            }
         }
+    }
+
+    fn needs_autoscaling(&self) -> bool {
+        // If there are no pending tasks, we don't need to autoscale
+        if self.pending_tasks.is_empty() {
+            return false;
+        }
+
+        // If there are no workers, we need to autoscale
+        if self.worker_snapshots.is_empty() {
+            return true;
+        }
+
+        false
     }
 }
 
@@ -85,16 +94,16 @@ impl<T: Task> Scheduler<T> for LinearScheduler<T> {
         }
     }
 
-    fn enqueue_tasks(&mut self, tasks: Vec<SchedulableTask<T>>) {
+    fn enqueue_tasks(&mut self, tasks: Vec<PendingTask<T>>) {
         self.pending_tasks.extend(tasks);
     }
 
-    fn get_schedulable_tasks(&mut self) -> Vec<ScheduledTask<T>> {
+    fn schedule_tasks(&mut self) -> Vec<ScheduledTask<T>> {
         // Check if any worker has active tasks
         let has_active_tasks = self
             .worker_snapshots
             .values()
-            .any(|worker| !worker.active_task_ids.is_empty());
+            .any(|worker| !worker.active_task_details.is_empty());
 
         // If there are active tasks, don't schedule any new ones
         if has_active_tasks {
@@ -110,9 +119,10 @@ impl<T: Task> Scheduler<T> for LinearScheduler<T> {
                 self.worker_snapshots
                     .get_mut(&worker_id)
                     .unwrap()
-                    .active_task_ids
-                    .insert(task.task_id().clone());
-                scheduled.push(ScheduledTask { task, worker_id });
+                    .active_task_details
+                    .insert(task.task_context(), TaskDetails::from(&task.task));
+                scheduled.push(ScheduledTask::new(task, worker_id));
+                // Only schedule one task
                 break;
             } else {
                 unscheduled.push(task);
@@ -126,6 +136,18 @@ impl<T: Task> Scheduler<T> for LinearScheduler<T> {
 
     fn num_pending_tasks(&self) -> usize {
         self.pending_tasks.len()
+    }
+
+    fn get_autoscaling_request(&mut self) -> Option<Vec<TaskResourceRequest>> {
+        // If we need to autoscale, return the resource requests of the pending tasks
+        let needs_autoscaling = self.needs_autoscaling();
+        needs_autoscaling.then(|| {
+            self.pending_tasks
+                .iter()
+                .next()
+                .map(|task| vec![task.task.resource_request().clone()])
+                .unwrap_or_default()
+        })
     }
 }
 #[cfg(test)]
@@ -157,33 +179,33 @@ mod tests {
 
         // Create tasks with Spread strategy
         let tasks = vec![
-            create_spread_task(),
-            create_spread_task(),
-            create_spread_task(),
+            create_spread_task(Some(1)),
+            create_spread_task(Some(2)),
+            create_spread_task(Some(3)),
         ];
 
         // Enqueue and schedule tasks
         scheduler.enqueue_tasks(tasks);
-        let result = scheduler.get_schedulable_tasks();
+        let result = scheduler.schedule_tasks();
 
         // Only one task should be scheduled because of linear scheduling
         assert_eq!(result.len(), 1);
         assert_eq!(scheduler.num_pending_tasks(), 2);
 
         // Try to schedule more tasks - should fail because one task is already running
-        let result = scheduler.get_schedulable_tasks();
+        let result = scheduler.schedule_tasks();
         assert_eq!(result.len(), 0);
         assert_eq!(scheduler.num_pending_tasks(), 2);
 
         // Update worker state to reflect that the workers are all idle
         let worker_snapshots = workers
             .values()
-            .map(|worker| WorkerSnapshot::from_worker(worker))
+            .map(|worker| WorkerSnapshot::from(worker))
             .collect::<Vec<_>>();
         scheduler.update_worker_state(&worker_snapshots);
 
         // Now we should be able to schedule another task
-        let result = scheduler.get_schedulable_tasks();
+        let result = scheduler.schedule_tasks();
         assert_eq!(result.len(), 1);
         assert_eq!(scheduler.num_pending_tasks(), 1);
     }
@@ -204,12 +226,12 @@ mod tests {
 
         // Create tasks with soft Node Affinity strategies
         let tasks = vec![
-            create_worker_affinity_task(&worker_1, true),
-            create_worker_affinity_task(&worker_2, true),
+            create_worker_affinity_task(&worker_1, true, Some(1)),
+            create_worker_affinity_task(&worker_2, true, Some(2)),
         ];
 
         scheduler.enqueue_tasks(tasks);
-        let result = scheduler.get_schedulable_tasks();
+        let result = scheduler.schedule_tasks();
 
         // Only one task should be scheduled
         assert_eq!(result.len(), 1);
@@ -222,18 +244,18 @@ mod tests {
             panic!("Task should have worker affinity strategy");
         }
 
-        let result = scheduler.get_schedulable_tasks();
+        let result = scheduler.schedule_tasks();
         assert_eq!(result.len(), 0);
         assert_eq!(scheduler.num_pending_tasks(), 1);
 
         // Update worker state to reflect that the workers are all idle
         let worker_snapshots = workers
             .values()
-            .map(|worker| WorkerSnapshot::from_worker(worker))
+            .map(|worker| WorkerSnapshot::from(worker))
             .collect::<Vec<_>>();
         scheduler.update_worker_state(&worker_snapshots);
 
-        let result = scheduler.get_schedulable_tasks();
+        let result = scheduler.schedule_tasks();
         assert_eq!(result.len(), 1);
         assert_eq!(scheduler.num_pending_tasks(), 0);
 
@@ -260,13 +282,13 @@ mod tests {
 
         // Create tasks with hard Node Affinity strategies
         let tasks = vec![
-            create_worker_affinity_task(&worker_1, false),
-            create_worker_affinity_task(&worker_2, false),
-            create_worker_affinity_task(&worker_3, false),
+            create_worker_affinity_task(&worker_1, false, Some(1)),
+            create_worker_affinity_task(&worker_2, false, Some(2)),
+            create_worker_affinity_task(&worker_3, false, Some(3)),
         ];
 
         scheduler.enqueue_tasks(tasks);
-        let result = scheduler.get_schedulable_tasks();
+        let result = scheduler.schedule_tasks();
 
         // Only one task should be scheduled
         assert_eq!(result.len(), 1);
@@ -279,18 +301,18 @@ mod tests {
             panic!("Task should have worker affinity strategy");
         }
 
-        let result = scheduler.get_schedulable_tasks();
+        let result = scheduler.schedule_tasks();
         assert_eq!(result.len(), 0);
         assert_eq!(scheduler.num_pending_tasks(), 2);
 
         // Update worker state to reflect that the workers are all idle
         let worker_snapshots = workers
             .values()
-            .map(|worker| WorkerSnapshot::from_worker(worker))
+            .map(|worker| WorkerSnapshot::from(worker))
             .collect::<Vec<_>>();
         scheduler.update_worker_state(&worker_snapshots);
 
-        let result = scheduler.get_schedulable_tasks();
+        let result = scheduler.schedule_tasks();
         assert_eq!(result.len(), 1);
         assert_eq!(scheduler.num_pending_tasks(), 1);
 
@@ -313,6 +335,7 @@ mod tests {
         // Add a low priority task
         let low_priority_task = create_schedulable_task(
             MockTaskBuilder::default()
+                .with_task_id(1)
                 .with_priority(1)
                 .with_scheduling_strategy(SchedulingStrategy::Spread)
                 .build(),
@@ -323,16 +346,17 @@ mod tests {
         let high_priority_task = create_schedulable_task(
             MockTaskBuilder::default()
                 .with_priority(100)
+                .with_task_id(2)
                 .with_scheduling_strategy(SchedulingStrategy::Spread)
                 .build(),
         );
         scheduler.enqueue_tasks(vec![high_priority_task]);
 
         // The high priority task should be scheduled first
-        let result = scheduler.get_schedulable_tasks();
+        let result = scheduler.schedule_tasks();
         assert_eq!(result.len(), 1);
         assert_eq!(scheduler.num_pending_tasks(), 1);
-        assert_eq!(result[0].task.priority(), 100);
+        assert_eq!(result[0].task.task_id(), 2);
     }
 
     #[test]
@@ -340,12 +364,12 @@ mod tests {
         let mut scheduler: LinearScheduler<MockTask> = setup_scheduler(&HashMap::new());
 
         let tasks = vec![
-            create_spread_task(),
-            create_worker_affinity_task(&Arc::from("worker1"), true),
+            create_spread_task(Some(1)),
+            create_worker_affinity_task(&Arc::from("worker1"), true, Some(2)),
         ];
 
         scheduler.enqueue_tasks(tasks);
-        let result = scheduler.get_schedulable_tasks();
+        let result = scheduler.schedule_tasks();
 
         assert_eq!(result.len(), 0);
         assert_eq!(scheduler.num_pending_tasks(), 2);

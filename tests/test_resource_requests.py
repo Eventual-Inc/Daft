@@ -8,6 +8,7 @@ import ray
 
 import daft
 from daft import udf
+from daft.context import get_context
 from daft.daft import SystemInfo
 from daft.expressions import col
 from daft.internal.gpu import cuda_visible_devices
@@ -68,17 +69,7 @@ def test_resource_request_pickle_roundtrip():
     assert new_udf == copy.deepcopy(new_udf)
 
 
-###
-# Assert PyRunner behavior for GPU requests:
-# Fail if requesting more GPUs than is available, but otherwise we do not modify anything
-# about local task execution (tasks have access to all GPUs available on the host,
-# even if they specify more)
-###
-
-
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() not in {"native", "py"}, reason="requires Native or Py Runner to be in use"
-)
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="requires Native Runner to be in use")
 def test_requesting_too_many_cpus():
     df = daft.from_pydict(DATA)
 
@@ -92,18 +83,7 @@ def test_requesting_too_many_cpus():
         df.collect()
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() not in {"py"}, reason="requires PyRunner to be in use")
-def test_requesting_too_many_gpus():
-    df = daft.from_pydict(DATA)
-
-    my_udf_parametrized = my_udf.override_options(num_gpus=len(cuda_visible_devices()) + 1)
-    df = df.with_column("foo", my_udf_parametrized(col("id")))
-
-    with pytest.raises(RuntimeError):
-        df.collect()
-
-
-@pytest.mark.skipif(get_tests_daft_runner_name() not in {"py", "native"}, reason="requires PyRunner to be in use")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="requires Native Runner to be in use")
 def test_requesting_too_much_memory():
     df = daft.from_pydict(DATA)
     system_info = SystemInfo()
@@ -162,6 +142,10 @@ RAY_VERSION_LT_2 = int(ray.__version__.split(".")[0]) < 2
     RAY_VERSION_LT_2, reason="The ray.get_runtime_context().get_assigned_resources() was only added in Ray >= 2.0"
 )
 @pytest.mark.skipif(get_tests_daft_runner_name() not in {"ray"}, reason="requires RayRunner to be in use")
+@pytest.mark.skipif(
+    get_context().daft_execution_config.use_legacy_ray_runner is False,
+    reason="resource requests are not fully supported in Flotilla",
+)
 def test_with_column_rayrunner():
     df = daft.from_pydict(DATA).repartition(2)
 
@@ -178,6 +162,10 @@ def test_with_column_rayrunner():
     RAY_VERSION_LT_2, reason="The ray.get_runtime_context().get_assigned_resources() was only added in Ray >= 2.0"
 )
 @pytest.mark.skipif(get_tests_daft_runner_name() not in {"ray"}, reason="requires RayRunner to be in use")
+@pytest.mark.skipif(
+    get_context().daft_execution_config.use_legacy_ray_runner is False,
+    reason="resource requests are not fully supported in Flotilla",
+)
 def test_with_column_folded_rayrunner():
     df = daft.from_pydict(DATA).repartition(2)
 
@@ -223,6 +211,10 @@ def test_with_column_rayrunner_class():
     RAY_VERSION_LT_2, reason="The ray.get_runtime_context().get_assigned_resources() was only added in Ray >= 2.0"
 )
 @pytest.mark.skipif(get_tests_daft_runner_name() not in {"ray"}, reason="requires RayRunner to be in use")
+@pytest.mark.skipif(
+    get_context().daft_execution_config.use_legacy_ray_runner is False,
+    reason="resource requests are not fully supported in Flotilla",
+)
 def test_with_column_folded_rayrunner_class():
     assert_resources = AssertResourcesStateful.with_concurrency(1)
 
@@ -259,20 +251,6 @@ def assert_num_cuda_visible_devices(c, num_gpus: int = 0):
         result = len(cuda_visible_devices_env.split(","))
     assert result == num_gpus
     return c
-
-
-@pytest.mark.skipif(get_tests_daft_runner_name() not in {"py"}, reason="requires PyRunner to be in use")
-@pytest.mark.skipif(no_gpu_available(), reason="requires GPUs to be available")
-def test_with_column_pyrunner_gpu():
-    df = daft.from_pydict(DATA).repartition(5)
-
-    # We set num_gpus=1 on the UDF itself
-    df = df.with_column(
-        "foo",
-        assert_num_cuda_visible_devices(col("id"), num_gpus=len(cuda_visible_devices())),
-    )
-
-    df.collect()
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() not in {"ray"}, reason="requires RayRunner to be in use")

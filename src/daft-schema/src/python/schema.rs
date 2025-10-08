@@ -21,6 +21,7 @@ impl PySchema {
 
     pub fn to_pyarrow_schema<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+        let field_fn = pyarrow.getattr(pyo3::intern!(py, "field"))?;
         let pyarrow_fields = self
             .schema
             .into_iter()
@@ -29,15 +30,23 @@ impl PySchema {
                 // the registered Arrow extension types
                 let py_dtype: PyDataType = f.dtype.clone().into();
                 let py_arrow_dtype = py_dtype.to_arrow(py)?;
-                pyarrow
-                    .getattr(pyo3::intern!(py, "field"))
-                    .unwrap()
-                    .call1((f.name.clone(), py_arrow_dtype))
+
+                let args = (f.name.as_str(), py_arrow_dtype);
+                if !f.metadata.is_empty() {
+                    let kwargs = pyo3::types::PyDict::new(py);
+                    let metadata_pydict = pyo3::types::PyDict::new(py);
+                    for (key, value) in f.metadata.iter() {
+                        metadata_pydict.set_item(key, value)?;
+                    }
+                    kwargs.set_item("metadata", metadata_pydict)?;
+                    field_fn.call(args, Some(&kwargs))
+                } else {
+                    field_fn.call1(args)
+                }
             })
             .collect::<PyResult<Vec<_>>>()?;
         pyarrow
-            .getattr(pyo3::intern!(py, "schema"))
-            .expect("PyArrow module must contain .schema function")
+            .getattr(pyo3::intern!(py, "schema"))?
             .call1((pyarrow_fields,))
     }
 
@@ -92,6 +101,16 @@ impl PySchema {
     pub fn apply_hints(&self, hints: &Self) -> PyResult<Self> {
         let new_schema = Arc::new(self.schema.apply_hints(&hints.schema)?);
         Ok(new_schema.into())
+    }
+
+    #[pyo3(name = "display_with_metadata")]
+    pub fn display_with_metadata(&self, show_metadata: bool) -> String {
+        self.schema.display_with_metadata(show_metadata)
+    }
+
+    #[pyo3(name = "min_estimated_size_column")]
+    pub fn min_estimated_size_column(&self) -> Option<&str> {
+        self.schema.min_estimated_size_column()
     }
 }
 

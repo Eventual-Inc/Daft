@@ -23,7 +23,7 @@ Where:
 - `function_name` is the name of the window function
 - `PARTITION BY` divides the result set into partitions to which the window function is applied
 - `ORDER BY` defines the logical order of rows within each partition
-    - Note: NULL values are positioned at the end for ascending order (default) and at the beginning for descending order
+    - Note: By default, NULL values are positioned at the end for ascending order (default) and at the beginning for descending order. To override this behavior you can specify "NULLS FIRST" or "NULLS LAST".
 - `frame_clause` defines a subset of rows in the current partition (called the window frame)
 
 ## Supported Window Functions

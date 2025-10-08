@@ -11,9 +11,13 @@
 # limitations under the License.
 #
 # Borrowed and modified from [`skypilot`](https://github.com/skypilot-org/skypilot/blob/master/sky/adaptors/common.py).
+from __future__ import annotations
 
 import importlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 
 class LazyImport:
@@ -27,12 +31,12 @@ class LazyImport:
 
     def __init__(self, module_name: str):
         self._module_name = module_name
-        self._module = None
+        self._module: ModuleType | None = None
 
-    def module_available(self):
+    def module_available(self) -> bool:
         return self._load_module() is not None
 
-    def _load_module(self):
+    def _load_module(self) -> ModuleType | None:
         if self._module is None:
             try:
                 self._module = importlib.import_module(self._module_name)

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 import random
 
@@ -8,11 +10,11 @@ import daft
 from daft import Window, col
 from daft.expressions import interval
 from daft.functions import dense_rank, rank, row_number
-from daft.sql.sql import SQLCatalog
 from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 
 pytestmark = pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner"
+    get_tests_daft_runner_name() == "ray",
+    reason="requires Native Runner to be in use",
 )
 
 
@@ -31,7 +33,7 @@ def test_row_number_window_function():
 
     df = daft.from_pydict(data)
 
-    catalog = SQLCatalog({"test_data": df})
+    bindings = {"test_data": df}
 
     sql_result = daft.sql(
         """
@@ -45,7 +47,7 @@ def test_row_number_window_function():
         FROM test_data
         ORDER BY category, value
     """,
-        catalog=catalog,
+        **bindings,
     ).collect()
 
     window_spec = Window().partition_by("category").order_by("value")
@@ -64,7 +66,7 @@ def test_rank_window_function():
         }
     )
 
-    catalog = SQLCatalog({"test_data": df})
+    bindings = {"test_data": df}
 
     sql_result = daft.sql(
         """
@@ -78,7 +80,7 @@ def test_rank_window_function():
         FROM test_data
         ORDER BY category, value
     """,
-        catalog=catalog,
+        **bindings,
     ).collect()
 
     window_spec = Window().partition_by("category").order_by("value")
@@ -97,7 +99,7 @@ def test_dense_rank_window_function():
         }
     )
 
-    catalog = SQLCatalog({"test_data": df})
+    bindings = {"test_data": df}
 
     sql_result = daft.sql(
         """
@@ -111,7 +113,7 @@ def test_dense_rank_window_function():
         FROM test_data
         ORDER BY category, value
     """,
-        catalog=catalog,
+        **bindings,
     ).collect()
 
     window_spec = Window().partition_by("category").order_by("value")
@@ -130,7 +132,7 @@ def test_lag_with_one_arg():
         }
     )
 
-    catalog = SQLCatalog({"test_data": df})
+    bindings = {"test_data": df}
 
     sql_result = daft.sql(
         """
@@ -144,7 +146,7 @@ def test_lag_with_one_arg():
         FROM test_data
         ORDER BY category, value
     """,
-        catalog=catalog,
+        **bindings,
     ).collect()
 
     window_spec = Window().partition_by("category").order_by("value")
@@ -163,7 +165,7 @@ def test_lag_with_two_args():
         }
     )
 
-    catalog = SQLCatalog({"test_data": df})
+    bindings = {"test_data": df}
 
     sql_result = daft.sql(
         """
@@ -177,7 +179,7 @@ def test_lag_with_two_args():
         FROM test_data
         ORDER BY category, value
     """,
-        catalog=catalog,
+        **bindings,
     ).collect()
 
     window_spec = Window().partition_by("category").order_by("value")
@@ -196,7 +198,7 @@ def test_lag_with_three_args():
         }
     )
 
-    catalog = SQLCatalog({"test_data": df})
+    bindings = {"test_data": df}
 
     sql_result = daft.sql(
         """
@@ -210,7 +212,7 @@ def test_lag_with_three_args():
         FROM test_data
         ORDER BY category, value
     """,
-        catalog=catalog,
+        **bindings,
     ).collect()
 
     window_spec = Window().partition_by("category").order_by("value")
@@ -231,7 +233,7 @@ def test_lead_with_one_arg():
         }
     )
 
-    catalog = SQLCatalog({"test_data": df})
+    bindings = {"test_data": df}
 
     sql_result = daft.sql(
         """
@@ -245,7 +247,7 @@ def test_lead_with_one_arg():
         FROM test_data
         ORDER BY category, value
     """,
-        catalog=catalog,
+        **bindings,
     ).collect()
 
     window_spec = Window().partition_by("category").order_by("value")
@@ -266,7 +268,7 @@ def test_lead_with_two_args():
         }
     )
 
-    catalog = SQLCatalog({"test_data": df})
+    bindings = {"test_data": df}
 
     sql_result = daft.sql(
         """
@@ -280,7 +282,7 @@ def test_lead_with_two_args():
         FROM test_data
         ORDER BY category, value
     """,
-        catalog=catalog,
+        **bindings,
     ).collect()
 
     window_spec = Window().partition_by("category").order_by("value")
@@ -301,7 +303,7 @@ def test_lead_with_three_args():
         }
     )
 
-    catalog = SQLCatalog({"test_data": df})
+    bindings = {"test_data": df}
 
     sql_result = daft.sql(
         """
@@ -315,7 +317,7 @@ def test_lead_with_three_args():
         FROM test_data
         ORDER BY category, value
     """,
-        catalog=catalog,
+        **bindings,
     ).collect()
 
     window_spec = Window().partition_by("category").order_by("value")
@@ -336,7 +338,7 @@ def test_multiple_window_functions():
         }
     )
 
-    catalog = SQLCatalog({"test_data": df})
+    bindings = {"test_data": df}
 
     sql_result = daft.sql(
         """
@@ -351,7 +353,7 @@ def test_multiple_window_functions():
         FROM test_data
         ORDER BY category, value
     """,
-        catalog=catalog,
+        **bindings,
     ).collect()
 
     window_spec = Window().partition_by("category").order_by("value")
@@ -384,7 +386,7 @@ def test_row_number_and_running_sum_window_functions():
 
     df = daft.from_pydict(data)
 
-    catalog = SQLCatalog({"test_data": df})
+    bindings = {"test_data": df}
 
     sql_result = daft.sql(
         """
@@ -403,7 +405,7 @@ def test_row_number_and_running_sum_window_functions():
         FROM test_data
         ORDER BY category, value
     """,
-        catalog=catalog,
+        **bindings,
     ).collect()
 
     window_spec = Window().partition_by("category").order_by("value")
@@ -440,7 +442,7 @@ def test_range_window_sql():
 
     df = daft.from_pydict(data)
 
-    catalog = SQLCatalog({"test_data": df})
+    bindings = {"test_data": df}
 
     sql_result = daft.sql(
         """
@@ -471,7 +473,7 @@ def test_range_window_sql():
         FROM test_data
         ORDER BY category, ts
     """,
-        catalog=catalog,
+        **bindings,
     ).collect()
 
     window_spec = Window().partition_by("category").order_by("ts", desc=False).range_between(-2, 2)
@@ -485,7 +487,12 @@ def test_range_window_sql():
         .collect()
     )
 
-    assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["category", "ts"], check_dtype=False)
+    assert_df_equals(
+        sql_result.to_pandas(),
+        daft_result.to_pandas(),
+        sort_key=["category", "ts"],
+        check_dtype=False,
+    )
 
 
 def test_range_window_desc_sql():
@@ -507,7 +514,7 @@ def test_range_window_desc_sql():
 
     df = daft.from_pydict(data)
 
-    catalog = SQLCatalog({"test_data": df})
+    bindings = {"test_data": df}
 
     sql_result = daft.sql(
         """
@@ -538,7 +545,7 @@ def test_range_window_desc_sql():
         FROM test_data
         ORDER BY category, ts
     """,
-        catalog=catalog,
+        **bindings,
     ).collect()
 
     window_spec = Window().partition_by("category").order_by("ts", desc=True).range_between(-2, 2)
@@ -552,7 +559,12 @@ def test_range_window_desc_sql():
         .collect()
     )
 
-    assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["category", "ts"], check_dtype=False)
+    assert_df_equals(
+        sql_result.to_pandas(),
+        daft_result.to_pandas(),
+        sort_key=["category", "ts"],
+        check_dtype=False,
+    )
 
 
 def test_range_window_with_dates():
@@ -575,7 +587,7 @@ def test_range_window_with_dates():
     pdf = pd.DataFrame(data)
     df = daft.from_pandas(pdf)
 
-    catalog = SQLCatalog({"test_data": df})
+    bindings = {"test_data": df}
 
     sql_result = daft.sql(
         """
@@ -596,7 +608,7 @@ def test_range_window_with_dates():
         FROM test_data
         ORDER BY category, date
         """,
-        catalog=catalog,
+        **bindings,
     ).collect()
 
     window_spec = Window().partition_by("category").order_by("date").range_between(interval(days=-3), interval(days=3))
@@ -609,7 +621,10 @@ def test_range_window_with_dates():
     )
 
     assert_df_equals(
-        sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["category", "date", "value"], check_dtype=False
+        sql_result.to_pandas(),
+        daft_result.to_pandas(),
+        sort_key=["category", "date", "value"],
+        check_dtype=False,
     )
 
 
@@ -621,7 +636,7 @@ def test_order_by_only_row_number():
         }
     )
 
-    catalog = SQLCatalog({"test_data": df})
+    bindings = {"test_data": df}
 
     sql_result = daft.sql(
         """
@@ -633,7 +648,7 @@ def test_order_by_only_row_number():
         FROM test_data
         ORDER BY value
     """,
-        catalog=catalog,
+        **bindings,
     ).collect()
 
     window_spec = Window().order_by("value")
@@ -651,7 +666,7 @@ def test_order_by_only_rank():
         }
     )
 
-    catalog = SQLCatalog({"test_data": df})
+    bindings = {"test_data": df}
 
     sql_result = daft.sql(
         """
@@ -663,7 +678,7 @@ def test_order_by_only_rank():
         FROM test_data
         ORDER BY value
     """,
-        catalog=catalog,
+        **bindings,
     ).collect()
 
     window_spec = Window().order_by("value")
@@ -681,7 +696,7 @@ def test_order_by_only_dense_rank():
         }
     )
 
-    catalog = SQLCatalog({"test_data": df})
+    bindings = {"test_data": df}
 
     sql_result = daft.sql(
         """
@@ -693,7 +708,7 @@ def test_order_by_only_dense_rank():
         FROM test_data
         ORDER BY value
     """,
-        catalog=catalog,
+        **bindings,
     ).collect()
 
     window_spec = Window().order_by("value")
@@ -711,7 +726,7 @@ def test_order_by_only_desc():
         }
     )
 
-    catalog = SQLCatalog({"test_data": df})
+    bindings = {"test_data": df}
 
     sql_result = daft.sql(
         """
@@ -723,7 +738,7 @@ def test_order_by_only_desc():
         FROM test_data
         ORDER BY value DESC
     """,
-        catalog=catalog,
+        **bindings,
     ).collect()
 
     window_spec = Window().order_by("value", desc=True)
@@ -739,6 +754,54 @@ def test_order_by_only_desc():
     assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["value"])
 
 
+@pytest.mark.parametrize(
+    "desc,nulls_first",
+    [
+        (False, False),
+        (False, True),
+        (True, False),
+        (True, True),
+    ],
+)
+def test_order_by_nulls(desc, nulls_first):
+    """Test window functions with ORDER BY NULLS FIRST and NULLS LAST."""
+    ids = list(range(1, 7))
+    values = [10, None, 20, None, 30, 30]
+    data = {
+        "id": ids,
+        "value": values,
+    }
+    df = daft.from_pydict(data)
+    bindings = {"test_data": df}
+    desc_str = "DESC" if desc else "ASC"
+    nulls_first_str = "NULLS FIRST" if nulls_first else "NULLS LAST"
+    sql_result = daft.sql(
+        f"""
+        SELECT
+            id,
+            value,
+            ROW_NUMBER() OVER(ORDER BY value {desc_str} {nulls_first_str}) AS row_num,
+            RANK() OVER(ORDER BY value {desc_str} {nulls_first_str}) AS rank_val,
+            DENSE_RANK() OVER(ORDER BY value {desc_str} {nulls_first_str}) AS dense_rank_val
+        FROM test_data
+        ORDER BY id
+    """,
+        **bindings,
+    ).collect()
+
+    window_spec = Window().order_by("value", desc=desc, nulls_first=nulls_first)
+
+    daft_result = (
+        df.with_column("row_num", row_number().over(window_spec))
+        .with_column("rank_val", rank().over(window_spec))
+        .with_column("dense_rank_val", dense_rank().over(window_spec))
+        .sort(["id"], desc=True)
+        .collect()
+    )
+
+    assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["id"])
+
+
 def test_order_by_only_multiple_columns():
     """Test window functions with ORDER BY multiple columns."""
     df = daft.from_pydict(
@@ -748,7 +811,7 @@ def test_order_by_only_multiple_columns():
         }
     )
 
-    catalog = SQLCatalog({"test_data": df})
+    bindings = {"test_data": df}
 
     sql_result = daft.sql(
         """
@@ -761,7 +824,7 @@ def test_order_by_only_multiple_columns():
         FROM test_data
         ORDER BY x, y
     """,
-        catalog=catalog,
+        **bindings,
     ).collect()
 
     window_spec = Window().order_by(["x", "y"])

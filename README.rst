@@ -2,26 +2,29 @@
 
 |CI| |PyPI| |Latest Tag| |Coverage| |Slack|
 
-`Website <https://www.getdaft.io>`_ • `Docs <https://www.getdaft.io/projects/docs/>`_ • `Installation`_ • `Daft Quickstart <https://www.getdaft.io/projects/docs/en/stable/quickstart/>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
+`Website <https://www.daft.ai>`_ • `Docs <https://docs.daft.ai>`_ • `Installation <https://docs.daft.ai/en/stable/install/>`_ • `Daft Quickstart <https://docs.daft.ai/en/stable/quickstart/>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
 
 Daft: Unified Engine for Data Analytics, Engineering & ML/AI
 ============================================================
 
+|TrendShift|
 
-`Daft <https://www.getdaft.io>`_ is a distributed query engine for large-scale data processing using Python or SQL, implemented in Rust.
+`Daft <https://www.daft.ai>`_ is a distributed query engine for large-scale data processing using Python or SQL, implemented in Rust.
 
 * **Familiar interactive API:** Lazy Python Dataframe for rapid and interactive iteration, or SQL for analytical queries
 * **Focus on the what:** Powerful Query Optimizer that rewrites queries to be as efficient as possible
-* **Data Catalog integrations:** Full integration with data catalogs such as Apache Iceberg
+* **Data Catalog integrations:** Integration with data catalogs (AWS Glue, Unity Catalog) and table formats like Apache Iceberg
 * **Rich multimodal type-system:** Supports multimodal types such as Images, URLs, Tensors and more
 * **Seamless Interchange**: Built on the `Apache Arrow <https://arrow.apache.org/docs/index.html>`_ In-Memory Format
-* **Built for the cloud:** `Record-setting <https://blog.getdaft.io/p/announcing-daft-02-10x-faster-io>`_ I/O performance for integrations with S3 cloud storage
+* **Built for the cloud:** `Record-setting <https://www.daft.ai/blog/announcing-daft-02>`_ I/O performance for integrations with S3 cloud storage
 
 **Table of Contents**
 
 * `About Daft`_
 * `Getting Started`_
 * `Benchmarks`_
+* `Contributing`_
+* `Telemetry`_
 * `Related Projects`_
 * `License`_
 
@@ -30,7 +33,7 @@ About Daft
 
 Daft was designed with the following principles in mind:
 
-1. **Any Data**: Beyond the usual strings/numbers/dates, Daft columns can also hold complex or nested multimodal data such as Images, Embeddings and Python objects efficiently with it's Arrow based memory representation. Ingestion and basic transformations of multimodal data is extremely easy and performant in Daft.
+1. **Any Data**: Beyond the usual strings/numbers/dates, Daft columns can also hold complex or nested multimodal data such as Images, Embeddings and Python objects efficiently with its Arrow based memory representation. Ingestion and basic transformations of multimodal data is extremely easy and performant in Daft.
 2. **Interactive Computing**: Daft is built for the interactive developer experience through notebooks or REPLs - intelligent caching/query optimizations accelerates your experimentation and data exploration.
 3. **Distributed Computing**: Some workloads can quickly outgrow your local laptop's computational resources - Daft integrates natively with `Ray <https://www.ray.io>`_ for running dataframes on large clusters of machines with thousands of CPUs/GPUs.
 
@@ -42,12 +45,12 @@ Installation
 
 Install Daft with ``pip install daft``.
 
-For more advanced installations (e.g. installing from source or with extra dependencies such as Ray and AWS utilities), please see our `Installation Guide <https://www.getdaft.io/projects/docs/en/stable/install/>`_
+For more advanced installations (e.g. installing from source or with extra dependencies such as Ray and AWS utilities), please see our `Installation Guide <https://docs.daft.ai/en/stable/install/>`_
 
 Quickstart
 ^^^^^^^^^^
 
-  Check out our `quickstart <https://www.getdaft.io/projects/docs/en/stable/quickstart/>`_!
+  Check out our `quickstart <https://docs.daft.ai/en/stable/quickstart/>`_!
 
 In this example, we load images from an AWS S3 bucket's URLs and resize each image in the dataframe:
 
@@ -75,31 +78,31 @@ Benchmarks
 ----------
 |Benchmark Image|
 
-To see the full benchmarks, detailed setup, and logs, check out our `benchmarking page. <https://www.getdaft.io/projects/docs/en/stable/resources/benchmarks/tpch/>`_
+To see the full benchmarks, detailed setup, and logs, check out our `benchmarking page. <https://docs.daft.ai/en/stable/benchmarks>`_
 
 
 More Resources
 ^^^^^^^^^^^^^^
 
-* `Daft Quickstart <https://www.getdaft.io/projects/docs/en/stable/quickstart/>`_ - learn more about Daft's full range of capabilities including dataloading from URLs, joins, user-defined functions (UDF), groupby, aggregations and more.
-* `User Guide <https://www.getdaft.io/projects/docs/>`_ - take a deep-dive into each topic within Daft
-* `API Reference <https://www.getdaft.io/projects/docs/en/stable/api_docs/>`_ - API reference for public classes/functions of Daft
+* `Daft Quickstart <https://docs.daft.ai/en/stable/quickstart/>`_ - learn more about Daft's full range of capabilities including dataloading from URLs, joins, user-defined functions (UDF), groupby, aggregations and more.
+* `Examples <https://docs.daft.ai/en/stable/examples/>`_ - see Daft in action with use cases across text, images, audio, and more
+* `User Guide <https://docs.daft.ai/en/stable/>`_ - take a deep-dive into each topic within Daft
+* `API Reference <https://docs.daft.ai/en/stable/api/>`_ - API reference for public classes/functions of Daft
+* `SQL Reference <https://docs.daft.ai/en/stable/sql/>`_ - Daft SQL reference
 
 Contributing
 ------------
 
-To start contributing to Daft, please read `CONTRIBUTING.md <https://github.com/Eventual-Inc/Daft/blob/main/CONTRIBUTING.md>`_
+We <3 developers! To start contributing to Daft, please read `CONTRIBUTING.md <https://github.com/Eventual-Inc/Daft/blob/main/CONTRIBUTING.md>`_. This document describes the development lifecycle and toolchain for working on Daft. It also details how to add new functionality to the core engine and expose it through a Python API.
 
 Here's a list of `good first issues <https://github.com/Eventual-Inc/Daft/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22>`_ to get yourself warmed up with Daft. Comment in the issue to pick it up, and feel free to ask any questions!
 
 Telemetry
 ---------
 
-To help improve Daft, we collect non-identifiable data via our own analytics as well as Scarf (https://scarf.sh).
+To help improve Daft, we collect non-identifiable data via Scarf (https://scarf.sh).
 
-To disable this behavior, set the following environment variables:
-- ``DAFT_ANALYTICS_ENABLED=0``
-- ``SCARF_NO_ANALYTICS=true`` or ``DO_NOT_TRACK=true``
+To disable this behavior, set the environment variable ``DO_NOT_TRACK=true``.
 
 The data that we collect is:
 
@@ -107,7 +110,7 @@ The data that we collect is:
 2. **Metadata-only:** We do not collect any of our users’ proprietary code or data
 3. **For development only:** We do not buy or sell any user data
 
-Please see our `documentation <https://www.getdaft.io/projects/docs/en/stable/resources/telemetry/>`_ for more details.
+Please see our `documentation <https://docs.daft.ai/en/stable/resources/telemetry/>`_ for more details.
 
 .. image:: https://static.scarf.sh/a.png?x-pxid=31f8d5ba-7e09-4d75-8895-5252bbf06cf6
 
@@ -115,7 +118,7 @@ Related Projects
 ----------------
 
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
-| Dataframe                                         | Query Optimizer | Multimodal    | Distributed | Arrow Backed    | Vectorized Execution Engine | Out-of-core |
+| Engine                                            | Query Optimizer | Multimodal    | Distributed | Arrow Backed    | Vectorized Execution Engine | Out-of-core |
 +===================================================+=================+===============+=============+=================+=============================+=============+
 | Daft                                              | Yes             | Yes           | Yes         | Yes             | Yes                         | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
@@ -123,14 +126,14 @@ Related Projects
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
 | `Polars <https://github.com/pola-rs/polars>`_     | Yes             | Python object | No          | Yes             | Yes                         | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
-| `Modin <https://github.com/modin-project/modin>`_ | Eagar           | Python object | Yes         | No              | Some(Pandas)                | Yes         |
+| `Modin <https://github.com/modin-project/modin>`_ | Yes             | Python object | Yes         | No              | Some(Pandas)                | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
-| `Pyspark <https://github.com/apache/spark>`_      | Yes             | No            | Yes         | Pandas UDF/IO   | Pandas UDF                  | Yes         |
+| `Ray Data <https://github.com/ray-project/ray>`_  | No              | Yes           | Yes         | Yes             | Some(PyArrow)               | Yes         |
++---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
+| `PySpark <https://github.com/apache/spark>`_      | Yes             | No            | Yes         | Pandas UDF/IO   | Pandas UDF                  | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
 | `Dask DF <https://github.com/dask/dask>`_         | No              | Python object | Yes         | No              | Some(Pandas)                | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
-
-Check out our `dataframe comparison page <https://www.getdaft.io/projects/docs/en/stable/resources/dataframe_comparison/>`_ for more details!
 
 License
 -------
@@ -141,18 +144,18 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
    :alt: Dataframe code to load a folder of images from AWS S3 and create thumbnails
    :height: 256
 
-.. |Benchmark Image| image:: https://github-production-user-asset-6210df.s3.amazonaws.com/2550285/243524430-338e427d-f049-40b3-b555-4059d6be7bfd.png
-   :alt: Benchmarks for SF100 TPCH
+.. |Benchmark Image| image:: https://raw.githubusercontent.com/Eventual-Inc/Daft/refs/heads/main/assets/benchmark.png
+   :alt: AI Benchmarks
 
-.. |Banner| image:: https://github.com/user-attachments/assets/a48a8348-8d28-4772-867b-710aefaeff9f
-   :target: https://www.getdaft.io
+.. |Banner| image:: https://daft.ai/images/diagram.png
+   :target: https://www.daft.ai
    :alt: Daft dataframes can load any data such as PDF documents, images, protobufs, csv, parquet and audio files into a table dataframe structure for easy querying
 
 .. |CI| image:: https://github.com/Eventual-Inc/Daft/actions/workflows/pr-test-suite.yml/badge.svg
    :target: https://github.com/Eventual-Inc/Daft/actions/workflows/pr-test-suite.yml?query=branch:main
-   :alt: Github Actions tests
+   :alt: GitHub Actions tests
 
-.. |PyPI| image:: https://img.shields.io/pypi/v/getdaft.svg?label=pip&logo=PyPI&logoColor=white
+.. |PyPI| image:: https://img.shields.io/pypi/v/daft.svg?label=pip&logo=PyPI&logoColor=white
    :target: https://pypi.org/project/daft
    :alt: PyPI
 
@@ -167,3 +170,9 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
 .. |Slack| image:: https://img.shields.io/badge/slack-@distdata-purple.svg?logo=slack
    :target: https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg
    :alt: slack community
+
+.. |TrendShift| image:: https://trendshift.io/api/badge/repositories/8239
+   :target: https://trendshift.io/repositories/8239
+   :alt: Eventual-Inc/Daft | Trendshift
+   :width: 250px
+   :height: 55px

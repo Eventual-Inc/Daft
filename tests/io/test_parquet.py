@@ -432,3 +432,31 @@ def test_parquet_nested_optional_or_required_fields(tmpdir, optional_outer_struc
     expected = MicroPartition.from_arrow(expected)
     df = daft.read_parquet(output_file)
     assert df.to_arrow() == expected.to_arrow(), f"Expected:\n{expected.to_arrow()}\n\nReceived:\n{df.to_arrow()}"
+
+
+# Test fix for issue #4515.
+def test_parquet_read_databricks_generated_file():
+    path = "tests/assets/parquet-data/databricks-generated.parquet"
+    table = daft.read_parquet(path)
+    expected = MicroPartition.from_arrow(papq.read_table(path))
+    assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+
+def test_parquet_count(tmp_path_factory, capsys):
+    path = str(tmp_path_factory.mktemp("parquet_count"))
+    data = {
+        "string_content": ["a"] * 10,
+        "int_id": [1] * 10,
+    }
+    df = daft.from_pydict(data)
+    df.write_parquet(path, write_mode="overwrite")
+
+    df = daft.read_parquet(path).count(1)
+    _ = capsys.readouterr()
+    df.explain(True)
+    actual = capsys.readouterr()
+
+    assert "Project: col(int_id) as count" in actual.out
+
+    result = df.to_pydict()
+    assert result == {"count": [10]}

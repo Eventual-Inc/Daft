@@ -3,14 +3,17 @@ use std::{
     sync::Arc,
 };
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
-    stats::{PlanStats, StatsState},
     LogicalPlan,
+    stats::{PlanStats, StatsState},
 };
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Sample {
     pub plan_id: Option<usize>,
+    pub node_id: Option<usize>,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
     pub fraction: f64,
@@ -46,6 +49,7 @@ impl Sample {
     ) -> Self {
         Self {
             plan_id: None,
+            node_id: None,
             input,
             fraction,
             with_replacement,
@@ -56,6 +60,11 @@ impl Sample {
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
         self.plan_id = Some(plan_id);
+        self
+    }
+
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
         self
     }
 

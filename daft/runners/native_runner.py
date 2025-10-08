@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Iterator
+import uuid
+from typing import TYPE_CHECKING
 
 from daft.context import get_context
 from daft.daft import FileFormatConfig, FileInfos, IOConfig, LocalPhysicalPlan, set_compute_runtime_num_worker_threads
@@ -19,6 +20,8 @@ from daft.runners.runner import LOCAL_PARTITION_SET_CACHE, Runner
 from daft.scarf_telemetry import track_runner_on_scarf
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from daft.logical.builder import LogicalPlanBuilder
 
 logger = logging.getLogger(__name__)
@@ -33,13 +36,15 @@ class NativeRunnerIO(runner_io.RunnerIO):
     ) -> FileInfos:
         file_infos = FileInfos()
         file_format = file_format_config.file_format() if file_format_config is not None else None
-        for source_path in source_paths:
-            path_file_infos = glob_path_with_stats(source_path, file_format, io_config)
+        for source_path in set(source_paths):
+            try:
+                path_file_infos = glob_path_with_stats(source_path, file_format, io_config)
+                file_infos.merge(path_file_infos)
+            except FileNotFoundError:
+                logger.debug("%s is not found.", source_path)
 
-            if len(path_file_infos) == 0:
-                raise FileNotFoundError(f"No files found at {source_path}")
-
-            file_infos.extend(path_file_infos)
+        if len(file_infos) == 0:
+            raise FileNotFoundError(f"No files found at {','.join(source_paths)}")
 
         return file_infos
 
@@ -76,22 +81,45 @@ class NativeRunner(Runner[MicroPartition]):
         track_runner_on_scarf(runner=self.name)
 
         # NOTE: Freeze and use this same execution config for the entire execution
-        daft_execution_config = get_context().daft_execution_config
+        ctx = get_context()
+        query_id = str(uuid.uuid4())
 
         # Optimize the logical plan.
+        ctx._notify_query_start(query_id, repr(builder))
+        ctx._notify_optimization_start(query_id)
         builder = builder.optimize()
+        ctx._notify_optimization_end(query_id, repr(builder))
+
+        # NOTE: ENABLE FOR DAFT-PROTO TESTING
+        # builder = _to_from_proto(builder)
+
         plan = LocalPhysicalPlan.from_logical_plan_builder(builder._builder)
         executor = NativeExecutor()
         results_gen = executor.run(
             plan,
             {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
-            daft_execution_config,
+            ctx,
             results_buffer_size,
+            {"query_id": query_id},
         )
-        yield from results_gen
+
+        for result in results_gen:
+            ctx._notify_result_out(query_id, result.partition())
+            yield result
+
+        ctx._notify_query_end(query_id)
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
     ) -> Iterator[MicroPartition]:
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield result.partition()
+
+
+def _to_from_proto(builder: LogicalPlanBuilder) -> LogicalPlanBuilder:
+    """This is a testing utility which mutably roundtrips an *optimized* plan through daft-proto."""
+    from daft.daft import to_from_proto
+    from daft.logical.builder import LogicalPlanBuilder
+
+    print("!! TO-FROM PROTO CALLED !!")
+    return LogicalPlanBuilder(to_from_proto(builder._builder))

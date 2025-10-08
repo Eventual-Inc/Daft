@@ -7,7 +7,8 @@ use daft_core::{
     datatypes::{DataType, UInt64Array},
     series::{IntoSeries, Series},
 };
-use daft_dsl::{expr::bound_expr::BoundExpr, Expr};
+use daft_dsl::{Expr, expr::bound_expr::BoundExpr, functions::scalar::ScalarFn};
+use daft_functions_list::SeriesListExtension;
 
 use crate::RecordBatch;
 
@@ -32,11 +33,14 @@ impl RecordBatch {
         let mut evaluated_columns = Vec::with_capacity(exprs.len());
         for expr in exprs {
             match expr.as_ref() {
-                Expr::ScalarFunction(func) => {
+                Expr::ScalarFn(ScalarFn::Builtin(func)) => {
                     if func.name() == "explode" {
                         let inputs = &func.inputs.clone().into_inner();
                         if inputs.len() != 1 {
-                            return Err(DaftError::ValueError(format!("ListExpr::Explode function expression must have one input only, received: {}", inputs.len())));
+                            return Err(DaftError::ValueError(format!(
+                                "ListExpr::Explode function expression must have one input only, received: {}",
+                                inputs.len()
+                            )));
                         }
                         let expr = BoundExpr::new_unchecked(inputs.first().unwrap().clone());
                         let exploded_name = expr.inner().get_name(&self.schema)?;
@@ -46,9 +50,9 @@ impl RecordBatch {
                             DataType::List(..) | DataType::FixedSizeList(..)
                         ) {
                             return Err(DaftError::ValueError(format!(
-                            "Expected Expression for series: `{exploded_name}` to be a List Type, but is {}",
-                            evaluated.data_type()
-                        )));
+                                "Expected Expression for series: `{exploded_name}` to be a List Type, but is {}",
+                                evaluated.data_type()
+                            )));
                         }
                         evaluated_columns.push(evaluated);
                     }
@@ -56,7 +60,7 @@ impl RecordBatch {
                 _ => {
                     return Err(DaftError::ValueError(
                         "Can only explode a ListExpr::Explode function expression".to_string(),
-                    ))
+                    ));
                 }
             }
         }

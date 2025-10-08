@@ -14,7 +14,7 @@ import daft
 
 # `import daft` defines an implicit session `daft.current_session()`
 
-from daft import Session
+from daft.session import Session
 
 # create a new session
 sess = Session()
@@ -89,7 +89,7 @@ Let's get started by creating an empty session and checking the state.
 ```python
 import daft
 
-from daft import Session
+from daft.session import Session
 
 # create a new empty session
 sess = Session()
@@ -157,7 +157,7 @@ sess.create_temp_table("temp", daft.read_csv("/tmp/daft/row.csv"))
 
 ### Read & Write
 
-Using sessions abstracts away underlying catalog and table implementations so you can easily read and write daft DataFrames.
+Using sessions abstracts away underlying catalog and table implementations so you can easily read and write DataFrames.
 
 ```python
 # we can read our table back as a DataFrame instance

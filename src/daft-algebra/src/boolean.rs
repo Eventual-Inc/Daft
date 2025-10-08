@@ -2,7 +2,8 @@ use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
-use daft_dsl::{null_lit, Expr, ExprRef, LiteralValue, Operator};
+use daft_core::lit::Literal;
+use daft_dsl::{Expr, ExprRef, Operator, null_lit};
 use daft_schema::{dtype::DataType, schema::SchemaRef};
 
 use crate::simplify_expr;
@@ -166,7 +167,7 @@ pub fn predicate_removes_nulls(
 
     Ok(matches!(
         simplified.as_ref(),
-        Expr::Literal(LiteralValue::Boolean(false)) | Expr::Literal(LiteralValue::Null)
+        Expr::Literal(Literal::Boolean(false)) | Expr::Literal(Literal::Null)
     ))
 }
 

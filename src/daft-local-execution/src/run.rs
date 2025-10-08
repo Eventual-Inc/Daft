@@ -7,34 +7,39 @@ use std::{
 };
 
 use common_daft_config::DaftExecutionConfig;
-use common_display::{mermaid::MermaidDisplayOptions, DisplayLevel};
+use common_display::{DisplayLevel, mermaid::MermaidDisplayOptions};
 use common_error::DaftResult;
-use common_tracing::{flush_opentelemetry_providers, refresh_chrome_trace};
-use daft_local_plan::{translate, LocalPhysicalPlanRef};
+use common_tracing::flush_opentelemetry_providers;
+use daft_context::{DaftContext, Subscriber};
+use daft_local_plan::{LocalPhysicalPlanRef, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
-    partitioning::{InMemoryPartitionSetCache, MicroPartitionSet, PartitionSetCache},
     MicroPartition, MicroPartitionRef,
+    partitioning::{InMemoryPartitionSetCache, MicroPartitionSet, PartitionSetCache},
 };
-use futures::{stream::BoxStream, Stream, StreamExt};
+use futures::{Stream, StreamExt, stream::BoxStream};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
+    daft_context::python::PyDaftContext,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
     pyo3::{
-        pyclass, pymethods, Bound, IntoPyObject, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python,
+        Bound, IntoPyObject, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python, pyclass, pymethods,
     },
 };
 
 use crate::{
-    channel::{create_channel, Receiver},
-    pipeline::{physical_plan_to_pipeline, viz_pipeline_ascii, viz_pipeline_mermaid},
-    progress_bar::{make_progress_bar_manager, ProgressBarManager},
+    ExecutionRuntimeContext,
+    channel::{Receiver, create_channel},
+    pipeline::{
+        RelationshipInformation, RuntimeContext, get_pipeline_relationship_mapping,
+        translate_physical_plan_to_pipeline, viz_pipeline_ascii, viz_pipeline_mermaid,
+    },
     resource_manager::get_or_init_memory_manager,
-    Error, ExecutionRuntimeContext,
+    runtime_stats::RuntimeStatsManager,
 };
 
 #[cfg(feature = "python")]
@@ -79,7 +84,7 @@ impl LocalPartitionStream {
 
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "daft.daft", name = "NativeExecutor")
+    pyclass(module = "daft.daft", name = "NativeExecutor", frozen)
 )]
 pub struct PyNativeExecutor {
     executor: NativeExecutor,
@@ -102,14 +107,15 @@ impl PyNativeExecutor {
         }
     }
 
-    #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None))]
+    #[pyo3(signature = (local_physical_plan, psets, daft_ctx, results_buffer_size=None, context=None))]
     pub fn run<'a>(
         &self,
         py: Python<'a>,
         local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
         psets: HashMap<String, Vec<PyMicroPartition>>,
-        cfg: PyDaftExecutionConfig,
+        daft_ctx: &PyDaftContext,
         results_buffer_size: Option<usize>,
+        context: Option<HashMap<String, String>>,
     ) -> PyResult<Bound<'a, PyAny>> {
         let native_psets: HashMap<String, Arc<MicroPartitionSet>> = psets
             .into_iter()
@@ -127,13 +133,16 @@ impl PyNativeExecutor {
             })
             .collect();
         let psets = InMemoryPartitionSetCache::new(&native_psets);
+        let daft_ctx: &DaftContext = daft_ctx.into();
         let out = py.allow_threads(|| {
             self.executor
                 .run(
                     &local_physical_plan.plan,
                     &psets,
-                    cfg.config,
+                    daft_ctx.execution_config(),
+                    daft_ctx.subscribers(),
                     results_buffer_size,
+                    context,
                 )
                 .map(|res| res.into_iter())
         })?;
@@ -149,14 +158,15 @@ impl PyNativeExecutor {
         Ok(part_iter.into_pyobject(py)?.into_any())
     }
 
-    #[pyo3(signature = (local_physical_plan, psets, cfg, results_buffer_size=None))]
+    #[pyo3(signature = (local_physical_plan, psets, exec_cfg, results_buffer_size=None, context=None))]
     pub fn run_async<'a>(
         &self,
         py: Python<'a>,
         local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
         psets: HashMap<String, Vec<PyMicroPartition>>,
-        cfg: PyDaftExecutionConfig,
+        exec_cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
+        context: Option<HashMap<String, String>>,
     ) -> PyResult<Bound<'a, PyAny>> {
         let native_psets: HashMap<String, Arc<MicroPartitionSet>> = psets
             .into_iter()
@@ -178,8 +188,10 @@ impl PyNativeExecutor {
             self.executor.run(
                 &local_physical_plan.plan,
                 &psets,
-                cfg.config,
+                exec_cfg.config,
+                vec![],
                 results_buffer_size,
+                context,
             )
         })?;
         let stream = Box::pin(res.into_stream().map(|part| {
@@ -196,26 +208,41 @@ impl PyNativeExecutor {
         Ok(stream.into_pyobject(py)?.into_any())
     }
 
+    #[staticmethod]
     pub fn repr_ascii(
-        &self,
         logical_plan_builder: &PyLogicalPlanBuilder,
         cfg: PyDaftExecutionConfig,
         simple: bool,
     ) -> PyResult<String> {
-        Ok(self
-            .executor
-            .repr_ascii(&logical_plan_builder.builder, cfg.config, simple))
+        Ok(NativeExecutor::repr_ascii(
+            &logical_plan_builder.builder,
+            cfg.config,
+            simple,
+        ))
     }
 
+    #[staticmethod]
     pub fn repr_mermaid(
-        &self,
         logical_plan_builder: &PyLogicalPlanBuilder,
         cfg: PyDaftExecutionConfig,
         options: MermaidDisplayOptions,
     ) -> PyResult<String> {
-        Ok(self
-            .executor
-            .repr_mermaid(&logical_plan_builder.builder, cfg.config, options))
+        Ok(NativeExecutor::repr_mermaid(
+            &logical_plan_builder.builder,
+            cfg.config,
+            options,
+        ))
+    }
+
+    #[staticmethod]
+    pub fn get_relationship_info(
+        logical_plan_builder: &PyLogicalPlanBuilder,
+        cfg: PyDaftExecutionConfig,
+    ) -> PyResult<RelationshipInformation> {
+        Ok(NativeExecutor::get_relationship_info(
+            &logical_plan_builder.builder,
+            cfg.config,
+        ))
     }
 }
 
@@ -223,7 +250,6 @@ impl PyNativeExecutor {
 pub struct NativeExecutor {
     cancel: CancellationToken,
     runtime: Option<Arc<tokio::runtime::Runtime>>,
-    pb_manager: Option<Arc<dyn ProgressBarManager>>,
     enable_explain_analyze: bool,
 }
 
@@ -232,7 +258,6 @@ impl Default for NativeExecutor {
         Self {
             cancel: CancellationToken::new(),
             runtime: None,
-            pb_manager: should_enable_progress_bar().then(make_progress_bar_manager),
             enable_explain_analyze: should_enable_explain_analyze(),
         }
     }
@@ -248,11 +273,6 @@ impl NativeExecutor {
         self
     }
 
-    pub fn with_progress_bar_manager(mut self, pb_manager: Arc<dyn ProgressBarManager>) -> Self {
-        self.pb_manager = Some(pb_manager);
-        self
-    }
-
     pub fn enable_explain_analyze(mut self, b: bool) -> Self {
         self.enable_explain_analyze = b;
         self
@@ -262,16 +282,19 @@ impl NativeExecutor {
         &self,
         local_physical_plan: &LocalPhysicalPlanRef,
         psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
-        cfg: Arc<DaftExecutionConfig>,
+        exec_cfg: Arc<DaftExecutionConfig>,
+        subscribers: Vec<Arc<dyn Subscriber>>,
         results_buffer_size: Option<usize>,
+        additional_context: Option<HashMap<String, String>>,
     ) -> DaftResult<ExecutionEngineResult> {
-        refresh_chrome_trace();
         let cancel = self.cancel.clone();
-        let pipeline = physical_plan_to_pipeline(local_physical_plan, psets, &cfg)?;
+        let ctx = RuntimeContext::new_with_context(additional_context.unwrap_or_default());
+        let pipeline =
+            translate_physical_plan_to_pipeline(local_physical_plan, psets, &exec_cfg, &ctx)?;
+
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
 
         let rt = self.runtime.clone();
-        let pb_manager = self.pb_manager.clone();
         let enable_explain_analyze = self.enable_explain_analyze;
         // todo: split this into a run and run_async method
         // the run_async should spawn a task instead of a thread like this
@@ -284,13 +307,14 @@ impl NativeExecutor {
                         .expect("Failed to create tokio runtime"),
                 )
             });
+
+            let stats_manager =
+                RuntimeStatsManager::try_new(runtime.handle(), &pipeline, subscribers)?;
+            let stats_manager_handle = stats_manager.handle();
             let execution_task = async {
                 let memory_manager = get_or_init_memory_manager();
-                let mut runtime_handle = ExecutionRuntimeContext::new(
-                    cfg.default_morsel_size,
-                    memory_manager.clone(),
-                    pb_manager,
-                );
+                let mut runtime_handle =
+                    ExecutionRuntimeContext::new(memory_manager.clone(), stats_manager_handle);
                 let receiver = pipeline.start(true, &mut runtime_handle)?;
 
                 while let Some(val) = receiver.recv().await {
@@ -301,42 +325,19 @@ impl NativeExecutor {
 
                 while let Some(result) = runtime_handle.join_next().await {
                     match result {
-                        Ok(Err(e)) => {
+                        Ok(Err(e)) | Err(e) => {
                             runtime_handle.shutdown().await;
                             return DaftResult::Err(e.into());
-                        }
-                        Err(e) => {
-                            runtime_handle.shutdown().await;
-                            return DaftResult::Err(Error::JoinError { source: e }.into());
                         }
                         _ => {}
                     }
                 }
-                if enable_explain_analyze {
-                    let curr_ms = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .expect("Time went backwards")
-                        .as_millis();
-                    let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
-                    let mut file = File::create(file_name)?;
-                    writeln!(
-                        file,
-                        "```mermaid\n{}\n```",
-                        viz_pipeline_mermaid(
-                            pipeline.as_ref(),
-                            DisplayLevel::Verbose,
-                            true,
-                            Default::default()
-                        )
-                    )?;
-                }
-                flush_opentelemetry_providers();
                 Ok(())
             };
 
             let local_set = tokio::task::LocalSet::new();
             local_set.block_on(&runtime, async {
-                tokio::select! {
+                let result = tokio::select! {
                     biased;
                     () = cancel.cancelled() => {
                         log::info!("Execution engine cancelled");
@@ -347,8 +348,34 @@ impl NativeExecutor {
                         Ok(())
                     }
                     result = execution_task => result,
-                }
-            })
+                };
+
+                result
+            })?;
+
+            // Finish the stats manager
+            stats_manager.finish(&runtime);
+
+            if enable_explain_analyze {
+                let curr_ms = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("Time went backwards")
+                    .as_millis();
+                let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
+                let mut file = File::create(file_name)?;
+                writeln!(
+                    file,
+                    "```mermaid\n{}\n```",
+                    viz_pipeline_mermaid(
+                        pipeline.as_ref(),
+                        DisplayLevel::Verbose,
+                        true,
+                        Default::default()
+                    )
+                )?;
+            }
+            flush_opentelemetry_providers();
+            Ok(())
         });
 
         Ok(ExecutionEngineResult {
@@ -358,31 +385,39 @@ impl NativeExecutor {
     }
 
     fn repr_ascii(
-        &self,
         logical_plan_builder: &LogicalPlanBuilder,
         cfg: Arc<DaftExecutionConfig>,
         simple: bool,
     ) -> String {
         let logical_plan = logical_plan_builder.build();
         let physical_plan = translate(&logical_plan).unwrap();
-        let pipeline_node =
-            physical_plan_to_pipeline(&physical_plan, &InMemoryPartitionSetCache::empty(), &cfg)
-                .unwrap();
+        let ctx = RuntimeContext::new();
+        let pipeline_node = translate_physical_plan_to_pipeline(
+            &physical_plan,
+            &InMemoryPartitionSetCache::empty(),
+            &cfg,
+            &ctx,
+        )
+        .unwrap();
 
         viz_pipeline_ascii(pipeline_node.as_ref(), simple)
     }
 
     fn repr_mermaid(
-        &self,
         logical_plan_builder: &LogicalPlanBuilder,
         cfg: Arc<DaftExecutionConfig>,
         options: MermaidDisplayOptions,
     ) -> String {
         let logical_plan = logical_plan_builder.build();
         let physical_plan = translate(&logical_plan).unwrap();
-        let pipeline_node =
-            physical_plan_to_pipeline(&physical_plan, &InMemoryPartitionSetCache::empty(), &cfg)
-                .unwrap();
+        let ctx = RuntimeContext::new();
+        let pipeline_node = translate_physical_plan_to_pipeline(
+            &physical_plan,
+            &InMemoryPartitionSetCache::empty(),
+            &cfg,
+            &ctx,
+        )
+        .unwrap();
 
         let display_type = if options.simple {
             DisplayLevel::Compact
@@ -395,6 +430,22 @@ impl NativeExecutor {
             options.bottom_up,
             options.subgraph_options,
         )
+    }
+    fn get_relationship_info(
+        logical_plan_builder: &LogicalPlanBuilder,
+        cfg: Arc<DaftExecutionConfig>,
+    ) -> RelationshipInformation {
+        let logical_plan = logical_plan_builder.build();
+        let physical_plan = translate(&logical_plan).unwrap();
+        let ctx = RuntimeContext::new();
+        let pipeline_node = translate_physical_plan_to_pipeline(
+            &physical_plan,
+            &InMemoryPartitionSetCache::empty(),
+            &cfg,
+            &ctx,
+        )
+        .unwrap();
+        get_pipeline_relationship_mapping(&*pipeline_node)
     }
 }
 
@@ -412,15 +463,6 @@ fn should_enable_explain_analyze() -> bool {
         true
     } else {
         false
-    }
-}
-
-fn should_enable_progress_bar() -> bool {
-    let progress_var_name = "DAFT_PROGRESS_BAR";
-    if let Ok(val) = std::env::var(progress_var_name) {
-        matches!(val.trim().to_lowercase().as_str(), "1" | "true")
-    } else {
-        true // Return true when env var is not set
     }
 }
 

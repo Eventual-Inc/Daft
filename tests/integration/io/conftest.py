@@ -2,21 +2,26 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import os
 import pathlib
 import shutil
-from typing import Generator, TypeVar
+import sys
+from collections.abc import Generator
+from typing import TypeVar
 
-import numpy as np
+if sys.version_info >= (3, 10):
+    from typing import TypeAlias
+else:
+    from typing_extensions import TypeAlias
+
 import pytest
-import s3fs
-from PIL import Image
 
 import daft
 
 T = TypeVar("T")
 
-YieldFixture = Generator[T, None, None]
+YieldFixture: TypeAlias = Generator[T, None, None]
 
 
 ###
@@ -37,8 +42,19 @@ def minio_io_config() -> daft.io.IOConfig:
 
 
 @pytest.fixture(scope="session")
+def anonymous_minio_io_config() -> daft.io.IOConfig:
+    return daft.io.IOConfig(
+        s3=daft.io.S3Config(
+            endpoint_url="http://127.0.0.1:9000",
+            use_ssl=False,
+            anonymous=True,
+        )
+    )
+
+
+@pytest.fixture(scope="session")
 def aws_public_s3_config(request) -> daft.io.IOConfig:
-    # Use anonymous mode to avoid having to search for credentials in the Github Runner
+    # Use anonymous mode to avoid having to search for credentials in the GitHub Runner
     # If pytest is run with `--credentials` then we set anonymous=None to go down the credentials chain
     anonymous = None if request.config.getoption("--credentials") else True
 
@@ -53,7 +69,7 @@ def aws_public_s3_config(request) -> daft.io.IOConfig:
 
 @pytest.fixture(scope="session")
 def gcs_public_config(request) -> daft.io.IOConfig:
-    # Use anonymous mode to avoid having to search for credentials in the Github Runner
+    # Use anonymous mode to avoid having to search for credentials in the GitHub Runner
     # If pytest is run with `--credentials` then we set anonymous=None to go down the credentials chain
     anonymous = None if request.config.getoption("--credentials") else True
     return daft.io.IOConfig(gcs=daft.io.GCSConfig(project_id=None, anonymous=anonymous))
@@ -82,8 +98,16 @@ def nginx_config() -> tuple[str, pathlib.Path]:
 def retry_server_s3_config(request) -> daft.io.IOConfig:
     """Returns the URL to the local retry_server fixture."""
     retry_mode = request.param
+    # set a bogus region to avoid a weird aws sdk bug that causes it to use a previously set config instead of the new one.
+    # once we upgrade, we can try removing the region_name param
     return daft.io.IOConfig(
-        s3=daft.io.S3Config(endpoint_url="http://127.0.0.1:8001", anonymous=True, num_tries=10, retry_mode=retry_mode)
+        s3=daft.io.S3Config(
+            endpoint_url="http://127.0.0.1:8001",
+            region_name="test",
+            anonymous=True,
+            num_tries=10,
+            retry_mode=retry_mode,
+        )
     )
 
 
@@ -100,6 +124,8 @@ def minio_create_bucket(
 
     Yields a s3fs FileSystem
     """
+    import s3fs
+
     fs = s3fs.S3FileSystem(
         key=minio_io_config.s3.key_id,
         password=minio_io_config.s3.access_key,
@@ -112,6 +138,62 @@ def minio_create_bucket(
         yield fs
     finally:
         fs.rm(bucket_name, recursive=True)
+
+
+@contextlib.contextmanager
+def minio_create_public_bucket(
+    minio_io_config: daft.io.IOConfig, bucket_name: str = "my-minio-public-bucket"
+) -> YieldFixture[list[str]]:
+    """Creates a public bucket in MinIO.
+
+    Yields the bucket name.
+    """
+    # Create authenticated S3 client to set up the bucket.
+    import boto3
+    from botocore.config import Config
+
+    s3_client = boto3.client(
+        "s3",
+        endpoint_url=minio_io_config.s3.endpoint_url,
+        aws_access_key_id=minio_io_config.s3.key_id,
+        aws_secret_access_key=minio_io_config.s3.access_key,
+        config=Config(signature_version="s3v4"),
+        region_name="us-east-1",
+    )
+
+    # Create bucket if it doesn't exist.
+    try:
+        s3_client.create_bucket(Bucket=bucket_name)
+    except s3_client.exceptions.BucketAlreadyOwnedByYou:
+        pass
+
+    # Set bucket policy for anonymous access.
+    bucket_policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": "*",
+                "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"],
+                "Resource": [f"arn:aws:s3:::{bucket_name}", f"arn:aws:s3:::{bucket_name}/*"],
+            }
+        ],
+    }
+    s3_client.put_bucket_policy(Bucket=bucket_name, Policy=json.dumps(bucket_policy))
+
+    try:
+        yield bucket_name
+    finally:
+        paginator = s3_client.get_paginator("list_objects_v2")
+        pages = paginator.paginate(Bucket=bucket_name)
+
+        for page in pages:
+            if "Contents" in page:
+                objects_to_delete = [{"Key": obj["Key"]} for obj in page["Contents"]]
+                if objects_to_delete:
+                    s3_client.delete_objects(Bucket=bucket_name, Delete={"Objects": objects_to_delete})
+
+        s3_client.delete_bucket(Bucket=bucket_name)
 
 
 @contextlib.contextmanager
@@ -179,6 +261,9 @@ def mount_data_nginx(nginx_config: tuple[str, pathlib.Path], folder: pathlib.Pat
 @pytest.fixture(scope="session")
 def image_data() -> YieldFixture[bytes]:
     """Bytes of a small image."""
+    import numpy as np
+    from PIL import Image
+
     bio = io.BytesIO()
     image = Image.fromarray(np.ones((3, 3)).astype(np.uint8))
     image.save(bio, format="JPEG")

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Iterator
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from daft.dataframe import DataFrame
+    from daft.io.partitioning import PartitionField
     from daft.io.pushdowns import Pushdowns
     from daft.recordbatch import MicroPartition
     from daft.schema import Schema
@@ -40,6 +43,10 @@ class DataSource(ABC):
     def schema(self) -> Schema:
         """Returns the schema shared by each task's record batches."""
         ...
+
+    def get_partition_fields(self) -> list[PartitionField]:
+        """Returns the partitioning fields for this data source."""
+        return []
 
     @abstractmethod
     def get_tasks(self, pushdowns: Pushdowns) -> Iterator[DataSourceTask]:

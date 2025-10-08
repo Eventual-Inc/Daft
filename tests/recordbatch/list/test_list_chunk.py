@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import pyarrow as pa
 import pytest
 
@@ -150,13 +152,13 @@ def test_list_chunk_invalid_parameters():
             "size": [1, 2, 3, 2, 2],
         }
     )
-    with pytest.raises(ValueError, match="Invalid value for `size`"):
+    with pytest.raises(ValueError, match="Expected numeric literal for 'size'"):
         table.eval_expression_list([col("col").list.chunk(col("size"))])
-    with pytest.raises(ValueError, match="Invalid value for `size`"):
+    with pytest.raises(ValueError, match="Expected non zero integer for 'size'"):
         table.eval_expression_list([col("col").list.chunk(0)])
-    with pytest.raises(ValueError, match="Invalid value for `size`"):
+    with pytest.raises(ValueError, match="Expected positive integer for 'size'"):
         table.eval_expression_list([col("col").list.chunk(-1)])
-    with pytest.raises(ValueError, match="Invalid value for `size`"):
+    with pytest.raises(ValueError, match="Expected numeric literal for 'size'"):
         table.eval_expression_list([col("col").list.chunk(1.0)])
 
 

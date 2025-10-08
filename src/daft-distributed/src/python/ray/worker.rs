@@ -1,26 +1,26 @@
-use std::{
-    collections::HashSet,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use pyo3::prelude::*;
 
-use super::{task::RayTaskResultHandle, RaySwordfishTask};
+use super::{RaySwordfishTask, task::RayTaskResultHandle};
 use crate::scheduling::{
-    task::{SwordfishTask, Task, TaskId},
+    task::{SwordfishTask, Task, TaskContext, TaskDetails},
     worker::{Worker, WorkerId},
 };
+
+type ActiveTaskDetails = HashMap<TaskContext, TaskDetails>;
 
 #[pyclass(module = "daft.daft", name = "RaySwordfishWorker")]
 #[derive(Debug, Clone)]
 pub(crate) struct RaySwordfishWorker {
     worker_id: WorkerId,
-    actor_handle: Arc<PyObject>,
-    num_cpus: usize,
+    ray_worker_handle: Arc<PyObject>,
+    num_cpus: f64,
     #[allow(dead_code)]
     total_memory_bytes: usize,
-    active_task_ids: Arc<Mutex<HashSet<TaskId>>>,
+    num_gpus: f64,
+    active_task_details: ActiveTaskDetails,
 }
 
 #[pymethods]
@@ -28,63 +28,66 @@ impl RaySwordfishWorker {
     #[new]
     pub fn new(
         worker_id: String,
-        actor_handle: PyObject,
-        num_cpus: usize,
+        ray_worker_handle: PyObject,
+        num_cpus: f64,
+        num_gpus: f64,
         total_memory_bytes: usize,
     ) -> Self {
         Self {
             worker_id: Arc::from(worker_id),
-            actor_handle: Arc::new(actor_handle),
+            ray_worker_handle: Arc::new(ray_worker_handle),
             num_cpus,
+            num_gpus,
             total_memory_bytes,
-            active_task_ids: Arc::new(Mutex::new(HashSet::new())),
+            active_task_details: Default::default(),
         }
     }
 }
 
-#[allow(dead_code)]
 impl RaySwordfishWorker {
-    pub fn mark_task_finished(&self, task_id: TaskId) {
-        self.active_task_ids
-            .lock()
-            .expect("Active task ids should be present")
-            .remove(&task_id);
+    pub fn mark_task_finished(&mut self, task_context: &TaskContext) {
+        self.active_task_details.remove(task_context);
     }
 
     pub fn submit_tasks(
-        &self,
+        &mut self,
         tasks: Vec<SwordfishTask>,
         py: Python<'_>,
         task_locals: &pyo3_async_runtimes::TaskLocals,
     ) -> DaftResult<Vec<RayTaskResultHandle>> {
-        let (task_ids, tasks): (Vec<TaskId>, Vec<RaySwordfishTask>) = tasks
-            .into_iter()
-            .map(|task| (task.task_id().clone(), RaySwordfishTask::new(task)))
-            .unzip();
+        let mut task_handles = Vec::with_capacity(tasks.len());
+        for task in tasks {
+            let task_context = task.task_context();
+            let task_details = TaskDetails::from(&task);
 
-        let py_task_handles = self
-            .actor_handle
-            .call_method1(py, pyo3::intern!(py, "submit_tasks"), (tasks,))?
-            .extract::<Vec<PyObject>>(py)?;
+            let ray_swordfish_task = RaySwordfishTask::new(task);
+            let py_task_handle = self.ray_worker_handle.call_method1(
+                py,
+                pyo3::intern!(py, "submit_task"),
+                (ray_swordfish_task,),
+            )?;
+            let coroutine = py_task_handle.call_method0(py, pyo3::intern!(py, "get_result"))?;
 
-        let task_handles = py_task_handles
-            .into_iter()
-            .map(|py_task_handle| {
-                let task_locals = task_locals.clone_ref(py);
-                RayTaskResultHandle::new(py_task_handle, task_locals)
-            })
-            .collect::<Vec<_>>();
+            self.active_task_details
+                .insert(task_context.clone(), task_details);
 
-        self.active_task_ids
-            .lock()
-            .expect("Active task ids should be present")
-            .extend(task_ids);
+            let task_locals = task_locals.clone_ref(py);
+            let ray_task_result_handle = RayTaskResultHandle::new(
+                task_context,
+                py_task_handle,
+                coroutine,
+                task_locals,
+                self.worker_id.clone(),
+            );
+            task_handles.push(ray_task_result_handle);
+        }
 
         Ok(task_handles)
     }
 
+    #[allow(dead_code)]
     pub fn shutdown(&self, py: Python<'_>) {
-        self.actor_handle
+        self.ray_worker_handle
             .call_method0(py, pyo3::intern!(py, "shutdown"))
             .expect("Failed to shutdown RaySwordfishWorker");
     }
@@ -98,14 +101,29 @@ impl Worker for RaySwordfishWorker {
         &self.worker_id
     }
 
-    fn num_cpus(&self) -> usize {
+    fn total_num_cpus(&self) -> f64 {
         self.num_cpus
     }
 
-    fn active_task_ids(&self) -> HashSet<TaskId> {
-        self.active_task_ids
-            .lock()
-            .expect("Active task ids should be present")
-            .clone()
+    fn total_num_gpus(&self) -> f64 {
+        self.num_gpus
+    }
+
+    fn active_num_cpus(&self) -> f64 {
+        self.active_task_details
+            .values()
+            .map(|details| details.num_cpus())
+            .sum()
+    }
+
+    fn active_num_gpus(&self) -> f64 {
+        self.active_task_details
+            .values()
+            .map(|details| details.num_gpus())
+            .sum()
+    }
+
+    fn active_task_details(&self) -> HashMap<TaskContext, TaskDetails> {
+        self.active_task_details.clone()
     }
 }

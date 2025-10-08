@@ -1,6 +1,6 @@
 # Expressions
 
-Daft Expressions allow you to express some computation that needs to happen in a DataFrame. This page provides an overview of all the functionality that is provided by Daft Expressions. Learn more about [Expressions](../core_concepts.md#expressions) in Daft User Guide.
+Daft Expressions allow you to express some computation that needs to happen in a DataFrame. This page provides an overview of all the functionality that is provided by Daft Expressions.
 
 ## Constructors
 
@@ -24,6 +24,11 @@ Daft Expressions allow you to express some computation that needs to happen in a
     options:
         heading_level: 3
 
+::: daft.expressions.coalesce
+    options:
+        heading_level: 3
+
+
 <!--
 ## Generic
 ## Numeric
@@ -34,6 +39,10 @@ Daft Expressions allow you to express some computation that needs to happen in a
 ::: daft.expressions.Expression
     options:
         filters: ["!^_[^_]", "!over", "!lag", "!lead"]
+
+::: daft.expressions.WhenExpr
+    options:
+        filters: ["!^_"]
 
 ::: daft.expressions.expressions.ExpressionStringNamespace
     options:
@@ -95,14 +104,12 @@ Daft Expressions allow you to express some computation that needs to happen in a
         toc_label: Expression.url
         heading: Expression.url
 
-::: daft.expressions.expressions.ExpressionJsonNamespace
-    options:
-        filters: ["!^_"]
-        toc_label: Expression.json
-        heading: Expression.json
-
 ::: daft.expressions.expressions.ExpressionEmbeddingNamespace
     options:
         filters: ["!^_"]
         toc_label: Expression.embedding
         heading: Expression.embedding
+
+::: daft.expressions.visitor.ExpressionVisitor
+    options:
+        filters: ["!^_"]

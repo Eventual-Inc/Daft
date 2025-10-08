@@ -129,16 +129,7 @@ def test_hash_int_array_with_bad_seed():
 
     bad_seed = Series.from_numpy(np.random.randint(0, 127, 100)).cast(DataType.float64())
 
-    with pytest.raises(ValueError, match="We can only use UInt64 as a seed"):
-        arr.hash(bad_seed)
-
-
-def test_hash_int_array_with_bad_length():
-    arr = Series.from_numpy(np.random.randint(0, 127, 100)).cast(DataType.uint64())
-
-    bad_seed = Series.from_numpy(np.random.randint(0, 127, 99)).cast(DataType.uint64())
-
-    with pytest.raises(ValueError, match="seed length does not match array length"):
+    with pytest.raises(ValueError, match="seed must be a numeric type"):
         arr.hash(bad_seed)
 
 
@@ -160,8 +151,7 @@ def test_hash_list_array_no_seed(dtype):
 @pytest.mark.parametrize("seed", [1, 2, 42])
 def test_hash_list_array_seeded(dtype, seed):
     arr = Series.from_pylist([[1, 2], [1, 3], [1, 2], [1, 2, 3], [], [], [2, 1]]).cast(DataType.list(dtype))
-    seeds = Series.from_pylist([seed] * 9).cast(DataType.uint64())
-
+    seeds = Series.from_pylist([seed] * 7).cast(DataType.uint64())
     hashed = arr.hash(seeds).to_pylist()
     assert hashed[0] == hashed[2]
     assert hashed[4] == hashed[5]
@@ -278,7 +268,7 @@ def test_hash_fixed_size_list_array_seeded(dtype, seed):
     arr = Series.from_pylist([[1, 2], [1, 3], [1, 2], [1, 4], [5, 5], [5, 5], [2, 1]]).cast(
         DataType.fixed_size_list(dtype, 2)
     )
-    seeds = Series.from_pylist([seed] * 9).cast(DataType.uint64())
+    seeds = Series.from_pylist([seed] * len(arr)).cast(DataType.uint64())
 
     hashed = arr.hash(seeds).to_pylist()
     assert hashed[0] == hashed[2]

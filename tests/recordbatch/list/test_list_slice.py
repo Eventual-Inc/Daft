@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import pyarrow as pa
 import pytest
 
@@ -210,9 +212,9 @@ def test_list_slice_invalid_parameters():
             "end": [1, 2, 3, -1, 0],
         }
     )
-    with pytest.raises(ValueError, match="Expected start index to be integer"):
+    with pytest.raises(ValueError, match="`start` argument to `slice` must be an integer, received: Float64"):
         table.eval_expression_list([col("col").list.slice(1.0, 0)])
-    with pytest.raises(ValueError, match="Expected end index to be integer"):
+    with pytest.raises(ValueError, match="`end` argument to `slice` must be an integer, received: Float64"):
         table.eval_expression_list([col("col").list.slice(0, 1.0)])
     with pytest.raises(TypeError, match="missing 1 required positional argument: 'start'"):
         table.eval_expression_list([col("col").list.slice()])

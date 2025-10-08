@@ -1,10 +1,15 @@
+from __future__ import annotations
+
 import argparse
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import daft
-from daft.sql.sql import SQLCatalog
+
+if TYPE_CHECKING:
+    from daft.dataframe.dataframe import DataFrame
 
 TABLE_NAMES = [
     "call_center",
@@ -34,15 +39,13 @@ TABLE_NAMES = [
 ]
 
 
-def register_catalog(scale_factor: int) -> SQLCatalog:
-    return SQLCatalog(
-        tables={
-            table: daft.read_parquet(
-                f"s3://eventual-dev-benchmarking-fixtures/uncompressed/tpcds-dbgen/{scale_factor}/{table}"
-            )
-            for table in TABLE_NAMES
-        }
-    )
+def create_bindings(scale_factor: int) -> dict[str, DataFrame]:
+    return {
+        table: daft.read_parquet(
+            f"s3://eventual-dev-benchmarking-fixtures/uncompressed/tpcds-dbgen/{scale_factor}/{table}"
+        )
+        for table in TABLE_NAMES
+    }
 
 
 def run(
@@ -50,14 +53,13 @@ def run(
     dry_run: bool,
     scale_factor: int,
 ):
-    catalog = register_catalog(scale_factor)
     query_file = Path(__file__).parent / "queries" / f"{question:02}.sql"
     with open(query_file) as f:
         query_string = f.read()
 
     info_path = Path("/tmp") / "ray" / "session_latest" / "logs" / "info"
     info_path.mkdir(parents=True, exist_ok=True)
-    query = daft.sql(query_string, catalog=catalog)
+    query = daft.sql(query_string, **create_bindings(scale_factor))
 
     explain_delta = None
     with open(info_path / f"plan-{question}.txt", "w") as f:

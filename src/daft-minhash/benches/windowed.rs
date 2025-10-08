@@ -2,8 +2,8 @@ use std::{collections::VecDeque, hint::black_box};
 
 use daft_minhash::windowed::WindowedWordsExt;
 use tango_bench::{
-    benchmark_fn, tango_benchmarks, tango_main, Benchmark, IntoBenchmarks, MeasurementSettings,
-    DEFAULT_SETTINGS,
+    Benchmark, DEFAULT_SETTINGS, IntoBenchmarks, MeasurementSettings, benchmark_fn,
+    tango_benchmarks, tango_main,
 };
 // Import the windowed words functionality
 

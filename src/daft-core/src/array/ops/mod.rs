@@ -7,7 +7,6 @@ mod arithmetic;
 pub mod arrow2;
 pub mod as_arrow;
 mod between;
-mod binary;
 mod bitwise;
 mod bool_agg;
 pub(crate) mod broadcast;
@@ -21,20 +20,22 @@ mod concat;
 mod concat_agg;
 mod count;
 mod exp;
+pub mod file;
 mod filter;
 mod float;
 mod floor;
 pub mod from_arrow;
 pub mod full;
 mod get;
+mod get_lit;
 pub(crate) mod groups;
 mod hash;
 mod hll_merge;
 mod hll_sketch;
 mod if_else;
+pub mod image;
 mod is_in;
 mod len;
-mod list;
 mod list_agg;
 mod log;
 mod map;
@@ -68,7 +69,6 @@ use std::hash::BuildHasher;
 use common_error::DaftResult;
 pub use hll_sketch::HLL_SKETCH_DTYPE;
 pub use sort::{build_multi_array_bicompare, build_multi_array_compare};
-pub use utf8::{PadPlacement, Utf8NormalizeOptions};
 
 use crate::count_mode::CountMode;
 
@@ -167,6 +167,10 @@ pub type GroupIndicesPair = (VecIndices, GroupIndices);
 
 pub trait IntoGroups {
     fn make_groups(&self) -> DaftResult<GroupIndicesPair>;
+}
+
+pub trait IntoUniqueIdxs {
+    fn make_unique_idxs(&self) -> DaftResult<VecIndices>;
 }
 
 pub trait DaftCountAggable {

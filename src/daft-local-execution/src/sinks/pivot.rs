@@ -1,25 +1,26 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_dsl::{AggExpr, Expr, ExprRef};
+use common_metrics::ops::NodeType;
+use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
-enum PivotState {
+pub(crate) enum PivotState {
     Accumulating(Vec<Arc<MicroPartition>>),
     Done,
 }
 
 impl PivotState {
     fn push(&mut self, part: Arc<MicroPartition>) {
-        if let Self::Accumulating(ref mut parts) = self {
+        if let Self::Accumulating(parts) = self {
             parts.push(part);
         } else {
             panic!("PivotSink should be in Accumulating state");
@@ -27,7 +28,7 @@ impl PivotState {
     }
 
     fn finalize(&mut self) -> Vec<Arc<MicroPartition>> {
-        let res = if let Self::Accumulating(ref mut parts) = self {
+        let res = if let Self::Accumulating(parts) = self {
             std::mem::take(parts)
         } else {
             panic!("PivotSink should be in Accumulating state");
@@ -37,18 +38,13 @@ impl PivotState {
     }
 }
 
-impl BlockingSinkState for PivotState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
 struct PivotParams {
-    group_by: Vec<ExprRef>,
-    pivot_column: ExprRef,
-    value_column: ExprRef,
-    aggregation: AggExpr,
+    group_by: Vec<BoundExpr>,
+    pivot_column: BoundExpr,
+    value_column: BoundExpr,
+    aggregation: BoundAggExpr,
     names: Vec<String>,
+    pre_agg: bool,
 }
 
 pub struct PivotSink {
@@ -57,11 +53,12 @@ pub struct PivotSink {
 
 impl PivotSink {
     pub fn new(
-        group_by: Vec<ExprRef>,
-        pivot_column: ExprRef,
-        value_column: ExprRef,
-        aggregation: AggExpr,
+        group_by: Vec<BoundExpr>,
+        pivot_column: BoundExpr,
+        value_column: BoundExpr,
+        aggregation: BoundAggExpr,
         names: Vec<String>,
+        pre_agg: bool,
     ) -> Self {
         Self {
             pivot_params: Arc::new(PivotParams {
@@ -70,70 +67,73 @@ impl PivotSink {
                 value_column,
                 aggregation,
                 names,
+                pre_agg,
             }),
         }
     }
 }
 
 impl BlockingSink for PivotSink {
+    type State = PivotState;
+
     #[instrument(skip_all, name = "PivotSink::sink")]
     fn sink(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn BlockingSinkState>,
+        mut state: Self::State,
         _spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkSinkResult {
-        state
-            .as_any_mut()
-            .downcast_mut::<PivotState>()
-            .expect("PivotSink should have PivotState")
-            .push(input);
+    ) -> BlockingSinkSinkResult<Self> {
+        state.push(input);
         Ok(BlockingSinkStatus::NeedMoreInput(state)).into()
     }
 
     #[instrument(skip_all, name = "PivotSink::finalize")]
     fn finalize(
         &self,
-        states: Vec<Box<dyn BlockingSinkState>>,
+        states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
         let pivot_params = self.pivot_params.clone();
         spawner
             .spawn(
                 async move {
-                    let all_parts = states.into_iter().flat_map(|mut state| {
-                        state
-                            .as_any_mut()
-                            .downcast_mut::<PivotState>()
-                            .expect("PivotSink should have PivotState")
-                            .finalize()
-                    });
+                    let all_parts = states.into_iter().flat_map(|mut state| state.finalize());
                     let concated = MicroPartition::concat(all_parts)?;
-                    let group_by_with_pivot = pivot_params
-                        .group_by
-                        .iter()
-                        .chain(std::iter::once(&pivot_params.pivot_column))
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    let agged = concated.agg(
-                        &[Expr::Agg(pivot_params.aggregation.clone()).into()],
-                        &group_by_with_pivot,
-                    )?;
+
+                    let agged = if pivot_params.pre_agg {
+                        let group_by_with_pivot = pivot_params
+                            .group_by
+                            .iter()
+                            .chain(std::iter::once(&pivot_params.pivot_column))
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        concated.agg(
+                            std::slice::from_ref(&pivot_params.aggregation),
+                            &group_by_with_pivot,
+                        )?
+                    } else {
+                        concated
+                    };
+
                     let pivoted = Arc::new(agged.pivot(
                         &pivot_params.group_by,
                         pivot_params.pivot_column.clone(),
                         pivot_params.value_column.clone(),
                         pivot_params.names.clone(),
                     )?);
-                    Ok(Some(pivoted))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![pivoted]))
                 },
                 Span::current(),
             )
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "Pivot"
+    fn name(&self) -> NodeName {
+        "Pivot".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::Pivot
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -156,7 +156,7 @@ impl BlockingSink for PivotSink {
         display
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        Ok(Box::new(PivotState::Accumulating(vec![])))
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(PivotState::Accumulating(vec![]))
     }
 }

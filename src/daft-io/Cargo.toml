@@ -2,16 +2,15 @@
 async-recursion = "1.0.4"
 async-stream = "0.3.6"
 async-trait = {workspace = true}
-aws-config = {version = "0.55.3", features = ["native-tls", "rt-tokio", "client-hyper", "credentials-sso"], default-features = false}
-aws-credential-types = {version = "0.55.3", features = ["hardcoded-credentials"]}
-aws-sdk-s3 = {version = "0.28.0", features = ["native-tls", "rt-tokio"], default-features = false}
-aws-sig-auth = "0.55.3"
-aws-smithy-async = "0.55.3"
-aws-smithy-client = "0.55.3"
-azure_core = "0.17.0"
-azure_identity = "0.17.0"
-azure_storage = {version = "0.17.0", features = ["enable_reqwest"], default-features = false}
-azure_storage_blobs = {version = "0.17.0", features = ["enable_reqwest"], default-features = false}
+aws-config = "1.8.1"
+aws-credential-types = {version = "1.2.6", features = ["hardcoded-credentials"]}
+aws-sdk-s3 = {version = "1.96.0", features = ["default-https-client", "rt-tokio", "sigv4a"], default-features = false}
+aws-smithy-http-client = "1.1.1"
+aws-smithy-runtime-api = "1.8.0"
+azure_core = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls", "hmac_rust"], default-features = false}
+azure_identity = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls"], default-features = false}
+azure_storage = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls"], default-features = false}
+azure_storage_blobs = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls"], default-features = false}
 bytes = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-file-formats = {path = "../common/file-formats", default-features = false}
@@ -20,35 +19,34 @@ common-runtime = {path = "../common/runtime", default-features = false}
 derive_builder = {workspace = true}
 futures = {workspace = true}
 globset = "0.4"
-google-cloud-storage = {version = "0.22.1", default-features = false, features = ["default-tls", "auth"]}
+google-cloud-storage = {version = "0.24.0", default-features = false, features = ["rustls-tls", "auth"]}
 google-cloud-token = {version = "0.1.2"}
 home = "0.5.9"
-hyper = "0.14.27"
-hyper-tls = "0.5.0"
 itertools = {workspace = true}
 log = {workspace = true}
-openssl-sys = {version = "0.9.102", features = ["vendored"]}
 pyo3 = {workspace = true, optional = true}
 rand = "0.8.5"
-regex = {version = "1.10.4"}
-reqwest-middleware = "0.3.3"
-reqwest-retry = "0.6.1"
+regex = {version = "1.11.2"}
+reqwest-middleware = "0.4.2"
+reqwest-retry = "0.7.0"
 retry-policies = "0.4.0"
 serde = {workspace = true}
 snafu = {workspace = true}
+thiserror = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}
 tracing = {workspace = true}
 url = {workspace = true}
+uuid = {workspace = true}
 
 [dependencies.reqwest]
 default-features = false
-features = ["stream", "native-tls", "json"]
-version = "0.11.18"
+features = ["stream", "json"]
+version = "0.12.19"
 
 [dev-dependencies]
-md5 = "0.7.0"
-tempfile = "3.8.1"
+md5 = "0.8.0"
+tempfile = "3.23.0"
 
 [features]
 python = [
@@ -65,6 +63,3 @@ workspace = true
 edition = {workspace = true}
 name = "daft-io"
 version = {workspace = true}
-
-[package.metadata.cargo-machete]
-ignored = ["openssl-sys"]

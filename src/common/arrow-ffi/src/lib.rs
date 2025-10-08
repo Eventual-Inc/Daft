@@ -42,11 +42,16 @@ pub fn to_py_array<'py>(
         array.data_type().clone(),
         true,
     )));
-    let new_arr = fix_child_array_slice_offsets(array);
-    let arrow_arr = Box::new(ffi::export_array_to_c(new_arr));
 
-    let schema_ptr: *const ffi::ArrowSchema = &*schema;
-    let array_ptr: *const ffi::ArrowArray = &*arrow_arr;
+    // fix_child_array_slice_offsets serializes and deserializes into ipc, and is a parallelizable operation.
+    // We allow threads here to avoid blocking the GIL.
+    let arrow_arr = py.allow_threads(|| {
+        let fixed_array = fix_child_array_slice_offsets(array);
+        Box::new(ffi::export_array_to_c(fixed_array))
+    });
+
+    let schema_ptr: *const ffi::ArrowSchema = &raw const *schema;
+    let array_ptr: *const ffi::ArrowArray = &raw const *arrow_arr;
 
     let array = pyarrow.getattr(pyo3::intern!(py, "Array"))?.call_method1(
         pyo3::intern!(py, "_import_from_c"),
@@ -67,7 +72,7 @@ pub fn field_to_py(
     pyarrow: &Bound<PyModule>,
 ) -> PyResult<PyObject> {
     let schema = Box::new(ffi::export_field_to_c(field));
-    let schema_ptr: *const ffi::ArrowSchema = &*schema;
+    let schema_ptr: *const ffi::ArrowSchema = &raw const *schema;
 
     let field = pyarrow.getattr(pyo3::intern!(py, "Field"))?.call_method1(
         pyo3::intern!(py, "_import_from_c"),
@@ -84,7 +89,7 @@ pub fn dtype_to_py<'py>(
     pyarrow: Bound<'py, PyModule>,
 ) -> PyResult<Bound<'py, PyAny>> {
     let schema = Box::new(ffi::export_field_to_c(&Field::new("", dtype.clone(), true)));
-    let schema_ptr: *const ffi::ArrowSchema = &*schema;
+    let schema_ptr: *const ffi::ArrowSchema = &raw const *schema;
 
     let field = pyarrow.getattr(pyo3::intern!(py, "Field"))?.call_method1(
         pyo3::intern!(py, "_import_from_c"),

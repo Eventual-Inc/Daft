@@ -5,8 +5,8 @@ common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 common-version = {path = "../common/version", default-features = false}
-derivative = {workspace = true}
 derive_more = {workspace = true}
+educe = {workspace = true}
 html-escape = {workspace = true}
 indexmap = {workspace = true}
 num-derive = {workspace = true}

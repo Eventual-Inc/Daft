@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import random
+
 import pytest
+from pyspark.sql import Row
 from pyspark.sql import functions as F
 from pyspark.sql.functions import col
 from pyspark.sql.types import LongType, StringType, StructField, StructType
@@ -119,6 +122,20 @@ def test_range_limit(spark_session):
     limited_df = spark_range.limit(5).toPandas()
     assert len(limited_df) == 5, "Limited DataFrame should have 5 rows"
     assert list(limited_df["id"]) == list(range(5)), "Limited DataFrame should contain values 0-4"
+
+
+def test_range_limit_offset(spark_session):
+    ids = [i for i in range(1024)]
+    random.shuffle(ids)
+    df = spark_session.createDataFrame([(id, f"user_{id}") for id in ids], ["id", "name"])
+
+    ol_df = df.sort("id", ascending=True).offset(2).limit(7).toPandas()
+    assert len(ol_df) == 7, "Limited DataFrame should have 7 rows"
+    assert list(ol_df["id"]) == list(range(2, 9)), "Limited DataFrame should contain values 2-9"
+
+    lo_df = df.sort("id", ascending=True).limit(7).offset(2).toPandas()
+    assert len(lo_df) == 5, "Limited DataFrame should have 5 rows"
+    assert list(lo_df["id"]) == list(range(2, 7)), "Limited DataFrame should contain values 2-7"
 
 
 def test_filter(spark_session):
@@ -349,6 +366,55 @@ def test_with_columns_renamed(spark_session):
     # assert [(row["number"], row["character"]) for row in collected] == [(0, 0), (1, 1)]
 
 
+def test_with_column_renamed_preserves_other_columns(spark_session):
+    """Test that withColumnRenamed preserves non-renamed columns."""
+    # Create a DataFrame with multiple columns
+    data = [(1, "alice", 25), (2, "bob", 30), (3, "charlie", 35)]
+    df = spark_session.createDataFrame(data, ["id", "name", "age"])
+
+    # Rename only the 'name' column to 'full_name'
+    renamed_df = df.withColumnRenamed("name", "full_name")
+
+    # Verify the schema has all columns
+    assert "id" in renamed_df.columns, "Original 'id' column should be preserved"
+    assert "age" in renamed_df.columns, "Original 'age' column should be preserved"
+    assert "full_name" in renamed_df.columns, "Renamed column should exist"
+    assert "name" not in renamed_df.columns, "Original 'name' column should be gone"
+    assert len(renamed_df.columns) == 3, "Should have same number of columns"
+
+    # Verify the data is correct
+    collected = renamed_df.collect()
+    assert len(collected) == 3
+    assert collected[0]["id"] == 1
+    assert collected[0]["full_name"] == "alice"
+    assert collected[0]["age"] == 25
+
+
+def test_with_column_renamed_chained(spark_session):
+    """Test that multiple withColumnRenamed calls work correctly."""
+    # Create a DataFrame with multiple columns
+    data = [(1, "alice", 25), (2, "bob", 30), (3, "charlie", 35)]
+    df = spark_session.createDataFrame(data, ["id", "name", "age"])
+
+    # Chain multiple renames
+    renamed_df = df.withColumnRenamed("name", "full_name").withColumnRenamed("age", "years")
+
+    # Verify the schema has all columns with correct names
+    assert "id" in renamed_df.columns, "Original 'id' column should be preserved"
+    assert "full_name" in renamed_df.columns, "First renamed column should exist"
+    assert "years" in renamed_df.columns, "Second renamed column should exist"
+    assert "name" not in renamed_df.columns, "Original 'name' column should be gone"
+    assert "age" not in renamed_df.columns, "Original 'age' column should be gone"
+    assert len(renamed_df.columns) == 3, "Should have same number of columns"
+
+    # Verify the data is correct
+    collected = renamed_df.collect()
+    assert len(collected) == 3
+    assert collected[0]["id"] == 1
+    assert collected[0]["full_name"] == "alice"
+    assert collected[0]["years"] == 25
+
+
 def test_explain(spark_session, capsys):
     df = spark_session.createDataFrame([(1, 2), (2, 2)], ["a", "b"])
     df.explain()
@@ -362,3 +428,17 @@ def test_explain(spark_session, capsys):
 
 """
     assert actual.out == expected
+
+
+def test_when(spark_session):
+    df = spark_session.createDataFrame([(1), (None), (10)], ["a"])
+    result = df.select(F.when(col("a").isNull(), True)).collect()
+    assert result == [Row(a=None), Row(a=True), Row(a=None)]
+
+
+def test_when_otherwise(spark_session):
+    df = spark_session.createDataFrame([(1), (None), (10)], ["a"])
+
+    result = df.select(F.when(col("a").isNull(), True).otherwise(False)).collect()
+
+    assert result == [Row(a=True), Row(a=False), Row(a=True)]

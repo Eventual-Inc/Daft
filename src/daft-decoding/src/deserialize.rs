@@ -8,6 +8,7 @@ use arrow2::{
     io::csv,
     offset::Offset,
     temporal_conversions,
+    trusted_len::TrustedLen,
     types::NativeType,
 };
 use chrono::{Datelike, Timelike};
@@ -59,17 +60,17 @@ fn to_utf8(bytes: &[u8]) -> Option<&str> {
 }
 
 #[inline]
-fn deserialize_primitive<T, B: ByteRecordGeneric, F>(
-    rows: &[B],
-    column: usize,
+fn deserialize_primitive<'a, T, I, F>(
+    bytes_iter: I,
     datatype: DataType,
     mut op: F,
 ) -> Box<dyn Array>
 where
     T: NativeType,
+    I: TrustedLen<Item = Option<&'a [u8]>>,
     F: FnMut(&[u8]) -> Option<T>,
 {
-    let iter = rows.iter().map(|row| match row.get(column) {
+    let iter = bytes_iter.map(|bytes_opt| match bytes_opt {
         Some(bytes) => {
             if bytes.is_empty() {
                 return None;
@@ -126,12 +127,12 @@ fn deserialize_decimal(bytes: &[u8], precision: usize, scale: usize) -> Option<i
 }
 
 #[inline]
-fn deserialize_boolean<B, F>(rows: &[B], column: usize, op: F) -> Box<dyn Array>
+fn deserialize_boolean<'a, I, F>(bytes_iter: I, op: F) -> Box<dyn Array>
 where
-    B: ByteRecordGeneric,
+    I: TrustedLen<Item = Option<&'a [u8]>>,
     F: Fn(&[u8]) -> Option<bool>,
 {
-    let iter = rows.iter().map(|row| match row.get(column) {
+    let iter = bytes_iter.map(|bytes_opt| match bytes_opt {
         Some(bytes) => {
             if bytes.is_empty() {
                 return None;
@@ -144,50 +145,49 @@ where
 }
 
 #[inline]
-fn deserialize_utf8<O: Offset, B: ByteRecordGeneric>(rows: &[B], column: usize) -> Box<dyn Array> {
-    let expected_size = rows
-        .iter()
-        .map(|row| match row.get(column) {
-            Some(bytes) => bytes.len(),
-            None => 0,
-        })
-        .sum::<usize>();
-
-    let iter = rows.iter().map(|row| match row.get(column) {
+fn deserialize_utf8<'a, O: Offset, I>(
+    bytes_iter: I,
+    expected_capacity: usize,
+    expected_size: usize,
+) -> Box<dyn Array>
+where
+    I: TrustedLen<Item = Option<&'a [u8]>>,
+{
+    let iter = bytes_iter.map(|bytes_opt| match bytes_opt {
         Some(bytes) => to_utf8(bytes),
         None => None,
     });
-    let mut mu = MutableUtf8Array::<O>::with_capacities(rows.len(), expected_size);
+
+    let mut mu = MutableUtf8Array::<O>::with_capacities(expected_capacity, expected_size);
     mu.extend_trusted_len(iter);
     let array: Utf8Array<O> = mu.into();
     Box::new(array)
 }
 
 #[inline]
-fn deserialize_binary<O: Offset, B: ByteRecordGeneric>(
-    rows: &[B],
-    column: usize,
-) -> Box<dyn Array> {
-    let expected_size = rows
-        .iter()
-        .map(|row| match row.get(column) {
-            Some(bytes) => bytes.len(),
-            None => 0,
-        })
-        .sum::<usize>();
-
-    let iter = rows.iter().map(|row| row.get(column));
-    let mut mu = MutableBinaryArray::<O>::with_capacities(rows.len(), expected_size);
-    mu.extend_trusted_len(iter);
+fn deserialize_binary<'a, O: Offset, I>(
+    bytes_iter: I,
+    expected_capacity: usize,
+    expected_size: usize,
+) -> Box<dyn Array>
+where
+    I: TrustedLen<Item = Option<&'a [u8]>>,
+{
+    let mut mu = MutableBinaryArray::<O>::with_capacities(expected_capacity, expected_size);
+    mu.extend_trusted_len(bytes_iter);
     let array: BinaryArray<O> = mu.into();
     Box::new(array)
 }
 
-#[inline]
-fn deserialize_null<B: ByteRecordGeneric>(rows: &[B], _: usize) -> Box<dyn Array> {
-    // TODO(Clark): Once we add strict parsing mode, where failure to parse to an intended dtype fails instead
-    // of resulting in a null, add an explicit parsing pass over the column.
-    Box::new(NullArray::new(DataType::Null, rows.len()))
+// Return the factor by how small is a time unit compared to seconds
+#[must_use]
+pub fn get_factor_from_timeunit(time_unit: TimeUnit) -> u32 {
+    match time_unit {
+        TimeUnit::Second => 1,
+        TimeUnit::Millisecond => 1_000,
+        TimeUnit::Microsecond => 1_000_000,
+        TimeUnit::Nanosecond => 1_000_000_000,
+    }
 }
 
 #[inline]
@@ -239,21 +239,24 @@ pub fn deserialize_datetime<T: chrono::TimeZone>(
     None
 }
 
-/// Deserializes `column` of `rows` into an [`Array`] of [`DataType`] `datatype`.
+/// Unified deserialization function that works with any iterator of byte slices
 #[inline]
-pub fn deserialize_column<B: ByteRecordGeneric>(
-    rows: &[B],
-    column: usize,
+pub fn deserialize_bytes_to_array<'a, I>(
+    bytes_iter: I,
     datatype: DataType,
-    _line_number: usize,
-) -> Result<Box<dyn Array>> {
+    expected_capacity: usize,
+    expected_size: usize,
+) -> Result<Box<dyn Array>>
+where
+    I: TrustedLen<Item = Option<&'a [u8]>>,
+{
     use DataType::{
-        Binary, Boolean, Date32, Date64, Decimal, Float32, Float64, Int16, Int32, Int64, Int8,
-        LargeBinary, LargeUtf8, Null, Time32, Time64, Timestamp, UInt16, UInt32, UInt64, UInt8,
+        Binary, Boolean, Date32, Date64, Decimal, Float32, Float64, Int8, Int16, Int32, Int64,
+        LargeBinary, LargeUtf8, Null, Time32, Time64, Timestamp, UInt8, UInt16, UInt32, UInt64,
         Utf8,
     };
     Ok(match datatype {
-        Boolean => deserialize_boolean(rows, column, |bytes| {
+        Boolean => deserialize_boolean(bytes_iter, |bytes| {
             if bytes.eq_ignore_ascii_case(b"false") {
                 Some(false)
             } else if bytes.eq_ignore_ascii_case(b"true") {
@@ -262,49 +265,49 @@ pub fn deserialize_column<B: ByteRecordGeneric>(
                 None
             }
         }),
-        Int8 => deserialize_primitive(rows, column, datatype, |bytes| {
+        Int8 => deserialize_primitive(bytes_iter, datatype, |bytes| {
             atoi_simd::parse_skipped::<i8>(bytes).ok()
         }),
-        Int16 => deserialize_primitive(rows, column, datatype, |bytes| {
+        Int16 => deserialize_primitive(bytes_iter, datatype, |bytes| {
             atoi_simd::parse_skipped::<i16>(bytes).ok()
         }),
-        Int32 => deserialize_primitive(rows, column, datatype, |bytes| {
+        Int32 => deserialize_primitive(bytes_iter, datatype, |bytes| {
             atoi_simd::parse_skipped::<i32>(bytes).ok()
         }),
-        Int64 => deserialize_primitive(rows, column, datatype, |bytes| {
+        Int64 => deserialize_primitive(bytes_iter, datatype, |bytes| {
             atoi_simd::parse_skipped::<i64>(bytes).ok()
         }),
-        UInt8 => deserialize_primitive(rows, column, datatype, |bytes| {
+        UInt8 => deserialize_primitive(bytes_iter, datatype, |bytes| {
             atoi_simd::parse_skipped::<u8>(bytes).ok()
         }),
-        UInt16 => deserialize_primitive(rows, column, datatype, |bytes| {
+        UInt16 => deserialize_primitive(bytes_iter, datatype, |bytes| {
             atoi_simd::parse_skipped::<u16>(bytes).ok()
         }),
-        UInt32 => deserialize_primitive(rows, column, datatype, |bytes| {
+        UInt32 => deserialize_primitive(bytes_iter, datatype, |bytes| {
             atoi_simd::parse_skipped::<u32>(bytes).ok()
         }),
-        UInt64 => deserialize_primitive(rows, column, datatype, |bytes| {
+        UInt64 => deserialize_primitive(bytes_iter, datatype, |bytes| {
             atoi_simd::parse_skipped::<u64>(bytes).ok()
         }),
-        Float32 => deserialize_primitive(rows, column, datatype, |bytes| {
-            fast_float::parse::<f32, _>(bytes).ok()
+        Float32 => deserialize_primitive(bytes_iter, datatype, |bytes| {
+            fast_float2::parse::<f32, _>(bytes).ok()
         }),
-        Float64 => deserialize_primitive(rows, column, datatype, |bytes| {
-            fast_float::parse::<f64, _>(bytes).ok()
+        Float64 => deserialize_primitive(bytes_iter, datatype, |bytes| {
+            fast_float2::parse::<f64, _>(bytes).ok()
         }),
-        Date32 => deserialize_primitive(rows, column, datatype, |bytes| {
+        Date32 => deserialize_primitive(bytes_iter, datatype, |bytes| {
             let mut last_fmt_idx = 0;
             to_utf8(bytes)
                 .and_then(|x| deserialize_naive_date(x, &mut last_fmt_idx))
                 .map(|x| x.num_days_from_ce() - temporal_conversions::EPOCH_DAYS_FROM_CE)
         }),
-        Date64 => deserialize_primitive(rows, column, datatype, |bytes| {
+        Date64 => deserialize_primitive(bytes_iter, datatype, |bytes| {
             let mut last_fmt_idx = 0;
             to_utf8(bytes)
                 .and_then(|x| deserialize_naive_datetime(x, &mut last_fmt_idx))
                 .map(|x| x.and_utc().timestamp_millis())
         }),
-        Time32(time_unit) => deserialize_primitive(rows, column, datatype, |bytes| {
+        Time32(time_unit) => deserialize_primitive(bytes_iter, datatype, |bytes| {
             let factor = get_factor_from_timeunit(time_unit);
             to_utf8(bytes)
                 .and_then(|x| x.parse::<chrono::NaiveTime>().ok())
@@ -315,7 +318,7 @@ pub fn deserialize_column<B: ByteRecordGeneric>(
                         + x.nanosecond() / (1_000_000_000 / factor)) as i32
                 })
         }),
-        Time64(time_unit) => deserialize_primitive(rows, column, datatype, |bytes| {
+        Time64(time_unit) => deserialize_primitive(bytes_iter, datatype, |bytes| {
             let factor: u64 = get_factor_from_timeunit(time_unit).into();
             to_utf8(bytes)
                 .and_then(|x| x.parse::<chrono::NaiveTime>().ok())
@@ -329,7 +332,7 @@ pub fn deserialize_column<B: ByteRecordGeneric>(
         }),
         Timestamp(time_unit, None) => {
             let mut last_fmt_idx = 0;
-            deserialize_primitive(rows, column, datatype, |bytes| {
+            deserialize_primitive(bytes_iter, datatype, |bytes| {
                 to_utf8(bytes)
                     .and_then(|s| deserialize_naive_datetime(s, &mut last_fmt_idx))
                     .and_then(|dt| match time_unit {
@@ -343,7 +346,7 @@ pub fn deserialize_column<B: ByteRecordGeneric>(
         Timestamp(time_unit, Some(ref tz)) => {
             let tz = temporal_conversions::parse_offset(tz)?;
             let mut last_fmt_idx = 0;
-            deserialize_primitive(rows, column, datatype, |bytes| {
+            deserialize_primitive(bytes_iter, datatype, |bytes| {
                 to_utf8(bytes)
                     .and_then(|x| deserialize_datetime(x, &tz, &mut last_fmt_idx))
                     .and_then(|dt| match time_unit {
@@ -354,29 +357,44 @@ pub fn deserialize_column<B: ByteRecordGeneric>(
                     })
             })
         }
-        Decimal(precision, scale) => deserialize_primitive(rows, column, datatype, |x| {
+        Decimal(precision, scale) => deserialize_primitive(bytes_iter, datatype, |x| {
             deserialize_decimal(x, precision, scale)
         }),
-        Utf8 => deserialize_utf8::<i32, _>(rows, column),
-        LargeUtf8 => deserialize_utf8::<i64, _>(rows, column),
-        Binary => deserialize_binary::<i32, _>(rows, column),
-        LargeBinary => deserialize_binary::<i64, _>(rows, column),
-        Null => deserialize_null(rows, column),
+        Utf8 => deserialize_utf8::<i32, _>(bytes_iter, expected_capacity, expected_size),
+        LargeUtf8 => deserialize_utf8::<i64, _>(bytes_iter, expected_capacity, expected_size),
+        Binary => deserialize_binary::<i32, _>(bytes_iter, expected_capacity, expected_size),
+        LargeBinary => deserialize_binary::<i64, _>(bytes_iter, expected_capacity, expected_size),
+        Null => Box::new(NullArray::new(DataType::Null, expected_capacity)),
         other => {
             return Err(Error::NotYetImplemented(format!(
                 "Deserializing type \"{other:?}\" is not implemented"
-            )))
+            )));
         }
     })
 }
 
-// Return the factor by how small is a time unit compared to seconds
-#[must_use]
-pub fn get_factor_from_timeunit(time_unit: TimeUnit) -> u32 {
-    match time_unit {
-        TimeUnit::Second => 1,
-        TimeUnit::Millisecond => 1_000,
-        TimeUnit::Microsecond => 1_000_000,
-        TimeUnit::Nanosecond => 1_000_000_000,
-    }
+/// Deserializes `column` of CSV byte records into an [`Array`] of [`DataType`] `datatype`.
+#[inline]
+pub fn deserialize_column<B: ByteRecordGeneric>(
+    rows: &[B],
+    column: usize,
+    datatype: DataType,
+    _line_number: usize,
+) -> Result<Box<dyn Array>> {
+    let bytes_iter = rows.iter().map(|row| row.get(column));
+    let expected_capacity = rows.len();
+    let expected_size = rows
+        .iter()
+        .map(|row| row.get(column).map(|bytes| bytes.len()).unwrap_or(0))
+        .sum::<usize>();
+    deserialize_bytes_to_array(bytes_iter, datatype, expected_capacity, expected_size)
+}
+
+/// Deserializes a single value from bytes to a single-element Arrow2 array of the specified DataType.
+pub fn deserialize_single_value_to_arrow(
+    bytes: &[u8],
+    datatype: DataType,
+) -> Result<Box<dyn Array>> {
+    let bytes_iter = std::iter::once(if bytes.is_empty() { None } else { Some(bytes) });
+    deserialize_bytes_to_array(bytes_iter, datatype, 1, bytes.len())
 }

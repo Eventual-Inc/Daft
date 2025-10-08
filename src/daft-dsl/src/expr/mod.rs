@@ -20,28 +20,31 @@ use common_hashable_float_wrapper::FloatWrapper;
 use common_treenode::{Transformed, TreeNode};
 use daft_core::{
     datatypes::{
-        try_mean_aggregation_supertype, try_skew_aggregation_supertype,
-        try_stddev_aggregation_supertype, try_sum_supertype, InferDataType,
+        InferDataType, try_mean_aggregation_supertype, try_skew_aggregation_supertype,
+        try_stddev_aggregation_supertype, try_sum_supertype,
     },
     join::JoinSide,
+    lit::Literal,
     prelude::*,
     utils::supertype::{try_get_collection_supertype, try_get_supertype},
 };
 use derive_more::Display;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use super::functions::FunctionExpr;
 use crate::{
+    expr::bound_expr::BoundExpr,
     functions::{
+        BuiltinScalarFn, FUNCTION_REGISTRY, FunctionArg, FunctionArgs, FunctionEvaluator,
         function_display_without_formatter, function_semantic_id,
-        python::PythonUDF,
-        scalar_function_semantic_id,
+        python::LegacyPythonUDF,
+        scalar::{ScalarFn, scalar_function_semantic_id},
         sketch::{HashableVecPercentiles, SketchExpr},
         struct_::StructExpr,
-        FunctionArg, FunctionArgs, FunctionEvaluator, ScalarFunction,
     },
-    lit,
     optimization::{get_required_columns, requires_computation},
+    python_udf::{PyScalarFn, RowWisePyFn},
 };
 
 pub trait SubqueryPlan: std::fmt::Debug + std::fmt::Display + Send + Sync {
@@ -192,18 +195,22 @@ impl Column {
                 Field { name, .. },
                 PlanRef::Alias(plan_alias),
             )) => format!("{plan_alias}.{name}"),
-            Self::Resolved(ResolvedColumn::OuterRef(Field { name, .. }, _)) => name.to_string(),
+            Self::Resolved(ResolvedColumn::OuterRef(Field { name, .. }, _)) => name.clone(),
             Self::Bound(BoundColumn {
                 field: Field { name, .. },
                 ..
-            }) => name.to_string(),
+            }) => name.clone(),
         }
     }
 }
 
-impl Display for Column {
+impl std::fmt::Display for Column {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "col({})", self.name())
+        if let Self::Bound(BoundColumn { index, field, .. }) = self {
+            write!(f, "col({}: {})", index, field.name)
+        } else {
+            write!(f, "col({})", self.name())
+        }
     }
 }
 
@@ -238,7 +245,7 @@ pub enum Expr {
 
     // Over represents a window function as it is actually evaluated (since it requires a window spec)
     #[display("{_0} over {_1}")]
-    Over(WindowExpr, window::WindowSpec),
+    Over(WindowExpr, Arc<window::WindowSpec>),
 
     // WindowFunction represents a window function as an expression, this alone cannot be evaluated since
     // it requires a window spec. This variant only exists for constructing window functions in the
@@ -269,7 +276,7 @@ pub enum Expr {
     List(Vec<ExprRef>),
 
     #[display("lit({_0})")]
-    Literal(lit::LiteralValue),
+    Literal(Literal),
 
     #[display("if [{predicate}] then [{if_true}] else [{if_false}]")]
     IfElse {
@@ -279,7 +286,7 @@ pub enum Expr {
     },
 
     #[display("{_0}")]
-    ScalarFunction(ScalarFunction),
+    ScalarFn(ScalarFn),
 
     #[display("subquery {_0}")]
     Subquery(Subquery),
@@ -393,6 +400,14 @@ pub enum SketchType {
     HyperLogLog,
 }
 
+pub fn lit<L: Into<Literal>>(t: L) -> ExprRef {
+    Arc::new(Expr::Literal(t.into()))
+}
+
+pub fn null_lit() -> ExprRef {
+    Arc::new(Expr::Literal(Literal::Null))
+}
+
 /// Unresolved column with no associated plan ID or schema.
 pub fn unresolved_col(name: impl Into<Arc<str>>) -> ExprRef {
     UnresolvedColumn {
@@ -427,6 +442,30 @@ pub fn binary_op(op: Operator, left: ExprRef, right: ExprRef) -> ExprRef {
 }
 
 impl AggExpr {
+    pub fn agg_name(&self) -> &'static str {
+        match self {
+            Self::Count(_, _) => "Count",
+            Self::CountDistinct(_) => "Count Distinct",
+            Self::Sum(_) => "Sum",
+            Self::ApproxPercentile(_) => "Approx Percentile",
+            Self::ApproxCountDistinct(_) => "Approx Count Distinct",
+            Self::ApproxSketch(_, _) => "Approx Sketch",
+            Self::MergeSketch(_, _) => "Merge Sketch",
+            Self::Mean(_) => "Mean",
+            Self::Stddev(_) => "Stddev",
+            Self::Min(_) => "Min",
+            Self::Max(_) => "Max",
+            Self::BoolAnd(_) => "Bool And",
+            Self::BoolOr(_) => "Bool Or",
+            Self::AnyValue(_, _) => "Any Value",
+            Self::List(_) => "List",
+            Self::Set(_) => "Set",
+            Self::Concat(_) => "Concat",
+            Self::Skew(_) => "Skew",
+            Self::MapGroups { .. } => "Map Groups",
+        }
+    }
+
     pub fn name(&self) -> &str {
         match self {
             Self::Count(expr, ..)
@@ -630,16 +669,21 @@ impl AggExpr {
                 Ok(Field::new(
                     field.name.as_str(),
                     match &field.dtype {
-                        dt if dt.is_numeric() => if percentiles.len() > 1 || *force_list_output {
-                            DataType::FixedSizeList(Box::new(DataType::Float64), percentiles.len())
-                        } else {
-                            DataType::Float64
-                        },
+                        dt if dt.is_numeric() => {
+                            if percentiles.len() > 1 || *force_list_output {
+                                DataType::FixedSizeList(
+                                    Box::new(DataType::Float64),
+                                    percentiles.len(),
+                                )
+                            } else {
+                                DataType::Float64
+                            }
+                        }
                         other => {
                             return Err(DaftError::TypeError(format!(
                                 "Expected input to approx_percentiles() to be numeric but received dtype {} for column \"{}\"",
                                 other, field.name,
-                            )))
+                            )));
                         }
                     },
                 ))
@@ -701,7 +745,7 @@ impl AggExpr {
                 Ok(Field::new(field.name.as_str(), field.dtype))
             }
 
-            Self::List(expr) | Self::Set(expr) => expr.to_field(schema)?.to_list_field(),
+            Self::List(expr) | Self::Set(expr) => Ok(expr.to_field(schema)?.to_list_field()),
 
             Self::BoolAnd(expr) | Self::BoolOr(expr) => {
                 let field = expr.to_field(schema)?;
@@ -713,10 +757,8 @@ impl AggExpr {
                 match field.dtype {
                     DataType::List(..) => Ok(field),
                     DataType::Utf8 => Ok(field),
-                    #[cfg(feature = "python")]
-                    DataType::Python => Ok(field),
                     _ => Err(DaftError::TypeError(format!(
-                        "We can only perform List Concat Agg on List or Python Types, got dtype {} for column \"{}\"",
+                        "We can only perform Concat Agg on List or Utf8 types, got dtype {} for column \"{}\"",
                         field.dtype, field.name
                     ))),
                 }
@@ -908,7 +950,15 @@ impl Expr {
     }
 
     pub fn alias<S: Into<Arc<str>>>(self: &ExprRef, name: S) -> ExprRef {
-        Self::Alias(self.clone(), name.into()).into()
+        Self::Alias(
+            if let Self::Alias(inner, _) = self.as_ref() {
+                inner.clone()
+            } else {
+                self.clone()
+            },
+            name.into(),
+        )
+        .into()
     }
 
     pub fn if_else(self: ExprRef, if_true: ExprRef, if_false: ExprRef) -> ExprRef {
@@ -1206,7 +1256,7 @@ impl Expr {
             Self::Alias(expr, ..) => expr.semantic_id(schema),
             // Agg: Separate path.
             Self::Agg(agg_expr) => agg_expr.semantic_id(schema),
-            Self::ScalarFunction(sf) => scalar_function_semantic_id(sf, schema),
+            Self::ScalarFn(ScalarFn::Builtin(sf)) => scalar_function_semantic_id(sf, schema),
             Self::Subquery(subquery) => subquery.semantic_id(),
             Self::InSubquery(expr, subquery) => {
                 let child_id = expr.semantic_id(schema);
@@ -1250,11 +1300,24 @@ impl Expr {
                     String::new()
                 };
 
-                FieldID::new(format!("{child_id}.window(partition_by=[{partition_by_ids}],order_by=[{order_by_ids}]{frame_details})"))
+                FieldID::new(format!(
+                    "{child_id}.window(partition_by=[{partition_by_ids}],order_by=[{order_by_ids}]{frame_details})"
+                ))
             }
             Self::WindowFunction(window_expr) => {
                 let child_id = window_expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.window_function()"))
+            }
+            Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
+                function_name: name,
+                args: children,
+                ..
+            }))) => {
+                let children_ids = children
+                    .iter()
+                    .map(|expr| expr.semantic_id(schema).id)
+                    .join(",");
+                FieldID::new(format!("ScalarPythonUDF_{name}({children_ids})"))
             }
         }
     }
@@ -1295,7 +1358,11 @@ impl Expr {
                 vec![if_true.clone(), if_false.clone(), predicate.clone()]
             }
             Self::FillNull(expr, fill_value) => vec![expr.clone(), fill_value.clone()],
-            Self::ScalarFunction(sf) => sf.inputs.clone().into_inner(),
+            Self::ScalarFn(ScalarFn::Builtin(sf)) => sf.inputs.clone().into_inner(),
+            Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
+                args: children,
+                ..
+            }))) => children.clone(),
         }
     }
 
@@ -1390,7 +1457,7 @@ impl Expr {
                     inputs: children,
                 }
             }
-            Self::ScalarFunction(sf) => {
+            Self::ScalarFn(ScalarFn::Builtin(sf)) => {
                 assert!(
                     children.len() == sf.inputs.len(),
                     "Should have same number of children"
@@ -1408,10 +1475,32 @@ impl Expr {
                     })
                     .collect();
 
-                Self::ScalarFunction(crate::functions::ScalarFunction {
+                Self::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn {
                     udf: sf.udf.clone(),
                     inputs: FunctionArgs::new_unchecked(new_children),
-                })
+                }))
+            }
+            Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
+                function_name: name,
+                inner: func,
+                return_dtype,
+                original_args,
+                args: old_children,
+                use_process,
+            }))) => {
+                assert!(
+                    children.len() == old_children.len(),
+                    "Should have same number of children"
+                );
+
+                Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
+                    function_name: name.clone(),
+                    inner: func.clone(),
+                    return_dtype: return_dtype.clone(),
+                    original_args: original_args.clone(),
+                    args: children,
+                    use_process: *use_process,
+                })))
             }
         }
     }
@@ -1460,7 +1549,7 @@ impl Expr {
                     Ok(supertype) => Ok(Field::new(expr_field.name.as_str(), supertype)),
                     Err(_) => Err(DaftError::TypeError(format!(
                         "Expected expr and fill_value arguments for fill_null to be castable to the same supertype, but received {expr_field} and {fill_value_field}",
-                    )))
+                    ))),
                 }
             }
             Self::IsIn(expr, items) => {
@@ -1501,7 +1590,7 @@ impl Expr {
             }
             Self::Literal(value) => Ok(Field::new("literal", value.get_type())),
             Self::Function { func, inputs } => func.to_field(inputs.as_slice(), schema, func),
-            Self::ScalarFunction(sf) => sf.to_field(schema),
+            Self::ScalarFn(sf) => sf.to_field(schema),
             Self::BinaryOp { op, left, right } => {
                 let left_field = left.to_field(schema)?;
                 let right_field = right.to_field(schema)?;
@@ -1583,8 +1672,8 @@ impl Expr {
                     )));
                 }
                 match predicate.as_ref() {
-                    Self::Literal(lit::LiteralValue::Boolean(true)) => if_true.to_field(schema),
-                    Self::Literal(lit::LiteralValue::Boolean(false)) => {
+                    Self::Literal(Literal::Boolean(true)) => if_true.to_field(schema),
+                    Self::Literal(Literal::Boolean(false)) => {
                         Ok(if_false.to_field(schema)?.rename(if_true.name()))
                     }
                     _ => {
@@ -1592,7 +1681,9 @@ impl Expr {
                         let if_false_field = if_false.to_field(schema)?;
                         match try_get_supertype(&if_true_field.dtype, &if_false_field.dtype) {
                             Ok(supertype) => Ok(Field::new(if_true_field.name, supertype)),
-                            Err(_) => Err(DaftError::TypeError(format!("Expected if_true and if_false arguments for if_else to be castable to the same supertype, but received {if_true_field} and {if_false_field}")))
+                            Err(_) => Err(DaftError::TypeError(format!(
+                                "Expected if_true and if_false arguments for if_else to be castable to the same supertype, but received {if_true_field} and {if_false_field}"
+                            ))),
                         }
                     }
                 }
@@ -1619,6 +1710,7 @@ impl Expr {
     pub fn name(&self) -> &str {
         match self {
             Self::Alias(.., name) => name.as_ref(),
+            // unlike alias, we only use the expr name here for functions,
             Self::Agg(agg_expr) => agg_expr.name(),
             Self::Cast(expr, ..) => expr.name(),
             Self::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => name.as_ref(),
@@ -1645,7 +1737,7 @@ impl Expr {
                 FunctionExpr::Struct(StructExpr::Get(name)) => name,
                 _ => inputs.first().unwrap().name(),
             },
-            Self::ScalarFunction(func) => match func.name() {
+            Self::ScalarFn(ScalarFn::Builtin(func)) => match func.name() {
                 "struct" => "struct", // FIXME: make struct its own expr variant
                 "monotonically_increasing_id" => "monotonically_increasing_id", // Special case for functions with no inputs
                 _ => func.inputs.first().unwrap().name(),
@@ -1661,6 +1753,17 @@ impl Expr {
             Self::Exists(subquery) => subquery.name(),
             Self::Over(expr, ..) => expr.name(),
             Self::WindowFunction(expr) => expr.name(),
+            Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
+                function_name: name,
+                args: children,
+                ..
+            }))) => {
+                if let Some(first_child) = children.first() {
+                    first_child.name()
+                } else {
+                    name.as_ref()
+                }
+            }
         }
     }
 
@@ -1680,7 +1783,7 @@ impl Expr {
         //   1. There is only one required column
         //   2. No computation is run on this required column
         match (&required_columns[..], requires_computation) {
-            ([required_col], false) => Some(required_col.to_string()),
+            ([required_col], false) => Some(required_col.clone()),
             _ => None,
         }
     }
@@ -1711,7 +1814,7 @@ impl Expr {
                         _ => {
                             return Err(io::Error::other(
                                 "Unsupported operator for SQL translation",
-                            ))
+                            ));
                         }
                     };
                     write!(buffer, " {} ", op)?;
@@ -1741,7 +1844,7 @@ impl Expr {
                 | Expr::Between(..)
                 | Expr::Function { .. }
                 | Expr::FillNull(..)
-                | Expr::ScalarFunction { .. }
+                | Expr::ScalarFn { .. }
                 | Expr::Subquery(..)
                 | Expr::InSubquery(..)
                 | Expr::Exists(..)
@@ -1760,7 +1863,7 @@ impl Expr {
     }
 
     /// Returns the literal value if this is a literal expression, otherwise none.
-    pub fn as_literal(&self) -> Option<&lit::LiteralValue> {
+    pub fn as_literal(&self) -> Option<&Literal> {
         match self {
             Self::Literal(lit) => Some(lit),
             _ => None,
@@ -1782,7 +1885,7 @@ impl Expr {
             Self::Subquery(..) => false,
             Self::Exists(..) => false,
             Self::Function { .. } => true,
-            Self::ScalarFunction(..) => true,
+            Self::ScalarFn(..) => true,
             Self::Agg(_) => true,
             Self::Over(..) => true,
             Self::WindowFunction(..) => true,
@@ -1833,6 +1936,25 @@ impl Expr {
                 _ => Ok(Transformed::no(e)),
             })?
             .data)
+    }
+
+    pub fn unwrap_alias(self: &ExprRef) -> (ExprRef, Option<Arc<str>>) {
+        match self.as_ref() {
+            // Recursively unwrap if nested aliases, but only return the outermost
+            Self::Alias(expr, name) => (expr.clone().unwrap_alias().0, Some(name.clone())),
+            _ => (self.clone(), None),
+        }
+    }
+
+    pub fn explode(self: Arc<Self>) -> DaftResult<ExprRef> {
+        let explode_fn = FUNCTION_REGISTRY.read().unwrap().get("explode").unwrap();
+        let f = explode_fn.get_function(FunctionArgs::empty(), &Schema::empty())?;
+
+        Ok(Self::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn {
+            udf: f,
+            inputs: FunctionArgs::new_unchecked(vec![FunctionArg::Unnamed(self)]),
+        }))
+        .arced())
     }
 }
 
@@ -1926,7 +2048,11 @@ impl FromStr for Operator {
 }
 
 // Check if one set of columns is a reordering of the other
-pub fn is_partition_compatible(a: &[ExprRef], b: &[ExprRef]) -> bool {
+pub fn is_partition_compatible<'a, A, B>(a: A, b: B) -> bool
+where
+    A: IntoIterator<Item = &'a ExprRef>,
+    B: IntoIterator<Item = &'a ExprRef>,
+{
     // sort a and b by name
     let a_set: HashSet<&ExprRef> = HashSet::from_iter(a);
     let b_set: HashSet<&ExprRef> = HashSet::from_iter(b);
@@ -1955,7 +2081,7 @@ pub fn is_actor_pool_udf(expr: &ExprRef) -> bool {
     matches!(
         expr.as_ref(),
         Expr::Function {
-            func: FunctionExpr::Python(PythonUDF {
+            func: FunctionExpr::Python(LegacyPythonUDF {
                 concurrency: Some(_),
                 ..
             }),
@@ -1964,23 +2090,16 @@ pub fn is_actor_pool_udf(expr: &ExprRef) -> bool {
     )
 }
 
-pub fn count_actor_pool_udfs(exprs: &[ExprRef]) -> usize {
-    exprs
-        .iter()
-        .map(|expr| {
-            let mut count = 0;
-            expr.apply(|e| {
-                if is_actor_pool_udf(e) {
-                    count += 1;
-                }
-
-                Ok(common_treenode::TreeNodeRecursion::Continue)
-            })
-            .unwrap();
-
-            count
-        })
-        .sum()
+/// Check if the top-level expression is a UDF
+#[inline]
+pub fn is_udf(expr: &ExprRef) -> bool {
+    matches!(
+        expr.as_ref(),
+        Expr::Function {
+            func: FunctionExpr::Python(LegacyPythonUDF { .. }),
+            ..
+        } | Expr::ScalarFn(ScalarFn::Python(_))
+    )
 }
 
 pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
@@ -2037,16 +2156,20 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
 
         // Boolean literals
         Expr::Literal(lit) => match lit {
-            lit::LiteralValue::Boolean(true) => 1.0,
-            lit::LiteralValue::Boolean(false) => 0.0,
+            Literal::Boolean(true) => 1.0,
+            Literal::Boolean(false) => 0.0,
             _ => 1.0,
         },
 
         // String contains
-        Expr::ScalarFunction(ScalarFunction { udf, .. }) if udf.name() == "contains" => 0.1,
+        Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. }))
+            if udf.name() == "contains" =>
+        {
+            0.1
+        }
 
         // Everything else that could be boolean gets 0.2, non-boolean gets 1.0
-        Expr::ScalarFunction(_)
+        Expr::ScalarFn(_)
         | Expr::Function { .. }
         | Expr::Column(_)
         | Expr::IfElse { .. }
@@ -2072,6 +2195,17 @@ pub fn exprs_to_schema(exprs: &[ExprRef], input_schema: SchemaRef) -> DaftResult
     Ok(Arc::new(Schema::new(fields)))
 }
 
+pub fn bound_exprs_to_schema(
+    exprs: &[BoundExpr],
+    input_schema: SchemaRef,
+) -> DaftResult<SchemaRef> {
+    let fields = exprs
+        .iter()
+        .map(|e| e.inner().to_field(&input_schema))
+        .collect::<DaftResult<Vec<_>>>()?;
+    Ok(Arc::new(Schema::new(fields)))
+}
+
 /// Adds aliases as appropriate to ensure that all expressions have unique names.
 pub fn deduplicate_expr_names(exprs: &[ExprRef]) -> Vec<ExprRef> {
     let mut names_so_far = HashSet::new();
@@ -2091,11 +2225,7 @@ pub fn deduplicate_expr_names(exprs: &[ExprRef]) -> Vec<ExprRef> {
 
             names_so_far.insert(new_name.clone());
 
-            if i == 0 {
-                e.clone()
-            } else {
-                e.alias(new_name)
-            }
+            if i == 0 { e.clone() } else { e.alias(new_name) }
         })
         .collect()
 }
@@ -2117,7 +2247,10 @@ fn try_compute_is_in_type(exprs: &[ExprRef], schema: &Schema) -> DaftResult<Opti
         }
         // other != null and dtype is set -> compare or err!
         if dtype.as_ref() != Some(&other_dtype) {
-            return Err(DaftError::TypeError(format!("Expected all arguments to be of the same type {}, but found element with type {other_dtype}", dtype.unwrap())));
+            return Err(DaftError::TypeError(format!(
+                "Expected all arguments to be of the same type {}, but found element with type {other_dtype}",
+                dtype.unwrap()
+            )));
         }
     }
     Ok(dtype)

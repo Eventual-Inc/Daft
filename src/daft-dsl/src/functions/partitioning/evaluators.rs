@@ -2,7 +2,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 
 use super::super::FunctionEvaluator;
-use crate::{functions::partitioning::PartitioningExpr, ExprRef};
+use crate::{ExprRef, functions::partitioning::PartitioningExpr};
 
 macro_rules! impl_func_evaluator_for_partitioning {
     ($name:ident, $op:ident, $kernel:ident, $result_type:ident) => {
@@ -125,9 +125,12 @@ impl FunctionEvaluator for IcebergTruncateEvaluator {
         match inputs {
             [input] => match input.to_field(schema) {
                 Ok(field) => match &field.dtype {
-                    DataType::Decimal128(_, _)
-                    | DataType::Utf8 | DataType::Binary => Ok(Field::new(format!("{}_trunc", field.name), field.dtype)),
-                    v if v.is_integer() => Ok(Field::new(format!("{}_trunc", field.name), field.dtype)),
+                    DataType::Decimal128(_, _) | DataType::Utf8 | DataType::Binary => {
+                        Ok(Field::new(format!("{}_trunc", field.name), field.dtype))
+                    }
+                    v if v.is_integer() => {
+                        Ok(Field::new(format!("{}_trunc", field.name), field.dtype))
+                    }
                     _ => Err(DaftError::TypeError(format!(
                         "Expected input to IcebergTruncate to be an Integer, Utf8, Decimal, or Binary, got {}",
                         field.dtype

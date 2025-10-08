@@ -1,10 +1,10 @@
 [dependencies]
-aws-credential-types = {version = "0.55.3"}
+aws-credential-types = "1.2.6"
 chrono = {workspace = true, features = ["serde"]}
 common-error = {path = "../error", default-features = false}
 common-py-serde = {path = "../py-serde", default-features = false}
-derivative = {workspace = true}
 derive_more = {workspace = true}
+educe = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 secrecy = {version = "0.8.0", features = ["alloc"], default-features = false}
 serde = {workspace = true}

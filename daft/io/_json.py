@@ -1,6 +1,7 @@
+# ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import Dict, List, Optional, Union
+from typing import Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -17,13 +18,12 @@ from daft.io.common import get_tabular_files_scan
 
 @PublicAPI
 def read_json(
-    path: Union[str, List[str]],
+    path: Union[str, list[str]],
     infer_schema: bool = True,
-    schema: Optional[Dict[str, DataType]] = None,
-    io_config: Optional["IOConfig"] = None,
+    schema: Optional[dict[str, DataType]] = None,
+    io_config: Optional[IOConfig] = None,
     file_path_column: Optional[str] = None,
     hive_partitioning: bool = False,
-    schema_hints: Optional[Dict[str, DataType]] = None,
     _buffer_size: Optional[int] = None,
     _chunk_size: Optional[int] = None,
 ) -> DataFrame:
@@ -49,11 +49,6 @@ def read_json(
     """
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from from empty list of JSON filepaths")
-
-    if schema_hints is not None:
-        raise ValueError(
-            "Specifying schema_hints is deprecated from Daft version >= 0.3.0! Instead, please use the 'schema' and 'infer_schema' arguments."
-        )
 
     if not infer_schema and schema is None:
         raise ValueError(

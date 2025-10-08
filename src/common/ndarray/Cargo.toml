@@ -1,0 +1,16 @@
+[dependencies]
+common-py-serde = {path = "../py-serde", default-features = false}
+ndarray = {workspace = true}
+numpy = {workspace = true, optional = true}
+pyo3 = {workspace = true, optional = true}
+
+[features]
+python = ["dep:pyo3", "dep:numpy", "common-py-serde/python"]
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "common-ndarray"
+version = {workspace = true}

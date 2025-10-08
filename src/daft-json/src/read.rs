@@ -5,13 +5,16 @@ use common_runtime::get_io_runtime;
 use daft_compression::CompressionCodec;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns};
-use daft_io::{parse_url, GetResult, IOClient, IOStatsRef, SourceType};
+use daft_io::{GetResult, IOClient, IOStatsRef, SourceType, parse_url};
 use daft_recordbatch::RecordBatch;
-use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
+use futures::{
+    Stream, StreamExt, TryStreamExt,
+    stream::{BoxStream, once},
+};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use snafu::{
-    futures::{try_future::Context, TryFutureExt, TryStreamExt as _},
     ResultExt,
+    futures::{TryFutureExt, TryStreamExt as _, try_future::Context},
 };
 use tokio::{
     fs::File,
@@ -21,8 +24,10 @@ use tokio::{
 use tokio_util::io::StreamReader;
 
 use crate::{
-    decoding::deserialize_records, local::read_json_local, schema::read_json_schema_single,
-    ArrowSnafu, ChunkSnafu, JsonConvertOptions, JsonParseOptions, JsonReadOptions,
+    ArrowSnafu, ChunkSnafu, JoinSnafu, JsonConvertOptions, JsonParseOptions, JsonReadOptions,
+    decoding::deserialize_records,
+    local::{read_json_array_impl, read_json_local},
+    schema::read_json_schema_single,
 };
 
 type TableChunkResult =
@@ -215,7 +220,7 @@ async fn read_json_single_into_table(
     };
 
     let (table_stream, schema) = read_json_single_into_stream(
-        uri,
+        uri.to_string(),
         convert_options_with_predicate_columns.unwrap_or_default(),
         parse_options.unwrap_or_default(),
         read_options,
@@ -284,7 +289,7 @@ async fn read_json_single_into_table(
         .collect::<DaftResult<Vec<_>>>()?;
     // Handle empty table case.
     if collected_tables.is_empty() {
-        return RecordBatch::empty(Some(daft_schema));
+        return Ok(RecordBatch::empty(Some(daft_schema)));
     }
     // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
     let concated_table = tables_concat(collected_tables)?;
@@ -307,6 +312,20 @@ pub async fn stream_json(
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    let (source_type, fixed_uri) = parse_url(&uri)?;
+    let is_compressed = CompressionCodec::from_uri(&uri).is_some();
+    if matches!(source_type, SourceType::File) && !is_compressed {
+        let fixed_uri = fixed_uri.to_string();
+        return Ok(Box::pin(once(async move {
+            read_json_local(
+                fixed_uri.as_ref(),
+                convert_options,
+                parse_options,
+                read_options,
+                max_chunks_in_flight,
+            )
+        })));
+    }
     let predicate = convert_options
         .as_ref()
         .and_then(|opts| opts.predicate.clone());
@@ -335,7 +354,7 @@ pub async fn stream_json(
     };
 
     let (chunk_stream, _fields) = read_json_single_into_stream(
-        &uri,
+        uri.clone(),
         convert_options_with_predicate_columns.unwrap_or_default(),
         parse_options.unwrap_or_default(),
         read_options,
@@ -398,17 +417,20 @@ pub async fn stream_json(
 }
 
 async fn read_json_single_into_stream(
-    uri: &str,
+    uri: String,
     convert_options: JsonConvertOptions,
     parse_options: JsonParseOptions,
     read_options: Option<JsonReadOptions>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-) -> DaftResult<(impl TableChunkStream + Send, arrow2::datatypes::Schema)> {
+) -> DaftResult<(
+    BoxStream<'static, TableChunkResult>,
+    arrow2::datatypes::Schema,
+)> {
     let schema = match convert_options.schema {
         Some(schema) => schema.to_arrow()?,
         None => read_json_schema_single(
-            uri,
+            &uri,
             parse_options.clone(),
             // Read at most 1 MiB when doing schema inference.
             Some(1024 * 1024),
@@ -421,7 +443,7 @@ async fn read_json_single_into_stream(
 
     let (reader, buffer_size, chunk_size): (Box<dyn AsyncBufRead + Unpin + Send>, usize, usize) =
         match io_client
-            .single_url_get(uri.to_string(), None, io_stats)
+            .single_url_get(uri.clone(), None, io_stats)
             .await?
         {
             GetResult::File(file) => {
@@ -468,37 +490,67 @@ async fn read_json_single_into_stream(
             ),
         };
     // If file is compressed, wrap stream in decoding stream.
-    let reader: Box<dyn AsyncBufRead + Unpin + Send> = match CompressionCodec::from_uri(uri) {
+    let mut reader: Box<dyn AsyncBufRead + Unpin + Send> = match CompressionCodec::from_uri(&uri) {
         Some(compression) => Box::new(tokio::io::BufReader::with_capacity(
             buffer_size,
             compression.to_decoder(reader),
         )),
         None => reader,
     };
-    let read_stream = read_into_line_chunk_stream(reader, convert_options.limit, chunk_size);
-    let (projected_schema, schema_is_projection) = match convert_options.include_columns {
-        Some(projection) => {
-            let mut field_map = schema
-                .fields
-                .into_iter()
-                .map(|f| (f.name.clone(), f))
-                .collect::<HashMap<_, _>>();
-            let projected_fields = projection.into_iter().map(|col| field_map.remove(col.as_str()).ok_or(DaftError::ValueError(format!("Column {} in the projection doesn't exist in the JSON file; existing columns = {:?}", col, field_map.keys())))).collect::<DaftResult<Vec<_>>>()?;
-            (
-                arrow2::datatypes::Schema::from(projected_fields).with_metadata(schema.metadata),
-                true,
-            )
+
+    use tokio::io::AsyncReadExt;
+    let buf = reader.fill_buf().await?;
+
+    if buf.is_empty() {
+        return Err(super::Error::JsonDeserializationError {
+            string: "Empty JSON file".to_string(),
         }
-        None => (schema, false),
-    };
-    Ok((
-        parse_into_column_array_chunk_stream(
-            read_stream,
-            projected_schema.clone().into(),
-            schema_is_projection,
-        )?,
-        projected_schema,
-    ))
+        .into());
+    }
+    match buf[0] {
+        b'[' => {
+            let schema_clone = schema.clone();
+            let inner: Context<JoinHandle<Result<RecordBatch, DaftError>>, JoinSnafu, _> =
+                tokio::spawn(async move {
+                    let (send, recv) = tokio::sync::oneshot::channel();
+                    let mut buf = Vec::new();
+                    reader.read_to_end(&mut buf).await?;
+                    let chunk = read_json_array_impl(&buf, schema_clone.into(), None);
+                    let _ = send.send(chunk);
+
+                    recv.await.context(super::OneShotRecvSnafu {})?
+                })
+                .context(super::JoinSnafu {});
+            Ok((Box::pin(once(async move { Ok(inner) })), schema.into()))
+        }
+        b'{' => {
+            let read_stream =
+                read_into_line_chunk_stream(reader, convert_options.limit, chunk_size);
+            let projected_schema = match convert_options.include_columns {
+                Some(projection) => {
+                    let mut field_map = schema
+                        .fields
+                        .into_iter()
+                        .map(|f| (f.name.clone(), f))
+                        .collect::<HashMap<_, _>>();
+                    let projected_fields = projection.into_iter().map(|col| field_map.remove(col.as_str()).ok_or(DaftError::ValueError(format!("Column {} in the projection doesn't exist in the JSON file; existing columns = {:?}", col, field_map.keys())))).collect::<DaftResult<Vec<_>>>()?;
+                    arrow2::datatypes::Schema::from(projected_fields).with_metadata(schema.metadata)
+                }
+                None => schema,
+            };
+
+            Ok((
+                Box::pin(parse_into_column_array_chunk_stream(
+                    read_stream,
+                    projected_schema.clone().into(),
+                )?),
+                projected_schema,
+            ))
+        }
+        _ => Err(DaftError::ValueError(
+            "Invalid JSON file format".to_string(),
+        )),
+    }
 }
 
 fn read_into_line_chunk_stream<R>(
@@ -521,7 +573,6 @@ where
 fn parse_into_column_array_chunk_stream(
     stream: impl LineChunkStream + Send,
     schema: Arc<arrow2::datatypes::Schema>,
-    schema_is_projection: bool,
 ) -> DaftResult<impl TableChunkStream + Send> {
     let daft_schema: SchemaRef = Arc::new(schema.as_ref().into());
     let daft_fields = Arc::new(
@@ -552,8 +603,8 @@ fn parse_into_column_array_chunk_stream(
                                 })
                         })
                         .collect::<super::Result<Vec<_>>>()?;
-                    let chunk = deserialize_records(&parsed, schema.as_ref(), schema_is_projection)
-                        .context(ArrowSnafu)?;
+                    let chunk =
+                        deserialize_records(&parsed, schema.as_ref()).context(ArrowSnafu)?;
                     let all_series = chunk
                         .into_iter()
                         .zip(daft_fields.iter())
@@ -564,11 +615,7 @@ fn parse_into_column_array_chunk_stream(
                             )
                         })
                         .collect::<DaftResult<Vec<_>>>()?;
-                    Ok(RecordBatch::new_unchecked(
-                        daft_schema.clone(),
-                        all_series,
-                        num_rows,
-                    ))
+                    RecordBatch::new_with_size(daft_schema.clone(), all_series, num_rows)
                 })();
                 let _ = send.send(result);
             });
@@ -594,9 +641,9 @@ mod tests {
 
     use super::read_json;
     use crate::{
+        JsonConvertOptions, JsonReadOptions,
         decoding::deserialize_records,
         inference::{column_types_map_to_fields, infer_records_schema},
-        JsonConvertOptions, JsonReadOptions,
     };
 
     fn check_equal_local_arrow2(
@@ -638,19 +685,16 @@ mod tests {
             .iter()
             .map(|f| (f.name.clone(), f.clone()))
             .collect::<IndexMap<_, _>>();
-        let (schema, is_projection) = match &projection {
-            Some(projection) => (
-                projection
-                    .iter()
-                    .map(|c| field_map.swap_remove(c.as_str()).unwrap())
-                    .collect::<Vec<_>>()
-                    .into(),
-                true,
-            ),
-            None => (field_map.into_values().collect::<Vec<_>>().into(), false),
+        let schema = match &projection {
+            Some(projection) => projection
+                .iter()
+                .map(|c| field_map.swap_remove(c.as_str()).unwrap())
+                .collect::<Vec<_>>()
+                .into(),
+            None => field_map.into_values().collect::<Vec<_>>().into(),
         };
         // Deserialize JSON records into Arrow2 column arrays.
-        let columns = deserialize_records(&parsed, &schema, is_projection).unwrap();
+        let columns = deserialize_records(&parsed, &schema).unwrap();
         // Roundtrip columns with Daft for casting.
         let columns = columns
             .into_iter()

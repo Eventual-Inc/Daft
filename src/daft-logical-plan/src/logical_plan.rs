@@ -10,23 +10,27 @@ use common_error::{DaftError, DaftResult};
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_core::join::JoinSide;
 use daft_dsl::{
-    optimization::get_required_columns, Column, Expr, ResolvedColumn, Subquery, SubqueryPlan,
+    Column, Expr, ResolvedColumn, Subquery, SubqueryPlan, optimization::get_required_columns,
 };
 use daft_schema::{field::Field, schema::SchemaRef};
 use indexmap::IndexSet;
+use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 
 pub use crate::ops::*;
 use crate::stats::{PlanStats, StatsState};
 
 /// Logical plan for a Daft query.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum LogicalPlan {
     Source(Source),
+    Shard(Shard),
     Project(Project),
-    ActorPoolProject(ActorPoolProject),
+    UDFProject(UDFProject),
     Filter(Filter),
+    IntoBatches(IntoBatches),
     Limit(Limit),
+    Offset(Offset),
     Explode(Explode),
     Unpivot(Unpivot),
     Sort(Sort),
@@ -48,9 +52,10 @@ pub enum LogicalPlan {
 
 pub type LogicalPlanRef = Arc<LogicalPlan>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SubqueryAlias {
     pub plan_id: Option<usize>,
+    pub node_id: Option<usize>,
     pub input: LogicalPlanRef,
     pub name: Arc<str>,
 }
@@ -59,6 +64,7 @@ impl SubqueryAlias {
     pub fn new(input: LogicalPlanRef, name: impl Into<Arc<str>>) -> Self {
         Self {
             plan_id: None,
+            node_id: None,
             input,
             name: name.into(),
         }
@@ -69,8 +75,47 @@ impl SubqueryAlias {
         self
     }
 
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
+        self
+    }
+
     pub fn multiline_display(&self) -> Vec<String> {
         vec![format!("Alias"), format!("name = {}", self.name)]
+    }
+}
+
+/// Return value of [LogicalPlan::required_columns]
+pub(crate) struct RequiredCols {
+    /// Base required columns for an operator. For operators with 2 sides
+    /// (e.g. join, concat), this is the required columns for the left side.
+    pub(crate) required_cols: IndexSet<String>,
+    /// Optional right side columns for an operator. For operators with 2 sides
+    /// (e.g. join, concat), this is the optional columns for the right side.
+    /// For other operators, this is None.
+    pub(crate) opt_right_cols: Option<IndexSet<String>>,
+}
+
+impl RequiredCols {
+    pub fn new(required_cols: IndexSet<String>, opt_right_cols: Option<IndexSet<String>>) -> Self {
+        Self {
+            required_cols,
+            opt_right_cols,
+        }
+    }
+
+    /// Unwrap and return the required (left) side columns. Intended for 1-side ops.
+    pub fn single(self) -> IndexSet<String> {
+        self.required_cols
+    }
+
+    /// Unwrap and return the required (left) and optional (right) side columns. Intended for 2-side ops.
+    pub fn double(self) -> (IndexSet<String>, IndexSet<String>) {
+        if let Some(opt_right_cols) = self.opt_right_cols {
+            (self.required_cols, opt_right_cols)
+        } else {
+            panic!("Expected 2-side plan node (e.g. join, concat), but got 1-side plan node")
+        }
     }
 }
 
@@ -82,14 +127,17 @@ impl LogicalPlan {
     pub fn schema(&self) -> SchemaRef {
         match self {
             Self::Source(Source { output_schema, .. }) => output_schema.clone(),
+            Self::Shard(Shard { input, .. }) => input.schema(),
             Self::Project(Project {
                 projected_schema, ..
             }) => projected_schema.clone(),
-            Self::ActorPoolProject(ActorPoolProject {
+            Self::UDFProject(UDFProject {
                 projected_schema, ..
             }) => projected_schema.clone(),
             Self::Filter(Filter { input, .. }) => input.schema(),
+            Self::IntoBatches(IntoBatches { input, .. }) => input.schema(),
             Self::Limit(Limit { input, .. }) => input.schema(),
+            Self::Offset(Offset { input, .. }) => input.schema(),
             Self::Explode(Explode {
                 exploded_schema, ..
             }) => exploded_schema.clone(),
@@ -114,34 +162,47 @@ impl LogicalPlan {
         }
     }
 
-    pub fn required_columns(&self) -> Vec<IndexSet<String>> {
+    pub(crate) fn required_columns(&self) -> RequiredCols {
         // TODO: https://github.com/Eventual-Inc/Daft/pull/1288#discussion_r1307820697
         match self {
-            Self::Limit(..) => vec![IndexSet::new()],
-            Self::Sample(..) => vec![IndexSet::new()],
-            Self::MonotonicallyIncreasingId(..) => vec![IndexSet::new()],
-            Self::Concat(..) => vec![IndexSet::new(), IndexSet::new()],
+            Self::Shard(..)
+            | Self::Limit(..)
+            | Self::IntoBatches(..)
+            | Self::Offset(..)
+            | Self::Sample(..)
+            | Self::MonotonicallyIncreasingId(..) => RequiredCols::new(IndexSet::new(), None),
+            Self::Concat(..) => RequiredCols::new(IndexSet::new(), Some(IndexSet::new())),
             Self::Project(projection) => {
                 let res = projection
                     .projection
                     .iter()
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                RequiredCols::new(res, None)
             }
-            Self::ActorPoolProject(ActorPoolProject { projection, .. }) => {
-                let res = projection.iter().flat_map(get_required_columns).collect();
-                vec![res]
+            Self::UDFProject(UDFProject {
+                expr,
+                passthrough_columns,
+                ..
+            }) => {
+                let mut res = passthrough_columns
+                    .iter()
+                    .flat_map(get_required_columns)
+                    .collect::<IndexSet<_>>();
+
+                res.extend(get_required_columns(expr).into_iter());
+                RequiredCols::new(res, None)
             }
-            Self::Filter(filter) => {
-                vec![get_required_columns(&filter.predicate)
+            Self::Filter(filter) => RequiredCols::new(
+                get_required_columns(&filter.predicate)
                     .iter()
                     .cloned()
-                    .collect()]
-            }
+                    .collect(),
+                None,
+            ),
             Self::Sort(sort) => {
                 let res = sort.sort_by.iter().flat_map(get_required_columns).collect();
-                vec![res]
+                RequiredCols::new(res, None)
             }
             Self::Repartition(repartition) => {
                 let res = repartition
@@ -150,7 +211,7 @@ impl LogicalPlan {
                     .iter()
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                RequiredCols::new(res, None)
             }
             Self::Explode(explode) => {
                 let res = explode
@@ -158,7 +219,7 @@ impl LogicalPlan {
                     .iter()
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                RequiredCols::new(res, None)
             }
             Self::Unpivot(unpivot) => {
                 let res = unpivot
@@ -167,16 +228,21 @@ impl LogicalPlan {
                     .chain(unpivot.values.iter())
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                RequiredCols::new(res, None)
             }
             Self::Distinct(distinct) => {
-                let res = distinct
-                    .input
-                    .schema()
-                    .field_names()
-                    .map(ToString::to_string)
-                    .collect();
-                vec![res]
+                if let Some(on) = &distinct.columns {
+                    let res = on.iter().flat_map(get_required_columns).collect();
+                    RequiredCols::new(res, None)
+                } else {
+                    let res = distinct
+                        .input
+                        .schema()
+                        .field_names()
+                        .map(ToString::to_string)
+                        .collect();
+                    RequiredCols::new(res, None)
+                }
             }
             Self::Aggregate(aggregate) => {
                 let res = aggregate
@@ -186,7 +252,7 @@ impl LogicalPlan {
                     .flat_map(|e| get_required_columns(&e))
                     .chain(aggregate.groupby.iter().flat_map(get_required_columns))
                     .collect();
-                vec![res]
+                RequiredCols::new(res, None)
             }
             Self::Pivot(pivot) => {
                 let res = pivot
@@ -196,7 +262,7 @@ impl LogicalPlan {
                     .chain(std::iter::once(&pivot.value_column))
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                RequiredCols::new(res, None)
             }
             Self::Join(join) => {
                 let mut left = IndexSet::new();
@@ -224,10 +290,10 @@ impl LogicalPlan {
                     })
                     .unwrap();
                 }
-                vec![left, right]
+                RequiredCols::new(left, Some(right))
             }
-            Self::Intersect(_) => vec![IndexSet::new(), IndexSet::new()],
-            Self::Union(_) => vec![IndexSet::new(), IndexSet::new()],
+            Self::Intersect(_) => RequiredCols::new(IndexSet::new(), Some(IndexSet::new())),
+            Self::Union(_) => RequiredCols::new(IndexSet::new(), Some(IndexSet::new())),
             Self::Source(_) => todo!(),
             Self::Sink(_) => todo!(),
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => input.required_columns(),
@@ -239,7 +305,7 @@ impl LogicalPlan {
                     .chain(window.window_spec.order_by.iter())
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                RequiredCols::new(res, None)
             }
             Self::TopN(top_n) => {
                 let res = top_n
@@ -247,7 +313,7 @@ impl LogicalPlan {
                     .iter()
                     .flat_map(get_required_columns)
                     .collect();
-                vec![res]
+                RequiredCols::new(res, None)
             }
         }
     }
@@ -255,10 +321,13 @@ impl LogicalPlan {
     pub fn name(&self) -> &'static str {
         match self {
             Self::Source(..) => "Source",
+            Self::Shard(..) => "Shard",
             Self::Project(..) => "Project",
-            Self::ActorPoolProject(..) => "ActorPoolProject",
+            Self::UDFProject(..) => "UDFProject",
             Self::Filter(..) => "Filter",
+            Self::IntoBatches(..) => "IntoBatches",
             Self::Limit(..) => "Limit",
+            Self::Offset(..) => "Offset",
             Self::Explode(..) => "Explode",
             Self::Unpivot(..) => "Unpivot",
             Self::Sort(..) => "Sort",
@@ -282,10 +351,13 @@ impl LogicalPlan {
     pub fn stats_state(&self) -> &StatsState {
         match self {
             Self::Source(Source { stats_state, .. })
+            | Self::Shard(Shard { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
-            | Self::ActorPoolProject(ActorPoolProject { stats_state, .. })
+            | Self::UDFProject(UDFProject { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
+            | Self::IntoBatches(IntoBatches { stats_state, .. })
             | Self::Limit(Limit { stats_state, .. })
+            | Self::Offset(Offset { stats_state, .. })
             | Self::Explode(Explode { stats_state, .. })
             | Self::Unpivot(Unpivot { stats_state, .. })
             | Self::Sort(Sort { stats_state, .. })
@@ -300,14 +372,11 @@ impl LogicalPlan {
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. })
             | Self::Window(Window { stats_state, .. })
             | Self::TopN(TopN { stats_state, .. }) => stats_state,
-            Self::Intersect(_) => {
-                panic!("Intersect nodes should be optimized away before stats are materialized")
-            }
-            Self::Union(_) => {
-                panic!("Union nodes should be optimized away before stats are materialized")
-            }
-            Self::SubqueryAlias(_) => {
-                panic!("Alias nodes should be optimized away before stats are materialized")
+            Self::Intersect(_) | Self::Union(_) | Self::SubqueryAlias(_) => {
+                panic!(
+                    "{} nodes should be optimized away before stats are materialized",
+                    self.name()
+                )
             }
         }
     }
@@ -321,10 +390,13 @@ impl LogicalPlan {
     pub fn with_materialized_stats(self) -> Self {
         match self {
             Self::Source(plan) => Self::Source(plan.with_materialized_stats()),
+            Self::Shard(plan) => Self::Shard(plan.with_materialized_stats()),
             Self::Project(plan) => Self::Project(plan.with_materialized_stats()),
-            Self::ActorPoolProject(plan) => Self::ActorPoolProject(plan.with_materialized_stats()),
+            Self::UDFProject(plan) => Self::UDFProject(plan.with_materialized_stats()),
             Self::Filter(plan) => Self::Filter(plan.with_materialized_stats()),
+            Self::IntoBatches(plan) => Self::IntoBatches(plan.with_materialized_stats()),
             Self::Limit(plan) => Self::Limit(plan.with_materialized_stats()),
+            Self::Offset(plan) => Self::Offset(plan.with_materialized_stats()),
             Self::Explode(plan) => Self::Explode(plan.with_materialized_stats()),
             Self::Unpivot(plan) => Self::Unpivot(plan.with_materialized_stats()),
             Self::Sort(plan) => Self::Sort(plan.with_materialized_stats()),
@@ -333,15 +405,6 @@ impl LogicalPlan {
             Self::Aggregate(plan) => Self::Aggregate(plan.with_materialized_stats()),
             Self::Pivot(plan) => Self::Pivot(plan.with_materialized_stats()),
             Self::Concat(plan) => Self::Concat(plan.with_materialized_stats()),
-            Self::Intersect(_) => {
-                panic!("Intersect should be optimized away before stats are derived")
-            }
-            Self::Union(_) => {
-                panic!("Union should be optimized away before stats are derived")
-            }
-            Self::SubqueryAlias(_) => {
-                panic!("Alias should be optimized away before stats are derived")
-            }
             Self::Join(plan) => Self::Join(plan.with_materialized_stats()),
             Self::Sink(plan) => Self::Sink(plan.with_materialized_stats()),
             Self::Sample(plan) => Self::Sample(plan.with_materialized_stats()),
@@ -350,16 +413,25 @@ impl LogicalPlan {
             }
             Self::Window(plan) => Self::Window(plan.with_materialized_stats()),
             Self::TopN(plan) => Self::TopN(plan.with_materialized_stats()),
+            Self::Intersect(_) | Self::Union(_) | Self::SubqueryAlias(_) => {
+                panic!(
+                    "{} should be optimized away before stats are derived",
+                    self.name()
+                )
+            }
         }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
         match self {
             Self::Source(source) => source.multiline_display(),
+            Self::Shard(shard) => shard.multiline_display(),
             Self::Project(projection) => projection.multiline_display(),
-            Self::ActorPoolProject(projection) => projection.multiline_display(),
+            Self::UDFProject(projection) => projection.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
+            Self::IntoBatches(into_batches) => into_batches.multiline_display(),
             Self::Limit(limit) => limit.multiline_display(),
+            Self::Offset(offset) => offset.multiline_display(),
             Self::Explode(explode) => explode.multiline_display(),
             Self::Unpivot(unpivot) => unpivot.multiline_display(),
             Self::Sort(sort) => sort.multiline_display(),
@@ -385,10 +457,13 @@ impl LogicalPlan {
     pub fn children(&self) -> Vec<&Self> {
         match self {
             Self::Source(..) => vec![],
+            Self::Shard(Shard { input, .. }) => vec![input],
             Self::Project(Project { input, .. }) => vec![input],
-            Self::ActorPoolProject(ActorPoolProject { input, .. }) => vec![input],
+            Self::UDFProject(UDFProject { input, .. }) => vec![input],
             Self::Filter(Filter { input, .. }) => vec![input],
+            Self::IntoBatches(IntoBatches { input, .. }) => vec![input],
             Self::Limit(Limit { input, .. }) => vec![input],
+            Self::Offset(Offset { input, .. }) => vec![input],
             Self::Explode(Explode { input, .. }) => vec![input],
             Self::Unpivot(Unpivot { input, .. }) => vec![input],
             Self::Sort(Sort { input, .. }) => vec![input],
@@ -414,54 +489,210 @@ impl LogicalPlan {
     pub fn with_new_children(&self, children: &[Arc<Self>]) -> Self {
         match children {
             [input] => match self {
-                Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
-                Self::Project(Project { projection, .. }) => Self::Project(Project::try_new(
-                    input.clone(), projection.clone(),
-                ).unwrap()),
-                Self::ActorPoolProject(ActorPoolProject {projection, ..}) => Self::ActorPoolProject(ActorPoolProject::try_new(input.clone(), projection.clone()).unwrap()),
-                Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap()),
-                Self::Limit(Limit { limit, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager)),
-                Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
-                Self::Sort(Sort { sort_by, descending, nulls_first, .. }) => Self::Sort(Sort::try_new(input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone()).unwrap()),
-                Self::Repartition(Repartition {  repartition_spec: scheme_config, .. }) => Self::Repartition(Repartition::new(input.clone(), scheme_config.clone())),
-                Self::Distinct(_) => Self::Distinct(Distinct::new(input.clone())),
-                Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::try_new(input.clone(), aggregations.clone(), groupby.clone()).unwrap()),
-                Self::Pivot(Pivot { group_by, pivot_column, value_column, aggregation, names, ..}) => Self::Pivot(Pivot::try_new(input.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), aggregation.into(), names.clone()).unwrap()),
-                Self::Sink(Sink { sink_info, .. }) => Self::Sink(Sink::try_new(input.clone(), sink_info.clone()).unwrap()),
-                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {column_name, .. }) => Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId::try_new(input.clone(), Some(column_name)).unwrap()),
-                Self::Unpivot(Unpivot {ids, values, variable_name, value_name, output_schema, ..}) =>
-                    Self::Unpivot(Unpivot::new(input.clone(), ids.clone(), values.clone(), variable_name.clone(), value_name.clone(), output_schema.clone())),
-                Self::Sample(Sample {fraction, with_replacement, seed, ..}) => Self::Sample(Sample::new(input.clone(), *fraction, *with_replacement, *seed)),
-                Self::SubqueryAlias(SubqueryAlias { name: id, .. }) => Self::SubqueryAlias(SubqueryAlias::new(input.clone(), id.clone())),
-                Self::Window(Window { window_functions, aliases, window_spec, .. }) => Self::Window(Window::try_new(
+                Self::Source(_) => panic!(
+                    "Source nodes don't have children, with_new_children() should never be called for Source ops"
+                ),
+                Self::Shard(Shard { sharder, .. }) => {
+                    Self::Shard(Shard::new(input.clone(), sharder.clone()))
+                }
+                Self::Project(Project { projection, .. }) => {
+                    Self::Project(Project::try_new(input.clone(), projection.clone()).unwrap())
+                }
+                Self::UDFProject(UDFProject {
+                    expr,
+                    passthrough_columns,
+                    ..
+                }) => Self::UDFProject(
+                    UDFProject::try_new(input.clone(), expr.clone(), passthrough_columns.clone())
+                        .unwrap(),
+                ),
+                Self::Filter(Filter { predicate, .. }) => {
+                    Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap())
+                }
+                Self::IntoBatches(IntoBatches { batch_size, .. }) => {
+                    Self::IntoBatches(IntoBatches::new(input.clone(), *batch_size))
+                }
+                Self::Limit(Limit {
+                    limit,
+                    offset,
+                    eager,
+                    ..
+                }) => Self::Limit(Limit::new(input.clone(), *limit, *offset, *eager)),
+                Self::Offset(Offset { offset, .. }) => {
+                    Self::Offset(Offset::new(input.clone(), *offset))
+                }
+                Self::Explode(Explode { to_explode, .. }) => {
+                    Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap())
+                }
+                Self::Sort(Sort {
+                    sort_by,
+                    descending,
+                    nulls_first,
+                    ..
+                }) => Self::Sort(
+                    Sort::try_new(
+                        input.clone(),
+                        sort_by.clone(),
+                        descending.clone(),
+                        nulls_first.clone(),
+                    )
+                    .unwrap(),
+                ),
+                Self::Repartition(Repartition {
+                    repartition_spec: scheme_config,
+                    ..
+                }) => Self::Repartition(Repartition::new(input.clone(), scheme_config.clone())),
+                Self::Distinct(distinct) => {
+                    Self::Distinct(Distinct::new(input.clone(), distinct.columns.clone()))
+                }
+                Self::Aggregate(Aggregate {
+                    aggregations,
+                    groupby,
+                    ..
+                }) => Self::Aggregate(
+                    Aggregate::try_new(input.clone(), aggregations.clone(), groupby.clone())
+                        .unwrap(),
+                ),
+                Self::Pivot(Pivot {
+                    group_by,
+                    pivot_column,
+                    value_column,
+                    aggregation,
+                    names,
+                    ..
+                }) => Self::Pivot(
+                    Pivot::try_new(
+                        input.clone(),
+                        group_by.clone(),
+                        pivot_column.clone(),
+                        value_column.clone(),
+                        aggregation.into(),
+                        names.clone(),
+                    )
+                    .unwrap(),
+                ),
+                Self::Sink(Sink { sink_info, .. }) => {
+                    Self::Sink(Sink::try_new(input.clone(), sink_info.clone()).unwrap())
+                }
+                Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
+                    column_name,
+                    starting_offset,
+                    ..
+                }) => Self::MonotonicallyIncreasingId(
+                    MonotonicallyIncreasingId::try_new(
+                        input.clone(),
+                        Some(column_name),
+                        *starting_offset,
+                    )
+                    .unwrap(),
+                ),
+                Self::Unpivot(Unpivot {
+                    ids,
+                    values,
+                    variable_name,
+                    value_name,
+                    output_schema,
+                    ..
+                }) => Self::Unpivot(Unpivot::new(
                     input.clone(),
-                    window_functions.clone(),
-                    aliases.clone(),
-                    window_spec.clone(),
-                ).unwrap()),
-                Self::TopN(TopN { sort_by, descending, nulls_first, limit, .. }) => Self::TopN(TopN::try_new(
-                    input.clone(), sort_by.clone(), descending.clone(), nulls_first.clone(), *limit
-                ).unwrap()),
-                Self::Concat(_) => panic!("Concat ops should never have only one input, but got one"),
-                Self::Intersect(_) => panic!("Intersect ops should never have only one input, but got one"),
-                Self::Union(_) => panic!("Union ops should never have only one input, but got one"),
-                Self::Join(_) => panic!("Join ops should never have only one input, but got one"),
+                    ids.clone(),
+                    values.clone(),
+                    variable_name.clone(),
+                    value_name.clone(),
+                    output_schema.clone(),
+                )),
+
+                Self::Sample(Sample {
+                    fraction,
+                    with_replacement,
+                    seed,
+                    ..
+                }) => Self::Sample(Sample::new(
+                    input.clone(),
+                    *fraction,
+                    *with_replacement,
+                    *seed,
+                )),
+                Self::SubqueryAlias(SubqueryAlias { name: id, .. }) => {
+                    Self::SubqueryAlias(SubqueryAlias::new(input.clone(), id.clone()))
+                }
+                Self::Window(Window {
+                    window_functions,
+                    aliases,
+                    window_spec,
+                    ..
+                }) => Self::Window(
+                    Window::try_new(
+                        input.clone(),
+                        window_functions.clone(),
+                        aliases.clone(),
+                        window_spec.clone(),
+                    )
+                    .unwrap(),
+                ),
+                Self::TopN(TopN {
+                    sort_by,
+                    descending,
+                    nulls_first,
+                    limit,
+                    offset,
+                    ..
+                }) => Self::TopN(
+                    TopN::try_new(
+                        input.clone(),
+                        sort_by.clone(),
+                        descending.clone(),
+                        nulls_first.clone(),
+                        *limit,
+                        *offset,
+                    )
+                    .unwrap(),
+                ),
+                Self::Concat(_) | Self::Intersect(_) | Self::Union(_) | Self::Join(_) => panic!(
+                    "{} ops should never have only one input, but got one",
+                    input.name()
+                ),
             },
             [input1, input2] => match self {
-                Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
-                Self::Concat(_) => Self::Concat(Concat::try_new(input1.clone(), input2.clone()).unwrap()),
-                Self::Intersect(inner) => Self::Intersect(Intersect::try_new(input1.clone(), input2.clone(), inner.is_all).unwrap()),
-                Self::Union(inner) => Self::Union(Union::try_new(input1.clone(), input2.clone(), inner.quantifier, inner.strategy).unwrap()),
-                Self::Join(Join { on, join_type, join_strategy, .. }) => Self::Join(Join::try_new(
-                    input1.clone(),
-                    input2.clone(),
-                    on.clone(),
-                    *join_type,
-                    *join_strategy,
-                ).unwrap()),
+                Self::Source(_) => panic!(
+                    "Source nodes don't have children, with_new_children() should never be called for Source ops"
+                ),
+                Self::Concat(_) => {
+                    Self::Concat(Concat::try_new(input1.clone(), input2.clone()).unwrap())
+                }
+                Self::Intersect(inner) => Self::Intersect(
+                    Intersect::try_new(input1.clone(), input2.clone(), inner.is_all).unwrap(),
+                ),
+                Self::Union(inner) => Self::Union(
+                    Union::try_new(
+                        input1.clone(),
+                        input2.clone(),
+                        inner.quantifier,
+                        inner.strategy,
+                    )
+                    .unwrap(),
+                ),
+                Self::Join(Join {
+                    on,
+                    join_type,
+                    join_strategy,
+                    ..
+                }) => Self::Join(
+                    Join::try_new(
+                        input1.clone(),
+                        input2.clone(),
+                        on.clone(),
+                        *join_type,
+                        *join_strategy,
+                    )
+                    .unwrap(),
+                ),
                 _ => panic!("Logical op {} has one input, but got two", self),
             },
-            _ => panic!("Logical ops should never have more than 2 inputs, but got: {}", children.len())
+            _ => panic!(
+                "Logical ops should never have more than 2 inputs, but got: {}",
+                children.len()
+            ),
         }
     }
 
@@ -568,10 +799,13 @@ impl LogicalPlan {
     pub fn plan_id(&self) -> &Option<usize> {
         match self {
             Self::Source(Source { plan_id, .. })
+            | Self::Shard(Shard { plan_id, .. })
             | Self::Project(Project { plan_id, .. })
-            | Self::ActorPoolProject(ActorPoolProject { plan_id, .. })
+            | Self::UDFProject(UDFProject { plan_id, .. })
             | Self::Filter(Filter { plan_id, .. })
+            | Self::IntoBatches(IntoBatches { plan_id, .. })
             | Self::Limit(Limit { plan_id, .. })
+            | Self::Offset(Offset { plan_id, .. })
             | Self::Explode(Explode { plan_id, .. })
             | Self::Unpivot(Unpivot { plan_id, .. })
             | Self::Sort(Sort { plan_id, .. })
@@ -592,38 +826,103 @@ impl LogicalPlan {
         }
     }
 
+    pub fn node_id(&self) -> &Option<usize> {
+        match self {
+            Self::Source(Source { node_id, .. })
+            | Self::Shard(Shard { node_id, .. })
+            | Self::Project(Project { node_id, .. })
+            | Self::UDFProject(UDFProject { node_id, .. })
+            | Self::Filter(Filter { node_id, .. })
+            | Self::IntoBatches(IntoBatches { node_id, .. })
+            | Self::Limit(Limit { node_id, .. })
+            | Self::Offset(Offset { node_id, .. })
+            | Self::Explode(Explode { node_id, .. })
+            | Self::Unpivot(Unpivot { node_id, .. })
+            | Self::Sort(Sort { node_id, .. })
+            | Self::Repartition(Repartition { node_id, .. })
+            | Self::Distinct(Distinct { node_id, .. })
+            | Self::Aggregate(Aggregate { node_id, .. })
+            | Self::Pivot(Pivot { node_id, .. })
+            | Self::Concat(Concat { node_id, .. })
+            | Self::Intersect(Intersect { node_id, .. })
+            | Self::Union(Union { node_id, .. })
+            | Self::Join(Join { node_id, .. })
+            | Self::Sink(Sink { node_id, .. })
+            | Self::Sample(Sample { node_id, .. })
+            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { node_id, .. })
+            | Self::SubqueryAlias(SubqueryAlias { node_id, .. })
+            | Self::Window(Window { node_id, .. })
+            | Self::TopN(TopN { node_id, .. }) => node_id,
+        }
+    }
+
     pub fn with_plan_id(self: Arc<Self>, plan_id: usize) -> Self {
-        match self.as_ref() {
-            Self::Source(source) => Self::Source(source.clone().with_plan_id(plan_id)),
-            Self::Project(project) => Self::Project(project.clone().with_plan_id(plan_id)),
-            Self::ActorPoolProject(project) => {
-                Self::ActorPoolProject(project.clone().with_plan_id(plan_id))
+        let this = Arc::unwrap_or_clone(self);
+        match this {
+            Self::Source(source) => Self::Source(source.with_plan_id(plan_id)),
+            Self::Shard(shard) => Self::Shard(shard.with_plan_id(plan_id)),
+            Self::Project(project) => Self::Project(project.with_plan_id(plan_id)),
+            Self::UDFProject(project) => Self::UDFProject(project.with_plan_id(plan_id)),
+            Self::Filter(filter) => Self::Filter(filter.with_plan_id(plan_id)),
+            Self::IntoBatches(into_batches) => {
+                Self::IntoBatches(into_batches.with_plan_id(plan_id))
             }
-            Self::Filter(filter) => Self::Filter(filter.clone().with_plan_id(plan_id)),
-            Self::Limit(limit) => Self::Limit(limit.clone().with_plan_id(plan_id)),
-            Self::Explode(explode) => Self::Explode(explode.clone().with_plan_id(plan_id)),
-            Self::Unpivot(unpivot) => Self::Unpivot(unpivot.clone().with_plan_id(plan_id)),
-            Self::Sort(sort) => Self::Sort(sort.clone().with_plan_id(plan_id)),
-            Self::Repartition(repartition) => {
-                Self::Repartition(repartition.clone().with_plan_id(plan_id))
-            }
-            Self::Distinct(distinct) => Self::Distinct(distinct.clone().with_plan_id(plan_id)),
-            Self::Aggregate(aggregate) => Self::Aggregate(aggregate.clone().with_plan_id(plan_id)),
-            Self::Pivot(pivot) => Self::Pivot(pivot.clone().with_plan_id(plan_id)),
-            Self::Concat(concat) => Self::Concat(concat.clone().with_plan_id(plan_id)),
-            Self::Intersect(intersect) => Self::Intersect(intersect.clone().with_plan_id(plan_id)),
-            Self::Union(union) => Self::Union(union.clone().with_plan_id(plan_id)),
-            Self::Join(join) => Self::Join(join.clone().with_plan_id(plan_id)),
-            Self::Sink(sink) => Self::Sink(sink.clone().with_plan_id(plan_id)),
-            Self::Sample(sample) => Self::Sample(sample.clone().with_plan_id(plan_id)),
+            Self::Limit(limit) => Self::Limit(limit.with_plan_id(plan_id)),
+            Self::Offset(offset) => Self::Offset(offset.with_plan_id(plan_id)),
+            Self::Explode(explode) => Self::Explode(explode.with_plan_id(plan_id)),
+            Self::Unpivot(unpivot) => Self::Unpivot(unpivot.with_plan_id(plan_id)),
+            Self::Sort(sort) => Self::Sort(sort.with_plan_id(plan_id)),
+            Self::Repartition(repartition) => Self::Repartition(repartition.with_plan_id(plan_id)),
+            Self::Distinct(distinct) => Self::Distinct(distinct.with_plan_id(plan_id)),
+            Self::Aggregate(aggregate) => Self::Aggregate(aggregate.with_plan_id(plan_id)),
+            Self::Pivot(pivot) => Self::Pivot(pivot.with_plan_id(plan_id)),
+            Self::Concat(concat) => Self::Concat(concat.with_plan_id(plan_id)),
+            Self::Intersect(intersect) => Self::Intersect(intersect.with_plan_id(plan_id)),
+            Self::Union(union) => Self::Union(union.with_plan_id(plan_id)),
+            Self::Join(join) => Self::Join(join.with_plan_id(plan_id)),
+            Self::Sink(sink) => Self::Sink(sink.with_plan_id(plan_id)),
+            Self::Sample(sample) => Self::Sample(sample.with_plan_id(plan_id)),
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
-                Self::MonotonicallyIncreasingId(
-                    monotonically_increasing_id.clone().with_plan_id(plan_id),
-                )
+                Self::MonotonicallyIncreasingId(monotonically_increasing_id.with_plan_id(plan_id))
             }
-            Self::SubqueryAlias(alias) => Self::SubqueryAlias(alias.clone().with_plan_id(plan_id)),
-            Self::Window(window) => window.with_plan_id(Some(plan_id)),
-            Self::TopN(top_n) => Self::TopN(top_n.clone().with_plan_id(plan_id)),
+            Self::SubqueryAlias(alias) => Self::SubqueryAlias(alias.with_plan_id(plan_id)),
+            Self::Window(window) => Self::Window(window.with_plan_id(plan_id)),
+            Self::TopN(top_n) => Self::TopN(top_n.with_plan_id(plan_id)),
+        }
+    }
+
+    pub fn with_node_id(self: Arc<Self>, node_id: usize) -> Self {
+        let this = Arc::unwrap_or_clone(self);
+        match this {
+            Self::Source(source) => Self::Source(source.with_node_id(node_id)),
+            Self::Shard(shard) => Self::Shard(shard.with_node_id(node_id)),
+            Self::Project(project) => Self::Project(project.with_node_id(node_id)),
+            Self::UDFProject(project) => Self::UDFProject(project.with_node_id(node_id)),
+            Self::Filter(filter) => Self::Filter(filter.with_node_id(node_id)),
+            Self::IntoBatches(into_batches) => {
+                Self::IntoBatches(into_batches.with_node_id(node_id))
+            }
+            Self::Limit(limit) => Self::Limit(limit.with_node_id(node_id)),
+            Self::Offset(offset) => Self::Offset(offset.with_node_id(node_id)),
+            Self::Explode(explode) => Self::Explode(explode.with_node_id(node_id)),
+            Self::Unpivot(unpivot) => Self::Unpivot(unpivot.with_node_id(node_id)),
+            Self::Sort(sort) => Self::Sort(sort.with_node_id(node_id)),
+            Self::Repartition(repartition) => Self::Repartition(repartition.with_node_id(node_id)),
+            Self::Distinct(distinct) => Self::Distinct(distinct.with_node_id(node_id)),
+            Self::Aggregate(aggregate) => Self::Aggregate(aggregate.with_node_id(node_id)),
+            Self::Pivot(pivot) => Self::Pivot(pivot.with_node_id(node_id)),
+            Self::Concat(concat) => Self::Concat(concat.with_node_id(node_id)),
+            Self::Intersect(intersect) => Self::Intersect(intersect.with_node_id(node_id)),
+            Self::Union(union) => Self::Union(union.with_node_id(node_id)),
+            Self::Join(join) => Self::Join(join.with_node_id(node_id)),
+            Self::Sink(sink) => Self::Sink(sink.with_node_id(node_id)),
+            Self::Sample(sample) => Self::Sample(sample.with_node_id(node_id)),
+            Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
+                Self::MonotonicallyIncreasingId(monotonically_increasing_id.with_node_id(node_id))
+            }
+            Self::SubqueryAlias(alias) => Self::SubqueryAlias(alias.with_node_id(node_id)),
+            Self::Window(window) => Self::Window(window.with_node_id(node_id)),
+            Self::TopN(top_n) => Self::TopN(top_n.with_node_id(node_id)),
         }
     }
 }
@@ -710,9 +1009,12 @@ macro_rules! impl_from_data_struct_for_logical_plan {
 }
 
 impl_from_data_struct_for_logical_plan!(Source);
+impl_from_data_struct_for_logical_plan!(Shard);
 impl_from_data_struct_for_logical_plan!(Project);
 impl_from_data_struct_for_logical_plan!(Filter);
+impl_from_data_struct_for_logical_plan!(IntoBatches);
 impl_from_data_struct_for_logical_plan!(Limit);
+impl_from_data_struct_for_logical_plan!(Offset);
 impl_from_data_struct_for_logical_plan!(Explode);
 impl_from_data_struct_for_logical_plan!(Unpivot);
 impl_from_data_struct_for_logical_plan!(Sort);

@@ -1,7 +1,6 @@
 [dependencies]
 common-io-config = {path = "../io-config", default-features = false}
 common-py-serde = {path = "../py-serde", default-features = false, optional = true}
-log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 

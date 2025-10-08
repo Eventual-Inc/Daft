@@ -1,5 +1,5 @@
 use arrow2::{
-    array::{ord::build_compare, Array, PrimitiveArray},
+    array::{Array, FixedSizeListArray, ListArray, PrimitiveArray, equal, ord::build_compare},
     datatypes::DataType,
     error::Result,
 };
@@ -33,19 +33,66 @@ fn build_is_equal_float<F: Float + arrow2::types::NativeType>(
     }
 }
 
+fn build_is_equal_list(
+    left: &dyn Array,
+    right: &dyn Array,
+) -> Box<dyn Fn(usize, usize) -> bool + Send + Sync> {
+    let left = left
+        .as_any()
+        .downcast_ref::<ListArray<i64>>()
+        .unwrap()
+        .clone();
+    let right = right
+        .as_any()
+        .downcast_ref::<ListArray<i64>>()
+        .unwrap()
+        .clone();
+
+    Box::new(move |i, j| equal(left.value(i).as_ref(), right.value(j).as_ref()))
+}
+
+fn build_is_equal_fixed_size_list(
+    left: &dyn Array,
+    right: &dyn Array,
+) -> Box<dyn Fn(usize, usize) -> bool + Send + Sync> {
+    let left = left
+        .as_any()
+        .downcast_ref::<FixedSizeListArray>()
+        .unwrap()
+        .clone();
+    let right = right
+        .as_any()
+        .downcast_ref::<FixedSizeListArray>()
+        .unwrap()
+        .clone();
+
+    Box::new(move |i, j| equal(left.value(i).as_ref(), right.value(j).as_ref()))
+}
+
 fn build_is_equal_with_nan(
     left: &dyn Array,
     right: &dyn Array,
-    nulls_equal: bool,
+    nan_equal: bool,
 ) -> Result<Box<dyn Fn(usize, usize) -> bool + Send + Sync>> {
-    if (left.data_type() == &DataType::Float32) && (right.data_type() == &DataType::Float32) {
-        Ok(build_is_equal_float::<f32>(left, right, nulls_equal))
-    } else if (left.data_type() == &DataType::Float64) && (right.data_type() == &DataType::Float64)
-    {
-        Ok(build_is_equal_float::<f64>(left, right, nulls_equal))
-    } else {
-        let comp = build_compare(left, right)?;
-        Ok(Box::new(move |i, j| comp(i, j).is_eq()))
+    match (left.data_type(), right.data_type()) {
+        (DataType::Float32, DataType::Float32) => {
+            Ok(build_is_equal_float::<f32>(left, right, nan_equal))
+        }
+        (DataType::Float64, DataType::Float64) => {
+            Ok(build_is_equal_float::<f64>(left, right, nan_equal))
+        }
+        (DataType::LargeList(f1), DataType::LargeList(f2)) if *f1 == *f2 => {
+            Ok(build_is_equal_list(left, right))
+        }
+        (DataType::FixedSizeList(f1, l1), DataType::FixedSizeList(f2, l2))
+            if *l1 == *l2 && *f1 == *f2 =>
+        {
+            Ok(build_is_equal_fixed_size_list(left, right))
+        }
+        _ => {
+            let comp = build_compare(left, right)?;
+            Ok(Box::new(move |i, j| comp(i, j).is_eq()))
+        }
     }
 }
 

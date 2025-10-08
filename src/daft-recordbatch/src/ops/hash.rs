@@ -1,11 +1,10 @@
-use std::collections::{hash_map::RawEntryMut, HashMap};
-
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::{arrow2::comparison::build_multi_array_is_equal, as_arrow::AsArrow},
     datatypes::UInt64Array,
     utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
 };
+use hashbrown::{HashMap, hash_map::RawEntryMut};
 
 use crate::RecordBatch;
 
@@ -66,6 +65,47 @@ impl RecordBatch {
             }
         }
         Ok(probe_table)
+    }
+
+    pub fn to_idx_hash_table(&self) -> DaftResult<HashMap<IndexHash, (), IdentityBuildHasher>> {
+        let hashes = self.hash_rows()?;
+
+        const DEFAULT_SIZE: usize = 20;
+        let comparator = build_multi_array_is_equal(
+            self.columns.as_slice(),
+            self.columns.as_slice(),
+            vec![true; self.columns.len()].as_slice(),
+            vec![true; self.columns.len()].as_slice(),
+        )?;
+
+        let mut idx_hash_table =
+            HashMap::<IndexHash, (), IdentityBuildHasher>::with_capacity_and_hasher(
+                DEFAULT_SIZE,
+                Default::default(),
+            );
+        // TODO(Sammy): Drop nulls using validity array if requested
+        for (i, h) in hashes.as_arrow().values_iter().enumerate() {
+            let entry = idx_hash_table.raw_entry_mut().from_hash(*h, |other| {
+                (*h == other.hash) && {
+                    let j = other.idx;
+                    comparator(i, j as usize)
+                }
+            });
+            match entry {
+                RawEntryMut::Vacant(entry) => {
+                    entry.insert_hashed_nocheck(
+                        *h,
+                        IndexHash {
+                            idx: i as u64,
+                            hash: *h,
+                        },
+                        (),
+                    );
+                }
+                RawEntryMut::Occupied(_) => {}
+            }
+        }
+        Ok(idx_hash_table)
     }
 
     pub fn to_probe_hash_map_without_idx(

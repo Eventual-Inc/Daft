@@ -71,3 +71,54 @@ def test_list_sort_with_groupby():
     result_dict = result.to_pydict()
     expected = {"group_col": [1, 2], "ids_col": [["a", "b", "c"], ["a", "d", "e"]]}
     assert result_dict == expected
+
+
+# Reproduce issue #4862.
+def test_list_sort_groupby_larger_than_morsel_size():
+    # Test that reproduces a bug with large datasets and groupby operations that exceed the default morsel size.This would previously fail with offset mismatch errors.
+    import itertools
+
+    morsel_size = daft.context.get_context().daft_execution_config.default_morsel_size
+    num_groups = int(morsel_size + 10)
+    expected_records_per_group = 1
+    num_records = num_groups * expected_records_per_group
+
+    group_ids = list(itertools.chain(*[expected_records_per_group * [f"{i}"] for i in range(num_groups)]))
+    record_ids = [f"r-{i}" for i in range(num_records)]
+
+    result = (
+        daft.from_pydict(
+            {
+                "group_id": group_ids,
+                "record_id": record_ids,
+            }
+        )
+        .groupby("group_id")
+        .agg(daft.col("record_id").agg_list().alias("record_ids"))
+        .with_column(
+            "record_ids_key",
+            daft.col("record_ids").list.sort(),
+        )
+        .select(
+            "group_id",
+            "record_ids_key",
+        )
+    )
+
+    result_dict = result.to_pydict()
+
+    assert (
+        len(result_dict["record_ids_key"]) == num_groups
+    ), f"Expected {num_groups} groups, got {len(result_dict['record_ids_key'])}"
+
+    # Each group should have exactly expected_records_per_group records: Group i gets records r-i*expected_records to r-(i+1)*expected_records-1
+    for group_id, record_list in zip(result_dict["group_id"], result_dict["record_ids_key"]):
+        assert (
+            len(record_list) == expected_records_per_group
+        ), f"Group {group_id} should have {expected_records_per_group} records, got {len(record_list)}"
+
+        start_record = int(group_id) * expected_records_per_group
+        expected_sorted = sorted([f"r-{start_record + i}" for i in range(expected_records_per_group)])
+        assert (
+            record_list == expected_sorted
+        ), f"Group {group_id} should be sorted: {record_list[:]}... vs {expected_sorted[:]}..."

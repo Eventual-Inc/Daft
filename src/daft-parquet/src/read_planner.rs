@@ -2,7 +2,7 @@ use std::{fmt::Display, ops::Range, sync::Arc};
 
 use bytes::Bytes;
 use common_error::DaftResult;
-use daft_io::{IOClient, IOStatsRef};
+use daft_io::{IOClient, IOStatsRef, range::GetRange};
 use futures::{StreamExt, TryStreamExt};
 use tokio::task::JoinHandle;
 
@@ -177,7 +177,11 @@ impl ReadPlanner {
             let end = range.end;
             let join_handle = tokio::spawn(async move {
                 let get_result = owned_io_client
-                    .single_url_get(owned_url, Some(range.clone()), owned_io_stats)
+                    .single_url_get(
+                        owned_url,
+                        Some(GetRange::from(range.clone())),
+                        owned_io_stats,
+                    )
                     .await?;
                 get_result.bytes().await
             });
@@ -199,7 +203,7 @@ pub struct RangesContainer {
 
 impl RangesContainer {
     pub async fn get_range_reader(
-        &self,
+        self: Arc<Self>,
         range: Range<usize>,
     ) -> DaftResult<impl futures::AsyncRead> {
         let mut current_pos = range.start;
@@ -234,7 +238,10 @@ impl RangesContainer {
                 let start = entry.start;
                 let end = entry.end;
                 let len = end - start;
-                assert!(current_pos >= start && current_pos < end, "range: {range:?}, current_pos: {current_pos}, bytes_start: {start}, end: {end}");
+                assert!(
+                    current_pos >= start && current_pos < end,
+                    "range: {range:?}, current_pos: {current_pos}, bytes_start: {start}, end: {end}"
+                );
                 let start_offset = current_pos - start;
                 let end_offset = len.min(range.end - start);
                 needed_entries.push(entry);

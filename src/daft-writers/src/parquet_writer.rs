@@ -1,21 +1,16 @@
-use std::{
-    io::BufWriter,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{collections::VecDeque, future::Future, path::PathBuf, pin::Pin, sync::Arc};
 
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
-use common_file_formats::FileFormat;
-use common_runtime::{get_compute_runtime, RuntimeTask};
+use common_runtime::{get_compute_pool_num_threads, get_compute_runtime, get_io_runtime};
 use daft_core::prelude::*;
-use daft_io::{parse_url, SourceType};
+use daft_io::{IOConfig, SourceType, parse_url};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use parquet::{
     arrow::{
-        arrow_writer::{compute_leaves, get_column_writers, ArrowColumnChunk, ArrowLeafColumn},
         ArrowSchemaConverter,
+        arrow_writer::{ArrowColumnChunk, ArrowLeafColumn, compute_leaves, get_column_writers},
     },
     basic::Compression,
     file::{
@@ -25,29 +20,24 @@ use parquet::{
     schema::types::SchemaDescriptor,
 };
 
-use crate::{utils::record_batch_to_partition_path, AsyncFileWriter};
+use crate::{
+    AsyncFileWriter, WriteResult,
+    storage_backend::{FileStorageBackend, S3StorageBackend, StorageBackend},
+    utils::build_filename,
+};
 
-type ParquetColumnWriterHandle = RuntimeTask<DaftResult<ArrowColumnChunk>>;
+type ColumnWriterFuture = dyn Future<Output = DaftResult<ArrowColumnChunk>> + Send;
 
 /// Helper function that checks if we support native writes given the file format, root directory, and schema.
 pub(crate) fn native_parquet_writer_supported(
-    file_format: FileFormat,
     root_dir: &str,
     file_schema: &SchemaRef,
 ) -> DaftResult<bool> {
-    // TODO(desmond): Currently we only support native parquet writes.
-    if !matches!(file_format, FileFormat::Parquet) {
-        return Ok(false);
-    }
-    // TODO(desmond): Currently we only support local writes.
-    // TODO(desmond): We return false on an error because S3n is incorrectly reported to be unsupported
-    // in parse_url. I'll fix this in another PR.
-    let source_type = match parse_url(root_dir) {
-        Ok((st, _)) => st,
+    let (source_type, _) = parse_url(root_dir)?;
+    match source_type {
+        SourceType::File => {}
+        SourceType::S3 => {}
         _ => return Ok(false),
-    };
-    if !matches!(source_type, SourceType::File) {
-        return Ok(false);
     }
     // TODO(desmond): Currently we do not support extension and timestamp types.
     let arrow_schema = match file_schema.to_arrow() {
@@ -78,25 +68,18 @@ pub(crate) fn create_native_parquet_writer(
     schema: &SchemaRef,
     file_idx: usize,
     partition_values: Option<&RecordBatch>,
+    io_config: Option<IOConfig>,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
 {
     // Parse the root directory and add partition values if present.
     let (source_type, root_dir) = parse_url(root_dir)?;
-    debug_assert!(
-        matches!(source_type, SourceType::File),
-        "Native writes are currently enabled for local writes only"
-    );
-    let root_dir = Path::new(root_dir.trim_start_matches("file://"));
-    let dir = if let Some(partition_values) = partition_values {
-        let partition_path = record_batch_to_partition_path(partition_values, None)?;
-        root_dir.join(partition_path)
-    } else {
-        root_dir.to_path_buf()
-    };
-    // Create the directories if they don't exist.
-    std::fs::create_dir_all(&dir)?;
-
-    let filename = dir.join(format!("{}-{}.parquet", uuid::Uuid::new_v4(), file_idx));
+    let filename = build_filename(
+        source_type,
+        root_dir.as_ref(),
+        partition_values,
+        file_idx,
+        "parquet",
+    )?;
 
     // TODO(desmond): Explore configurations such data page size limit, writer version, etc. Parquet format v2
     // could be interesting but has much less support in the ecosystem (including ourselves).
@@ -114,28 +97,51 @@ pub(crate) fn create_native_parquet_writer(
         .convert(&arrow_schema)
         .expect("By this point `native_writer_supported` should have been called which would have verified that the schema is convertible");
 
-    Ok(Box::new(ParquetWriter::new(
-        filename,
-        writer_properties,
-        arrow_schema,
-        parquet_schema,
-        partition_values.cloned(),
-    )))
+    match source_type {
+        SourceType::File => {
+            let storage_backend = FileStorageBackend {};
+            Ok(Box::new(ParquetWriter::new(
+                filename,
+                writer_properties,
+                arrow_schema,
+                parquet_schema,
+                partition_values.cloned(),
+                storage_backend,
+            )))
+        }
+        SourceType::S3 => {
+            let (scheme, _, _) = daft_io::s3_like::parse_s3_url(root_dir.as_ref())?;
+            let io_config = io_config.ok_or_else(|| {
+                DaftError::InternalError("IO config is required for S3 writes".to_string())
+            })?;
+            let storage_backend = S3StorageBackend::new(scheme, io_config);
+            Ok(Box::new(ParquetWriter::new(
+                filename,
+                writer_properties,
+                arrow_schema,
+                parquet_schema,
+                partition_values.cloned(),
+                storage_backend,
+            )))
+        }
+        _ => Err(DaftError::InternalError(format!(
+            "Unsupported source type for the native writer: {source_type}"
+        ))),
+    }
 }
 
-struct ParquetWriter {
+struct ParquetWriter<B: StorageBackend> {
     filename: PathBuf,
     writer_properties: Arc<WriterProperties>,
     arrow_schema: Arc<arrow_schema::Schema>,
     parquet_schema: SchemaDescriptor,
     partition_values: Option<RecordBatch>,
-    file_writer: Option<SerializedFileWriter<BufWriter<std::fs::File>>>,
+    storage_backend: B,
+    file_writer: Option<SerializedFileWriter<B::Writer>>,
+    total_bytes_written: usize,
 }
 
-impl ParquetWriter {
-    /// TODO(desmond): This can be tuned.
-    /// Default buffer size for writing to files.
-    const DEFAULT_WRITE_BUFFER_SIZE: usize = 4 * 1024 * 1024;
+impl<B: StorageBackend> ParquetWriter<B> {
     const PATH_FIELD_NAME: &str = "path";
 
     fn new(
@@ -144,6 +150,7 @@ impl ParquetWriter {
         arrow_schema: Arc<arrow_schema::Schema>,
         parquet_schema: SchemaDescriptor,
         partition_values: Option<RecordBatch>,
+        storage_backend: B,
     ) -> Self {
         Self {
             filename,
@@ -151,20 +158,21 @@ impl ParquetWriter {
             arrow_schema,
             parquet_schema,
             partition_values,
+            storage_backend,
             file_writer: None,
+            total_bytes_written: 0,
         }
     }
 
-    fn create_writer(&mut self) -> DaftResult<()> {
-        let file = std::fs::File::create(&self.filename)?;
-        let bufwriter = BufWriter::with_capacity(Self::DEFAULT_WRITE_BUFFER_SIZE, file);
-        let writer = SerializedFileWriter::new(
-            bufwriter,
+    async fn create_writer(&mut self) -> DaftResult<()> {
+        let backend_writer = self.storage_backend.create_writer(&self.filename).await?;
+        let file_writer = SerializedFileWriter::new(
+            backend_writer,
             self.parquet_schema.root_schema_ptr(),
             self.writer_properties.clone(),
         )
         .map_err(|e| DaftError::ParquetError(e.to_string()))?;
-        self.file_writer = Some(writer);
+        self.file_writer = Some(file_writer);
         Ok(())
     }
 
@@ -192,7 +200,7 @@ impl ParquetWriter {
                         None => {
                             return Err(DaftError::InternalError(
                                 "Mismatch between leaves and column slots".to_string(),
-                            ))
+                            ));
                         }
                     }
                 }
@@ -201,12 +209,13 @@ impl ParquetWriter {
         Ok(leaf_columns)
     }
 
-    /// Helper function that spawns 1 worker thread per leaf column, dispatches the relevant arrow leaf columns to each
-    /// worker, then returns the handles to the workers.
-    fn spawn_column_writer_workers(
+    /// Helper function to create (but not spawn) futures, where each future encodes one arrow leaf
+    /// column. The futures are returned in the same order in which they're supposed to appear in
+    /// the parquet file.
+    fn build_column_writer_futures(
         &self,
         record_batches: &[RecordBatch],
-    ) -> DaftResult<Vec<ParquetColumnWriterHandle>> {
+    ) -> DaftResult<VecDeque<Pin<Box<ColumnWriterFuture>>>> {
         // Get leaf column writers. For example, a struct<int, int> column produces two leaf column writers.
         let column_writers = get_column_writers(
             &self.parquet_schema,
@@ -218,74 +227,145 @@ impl ParquetWriter {
         // Flatten record batches into per-leaf-column Arrow data chunks.
         let leaf_columns =
             self.extract_leaf_columns_from_record_batches(record_batches, column_writers.len())?;
-
-        let compute_runtime = get_compute_runtime();
-
-        // Spawn one worker per leaf column writer.
-        Ok(column_writers
+        let compute_futures: VecDeque<_> = column_writers
             .into_iter()
             .zip(leaf_columns.into_iter())
-            .map(|(mut writer, leaf_column)| {
-                compute_runtime.spawn(async move {
-                    for chunk in leaf_column {
-                        writer
+            .map(|(mut column_writer, leaf_columns)| {
+                let boxed = Box::pin(async move {
+                    for chunk in leaf_columns {
+                        column_writer
                             .write(&chunk)
                             .map_err(|e| DaftError::ParquetError(e.to_string()))?;
                     }
-                    writer
+
+                    let chunk = column_writer
                         .close()
-                        .map_err(|e| DaftError::ParquetError(e.to_string()))
-                })
+                        .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+
+                    Ok(chunk)
+                });
+
+                boxed as Pin<Box<dyn Future<Output = DaftResult<ArrowColumnChunk>> + Send>>
             })
-            .collect())
+            .collect();
+
+        Ok(compute_futures)
     }
 }
 
 #[async_trait]
-impl AsyncFileWriter for ParquetWriter {
+impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
-    async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {
         if self.file_writer.is_none() {
-            self.create_writer()?;
+            self.create_writer().await?;
         }
-        let starting_bytes_written = self.bytes_written();
+        let num_rows = data.len();
         let record_batches = data.get_tables()?;
 
-        // Spawn column writers.
-        let column_writer_handles = self.spawn_column_writer_workers(&record_batches)?;
+        let row_group_writer_thread_handle = {
+            // Wait for the workers to complete encoding, and append the resulting column chunks to the row group and the file.
+            let (tx_chunk, mut rx_chunk) = tokio::sync::mpsc::channel::<ArrowColumnChunk>(1);
 
-        // Wait for the workers to complete encoding, and append the resulting column chunks to the row group and the file.
-        let mut row_group_writer = self
-            .file_writer
-            .as_mut()
-            .expect("File writer should be created by now")
-            .next_row_group()
-            .map_err(|e| DaftError::ParquetError(e.to_string()))?;
-        for handle in column_writer_handles {
-            let chunk = handle.await??;
-            chunk
-                .append_to_row_group(&mut row_group_writer)
-                .map_err(|e| DaftError::ParquetError(e.to_string()))?;
-        }
+            let mut file_writer = self.file_writer.take().unwrap();
+            let io_runtime = get_io_runtime(true);
 
-        // Close the current row group.
-        row_group_writer
-            .close()
-            .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+            // Spawn a thread to handle the row group writing since it involves blocking writes.
+            let row_group_writer_thread_handle =
+                io_runtime.spawn_blocking(move || -> DaftResult<SerializedFileWriter<_>> {
+                    let mut row_group_writer = file_writer
+                        .next_row_group()
+                        .map_err(|e| DaftError::ParquetError(e.to_string()))?;
 
-        Ok(self.bytes_written() - starting_bytes_written)
+                    while let Some(chunk) = rx_chunk.blocking_recv() {
+                        chunk
+                            .append_to_row_group(&mut row_group_writer)
+                            .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+                    }
+
+                    row_group_writer
+                        .close()
+                        .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+
+                    Ok(file_writer)
+                });
+
+            let mut pending_column_writers = self.build_column_writer_futures(&record_batches)?;
+
+            // Spawn up to NUM_CPU workers to handle the column writes.
+            let initial_spawn_count =
+                get_compute_pool_num_threads().min(pending_column_writers.len());
+            let mut spawned_column_writers: VecDeque<_> =
+                VecDeque::with_capacity(initial_spawn_count);
+
+            let compute_runtime = get_compute_runtime();
+
+            for _ in 0..initial_spawn_count {
+                if let Some(future) = pending_column_writers.pop_front() {
+                    spawned_column_writers.push_back(compute_runtime.spawn(future));
+                } else {
+                    break; // No more futures to spawn
+                }
+            }
+
+            while let Some(first_spawned_writer) = spawned_column_writers.pop_front() {
+                let chunk = first_spawned_writer.await??;
+                tx_chunk
+                    .send(chunk)
+                    .await
+                    .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+
+                // Spawn a new task for the next column writer, if more columns are available.
+                if let Some(next_pending_future) = pending_column_writers.pop_front() {
+                    spawned_column_writers.push_back(compute_runtime.spawn(next_pending_future));
+                }
+            }
+
+            row_group_writer_thread_handle
+            // tx_chunk is dropped here, which signals the row writer thread to finish.
+        };
+
+        let file_writer = row_group_writer_thread_handle
+            .await
+            .map_err(|e| DaftError::ParquetError(e.to_string()))??;
+
+        let bytes_written = file_writer.bytes_written() - self.total_bytes_written;
+        self.total_bytes_written = file_writer.bytes_written();
+        self.file_writer.replace(file_writer);
+
+        Ok(WriteResult {
+            bytes_written,
+            rows_written: num_rows,
+        })
     }
 
     async fn close(&mut self) -> DaftResult<Self::Result> {
         // TODO(desmond): We can shove some pretty useful metadata before closing the file.
-        let _metadata = self
-            .file_writer
-            .as_mut()
-            .expect("File writer should be created by now")
-            .finish()
-            .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+
+        // Our file writer might be backed by an S3 part writer that may block when flushing metadata.
+        let io_runtime = get_io_runtime(true);
+        let mut file_writer = self.file_writer.take().unwrap();
+        self.file_writer = Some(
+            io_runtime
+                .spawn_blocking(move || -> DaftResult<SerializedFileWriter<_>> {
+                    file_writer
+                        .finish()
+                        .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+
+                    Ok(file_writer)
+                })
+                .await
+                .map_err(|e| DaftError::ParquetError(e.to_string()))??,
+        );
+
+        // TODO: We can start encoding the next file while this finalization happens.
+
+        // Let the storage backend handle its finalization. For our S3 backend, this waits for all
+        // part uploads to complete.
+        self.storage_backend.finalize().await?;
+
         // Return a recordbatch containing the filename that we wrote to.
         let field = Field::new(Self::PATH_FIELD_NAME, DataType::Utf8);
         let filename_series = Series::from_arrow(
@@ -306,18 +386,10 @@ impl AsyncFileWriter for ParquetWriter {
     }
 
     fn bytes_written(&self) -> usize {
-        self.file_writer
-            .as_ref()
-            .expect("File writer should be created by now")
-            .bytes_written()
+        self.total_bytes_written
     }
 
     fn bytes_per_file(&self) -> Vec<usize> {
-        let bytes_written = self
-            .file_writer
-            .as_ref()
-            .expect("File writer should be created by now")
-            .bytes_written();
-        vec![bytes_written]
+        vec![self.total_bytes_written]
     }
 }

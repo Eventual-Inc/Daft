@@ -4,7 +4,7 @@ Daft's [SQL](https://en.wikipedia.org/wiki/SQL) dialect closely follows both Duc
 
 ## Example
 
-Please see [Sessions](sessions.md) and [Catalogs](catalogs.md) for a detailed look at connecting data sources to Daft SQL.
+Please see [Sessions](api/sessions.md) and [Catalogs](api/catalogs_tables.md) for a detailed look at connecting data sources to Daft SQL.
 
 ```python
 import daft

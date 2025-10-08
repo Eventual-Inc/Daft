@@ -1,13 +1,13 @@
 use std::sync::{Arc, OnceLock};
 
 use common_error::{DaftError, DaftResult};
-use common_runtime::{get_compute_runtime, RuntimeRef, RuntimeTask};
-use daft_dsl::ExprRef;
-use daft_io::{parse_url, SourceType};
+use common_runtime::{RuntimeRef, RuntimeTask, get_compute_runtime};
+use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
+use daft_io::{SourceType, parse_url};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
-use daft_writers::{make_ipc_writer, AsyncFileWriter};
+use daft_writers::{AsyncFileWriter, make_ipc_writer};
 use itertools::Itertools;
 use tokio::sync::Mutex;
 
@@ -288,7 +288,8 @@ async fn partitioner_task(
             .spawn(async move {
                 let partitioned = match &partition_by {
                     Some(partition_by) => {
-                        partition.partition_by_hash(partition_by, num_partitions)?
+                        let partition_by = BoundExpr::bind_all(partition_by, &partition.schema())?;
+                        partition.partition_by_hash(&partition_by, num_partitions)?
                     }
                     None => partition.partition_by_random(num_partitions, 0)?,
                 };
@@ -324,7 +325,7 @@ async fn writer_task(
             schema = Some(partition.schema().clone());
         }
         total_rows_written += partition.len();
-        total_bytes_written += partition.size_bytes()?.expect("size_bytes should be Some");
+        total_bytes_written += partition.size_bytes().expect("size_bytes should be Some");
         writer = compute_runtime
             .spawn(async move {
                 writer.write(partition).await?;
@@ -429,8 +430,8 @@ mod tests {
 
     use daft_dsl::{Column, Expr, ResolvedColumn};
     use daft_writers::test::{
-        make_dummy_mp, make_dummy_target_file_size_writer_factory, DummyWriterFactory,
-        FailingWriterFactory,
+        DummyWriterFactory, FailingWriterFactory, make_dummy_mp,
+        make_dummy_target_file_size_writer_factory,
     };
 
     use super::*;
@@ -497,10 +498,9 @@ mod tests {
         }
 
         // Create a simple hash partition expression
-        let partition_by = Some(vec![Expr::Column(Column::Resolved(ResolvedColumn::Basic(
-            "ints".into(),
-        )))
-        .into()]);
+        let partition_by = Some(vec![
+            Expr::Column(Column::Resolved(ResolvedColumn::Basic("ints".into()))).into(),
+        ]);
 
         // Create the cache with dummy writers
         let cache = InProgressShuffleCache::try_new_with_writers(
@@ -535,10 +535,9 @@ mod tests {
             writers.push(dummy_writer_factory.create_writer(partition_idx, None)?);
         }
 
-        let partition_by = Some(vec![Expr::Column(Column::Resolved(ResolvedColumn::Basic(
-            "ints".into(),
-        )))
-        .into()]);
+        let partition_by = Some(vec![
+            Expr::Column(Column::Resolved(ResolvedColumn::Basic("ints".into()))).into(),
+        ]);
 
         let cache = InProgressShuffleCache::try_new_with_writers(
             writers,

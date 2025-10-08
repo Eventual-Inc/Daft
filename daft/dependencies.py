@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from daft.lazy_import import LazyImport
@@ -8,6 +10,7 @@ if TYPE_CHECKING:
     import pandas as pd
     import PIL.Image as pil_image
     import pyarrow as pa
+    import pyarrow.compute as pc
     import pyarrow.csv as pacsv
     import pyarrow.dataset as pads
     import pyarrow.flight as flight
@@ -24,7 +27,24 @@ else:
     pads = LazyImport("pyarrow.dataset")
     pafs = LazyImport("pyarrow.fs")
     pajson = LazyImport("pyarrow.json")
+    pc = LazyImport("pyarrow.compute")
     pq = LazyImport("pyarrow.parquet")
     flight = LazyImport("pyarrow.flight")
 
 unity_catalog = LazyImport("daft.unity_catalog")
+
+__all__ = [
+    "flight",
+    "fsspec",
+    "np",
+    "pa",
+    "pacsv",
+    "pads",
+    "pafs",
+    "pajson",
+    "pc",
+    "pd",
+    "pil_image",
+    "pq",
+    "unity_catalog",
+]

@@ -15,8 +15,8 @@ use tokio::{
 use tokio_util::io::StreamReader;
 
 use crate::{
-    inference::{column_types_map_to_fields, infer_records_schema},
     ArrowSnafu, JsonParseOptions, StdIOSnafu,
+    inference::{column_types_map_to_fields, infer_records_schema},
 };
 
 #[derive(Debug, Clone)]
@@ -135,7 +135,7 @@ pub(crate) async fn read_json_schema_single(
 }
 
 async fn infer_schema<R>(
-    reader: R,
+    mut reader: R,
     max_rows: Option<usize>,
     max_bytes: Option<usize>,
 ) -> DaftResult<arrow2::datatypes::Schema>
@@ -143,51 +143,84 @@ where
     R: tokio::io::AsyncBufRead + Unpin + Send,
 {
     let max_records = max_rows.unwrap_or(usize::MAX);
-    let max_bytes = max_bytes.unwrap_or(usize::MAX);
     let mut total_bytes = 0;
-    // Stream of unparsed JSON string records.
-    let line_stream = tokio_stream::wrappers::LinesStream::new(reader.lines());
-    let mut schema_stream = line_stream
-        .try_take_while(|record| {
-            // Terminate scan if we've exceeded our max_bytes threshold with the last-read line.
-            if total_bytes >= max_bytes {
-                futures::future::ready(Ok(false))
-            } else {
-                total_bytes += record.len();
-                futures::future::ready(Ok(true))
-            }
-        })
-        .take(max_records)
-        .map(|record| {
-            let mut record = record.context(StdIOSnafu)?;
+    use tokio::io::AsyncReadExt;
+    let buf = reader.fill_buf().await?;
 
-            // Parse record into a JSON Value, then infer the schema.
-            let parsed_record = crate::deserializer::to_value(unsafe { record.as_bytes_mut() })
-                .map_err(|e| super::Error::JsonDeserializationError {
+    if buf.is_empty() {
+        return Err(super::Error::JsonDeserializationError {
+            string: "Empty JSON file".to_string(),
+        }
+        .into());
+    }
+    match buf[0] {
+        b'[' => {
+            let mut buf = Vec::new();
+            reader.read_to_end(&mut buf).await?;
+
+            let parsed_record = crate::deserializer::to_value(&mut buf).map_err(|e| {
+                super::Error::JsonDeserializationError {
                     string: e.to_string(),
-                })?;
-            infer_records_schema(&parsed_record).context(ArrowSnafu)
-        });
-    // Collect all inferred dtypes for each column.
-    let mut column_types: IndexMap<String, HashSet<arrow2::datatypes::DataType>> = IndexMap::new();
-    while let Some(schema) = schema_stream.next().await.transpose()? {
-        for field in schema.fields {
-            // Get-and-mutate-or-insert.
-            match column_types.entry(field.name) {
-                indexmap::map::Entry::Occupied(mut v) => {
-                    v.get_mut().insert(field.data_type);
                 }
-                indexmap::map::Entry::Vacant(v) => {
-                    let mut a = HashSet::new();
-                    a.insert(field.data_type);
-                    v.insert(a);
+            })?;
+            let inferred_schema = infer_records_schema(&parsed_record).context(ArrowSnafu);
+            Ok(inferred_schema?)
+        }
+        b'{' => {
+            let max_bytes = max_bytes.unwrap_or(usize::MAX);
+
+            // Stream of unparsed JSON string records.
+            let line_stream = tokio_stream::wrappers::LinesStream::new(reader.lines());
+            let mut schema_stream = line_stream
+                .try_take_while(|record| {
+                    // Terminate scan if we've exceeded our max_bytes threshold with the last-read line.
+                    if total_bytes >= max_bytes {
+                        futures::future::ready(Ok(false))
+                    } else {
+                        total_bytes += record.len();
+                        futures::future::ready(Ok(true))
+                    }
+                })
+                .take(max_records)
+                .map(|record| {
+                    let mut record = record.context(StdIOSnafu)?;
+
+                    // Parse record into a JSON Value, then infer the schema.
+                    let parsed_record =
+                        crate::deserializer::to_value(unsafe { record.as_bytes_mut() }).map_err(
+                            |e| super::Error::JsonDeserializationError {
+                                string: e.to_string(),
+                            },
+                        )?;
+                    infer_records_schema(&parsed_record).context(ArrowSnafu)
+                });
+            // Collect all inferred dtypes for each column.
+            let mut column_types: IndexMap<String, HashSet<arrow2::datatypes::DataType>> =
+                IndexMap::new();
+            while let Some(schema) = schema_stream.next().await.transpose()? {
+                for field in schema.fields {
+                    // Get-and-mutate-or-insert.
+                    match column_types.entry(field.name) {
+                        indexmap::map::Entry::Occupied(mut v) => {
+                            v.get_mut().insert(field.data_type);
+                        }
+                        indexmap::map::Entry::Vacant(v) => {
+                            let mut a = HashSet::new();
+                            a.insert(field.data_type);
+                            v.insert(a);
+                        }
+                    }
                 }
             }
+            // Convert column types map to dtype-consolidated column fields.
+            let fields = column_types_map_to_fields(column_types);
+            Ok(fields.into())
         }
+        _ => Err(super::Error::JsonDeserializationError {
+            string: "Invalid JSON format - file must start with '[' or '{'".to_string(),
+        }
+        .into()),
     }
-    // Convert column types map to dtype-consolidated column fields.
-    let fields = column_types_map_to_fields(column_types);
-    Ok(fields.into())
 }
 
 #[cfg(test)]

@@ -1,12 +1,20 @@
 use std::{fmt, sync::Arc};
 
+use common_error::{DaftError, DaftResult};
+use daft_core::lit::Literal;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 use crate::python::PyExpr;
-use crate::{expr::Expr, LiteralValue};
+use crate::{
+    WindowExpr,
+    expr::{
+        Expr,
+        bound_expr::{BoundAggExpr, BoundWindowExpr},
+    },
+};
 
 /// Represents a window frame boundary
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -23,7 +31,7 @@ pub enum WindowBoundary {
     /// - 0 for CURRENT VALUE
     /// - Negative for CURRENT VALUE - N
     /// - Positive for CURRENT VALUE + N
-    RangeOffset(LiteralValue),
+    RangeOffset(Literal),
 }
 
 #[derive(Clone)]
@@ -88,6 +96,8 @@ pub struct WindowSpec {
     pub order_by: Vec<Arc<Expr>>,
     /// Whether each order by expression is descending
     pub descending: Vec<bool>,
+    /// Whether each order by expression is nulls first
+    pub nulls_first: Vec<bool>,
     /// Window frame specification
     pub frame: Option<WindowFrame>,
     /// Minimum number of observations required to produce a value
@@ -100,6 +110,7 @@ impl Default for WindowSpec {
             partition_by: Vec::new(),
             order_by: Vec::new(),
             descending: Vec::new(),
+            nulls_first: Vec::new(),
             frame: None,
             min_periods: 1,
         }
@@ -120,15 +131,26 @@ impl WindowSpec {
         new_spec
     }
 
-    pub fn with_order_by(&self, exprs: Vec<PyExpr>, descending: Vec<bool>) -> Self {
+    pub fn with_order_by(
+        &self,
+        exprs: Vec<PyExpr>,
+        descending: Vec<bool>,
+        nulls_first: Vec<bool>,
+    ) -> Self {
         assert_eq!(
             exprs.len(),
             descending.len(),
             "Order by expressions and descending flags must have same length"
         );
+        assert_eq!(
+            exprs.len(),
+            nulls_first.len(),
+            "Order by expressions and nulls first flags must have same length"
+        );
         let mut new_spec = self.clone();
         new_spec.order_by = exprs.into_iter().map(|e| e.expr).collect();
         new_spec.descending = descending;
+        new_spec.nulls_first = nulls_first;
         new_spec
     }
 
@@ -167,11 +189,27 @@ impl fmt::Display for WindowSpec {
                 write!(f, ", ")?;
             }
             write!(f, "order_by=[")?;
-            for (i, (expr, desc)) in self.order_by.iter().zip(self.descending.iter()).enumerate() {
+            for (i, ((expr, desc), nulls_first)) in self
+                .order_by
+                .iter()
+                .zip(self.descending.iter())
+                .zip(self.nulls_first.iter())
+                .enumerate()
+            {
                 if i > 0 {
                     write!(f, ", ")?;
                 }
-                write!(f, "{}:{}", expr, if *desc { "desc" } else { "asc" })?;
+                write!(
+                    f,
+                    "{}:{} {}",
+                    expr,
+                    if *desc { "desc" } else { "asc" },
+                    if *nulls_first {
+                        "nulls first"
+                    } else {
+                        "nulls last"
+                    }
+                )?;
             }
             write!(f, "]")?;
         }
@@ -194,4 +232,20 @@ impl fmt::Display for WindowSpec {
 
         write!(f, ")")
     }
+}
+
+pub fn window_to_agg_exprs(window_exprs: Vec<BoundWindowExpr>) -> DaftResult<Vec<BoundAggExpr>> {
+    window_exprs
+    .into_iter()
+    .map(|w| {
+        if let WindowExpr::Agg(agg_expr) = w.as_ref() {
+            Ok(BoundAggExpr::new_unchecked(agg_expr.clone()))
+        } else {
+            Err(DaftError::TypeError(format!(
+                "Window function {:?} not implemented in partition-only windows, only aggregation functions are supported",
+                w
+            )))
+        }
+    })
+    .collect::<DaftResult<Vec<_>>>()
 }

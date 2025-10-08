@@ -73,7 +73,7 @@ def test_image_round_trip(give_mode):
         np.arange(12, 39, dtype=np.uint8).reshape((3, 3, 3)),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     mode = "RGB" if give_mode else None
     target_dtype = DataType.image(mode)
@@ -114,7 +114,7 @@ def test_fixed_shape_image_round_trip():
         np.arange(12, 24, dtype=np.uint8).reshape(shape),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image("RGB", height, width)
 
@@ -210,7 +210,7 @@ def test_image_pil_inference_mixed():
     ]
 
     # Forcing should still create Python Series
-    s = Series.from_pylist(imgs, pyobj="force")
+    s = Series.from_pylist(imgs, dtype=DataType.python())
     assert s.datatype() == DataType.python()
 
     s = Series.from_pylist(imgs, pyobj="allow")
@@ -667,7 +667,7 @@ def test_image_resize_same_mode(fixed_shape, mode):
             if arr is not None:
                 arr[..., -1] = 255
 
-    s = Series.from_pylist(arrs, pyobj="force")
+    s = Series.from_pylist(arrs, dtype=DataType.python())
     t = s.cast(dtype)
     assert t.datatype() == dtype
 
@@ -702,7 +702,7 @@ def test_image_resize_mixed_modes():
         None,
     ]
 
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image()
 
@@ -729,7 +729,7 @@ def test_fixed_shape_image_roundtrip():
     width = 2
     shape = (height, width, 3)
     data = [np.arange(12, dtype=np.uint8).reshape(shape), np.arange(12, 24, dtype=np.uint8).reshape(shape), None]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image("RGB", height, width)
 
@@ -766,10 +766,12 @@ def test_bad_cast_image():
         np.arange(12, 39, dtype=np.uint64).reshape((3, 3, 3)),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image("RGB")
-    with pytest.raises(ValueError, match="Expected Numpy array to be of type: UInt8"):
+    with pytest.raises(
+        ValueError, match="Images with mode RGB can only be created from tensors of type UInt8, found UInt64"
+    ):
         s.cast(target_dtype)
 
 
@@ -780,7 +782,7 @@ def test_bad_cast_fixed_shape_image():
     width = 2
     shape = (height, width, 3)
     data = [np.arange(12, dtype=np.uint8).reshape(shape), np.arange(12, 24, dtype=np.uint64).reshape(shape), None]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image("RGB", height, width)
 
@@ -814,7 +816,7 @@ def test_image_to_mode(input_mode, output_mode):
         np.arange(4 * channels, 13 * channels, dtype=np.uint8).reshape((3, 3, channels)),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     s = s.cast(DataType.image(input_mode)).image.to_mode(output_mode)
     assert s.datatype() == DataType.image(output_mode)
@@ -832,7 +834,7 @@ def test_image_to_mode_fixed_size(input_mode, output_mode):
         np.arange(4 * channels, 8 * channels, dtype=np.uint8).reshape((2, 2, channels)),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     s = s.cast(DataType.image(input_mode, 2, 2)).image.to_mode(output_mode)
     assert s.datatype() == DataType.image(output_mode, 2, 2)

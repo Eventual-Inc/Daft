@@ -5,9 +5,14 @@ repos:
   rev: v1.15.0
   hooks:
   - id: mypy
-    additional_dependencies: [types-requests, types-PyYAML, types-tabulate]
+    args: ['--strict', '--ignore-missing-imports']
+    additional_dependencies: [types-requests, types-PyYAML, types-tabulate, pandas-stubs]
     files: daft
-    exclude: daft/pickle/.*\.py
+    exclude: |
+      (?x)^(
+          daft/pickle/.*\.py|
+          benchmarking/.*
+      )$
 
 - repo: https://github.com/pre-commit/pre-commit-hooks
   rev: v4.6.0
@@ -19,7 +24,7 @@ repos:
     exclude: |
       (?x)^(.*\.warc)$
   - id: check-yaml
-    exclude: kubernetes-ops
+    exclude: kubernetes-ops|k8s/charts/.*/templates/.*\.ya?ml$
     args:
     - --unsafe
   - id: pretty-format-json
@@ -34,18 +39,20 @@ repos:
     - --no-sort-keys
     - '--indent=  '
   - id: check-added-large-files
+    exclude: uv.lock
   - id: check-merge-conflict
   - id: check-docstring-first
   - id: check-toml
 
 - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
-  rev: v2.14.0
+  rev: v2.15.0
   hooks:
   - id: pretty-format-toml
-    args: [--autofix]
+    args: [--autofix, --no-sort]
     exclude: Cargo.lock
   - id: pretty-format-yaml
     args: [--autofix, --preserve-quotes]
+    exclude: k8s/charts/.*/templates/.*\.ya?ml$
 
 - repo: https://github.com/codespell-project/codespell
   rev: v2.3.0
@@ -56,21 +63,32 @@ repos:
     exclude: static-dashboard-assets
 
 - repo: https://github.com/astral-sh/ruff-pre-commit
-      # Ruff version.
+  # Ruff version.
   rev: v0.8.2
   hooks:
-      # Run the linter.
+    # Run the linter.
   - id: ruff
     args: [--fix, --exit-non-zero-on-fix, --show-fixes]
-          # Run the formatter.
+    exclude: benchmarking
+    # Run the formatter.
   - id: ruff-format
+    name: Python code Formatting
+    exclude: benchmarking
 
 - repo: local
   hooks:
+  - id: check-invalid-deps
+    name: Check Invalid Dependencies
+    description: Check for invalid Rust dependencies
+    entry: ./tools/check_invalid_deps.sh
+    language: system
+    types: [rust]
+    pass_filenames: false
+
   - id: fmt
-    name: fmt
+    name: Rust Code Formatting
     description: Format files with cargo fmt.
-    entry: cargo fmt
+    entry: cargo fmt --manifest-path Cargo.toml
     language: system
     types: [rust]
     args: [--]
@@ -82,7 +100,7 @@ repos:
     language: system
     types: [rust]
     pass_filenames: false
-    args: [--workspace, --all-targets]
+    args: [--workspace, --all-targets, -v]
 
   - id: cargo-check-all-features
     name: cargo check (all features)
@@ -94,7 +112,7 @@ repos:
     args: [--workspace, --all-features, --all-targets]
 
   - id: clippy
-    name: clippy
+    name: Rust code quality check
     description: Lint rust sources
     entry: cargo clippy
     language: system
@@ -102,15 +120,8 @@ repos:
     types: [rust]
     pass_filenames: false
 
-  - id: check-for-rustls
-    name: check-for-rustls
-    description: Lint rust sources
-    entry: ./tools/check_for_rustls.sh
-    language: system
-    types: [rust]
-    pass_filenames: false
 
 - repo: https://github.com/abravalheri/validate-pyproject
-  rev: v0.19
+  rev: v0.24.1
   hooks:
   - id: validate-pyproject

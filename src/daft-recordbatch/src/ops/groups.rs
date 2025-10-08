@@ -1,8 +1,8 @@
 use common_error::DaftResult;
 use daft_core::{
     array::ops::{
-        arrow2::comparison::build_multi_array_is_equal, as_arrow::AsArrow, GroupIndicesPair,
-        IntoGroups,
+        GroupIndicesPair, IntoGroups, IntoUniqueIdxs, VecIndices,
+        arrow2::comparison::build_multi_array_is_equal, as_arrow::AsArrow,
     },
     datatypes::UInt64Array,
     series::Series,
@@ -114,5 +114,26 @@ impl RecordBatch {
 impl IntoGroups for RecordBatch {
     fn make_groups(&self) -> DaftResult<GroupIndicesPair> {
         self.as_physical()?.hash_grouper()
+    }
+}
+
+impl IntoUniqueIdxs for RecordBatch {
+    fn make_unique_idxs(&self) -> DaftResult<VecIndices> {
+        // Returns the indices of the first occurrence of each unique row.
+        //
+        // e.g. given a table [B, B, A, B, C, C]
+        // returns: [2, 0, 4]  <-- indices of A, B, and C
+
+        if self.num_columns() == 1 {
+            return self.columns.first().unwrap().make_unique_idxs();
+        }
+
+        let idx_table = self.to_idx_hash_table()?;
+        let mut indices: Vec<u64> = Vec::with_capacity(idx_table.len());
+
+        for (idx_hash, ()) in idx_table {
+            indices.push(idx_hash.idx);
+        }
+        Ok(indices)
     }
 }

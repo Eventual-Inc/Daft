@@ -1,27 +1,26 @@
-use common_error::{ensure, DaftResult};
+use common_error::DaftResult;
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF, UnaryArg, scalar::ScalarFn},
 };
 use serde::{Deserialize, Serialize};
 
-use super::to_field_single_floating;
+use super::to_field_floating;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Sqrt;
 
 #[typetag::serde]
 impl ScalarUDF for Sqrt {
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        ensure!(inputs.len() == 1, "Expected 1 argument");
-        let s = inputs.required((0, "input"))?;
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+        let UnaryArg { input } = inputs.try_into()?;
 
-        let casted_dtype = s.to_floating_data_type()?;
-        let casted_self = s
+        let casted_dtype = input.to_floating_data_type()?;
+        let casted_self = input
             .cast(&casted_dtype)
             .expect("Casting numeric types to their floating point analogues should not fail");
         match casted_dtype {
@@ -35,8 +34,13 @@ impl ScalarUDF for Sqrt {
         "sqrt"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        to_field_single_floating(self, inputs, schema)
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        let UnaryArg { input } = inputs.try_into()?;
+        to_field_floating(&input, schema)
     }
 
     fn docstring(&self) -> &'static str {
@@ -46,5 +50,5 @@ impl ScalarUDF for Sqrt {
 
 #[must_use]
 pub fn sqrt(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(Sqrt {}, vec![input]).into()
+    ScalarFn::builtin(Sqrt {}, vec![input]).into()
 }

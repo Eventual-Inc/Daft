@@ -3,7 +3,7 @@ use std::ops::Rem;
 use arrow2::array::{Array, DictionaryKey};
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    array::ops::{as_arrow::AsArrow, IntoGroups},
+    array::ops::{IntoGroups, as_arrow::AsArrow},
     datatypes::UInt64Array,
     series::IntoSeries,
 };
@@ -36,7 +36,9 @@ impl RecordBatch {
 
         for (s_idx, t_idx) in targets.as_arrow().values_iter().enumerate() {
             if *t_idx >= (num_partitions as u64) {
-                return Err(DaftError::ComputeError(format!("idx in target array is out of bounds, target idx {t_idx} at index {s_idx} out of {num_partitions} partitions")));
+                return Err(DaftError::ComputeError(format!(
+                    "idx in target array is out of bounds, target idx {t_idx} at index {s_idx} out of {num_partitions} partitions"
+                )));
             }
 
             output_to_input_idx[unsafe { t_idx.as_usize() }].push(s_idx as u64);
@@ -77,7 +79,7 @@ impl RecordBatch {
                 "Can not partition a Table by 0 partitions".to_string(),
             ));
         }
-        use rand::{distributions::Uniform, Rng};
+        use rand::{Rng, distributions::Uniform};
         let range = Uniform::from(0..num_partitions as u64);
 
         let rng = rand::rngs::StdRng::seed_from_u64(seed);

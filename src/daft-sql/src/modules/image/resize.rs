@@ -1,5 +1,5 @@
-use daft_dsl::{Expr, ExprRef, LiteralValue};
-use daft_functions::image::resize::{resize, ImageResize};
+use daft_dsl::{Expr, ExprRef, Literal};
+use daft_functions::image::resize::{ImageResize, resize};
 
 use crate::{
     ensure,
@@ -18,7 +18,7 @@ impl TryFrom<SQLFunctionArguments> for ImageResize {
             .get_named("w")
             .or_else(|| args.get_positional(0))
             .map(|arg| match arg.as_ref() {
-                Expr::Literal(LiteralValue::Int64(i)) => Ok(*i),
+                Expr::Literal(Literal::Int64(i)) => Ok(*i),
                 _ => unsupported_sql_err!("Expected width to be a number"),
             })
             .transpose()?
@@ -30,7 +30,7 @@ impl TryFrom<SQLFunctionArguments> for ImageResize {
             .get_named("h")
             .or_else(|| args.get_positional(1))
             .map(|arg| match arg.as_ref() {
-                Expr::Literal(LiteralValue::Int64(i)) => Ok(*i),
+                Expr::Literal(Literal::Int64(i)) => Ok(*i),
                 _ => unsupported_sql_err!("Expected height to be a number"),
             })
             .transpose()?

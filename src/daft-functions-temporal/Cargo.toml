@@ -1,0 +1,15 @@
+[dependencies]
+common-error = {path = "../common/error", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+paste = "1.0.15"
+serde = {workspace = true}
+typetag = {workspace = true}
+
+[lints]
+workspace = true
+
+[package]
+name = "daft-functions-temporal"
+edition.workspace = true
+version.workspace = true

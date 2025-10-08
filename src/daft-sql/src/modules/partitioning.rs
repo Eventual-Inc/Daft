@@ -43,7 +43,7 @@ impl SQLFunction for PartitioningExpr {
                     .plan_function_arg(&args[1])
                     .map(|arg| arg.into_inner())?
                     .as_literal()
-                    .and_then(daft_dsl::LiteralValue::as_i64)
+                    .and_then(daft_core::lit::Literal::as_i64)
                     .ok_or_else(|| {
                         crate::error::PlannerError::unsupported_sql(
                             "Expected integer literal".to_string(),
@@ -71,7 +71,7 @@ impl SQLFunction for PartitioningExpr {
                     .plan_function_arg(&args[1])
                     .map(|arg| arg.into_inner())?
                     .as_literal()
-                    .and_then(daft_dsl::LiteralValue::as_i64)
+                    .and_then(daft_core::lit::Literal::as_i64)
                     .ok_or_else(|| {
                         crate::error::PlannerError::unsupported_sql(
                             "Expected integer literal".to_string(),

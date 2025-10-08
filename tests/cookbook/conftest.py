@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import uuid
-from typing import List, Tuple
 
 import pandas as pd
 import pytest
@@ -19,7 +18,7 @@ COLUMNS = [
     "Descriptor",
     "Closed Date",
 ]
-CsvPathAndColumns = Tuple[str, List[str]]
+CsvPathAndColumns = tuple[str, list[str]]
 
 
 @pytest.fixture(scope="function", params=["parquet", "csv"])

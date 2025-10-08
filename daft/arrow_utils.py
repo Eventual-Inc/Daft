@@ -34,15 +34,15 @@ class _FixEmptyStructArrays:
     """
 
     @staticmethod
-    def get_empty_struct_type():
+    def get_empty_struct_type() -> pa.StructType:
         return pa.struct([])
 
     @staticmethod
-    def get_single_field_struct_type():
+    def get_single_field_struct_type() -> pa.StructType:
         return pa.struct({"": pa.null()})
 
     @staticmethod
-    def get_single_field_struct_value():
+    def get_single_field_struct_value() -> dict[str, None]:
         return {"": None}
 
     def ensure_table(table: pa.Table) -> pa.Table:
@@ -82,7 +82,7 @@ class _FixEmptyStructArrays:
             return arr
 
 
-def remove_empty_struct_placeholders(arr: pa.Array):
+def remove_empty_struct_placeholders(arr: pa.Array) -> pa.Array:
     """Recursively removes the empty struct placeholders placed by _FixEmptyStructArrays.ensure_array."""
     if arr.type == _FixEmptyStructArrays.get_single_field_struct_type():
         return pa.array(

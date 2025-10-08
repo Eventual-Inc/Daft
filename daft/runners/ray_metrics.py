@@ -4,6 +4,7 @@ import dataclasses
 import logging
 import threading
 from collections import defaultdict
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +12,7 @@ try:
     import ray
 except ImportError:
     logger.error(
-        "Error when importing Ray. Please ensure that daft was installed with the Ray extras tag: daft[ray] (https://www.getdaft.io/projects/docs/en/latest/learn/install.html)"
+        "Error when importing Ray. Please ensure that daft was installed with the Ray extras tag: daft[ray] (https://docs.daft.ai/en/latest/install)"
     )
     raise
 
@@ -41,7 +42,7 @@ class StartTaskEvent(TaskEvent):
     worker_idx: int
 
     # The resources that Ray assigned to this task
-    ray_assigned_resources: dict
+    ray_assigned_resources: dict[Any, Any]
     ray_task_id: str
 
 
@@ -56,10 +57,10 @@ class EndTaskEvent(TaskEvent):
 class _NodeInfo:
     """Information about nodes and their workers."""
 
-    def __init__(self):
-        self.node_to_workers = {}
-        self.node_idxs = {}
-        self.worker_idxs = {}
+    def __init__(self) -> None:
+        self.node_to_workers: dict[str, list[str]] = {}
+        self.node_idxs: dict[str, int] = {}
+        self.worker_idxs: dict[str, int] = {}
 
     def get_node_and_worker_idx(self, node_id: str, worker_id: str) -> tuple[int, int]:
         """Returns a node and worker index for the provided IDs."""
@@ -86,11 +87,11 @@ class _NodeInfo:
 
 @ray.remote(num_cpus=0)
 class _MetricsActor:
-    def __init__(self):
+    def __init__(self) -> None:
         self._task_events: dict[str, list[TaskEvent]] = defaultdict(list)
         self._node_info: dict[str, _NodeInfo] = defaultdict(_NodeInfo)
 
-    def ready(self):
+    def ready(self) -> None:
         """Returns when the metrics actor is ready."""
         # Discussion on how to check if an actor is ready: https://github.com/ray-project/ray/issues/14923
         return None
@@ -103,9 +104,9 @@ class _MetricsActor:
         node_id: str,
         worker_id: str,
         stage_id: int,
-        ray_assigned_resources: dict,
+        ray_assigned_resources: dict[Any, Any],
         ray_task_id: str,
-    ):
+    ) -> None:
         """Records a task start event."""
         # Update node info
         node_idx, worker_idx = self._node_info[execution_id].get_node_and_worker_idx(node_id, worker_id)
@@ -123,7 +124,7 @@ class _MetricsActor:
             )
         )
 
-    def mark_task_end(self, execution_id: str, task_id: str, end: float):
+    def mark_task_end(self, execution_id: str, task_id: str, end: float) -> None:
         # Add an EndTaskEvent
         self._task_events[execution_id].append(EndTaskEvent(task_id=task_id, end=end))
 
@@ -159,7 +160,7 @@ class MetricsActorHandle:
         node_id: str,
         worker_id: str,
         stage_id: int,
-        ray_assigned_resources: dict,
+        ray_assigned_resources: dict[Any, Any],
         ray_task_id: str,
     ) -> None:
         self.actor.mark_task_start.remote(

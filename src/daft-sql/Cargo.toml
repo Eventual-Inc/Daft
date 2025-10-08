@@ -9,8 +9,10 @@ daft-context = {path = "../daft-context"}
 daft-core = {path = "../daft-core"}
 daft-dsl = {path = "../daft-dsl"}
 daft-functions = {path = "../daft-functions"}
+daft-functions-list = {path = "../daft-functions-list"}
+daft-functions-temporal = {path = "../daft-functions-temporal"}
+daft-functions-utf8 = {path = "../daft-functions-utf8"}
 daft-logical-plan = {path = "../daft-logical-plan"}
-daft-micropartition = {path = "../daft-micropartition", default-features = false}
 daft-scan = {path = "../daft-scan"}
 daft-session = {path = "../daft-session"}
 itertools = {workspace = true}
@@ -33,8 +35,9 @@ python = [
   "daft-core/python",
   "daft-dsl/python",
   "daft-functions/python",
+  "daft-functions-list/python",
+  "daft-functions-utf8/python",
   "daft-logical-plan/python",
-  "daft-micropartition/python",
   "daft-scan/python",
   "daft-session/python"
 ]

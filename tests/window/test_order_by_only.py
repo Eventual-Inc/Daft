@@ -6,11 +6,13 @@ import pandas as pd
 import pytest
 
 from daft import Window, col
+from daft.context import get_context
 from daft.functions import dense_rank, rank, row_number
 from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 
 pytestmark = pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner"
+    get_tests_daft_runner_name() == "ray" and get_context().daft_execution_config.use_legacy_ray_runner is True,
+    reason="requires Native Runner or Flotilla to be in use",
 )
 
 
@@ -286,3 +288,83 @@ def test_rank_with_1k_distinct_values(make_df, repartition_nparts, with_morsel_s
     )
 
     assert_df_equals(result_df, expected_df, sort_key=["id", "value"], check_dtype=False)
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() == "ray",
+    reason="requires Native Runner, Flotilla doesn't support sort and Ray runner doesn't support window functions",
+)
+@pytest.mark.parametrize(
+    "desc,nulls_first,expected",
+    [
+        (
+            False,
+            False,
+            {
+                "row_num": [1, 5, 2, 6, 3, 4],
+                "rank": [1, 5, 2, 5, 3, 3],
+                "dense_rank": [1, 4, 2, 4, 3, 3],
+            },
+        ),
+        (
+            False,
+            True,
+            {
+                "row_num": [3, 1, 4, 2, 5, 6],
+                "rank": [3, 1, 4, 1, 5, 5],
+                "dense_rank": [2, 1, 3, 1, 4, 4],
+            },
+        ),
+        (
+            True,
+            False,
+            {
+                "row_num": [4, 5, 3, 6, 1, 2],
+                "rank": [4, 5, 3, 5, 1, 1],
+                "dense_rank": [3, 4, 2, 4, 1, 1],
+            },
+        ),
+        (
+            True,
+            True,
+            {
+                "row_num": [6, 1, 5, 2, 3, 4],
+                "rank": [6, 1, 5, 1, 3, 3],
+                "dense_rank": [4, 1, 3, 1, 2, 2],
+            },
+        ),
+    ],
+)
+def test_window_nulls_first_or_last(make_df, desc, nulls_first, expected):
+    """Test window functions with nulls_first=True/False."""
+    data = [
+        {"id": 1, "value": 10},
+        {"id": 2, "value": None},
+        {"id": 3, "value": 20},
+        {"id": 4, "value": None},
+        {"id": 5, "value": 30},
+        {"id": 6, "value": 30},
+    ]
+    df = make_df(data)
+
+    window_specs = Window().order_by("value", desc=desc, nulls_first=nulls_first)
+    window_functions = {
+        "row_num": row_number(),
+        "rank": rank(),
+        "dense_rank": dense_rank(),
+    }
+    select_exprs = [col("id"), col("value")]
+    for func_name, func in window_functions.items():
+        select_exprs.append(func.over(window_specs).alias(f"{func_name}"))
+
+    result = df.select(*select_exprs).sort("id").collect()
+    result_df = result.to_pandas()
+
+    expected_data = {
+        "id": [1, 2, 3, 4, 5, 6],
+        "value": [10, None, 20, None, 30, 30],
+    }
+    expected_data.update(expected)
+    expected = pd.DataFrame(expected_data)
+
+    assert_df_equals(result_df, expected, sort_key=["id", "value"], check_dtype=False)

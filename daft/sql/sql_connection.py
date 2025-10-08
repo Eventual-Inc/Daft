@@ -80,6 +80,9 @@ class SQLConnection:
         # sqlglot does not recognize "mssql" as a dialect, it instead recognizes "tsql", which is the SQL dialect for Microsoft SQL Server
         elif target_dialect == "mssql":
             target_dialect = "tsql"
+        # sqlglot does not recognize "awsathena", the dialect registered by PyAthena, SQLAlchemy driver for reading from AWS Athena. It only support "athena"
+        elif target_dialect == "awsathena":
+            target_dialect = "athena"
 
         if not any(target_dialect == supported_dialect.value for supported_dialect in sqlglot.Dialects):
             raise ValueError(

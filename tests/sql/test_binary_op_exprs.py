@@ -1,14 +1,18 @@
-from typing import Callable
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Callable
 
 import pytest
 
 import daft
-from daft.sql import SQLCatalog
+
+if TYPE_CHECKING:
+    from daft.dataframe.dataframe import DataFrame
 
 
-def _assert_sql_raise(sql: str, catalog: SQLCatalog, error_msg: str) -> None:
+def _assert_sql_raise(sql: str, bindings: dict[str, DataFrame], error_msg: str) -> None:
     with pytest.raises(Exception) as excinfo:
-        daft.sql(sql, catalog=catalog).collect()
+        daft.sql(sql, **bindings).collect()
 
     assert error_msg in str(excinfo.value)
 
@@ -55,22 +59,22 @@ def test_div_floor():
 def test_unsupported_div_floor():
     df = daft.from_pydict({"A": [1, 2, 3, 4], "B": [1.5, 2.5, 3.5, 4.5], "C": [True, False, True, True]})
 
-    catalog = SQLCatalog({"df": df})
+    bindings = {"df": df}
 
     _assert_sql_raise(
-        "SELECT A // C FROM df", catalog, "TypeError Cannot perform floor divide on types: Int64, Boolean"
+        "SELECT A // C FROM df", bindings, "TypeError Cannot perform floor divide on types: Int64, Boolean"
     )
 
     _assert_sql_raise(
-        "SELECT C // A FROM df", catalog, "TypeError Cannot perform floor divide on types: Boolean, Int64"
+        "SELECT C // A FROM df", bindings, "TypeError Cannot perform floor divide on types: Boolean, Int64"
     )
 
     _assert_sql_raise(
-        "SELECT B // C FROM df", catalog, "TypeError Cannot perform floor divide on types: Float64, Boolean"
+        "SELECT B // C FROM df", bindings, "TypeError Cannot perform floor divide on types: Float64, Boolean"
     )
 
     _assert_sql_raise(
-        "SELECT B // C FROM df", catalog, "TypeError Cannot perform floor divide on types: Float64, Boolean"
+        "SELECT B // C FROM df", bindings, "TypeError Cannot perform floor divide on types: Float64, Boolean"
     )
 
     _assert_df_op_raise(

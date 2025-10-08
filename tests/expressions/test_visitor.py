@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, List
+from typing import Any
 
 import pytest
 
@@ -45,7 +47,7 @@ class Trace:
         return eq(self.args, other.args)
 
 
-class TracingVisitor(PredicateVisitor[List[Trace]]):
+class TracingVisitor(PredicateVisitor[list[Trace]]):
     """TracingVisitor accumulates a callstack so we can verify how the rust PyVisitor dispatches.
 
     This is factored intentionally to exemplify a stateless tree fold, and I've made the
@@ -58,33 +60,33 @@ class TracingVisitor(PredicateVisitor[List[Trace]]):
     managing their own state stack, this visitor is for the people.
     """
 
-    def visit_col(self, name: str) -> List[Trace]:
+    def visit_col(self, name: str) -> list[Trace]:
         trace = Trace("visit_col", [name])
         acc = []
         acc += [trace]
         return acc
 
-    def visit_lit(self, value: Any) -> List[Trace]:
+    def visit_lit(self, value: Any) -> list[Trace]:
         trace = Trace("visit_lit", [value])
         acc = []
         acc += [trace]
         return acc
 
-    def visit_alias(self, expr: Expression, alias: str) -> List[Trace]:
+    def visit_alias(self, expr: Expression, alias: str) -> list[Trace]:
         trace = Trace("visit_alias", [expr, alias])
         acc = []
         acc += self.visit(expr)
         acc += [trace]
         return acc
 
-    def visit_cast(self, expr: Expression, dtype: DataType) -> List[Trace]:
+    def visit_cast(self, expr: Expression, dtype: DataType) -> list[Trace]:
         trace = Trace("visit_cast", [expr, dtype])
         acc = []
         acc += self.visit(expr)
         acc += [trace]
         return acc
 
-    def visit_list(self, items: List[Expression]) -> List[Trace]:
+    def visit_list(self, items: list[Expression]) -> list[Trace]:
         trace = Trace("visit_list", [items])
         acc = []
         for item in items:
@@ -92,7 +94,7 @@ class TracingVisitor(PredicateVisitor[List[Trace]]):
         acc += [trace]
         return acc
 
-    def visit_and(self, left: Expression, right: Expression) -> List[Trace]:
+    def visit_and(self, left: Expression, right: Expression) -> list[Trace]:
         trace = Trace("visit_and", [left, right])
         acc = []
         acc += self.visit(left)
@@ -100,7 +102,7 @@ class TracingVisitor(PredicateVisitor[List[Trace]]):
         acc += [trace]
         return acc
 
-    def visit_or(self, left: Expression, right: Expression) -> List[Trace]:
+    def visit_or(self, left: Expression, right: Expression) -> list[Trace]:
         trace = Trace("visit_or", [left, right])
         acc = []
         acc += self.visit(left)
@@ -108,14 +110,14 @@ class TracingVisitor(PredicateVisitor[List[Trace]]):
         acc += [trace]
         return acc
 
-    def visit_not(self, expr: Expression) -> List[Trace]:
+    def visit_not(self, expr: Expression) -> list[Trace]:
         trace = Trace("visit_not", [expr])
         acc = []
         acc += self.visit(expr)
         acc += [trace]
         return acc
 
-    def visit_equal(self, left: Expression, right: Expression) -> List[Trace]:
+    def visit_equal(self, left: Expression, right: Expression) -> list[Trace]:
         trace = Trace("visit_equal", [left, right])
         acc = []
         acc += self.visit(left)
@@ -123,7 +125,7 @@ class TracingVisitor(PredicateVisitor[List[Trace]]):
         acc += [trace]
         return acc
 
-    def visit_not_equal(self, left: Expression, right: Expression) -> List[Trace]:
+    def visit_not_equal(self, left: Expression, right: Expression) -> list[Trace]:
         trace = Trace("visit_not_equal", [left, right])
         acc = []
         acc += self.visit(left)
@@ -131,7 +133,7 @@ class TracingVisitor(PredicateVisitor[List[Trace]]):
         acc += [trace]
         return acc
 
-    def visit_less_than(self, left: Expression, right: Expression) -> List[Trace]:
+    def visit_less_than(self, left: Expression, right: Expression) -> list[Trace]:
         trace = Trace("visit_less_than", [left, right])
         acc = []
         acc += self.visit(left)
@@ -139,7 +141,7 @@ class TracingVisitor(PredicateVisitor[List[Trace]]):
         acc += [trace]
         return acc
 
-    def visit_less_than_or_equal(self, left: Expression, right: Expression) -> List[Trace]:
+    def visit_less_than_or_equal(self, left: Expression, right: Expression) -> list[Trace]:
         trace = Trace("visit_less_than_or_equal", [left, right])
         acc = []
         acc += self.visit(left)
@@ -147,7 +149,7 @@ class TracingVisitor(PredicateVisitor[List[Trace]]):
         acc += [trace]
         return acc
 
-    def visit_greater_than(self, left: Expression, right: Expression) -> List[Trace]:
+    def visit_greater_than(self, left: Expression, right: Expression) -> list[Trace]:
         trace = Trace("visit_greater_than", [left, right])
         acc = []
         acc += self.visit(left)
@@ -155,7 +157,7 @@ class TracingVisitor(PredicateVisitor[List[Trace]]):
         acc += [trace]
         return acc
 
-    def visit_greater_than_or_equal(self, left: Expression, right: Expression) -> List[Trace]:
+    def visit_greater_than_or_equal(self, left: Expression, right: Expression) -> list[Trace]:
         trace = Trace("visit_greater_than_or_equal", [left, right])
         acc = []
         acc += self.visit(left)
@@ -163,7 +165,7 @@ class TracingVisitor(PredicateVisitor[List[Trace]]):
         acc += [trace]
         return acc
 
-    def visit_between(self, expr: Expression, lower: Expression, upper: Expression) -> List[Trace]:
+    def visit_between(self, expr: Expression, lower: Expression, upper: Expression) -> list[Trace]:
         trace = Trace("visit_between", [expr, lower, upper])
         acc = []
         acc += self.visit(expr)
@@ -172,7 +174,7 @@ class TracingVisitor(PredicateVisitor[List[Trace]]):
         acc += [trace]
         return acc
 
-    def visit_is_in(self, expr: Expression, items: list[Expression]) -> List[Trace]:
+    def visit_is_in(self, expr: Expression, items: list[Expression]) -> list[Trace]:
         trace = Trace("visit_is_in", [expr, items])
         acc = []
         acc += self.visit(expr)
@@ -181,21 +183,21 @@ class TracingVisitor(PredicateVisitor[List[Trace]]):
         acc += [trace]
         return acc
 
-    def visit_is_null(self, expr: Expression) -> List[Trace]:
+    def visit_is_null(self, expr: Expression) -> list[Trace]:
         trace = Trace("visit_is_null", [expr])
         acc = []
         acc += self.visit(expr)
         acc += [trace]
         return acc
 
-    def visit_not_null(self, expr: Expression) -> List[Trace]:
+    def visit_not_null(self, expr: Expression) -> list[Trace]:
         trace = Trace("visit_not_null", [expr])
         acc = []
         acc += self.visit(expr)
         acc += [trace]
         return acc
 
-    def visit_function(self, name: str, args: List[Expression]) -> List[Trace]:
+    def visit_function(self, name: str, args: list[Expression]) -> list[Trace]:
         trace = Trace("visit_function", [name, args])
         acc = []
         for arg in args:
@@ -208,7 +210,7 @@ class TracingVisitor(PredicateVisitor[List[Trace]]):
 TRACING = TracingVisitor()
 
 
-def trace(expr: Expression) -> List[Trace]:
+def trace(expr: Expression) -> list[Trace]:
     return TRACING.visit(expr)
 
 
@@ -254,7 +256,7 @@ def test_visit_lit():
     assert len(lit_9_trace) == 1
     assert len(lit_9_trace[0].args) == 1
     assert lit_9_trace[0].attr == "visit_lit"
-    assert lit_9_trace[0].args[0].to_pylist() == [1, 2, 3]
+    assert lit_9_trace[0].args[0] == [1, 2, 3]
 
     # struct literal
     lit_10 = lit({"a": 1, "b": 2})

@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
-use daft_core::prelude::SchemaRef;
+use daft_core::prelude::*;
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
+use indexmap::IndexMap;
 
-use crate::error::Result;
+use crate::error::{CatalogError, CatalogResult};
 
 /// Table implementation reference.
 pub type TableRef = Arc<dyn Table>;
@@ -37,60 +38,105 @@ impl From<LogicalPlanBuilder> for TableSource {
 
 /// TODO consider moving out to daft-table, but this isn't necessary or helpful right now.
 pub trait Table: Sync + Send + std::fmt::Debug {
+    /// Returns the table name.
+    fn name(&self) -> String;
+
     /// Returns the table schema
-    fn get_schema(&self) -> SchemaRef;
+    fn schema(&self) -> CatalogResult<SchemaRef>;
 
     /// Returns a logical plan for this table.
-    fn get_logical_plan(&self) -> Result<LogicalPlanRef>;
+    fn to_logical_plan(&self) -> CatalogResult<LogicalPlanBuilder>;
 
-    /// Leverage dynamic dispatch to return the inner object for a PyTableImpl (generics?)
+    /// Append data to the table. Equivalent to `INSERT INTO` in SQL
+    fn append(
+        &self,
+        plan: LogicalPlanBuilder,
+        options: IndexMap<String, Literal>,
+    ) -> CatalogResult<()>;
+    /// Overwrite table with data. Equivalent to `INSERT OVERWRITE` in SQL
+    fn overwrite(
+        &self,
+        plan: LogicalPlanBuilder,
+        options: IndexMap<String, Literal>,
+    ) -> CatalogResult<()>;
+
+    /// Create/extract a Python object that subclasses the Table ABC
     #[cfg(feature = "python")]
-    fn to_py(&self, _: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
-        panic!("missing to_py implementation, consider PyTable(self) as the blanket implementation")
-    }
+    fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject>;
 }
 
 /// View is an immutable Table backed by a DataFrame.
 #[derive(Debug, Clone)]
-pub struct View(LogicalPlanRef);
-
-impl From<LogicalPlanRef> for View {
-    fn from(plan: LogicalPlanRef) -> Self {
-        Self(plan)
-    }
-}
-
-impl From<LogicalPlanBuilder> for View {
-    fn from(value: LogicalPlanBuilder) -> Self {
-        Self(value.plan)
-    }
+#[cfg_attr(feature = "python", pyo3::pyclass)]
+pub struct View {
+    name: String,
+    plan: LogicalPlanBuilder,
 }
 
 impl View {
-    pub fn arced(self) -> Arc<View> {
-        Arc::new(self)
+    pub fn new(name: impl Into<String>, plan: impl Into<LogicalPlanBuilder>) -> Self {
+        Self {
+            name: name.into(),
+            plan: plan.into(),
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn plan(&self) -> LogicalPlanBuilder {
+        self.plan.clone()
     }
 }
 
 impl Table for View {
+    fn name(&self) -> String {
+        self.name().to_string()
+    }
+
     /// Returns a reference to the inner plan's schema
-    fn get_schema(&self) -> SchemaRef {
-        self.0.schema().clone()
+    fn schema(&self) -> CatalogResult<SchemaRef> {
+        Ok(self.plan().schema())
     }
 
     /// Returns a reference to the inner plan
-    fn get_logical_plan(&self) -> Result<LogicalPlanRef> {
-        Ok(self.0.clone())
+    fn to_logical_plan(&self) -> CatalogResult<LogicalPlanBuilder> {
+        Ok(self.plan())
     }
 
-    /// This is a little ugly .. it creates a PyObject which implements the daft.catalog.Table ABC
+    fn append(
+        &self,
+        _plan: LogicalPlanBuilder,
+        _options: IndexMap<String, Literal>,
+    ) -> CatalogResult<()> {
+        Err(CatalogError::unsupported(
+            "cannot modify the data in a view",
+        ))
+    }
+
+    fn overwrite(
+        &self,
+        _plan: LogicalPlanBuilder,
+        _options: IndexMap<String, Literal>,
+    ) -> CatalogResult<()> {
+        Err(CatalogError::unsupported(
+            "cannot modify the data in a view",
+        ))
+    }
+
     #[cfg(feature = "python")]
     fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
-        use pyo3::{types::PyAnyMethods, IntoPyObject};
+        use pyo3::{intern, types::PyAnyMethods};
 
         use crate::python::PyTable;
-        PyTable::new(self.clone().arced())
-            .into_pyobject(py)?
-            .extract()
+
+        let pytable = PyTable(Arc::new(self.clone()));
+
+        Ok(py
+            .import(intern!(py, "daft.catalog.__internal"))?
+            .getattr("View")?
+            .call1((pytable,))?
+            .unbind())
     }
 }

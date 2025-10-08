@@ -1,8 +1,8 @@
-use common_error::{ensure, DaftError, DaftResult};
+use common_error::{DaftError, DaftResult, ensure};
 use daft_core::prelude::*;
 use daft_dsl::{
+    ExprRef,
     functions::{FunctionArgs, ScalarUDF},
-    ExprRef, LiteralValue,
 };
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +11,7 @@ pub struct ImageResize;
 
 #[typetag::serde]
 impl ScalarUDF for ImageResize {
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         let height = inputs.required(("h", "height")).and_then(|s| {
             ensure!(s.len() == 1, "height must be a scalar");
@@ -40,7 +40,7 @@ impl ScalarUDF for ImageResize {
         "image_resize"
     }
 
-    fn function_args_to_field(
+    fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
@@ -56,14 +56,14 @@ impl ScalarUDF for ImageResize {
             e.as_literal()
                 .and_then(|lit| {
                     Some(match lit {
-                        LiteralValue::Int8(i) if *i > 0i8 => *i as u32,
-                        LiteralValue::UInt8(u) => *u as u32,
-                        LiteralValue::Int16(i) if *i > 0i16 => *i as u32,
-                        LiteralValue::UInt16(u) => *u as u32,
-                        LiteralValue::Int32(i) => *i as u32,
-                        LiteralValue::UInt32(u) => *u,
-                        LiteralValue::Int64(i) => return u32::try_from(*i).ok(),
-                        LiteralValue::UInt64(u) => return u32::try_from(*u).ok(),
+                        Literal::Int8(i) if *i > 0i8 => *i as u32,
+                        Literal::UInt8(u) => *u as u32,
+                        Literal::Int16(i) if *i > 0i16 => *i as u32,
+                        Literal::UInt16(u) => *u as u32,
+                        Literal::Int32(i) => *i as u32,
+                        Literal::UInt32(u) => *u,
+                        Literal::Int64(i) => return u32::try_from(*i).ok(),
+                        Literal::UInt64(u) => return u32::try_from(*u).ok(),
                         _ => unreachable!(),
                     })
                 })
@@ -81,14 +81,14 @@ impl ScalarUDF for ImageResize {
             e.as_literal()
                 .and_then(|lit| {
                     Some(match lit {
-                        LiteralValue::Int8(i) if *i > 0i8 => *i as u32,
-                        LiteralValue::UInt8(u) => *u as u32,
-                        LiteralValue::Int16(i) if *i > 0i16 => *i as u32,
-                        LiteralValue::UInt16(u) => *u as u32,
-                        LiteralValue::Int32(i) => *i as u32,
-                        LiteralValue::UInt32(u) => *u,
-                        LiteralValue::Int64(i) => return u32::try_from(*i).ok(),
-                        LiteralValue::UInt64(u) => return u32::try_from(*u).ok(),
+                        Literal::Int8(i) if *i > 0i8 => *i as u32,
+                        Literal::UInt8(u) => *u as u32,
+                        Literal::Int16(i) if *i > 0i16 => *i as u32,
+                        Literal::UInt16(u) => *u as u32,
+                        Literal::Int32(i) => *i as u32,
+                        Literal::UInt32(u) => *u,
+                        Literal::Int64(i) => return u32::try_from(*i).ok(),
+                        Literal::UInt64(u) => return u32::try_from(*u).ok(),
                         _ => unreachable!(),
                     })
                 })

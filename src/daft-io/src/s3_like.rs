@@ -1,27 +1,44 @@
-use std::{collections::HashMap, ops::Range, string::FromUtf8Error, sync::Arc, time::Duration};
+use std::{
+    any::Any,
+    borrow::Cow,
+    collections::HashMap,
+    io::Write,
+    num::{NonZeroI32, NonZeroUsize},
+    pin::Pin,
+    string::FromUtf8Error,
+    sync::Arc,
+    task::Poll,
+    time::Duration,
+};
 
 use async_recursion::async_recursion;
 use async_trait::async_trait;
-use aws_config::{
-    meta::credentials::CredentialsProviderChain, retry::RetryMode, timeout::TimeoutConfig,
-    SdkConfig,
-};
-use aws_credential_types::{
-    cache::{CredentialsCache, ProvideCachedCredentials, SharedCredentialsCache},
-    provider::error::CredentialsError,
-};
+use aws_config::{BehaviorVersion, meta::region::ProvideRegion, timeout::TimeoutConfig};
+use aws_credential_types::provider::error::CredentialsError;
 use aws_sdk_s3::{
-    self as s3, error::ProvideErrorMetadata, operation::put_object::PutObjectError,
-    primitives::ByteStreamError,
+    self as s3,
+    config::{
+        IdentityCache, ProvideCredentials, SharedCredentialsProvider,
+        interceptors::InterceptorContext,
+        retry::{ClassifyRetry, RetryAction},
+    },
+    error::ProvideErrorMetadata,
+    operation::{
+        complete_multipart_upload::CompleteMultipartUploadError,
+        create_multipart_upload::CreateMultipartUploadError,
+        put_object::PutObjectError,
+        upload_part::{UploadPartError, UploadPartOutput},
+    },
+    primitives::{ByteStream, ByteStreamError},
 };
-use aws_sig_auth::signer::SigningRequirements;
-use aws_smithy_async::rt::sleep::TokioSleep;
+use aws_smithy_runtime_api::{
+    client::retries::classifiers::RetryClassifierPriority, http::Response,
+};
+use bytes::Bytes;
 use common_io_config::S3Config;
 use common_runtime::get_io_pool_num_threads;
-use futures::{stream::BoxStream, StreamExt, TryStreamExt};
-use reqwest::StatusCode;
+use futures::stream::BoxStream;
 use s3::{
-    client::customize::Response,
     config::{Credentials, Region},
     error::{DisplayErrorContext, SdkError},
     operation::{
@@ -29,27 +46,33 @@ use s3::{
         list_objects_v2::ListObjectsV2Error,
     },
 };
-use snafu::{ensure, IntoError, ResultExt, Snafu};
-use tokio::sync::{OwnedSemaphorePermit, SemaphorePermit};
+use snafu::{IntoError, OptionExt, ResultExt, Snafu, ensure};
+use tokio::{
+    sync::{OwnedSemaphorePermit, SemaphorePermit, mpsc::Sender},
+    task::JoinSet,
+};
 use url::{ParseError, Position};
 
 use super::object_io::{GetResult, ObjectSource};
 use crate::{
+    Error::InvalidArgument,
+    FileFormat, InvalidArgumentSnafu, InvalidRangeRequestSnafu, SourceType,
     object_io::{FileMetadata, FileType, LSResult},
+    range::GetRange,
     retry::{ExponentialBackoff, RetryError},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
-    FileFormat, InvalidArgumentSnafu, SourceType,
 };
 
 const S3_DELIMITER: &str = "/";
 const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
+
+#[derive(Debug)]
 pub struct S3LikeSource {
     region_to_client_map: tokio::sync::RwLock<HashMap<Region, Arc<s3::Client>>>,
     connection_pool_sema: Arc<tokio::sync::Semaphore>,
     default_region: Region,
     s3_config: S3Config,
-    anonymous: bool,
 }
 
 #[derive(Debug, Snafu)]
@@ -70,11 +93,73 @@ enum Error {
         source: SdkError<PutObjectError, Response>,
     },
 
+    #[snafu(display(
+        "Unable to do create multipart upload to {}/{}: {}",
+        bucket,
+        key,
+        s3::error::DisplayErrorContext(source)
+    ))]
+    UnableToCreateMultipartUpload {
+        bucket: String,
+        key: String,
+        source: SdkError<CreateMultipartUploadError, Response>,
+    },
+
+    #[snafu(display(
+        "Unable to upload part {} for {}/{} with upload_id {}: {}",
+        part,
+        bucket,
+        key,
+        upload_id,
+        s3::error::DisplayErrorContext(source)
+    ))]
+    UnableToUploadPart {
+        bucket: String,
+        key: String,
+        upload_id: String,
+        part: NonZeroI32,
+        source: SdkError<UploadPartError, Response>,
+    },
+
+    #[snafu(display(
+        "Unable to complete multipart upload to {}/{}: {}",
+        bucket,
+        key,
+        s3::error::DisplayErrorContext(source)
+    ))]
+    UnableToCompleteMultipartUpload {
+        bucket: String,
+        key: String,
+        source: SdkError<CompleteMultipartUploadError, Response>,
+    },
+
+    #[snafu(display(
+        "Expected multi-part upload ID in CreateMultipartUpload response for {bucket}/{key}",
+    ))]
+    MissingUploadIdForMultipartUpload { bucket: String, key: String },
+
+    #[snafu(display(
+        "Expected ETag in UploadPart response for bucket: {}, key: {}, upload_id: {}, part: {}.",
+        bucket,
+        key,
+        upload_id,
+        part
+    ))]
+    MissingEtagForMultipartUpload {
+        bucket: String,
+        key: String,
+        upload_id: String,
+        part: NonZeroI32,
+    },
+
     #[snafu(display("Unable to head {}: {}", path, s3::error::DisplayErrorContext(source)))]
     UnableToHeadFile {
         path: String,
         source: SdkError<HeadObjectError, Response>,
     },
+
+    #[snafu(display("Head for path received empty content length: {}", path))]
+    HeadObjectOutputEmpty { path: String },
 
     #[snafu(display("Unable to list {}: {}", path, s3::error::DisplayErrorContext(source)))]
     UnableToListObjects {
@@ -112,13 +197,6 @@ enum Error {
         "Unable to parse data as Utf8 while reading header for file: {path}. {source}"
     ))]
     UnableToParseUtf8 { path: String, source: FromUtf8Error },
-    #[snafu(display("Unable to create TlsConnector. {source}"))]
-    UnableToCreateTlsConnector {
-        source: hyper_tls::native_tls::Error,
-    },
-
-    #[snafu(display("Uploads cannot be anonymous. Please disable anonymous S3 access."))]
-    UploadsCannotBeAnonymous {},
 }
 
 /// List of AWS error codes that are due to throttling
@@ -140,6 +218,15 @@ const THROTTLING_ERRORS: &[&str] = &[
     "EC2ThrottledException",
 ];
 
+/// volc engine tos
+/// https://www.volcengine.com/docs/6349/74874
+const TOS_THROTTLING_ERRORS: &[&str] = &[
+    "ExceedAccountQPSLimit",
+    "ExceedAccountRateLimit",
+    "ExceedBucketQPSLimit",
+    "ExceedBucketRateLimit",
+];
+
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::{
@@ -158,10 +245,16 @@ impl From<Error> for super::Error {
                     path,
                     source: err.into(),
                 },
-                Some(code) if THROTTLING_ERRORS.contains(&code) => super::Error::Throttled {
-                    path,
-                    source: err.into(),
-                },
+                Some(code)
+                    if THROTTLING_ERRORS.contains(&code)
+                        || TOS_THROTTLING_ERRORS.contains(&code) =>
+                // Throttling errors are transient, so we classify them as such
+                {
+                    super::Error::Throttled {
+                        path,
+                        source: err.into(),
+                    }
+                }
                 _ => super::Error::Unhandled {
                     path,
                     msg: DisplayErrorContext(err).to_string(),
@@ -301,33 +394,37 @@ impl From<Error> for super::Error {
 
 /// Retrieves an S3Config from the environment by leveraging the AWS SDK's credentials chain
 pub async fn s3_config_from_env() -> super::Result<S3Config> {
-    let default_s3_config = S3Config::default();
-    let (anonymous, s3_conf) = build_s3_conf(&default_s3_config, None).await?;
-    let creds = s3_conf
-        .credentials_cache()
-        .provide_cached_credentials()
-        .await
-        .with_context(|_| UnableToLoadCredentialsSnafu {})?;
-    let key_id = Some(creds.access_key_id().to_string());
-    let access_key = Some(creds.secret_access_key().to_string().into());
-    let session_token = creds.session_token().map(|t| t.to_string().into());
-    let region_name = s3_conf.region().map(std::string::ToString::to_string);
-    Ok(S3Config {
-        // Do not perform auto-discovery of endpoint_url. This is possible, but requires quite a bit
-        // of work that our current implementation of `build_s3_conf` does not yet do. See smithy-rs code:
-        // https://github.com/smithy-lang/smithy-rs/blob/94ecd38c2518583042796b2b45c37947237e31dd/aws/rust-runtime/aws-config/src/lib.rs#L824-L849
-        endpoint_url: None,
-        region_name,
-        key_id,
-        session_token,
-        access_key,
-        anonymous,
-        ..default_s3_config
+    let region_provider = aws_config::default_provider::region::default_provider();
+    let region = region_provider.region().await;
+    let region_name = region.map(|r| r.to_string());
+
+    let credentials_provider =
+        aws_config::default_provider::credentials::DefaultCredentialsChain::builder()
+            .region(region_provider)
+            .build()
+            .await;
+    let creds = provide_credentials_with_retry(&credentials_provider).await?;
+
+    Ok(if let Some(creds) = creds {
+        S3Config {
+            key_id: Some(creds.access_key_id().to_string()),
+            access_key: Some(creds.secret_access_key().to_string().into()),
+            session_token: creds.session_token().map(|t| t.to_string().into()),
+            region_name,
+            anonymous: false,
+            ..Default::default()
+        }
+    } else {
+        S3Config {
+            region_name,
+            anonymous: true,
+            ..Default::default()
+        }
     })
 }
 
 /// Helper to parse S3 URLs, returning (scheme, bucket, key)
-fn parse_url(uri: &str) -> super::Result<(String, String, String)> {
+pub fn parse_s3_url(uri: &str) -> super::Result<(String, String, String)> {
     let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
     let bucket = match parsed.host_str() {
         Some(s) => Ok(s),
@@ -348,56 +445,55 @@ fn parse_url(uri: &str) -> super::Result<(String, String, String)> {
     ))
 }
 
-fn handle_https_client_settings(
-    builder: aws_sdk_s3::config::Builder,
-    config: &S3Config,
-) -> super::Result<aws_sdk_s3::config::Builder> {
-    let tls_connector = hyper_tls::native_tls::TlsConnector::builder()
-        .danger_accept_invalid_certs(!config.verify_ssl)
-        .danger_accept_invalid_hostnames((!config.verify_ssl) || (!config.check_hostname_ssl))
-        .build()
-        .context(UnableToCreateTlsConnectorSnafu {})?;
-    let mut http_connector = hyper::client::HttpConnector::new();
-    http_connector.enforce_http(false);
-    let https_connector = hyper_tls::HttpsConnector::<hyper::client::HttpConnector>::from((
-        http_connector,
-        tls_connector.into(),
-    ));
-    use aws_smithy_client::{http_connector::ConnectorSettings, hyper_ext};
-    let smithy_client = hyper_ext::Adapter::builder()
-        .connector_settings(
-            ConnectorSettings::builder()
-                .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
-                .read_timeout(Duration::from_millis(config.read_timeout_ms))
-                .build(),
-        )
-        .build(https_connector);
-    let builder = builder.http_connector(smithy_client);
-    Ok(builder)
-}
+async fn provide_credentials_with_retry(
+    provider: &impl ProvideCredentials,
+) -> super::Result<Option<Credentials>> {
+    let get_creds = async || {
+        use CredentialsError::{CredentialsNotLoaded, ProviderTimedOut};
 
-async fn build_s3_conf(
-    config: &S3Config,
-    credentials_cache: Option<SharedCredentialsCache>,
-) -> super::Result<(bool, s3::Config)> {
-    const DEFAULT_REGION: Region = Region::from_static("us-east-1");
-
-    let mut anonymous = config.anonymous;
-
-    let cached_creds = if let Some(credentials_cache) = credentials_cache {
-        let creds = credentials_cache.provide_cached_credentials().await;
-        creds.ok()
-    } else {
-        None
+        match provider.provide_credentials().await {
+            Ok(creds) => Ok(Some(creds)),
+            Err(err @ ProviderTimedOut(..)) => {
+                log::warn!(
+                    "S3 Credentials Provider timed out when retrieving credentials. Retrying. {err}",
+                );
+                Err(RetryError::Transient(err))
+            }
+            Err(err @ CredentialsNotLoaded(..)) => {
+                log::warn!(
+                    "S3 Credentials could not be loaded. Reverting to Anonymous mode. {err}"
+                );
+                Ok(None)
+            }
+            Err(err) => Err(RetryError::Permanent(err)),
+        }
     };
 
-    let provider = if let Some(cached_creds) = cached_creds {
-        let provider = CredentialsProviderChain::first_try("different_region_cache", cached_creds)
-            .or_default_provider()
-            .await;
-        Some(aws_credential_types::provider::SharedCredentialsProvider::new(provider))
+    let backoff = ExponentialBackoff {
+        max_waittime_ms: Some(45_000),
+        ..Default::default()
+    };
+
+    let creds = backoff
+        .retry(get_creds)
+        .await
+        .with_context(|_| UnableToLoadCredentialsSnafu {})?;
+
+    Ok(creds)
+}
+
+async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
+    const DEFAULT_REGION: Region = Region::from_static("us-east-1");
+
+    let region = config
+        .region_name
+        .as_ref()
+        .map(|region_name| Region::new(region_name.clone()));
+
+    let credentials_provider = if config.anonymous {
+        None
     } else if let Some(provider) = &config.credentials_provider {
-        Some(aws_credential_types::provider::SharedCredentialsProvider::new(provider.clone()))
+        Some(SharedCredentialsProvider::new(provider.clone()))
     } else if config.access_key.is_some() && config.key_id.is_some() {
         let creds = Credentials::from_keys(
             config.key_id.clone().unwrap(),
@@ -408,158 +504,188 @@ async fn build_s3_conf(
                 .unwrap(),
             config.session_token.as_ref().map(|s| s.as_string().clone()),
         );
-        Some(aws_credential_types::provider::SharedCredentialsProvider::new(creds))
+        Some(SharedCredentialsProvider::new(creds))
     } else if config.access_key.is_some() || config.key_id.is_some() {
         return Err(super::Error::InvalidArgument {
             msg: "Must provide both access_key and key_id when building S3-Like Client".to_string(),
         });
     } else {
-        None
-    };
-
-    let conf: SdkConfig = if anonymous {
-        let mut builder = aws_config::SdkConfig::builder();
-        builder.set_credentials_provider(provider);
-        builder.build()
-    } else {
-        let mut loader = aws_config::from_env();
-        if let Some(profile_name) = &config.profile_name {
-            loader = loader.profile_name(profile_name);
-        }
+        let mut provider_builder =
+            aws_config::default_provider::credentials::DefaultCredentialsChain::builder();
 
         // Set region now to avoid imds
-        if let Some(region) = &config.region_name {
-            loader = loader.region(Region::new(region.to_owned()));
+        if let Some(region) = &region {
+            provider_builder = provider_builder.region(region.clone());
         }
 
-        // Set creds now to avoid imds
-        if let Some(provider) = provider {
-            loader = loader.credentials_provider(provider);
+        let default_provider = provider_builder.build().await;
+
+        // test if there are default credentials. If not, use anonymous mode
+        if provide_credentials_with_retry(&default_provider)
+            .await?
+            .is_some()
+        {
+            Some(SharedCredentialsProvider::new(default_provider))
+        } else {
+            None
+        }
+    };
+
+    let identity_cache = config.buffer_time.map(|buffer_time| {
+        IdentityCache::lazy()
+            .buffer_time(Duration::from_secs(buffer_time))
+            .build()
+    });
+
+    let retry_config = {
+        ensure!(
+            config.num_tries > 0,
+            InvalidArgumentSnafu {
+                msg: "num_tries must be greater than zero"
+            }
+        );
+
+        let retry_mode = config
+            .retry_mode
+            .as_ref()
+            .map(|mode| mode.trim().to_lowercase());
+
+        let retry_config = match retry_mode.as_deref() {
+            None | Some("standard") => s3::config::retry::RetryConfig::standard(),
+            Some("adaptive") => s3::config::retry::RetryConfig::adaptive(),
+            _ => {
+                return Err(crate::Error::InvalidArgument {
+                    msg: format!(
+                        "Invalid Retry Mode, Daft S3 client currently only supports standard and adaptive, got {}",
+                        config.retry_mode.clone().unwrap()
+                    ),
+                });
+            }
+        };
+
+        retry_config
+            .with_max_attempts(config.num_tries)
+            .with_initial_backoff(Duration::from_millis(config.retry_initial_backoff_ms))
+    };
+
+    let http_client = {
+        use aws_smithy_runtime_api::client::http::SharedHttpClient;
+
+        fn default_client() -> SharedHttpClient {
+            use aws_smithy_http_client::{
+                Builder,
+                tls::{Provider, rustls_provider::CryptoMode},
+            };
+            Builder::new()
+                .tls_provider(Provider::Rustls(CryptoMode::AwsLc))
+                .build_https()
         }
 
-        if let Some(buffer_time) = &config.buffer_time {
-            loader = loader.credentials_cache(
-                CredentialsCache::lazy_builder()
-                    .buffer_time(Duration::from_secs(*buffer_time))
-                    .into_credentials_cache(),
+        fn no_verify_hostname_client() -> SharedHttpClient {
+            unimplemented!(
+                "Setting `S3Config.check_hostname_ssl` is no longer supported. See this GitHub Issue for more info: https://github.com/Eventual-Inc/Daft/issues/4530"
             );
         }
 
-        loader.load().await
-    };
-
-    let builder = aws_sdk_s3::config::Builder::from(&conf);
-    let builder = match &config.endpoint_url {
-        None => builder,
-        Some(endpoint) => builder.endpoint_url(endpoint),
-    };
-    let builder = if config.endpoint_url.is_some() && !config.force_virtual_addressing {
-        builder.force_path_style(true)
-    } else {
-        builder.force_path_style(false)
-    };
-
-    let builder = if let Some(region) = &config.region_name {
-        builder.region(Region::new(region.to_owned()))
-    } else {
-        builder
-    };
-
-    ensure!(
-        config.num_tries > 0,
-        InvalidArgumentSnafu {
-            msg: "num_tries must be greater than zero"
+        fn no_verify_client() -> SharedHttpClient {
+            unimplemented!(
+                "Setting `S3Config.verify_ssl` is no longer supported. See this GitHub Issue for more info: https://github.com/Eventual-Inc/Daft/issues/4530"
+            );
         }
-    );
-    let retry_config = s3::config::retry::RetryConfig::standard()
-        .with_max_attempts(config.num_tries)
-        .with_initial_backoff(Duration::from_millis(config.retry_initial_backoff_ms));
 
-    let retry_config = if let Some(retry_mode) = &config.retry_mode {
-        if retry_mode.trim().eq_ignore_ascii_case("adaptive") {
-            retry_config.with_retry_mode(RetryMode::Adaptive)
-        } else if retry_mode.trim().eq_ignore_ascii_case("standard") {
-            retry_config
-        } else {
-            return Err(crate::Error::InvalidArgument { msg: format!("Invalid Retry Mode, Daft S3 client currently only supports standard and adaptive, got {retry_mode}") });
+        match (config.verify_ssl, config.check_hostname_ssl) {
+            (true, true) => default_client(),
+            (true, false) => no_verify_hostname_client(),
+            (false, _) => no_verify_client(),
         }
-    } else {
-        retry_config
     };
 
-    let builder = builder.retry_config(retry_config);
-
-    let builder = handle_https_client_settings(builder, config)?;
-
-    let sleep_impl = Arc::new(TokioSleep::new());
-    let builder = builder.sleep_impl(sleep_impl);
     let timeout_config = TimeoutConfig::builder()
         .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
         .read_timeout(Duration::from_millis(config.read_timeout_ms))
         .build();
-    let builder = builder.timeout_config(timeout_config);
+
+    let sdk_config = {
+        let mut loader = aws_config::defaults(BehaviorVersion::latest());
+
+        macro_rules! maybe_set_loader_value {
+            ($method:ident, $value:expr) => {
+                if let Some($method) = $value {
+                    loader = loader.$method($method);
+                }
+            };
+        }
+
+        if let Some(provider) = credentials_provider {
+            loader = loader.credentials_provider(provider);
+        } else {
+            loader = loader.no_credentials();
+        }
+
+        maybe_set_loader_value!(profile_name, &config.profile_name);
+        maybe_set_loader_value!(endpoint_url, &config.endpoint_url);
+        maybe_set_loader_value!(identity_cache, identity_cache);
+        maybe_set_loader_value!(region, region);
+
+        loader = loader.retry_config(retry_config);
+        loader = loader.http_client(http_client);
+        loader = loader.timeout_config(timeout_config);
+
+        loader.load().await
+    };
+
+    let mut builder = aws_sdk_s3::config::Builder::from(&sdk_config);
+
+    let force_path_style = config.endpoint_url.is_some() && !config.force_virtual_addressing;
+    builder = builder.force_path_style(force_path_style);
+
+    let retry_unexpected_eof = {
+        #[derive(Debug)]
+        struct RetryUnexpectedEof;
+
+        impl ClassifyRetry for RetryUnexpectedEof {
+            fn classify_retry(&self, ctx: &InterceptorContext) -> RetryAction {
+                if let Some(Err(err)) = ctx.output_or_error()
+                    && format!("{err:?}").contains("UnexpectedEof")
+                {
+                    RetryAction::server_error()
+                } else {
+                    RetryAction::NoActionIndicated
+                }
+            }
+
+            fn name(&self) -> &'static str {
+                "RetryUnexpectedEof"
+            }
+
+            fn priority(&self) -> RetryClassifierPriority {
+                RetryClassifierPriority::transient_error_classifier()
+            }
+        }
+
+        RetryUnexpectedEof
+    };
+    builder = builder.retry_classifier(retry_unexpected_eof);
 
     let builder_copy = builder.clone();
-    let s3_conf = builder.build();
+    let mut s3_conf = builder.build();
 
-    let backoff = ExponentialBackoff {
-        max_waittime_ms: Some(45_000),
-        ..Default::default()
-    };
-
-    let check_creds = async || {
-        use CredentialsError::{CredentialsNotLoaded, ProviderTimedOut};
-
-        let creds = s3_conf
-            .credentials_cache()
-            .provide_cached_credentials()
-            .await;
-
-        match creds {
-            Ok(_) => Ok(false),
-            Err(err @ ProviderTimedOut(..)) => {
-                log::warn!(
-                    "S3 Credentials Provider timed out when making client for {}! Retrying. {err}",
-                    s3_conf.region().unwrap_or(&DEFAULT_REGION)
-                );
-                Err(RetryError::Transient(err))
-            }
-            Err(err @ CredentialsNotLoaded(..)) => {
-                log::warn!("S3 Credentials not provided or found when making client for {}! Reverting to Anonymous mode. {err}", s3_conf.region().unwrap_or(&DEFAULT_REGION));
-                Ok(true)
-            }
-            Err(err) => Err(RetryError::Permanent(err)),
-        }
-    };
-
-    if !config.anonymous {
-        anonymous = backoff
-            .retry(check_creds)
-            .await
-            .with_context(|_| UnableToLoadCredentialsSnafu {})?;
+    if s3_conf.region().is_none() {
+        s3_conf = builder_copy.region(DEFAULT_REGION).build();
     }
 
-    let s3_conf = if s3_conf.region().is_none() {
-        builder_copy.region(DEFAULT_REGION).build()
-    } else {
-        s3_conf
-    };
-
-    Ok((anonymous, s3_conf))
+    Ok(s3_conf)
 }
 
-async fn build_s3_client(
-    config: &S3Config,
-    credentials_cache: Option<SharedCredentialsCache>,
-) -> super::Result<(bool, s3::Client)> {
-    let (anonymous, s3_conf) = build_s3_conf(config, credentials_cache).await?;
-    Ok((anonymous, s3::Client::from_conf(s3_conf)))
+async fn build_s3_client(config: &S3Config) -> super::Result<s3::Client> {
+    let s3_conf = build_s3_conf(config).await?;
+    Ok(s3::Client::from_conf(s3_conf))
 }
 
 async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
-    let (anonymous, client) = build_s3_client(config, None).await?;
+    let client = build_s3_client(config).await?;
     let mut client_map = HashMap::new();
-    let default_region = client.conf().region().unwrap().clone();
+    let default_region = client.config().region().unwrap().clone();
     client_map.insert(default_region.clone(), client.into());
     Ok(S3LikeSource {
         region_to_client_map: tokio::sync::RwLock::new(client_map),
@@ -569,7 +695,6 @@ async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
         )),
         s3_config: config.clone(),
         default_region,
-        anonymous,
     })
 }
 const REGION_HEADER: &str = "x-amz-bucket-region";
@@ -595,11 +720,7 @@ impl S3LikeSource {
         let mut new_config = self.s3_config.clone();
         new_config.region_name = Some(region.to_string());
 
-        let creds_cache = w_handle
-            .get(&self.default_region)
-            .map(|current_client| current_client.conf().credentials_cache());
-
-        let (_, new_client) = build_s3_client(&new_config, creds_cache).await?;
+        let new_client = build_s3_client(&new_config).await?;
 
         if w_handle.get(region).is_none() {
             w_handle.insert(region.clone(), new_client.into());
@@ -612,11 +733,11 @@ impl S3LikeSource {
         &self,
         permit: OwnedSemaphorePermit,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         region: &Region,
     ) -> super::Result<GetResult> {
         log::debug!("S3 get at {uri}, range: {range:?}, in region: {region}");
-        let (_scheme, bucket, key) = parse_url(uri)?;
+        let (_scheme, bucket, key) = parse_s3_url(uri)?;
 
         if key.is_empty() {
             Err(Error::NotAFile { path: uri.into() }.into())
@@ -637,62 +758,53 @@ impl S3LikeSource {
 
             let request = match &range {
                 None => request,
-                Some(range) => request.range(format!(
-                    "bytes={}-{}",
-                    range.start,
-                    range.end.saturating_sub(1)
-                )),
+                Some(range) => {
+                    range.validate().context(InvalidRangeRequestSnafu)?;
+                    request.range(range.to_string())
+                }
             };
 
-            let response = if self.anonymous {
-                request
-                    .customize_middleware()
-                    .await
-                    .unwrap()
-                    .map_operation::<Error>(|mut o| {
-                        {
-                            let mut properties = o.properties_mut();
-                            #[allow(unused_mut)]
-                            let mut config = properties
-                                .get_mut::<::aws_sig_auth::signer::OperationSigningConfig>()
-                                .expect("signing config added by make_operation()");
-
-                            config.signing_requirements = SigningRequirements::Disabled;
-                        }
-                        Ok(o)
-                    })
-                    .unwrap()
-                    .send()
-                    .await
-            } else {
-                request.send().await
-            };
+            let response = request.send().await;
 
             match response {
                 Ok(v) => {
                     let body = v.body;
-                    let owned_string = uri.to_owned();
-                    let stream = body
-                        .map_err(move |e| {
-                            UnableToReadBytesSnafu {
-                                path: owned_string.clone(),
-                            }
-                            .into_error(e)
-                            .into()
-                        })
-                        .boxed();
+                    struct FuturesStreamCompatByteStream {
+                        byte_stream: ByteStream,
+                        uri: String,
+                    }
+                    impl futures::stream::Stream for FuturesStreamCompatByteStream {
+                        type Item = super::Result<Bytes>;
+                        fn poll_next(
+                            mut self: Pin<&mut Self>,
+                            cx: &mut std::task::Context<'_>,
+                        ) -> Poll<Option<Self::Item>> {
+                            Pin::new(&mut self.byte_stream).poll_next(cx).map_err(|e| {
+                                UnableToReadBytesSnafu {
+                                    path: self.uri.clone(),
+                                }
+                                .into_error(e)
+                                .into()
+                            })
+                        }
+                    }
+                    let stream = Box::pin(FuturesStreamCompatByteStream {
+                        byte_stream: body,
+                        uri: uri.to_owned(),
+                    });
                     Ok(GetResult::Stream(
                         stream,
-                        Some(v.content_length as usize),
+                        v.content_length.map(|l| l as usize),
                         Some(permit),
                         None,
                     ))
                 }
 
                 Err(SdkError::ServiceError(err)) => {
-                    let bad_response = err.raw().http();
-                    match bad_response.status() {
-                        StatusCode::MOVED_PERMANENTLY => {
+                    let bad_response = err.raw();
+                    match bad_response.status().as_u16() {
+                        // moved permanently
+                        301 => {
                             let headers = bad_response.headers();
                             let new_region =
                                 headers.get(REGION_HEADER).ok_or(Error::MissingHeader {
@@ -706,7 +818,11 @@ impl S3LikeSource {
                                 })?;
 
                             let new_region = Region::new(region_name);
-                            log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting GET in that region with new client", new_region, region);
+                            log::debug!(
+                                "S3 Region of {uri} different than client {:?} vs {:?} Attempting GET in that region with new client",
+                                new_region,
+                                region
+                            );
                             self.get_impl(permit, uri, range, &new_region).await
                         }
                         _ => Err(UnableToOpenFileSnafu { path: uri }
@@ -727,7 +843,7 @@ impl S3LikeSource {
         region: &Region,
     ) -> super::Result<usize> {
         log::debug!("S3 head at {uri} in region: {region}");
-        let (_scheme, bucket, key) = parse_url(uri)?;
+        let (_scheme, bucket, key) = parse_s3_url(uri)?;
 
         if key.is_empty() {
             Err(Error::NotAFile { path: uri.into() }.into())
@@ -746,36 +862,18 @@ impl S3LikeSource {
                 request
             };
 
-            let response = if self.anonymous {
-                request
-                    .customize_middleware()
-                    .await
-                    .unwrap()
-                    .map_operation::<Error>(|mut o| {
-                        {
-                            let mut properties = o.properties_mut();
-                            #[allow(unused_mut)]
-                            let mut config = properties
-                                .get_mut::<::aws_sig_auth::signer::OperationSigningConfig>()
-                                .expect("signing config added by make_operation()");
-
-                            config.signing_requirements = SigningRequirements::Disabled;
-                        }
-                        Ok(o)
-                    })
-                    .unwrap()
-                    .send()
-                    .await
-            } else {
-                request.send().await
-            };
+            let response = request.send().await;
 
             match response {
-                Ok(v) => Ok(v.content_length() as usize),
+                Ok(v) => match v.content_length() {
+                    Some(l) => Ok(l as usize),
+                    None => Err(Error::HeadObjectOutputEmpty { path: uri.into() }.into()),
+                },
                 Err(SdkError::ServiceError(err)) => {
-                    let bad_response = err.raw().http();
-                    match bad_response.status() {
-                        StatusCode::MOVED_PERMANENTLY => {
+                    let bad_response = err.raw();
+                    match bad_response.status().as_u16() {
+                        // moved permanently
+                        301 => {
                             let headers = bad_response.headers();
                             let new_region =
                                 headers.get(REGION_HEADER).ok_or(Error::MissingHeader {
@@ -789,7 +887,11 @@ impl S3LikeSource {
                                 })?;
 
                             let new_region = Region::new(region_name);
-                            log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting HEAD in that region with new client", new_region, region);
+                            log::debug!(
+                                "S3 Region of {uri} different than client {:?} vs {:?} Attempting HEAD in that region with new client",
+                                new_region,
+                                region
+                            );
                             self.head_impl(permit, uri, &new_region).await
                         }
                         _ => Err(UnableToHeadFileSnafu { path: uri }
@@ -815,7 +917,9 @@ impl S3LikeSource {
         region: &Region,
         page_size: Option<i32>,
     ) -> super::Result<LSResult> {
-        log::debug!("S3 list_objects: Bucket: {bucket}, Key: {key}, continuation_token: {continuation_token:?} in region: {region}");
+        log::debug!(
+            "S3 list_objects: Bucket: {bucket}, Key: {key}, continuation_token: {continuation_token:?} in region: {region}"
+        );
         let request = self
             .get_s3_client(region)
             .await?
@@ -843,80 +947,40 @@ impl S3LikeSource {
             request
         };
 
-        let response = if self.anonymous {
-            request
-                .customize_middleware()
-                .await
-                .unwrap()
-                .map_operation::<Error>(|mut o| {
-                    {
-                        let mut properties = o.properties_mut();
-                        #[allow(unused_mut)]
-                        let mut config = properties
-                            .get_mut::<::aws_sig_auth::signer::OperationSigningConfig>()
-                            .expect("signing config added by make_operation()");
-
-                        config.signing_requirements = SigningRequirements::Disabled;
-                    }
-                    Ok(o)
-                })
-                .unwrap()
-                .send()
-                .await
-        } else {
-            request.send().await
-        };
+        let response = request.send().await;
         let uri = &format!("{scheme}://{bucket}/{key}");
         match response {
             Ok(v) => {
                 let dirs = v.common_prefixes();
                 let files = v.contents();
+                let files = dirs
+                    .iter()
+                    .map(|d| FileMetadata {
+                        filepath: format!("{scheme}://{bucket}/{}", d.prefix().unwrap_or_default()),
+                        size: None,
+                        filetype: FileType::Directory,
+                    })
+                    .chain(files.iter().map(|f| FileMetadata {
+                        filepath: format!("{scheme}://{bucket}/{}", f.key().unwrap_or_default()),
+                        size: f.size().map(|size| size as u64),
+                        filetype: FileType::File,
+                    }))
+                    .collect();
+
                 let continuation_token = v
                     .next_continuation_token()
                     .map(std::string::ToString::to_string);
-                let mut total_len = 0;
-                if let Some(dirs) = dirs {
-                    total_len += dirs.len();
-                }
-                if let Some(files) = files {
-                    total_len += files.len();
-                }
-                let mut all_files = Vec::with_capacity(total_len);
-                if let Some(dirs) = dirs {
-                    for d in dirs {
-                        let fmeta = FileMetadata {
-                            filepath: format!(
-                                "{scheme}://{bucket}/{}",
-                                d.prefix().unwrap_or_default()
-                            ),
-                            size: None,
-                            filetype: FileType::Directory,
-                        };
-                        all_files.push(fmeta);
-                    }
-                }
-                if let Some(files) = files {
-                    for f in files {
-                        let fmeta = FileMetadata {
-                            filepath: format!(
-                                "{scheme}://{bucket}/{}",
-                                f.key().unwrap_or_default()
-                            ),
-                            size: Some(f.size() as u64),
-                            filetype: FileType::File,
-                        };
-                        all_files.push(fmeta);
-                    }
-                }
+
                 Ok(LSResult {
-                    files: all_files,
+                    files,
                     continuation_token,
                 })
             }
             Err(SdkError::ServiceError(err)) => {
-                let bad_response = err.raw().http();
-                match bad_response.status() {
-                    StatusCode::MOVED_PERMANENTLY => {
+                let bad_response = err.raw();
+                match bad_response.status().as_u16() {
+                    // moved permanently
+                    301 => {
                         let headers = bad_response.headers();
                         let new_region =
                             headers.get(REGION_HEADER).ok_or(Error::MissingHeader {
@@ -930,7 +994,11 @@ impl S3LikeSource {
                             })?;
 
                         let new_region = Region::new(region_name);
-                        log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting List in that region with new client", new_region, region);
+                        log::debug!(
+                            "S3 Region of {uri} different than client {:?} vs {:?} Attempting List in that region with new client",
+                            new_region,
+                            region
+                        );
                         self.list_impl(
                             permit,
                             scheme,
@@ -966,7 +1034,7 @@ impl S3LikeSource {
             "S3 put at {uri}, num_bytes: {}, in region: {region}",
             data.len()
         );
-        let (_scheme, bucket, key) = parse_url(uri)?;
+        let (_scheme, bucket, key) = parse_s3_url(uri)?;
 
         if key.is_empty() {
             Err(Error::NotAFile { path: uri.into() }.into())
@@ -986,26 +1054,198 @@ impl S3LikeSource {
                 request
             };
 
-            let response = if self.anonymous {
-                return Err(Error::UploadsCannotBeAnonymous {}.into());
-            } else {
-                request.send().await
-            };
-
-            match response {
+            match request.send().await {
                 Ok(_) => Ok(()),
                 Err(err) => Err(UnableToPutFileSnafu { path: uri }.into_error(err).into()),
             }
         }
     }
+
+    #[async_recursion]
+    /// Initiates a multipart upload and returns the upload ID.
+    pub async fn create_multipart_upload(
+        &self,
+        bucket: &str,
+        key: &str,
+        region: &Region,
+    ) -> super::Result<MultipartUploadInfo> {
+        let _permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        let request_payer = if self.s3_config.requester_pays {
+            Some(s3::types::RequestPayer::Requester)
+        } else {
+            None
+        };
+
+        let client = self.get_s3_client(region).await?;
+
+        let response = client
+            .create_multipart_upload()
+            .bucket(bucket)
+            .key(key)
+            .set_request_payer(request_payer.clone())
+            .send()
+            .await;
+
+        match response {
+            Ok(response) => {
+                let upload_id = response.upload_id().ok_or_else(|| {
+                    Error::MissingUploadIdForMultipartUpload {
+                        bucket: bucket.to_owned(),
+                        key: key.to_owned(),
+                    }
+                })?;
+
+                log::debug!("S3 create multipart upload-id: {upload_id}");
+
+                Ok(MultipartUploadInfo {
+                    upload_id: upload_id.to_owned().into(),
+                    region: region.clone(),
+                })
+            }
+            Err(SdkError::ServiceError(err)) => {
+                let bad_response = err.raw();
+                match bad_response.status().as_u16() {
+                    // moved permanently
+                    301 => {
+                        let headers = bad_response.headers();
+                        let new_region =
+                            headers.get(REGION_HEADER).ok_or(Error::MissingHeader {
+                                path: format!("{bucket}/{key}"),
+                                header: REGION_HEADER.into(),
+                            })?;
+
+                        let region_name = String::from_utf8(new_region.as_bytes().to_vec())
+                            .with_context(|_| UnableToParseUtf8Snafu::<String> {
+                                path: format!("{bucket}/{key}"),
+                            })?;
+
+                        let new_region = Region::new(region_name);
+                        log::debug!(
+                            "S3 Region of {bucket}/{key} different than client {:?} vs {:?} Attempting multipart upload in that region with new client",
+                            new_region,
+                            region
+                        );
+                        self.create_multipart_upload(bucket, key, &new_region).await
+                    }
+                    _ => Err(UnableToCreateMultipartUploadSnafu { bucket, key }
+                        .into_error(SdkError::ServiceError(err))
+                        .into()),
+                }
+            }
+            Err(err) => Err(UnableToCreateMultipartUploadSnafu { bucket, key }
+                .into_error(err)
+                .into()),
+        }
+    }
+
+    /// Completes a multipart upload by providing the upload ID and a list of completed parts.
+    pub async fn complete_multipart_upload(
+        &self,
+        key: Cow<'static, str>,
+        bucket: Cow<'static, str>,
+        upload_id: Cow<'static, str>,
+        completed_parts: Vec<CompletedPart>,
+        region: &Region,
+    ) -> super::Result<()> {
+        let _permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        let client = self.get_s3_client(region).await?;
+
+        let completed_parts = completed_parts
+            .into_iter()
+            .map(|part| {
+                s3::types::CompletedPart::builder()
+                    .part_number(part.part_number.get())
+                    .e_tag(part.etag.clone())
+                    .build()
+            })
+            .collect::<Vec<_>>();
+
+        let completed_multipart_upload = s3::types::CompletedMultipartUpload::builder()
+            .set_parts(Some(completed_parts))
+            .build();
+        client
+            .complete_multipart_upload()
+            .multipart_upload(completed_multipart_upload)
+            .bucket(bucket.clone())
+            .key(key.clone())
+            .upload_id(upload_id.clone())
+            .send()
+            .await
+            .context(UnableToCompleteMultipartUploadSnafu { bucket, key })?;
+
+        log::debug!("S3 complete multipart upload completed. upload_id :{upload_id}");
+
+        Ok(())
+    }
+
+    /// Upload a single part to an existing multipart upload.
+    pub async fn upload_part(
+        &self,
+        bucket: &str,
+        key: &str,
+        upload_id: &str,
+        part_number: NonZeroI32,
+        data: bytes::Bytes,
+        region: &Region,
+    ) -> super::Result<UploadPartOutput> {
+        let _permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        let request_payer = if self.s3_config.requester_pays {
+            Some(s3::types::RequestPayer::Requester)
+        } else {
+            None
+        };
+
+        let client = self.get_s3_client(region).await?;
+
+        let output = client
+            .upload_part()
+            .bucket(bucket)
+            .key(key)
+            .upload_id(upload_id)
+            .part_number(part_number.get())
+            .body(data.into())
+            .set_request_payer(request_payer)
+            .send()
+            .await
+            .context(UnableToUploadPartSnafu {
+                bucket,
+                key,
+                upload_id,
+                part: part_number,
+            })?;
+
+        Ok(output)
+    }
 }
 
 #[async_trait]
 impl ObjectSource for S3LikeSource {
+    async fn supports_range(&self, _: &str) -> super::Result<bool> {
+        Ok(true)
+    }
+
     async fn get(
         &self,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
         let permit = self
@@ -1107,7 +1347,7 @@ impl ObjectSource for S3LikeSource {
         page_size: Option<i32>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<LSResult> {
-        let (scheme, bucket, key) = parse_url(path)?;
+        let (scheme, bucket, key) = parse_s3_url(path)?;
 
         if posix {
             // Perform a directory-based list of entries in the next level
@@ -1202,13 +1442,341 @@ impl ObjectSource for S3LikeSource {
             Ok(lsr)
         }
     }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
+    }
+}
+
+/// S3MultipartWriter is responsible for managing multipart uploads to S3.
+///
+/// It handles the creation of the multipart upload, writing individual parts to S3 and also
+/// completing the multipart upload once all parts have been uploaded.
+///
+/// It uses a semaphore to limit upload concurrency (and therefore memory utilization associated
+/// with the part data).
+#[derive(Debug)]
+pub struct S3MultipartWriter {
+    /// The URI of the S3 object to write to.
+    uri: Cow<'static, str>,
+
+    /// The bucket and key of the S3 object to write to.
+    bucket: Cow<'static, str>,
+
+    /// The key of the S3 object to write to.
+    key: Cow<'static, str>,
+
+    /// The upload ID of the S3 multipart upload. This is used to identify the multipart upload
+    /// to S3.
+    upload_id: Cow<'static, str>,
+
+    /// The region the upload should write to.
+    region: Region,
+
+    /// Handles for the parts being uploaded.
+    in_progress_uploads: JoinSet<super::Result<CompletedPart>>,
+
+    /// Stores the next part number for multipart upload. See [`generate_part_number`] for a
+    /// convenience method to generate the next part number.
+    next_part_number: NonZeroI32,
+
+    /// The S3 client used to perform the multipart upload operations.
+    s3_client: Arc<S3LikeSource>,
+
+    /// Semaphore to limit the number of concurrent in-flight uploads.
+    in_flight_upload_permits: Arc<tokio::sync::Semaphore>,
+}
+
+/// Represents a completed part of a multipart upload to S3.
+#[derive(Debug, Clone)]
+pub struct CompletedPart {
+    part_number: NonZeroI32,
+    etag: Cow<'static, str>,
+}
+
+pub struct MultipartUploadInfo {
+    pub upload_id: Cow<'static, str>,
+    pub region: Region,
+}
+
+impl S3MultipartWriter {
+    const MINIMUM_PART_SIZE: usize = 5 * 1024 * 1024; // 5 Mebibytes
+    const MAXIMUM_PART_SIZE: usize = 5 * 1024 * 1024 * 1024; // 5 Gibibytes
+    const MAX_PART_COUNT: i32 = 10000; // Max parts in a multipart upload
+
+    /// Ensure that the part size is within the valid range for S3 multipart uploads.
+    /// This function checks that the part size is at least 5 MiB and at most 5 GiB.
+    fn validate_part_size(part_size: NonZeroUsize) -> super::Result<()> {
+        if part_size.get() > Self::MAXIMUM_PART_SIZE {
+            return Err(InvalidArgument {
+                msg: format!(
+                    "Part size must be less than or equal to {} bytes",
+                    Self::MAXIMUM_PART_SIZE
+                ),
+            });
+        }
+        if part_size.get() < Self::MINIMUM_PART_SIZE {
+            return Err(InvalidArgument {
+                msg: format!(
+                    "Part size must be greater than or equal to {} bytes",
+                    Self::MINIMUM_PART_SIZE
+                ),
+            });
+        }
+        Ok(())
+    }
+
+    /// Creates a new S3MultipartWriter for the specified URI, part size, and maximum concurrent uploads.
+    ///
+    /// This kicks off the multipart upload process by creating a new multipart upload on S3.
+    /// The returned S3MultipartWriter can then be used to write parts to the upload. After all parts
+    /// are written, `shutdown()` must be called to finalize the upload.
+    pub async fn create(
+        uri: impl Into<String>,
+        part_size: NonZeroUsize,
+        max_concurrent_uploads: NonZeroUsize,
+        s3_client: Arc<S3LikeSource>,
+    ) -> super::Result<Self> {
+        let uri = uri.into();
+        let (_scheme, bucket, key) = parse_s3_url(&uri)?;
+
+        if key.is_empty() {
+            return Err(Error::NotAFile { path: uri.clone() }.into());
+        }
+
+        Self::validate_part_size(part_size)?;
+
+        log::debug!("S3 multipart upload requested: {uri}, part_size: {part_size}");
+
+        let upload_info = s3_client
+            .create_multipart_upload(&bucket, &key, &s3_client.default_region)
+            .await?;
+
+        log::debug!(
+            "S3 multipart upload has been assigned an upload_id: {uri}, upload_id: {}",
+            upload_info.upload_id
+        );
+
+        Ok(Self {
+            uri: uri.into(),
+            bucket: bucket.into(),
+            key: key.into(),
+            upload_id: upload_info.upload_id.into(),
+            region: upload_info.region,
+            s3_client,
+            next_part_number: unsafe { NonZeroI32::new_unchecked(1) },
+            in_progress_uploads: JoinSet::new(),
+            in_flight_upload_permits: Arc::new(tokio::sync::Semaphore::new(
+                max_concurrent_uploads.get(),
+            )),
+        })
+    }
+}
+
+impl S3MultipartWriter {
+    /// Generates the next part number for the multipart upload.
+    ///
+    /// Panics if the next part number exceeds the maximum part count of 10,000.
+    fn generate_part_number(&mut self) -> NonZeroI32 {
+        let part_number = self.next_part_number;
+        self.next_part_number = NonZeroI32::new(part_number.get() + 1).unwrap();
+        assert!(
+            self.next_part_number.get() <= Self::MAX_PART_COUNT,
+            "Maximum part count exceeded"
+        );
+        part_number
+    }
+
+    /// Writes a chunk of data to the S3 multipart upload.
+    ///
+    /// The part size is expected to be the same as the one specified during the creation of the
+    /// S3MultipartWriter. If the part size is different, it will panic.
+    ///
+    /// A new part number is generated for the part and a new task is spawned to upload the part
+    /// in the background.
+    pub async fn write_part(&mut self, chunk: bytes::Bytes) -> super::Result<()> {
+        // Create an async task to upload the part.
+        let data_len = chunk.len();
+
+        let next_part_number = self.generate_part_number();
+        let upload_id = self.upload_id.clone();
+        let bucket = self.bucket.clone();
+        let key = self.key.clone();
+        let s3_client = self.s3_client.clone();
+        let region = self.region.clone();
+
+        log::debug!(
+            "S3 multipart upload part requested: {next_part_number}, size: {data_len} bytes"
+        );
+        let upload_permit = self.in_flight_upload_permits.clone().acquire_owned().await;
+        log::debug!(
+            "S3 multipart upload part permit acquired: {next_part_number}, size: {data_len} bytes"
+        );
+
+        let upload_future = async move {
+            let output = s3_client
+                .upload_part(&bucket, &key, &upload_id, next_part_number, chunk, &region)
+                .await?;
+
+            drop(upload_permit);
+
+            log::debug!(
+                "S3 upload part has been completed: {next_part_number}, size: {data_len} bytes"
+            );
+
+            let etag = output.e_tag().map(|etag| etag.to_string().into()).context(
+                MissingEtagForMultipartUploadSnafu {
+                    bucket: bucket.to_string(),
+                    key: key.to_string(),
+                    upload_id: upload_id.to_string(),
+                    part: next_part_number,
+                },
+            )?;
+
+            Ok(CompletedPart {
+                part_number: next_part_number,
+                etag,
+            })
+        };
+
+        // Spawn the upload task and add it to the in-progress uploads.
+        self.in_progress_uploads.spawn(upload_future);
+        Ok(())
+    }
+
+    pub async fn shutdown(&mut self) -> super::Result<()> {
+        // Wait for all in-progress uploads to complete.
+        let mut completed_parts = vec![];
+
+        while let Some(upload) = self.in_progress_uploads.join_next().await {
+            match upload {
+                Ok(Ok(part)) => completed_parts.push(part),
+                Ok(Err(err)) => return Err(err),
+                Err(err) => return Err(super::Error::JoinError { source: err }),
+            }
+        }
+
+        log::debug!(
+            "Finalizing multipart upload with {} parts.",
+            completed_parts.len()
+        );
+
+        // Ensure that completed parts are sorted by in ascending order by part number - else S3
+        // will reject the completion request.
+        completed_parts.sort_by_key(|part| part.part_number);
+
+        // Complete the multipart upload with the completed parts.
+        self.s3_client
+            .complete_multipart_upload(
+                self.key.clone(),
+                self.bucket.clone(),
+                self.upload_id.clone(),
+                completed_parts
+                    .into_iter()
+                    .map(|part| part.into())
+                    .collect(),
+                &self.region,
+            )
+            .await?;
+
+        log::debug!("S3 multipart upload completed: {}", self.uri);
+        Ok(())
+    }
+}
+
+pub struct S3PartBuffer {
+    buffer: Vec<u8>,
+    part_size: NonZeroUsize,
+    tx: Option<Sender<bytes::Bytes>>,
+}
+
+impl S3PartBuffer {
+    pub fn new(part_size: NonZeroUsize, tx: Sender<bytes::Bytes>) -> Self {
+        Self {
+            buffer: Vec::with_capacity(part_size.get()),
+            part_size,
+            tx: Some(tx),
+        }
+    }
+
+    pub fn shutdown(&mut self) -> std::io::Result<()> {
+        log::debug!("Shutting down S3 parts buffer.");
+
+        if !self.buffer.is_empty() {
+            log::debug!(
+                "S3 parts buffer has {} bytes remaining to send.",
+                self.buffer.len()
+            );
+
+            // If there is any remaining data in the buffer, send it as a final part
+            let old_buffer =
+                std::mem::replace(&mut self.buffer, Vec::with_capacity(self.part_size.get()));
+            let new_part = bytes::Bytes::from(old_buffer);
+
+            if let Some(tx) = &self.tx {
+                // Attempt to send the final part
+                tx.blocking_send(new_part)
+                    .map_err(|_| std::io::Error::other("Failed to send final part for multi-part upload. Has the receiver been dropped?"))?;
+            } else {
+                panic!(
+                    "It seems that the S3PartBuffer has been shutdown already, but we still have data to send. This is a bug in the code."
+                );
+            }
+        }
+        self.tx.take();
+        Ok(())
+    }
+}
+
+impl Write for S3PartBuffer {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let mut remaining = buf;
+        let mut total_written_bytes = 0;
+
+        while !remaining.is_empty() {
+            // Write the buffer until its full, or we run out of data
+            let available_space = self.part_size.get() - self.buffer.len();
+            let writable_bytes = remaining.len().min(available_space);
+
+            self.buffer.extend_from_slice(&remaining[..writable_bytes]);
+            total_written_bytes += writable_bytes;
+            remaining = &remaining[writable_bytes..];
+
+            if self.buffer.len() == self.part_size.get() {
+                log::debug!("Enough data to write a part to S3.");
+                // Buffer is full, send it to the channel
+                let old_buffer =
+                    std::mem::replace(&mut self.buffer, Vec::with_capacity(self.part_size.get()));
+                let new_part = bytes::Bytes::from(old_buffer);
+
+                if let Some(tx) = &self.tx {
+                    tx.blocking_send(new_part)
+                        .map_err(|_| std::io::Error::other("Failed to send part for multi-part upload. Has the receiver been dropped?"))?;
+                } else {
+                    panic!(
+                        "It seems that the S3PartBuffer has been shutdown already, but we still have data to send. This is a bug in the code."
+                    );
+                }
+            }
+        }
+
+        Ok(total_written_bytes)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        // No-Op: Flushing a partial part will make the parts of unequal size. R2, for example,
+        // requires all parts (except the last) to be the same size. The last part is always flushed
+        // at shutdown().
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+
     use common_io_config::S3Config;
 
-    use crate::{object_io::ObjectSource, Result, S3LikeSource};
+    use crate::{Result, S3LikeSource, integrations::test_full_get, object_io::ObjectSource};
 
     #[tokio::test]
     async fn test_full_get_from_s3() -> Result<()> {
@@ -1226,38 +1794,7 @@ mod tests {
         let checksum = format!("{:x}", md5::compute(all_bytes));
         assert_eq!(checksum, parquet_expected_md5);
 
-        let first_bytes = client
-            .get(parquet_file_path, Some(0..10), None)
-            .await?
-            .bytes()
-            .await?;
-        assert_eq!(first_bytes.len(), 10);
-        assert_eq!(first_bytes.as_ref(), &all_bytes[..10]);
-
-        let first_bytes = client
-            .get(parquet_file_path, Some(10..100), None)
-            .await?
-            .bytes()
-            .await?;
-        assert_eq!(first_bytes.len(), 90);
-        assert_eq!(first_bytes.as_ref(), &all_bytes[10..100]);
-
-        let last_bytes = client
-            .get(
-                parquet_file_path,
-                Some((all_bytes.len() - 10)..(all_bytes.len() + 10)),
-                None,
-            )
-            .await?
-            .bytes()
-            .await?;
-        assert_eq!(last_bytes.len(), 10);
-        assert_eq!(last_bytes.as_ref(), &all_bytes[(all_bytes.len() - 10)..]);
-
-        let size_from_get_size = client.get_size(parquet_file_path, None).await?;
-        assert_eq!(size_from_get_size, all_bytes.len());
-
-        Ok(())
+        test_full_get(client, &parquet_file_path, &bytes).await
     }
 
     #[tokio::test]

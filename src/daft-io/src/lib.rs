@@ -1,5 +1,3 @@
-#![feature(let_chains)]
-#![feature(io_error_more)]
 #![feature(if_let_guard)]
 mod azure_blob;
 mod counting_reader;
@@ -10,9 +8,11 @@ mod local;
 mod object_io;
 mod object_store_glob;
 mod retry;
-mod s3_like;
+pub mod s3_like;
 mod stats;
 mod stream_utils;
+#[cfg(feature = "python")]
+mod unity;
 
 use std::sync::LazyLock;
 
@@ -22,24 +22,29 @@ pub use counting_reader::CountingReader;
 use google_cloud::GCSSource;
 use huggingface::HFSource;
 #[cfg(feature = "python")]
+use unity::UnitySource;
+#[cfg(test)]
+mod integrations;
+#[cfg(feature = "python")]
 pub mod python;
+pub mod range;
 
-use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 pub use common_io_config::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config};
-use futures::stream::BoxStream;
+use futures::{FutureExt, stream::BoxStream};
 use object_io::StreamingRetryParams;
-pub use object_io::{FileMetadata, GetResult};
+pub use object_io::{FileMetadata, FileType, GetResult, ObjectSource};
 #[cfg(feature = "python")]
 pub use python::register_modules;
-pub use s3_like::s3_config_from_env;
-use s3_like::S3LikeSource;
-use snafu::{prelude::*, Snafu};
+pub use s3_like::{S3LikeSource, S3MultipartWriter, S3PartBuffer, s3_config_from_env};
+use snafu::{Snafu, prelude::*};
 pub use stats::{IOStatsContext, IOStatsRef};
 use url::ParseError;
 
-use self::{http::HttpSource, local::LocalSource, object_io::ObjectSource};
+use self::{http::HttpSource, local::LocalSource};
+pub use crate::range::GetRange;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -110,13 +115,18 @@ pub enum Error {
     #[snafu(display("Unable to determine size of {}", path))]
     UnableToDetermineSize { path: String },
 
+    #[snafu(display("Invalid range request: {}", source))]
+    InvalidRangeRequest { source: range::InvalidGetRange },
+
     #[snafu(display("Unable to load Credentials for store: {store}\nDetails:\n{source:?}"))]
     UnableToLoadCredentials { store: SourceType, source: DynError },
 
     #[snafu(display("Failed to load Credentials for store: {store}\nDetails:\n{source:?}"))]
     UnableToCreateClient { store: SourceType, source: DynError },
 
-    #[snafu(display("Unauthorized to access store: {store} for file: {path}\nYou may need to set valid Credentials\n{source}"))]
+    #[snafu(display(
+        "Unauthorized to access store: {store} for file: {path}\nYou may need to set valid Credentials\n{source}"
+    ))]
     Unauthorized {
         store: SourceType,
         path: String,
@@ -181,7 +191,7 @@ impl From<Error> for std::io::Error {
     }
 }
 
-type Result<T, E = Error> = std::result::Result<T, E>;
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Default)]
 pub struct IOClient {
@@ -196,25 +206,36 @@ impl IOClient {
             config,
         })
     }
-
-    async fn get_source(&self, input: &str) -> Result<Arc<dyn ObjectSource>> {
+    pub async fn get_source_and_path(
+        &self,
+        input: &str,
+    ) -> Result<(Arc<dyn ObjectSource>, String)> {
         let (source_type, path) = parse_url(input)?;
 
         {
             if let Some(client) = self.source_type_to_store.read().await.get(&source_type) {
-                return Ok(client.clone());
+                return Ok((client.clone(), path.to_string()));
             }
         }
         let mut w_handle = self.source_type_to_store.write().await;
 
         if let Some(client) = w_handle.get(&source_type) {
-            return Ok(client.clone());
+            return Ok((client.clone(), path.to_string()));
         }
 
         let new_source = match source_type {
             SourceType::File => LocalSource::get_client().await? as Arc<dyn ObjectSource>,
             SourceType::Http => {
-                HttpSource::get_client(&self.config.http).await? as Arc<dyn ObjectSource>
+                let url = url::Url::parse(&path).context(InvalidUrlSnafu { path: input })?;
+
+                // Hugging Face requires special logic around cache busting. That logic is encapsulated in the HFSource.
+                match url.domain() {
+                    Some("huggingface.co") => {
+                        HFSource::get_client(&self.config.hf, &self.config.http).await?
+                            as Arc<dyn ObjectSource>
+                    }
+                    _ => HttpSource::get_client(&self.config.http).await? as Arc<dyn ObjectSource>,
+                }
             }
             SourceType::S3 => {
                 S3LikeSource::get_client(&self.config.s3).await? as Arc<dyn ObjectSource>
@@ -228,14 +249,31 @@ impl IOClient {
                 GCSSource::get_client(&self.config.gcs).await? as Arc<dyn ObjectSource>
             }
             SourceType::HF => {
-                HFSource::get_client(&self.config.http).await? as Arc<dyn ObjectSource>
+                HFSource::get_client(&self.config.hf, &self.config.http).await?
+                    as Arc<dyn ObjectSource>
+            }
+            SourceType::Unity => {
+                #[cfg(feature = "python")]
+                {
+                    UnitySource::get_client(&self.config.unity).await? as Arc<dyn ObjectSource>
+                }
+                #[cfg(not(feature = "python"))]
+                {
+                    unimplemented!("Unity Catalog source currently requires Python");
+                }
             }
         };
 
         if w_handle.get(&source_type).is_none() {
             w_handle.insert(source_type, new_source.clone());
         }
-        Ok(new_source)
+        Ok((new_source, path.to_string()))
+    }
+
+    pub async fn get_source(&self, input: &str) -> Result<Arc<dyn ObjectSource>> {
+        self.get_source_and_path(input)
+            .map(|f| f.map(|(source, _)| source))
+            .await
     }
 
     pub async fn glob(
@@ -264,11 +302,12 @@ impl IOClient {
     pub async fn single_url_get(
         &self,
         input: String,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> Result<GetResult> {
         let (_, path) = parse_url(&input)?;
         let source = self.get_source(&input).await?;
+
         let get_result = source
             .get(path.as_ref(), range.clone(), io_stats.clone())
             .await?;
@@ -298,7 +337,6 @@ impl IOClient {
 
     pub async fn single_url_download(
         &self,
-        index: usize,
         input: Option<String>,
         raise_error_on_failure: bool,
         io_stats: Option<IOStatsRef>,
@@ -320,10 +358,6 @@ impl IOClient {
                 if raise_error_on_failure {
                     Err(err)
                 } else {
-                    log::warn!(
-                        "Error occurred during url_download at index: {index} {} (falling back to Null)",
-                        err
-                    );
                     Ok(None)
                 }
             }
@@ -333,7 +367,6 @@ impl IOClient {
 
     pub async fn single_url_upload(
         &self,
-        index: usize,
         dest: String,
         data: Option<bytes::Bytes>,
         raise_error_on_failure: bool,
@@ -352,10 +385,6 @@ impl IOClient {
                 if raise_error_on_failure {
                     Err(err)
                 } else {
-                    log::warn!(
-                        "Error occurred during file upload at index: {index} {} (falling back to Null)",
-                        err
-                    );
                     Ok(None)
                 }
             }
@@ -372,6 +401,7 @@ pub enum SourceType {
     AzureBlob,
     GCS,
     HF,
+    Unity,
 }
 
 impl std::fmt::Display for SourceType {
@@ -383,6 +413,7 @@ impl std::fmt::Display for SourceType {
             Self::AzureBlob => write!(f, "AzureBlob"),
             Self::GCS => write!(f, "gcs"),
             Self::HF => write!(f, "hf"),
+            Self::Unity => write!(f, "UnityCatalog"),
         }
     }
 }
@@ -416,12 +447,24 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
 
     let scheme = url.scheme().to_lowercase();
     match scheme.as_ref() {
-        "file" => Ok((SourceType::File, fixed_input)),
-        "http" | "https" => Ok((SourceType::Http, fixed_input)),
-        "s3" | "s3a" => Ok((SourceType::S3, fixed_input)),
+        "file" => {
+            // Normalize file:/ to file:/// format for consistency
+            if input.starts_with("file:/") && !input.starts_with("file://") {
+                let normalized = input.replacen("file:/", "file:///", 1);
+                Ok((SourceType::File, Cow::Owned(normalized)))
+            } else {
+                Ok((SourceType::File, fixed_input))
+            }
+        }
+        "http" | "https" => match url.domain() {
+            Some("huggingface.co") => Ok((SourceType::HF, fixed_input)),
+            _ => Ok((SourceType::Http, fixed_input)),
+        },
+        "s3" | "s3a" | "s3n" => Ok((SourceType::S3, fixed_input)),
         "az" | "abfs" | "abfss" => Ok((SourceType::AzureBlob, fixed_input)),
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
         "hf" => Ok((SourceType::HF, fixed_input)),
+        "vol+dbfs" | "dbfs" => Ok((SourceType::Unity, fixed_input)),
         #[cfg(target_env = "msvc")]
         _ if scheme.len() == 1 && ("a" <= scheme.as_str() && (scheme.as_str() <= "z")) => {
             Ok((SourceType::File, Cow::Owned(format!("file://{input}"))))

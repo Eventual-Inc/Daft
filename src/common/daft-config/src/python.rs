@@ -29,12 +29,20 @@ impl PyDaftPlanningConfig {
         }
     }
 
-    #[pyo3(signature = (default_io_config=None))]
-    fn with_config_values(&mut self, default_io_config: Option<PyIOConfig>) -> PyResult<Self> {
+    #[pyo3(signature = (default_io_config=None, enable_strict_filter_pushdown=None))]
+    fn with_config_values(
+        &mut self,
+        default_io_config: Option<PyIOConfig>,
+        enable_strict_filter_pushdown: Option<bool>,
+    ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
         if let Some(default_io_config) = default_io_config {
             config.default_io_config = default_io_config.config;
+        }
+
+        if let Some(enable_strict_filter_pushdown) = enable_strict_filter_pushdown {
+            config.enable_strict_filter_pushdown = enable_strict_filter_pushdown;
         }
 
         Ok(Self {
@@ -47,6 +55,11 @@ impl PyDaftPlanningConfig {
         Ok(PyIOConfig {
             config: self.config.default_io_config.clone(),
         })
+    }
+
+    #[getter(enable_strict_filter_pushdown)]
+    fn enable_strict_filter_pushdown(&self) -> PyResult<bool> {
+        Ok(self.config.enable_strict_filter_pushdown)
     }
 }
 
@@ -95,14 +108,17 @@ impl PyDaftExecutionConfig {
         high_cardinality_aggregation_threshold=None,
         read_sql_partition_size_bytes=None,
         enable_aqe=None,
-        enable_native_executor=None,
         default_morsel_size=None,
         shuffle_algorithm=None,
         pre_shuffle_merge_threshold=None,
         flight_shuffle_dirs=None,
         enable_ray_tracing=None,
         scantask_splitting_level=None,
-        flotilla=None,
+        scantask_max_parallel=None,
+        native_parquet_writer=None,
+        use_legacy_ray_runner=None,
+        min_cpu_per_task=None,
+        actor_udf_ready_timeout=None,
     ))]
     fn with_config_values(
         &self,
@@ -125,14 +141,17 @@ impl PyDaftExecutionConfig {
         high_cardinality_aggregation_threshold: Option<f64>,
         read_sql_partition_size_bytes: Option<usize>,
         enable_aqe: Option<bool>,
-        enable_native_executor: Option<bool>,
         default_morsel_size: Option<usize>,
         shuffle_algorithm: Option<&str>,
         pre_shuffle_merge_threshold: Option<usize>,
         flight_shuffle_dirs: Option<Vec<String>>,
         enable_ray_tracing: Option<bool>,
         scantask_splitting_level: Option<i32>,
-        flotilla: Option<bool>,
+        scantask_max_parallel: Option<usize>,
+        native_parquet_writer: Option<bool>,
+        use_legacy_ray_runner: Option<bool>,
+        min_cpu_per_task: Option<f64>,
+        actor_udf_ready_timeout: Option<usize>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -199,9 +218,6 @@ impl PyDaftExecutionConfig {
         if let Some(enable_aqe) = enable_aqe {
             config.enable_aqe = enable_aqe;
         }
-        if let Some(enable_native_executor) = enable_native_executor {
-            config.enable_native_executor = enable_native_executor;
-        }
         if let Some(default_morsel_size) = default_morsel_size {
             config.default_morsel_size = default_morsel_size;
         }
@@ -236,8 +252,24 @@ impl PyDaftExecutionConfig {
             config.scantask_splitting_level = scantask_splitting_level;
         }
 
-        if let Some(flotilla) = flotilla {
-            config.flotilla = flotilla;
+        if let Some(scantask_max_parallel) = scantask_max_parallel {
+            config.scantask_max_parallel = scantask_max_parallel;
+        }
+
+        if let Some(native_parquet_writer) = native_parquet_writer {
+            config.native_parquet_writer = native_parquet_writer;
+        }
+
+        if let Some(use_legacy_ray_runner) = use_legacy_ray_runner {
+            config.use_legacy_ray_runner = use_legacy_ray_runner;
+        }
+
+        if let Some(min_cpu_per_task) = min_cpu_per_task {
+            config.min_cpu_per_task = min_cpu_per_task;
+        }
+
+        if let Some(actor_udf_ready_timeout) = actor_udf_ready_timeout {
+            config.actor_udf_ready_timeout = actor_udf_ready_timeout;
         }
 
         Ok(Self {
@@ -334,10 +366,6 @@ impl PyDaftExecutionConfig {
         Ok(self.config.enable_aqe)
     }
     #[getter]
-    fn enable_native_executor(&self) -> PyResult<bool> {
-        Ok(self.config.enable_native_executor)
-    }
-    #[getter]
     fn default_morsel_size(&self) -> PyResult<usize> {
         Ok(self.config.default_morsel_size)
     }
@@ -361,8 +389,23 @@ impl PyDaftExecutionConfig {
     }
 
     #[getter]
-    fn flotilla(&self) -> PyResult<bool> {
-        Ok(self.config.flotilla)
+    fn scantask_max_parallel(&self) -> PyResult<usize> {
+        Ok(self.config.scantask_max_parallel)
+    }
+
+    #[getter]
+    fn use_legacy_ray_runner(&self) -> PyResult<bool> {
+        Ok(self.config.use_legacy_ray_runner)
+    }
+
+    #[getter]
+    fn min_cpu_per_task(&self) -> PyResult<f64> {
+        Ok(self.config.min_cpu_per_task)
+    }
+
+    #[getter]
+    fn actor_udf_ready_timeout(&self) -> PyResult<usize> {
+        Ok(self.config.actor_udf_ready_timeout)
     }
 }
 

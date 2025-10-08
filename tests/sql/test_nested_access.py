@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 import daft
-from daft.sql.sql import SQLCatalog
 
 
 def test_nested_access():
@@ -11,12 +12,10 @@ def test_nested_access():
         }
     )
 
-    catalog = SQLCatalog({"test": df})
-
     actual = daft.sql(
         """
     select
-        json_query(json, '.b.c') as json_b_c,
+        jq(json, '.b.c') as json_b_c,
         list[1] as list_1,
         list[0:1] as list_slice,
         dict['a'] as dict_a,
@@ -25,11 +24,11 @@ def test_nested_access():
         cast(list as int[3])[0:1] as fsl_slice
     from test
     """,
-        catalog,
+        test=df,
     ).collect()
 
     expected = df.select(
-        daft.col("json").json.query(".b.c").alias("json_b_c"),
+        daft.col("json").jq(".b.c").alias("json_b_c"),
         daft.col("list").list.get(1).alias("list_1"),
         daft.col("list").list.slice(0, 1).alias("list_slice"),
         daft.col("dict").struct.get("a").alias("dict_a"),

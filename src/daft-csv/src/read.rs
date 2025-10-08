@@ -5,7 +5,7 @@ use arrow2::{
     datatypes::Field,
     io::csv::{
         read_async,
-        read_async::{read_rows, AsyncReaderBuilder},
+        read_async::{AsyncReaderBuilder, read_rows},
     },
 };
 use async_compat::{Compat, CompatExt};
@@ -16,16 +16,16 @@ use daft_compression::CompressionCodec;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns};
-use daft_io::{parse_url, GetResult, IOClient, IOStatsRef, SourceType};
+use daft_io::{GetResult, IOClient, IOStatsRef, SourceType, parse_url};
 use daft_recordbatch::RecordBatch;
-use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
+use futures::{Stream, StreamExt, TryStreamExt, stream::BoxStream};
 use rayon::{
     iter::{IndexedParallelIterator, IntoParallelIterator},
     prelude::{IntoParallelRefIterator, ParallelIterator},
 };
 use snafu::{
-    futures::{try_future::Context, TryFutureExt},
     ResultExt,
+    futures::{TryFutureExt, try_future::Context},
 };
 use tokio::{
     fs::File,
@@ -35,8 +35,8 @@ use tokio::{
 use tokio_util::io::StreamReader;
 
 use crate::{
-    metadata::read_csv_schema_single, ArrowSnafu, CsvConvertOptions, CsvParseOptions,
-    CsvReadOptions,
+    ArrowSnafu, CsvConvertOptions, CsvParseOptions, CsvReadOptions,
+    metadata::read_csv_schema_single,
 };
 
 trait ByteRecordChunkStream: Stream<Item = super::Result<Vec<read_async::ByteRecord>>> {}
@@ -155,9 +155,8 @@ pub async fn stream_csv(
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-    let uri = uri.as_str();
-    let (source_type, _) = parse_url(uri)?;
-    let is_compressed = CompressionCodec::from_uri(uri).is_some();
+    let (source_type, _) = parse_url(&uri)?;
+    let is_compressed = CompressionCodec::from_uri(&uri).is_some();
     if matches!(source_type, SourceType::File) && !is_compressed {
         let stream = stream_csv_local(
             uri,
@@ -275,7 +274,7 @@ async fn read_csv_single_into_table(
     };
 
     let (chunk_stream, fields) = read_csv_single_into_stream(
-        uri,
+        uri.to_string(),
         convert_options_with_predicate_columns.unwrap_or_default(),
         parse_options.unwrap_or_default(),
         read_options,
@@ -362,7 +361,7 @@ async fn read_csv_single_into_table(
         .collect::<DaftResult<Vec<_>>>()?;
     // Handle empty table case.
     if collected_tables.is_empty() {
-        return RecordBatch::empty(Some(schema));
+        return Ok(RecordBatch::empty(Some(schema)));
     }
 
     // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
@@ -378,7 +377,7 @@ async fn read_csv_single_into_table(
 }
 
 pub async fn stream_csv_single(
-    uri: &str,
+    uri: String,
     convert_options: Option<CsvConvertOptions>,
     parse_options: Option<CsvParseOptions>,
     read_options: Option<CsvReadOptions>,
@@ -477,7 +476,7 @@ pub async fn stream_csv_single(
 }
 
 async fn read_csv_single_into_stream(
-    uri: &str,
+    uri: String,
     convert_options: CsvConvertOptions,
     parse_options: CsvParseOptions,
     read_options: Option<CsvReadOptions>,
@@ -489,7 +488,7 @@ async fn read_csv_single_into_stream(
             (schema.to_arrow()?, None, None)
         } else {
             let (schema, read_stats) = read_csv_schema_single(
-                uri,
+                &uri,
                 parse_options.clone(),
                 // Read at most 1 MiB when doing schema inference.
                 Some(1024 * 1024),
@@ -517,7 +516,7 @@ async fn read_csv_single_into_stream(
     }
     let (reader, buffer_size, chunk_size): (Box<dyn AsyncBufRead + Unpin + Send>, usize, usize) =
         match io_client
-            .single_url_get(uri.to_string(), None, io_stats)
+            .single_url_get(uri.clone(), None, io_stats)
             .await?
         {
             GetResult::File(file) => {
@@ -546,7 +545,7 @@ async fn read_csv_single_into_stream(
                     .unwrap_or(64 * 1024),
             ),
         };
-    let reader: Box<dyn AsyncRead + Unpin + Send> = match CompressionCodec::from_uri(uri) {
+    let reader: Box<dyn AsyncRead + Unpin + Send> = match CompressionCodec::from_uri(&uri) {
         Some(compression) => Box::new(compression.to_decoder(reader)),
         None => reader,
     };
@@ -724,8 +723,8 @@ mod tests {
     use std::sync::Arc;
 
     use arrow2::io::csv::read::{
-        deserialize_batch, deserialize_column, infer, infer_schema, read_rows, ByteRecord,
-        ReaderBuilder,
+        ByteRecord, ReaderBuilder, deserialize_batch, deserialize_column, infer, infer_schema,
+        read_rows,
     };
     use common_error::{DaftError, DaftResult};
     use daft_core::{
@@ -737,7 +736,7 @@ mod tests {
     use rstest::rstest;
 
     use super::read_csv;
-    use crate::{char_to_byte, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
+    use crate::{CsvConvertOptions, CsvParseOptions, CsvReadOptions, char_to_byte};
 
     #[allow(clippy::too_many_arguments)]
     fn check_equal_local_arrow2(

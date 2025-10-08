@@ -1,11 +1,11 @@
-#![feature(hash_raw_entry)]
-#![feature(let_chains)]
 mod batch;
 mod file;
 mod ipc;
+mod json_writer;
 mod parquet_writer;
 mod partition;
 mod physical;
+mod storage_backend;
 #[cfg(test)]
 mod test;
 mod utils;
@@ -34,7 +34,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use daft_core::prelude::SchemaRef;
-use daft_dsl::ExprRef;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -49,6 +49,11 @@ pub use sink::make_data_sink_writer_factory;
 
 pub const RETURN_PATHS_COLUMN_NAME: &str = "path";
 
+pub struct WriteResult {
+    pub bytes_written: usize,
+    pub rows_written: usize,
+}
+
 /// This trait is used to abstract the writing of data to a file.
 ///
 /// The `Input` type is the type of data that will be written to the file.
@@ -59,7 +64,7 @@ pub trait AsyncFileWriter: Send + Sync {
     type Result;
 
     /// Write data to the file, returning the number of bytes written.
-    async fn write(&mut self, data: Self::Input) -> DaftResult<usize>;
+    async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult>;
 
     /// Close the file and return the result. The caller should NOT write to the file after calling this method.
     async fn close(&mut self) -> DaftResult<Self::Result>;
@@ -87,7 +92,7 @@ pub trait WriterFactory: Send + Sync {
 }
 
 pub fn make_physical_writer_factory(
-    file_info: &OutputFileInfo,
+    file_info: &OutputFileInfo<BoundExpr>,
     file_schema: &SchemaRef,
     cfg: &DaftExecutionConfig,
 ) -> DaftResult<Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>> {
@@ -149,7 +154,28 @@ pub fn make_physical_writer_factory(
                 Ok(Arc::new(file_writer_factory))
             }
         }
-        _ => unreachable!("Physical write should only support Parquet and CSV"),
+        FileFormat::Json => {
+            let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
+                cfg.json_target_filesize,
+                cfg.json_inflation_factor,
+            );
+
+            let file_writer_factory = TargetFileSizeWriterFactory::new(
+                Arc::new(base_writer_factory),
+                Arc::new(file_size_calculator),
+            );
+
+            if let Some(partition_cols) = &file_info.partition_cols {
+                let partitioned_writer_factory = PartitionedWriterFactory::new(
+                    Arc::new(file_writer_factory),
+                    partition_cols.clone(),
+                );
+                Ok(Arc::new(partitioned_writer_factory))
+            } else {
+                Ok(Arc::new(file_writer_factory))
+            }
+        }
+        _ => unreachable!("Physical write should only support Parquet, CSV, and JSON"),
     }
 }
 
@@ -184,8 +210,8 @@ pub fn make_ipc_writer(
 
 #[cfg(feature = "python")]
 pub fn make_catalog_writer_factory(
-    catalog_info: &daft_logical_plan::CatalogType,
-    partition_cols: &Option<Vec<ExprRef>>,
+    catalog_info: &daft_logical_plan::CatalogType<BoundExpr>,
+    partition_cols: &Option<Vec<BoundExpr>>,
     cfg: &DaftExecutionConfig,
 ) -> Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>> {
     use catalog::CatalogWriterFactory;

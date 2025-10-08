@@ -68,6 +68,9 @@ impl DaftError {
     pub fn not_implemented<T: std::fmt::Display>(msg: T) -> Self {
         Self::NotImplemented(msg.to_string())
     }
+    pub fn type_error<T: std::fmt::Display>(msg: T) -> Self {
+        Self::TypeError(msg.to_string())
+    }
 }
 
 #[macro_export]
@@ -81,6 +84,13 @@ macro_rules! ensure {
         if !$cond {
             return Err($crate::DaftError::$variant(format!($($msg)*)));
         }
+    };
+}
+
+#[macro_export]
+macro_rules! value_err {
+    ($($arg:tt)*) => {
+        return Err(common_error::DaftError::ValueError(format!($($arg)*)))
     };
 }
 

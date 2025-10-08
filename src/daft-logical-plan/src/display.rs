@@ -1,7 +1,7 @@
 pub mod json;
 use std::fmt::{self, Display};
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
+use common_display::{DisplayLevel, tree::TreeDisplay};
 
 impl TreeDisplay for crate::LogicalPlan {
     fn display_as(&self, level: DisplayLevel) -> String {
@@ -36,12 +36,12 @@ pub(crate) mod test {
     use common_error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::{lit, resolved_col};
-    use daft_functions::utf8::{endswith, startswith};
+    use daft_functions_utf8::{endswith, startswith};
     use pretty_assertions::assert_eq;
 
     use crate::{
-        ops::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan, LogicalPlanBuilder,
-        LogicalPlanRef, SourceInfo,
+        ClusteringSpec, LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo, ops::Source,
+        source_info::PlaceHolderInfo,
     };
 
     pub(crate) fn plan_1() -> LogicalPlanRef {
@@ -88,8 +88,8 @@ pub(crate) mod test {
                     .and(endswith(resolved_col("last_name"), lit("n"))),
             )?
             .limit(1000, false)?
-            .add_monotonically_increasing_id(Some("id2"))?
-            .distinct()?
+            .add_monotonically_increasing_id(Some("id2"), None)?
+            .distinct(None)?
             .sort(vec![resolved_col("last_name")], vec![false], vec![false])?
             .build();
 
@@ -127,7 +127,7 @@ Sort6["Sort: Sort by = (col(last_name), ascending, nulls last)"]
 Distinct7["Distinct"]
 MonotonicallyIncreasingId8["MonotonicallyIncreasingId"]
 Limit9["Limit: 1000"]
-Filter10["Filter: startswith(col(last_name), lit('S')) & endswith(col(last_name),
+Filter10["Filter: starts_with(col(last_name), lit('S')) & ends_with(col(last_name),
 lit('n'))"]
 Source11["PlaceHolder:
 Num partitions = 0
@@ -159,8 +159,8 @@ Project1 --> Limit0
                     .and(endswith(resolved_col("last_name"), lit("n"))),
             )?
             .limit(1000, false)?
-            .add_monotonically_increasing_id(Some("id2"))?
-            .distinct()?
+            .add_monotonically_increasing_id(Some("id2"), None)?
+            .distinct(None)?
             .sort(vec![resolved_col("last_name")], vec![false], vec![false])?
             .build();
 
@@ -220,17 +220,22 @@ Project1 --> Limit0
             bottom_up: false,
             subgraph_options: Some(SubgraphOptions {
                 name: "Optimized Logical Plan".to_string(),
-                subgraph_id: "optimized".to_string(),
-                metadata: None,
+                subgraph_id: "optimized<daft::LogicalPlan>".to_string(),
+                metadata: Some(
+                    "{'rules': 'RuleBatch<daft::PushDownLimit>, RuleBatch<daft::EnrichWithStats>'}"
+                        .to_string(),
+                ),
             }),
         };
 
         let mermaid_repr = plan.repr_mermaid(opts);
-        let expected = r#"subgraph optimized["Optimized Logical Plan"]
+        let expected = r#"subgraph optimized__daft::LogicalPlan__["Optimized Logical Plan"]
 direction TB
-optimizedSource0["PlaceHolder:
+optimized__daft::LogicalPlan___metadata["{'rules': 'RuleBatch&lt;daft::PushDownLimit&gt;, RuleBatch&lt;daft::EnrichWithStats&gt;'}"]
+optimized__daft::LogicalPlan__Source0["PlaceHolder:
 Num partitions = 0
 Output schema = text#Utf8, id#Int32"]
+optimized__daft::LogicalPlan___metadata ~~~ optimized__daft::LogicalPlan__Source0
 end
 "#;
         assert_eq!(mermaid_repr, expected);

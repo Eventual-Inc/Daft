@@ -15,33 +15,20 @@ use cbrt::Cbrt;
 use ceil::Ceil;
 use clip::Clip;
 use common_error::{DaftError, DaftResult};
-use daft_core::{
-    prelude::{Field, Schema},
-    series::Series,
-};
+use daft_core::prelude::{Field, Schema};
 use daft_dsl::{
+    Expr,
     functions::{FunctionModule, FunctionRegistry, ScalarUDF},
-    ExprRef,
 };
 use exp::{Exp, Expm1};
 use floor::Floor;
-use log::{Ln, Log, Log10, Log1p, Log2};
+use log::{Ln, Log, Log1p, Log2, Log10};
 use round::Round;
 use sign::{Negative, Sign};
 use sqrt::Sqrt;
 
-fn to_field_single_numeric(
-    f: &dyn ScalarUDF,
-    inputs: &[ExprRef],
-    schema: &Schema,
-) -> DaftResult<Field> {
-    if inputs.len() != 1 {
-        return Err(DaftError::SchemaMismatch(format!(
-            "Expected 1 input arg, got {}",
-            inputs.len()
-        )));
-    }
-    let field = inputs.first().unwrap().to_field(schema)?;
+fn to_field_numeric(f: &dyn ScalarUDF, input: &Expr, schema: &Schema) -> DaftResult<Field> {
+    let field = input.to_field(schema)?;
     if !field.dtype.is_numeric() {
         return Err(DaftError::TypeError(format!(
             "Expected input to {} to be numeric, got {}",
@@ -52,36 +39,10 @@ fn to_field_single_numeric(
     Ok(field)
 }
 
-fn to_field_single_floating(
-    f: &dyn ScalarUDF,
-    inputs: &[ExprRef],
-    schema: &Schema,
-) -> DaftResult<Field> {
-    match inputs {
-        [first] => {
-            let field = first.to_field(schema)?;
-            let dtype = field.dtype.to_floating_representation()?;
-            Ok(Field::new(field.name, dtype))
-        }
-        _ => Err(DaftError::SchemaMismatch(format!(
-            "Expected 1 input arg for {}, got {}",
-            f.name(),
-            inputs.len()
-        ))),
-    }
-}
-
-fn evaluate_single_numeric<F: Fn(&Series) -> DaftResult<Series>>(
-    inputs: &[Series],
-    func: F,
-) -> DaftResult<Series> {
-    if inputs.len() != 1 {
-        return Err(DaftError::ValueError(format!(
-            "Expected 1 input arg, got {}",
-            inputs.len()
-        )));
-    }
-    func(inputs.first().unwrap())
+fn to_field_floating(input: &Expr, schema: &Schema) -> DaftResult<Field> {
+    let field = input.to_field(schema)?;
+    let dtype = field.dtype.to_floating_representation()?;
+    Ok(Field::new(field.name, dtype))
 }
 
 pub struct NumericFunctions;

@@ -197,7 +197,7 @@ def test_series_concat_extension_type(uuid_ext_type, chunks) -> None:
 def test_series_concat_pyobj(chunks) -> None:
     series = []
     for i in range(chunks):
-        series.append(Series.from_pylist([MockObject(i * j) for j in range(i)], pyobj="force"))
+        series.append(Series.from_pylist([MockObject(i * j) for j in range(i)], dtype=DataType.python()))
 
     concated = Series.concat(series)
 

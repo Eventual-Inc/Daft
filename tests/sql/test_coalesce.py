@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import daft
 from daft import coalesce, col, lit
 

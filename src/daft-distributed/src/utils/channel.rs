@@ -14,3 +14,11 @@ pub fn create_oneshot_channel<T>() -> (OneshotSender<T>, OneshotReceiver<T>) {
     let (sender, receiver) = tokio::sync::oneshot::channel();
     (sender, receiver)
 }
+
+pub type UnboundedSender<T> = tokio::sync::mpsc::UnboundedSender<T>;
+pub type UnboundedReceiver<T> = tokio::sync::mpsc::UnboundedReceiver<T>;
+
+pub fn create_unbounded_channel<T>() -> (UnboundedSender<T>, UnboundedReceiver<T>) {
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    (sender, receiver)
+}

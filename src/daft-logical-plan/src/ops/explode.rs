@@ -1,18 +1,20 @@
 use std::sync::Arc;
 
-use daft_dsl::{exprs_to_schema, ExprRef};
+use daft_dsl::{ExprRef, exprs_to_schema};
 use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 
 use crate::{
+    LogicalPlan,
     logical_plan::{self},
     stats::{ApproxStats, PlanStats, StatsState},
-    LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Explode {
     pub plan_id: Option<usize>,
+    pub node_id: Option<usize>,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
     // Expressions to explode. e.g. col("a")
@@ -30,7 +32,7 @@ impl Explode {
             let explode_exprs = to_explode
                 .iter()
                 .cloned()
-                .map(daft_functions::list::explode)
+                .map(daft_functions_list::explode)
                 .collect::<Vec<_>>();
 
             let explode_schema = exprs_to_schema(&explode_exprs, input.schema())?;
@@ -46,6 +48,7 @@ impl Explode {
 
         Ok(Self {
             plan_id: None,
+            node_id: None,
             input,
             to_explode,
             exploded_schema,
@@ -55,6 +58,11 @@ impl Explode {
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
         self.plan_id = Some(plan_id);
+        self
+    }
+
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
         self
     }
 

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Iterable, Iterator
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +32,10 @@ class DaftTorchDataset(MAP_DATASET_CLASS):  # type: ignore
         self.data = data
         self.length = length
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.length
 
-    def __getitem__(self, i):
+    def __getitem__(self, i: int) -> dict[str, Any]:
         return {key: vallist[i] for (key, vallist) in self.data.items()}
 
 

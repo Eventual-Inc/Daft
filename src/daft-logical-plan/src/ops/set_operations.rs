@@ -3,15 +3,15 @@ use std::sync::Arc;
 use common_error::DaftError;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::{count_mode::CountMode, join::JoinType, utils::supertype::get_supertype};
-use daft_dsl::{left_col, lit, null_lit, resolved_col, right_col, ExprRef};
-use daft_functions::list::{explode, list_fill};
+use daft_dsl::{ExprRef, left_col, lit, null_lit, resolved_col, right_col};
+use daft_functions_list::{explode, list_fill};
 use daft_schema::{dtype::DataType, field::Field, schema::SchemaRef};
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
-use super::{join::JoinPredicate, Aggregate, Concat, Distinct, Filter, Project};
-use crate::{logical_plan, logical_plan::CreationSnafu, LogicalPlan};
+use super::{Aggregate, Concat, Distinct, Filter, Project, join::JoinPredicate};
+use crate::{LogicalPlan, logical_plan, logical_plan::CreationSnafu};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SetQuantifier {
@@ -58,7 +58,7 @@ fn intersect_or_except_plan(
     let on = JoinPredicate::try_new(on_expr)?;
 
     let join = logical_plan::Join::try_new(lhs, rhs, on, join_type, None);
-    join.map(|j| Distinct::new(j.into()).into())
+    join.map(|j| Distinct::new(j.into(), None).into())
 }
 
 fn check_structurally_equal(
@@ -101,9 +101,10 @@ const V_COL_R: &str = "__v_col_r";
 const V_R_CNT: &str = "__v_r_cnt";
 const V_MIN_COUNT: &str = "__min_count";
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Intersect {
     pub plan_id: Option<usize>,
+    pub node_id: Option<usize>,
     // Upstream nodes.
     pub lhs: Arc<LogicalPlan>,
     pub rhs: Arc<LogicalPlan>,
@@ -121,6 +122,7 @@ impl Intersect {
         check_structurally_equal(lhs_schema, rhs_schema, "intersect")?;
         Ok(Self {
             plan_id: None,
+            node_id: None,
             lhs,
             rhs,
             is_all,
@@ -129,6 +131,11 @@ impl Intersect {
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
         self.plan_id = Some(plan_id);
+        self
+    }
+
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
         self
     }
 
@@ -226,7 +233,7 @@ impl Intersect {
             let fill_and_explodes = left_cols
                 .iter()
                 .map(|column| {
-                    explode(list_fill(resolved_col(V_MIN_COUNT), column.clone()))
+                    explode(list_fill(column.clone(), resolved_col(V_MIN_COUNT)))
                         .alias(column.name())
                 })
                 .collect::<Vec<_>>();
@@ -248,9 +255,10 @@ impl Intersect {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Union {
     pub plan_id: Option<usize>,
+    pub node_id: Option<usize>,
     // Upstream nodes.
     pub lhs: Arc<LogicalPlan>,
     pub rhs: Arc<LogicalPlan>,
@@ -287,6 +295,7 @@ impl Union {
         }
         Ok(Self {
             plan_id: None,
+            node_id: None,
             lhs,
             rhs,
             quantifier,
@@ -296,6 +305,11 @@ impl Union {
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
         self.plan_id = Some(plan_id);
+        self
+    }
+
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
         self
     }
 
@@ -338,7 +352,7 @@ impl Union {
                 let concat = LogicalPlan::Concat(Concat::try_new(lhs, rhs)?);
                 match self.quantifier {
                     SetQuantifier::All => Ok(concat),
-                    SetQuantifier::Distinct => Ok(Distinct::new(concat.arced()).into()),
+                    SetQuantifier::Distinct => Ok(Distinct::new(concat.arced(), None).into()),
                 }
             }
             UnionStrategy::ByName => {
@@ -374,7 +388,7 @@ impl Union {
 
                 match self.quantifier {
                     SetQuantifier::All => Ok(concat),
-                    SetQuantifier::Distinct => Ok(Distinct::new(concat.arced()).into()),
+                    SetQuantifier::Distinct => Ok(Distinct::new(concat.arced(), None).into()),
                 }
             }
         }
@@ -396,6 +410,7 @@ impl Union {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Except {
     pub plan_id: Option<usize>,
+    pub node_id: Option<usize>,
     // Upstream nodes.
     pub lhs: Arc<LogicalPlan>,
     pub rhs: Arc<LogicalPlan>,
@@ -412,6 +427,7 @@ impl Except {
         check_structurally_equal(lhs_schema, rhs_schema, "except")?;
         Ok(Self {
             plan_id: None,
+            node_id: None,
             lhs,
             rhs,
             is_all,
@@ -420,6 +436,11 @@ impl Except {
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
         self.plan_id = Some(plan_id);
+        self
+    }
+
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
         self
     }
 
@@ -493,7 +514,7 @@ impl Except {
             let fill_and_explodes = left_cols
                 .iter()
                 .map(|column| {
-                    explode(list_fill(resolved_col(virtual_sum), column.clone()))
+                    explode(list_fill(column.clone(), resolved_col(virtual_sum)))
                         .alias(column.name())
                 })
                 .collect::<Vec<_>>();

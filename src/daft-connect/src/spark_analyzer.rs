@@ -5,16 +5,16 @@ pub(crate) mod expr_analyzer;
 
 use std::{collections::HashMap, io::Cursor, rc::Rc, sync::Arc};
 
-use arrow2::io::ipc::read::{read_stream_metadata, StreamReader, StreamState};
+use arrow2::io::ipc::read::{StreamReader, StreamState, read_stream_metadata};
 use daft_core::series::Series;
 use daft_dsl::unresolved_col;
 use daft_logical_plan::{
-    ops::{SetQuantifier, UnionStrategy},
     JoinType, LogicalPlanBuilder, PyLogicalPlanBuilder,
+    ops::{SetQuantifier, UnionStrategy},
 };
-use daft_micropartition::{self, python::PyMicroPartition, MicroPartition};
+use daft_micropartition::{self, MicroPartition, python::PyMicroPartition};
 use daft_recordbatch::RecordBatch;
-use daft_scan::builder::{delta_scan, CsvScanBuilder, JsonScanBuilder, ParquetScanBuilder};
+use daft_scan::builder::{CsvScanBuilder, JsonScanBuilder, ParquetScanBuilder, delta_scan};
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_sql::SQLPlanner;
 use datatype::to_daft_datatype;
@@ -23,17 +23,17 @@ use expr_analyzer::analyze_expr;
 use itertools::zip_eq;
 use pyo3::{intern, prelude::*};
 use spark_connect::{
+    Deduplicate, Expression, Join, Limit, Offset, Range, Relation, SetOperation, Sort, Sql,
     aggregate::GroupType,
     data_type::StructField,
     expression::{
-        sort_order::{NullOrdering, SortDirection},
         ExprType, SortOrder,
+        sort_order::{NullOrdering, SortDirection},
     },
     join::JoinType as SparkJoinType,
     read::ReadType,
     relation::RelType,
     set_operation::SetOpType,
-    Deduplicate, Expression, Join, Limit, Range, Relation, SetOperation, Sort, Sql,
 };
 use tracing::debug;
 
@@ -101,6 +101,7 @@ impl SparkAnalyzer<'_> {
 
         let lp = match rel_type {
             RelType::Limit(l) => self.limit(*l).await,
+            RelType::Offset(o) => self.offset(*o).await,
             RelType::Range(r) => self.range(r),
             RelType::Project(p) => self.project(*p).await,
             RelType::Aggregate(a) => self.aggregate(*a).await,
@@ -133,7 +134,30 @@ impl SparkAnalyzer<'_> {
 
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
 
-        plan.limit(i64::from(limit), false).map_err(Into::into)
+        let limit = u64::try_from(limit).map_err(|_| {
+            ConnectError::invalid_argument(format!(
+                "LIMIT <n> must be greater than or equal to 0, instead got: {}",
+                limit
+            ))
+        })?;
+
+        plan.limit(limit, false).map_err(Into::into)
+    }
+
+    async fn offset(&self, offset: Offset) -> ConnectResult<LogicalPlanBuilder> {
+        let Offset { input, offset } = offset;
+        let input = input.required("input")?;
+
+        let plan = Box::pin(self.to_logical_plan(*input)).await?;
+
+        let offset = u64::try_from(offset).map_err(|_| {
+            ConnectError::invalid_argument(format!(
+                "OFFSET <n> must be greater than or equal to 0, instead got: {}",
+                offset
+            ))
+        })?;
+
+        plan.offset(offset).map_err(Into::into)
     }
 
     async fn deduplicate(&self, deduplicate: Deduplicate) -> ConnectResult<LogicalPlanBuilder> {
@@ -143,15 +167,15 @@ impl SparkAnalyzer<'_> {
             ..
         } = deduplicate;
 
-        if !column_names.is_empty() {
-            not_yet_implemented!("Deduplicate with column names");
-        }
+        let columns = if column_names.is_empty() {
+            None
+        } else {
+            Some(column_names.into_iter().map(unresolved_col).collect())
+        };
 
         let input = input.required("input")?;
-
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
-
-        plan.distinct().map_err(Into::into)
+        plan.distinct(columns).map_err(Into::into)
     }
 
     async fn sort(&self, sort: Sort) -> ConnectResult<LogicalPlanBuilder> {
@@ -642,30 +666,37 @@ impl SparkAnalyzer<'_> {
 
         let plan = Box::pin(self.to_logical_plan(*input)).await?;
 
-        // todo: let's implement this directly into daft
-
-        // Convert the rename mappings into expressions
-        let rename_exprs = if !rename_columns_map.is_empty() {
+        // Create rename mappings from either format
+        let rename_map: HashMap<String, String> = if !rename_columns_map.is_empty() {
             // Use rename_columns_map if provided (legacy format)
             rename_columns_map
-                .into_iter()
-                .map(|(old_name, new_name)| {
-                    unresolved_col(old_name.as_str()).alias(new_name.as_str())
-                })
-                .collect()
         } else {
             // Use renames if provided (new format)
             renames
                 .into_iter()
-                .map(|rename| {
-                    unresolved_col(rename.col_name.as_str()).alias(rename.new_col_name.as_str())
-                })
+                .map(|rename| (rename.col_name, rename.new_col_name))
                 .collect()
         };
 
-        // Apply the rename expressions to the plan
+        // Get all column names from the schema and create expressions for each
+        let all_exprs: Vec<_> = plan
+            .schema()
+            .names()
+            .into_iter()
+            .map(|col_name| {
+                if let Some(new_name) = rename_map.get(&col_name) {
+                    // This column should be renamed
+                    unresolved_col(col_name.as_str()).alias(new_name.as_str())
+                } else {
+                    // This column should remain unchanged
+                    unresolved_col(col_name.as_str())
+                }
+            })
+            .collect();
+
+        // Apply the expressions to select all columns (with renames applied)
         let plan = plan
-            .select(rename_exprs)
+            .select(all_exprs)
             .wrap_err("Failed to apply rename expressions to logical plan")?;
 
         Ok(plan)
@@ -756,10 +787,10 @@ impl SparkAnalyzer<'_> {
     }
 
     pub async fn relation_to_daft_schema(&self, input: Relation) -> ConnectResult<SchemaRef> {
-        if let Some(common) = &input.common {
-            if common.origin.is_some() {
-                debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
-            }
+        if let Some(common) = &input.common
+            && common.origin.is_some()
+        {
+            debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
         }
 
         let plan = Box::pin(self.to_logical_plan(input)).await?;

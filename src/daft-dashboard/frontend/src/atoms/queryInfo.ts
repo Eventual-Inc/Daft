@@ -2,9 +2,12 @@ import { atomWithStorage } from "jotai/utils";
 
 export type QueryInfo = {
     id: string
-    mermaid_plan: string
+    unoptimized_plan: string,
+    optimized_plan: string,
     plan_time_start: string
     plan_time_end: string
+    run_id?: string
+    logs?: string
 };
 
 export type QueryInfoMap = {

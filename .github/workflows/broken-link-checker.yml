@@ -1,7 +1,7 @@
 # This workflow will do a clean installation of node dependencies, cache/restore them, build the source code and run tests across different versions of node
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-nodejs
 
-name: Check Broken Links on getdaft.io
+name: Check Broken Links on daft.ai
 
 on:
   schedule:
@@ -12,17 +12,50 @@ jobs:
   check-links:
     timeout-minutes: 45
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        site:
+        - url: https://www.daft.ai
+        - url: https://docs.daft.ai
+        - url: https://www.eventual.ai
     steps:
     - name: setup broken link checker
       run: npm install -g broken-link-checker
-    - name: Check getdaft.io
+    - name: Check ${{ matrix.site.url }}
       uses: nick-fields/retry@v3
       with:
         timeout_minutes: 10
-        retry_wait_seconds: 60
+        retry_wait_seconds: 120
         max_attempts: 3
-        retry_on: error
-        command: blc https://www.getdaft.io -ro --exclude www.pytorch.org/ --exclude https://github.com/Eventual-Inc/Daft/ --exclude https://twitter.com/daft_dataframe --exclude https://www.linkedin.com/company/eventualcomputing/ --exclude https://x.com/daft_dataframe --exclude https://www.linkedin.com/showcase/daft-dataframe/ --exclude https://scarf.sh/ --exclude https://static.scarf.sh/* --exclude https://huggingface.co/docs/dataset-viewer/en/parquet
+        command: |
+          LOG="$(mktemp)"
+          blc ${{ matrix.site.url }} \
+            -ro \
+            --exclude https://scarf.sh/ \
+            --exclude https://static.scarf.sh/* \
+            --exclude http://www.allaboutcookies.org/ \
+            | tee "$LOG"
+
+          # Only fail on 404s; print other broken links too (deduplicated).
+          BROKEN_LINES="$(grep 'BROKEN' "$LOG" | sort -u || true)"
+          if [ -n "$BROKEN_LINES" ]; then
+            NON_404="$(printf "%s\n" "$BROKEN_LINES" | grep -v 'HTTP_404' || true)"
+            ONLY_404="$(printf "%s\n" "$BROKEN_LINES" | grep 'HTTP_404' || true)"
+
+            if [ -n "$NON_404" ]; then
+              echo "Broken links (non-404, non-fatal):"
+              printf "%s\n" "$NON_404"
+            fi
+
+            if [ -n "$ONLY_404" ]; then
+              echo "Broken links (404 - failing):"
+              printf "%s\n" "$ONLY_404"
+              exit 1
+            fi
+          else
+            echo "No broken links detected."
+          fi
   notify_on_failure:
     runs-on: self-hosted
     if: failure()

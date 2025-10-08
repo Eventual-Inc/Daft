@@ -5,7 +5,7 @@ use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_scan_info::{PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeRef};
 use daft_schema::schema::SchemaRef;
 
-use crate::{storage_config::StorageConfig, ChunkSpec, DataSource, ScanTask};
+use crate::{ChunkSpec, DataSource, ScanTask, storage_config::StorageConfig};
 #[derive(Debug)]
 pub struct AnonymousScanOperator {
     files: Vec<String>,
@@ -58,6 +58,14 @@ impl ScanOperator for AnonymousScanOperator {
         false
     }
     fn can_absorb_limit(&self) -> bool {
+        false
+    }
+
+    fn can_absorb_shard(&self) -> bool {
+        false
+    }
+
+    fn supports_count_pushdown(&self) -> bool {
         false
     }
 

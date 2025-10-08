@@ -3,10 +3,12 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
+use daft_core::prelude::Schema;
 use daft_dsl::{
+    Expr, ExprRef, Operator, WindowExpr, WindowSpec, binary_op,
     expr::window::{WindowBoundary, WindowFrame},
-    functions::{ScalarFunction, ScalarUDF, FUNCTION_REGISTRY},
-    Expr, ExprRef, WindowExpr, WindowSpec,
+    functions::{BuiltinScalarFn, FUNCTION_REGISTRY, FunctionArgs, ScalarUDF},
+    unresolved_col,
 };
 use daft_session::Session;
 use sqlparser::ast::{
@@ -16,33 +18,77 @@ use sqlparser::ast::{
 
 use crate::{
     error::{PlannerError, SQLPlannerResult},
+    invalid_operation_err,
     modules::{
-        coalesce::SQLCoalesce, hashing::SQLModuleHashing, SQLModule, SQLModuleAggs,
-        SQLModuleConfig, SQLModuleList, SQLModuleMap, SQLModulePartitioning, SQLModulePython,
-        SQLModuleSketch, SQLModuleStructs, SQLModuleTemporal, SQLModuleUtf8, SQLModuleWindow,
+        SQLModule, SQLModuleAggs, SQLModuleConfig, SQLModuleMap, SQLModulePartitioning,
+        SQLModulePython, SQLModuleSketch, SQLModuleStructs, SQLModuleWindow,
     },
     planner::SQLPlanner,
     unsupported_sql_err,
 };
+pub struct SQLElement;
+
+impl SQLFunction for SQLElement {
+    fn to_expr(&self, _: &[FunctionArg], _: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+        Ok(unresolved_col(""))
+    }
+}
+pub struct SQLConcat;
+
+impl SQLFunction for SQLConcat {
+    fn to_expr(
+        &self,
+        inputs: &[sqlparser::ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        let inputs = inputs
+            .iter()
+            .map(|input| planner.plan_function_arg(input).map(|arg| arg.into_inner()))
+            .collect::<SQLPlannerResult<Vec<_>>>()?;
+        let mut inputs = inputs.into_iter();
+
+        let Some(mut first) = inputs.next() else {
+            invalid_operation_err!("concat requires at least one argument")
+        };
+        for input in inputs {
+            first = binary_op(Operator::Plus, first, input);
+        }
+
+        Ok(first)
+    }
+
+    fn docstrings(&self, _: &str) -> String {
+        "Concatenate the inputs into a single string".to_string()
+    }
+}
 
 /// [SQL_FUNCTIONS] is a singleton that holds all the registered SQL functions.
 pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     let mut functions = SQLFunctions::new();
     functions.register::<SQLModuleAggs>();
-    functions.register::<SQLModuleHashing>();
-    functions.register::<SQLModuleList>();
     functions.register::<SQLModuleMap>();
     functions.register::<SQLModulePartitioning>();
     functions.register::<SQLModulePython>();
     functions.register::<SQLModuleSketch>();
     functions.register::<SQLModuleStructs>();
-    functions.register::<SQLModuleTemporal>();
-    functions.register::<SQLModuleUtf8>();
     functions.register::<SQLModuleConfig>();
     functions.register::<SQLModuleWindow>();
-    functions.add_fn("coalesce", SQLCoalesce {});
-    for (name, function) in FUNCTION_REGISTRY.read().unwrap().entries() {
-        functions.add_fn(name, function.clone());
+    functions.add_fn("concat", SQLConcat);
+    functions.add_fn("element", SQLElement);
+    for (name, function_factory) in FUNCTION_REGISTRY.read().unwrap().entries() {
+        // Note:
+        //  FunctionModule came from SQLModule, but SQLModule still remains.
+        //  We must add all functions from the registry to the SQLModule, but
+        //  now the FunctionModule has the ability to represent both logical
+        //  and physical via ScalarFunctionFactory. This is an easy migration
+        //  because, like the python API, we've only had dynamic functions on
+        //  the SQL side. The solution is to add all `DynamicScalarFunction`
+        //  by calling get_function with empty arguments and only adding the ok's.
+        let args = FunctionArgs::empty();
+        let schema = Schema::empty();
+        if let Ok(function) = function_factory.get_function(args, &schema) {
+            functions.add_fn(name, function);
+        }
     }
     functions
 });
@@ -53,7 +99,7 @@ impl SQLFunction for Arc<dyn ScalarUDF> {
             .iter()
             .map(|input| planner.plan_function_arg(input))
             .collect::<SQLPlannerResult<Vec<_>>>()?;
-        Ok(ScalarFunction {
+        Ok(BuiltinScalarFn {
             udf: self.clone(),
             inputs: daft_dsl::functions::FunctionArgs::try_new(inputs)?,
         }
@@ -223,7 +269,7 @@ impl SQLLiteral for i64 {
         Self: Sized,
     {
         expr.as_literal()
-            .and_then(daft_dsl::LiteralValue::as_i64)
+            .and_then(daft_core::lit::Literal::as_i64)
             .ok_or_else(|| PlannerError::invalid_operation("Expected an integer literal"))
     }
 }
@@ -245,7 +291,7 @@ impl SQLLiteral for bool {
         Self: Sized,
     {
         expr.as_literal()
-            .and_then(daft_dsl::LiteralValue::as_bool)
+            .and_then(daft_core::lit::Literal::as_bool)
             .ok_or_else(|| PlannerError::invalid_operation("Expected a boolean literal"))
     }
 }
@@ -263,13 +309,13 @@ impl<T: SQLLiteral> SQLLiteral for HashMap<String, T> {
         // get reference to struct
         let fields = expr
             .as_literal()
-            .and_then(daft_dsl::LiteralValue::as_struct)
+            .and_then(daft_core::lit::Literal::as_struct)
             .ok_or_else(|| PlannerError::invalid_operation("Expected a struct literal"))?;
         // add literals to new map
         let mut map = Self::new();
-        for (field, lit) in fields {
+        for (key, lit) in fields {
             let e = Expr::Literal(lit.clone()).arced();
-            let k = field.name.clone();
+            let k = key.clone();
             let v = T::from_expr(&e)?;
             map.insert(k, v);
         }
@@ -400,7 +446,7 @@ impl SQLPlanner<'_> {
         };
 
         if func.over.is_some() {
-            let window_spec = self.parse_window_spec(func.over.as_ref().unwrap())?;
+            let window_spec = Arc::new(self.parse_window_spec(func.over.as_ref().unwrap())?);
             let window_fn = fn_match.to_expr(&args, self)?;
             Ok(match &*window_fn {
                 Expr::Agg(agg_expr) => {
@@ -436,27 +482,32 @@ impl SQLPlanner<'_> {
                         window_spec
                             .descending
                             .push(order.asc.is_some_and(|asc| !asc));
+                        window_spec.nulls_first.push(
+                            order
+                                .nulls_first
+                                .unwrap_or_else(|| order.asc.is_some_and(|asc| !asc)),
+                        );
                     }
                 }
 
-                if spec.window_frame.is_some() {
-                    if let Some(sql_frame) = &spec.window_frame {
-                        let is_range_frame =
-                            matches!(sql_frame.units, sqlparser::ast::WindowFrameUnits::Range);
+                if spec.window_frame.is_some()
+                    && let Some(sql_frame) = &spec.window_frame
+                {
+                    let is_range_frame =
+                        matches!(sql_frame.units, sqlparser::ast::WindowFrameUnits::Range);
 
-                        let start = self
-                            .convert_window_frame_bound(&sql_frame.start_bound, is_range_frame)?;
+                    let start =
+                        self.convert_window_frame_bound(&sql_frame.start_bound, is_range_frame)?;
 
-                        // Convert end bound or default to CURRENT ROW if not specified
-                        let end = match &sql_frame.end_bound {
-                            Some(end_bound) => {
-                                self.convert_window_frame_bound(end_bound, is_range_frame)?
-                            }
-                            None => WindowBoundary::Offset(0), // CURRENT ROW
-                        };
+                    // Convert end bound or default to CURRENT ROW if not specified
+                    let end = match &sql_frame.end_bound {
+                        Some(end_bound) => {
+                            self.convert_window_frame_bound(end_bound, is_range_frame)?
+                        }
+                        None => WindowBoundary::Offset(0), // CURRENT ROW
+                    };
 
-                        window_spec.frame = Some(WindowFrame { start, end });
-                    }
+                    window_spec.frame = Some(WindowFrame { start, end });
                 }
 
                 if let Some(current_plan) = &self.current_plan {
@@ -572,7 +623,9 @@ impl SQLPlanner<'_> {
                     }
                     positional_args.insert(idx, self.try_unwrap_function_arg_expr(arg)?);
                 }
-                other => unsupported_sql_err!("unsupported function argument type: {other}, valid function arguments for this function are: {expected_named:?}."),
+                other => unsupported_sql_err!(
+                    "unsupported function argument type: {other}, valid function arguments for this function are: {expected_named:?}."
+                ),
             }
         }
 

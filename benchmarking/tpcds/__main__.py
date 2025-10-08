@@ -1,10 +1,11 @@
+from __future__ import annotations
+
 import argparse
 import logging
 import typing
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, Tuple
 
 import duckdb
 import numpy as np
@@ -30,7 +31,7 @@ class ParsedArgs:
     tpcds_gen_folder: Path
     scale_factor: float
     questions: str
-    ray_address: Optional[str]
+    ray_address: str | None
     dry_run: bool
     validate: bool
     cast_decimals: bool
@@ -41,7 +42,7 @@ class ParsedArgs:
 class RunArgs:
     scaled_tpcds_gen_folder: Path
     query_indices: list[int]
-    ray_address: Optional[str]
+    ray_address: str | None
     dry_run: bool
     validate: bool
     save_csv_on_failure: bool
@@ -50,10 +51,10 @@ class RunArgs:
 @dataclass
 class Result:
     index: int
-    duration: Optional[timedelta]
-    error_msg: Optional[str]
-    is_correct: Optional[bool] = None
-    validation_error: Optional[str] = None
+    duration: timedelta | None
+    error_msg: str | None
+    is_correct: bool | None = None
+    validation_error: str | None = None
 
     def __repr__(self) -> str:
         if self.duration and self.error_msg:
@@ -140,8 +141,8 @@ def validate_query_results(
     rtol: float = 1e-3,
     atol: float = 1e-3,
     save_csv_on_failure: bool = False,
-    query_index: Optional[int] = None,
-) -> Tuple[bool, Optional[str]]:
+    query_index: int | None = None,
+) -> tuple[bool, str | None]:
     """Compare Daft and DuckDB results."""
     try:
         conn = setup_duckdb_catalog(data_dir)
@@ -255,7 +256,7 @@ def run_query_on_ray(
 def run_query_on_local(
     run_args: RunArgs,
 ) -> list[Result]:
-    catalog = helpers.generate_catalog(run_args.scaled_tpcds_gen_folder)
+    bindings = helpers.generate_bindings(run_args.scaled_tpcds_gen_folder)
     results = []
 
     for query_index in run_args.query_indices:
@@ -271,9 +272,9 @@ def run_query_on_local(
         validation_error = None
 
         try:
-            daft.sql(query, catalog=catalog).explain(show_all=True)
+            daft.sql(query, **bindings).explain(show_all=True)
             if not run_args.dry_run:
-                daft_results = daft.sql(query, catalog=catalog).collect()
+                daft_results = daft.sql(query, **bindings).collect()
 
                 if run_args.validate and not run_args.dry_run:
                     is_correct, validation_error = validate_query_results(
@@ -323,7 +324,7 @@ def run_benchmarks(
 
     if runner == "ray":
         return run_query_on_ray(run_args)
-    elif runner == "py" or runner == "native":
+    elif runner == "native":
         return run_query_on_local(run_args)
     else:
         typing.assert_never(runner)

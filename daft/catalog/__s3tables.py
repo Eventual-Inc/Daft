@@ -3,40 +3,42 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, overload
 
+import boto3
+import botocore
 from botocore.exceptions import ClientError
 
 from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
 from daft.catalog.__iceberg import IcebergCatalog
-from daft.dataframe import DataFrame
 from daft.io import read_iceberg
 
 if TYPE_CHECKING:
     from boto3 import Session
     from mypy_boto3_s3tables import S3TablesClient
+    from mypy_boto3_s3tables.type_defs import SchemaFieldTypeDef, TableMetadataTypeDef, TableSummaryTypeDef
 
     from daft.daft import IOConfig
-    from daft.dependencies import pa
+    from daft.dataframe import DataFrame
+    from daft.io.partitioning import PartitionField
+
 else:
     S3TablesClient = object
+    TableMetadataTypeDef = dict
+    SchemaFieldTypeDef = dict
+    TableSummaryTypeDef = dict
 
 
-class S3Path(Sequence):
+class S3Path(Sequence[str]):
     _parts: tuple[str, ...]
 
     def __init__(self, *parts: str):
         self._parts = tuple(parts)
 
     @staticmethod
-    def from_ident(ident: Identifier | str) -> S3Path:
+    def from_ident(ident: Identifier) -> S3Path:
         path = S3Path.__new__(S3Path)
-        if isinstance(ident, Identifier):
-            path._parts = tuple(ident)
-        elif isinstance(ident, str):
-            path._parts = tuple(ident.split("."))
-        else:
-            raise ValueError("expected Identifier or str")
+        path._parts = tuple(ident)
         return path
 
     @staticmethod
@@ -56,7 +58,13 @@ class S3Path(Sequence):
             return False
         return self._parts == other._parts
 
-    def __getitem__(self, index: int | slice) -> str | Sequence[str]:
+    @overload
+    def __getitem__(self, index: int, /) -> str: ...
+
+    @overload
+    def __getitem__(self, index: slice, /) -> Sequence[str]: ...
+
+    def __getitem__(self, index: int | slice, /) -> str | Sequence[str]:
         return self._parts.__getitem__(index)
 
     def __len__(self) -> int:
@@ -75,7 +83,7 @@ class S3Catalog(Catalog):
     _table_bucket_arn: str
     _io_config: IOConfig
 
-    def __init__(self):
+    def __init__(self) -> None:
         raise ValueError("Not supported!")
 
     @property
@@ -118,15 +126,19 @@ class S3Catalog(Catalog):
         """Creates an S3Catalog using the boto3 session."""
         c = S3Catalog.__new__(S3Catalog)
         c._table_bucket_arn = table_bucket_arn
-        c._client = session.create_client("s3tables")
+        if isinstance(session, boto3.Session):
+            c._client = session.client("s3tables")
+        elif isinstance(session, botocore.session.Session):
+            c._client = session.create_client("s3tables")
+        else:
+            raise TypeError(f"Expected boto3.Session or botocore.session.Session, got {type(session).__name__}")
         return c
 
     ###
     # create_*
     ###
 
-    def create_namespace(self, identifier: Identifier | str):
-        """Creates a namespace in the S3 Tables catalog."""
+    def _create_namespace(self, identifier: Identifier) -> None:
         try:
             path = S3Path.from_ident(identifier)
             self._client.create_namespace(
@@ -136,20 +148,13 @@ class S3Catalog(Catalog):
         except Exception as e:
             raise ValueError(f"Failed to create namespace: {e}") from e
 
-    def create_table(
+    def _create_table(
         self,
-        identifier: Identifier | str,
-        source: Schema | DataFrame,
+        ident: Identifier,
+        schema: Schema,
         properties: Properties | None = None,
+        partition_fields: list[PartitionField] | None = None,
     ) -> Table:
-        if isinstance(source, Schema):
-            return self._create_table_from_schema(identifier, source)
-        elif isinstance(source, DataFrame):
-            raise ValueError("S3 Tables create table from DataFrame not yet supported.")
-        else:
-            raise Exception(f"Unknown table source: {source}")
-
-    def _create_table_from_schema(self, ident: Identifier | str, source: Schema) -> Table:
         path = S3Path.from_ident(ident)
         if len(path) < 2:
             raise ValueError(f"Table identifier is missing a namespace, {path!s}")
@@ -160,7 +165,7 @@ class S3Catalog(Catalog):
                 namespace=str(path.parent),
                 name=path.name,
                 format="ICEBERG",  # <-- only supported value
-                metadata=_to_metadata(source),
+                metadata=_to_metadata(schema),
             )
             return self.get_table(ident)
         except Exception as e:
@@ -170,7 +175,7 @@ class S3Catalog(Catalog):
     # has_*
     ###
 
-    def has_namespace(self, identifier: Identifier | str):
+    def _has_namespace(self, identifier: Identifier) -> bool:
         try:
             _ = self._client.get_namespace(
                 namespace=str(identifier),
@@ -183,12 +188,18 @@ class S3Catalog(Catalog):
             else:
                 raise ex
 
+    def _has_table(self, identifier: Identifier) -> bool:
+        try:
+            self._get_table(identifier)
+            return True
+        except Exception:
+            return False
+
     ###
     # drop_*
     ###
 
-    def drop_namespace(self, identifier: Identifier | str):
-        """Drops a namespace from the S3 Tables catalog."""
+    def _drop_namespace(self, identifier: Identifier) -> None:
         path = S3Path.from_ident(identifier)
         try:
             self._client.delete_namespace(
@@ -198,8 +209,7 @@ class S3Catalog(Catalog):
         except Exception as e:
             raise ValueError(f"Failed to drop namespace: {e}") from e
 
-    def drop_table(self, identifier: Identifier | str):
-        """Drops a table from the S3 Tables catalog."""
+    def _drop_table(self, identifier: Identifier) -> None:
         path = S3Path.from_ident(identifier)
         try:
             self._client.delete_table(
@@ -214,7 +224,7 @@ class S3Catalog(Catalog):
     # get_*
     ###
 
-    def get_table(self, identifier: Identifier | str) -> S3Table:
+    def _get_table(self, identifier: Identifier) -> S3Table:
         path = S3Path.from_ident(identifier)
         try:
             res = self._client.get_table(
@@ -233,8 +243,7 @@ class S3Catalog(Catalog):
     # list_*
     ###
 
-    def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
-        """Lists namespaces in the S3 Tables catalog."""
+    def _list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
         # base request
         req = {
             "tableBucketARN": self._table_bucket_arn,
@@ -259,20 +268,15 @@ class S3Catalog(Catalog):
         except Exception as e:
             raise ValueError(f"Failed to list namespaces: {e}")
 
-    def list_tables(self, pattern: str | None = None) -> list[str]:
-        """Lists tables in the S3 Tables catalog."""
+    def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
         # base request
         req = {
             "tableBucketARN": self._table_bucket_arn,
             "maxTables": 1000,
         }
 
-        # need to return qualified names, so stitch the parts (str for now).
-        def to_ident(table_summary) -> str:
-            parts = []
-            parts.extend(table_summary["namespace"])
-            parts.append(table_summary["name"])
-            return ".".join(parts)
+        def to_ident(table_summary: TableSummaryTypeDef) -> Identifier:
+            return Identifier(*table_summary["namespace"], table_summary["name"])
 
         # we must split the pattern and use the last part as the table preefix.
         if pattern:
@@ -303,6 +307,8 @@ class S3Catalog(Catalog):
     ###
 
     def _read_iceberg(self, table: S3Table) -> DataFrame:
+        if table.metadata_location is None:
+            raise ValueError("Cannot read S3Table without a metadata_location")
         return read_iceberg(table=table.metadata_location, io_config=self._io_config)
 
 
@@ -311,13 +317,13 @@ class S3Table(Table):
     _catalog: S3Catalog
     _path: S3Path
     #
-    metadata_location: str
+    metadata_location: str | None
 
     def __init__(
         self,
         catalog: S3Catalog,
         path: S3Path,
-        metadata_location: str,
+        metadata_location: str | None,
     ):
         self._catalog = catalog
         self._path = path
@@ -331,14 +337,20 @@ class S3Table(Table):
     def name(self) -> str:
         return self._path.name
 
+    def schema(self) -> Schema:
+        return self.read().schema()
+
     @property
     def namespace(self) -> S3Path:
         return self._path.parent
 
-    def read(self, **options) -> DataFrame:
+    def read(self, **options: Any) -> DataFrame:
         return self._catalog._read_iceberg(self)
 
-    def write(self):
+    def append(self, df: DataFrame, **options: Any) -> None:
+        raise ValueError("S3 Table writes require using Iceberg REST.")
+
+    def overwrite(self, df: DataFrame, **options: Any) -> None:
         raise ValueError("S3 Table writes require using Iceberg REST.")
 
 
@@ -347,7 +359,7 @@ class S3Table(Table):
 ###
 
 
-def _to_metadata(schema: Schema) -> dict:
+def _to_metadata(schema: Schema) -> TableMetadataTypeDef:
     from pyiceberg.io.pyarrow import _ConvertToIcebergWithoutIDs, visit_pyarrow
 
     # We must stringify the iceberg schema.
@@ -365,7 +377,7 @@ def _to_metadata(schema: Schema) -> dict:
     }
 
 
-def _to_field(field: pa.Field) -> dict:
+def _to_field(field) -> SchemaFieldTypeDef:  # type: ignore
     return {
         "name": field.name,
         "type": str(field.field_type),

@@ -1,5 +1,3 @@
-#![feature(if_let_guard)]
-#![feature(let_chains)]
 use std::{
     any::Any,
     borrow::Cow,
@@ -89,7 +87,10 @@ pub enum Error {
         p1,
         p2
     ))]
-    DifferingPushdownsInScanTaskMerge { p1: Pushdowns, p2: Pushdowns },
+    DifferingPushdownsInScanTaskMerge {
+        p1: Box<Pushdowns>,
+        p2: Box<Pushdowns>,
+    },
 }
 
 impl From<Error> for DaftError {
@@ -491,6 +492,16 @@ impl ScanTaskLike for ScanTask {
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }
+
+    fn get_file_paths(&self) -> Vec<String> {
+        self.sources
+            .iter()
+            .filter_map(|s| match s {
+                DataSource::File { path, .. } => Some(path.clone()),
+                _ => None,
+            })
+            .collect()
+    }
 }
 
 impl From<ScanTask> for ScanTaskLikeRef {
@@ -609,8 +620,8 @@ impl ScanTask {
         }
         if sc1.pushdowns != sc2.pushdowns {
             return Err(Error::DifferingPushdownsInScanTaskMerge {
-                p1: sc1.pushdowns.clone(),
-                p2: sc2.pushdowns.clone(),
+                p1: Box::new(sc1.pushdowns.clone()),
+                p2: Box::new(sc2.pushdowns.clone()),
             });
         }
         if sc1.generated_fields != sc2.generated_fields {
@@ -636,7 +647,17 @@ impl ScanTask {
     #[must_use]
     pub fn materialized_schema(&self) -> SchemaRef {
         match (&self.generated_fields, &self.pushdowns.columns) {
-            (None, None) => self.schema.clone(),
+            (None, None) => {
+                if let Some(aggregation) = &self.pushdowns.aggregation {
+                    Arc::new(Schema::new(vec![
+                        aggregation
+                            .to_field(&self.schema)
+                            .expect("Casting to aggregation field should not fail"),
+                    ]))
+                } else {
+                    self.schema.clone()
+                }
+            }
             _ => {
                 let schema_with_generated_fields =
                     if let Some(generated_fields) = &self.generated_fields {
@@ -646,12 +667,24 @@ impl ScanTask {
                         self.schema.clone()
                     };
 
-                let mut fields = schema_with_generated_fields.fields().to_vec();
-
-                // Filter the schema based on the pushdown column filters.
-                if let Some(columns) = &self.pushdowns.columns {
-                    fields.retain(|field| columns.contains(&field.name));
-                }
+                let fields = if let Some(aggregation) = &self.pushdowns.aggregation {
+                    // If we have a pushdown aggregation, the only field in the schema is the aggregation.
+                    vec![
+                        aggregation
+                            .to_field(&schema_with_generated_fields)
+                            .expect("Casting to aggregation field should not fail"),
+                    ]
+                } else if let Some(columns) = &self.pushdowns.columns {
+                    // Filter the schema based on the pushdown column filters.
+                    schema_with_generated_fields
+                        .fields()
+                        .iter()
+                        .filter(|field| columns.contains(&field.name))
+                        .cloned()
+                        .collect()
+                } else {
+                    schema_with_generated_fields.fields().to_vec()
+                };
 
                 Arc::new(Schema::new(fields))
             }
@@ -922,7 +955,7 @@ mod test {
     use daft_schema::{schema::Schema, time_unit::TimeUnit};
     use itertools::Itertools;
 
-    use crate::{glob::GlobScanOperator, storage_config::StorageConfig, DataSource, ScanTask};
+    use crate::{DataSource, ScanTask, glob::GlobScanOperator, storage_config::StorageConfig};
 
     fn make_scan_task(num_sources: usize) -> ScanTask {
         let sources = (0..num_sources)
@@ -977,6 +1010,7 @@ mod test {
             Some(Arc::new(Schema::empty())),
             None,
             false,
+            false,
         )
         .await
         .unwrap();
@@ -988,7 +1022,10 @@ mod test {
     async fn test_glob_display_condenses() -> DaftResult<()> {
         let glob_scan_operator: GlobScanOperator = make_glob_scan_operator(8, false).await;
         let condensed_glob_paths: Vec<String> = glob_scan_operator.multiline_display();
-        assert_eq!(condensed_glob_paths[1], "Glob paths = [../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet, ..., ../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet]");
+        assert_eq!(
+            condensed_glob_paths[1],
+            "Glob paths = [../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet, ..., ../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet]"
+        );
         Ok(())
     }
 
@@ -1018,8 +1055,16 @@ mod test {
         .await
         .unwrap()?;
         assert!(scan_tasks.len() > 1, "Expected more than 1 scan tasks");
-        assert_eq!(scan_tasks[0].num_rows(), Some(100), "We should be able to populate stats from inference when the scan task's file matches the file used during inference");
-        assert_eq!(scan_tasks[1].num_rows(), Some(100), "We should be able to populate stats from inference when the scan task's file matches the file used during inference");
+        assert_eq!(
+            scan_tasks[0].num_rows(),
+            Some(100),
+            "We should be able to populate stats from inference when the scan task's file matches the file used during inference"
+        );
+        assert_eq!(
+            scan_tasks[1].num_rows(),
+            Some(100),
+            "We should be able to populate stats from inference when the scan task's file matches the file used during inference"
+        );
         Ok(())
     }
 

@@ -70,15 +70,16 @@ pub mod pylib {
 
     use common_daft_config::PyDaftExecutionConfig;
     use common_error::DaftResult;
-    use common_file_formats::{python::PyFileFormatConfig, FileFormatConfig};
+    use common_file_formats::{FileFormatConfig, python::PyFileFormatConfig};
     use common_py_serde::impl_bincode_py_state_serialization;
     use common_scan_info::{
-        python::pylib::{PyPartitionField, PyPushdowns},
         PartitionField, Pushdowns, ScanOperator, ScanOperatorRef, ScanTaskLike, ScanTaskLikeRef,
+        SupportsPushdownFilters,
+        python::pylib::{PyPartitionField, PyPushdowns},
     };
-    use daft_dsl::expr::bound_expr::BoundExpr;
+    use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, python::PyExpr};
     use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
-    use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
+    use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
     use daft_schema::{python::schema::PySchema, schema::SchemaRef};
     use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
     use pyo3::{prelude::*, pyclass, types::PyIterator};
@@ -86,9 +87,10 @@ pub mod pylib {
 
     use super::PythonTablesFactoryArgs;
     use crate::{
-        anonymous::AnonymousScanOperator, glob::GlobScanOperator, storage_config::StorageConfig,
-        DataSource, ScanTask,
+        DataSource, ScanTask, anonymous::AnonymousScanOperator, glob::GlobScanOperator,
+        storage_config::StorageConfig,
     };
+
     #[pyclass(module = "daft.daft", frozen)]
     #[derive(Debug, Clone)]
     pub struct ScanOperatorHandle {
@@ -117,6 +119,7 @@ pub mod pylib {
                     file_format_config.into(),
                     storage_config.into(),
                 ));
+
                 Ok(Self {
                     scan_op: ScanOperatorRef(operator),
                 })
@@ -132,7 +135,8 @@ pub mod pylib {
             hive_partitioning,
             infer_schema,
             schema=None,
-            file_path_column=None
+            file_path_column=None,
+            skip_glob=false
         ))]
         pub fn glob_scan(
             py: Python,
@@ -143,6 +147,7 @@ pub mod pylib {
             infer_schema: bool,
             schema: Option<PySchema>,
             file_path_column: Option<String>,
+            skip_glob: bool,
         ) -> PyResult<Self> {
             py.allow_threads(|| {
                 let executor = common_runtime::get_io_runtime(true);
@@ -155,9 +160,10 @@ pub mod pylib {
                     schema.map(|s| s.schema),
                     file_path_column,
                     hive_partitioning,
+                    skip_glob,
                 );
 
-                let operator = executor.block_on(task)??;
+                let operator = executor.block_within_async_context(task)??;
                 let operator = Arc::new(operator);
 
                 Ok(Self {
@@ -174,9 +180,10 @@ pub mod pylib {
             Ok(Self { scan_op })
         }
     }
+
     #[pyclass(module = "daft.daft")]
     #[derive(Debug)]
-    struct PythonScanOperatorBridge {
+    pub struct PythonScanOperatorBridge {
         name: String,
         operator: PyObject,
         schema: SchemaRef,
@@ -184,6 +191,7 @@ pub mod pylib {
         can_absorb_filter: bool,
         can_absorb_limit: bool,
         can_absorb_select: bool,
+        supports_count_pushdown: bool,
         display_name: String,
     }
 
@@ -228,6 +236,11 @@ pub mod pylib {
             abc.call_method0(py, pyo3::intern!(py, "display_name"))?
                 .extract::<String>(py)
         }
+
+        fn _supports_count_pushdown(abc: &PyObject, py: Python) -> PyResult<bool> {
+            abc.call_method0(py, pyo3::intern!(py, "supports_count_pushdown"))?
+                .extract::<bool>(py)
+        }
     }
 
     #[pymethods]
@@ -241,6 +254,7 @@ pub mod pylib {
             let can_absorb_limit = Self::_can_absorb_limit(&abc, py)?;
             let can_absorb_select = Self::_can_absorb_select(&abc, py)?;
             let display_name = Self::_display_name(&abc, py)?;
+            let supports_count_pushdown = Self::_supports_count_pushdown(&abc, py)?;
 
             Ok(Self {
                 name,
@@ -251,6 +265,72 @@ pub mod pylib {
                 can_absorb_limit,
                 can_absorb_select,
                 display_name,
+                supports_count_pushdown,
+            })
+        }
+    }
+
+    impl SupportsPushdownFilters for PythonScanOperatorBridge {
+        fn push_filters(&self, filters: &[ExprRef]) -> (Vec<ExprRef>, Vec<ExprRef>) {
+            Python::with_gil(|py| {
+                let py_filters: Vec<PyObject> = filters
+                    .iter()
+                    .map(|expr| Py::new(py, PyExpr::from(expr.clone())).unwrap().into())
+                    .collect();
+
+                let result = match self
+                    .operator
+                    .call_method1(py, "push_filters", (py_filters,))
+                {
+                    Ok(res) => res,
+                    Err(e) => {
+                        e.print_and_set_sys_last_vars(py);
+                        panic!(
+                            "Python method call failed, please ensure return value is a tuple of (pushed_filters, post_filters)"
+                        );
+                    }
+                };
+
+                let (pushed_pyexpr, post_pyexpr): (Vec<PyExpr>, Vec<PyExpr>) = match result
+                    .extract(py)
+                {
+                    Ok(res) => res,
+                    Err(_) => {
+                        let py_result = result.bind(py);
+
+                        let elem1_type = py_result
+                            .get_item(0)
+                            .map(|e| {
+                                let type_ = e.get_type();
+                                let name = type_.name().unwrap();
+                                name.to_string_lossy().into_owned()
+                            })
+                            .unwrap_or_else(|_| "unknown".to_string());
+
+                        let elem2_type = py_result
+                            .get_item(1)
+                            .map(|e| {
+                                let type_ = e.get_type();
+                                let name = type_.name().unwrap();
+                                name.to_string_lossy().into_owned()
+                            })
+                            .unwrap_or_else(|_| "unknown".to_string());
+
+                        let full_type = py_result.get_type();
+                        let type_name_obj = full_type.name().unwrap();
+                        let type_name = type_name_obj.to_string_lossy();
+
+                        panic!(
+                            "Python return type mismatch. Expected tuple[list[Expr], list[Expr]]\nActual:\nElement 1 type: {}\nElement 2 type: {}\nFull type: {}",
+                            elem1_type, elem2_type, type_name
+                        );
+                    }
+                };
+
+                (
+                    pushed_pyexpr.into_iter().map(|e| e.expr).collect(),
+                    post_pyexpr.into_iter().map(|e| e.expr).collect(),
+                )
             })
         }
     }
@@ -281,6 +361,14 @@ pub mod pylib {
             self.can_absorb_select
         }
 
+        fn can_absorb_shard(&self) -> bool {
+            false
+        }
+
+        fn supports_count_pushdown(&self) -> bool {
+            self.supports_count_pushdown
+        }
+
         fn multiline_display(&self) -> Vec<String> {
             let lines = vec![format!("PythonScanOperator: {}", self.display_name)];
             lines
@@ -307,6 +395,14 @@ pub mod pylib {
                 .into_iter()
                 .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
                 .collect()
+        }
+
+        fn as_pushdown_filter(&self) -> Option<&dyn SupportsPushdownFilters> {
+            if self.can_absorb_filter {
+                Some(self)
+            } else {
+                None
+            }
         }
     }
 
@@ -373,7 +469,7 @@ pub mod pylib {
             stats: Option<PyRecordBatch>,
         ) -> PyResult<Option<Self>> {
             if let Some(ref pvalues) = partition_values
-                && let Some(Some(ref partition_filters)) =
+                && let Some(Some(partition_filters)) =
                     pushdowns.as_ref().map(|p| &p.0.partition_filters)
             {
                 let table = &pvalues.record_batch;
@@ -394,8 +490,7 @@ pub mod pylib {
             // TODO(Clark): Filter out scan tasks with pushed down filters + table stats?
 
             let pspec = PartitionSpec {
-                keys: partition_values
-                    .map_or_else(|| RecordBatch::empty(None).unwrap(), |p| p.record_batch),
+                keys: partition_values.map_or_else(|| RecordBatch::empty(None), |p| p.record_batch),
             };
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.record_batch))
@@ -603,7 +698,7 @@ pub mod pylib {
             Arc::new(FileFormatConfig::Parquet(default::Default::default())),
             Arc::new(schema),
             Arc::new(Default::default()),
-            Pushdowns::new(None, None, columns.map(Arc::new), None),
+            Pushdowns::new(None, None, columns.map(Arc::new), None, None, None),
             None,
         );
         Ok(st.estimate_in_memory_size_bytes(None).unwrap())

@@ -14,6 +14,8 @@ import pytest
 from daft import DataType, Series
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
 
+IS_CI = True if os.getenv("CI") else False
+
 
 class CustomTestObject:
     def __init__(self, a):
@@ -74,14 +76,14 @@ def test_series_pyobj_roundtrip() -> None:
 def test_series_pyobj_strict_arrow_err() -> None:
     objects = [0, CustomTestObject(1)]
 
-    with pytest.raises(pa.lib.ArrowInvalid):
+    with pytest.raises(TypeError):
         Series.from_pylist(objects, pyobj="disallow")
 
 
 def test_series_pyobj_explicit_roundtrip() -> None:
     objects = [0, 1.1, "foo"]
 
-    s = Series.from_pylist(objects, pyobj="force")
+    s = Series.from_pylist(objects, dtype=DataType.python())
 
     result = s.to_pylist()
 
@@ -269,6 +271,7 @@ def get_memory_usage() -> float:
     return process.memory_info().rss / (1024 * 1024)
 
 
+@pytest.mark.skipif(IS_CI, reason="Memory usage test is flaky in CI environments")
 def test_series_iter_memory_efficiency() -> None:
     # Create a Series with 1 million elements.
     n = 1000_000

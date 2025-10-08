@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import pytest
 
 import daft
@@ -213,28 +215,36 @@ def test_exception_surfacing():
         def name(self):
             return "throwing"
 
-        def create_namespace(self, identifier):
+        def _create_namespace(self, identifier):
             raise NotImplementedError
 
-        def create_table(self, identifier, source):
+        def _create_table(self, identifier, source):
             raise NotImplementedError
 
-        def drop_namespace(self, identifier):
+        def _drop_namespace(self, identifier):
             raise NotImplementedError
 
-        def drop_table(self, identifier):
+        def _drop_table(self, identifier):
             raise NotImplementedError
 
-        def get_table(self, identifier):
+        def _get_table(self, identifier):
             if str(identifier) == "boom":
                 raise RuntimeError("something went wrong")
             raise NotFoundError(f"Table {identifier} not found")
 
-        def list_namespaces(self, pattern=None):
+        def _list_namespaces(self, pattern=None):
             raise NotImplementedError
 
-        def list_tables(self, pattern=None):
+        def _list_tables(self, pattern=None):
             raise NotImplementedError
+
+        def _has_namespace(self, ident):
+            raise NotImplementedError
+
+        def _has_table(self, ident):
+            if str(ident) == "boom":
+                raise RuntimeError("something went wrong")
+            raise NotFoundError(f"Table {ident} not found")
 
     sess = Session()
     sess.attach(ThrowingCatalog())
@@ -246,3 +256,58 @@ def test_exception_surfacing():
     # some internal error should be surfaced in the runtime exception
     with pytest.raises(Exception, match="something went wrong"):
         sess.read_table("boom")
+
+
+#
+# PROVIDERS
+#
+
+
+class MockProvider:
+    def __init__(self, name):
+        self._name = name
+
+    @property
+    def name(self):
+        return self._name
+
+
+def test_attach_provider():
+    sess = Session()
+
+    provider = MockProvider("test_provider")
+    expect = sess.attach_provider(provider)
+    actual = sess.get_provider("test_provider")
+
+    assert expect is actual
+
+
+def test_attach_provider_with_alias():
+    sess = Session()
+
+    provider = MockProvider("test_provider")
+    expect = sess.attach_provider(provider, alias="alias")
+    actual = sess.get_provider("alias")
+
+    assert expect is actual
+    with pytest.raises(Exception):
+        sess.get_provider("test_provider")
+
+
+def test_detach_provider():
+    sess = Session()
+
+    provider = MockProvider("test_provider")
+    sess.attach_provider(provider)
+    sess.detach_provider("test_provider")
+
+    with pytest.raises(Exception):
+        sess.get_provider("test_provider")
+
+
+def test_set_provider_and_current_provider(monkeypatch):
+    mock_provider = MockProvider("mock_provider")
+    sess = Session()
+    sess.attach_provider(mock_provider)
+    sess.set_provider("mock_provider")
+    assert sess.current_provider() is mock_provider

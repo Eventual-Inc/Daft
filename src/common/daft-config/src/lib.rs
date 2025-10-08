@@ -1,4 +1,3 @@
-#![feature(let_chains)]
 pub use common_io_config::IOConfig;
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +10,7 @@ use serde::{Deserialize, Serialize};
 pub struct DaftPlanningConfig {
     pub default_io_config: IOConfig,
     pub disable_join_reordering: bool,
+    pub enable_strict_filter_pushdown: bool,
 }
 
 impl DaftPlanningConfig {
@@ -22,6 +22,11 @@ impl DaftPlanningConfig {
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {
             cfg.disable_join_reordering = true;
+        }
+        if let Ok(val) = std::env::var("DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN")
+            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+        {
+            cfg.enable_strict_filter_pushdown = true;
         }
         cfg
     }
@@ -52,20 +57,24 @@ pub struct DaftExecutionConfig {
     pub parquet_inflation_factor: f64,
     pub csv_target_filesize: usize,
     pub csv_inflation_factor: f64,
+    pub json_target_filesize: usize,
+    pub json_inflation_factor: f64,
     pub shuffle_aggregation_default_partitions: usize,
     pub partial_aggregation_threshold: usize,
     pub high_cardinality_aggregation_threshold: f64,
     pub read_sql_partition_size_bytes: usize,
     pub enable_aqe: bool,
-    pub enable_native_executor: bool,
     pub default_morsel_size: usize,
     pub shuffle_algorithm: String,
     pub pre_shuffle_merge_threshold: usize,
     pub flight_shuffle_dirs: Vec<String>,
     pub enable_ray_tracing: bool,
     pub scantask_splitting_level: i32,
+    pub scantask_max_parallel: usize,
     pub native_parquet_writer: bool,
-    pub flotilla: bool,
+    pub use_legacy_ray_runner: bool,
+    pub min_cpu_per_task: f64,
+    pub actor_udf_ready_timeout: usize,
 }
 
 impl Default for DaftExecutionConfig {
@@ -85,20 +94,24 @@ impl Default for DaftExecutionConfig {
             parquet_inflation_factor: 3.0,
             csv_target_filesize: 512 * 1024 * 1024, // 512MB
             csv_inflation_factor: 0.5,
+            json_target_filesize: 512 * 1024 * 1024, // 512MB
+            json_inflation_factor: 0.5, // TODO(desmond): This can be tuned with more real world datasets.
             shuffle_aggregation_default_partitions: 200,
             partial_aggregation_threshold: 10000,
             high_cardinality_aggregation_threshold: 0.8,
             read_sql_partition_size_bytes: 512 * 1024 * 1024, // 512MB
             enable_aqe: false,
-            enable_native_executor: false,
             default_morsel_size: 128 * 1024,
             shuffle_algorithm: "auto".to_string(),
             pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
             flight_shuffle_dirs: vec!["/tmp".to_string()],
             enable_ray_tracing: false,
             scantask_splitting_level: 1,
+            scantask_max_parallel: 8,
             native_parquet_writer: true,
-            flotilla: false,
+            use_legacy_ray_runner: false,
+            min_cpu_per_task: 0.5,
+            actor_udf_ready_timeout: 120,
         }
     }
 }
@@ -112,19 +125,6 @@ impl DaftExecutionConfig {
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {
             cfg.enable_aqe = true;
-        }
-        let exec_env_var_name = "DAFT_ENABLE_NATIVE_EXECUTOR";
-        if let Ok(val) = std::env::var(exec_env_var_name)
-            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
-        {
-            log::warn!("DAFT_ENABLE_NATIVE_EXECUTOR will be deprecated and removed in the future. Please switch to using DAFT_RUNNER=NATIVE instead.");
-            cfg.enable_native_executor = true;
-        }
-        let daft_runner_var_name = "DAFT_RUNNER";
-        if let Ok(val) = std::env::var(daft_runner_var_name)
-            && matches!(val.trim().to_lowercase().as_str(), "native")
-        {
-            cfg.enable_native_executor = true;
         }
         let ray_tracing_env_var_name = "DAFT_ENABLE_RAY_TRACING";
         if let Ok(val) = std::env::var(ray_tracing_env_var_name)
@@ -140,6 +140,20 @@ impl DaftExecutionConfig {
         if let Ok(val) = std::env::var(enable_aggressive_scantask_splitting_env_var_name) {
             cfg.scantask_splitting_level = val.parse::<i32>().unwrap_or(0);
         }
+        let scantask_max_parallel_env_var_name = "DAFT_SCANTASK_MAX_PARALLEL";
+        if let Ok(val) = std::env::var(scantask_max_parallel_env_var_name) {
+            if val.trim().to_lowercase().as_str() == "auto" {
+                cfg.scantask_max_parallel = 0;
+            } else {
+                match val.parse::<usize>() {
+                    Ok(parallel) => cfg.scantask_max_parallel = parallel,
+                    Err(_) => eprintln!(
+                        "Invalid {} value: {}, using default {}",
+                        scantask_max_parallel_env_var_name, val, cfg.scantask_max_parallel
+                    ),
+                }
+            }
+        }
         let native_parquet_writer_env_var_name = "DAFT_NATIVE_PARQUET_WRITER";
         if let Ok(val) = std::env::var(native_parquet_writer_env_var_name)
             && matches!(val.trim().to_lowercase().as_str(), "0" | "false")
@@ -147,10 +161,18 @@ impl DaftExecutionConfig {
             cfg.native_parquet_writer = false;
         }
         let flotilla_env_var_name = "DAFT_FLOTILLA";
-        if let Ok(val) = std::env::var(flotilla_env_var_name)
-            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
-        {
-            cfg.flotilla = true;
+        if let Ok(val) = std::env::var(flotilla_env_var_name) {
+            cfg.use_legacy_ray_runner = matches!(val.trim().to_lowercase().as_str(), "0" | "false");
+        }
+        let min_cpu_var = "DAFT_MIN_CPU_PER_TASK";
+        if let Ok(val) = std::env::var(min_cpu_var) {
+            match val.parse::<f64>() {
+                Ok(parsed) => cfg.min_cpu_per_task = parsed,
+                Err(_) => eprintln!(
+                    "Invalid {} value: {}, using default {}",
+                    min_cpu_var, val, cfg.min_cpu_per_task
+                ),
+            }
         }
         cfg
     }

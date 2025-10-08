@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from daft.daft import PyPushdowns
 from daft.expressions import col, lit
 from daft.io.pushdowns import Pushdowns
+from daft.sql import sql_expr
 
 if TYPE_CHECKING:
     from daft.expressions import Expression
@@ -78,8 +79,8 @@ def test_simple_partition_pushdown():
 
 
 def test_composite_predicate_pushdown():
-    filters = col("a") == lit(1)  # (= a 1)
-    partition_filters = col("b") > lit(2)  # (> b 2)
+    filters = col("a") == lit(1)
+    partition_filters = col("b") > lit(2)
     py_pushdowns = PyPushdowns(filters=filters._expr, partition_filters=partition_filters._expr)
     pushdowns = Pushdowns._from_pypushdowns(py_pushdowns)
 
@@ -89,3 +90,29 @@ def test_composite_predicate_pushdown():
 
     assert pushdowns.columns is None
     assert pushdowns.limit is None
+
+
+def test_filter_required_column_names():
+    # multiple columns with duplicates
+    filters = sql_expr("a > 1 AND b < 2 OR c > 3 AND a < 10")
+    pushdowns = Pushdowns(filters)
+    assert {"a", "b", "c"} == pushdowns.filter_required_column_names()
+
+    # single column
+    filters = sql_expr("foo = 42")
+    pushdowns = Pushdowns(filters)
+    assert {"foo"} == pushdowns.filter_required_column_names()
+
+    # no columns (literal only) is empty set
+    filters = sql_expr("1 = 1")
+    pushdowns = Pushdowns(filters)
+    assert set() == pushdowns.filter_required_column_names()
+
+    # nested expressions and repeated columns
+    filters = sql_expr("(x > 0 AND y < 5) OR (x < 10 AND z = 3)")
+    pushdowns = Pushdowns(filters)
+    assert {"x", "y", "z"} == pushdowns.filter_required_column_names()
+
+    # no filter is empty set
+    pushdowns = Pushdowns(filters=None)
+    assert set() == pushdowns.filter_required_column_names()

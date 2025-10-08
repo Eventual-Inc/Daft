@@ -13,14 +13,13 @@ use daft_logical_plan::{DataSinkInfo, DeltaLakeCatalogInfo, IcebergCatalogInfo, 
 #[cfg(feature = "python")]
 use daft_physical_plan::ops::{DeltaLakeWrite, IcebergWrite, LanceWrite};
 use daft_physical_plan::{
-    logical_to_physical,
+    PhysicalPlan, PhysicalPlanRef, QueryStageOutput, logical_to_physical,
     ops::{
-        ActorPoolProject, Aggregate, BroadcastJoin, Concat, EmptyScan, Explode, Filter, HashJoin,
-        InMemoryScan, Limit, MonotonicallyIncreasingId, Pivot, Project, Sample, Sort,
+        ActorPoolProject, Aggregate, BroadcastJoin, Concat, Dedup, EmptyScan, Explode, Filter,
+        HashJoin, InMemoryScan, Limit, MonotonicallyIncreasingId, Pivot, Project, Sample, Sort,
         SortMergeJoin, TabularScan, TabularWriteCsv, TabularWriteJson, TabularWriteParquet, TopN,
         Unpivot,
     },
-    PhysicalPlan, PhysicalPlanRef, QueryStageOutput,
 };
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
@@ -33,9 +32,8 @@ use {
     daft_logical_plan::{OutputFileInfo, PyLogicalPlanBuilder},
     daft_scan::python::pylib::PyScanTask,
     pyo3::{
-        pyclass, pymethods,
+        Bound, Py, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python, pyclass, pymethods,
         types::{PyAnyMethods, PyDict, PyList},
-        Bound, Py, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python,
     },
 };
 
@@ -141,7 +139,7 @@ impl PartitionIterator {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
-    fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<Bound<PyAny>> {
+    fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<Bound<'_, PyAny>> {
         let index = slf.index;
         slf.index += 1;
         slf.parts.bind(slf.py()).get_item(index).ok()
@@ -226,7 +224,12 @@ fn deltalake_write(
             &delta_lake_info.path,
             delta_lake_info.large_dtypes,
             delta_lake_info.version,
-            delta_lake_info.partition_cols.clone(),
+            delta_lake_info.partition_cols.as_ref().map(|cols| {
+                cols.iter()
+                    .cloned()
+                    .map(|col| col.into())
+                    .collect::<Vec<PyExpr>>()
+            }),
             delta_lake_info
                 .io_config
                 .as_ref()
@@ -402,6 +405,7 @@ fn physical_plan_to_partition_tasks(
         PhysicalPlan::Limit(Limit {
             input,
             limit,
+            offset,
             eager,
             num_partitions,
         }) => {
@@ -410,7 +414,13 @@ fn physical_plan_to_partition_tasks(
             let py_physical_plan = py.import(pyo3::intern!(py, "daft.execution.physical_plan"))?;
             let global_limit_iter = py_physical_plan
                 .getattr(pyo3::intern!(py, "global_limit"))?
-                .call1((upstream_iter, *limit, *eager, *num_partitions))?;
+                .call1((
+                    upstream_iter,
+                    *limit,
+                    offset.unwrap_or(0),
+                    *eager,
+                    *num_partitions,
+                ))?;
             Ok(global_limit_iter.into())
         }
         PhysicalPlan::Explode(Explode {
@@ -513,6 +523,7 @@ fn physical_plan_to_partition_tasks(
             descending,
             nulls_first,
             limit,
+            offset,
             num_partitions,
         }) => {
             let upstream_iter =
@@ -532,6 +543,7 @@ fn physical_plan_to_partition_tasks(
                     descending.clone(),
                     nulls_first.clone(),
                     *limit,
+                    offset.unwrap_or(0),
                     *num_partitions,
                 ))?;
             Ok(global_limit_iter.into())
@@ -562,10 +574,14 @@ fn physical_plan_to_partition_tasks(
                             .getattr(pyo3::intern!(py, "fanout_random"))?
                             .call1((upstream_iter, random_clustering_config.num_partitions()))?,
                         daft_logical_plan::ClusteringSpec::Range(_) => {
-                            unimplemented!("FanoutByRange not implemented, since only use case (sorting) doesn't need it yet.");
+                            unimplemented!(
+                                "FanoutByRange not implemented, since only use case (sorting) doesn't need it yet."
+                            );
                         }
                         daft_logical_plan::ClusteringSpec::Unknown(_) => {
-                            unreachable!("Cannot use NaiveFullyMaterializingMapReduce ShuffleExchange to map to an Unknown ClusteringSpec");
+                            unreachable!(
+                                "Cannot use NaiveFullyMaterializingMapReduce ShuffleExchange to map to an Unknown ClusteringSpec"
+                            );
                         }
                     };
                     let reduced = py
@@ -605,10 +621,14 @@ fn physical_plan_to_partition_tasks(
                             .getattr(pyo3::intern!(py, "fanout_random"))?
                             .call1((merged, random_clustering_config.num_partitions()))?,
                         daft_logical_plan::ClusteringSpec::Range(_) => {
-                            unimplemented!("FanoutByRange not implemented, since only use case (sorting) doesn't need it yet.");
+                            unimplemented!(
+                                "FanoutByRange not implemented, since only use case (sorting) doesn't need it yet."
+                            );
                         }
                         daft_logical_plan::ClusteringSpec::Unknown(_) => {
-                            unreachable!("Cannot use NaiveFullyMaterializingMapReduce ShuffleExchange to map to an Unknown ClusteringSpec");
+                            unreachable!(
+                                "Cannot use NaiveFullyMaterializingMapReduce ShuffleExchange to map to an Unknown ClusteringSpec"
+                            );
                         }
                     };
                     let reduced = py
@@ -652,10 +672,14 @@ fn physical_plan_to_partition_tasks(
                                 shuffle_dirs,
                             ))?,
                         daft_logical_plan::ClusteringSpec::Range(_) => {
-                            unimplemented!("FanoutByRange not implemented, since only use case (sorting) doesn't need it yet.");
+                            unimplemented!(
+                                "FanoutByRange not implemented, since only use case (sorting) doesn't need it yet."
+                            );
                         }
                         daft_logical_plan::ClusteringSpec::Unknown(_) => {
-                            unreachable!("Cannot use NaiveFullyMaterializingMapReduce ShuffleExchange to map to an Unknown ClusteringSpec");
+                            unreachable!(
+                                "Cannot use NaiveFullyMaterializingMapReduce ShuffleExchange to map to an Unknown ClusteringSpec"
+                            );
                         }
                     };
                     Ok(shuffled.into())
@@ -717,6 +741,19 @@ fn physical_plan_to_partition_tasks(
                 .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "local_aggregate"))?
                 .call1((upstream_iter, aggs_as_pyexprs, groupbys_as_pyexprs))?;
+            Ok(py_iter.into())
+        }
+        PhysicalPlan::Dedup(Dedup { input, columns, .. }) => {
+            let upstream_iter =
+                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
+            let columns_as_pyexprs: Vec<PyExpr> = columns
+                .iter()
+                .map(|expr| PyExpr::from(expr.clone()))
+                .collect();
+            let py_iter = py
+                .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                .getattr(pyo3::intern!(py, "local_dedup"))?
+                .call1((upstream_iter, columns_as_pyexprs))?;
             Ok(py_iter.into())
         }
         PhysicalPlan::Pivot(Pivot {

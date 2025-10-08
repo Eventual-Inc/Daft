@@ -3,7 +3,7 @@ use daft_logical_plan::PyLogicalPlanBuilder;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{translate, LocalPhysicalPlanRef};
+use crate::{LocalPhysicalPlanRef, translate};
 
 #[pyclass(module = "daft.daft", name = "LocalPhysicalPlan")]
 #[derive(Debug, Serialize, Deserialize)]

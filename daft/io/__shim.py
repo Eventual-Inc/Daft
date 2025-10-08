@@ -9,7 +9,7 @@ from daft.daft import (
     PyRecordBatch,
     ScanTask,
 )
-from daft.io.pushdowns import Pushdowns
+from daft.io.pushdowns import Pushdowns, SupportsPushdownFilters
 from daft.io.scan import ScanOperator
 
 if TYPE_CHECKING:
@@ -37,7 +37,7 @@ class _DataSourceShim(ScanOperator):
         return f"DataSource({self.name()})"
 
     def partitioning_keys(self) -> list[PyPartitionField]:
-        return []
+        return [pf._partition_field for pf in self._source.get_partition_fields()]
 
     def can_absorb_filter(self) -> bool:
         return False
@@ -67,6 +67,9 @@ class _DataSourceShim(ScanOperator):
                 pushdowns=pushdowns,
                 stats=None,
             )
+
+    def as_pushdown_filter(self) -> SupportsPushdownFilters | None:
+        return None
 
 
 def _get_record_batches(task: DataSourceTask) -> Iterator[PyRecordBatch]:

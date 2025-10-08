@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import daft
+from daft import DataType
 
 MODES = ["L", "LA", "RGB", "RGBA"]
 MODE_TO_NP_DTYPE = {
@@ -50,7 +51,7 @@ def fixed_shape_data_fixture(request):
             if arr is not None:
                 arr[..., -1] = 255
 
-    s = daft.Series.from_pylist(arrs, pyobj="force")
+    s = daft.Series.from_pylist(arrs, dtype=DataType.python())
     return s.cast(dtype)
 
 
@@ -72,5 +73,5 @@ def mixed_shape_data_fixture(request):
             if arr is not None:
                 arr[..., -1] = 255
 
-    s = daft.Series.from_pylist(arrs, pyobj="force")
+    s = daft.Series.from_pylist(arrs, dtype=DataType.python())
     return s.cast(dtype)

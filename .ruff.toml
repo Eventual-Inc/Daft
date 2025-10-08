@@ -1,8 +1,6 @@
 fix = true
 indent-width = 4
 line-length = 120
-# TODO: clean up typing code and update to py39
-target-version = "py38"
 
 [format]
 docstring-code-format = true
@@ -22,6 +20,7 @@ extend-select = [
   "LOG",  # flake8-logging
   "G",  # flake8-logging-format
   "I",  # isort
+  "D",  # pydocstyle rules
   "RUF010",  # Use explicit conversion flag
   "RUF013",  # PEP 484 prohibits implicit Optional
   "RUF015",  # Prefer next({iterable}) over single element slice
@@ -30,9 +29,8 @@ extend-select = [
   "RUF032",  # Decimal() called with float literal argument
   "RUF034",  # Useless if-else condition
   "RUF041",  # Unnecessary nested Literal
-  "RUF100",  # unused-noqa"
-  "T10",  # flake8-debugger
-  "D"  # pydocstyle rules
+  "RUF100",  # unused-noqa
+  "T10"  # flake8-debugger
 ]
 ignore = [
   "E402",  # Module level import not at top of file [TODO(sammy): We want to fix this]
@@ -48,11 +46,21 @@ ignore = [
 ]
 preview = true
 
+[lint.isort]
+known-first-party = ["daft"]
+known-third-party = ["lance"]
+required-imports = ["from __future__ import annotations"]
+
 [lint.per-file-ignores]
 # Do not enforce usage and import order rules in init files
 "__init__.py" = ["E402", "F401", "I"]
+# Only add `from __future__ import annotations` to daft and tests folders
+# TODO(slade): Find an include pattern rather than exclude
+"docs/**/*" = ["I002"]
 # Allow wild imports in conftest
 "tests/conftest.py" = ["F405", "E402", "F403"]
+"tools/**/*" = ["I002"]
+"tutorials/**/*" = ["I002"]
 
 [lint.pydocstyle]
 convention = "google"

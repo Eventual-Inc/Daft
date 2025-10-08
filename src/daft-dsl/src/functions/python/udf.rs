@@ -2,12 +2,12 @@ use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 #[cfg(feature = "python")]
 use pyo3::{
-    types::{PyAnyMethods, PyModule},
     Bound, PyAny, PyResult,
+    types::{PyAnyMethods, PyModule},
 };
 
-use super::{super::FunctionEvaluator, PythonUDF};
-use crate::{functions::FunctionExpr, ExprRef};
+use super::{super::FunctionEvaluator, LegacyPythonUDF};
+use crate::{ExprRef, functions::FunctionExpr};
 
 #[cfg(feature = "python")]
 fn run_udf(
@@ -36,7 +36,7 @@ fn run_udf(
     let pyseries = pyseries?;
 
     // Run the function on the converted Vec<Bound<PyAny>>
-    let py_udf_module = PyModule::import(py, pyo3::intern!(py, "daft.udf"))?;
+    let py_udf_module = PyModule::import(py, pyo3::intern!(py, "daft.udf.legacy"))?;
     let run_udf_func = py_udf_module.getattr(pyo3::intern!(py, "run_udf"))?;
     let result = run_udf_func.call1((
         func,                                   // Function to run
@@ -51,19 +51,21 @@ fn run_udf(
             let pyseries = pyany.extract::<PySeries>();
             match pyseries {
                 Ok(pyseries) => Ok(pyseries.series),
-                Err(e) => Err(DaftError::ValueError(format!("Internal error occurred when coercing the results of running UDF to Series:\n\n{e}"))),
+                Err(e) => Err(DaftError::ValueError(format!(
+                    "Internal error occurred when coercing the results of running UDF to Series:\n\n{e}"
+                ))),
             }
         }
         Err(e) => Err(e.into()),
     }
 }
 
-impl PythonUDF {
+impl LegacyPythonUDF {
     #[cfg(feature = "python")]
     pub fn call_udf(&self, inputs: &[Series]) -> DaftResult<Series> {
         use pyo3::Python;
 
-        use crate::functions::python::{py_udf_initialize, MaybeInitializedUDF};
+        use crate::functions::python::{MaybeInitializedUDF, py_udf_initialize};
 
         if inputs.len() != self.num_expressions {
             return Err(DaftError::SchemaMismatch(format!(
@@ -78,7 +80,6 @@ impl PythonUDF {
                 MaybeInitializedUDF::Initialized(func) => func.clone().unwrap().clone_ref(py),
                 MaybeInitializedUDF::Uninitialized { inner, init_args } => {
                     // TODO(Kevin): warn user if initialization is taking too long and ask them to use actor pool UDFs
-
                     py_udf_initialize(py, inner.clone().unwrap(), init_args.clone().unwrap())?
                 }
             };
@@ -93,9 +94,14 @@ impl PythonUDF {
             )
         })
     }
+
+    #[cfg(not(feature = "python"))]
+    pub fn call_udf(&self, inputs: &[Series]) -> DaftResult<Series> {
+        panic!("Cannot evaluate a PythonUDF without compiling for Python");
+    }
 }
 
-impl FunctionEvaluator for PythonUDF {
+impl FunctionEvaluator for LegacyPythonUDF {
     fn fn_name(&self) -> &'static str {
         "py_udf"
     }
@@ -117,13 +123,6 @@ impl FunctionEvaluator for PythonUDF {
     }
 
     fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
-        #[cfg(not(feature = "python"))]
-        {
-            panic!("Cannot evaluate a PythonUDF without compiling for Python");
-        }
-        #[cfg(feature = "python")]
-        {
-            self.call_udf(inputs)
-        }
+        self.call_udf(inputs)
     }
 }

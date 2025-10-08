@@ -1,39 +1,33 @@
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import logging
-from typing import TYPE_CHECKING, ClassVar
+import threading
+import warnings
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, ClassVar
 
+from daft import runners
 from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig
 from daft.daft import get_context as _get_context
-from daft.daft import set_runner_native as _set_runner_native
-from daft.daft import set_runner_py as _set_runner_py
-from daft.daft import set_runner_ray as _set_runner_ray
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from daft.runners.partitioning import PartitionT
     from daft.runners.runner import Runner
+    from daft.subscribers import Subscriber
 
 logger = logging.getLogger(__name__)
 
-import threading
 
-
-@dataclasses.dataclass
+@dataclass
 class DaftContext:
     """Global context for the current Daft execution environment."""
 
     _ctx: PyDaftContext
 
     _lock: ClassVar[threading.Lock] = threading.Lock()
-
-    @property
-    def _runner(self) -> Runner:
-        return self._ctx._runner
-
-    @_runner.setter
-    def _runner(self, runner: Runner):
-        self._ctx._runner = runner
 
     @staticmethod
     def _from_native(ctx: PyDaftContext) -> DaftContext:
@@ -45,8 +39,32 @@ class DaftContext:
         else:
             self._ctx = PyDaftContext()
 
-    def get_or_create_runner(self) -> Runner:
-        return self._ctx.get_or_create_runner()
+    def get_or_infer_runner_type(self) -> str:
+        """DEPRECATED: Use daft.get_or_infer_runner_type instead. This method will be removed in v0.7.0.
+
+        Get or infer the runner type.
+
+        This API will get or infer the currently used runner type according to the following strategies:
+        1. If the `runner` has been set, return its type directly;
+        2. Try to determine whether it's currently running on a ray cluster. If so, consider it to be a ray type;
+        3. Try to determine based on `DAFT_RUNNER` env variable.
+
+        :return: runner type string ("native" or "ray")
+        """
+        warnings.warn(
+            "This method is deprecated and will be removed in v0.7.0. Use daft.get_or_infer_runner_type instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return runners.get_or_infer_runner_type()
+
+    def get_or_create_runner(self) -> Runner[PartitionT]:
+        warnings.warn(
+            "This method is deprecated and will be removed in v0.7.0. Use daft.get_or_create_runner instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return runners.get_or_create_runner()
 
     @property
     def daft_execution_config(self) -> PyDaftExecutionConfig:
@@ -56,8 +74,48 @@ class DaftContext:
     def daft_planning_config(self) -> PyDaftPlanningConfig:
         return self._ctx._daft_planning_config
 
+    def attach_subscriber(self, alias: str, subscriber: Subscriber) -> None:
+        """Attaches a subscriber to this context.
+
+        Subscribers listen to events emitted during runtime, particularly during query execution.
+        See the Subscriber class for more details.
+
+        Args:
+            alias (str): alias for the subscriber
+            subscriber (Subscriber): subscriber instance
+        """
+        self._ctx.attach_subscriber(alias, subscriber)
+
+    def detach_subscriber(self, alias: str) -> None:
+        """Detaches a subscriber from this context.
+
+        Args:
+            alias (str): alias for the subscriber
+        """
+        self._ctx.detach_subscriber(alias)
+
+    def _notify_query_start(self, query_id: str, unoptimized_plan: str) -> None:
+        self._ctx.notify_query_start(query_id, unoptimized_plan)
+
+    def _notify_query_end(self, query_id: str) -> None:
+        self._ctx.notify_query_end(query_id)
+
+    def _notify_optimization_start(self, query_id: str) -> None:
+        self._ctx.notify_optimization_start(query_id)
+
+    def _notify_optimization_end(self, query_id: str, optimized_plan: str) -> None:
+        self._ctx.notify_optimization_end(query_id, optimized_plan)
+
+    def _notify_result_out(self, query_id: str, result: PartitionT) -> None:
+        from daft.recordbatch.micropartition import MicroPartition
+
+        if not isinstance(result, MicroPartition):
+            raise ValueError("Query Managers only support the Native Runner for now")
+        self._ctx.notify_result_out(query_id, result._micropartition)
+
 
 def get_context() -> DaftContext:
+    """Returns the global singleton daft context."""
     return DaftContext(_get_context())
 
 
@@ -67,7 +125,9 @@ def set_runner_ray(
     max_task_backlog: int | None = None,
     force_client_mode: bool = False,
 ) -> DaftContext:
-    """Configure Daft to execute dataframes using the Ray distributed computing framework.
+    """DEPRECATED: Use daft.set_runner_ray instead. This method will be removed in v0.7.0.
+
+    Configure Daft to execute dataframes using the Ray distributed computing framework.
 
     Args:
         address: Ray cluster address to connect to. If None, connects to or starts a local Ray instance.
@@ -81,43 +141,26 @@ def set_runner_ray(
     Note:
         Can also be configured via environment variable: DAFT_RUNNER=ray
     """
-    py_ctx = _set_runner_ray(
+    warnings.warn(
+        "This method is deprecated and will be removed in v0.7.0. Use daft.set_runner_ray instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
+    _ = runners.set_runner_ray(
         address=address,
         noop_if_initialized=noop_if_initialized,
         max_task_backlog=max_task_backlog,
         force_client_mode=force_client_mode,
     )
 
-    return DaftContext._from_native(py_ctx)
-
-
-def set_runner_py(use_thread_pool: bool | None = None, num_threads: int | None = None) -> DaftContext:
-    """Configure Daft to execute dataframes in the local Python interpreter.
-
-    Args:
-        use_thread_pool: If True, uses a thread pool for parallel execution.
-            If False, runs single-threaded. If None, uses system default.
-
-    Returns:
-        DaftContext: Updated Daft execution context configured for local Python.
-
-    Note:
-        Can also be configured via environment variable: DAFT_RUNNER=py
-
-    Deprecated:
-        This execution mode is deprecated. Use set_runner_native() instead for
-        improved local performance with native multi-threading.
-    """
-    py_ctx = _set_runner_py(
-        use_thread_pool=use_thread_pool,
-        num_threads=num_threads,
-    )
-
-    return DaftContext._from_native(py_ctx)
+    return DaftContext._from_native(_get_context())
 
 
 def set_runner_native(num_threads: int | None = None) -> DaftContext:
-    """Configure Daft to execute dataframes using native multi-threaded processing.
+    """DEPRECATED: Use daft.set_runner_native instead. This method will be removed in v0.7.0.
+
+    Configure Daft to execute dataframes using native multi-threaded processing.
 
     This is the default execution mode for Daft.
 
@@ -127,13 +170,18 @@ def set_runner_native(num_threads: int | None = None) -> DaftContext:
     Note:
         Can also be configured via environment variable: DAFT_RUNNER=native
     """
-    py_ctx = _set_runner_native(num_threads=num_threads)
+    warnings.warn(
+        "This method is deprecated and will be removed in v0.7.0. Use daft.set_runner_native instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
-    return DaftContext._from_native(py_ctx)
+    _ = runners.set_runner_native(num_threads=num_threads)
+    return DaftContext._from_native(_get_context())
 
 
 @contextlib.contextmanager
-def planning_config_ctx(**kwargs):
+def planning_config_ctx(**kwargs: Any) -> Generator[None, None, None]:
     """Context manager that wraps set_planning_config to reset the config to its original setting afternwards."""
     original_config = get_context().daft_planning_config
     try:
@@ -146,6 +194,7 @@ def planning_config_ctx(**kwargs):
 def set_planning_config(
     config: PyDaftPlanningConfig | None = None,
     default_io_config: IOConfig | None = None,
+    enable_strict_filter_pushdown: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control Daft plan construction behavior.
 
@@ -162,7 +211,7 @@ def set_planning_config(
     with ctx._lock:
         old_daft_planning_config = ctx._ctx._daft_planning_config if config is None else config
         new_daft_planning_config = old_daft_planning_config.with_config_values(
-            default_io_config=default_io_config,
+            default_io_config=default_io_config, enable_strict_filter_pushdown=enable_strict_filter_pushdown
         )
 
         ctx._ctx._daft_planning_config = new_daft_planning_config
@@ -170,7 +219,7 @@ def set_planning_config(
 
 
 @contextlib.contextmanager
-def execution_config_ctx(**kwargs):
+def execution_config_ctx(**kwargs: Any) -> Generator[None, None, None]:
     """Context manager that wraps set_execution_config to reset the config to its original setting afternwards."""
     original_config = get_context()._ctx._daft_execution_config
     try:
@@ -201,19 +250,22 @@ def set_execution_config(
     high_cardinality_aggregation_threshold: float | None = None,
     read_sql_partition_size_bytes: int | None = None,
     enable_aqe: bool | None = None,
-    enable_native_executor: bool | None = None,
     default_morsel_size: int | None = None,
     shuffle_algorithm: str | None = None,
     pre_shuffle_merge_threshold: int | None = None,
     flight_shuffle_dirs: list[str] | None = None,
     enable_ray_tracing: bool | None = None,
     scantask_splitting_level: int | None = None,
-    flotilla: bool | None = None,
+    scantask_max_parallel: int | None = None,
+    native_parquet_writer: bool | None = None,
+    use_legacy_ray_runner: bool | None = None,
+    min_cpu_per_task: float | None = None,
+    actor_udf_ready_timeout: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
     These configuration values
-    are used when a Dataframe is executed (e.g. calls to `DataFrame.write_*`, [DataFrame.collect()](https://www.getdaft.io/projects/docs/en/stable/api/dataframe/#daft.DataFrame.collect) or [DataFrame.show()](https://www.getdaft.io/projects/docs/en/stable/api/dataframe/#daft.DataFrame.select)).
+    are used when a Dataframe is executed (e.g. calls to `DataFrame.write_*`, [DataFrame.collect()](https://docs.daft.ai/en/stable/api/dataframe/#daft.DataFrame.collect) or [DataFrame.show()](https://docs.daft.ai/en/stable/api/dataframe/#daft.DataFrame.select)).
 
     Args:
         config: A PyDaftExecutionConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
@@ -248,13 +300,17 @@ def set_execution_config(
         high_cardinality_aggregation_threshold: Threshold selectivity for performing high cardinality aggregations on the Native Runner. Defaults to 0.8.
         read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
         enable_aqe: Enables Adaptive Query Execution, Defaults to False
-        enable_native_executor: Enables the native executor, Defaults to False
         default_morsel_size: Default size of morsels used for the new local executor. Defaults to 131072 rows.
         shuffle_algorithm: The shuffle algorithm to use. Defaults to "auto", which will let Daft determine the algorithm. Options are "map_reduce" and "pre_shuffle_merge".
         pre_shuffle_merge_threshold: Memory threshold in bytes for pre-shuffle merge. Defaults to 1GB
         flight_shuffle_dirs: The directories to use for flight shuffle. Defaults to ["/tmp"].
         enable_ray_tracing: Enable tracing for Ray. Accessible in `/tmp/ray/session_latest/logs/daft` after the run completes. Defaults to False.
         scantask_splitting_level: How aggressively to split scan tasks. Setting this to `2` will use a more aggressive ScanTask splitting algorithm which might be more expensive to run but results in more even splits of partitions. Defaults to 1.
+        scantask_max_parallel: Set the max parallelism for running scan tasks simultaneously. Currently, this only works for Native Runner. If set to 0, all available CPUs will be used. Defaults to 8.
+        native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
+        use_legacy_ray_runner: Whether to use the legacy ray runner. Defaults to `False`.
+        min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 0.5.
+        actor_udf_ready_timeout: Timeout for UDF actors to be ready. Defaults to 60 seconds.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -281,14 +337,17 @@ def set_execution_config(
             high_cardinality_aggregation_threshold=high_cardinality_aggregation_threshold,
             read_sql_partition_size_bytes=read_sql_partition_size_bytes,
             enable_aqe=enable_aqe,
-            enable_native_executor=enable_native_executor,
             default_morsel_size=default_morsel_size,
             shuffle_algorithm=shuffle_algorithm,
             flight_shuffle_dirs=flight_shuffle_dirs,
             pre_shuffle_merge_threshold=pre_shuffle_merge_threshold,
             enable_ray_tracing=enable_ray_tracing,
             scantask_splitting_level=scantask_splitting_level,
-            flotilla=flotilla,
+            scantask_max_parallel=scantask_max_parallel,
+            native_parquet_writer=native_parquet_writer,
+            use_legacy_ray_runner=use_legacy_ray_runner,
+            min_cpu_per_task=min_cpu_per_task,
+            actor_udf_ready_timeout=actor_udf_ready_timeout,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config

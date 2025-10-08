@@ -1,11 +1,11 @@
-use common_error::{ensure, DaftError, DaftResult};
+use common_error::{DaftError, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::Series,
 };
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF, UnaryArg, scalar::ScalarFn},
 };
 use serde::{Deserialize, Serialize};
 
@@ -17,12 +17,8 @@ macro_rules! log {
 
         #[typetag::serde]
         impl ScalarUDF for $variant {
-            fn evaluate(
-                &self,
-                inputs: daft_dsl::functions::FunctionArgs<Series>,
-            ) -> DaftResult<Series> {
-                ensure!(inputs.len() == 1, "Expected 1 argument");
-                let input = inputs.required((0, "input"))?;
+            fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+                let UnaryArg { input } = inputs.try_into()?;
 
                 input.$name()
             }
@@ -31,14 +27,13 @@ macro_rules! log {
                 stringify!($name)
             }
 
-            fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-                if inputs.len() != 1 {
-                    return Err(DaftError::SchemaMismatch(format!(
-                        "Expected 1 input arg, got {}",
-                        inputs.len()
-                    )));
-                };
-                let field = inputs.first().unwrap().to_field(schema)?;
+            fn get_return_field(
+                &self,
+                inputs: FunctionArgs<ExprRef>,
+                schema: &Schema,
+            ) -> DaftResult<Field> {
+                let UnaryArg { input } = inputs.try_into()?;
+                let field = input.to_field(schema)?;
                 let dtype = match field.dtype {
                     DataType::Float32 => DataType::Float32,
                     dt if dt.is_numeric() => DataType::Float64,
@@ -46,7 +41,7 @@ macro_rules! log {
                         return Err(DaftError::TypeError(format!(
                             "Expected input to log to be numeric, got {}",
                             field.dtype
-                        )))
+                        )));
                     }
                 };
                 Ok(Field::new(field.name, dtype))
@@ -59,7 +54,7 @@ macro_rules! log {
 
         #[must_use]
         pub fn $name(input: ExprRef) -> ExprRef {
-            ScalarFunction::new($variant, vec![input]).into()
+            ScalarFn::builtin($variant, vec![input]).into()
         }
     };
 }
@@ -79,29 +74,30 @@ log!(
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Log;
+#[derive(FunctionArgs)]
+struct LogArgs<T> {
+    input: T,
+    base: f64,
+}
 
 #[typetag::serde]
 impl ScalarUDF for Log {
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        let inner = inputs.into_inner();
-        self.evaluate_from_series(&inner)
-    }
-
     fn name(&self) -> &'static str {
         "log"
     }
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let LogArgs { input, base } = inputs.try_into()?;
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        ensure!(inputs.len() == 2, "log takes two arguments");
-        let field = inputs.first().unwrap().to_field(schema)?;
-        let base = inputs.get(1).unwrap().to_field(schema)?;
-        if !base.dtype.is_numeric() {
-            return Err(DaftError::TypeError(format!(
-                "Expected base to log to be numeric, got {}",
-                base.dtype
-            )));
-        }
+        input.log(base)
+    }
 
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        let LogArgs { input, base: _ } = inputs.try_into()?;
+        let field = input.to_field(schema)?;
         let dtype = match field.dtype {
             DataType::Float32 => DataType::Float32,
             dt if dt.is_numeric() => DataType::Float64,
@@ -109,24 +105,12 @@ impl ScalarUDF for Log {
                 return Err(DaftError::TypeError(format!(
                     "Expected input to log to be numeric, got {}",
                     field.dtype
-                )))
+                )));
             }
         };
         Ok(Field::new(field.name, dtype))
     }
 
-    fn evaluate_from_series(&self, inputs: &[Series]) -> DaftResult<Series> {
-        ensure!(inputs.len() == 2, "log takes two arguments");
-        let input = &inputs[0];
-        let base = &inputs[1];
-        let base = {
-            ensure!(base.len() == 1, "expected scalar value");
-            let s = base.cast(&DataType::Float64)?;
-
-            s.f64().unwrap().get(0).unwrap()
-        };
-        input.log(base)
-    }
     fn docstring(&self) -> &'static str {
         "Calculates the first argument-based logarithm of the second argument log_x(y)."
     }
@@ -134,5 +118,5 @@ impl ScalarUDF for Log {
 
 #[must_use]
 pub fn log(input: ExprRef, base: ExprRef) -> ExprRef {
-    ScalarFunction::new(Log, vec![input, base]).into()
+    ScalarFn::builtin(Log, vec![input, base]).into()
 }

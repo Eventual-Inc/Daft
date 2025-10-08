@@ -1,14 +1,17 @@
 use std::{collections::BTreeMap, sync::Arc};
 
+use bytes::{Bytes, BytesMut};
 use common_error::DaftResult;
 use daft_core::datatypes::Field;
 use daft_dsl::common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
-use daft_io::{IOClient, IOStatsRef};
+use daft_io::{GetRange, IOClient, IOStatsRef};
 pub use parquet2::metadata::{FileMetaData, RowGroupMetaData};
 use parquet2::{read::deserialize_metadata, schema::types::ParquetType};
 use snafu::ResultExt;
 
 use crate::{Error, JoinSnafu, UnableToParseMetadataSnafu};
+
+const FOOTER_SIZE: usize = 8;
 
 fn metadata_len(buffer: &[u8], len: usize) -> i32 {
     i32::from_le_bytes(buffer[len - 8..len - 4].try_into().unwrap())
@@ -213,16 +216,50 @@ fn apply_field_ids_to_parquet_file_metadata(
     })
 }
 
+pub(crate) fn validate_footer_magic(uri: &str, buffer: &[u8]) -> super::Result<()> {
+    const PARQUET_MAGIC: [u8; 4] = [b'P', b'A', b'R', b'1'];
+
+    if buffer.len() < FOOTER_SIZE {
+        return Err(Error::FileTooSmall {
+            path: uri.into(),
+            file_size: buffer.len(),
+        });
+    }
+
+    if buffer[buffer.len() - 4..] != PARQUET_MAGIC {
+        return Err(Error::InvalidParquetFile {
+            path: uri.into(),
+            footer: buffer[buffer.len() - 4..].into(),
+        });
+    }
+    Ok(())
+}
+
 pub(crate) async fn read_parquet_metadata(
     uri: &str,
-    size: usize,
+    file_size: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    default_footer_read_size: Option<usize>,
 ) -> super::Result<FileMetaData> {
-    const FOOTER_SIZE: usize = 8;
-    const PARQUET_MAGIC: [u8; 4] = [b'P', b'A', b'R', b'1'];
-    if size < 12 {
+    async fn fetch_data(
+        io_client: Arc<IOClient>,
+        uri: &str,
+        range: GetRange,
+        io_stats: Option<IOStatsRef>,
+    ) -> daft_io::Result<Bytes> {
+        io_client
+            .single_url_get(uri.into(), Some(range), io_stats)
+            .await?
+            .bytes()
+            .await
+    }
+
+    // Check the minimum value of file size if provided
+    if let Some(size) = file_size
+        && size < 12
+    {
         return Err(Error::FileTooSmall {
             path: uri.into(),
             file_size: size,
@@ -231,26 +268,26 @@ pub(crate) async fn read_parquet_metadata(
 
     /// The number of bytes read at the end of the parquet file on first read
     const DEFAULT_FOOTER_READ_SIZE: usize = 128 * 1024;
-    let default_end_len = std::cmp::min(DEFAULT_FOOTER_READ_SIZE, size);
-
-    let start = size.saturating_sub(default_end_len);
-    let mut data = io_client
-        .single_url_get(uri.into(), Some(start..size), io_stats.clone())
-        .await?
-        .bytes()
-        .await?;
-
+    let footer_read_size = default_footer_read_size
+        .unwrap_or(DEFAULT_FOOTER_READ_SIZE)
+        .max(FOOTER_SIZE);
+    let range = match file_size {
+        None => GetRange::Suffix(footer_read_size),
+        Some(size) => {
+            let default_end_len = std::cmp::min(footer_read_size, size);
+            let start = size - default_end_len;
+            (start..size).into()
+        }
+    };
+    let mut data = fetch_data(io_client.clone(), uri, range, io_stats.clone()).await?;
     let buffer = data.as_ref();
-    if buffer[buffer.len() - 4..] != PARQUET_MAGIC {
-        return Err(Error::InvalidParquetFile {
-            path: uri.into(),
-            footer: buffer[buffer.len() - 4..].into(),
-        });
-    }
-    let metadata_size = metadata_len(buffer, default_end_len);
-    let footer_len = FOOTER_SIZE + metadata_size as usize;
+    validate_footer_magic(uri, buffer)?;
 
-    if footer_len > size {
+    let metadata_size = metadata_len(buffer, buffer.len());
+    let footer_len = FOOTER_SIZE + metadata_size as usize;
+    if let Some(size) = file_size
+        && size < footer_len
+    {
         return Err(Error::InvalidParquetFooterSize {
             path: uri.into(),
             footer_size: footer_len,
@@ -258,28 +295,30 @@ pub(crate) async fn read_parquet_metadata(
         });
     }
 
-    let remaining = if footer_len < buffer.len() {
+    let remaining = if footer_len <= buffer.len() {
         // the whole metadata is in the bytes we already read
         buffer.len() - footer_len
     } else {
-        // the end of file read by default is not long enough, read again including the metadata.
-        let start = size.saturating_sub(footer_len);
-        data = io_client
-            .single_url_get(uri.into(), Some(start..size), io_stats)
-            .await?
-            .bytes()
-            .await?;
-        data.len() - footer_len
+        // the end of file read by default is not long enough, read more bytes of metadata.
+        data = match file_size {
+            None => fetch_data(io_client, uri, GetRange::Suffix(footer_len), io_stats).await?,
+            Some(size) => {
+                let range =
+                    (size.saturating_sub(footer_len)..size.saturating_sub(buffer.len())).into();
+                let new_data = fetch_data(io_client, uri, range, io_stats).await?;
+
+                let mut buffer = BytesMut::with_capacity(new_data.len() + data.len());
+                buffer.extend_from_slice(&new_data);
+                buffer.extend_from_slice(&data);
+                buffer.freeze()
+            }
+        };
+        0
     };
 
     let buffer = data.as_ref();
+    validate_footer_magic(uri, buffer)?;
 
-    if buffer[buffer.len() - 4..] != PARQUET_MAGIC {
-        return Err(Error::InvalidParquetFile {
-            path: uri.into(),
-            footer: buffer[buffer.len() - 4..].into(),
-        });
-    }
     // use rayon here
     let file_metadata = tokio::task::spawn_blocking(move || {
         let reader = &data.as_ref()[remaining..];
@@ -307,6 +346,7 @@ mod tests {
     use daft_io::{IOClient, IOConfig};
 
     use super::read_parquet_metadata;
+    use crate::Error;
 
     #[tokio::test]
     async fn test_parquet_metadata_from_s3() -> DaftResult<()> {
@@ -317,8 +357,40 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let metadata = read_parquet_metadata(file, size, io_client.clone(), None, None).await?;
+        // Read metadata with actual file size.
+        let metadata =
+            read_parquet_metadata(file, Some(size), io_client.clone(), None, None, None).await?;
         assert_eq!(metadata.num_rows, 100);
+
+        // Read metadata without a file size.
+        let metadata =
+            read_parquet_metadata(file, None, io_client.clone(), None, None, None).await?;
+        assert_eq!(metadata.num_rows, 100);
+
+        // Overwrite the default footer read size which less than footer length but without a file size.
+        let metadata =
+            read_parquet_metadata(file, None, io_client.clone(), None, None, Some(500)).await?;
+        assert_eq!(metadata.num_rows, 100);
+
+        // Overwrite the default footer read size which less than footer length and a file size.
+        let metadata =
+            read_parquet_metadata(file, Some(size), io_client.clone(), None, None, Some(500))
+                .await?;
+        assert_eq!(metadata.num_rows, 100);
+
+        // Overwrite the default footer read size less than 8 bytes.
+        let metadata =
+            read_parquet_metadata(file, None, io_client.clone(), None, None, Some(5)).await?;
+        assert_eq!(metadata.num_rows, 100);
+
+        // Test with invalid file size, assume file size is 10 bytes.
+        let result =
+            read_parquet_metadata(file, Some(10), io_client.clone(), None, None, None).await;
+        assert!(matches!(result, Err(Error::FileTooSmall { .. })));
+
+        // Test with invalid footer size, assume file size is 1260 bytes.
+        let result = read_parquet_metadata(file, Some(1260), io_client, None, None, None).await;
+        assert!(matches!(result, Err(Error::InvalidParquetFile { .. })));
 
         Ok(())
     }

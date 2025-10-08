@@ -4,21 +4,26 @@ use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::FunctionArgs, optimization, resolved_col, AggExpr, ApproxPercentileParams, Column,
-    Expr, ExprRef,
+    AggExpr, ApproxPercentileParams, Column, Expr, ExprRef,
+    functions::{FunctionArgs, scalar::ScalarFn},
+    optimization,
+    python_udf::{PyScalarFn, RowWisePyFn},
+    resolved_col,
 };
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 
 use crate::{
+    LogicalPlan,
     logical_plan::{self},
     stats::StatsState,
-    LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Project {
     pub plan_id: Option<usize>,
+    pub node_id: Option<usize>,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
     pub projection: Vec<ExprRef>,
@@ -27,6 +32,10 @@ pub struct Project {
 }
 
 impl Project {
+    pub fn new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> DaftResult<Self> {
+        Ok(Self::try_new(input, projection)?)
+    }
+
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
         projection: Vec<ExprRef>,
@@ -44,6 +53,7 @@ impl Project {
 
         Ok(Self {
             plan_id: None,
+            node_id: None,
             input: factored_input,
             projection: factored_projection,
             projected_schema,
@@ -53,6 +63,11 @@ impl Project {
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
         self.plan_id = Some(plan_id);
+        self
+    }
+
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
         self
     }
 
@@ -434,7 +449,7 @@ fn replace_column_with_semantic_id(
                     )
                 }
             }
-            Expr::ScalarFunction(func) => {
+            Expr::ScalarFn(ScalarFn::Builtin(func)) => {
                 let mut func = func.clone();
                 let transforms = func
                     .inputs
@@ -453,7 +468,7 @@ fn replace_column_with_semantic_id(
                         .map(|t| t.map(|t| t.data.clone()))
                         .collect::<Vec<_>>();
                     func.inputs = FunctionArgs::new_unchecked(inputs);
-                    Transformed::yes(Expr::ScalarFunction(func).into())
+                    Transformed::yes(func.into())
                 }
             }
             Expr::InSubquery(expr, subquery) => {
@@ -463,6 +478,40 @@ fn replace_column_with_semantic_id(
                     Transformed::no(e)
                 } else {
                     Transformed::yes(Expr::InSubquery(expr.data, subquery.clone()).into())
+                }
+            }
+            Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
+                function_name: name,
+                inner: func,
+                return_dtype,
+                original_args,
+                args: children,
+                use_process,
+            }))) => {
+                let transforms = children
+                    .iter()
+                    .map(|e| {
+                        replace_column_with_semantic_id(e.clone(), subexprs_to_replace, schema)
+                    })
+                    .collect::<Vec<_>>();
+
+                if transforms.iter().all(|e| !e.transformed) {
+                    Transformed::no(e)
+                } else {
+                    let new_children = transforms
+                        .iter()
+                        .map(|t| t.data.clone())
+                        .collect::<Vec<_>>();
+                    Transformed::yes(Arc::new(Expr::ScalarFn(ScalarFn::Python(
+                        PyScalarFn::RowWise(RowWisePyFn {
+                            function_name: name.clone(),
+                            inner: func.clone(),
+                            return_dtype: return_dtype.clone(),
+                            original_args: original_args.clone(),
+                            args: new_children,
+                            use_process: *use_process,
+                        }),
+                    ))))
                 }
             }
         }
@@ -592,12 +641,12 @@ fn replace_column_with_semantic_id_aggexpr(
 mod tests {
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::{binary_op, lit, resolved_col, Operator};
+    use daft_dsl::{Operator, binary_op, lit, resolved_col};
 
     use crate::{
+        LogicalPlan,
         ops::Project,
         test::{dummy_scan_node, dummy_scan_operator},
-        LogicalPlan,
     };
 
     /// Test that nested common subexpressions are correctly split

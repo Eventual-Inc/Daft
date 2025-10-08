@@ -5,22 +5,25 @@ use std::{
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
-use daft_dsl::{resolved_col, Expr, ExprRef};
+use daft_dsl::expr::{
+    bound_col,
+    bound_expr::{BoundAggExpr, BoundExpr},
+};
 use daft_micropartition::MicroPartition;
-use daft_physical_plan::extract_agg_expr;
 use itertools::Itertools;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::ExecutionTaskSpawner;
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
-#[derive(Clone)]
-enum AggStrategy {
+#[derive(Clone, Debug)]
+pub(crate) enum AggStrategy {
     // TODO: This would probably benefit from doing sharded aggs.
     AggThenPartition,
     PartitionThenAgg(usize),
@@ -105,13 +108,13 @@ impl AggStrategy {
 }
 
 #[derive(Default)]
-struct SinglePartitionAggregateState {
+pub(crate) struct SinglePartitionAggregateState {
     partially_aggregated: Vec<MicroPartition>,
     unaggregated: Vec<MicroPartition>,
     unaggregated_size: usize,
 }
 
-enum GroupedAggregateState {
+pub(crate) enum GroupedAggregateState {
     Accumulating {
         inner_states: Vec<Option<SinglePartitionAggregateState>>,
         strategy: Option<AggStrategy>,
@@ -143,7 +146,7 @@ impl GroupedAggregateState {
         global_strategy_lock: &Arc<Mutex<Option<AggStrategy>>>,
     ) -> DaftResult<()> {
         let Self::Accumulating {
-            ref mut inner_states,
+            inner_states,
             strategy,
             partial_agg_threshold,
             high_cardinality_threshold_ratio,
@@ -213,11 +216,7 @@ impl GroupedAggregateState {
     }
 
     fn finalize(&mut self) -> Vec<Option<SinglePartitionAggregateState>> {
-        let res = if let Self::Accumulating {
-            ref mut inner_states,
-            ..
-        } = self
-        {
+        let res = if let Self::Accumulating { inner_states, .. } = self {
             std::mem::take(inner_states)
         } else {
             panic!("GroupedAggregateSink should be in Accumulating state");
@@ -227,22 +226,16 @@ impl GroupedAggregateState {
     }
 }
 
-impl BlockingSinkState for GroupedAggregateState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
 struct GroupedAggregateParams {
     // The original aggregations and group by expressions
-    original_aggregations: Vec<ExprRef>,
-    group_by: Vec<ExprRef>,
+    original_aggregations: Vec<BoundAggExpr>,
+    group_by: Vec<BoundExpr>,
     // The expressions for to be used for partial aggregation
-    partial_agg_exprs: Vec<ExprRef>,
+    partial_agg_exprs: Vec<BoundAggExpr>,
     // The expressions for the final aggregation
-    final_agg_exprs: Vec<ExprRef>,
-    final_group_by: Vec<ExprRef>,
-    final_projections: Vec<ExprRef>,
+    final_agg_exprs: Vec<BoundAggExpr>,
+    final_group_by: Vec<BoundExpr>,
+    final_projections: Vec<BoundExpr>,
 }
 
 pub struct GroupedAggregateSink {
@@ -254,30 +247,26 @@ pub struct GroupedAggregateSink {
 
 impl GroupedAggregateSink {
     pub fn new(
-        aggregations: &[ExprRef],
-        group_by: &[ExprRef],
-        schema: &SchemaRef,
+        aggregations: &[BoundAggExpr],
+        group_by: &[BoundExpr],
+        input_schema: &SchemaRef,
         cfg: &DaftExecutionConfig,
     ) -> DaftResult<Self> {
-        let aggregations = aggregations
-            .iter()
-            .map(extract_agg_expr)
-            .collect::<DaftResult<Vec<_>>>()?;
-        let (partial_aggs, final_aggs, final_projections) =
-            daft_physical_plan::populate_aggregation_stages(&aggregations, schema, group_by);
-        let partial_agg_exprs = partial_aggs
-            .into_values()
-            .map(|e| Arc::new(Expr::Agg(e)))
-            .collect::<Vec<_>>();
-        let final_agg_exprs = final_aggs
-            .into_values()
-            .map(|e| Arc::new(Expr::Agg(e)))
-            .collect::<Vec<_>>();
+        let (partial_agg_exprs, final_agg_exprs, final_projections) =
+            daft_physical_plan::populate_aggregation_stages_bound(
+                aggregations,
+                input_schema,
+                group_by,
+            )?;
         let final_group_by = if !partial_agg_exprs.is_empty() {
             group_by
                 .iter()
-                .map(|e| resolved_col(e.name()))
-                .collect::<Vec<_>>()
+                .enumerate()
+                .map(|(i, e)| {
+                    let field = e.as_ref().to_field(input_schema)?;
+                    Ok(BoundExpr::new_unchecked(bound_col(i, field)))
+                })
+                .collect::<DaftResult<Vec<_>>>()?
         } else {
             group_by.to_vec()
         };
@@ -288,10 +277,7 @@ impl GroupedAggregateSink {
         };
         Ok(Self {
             grouped_aggregate_params: Arc::new(GroupedAggregateParams {
-                original_aggregations: aggregations
-                    .into_iter()
-                    .map(|e| Expr::Agg(e).into())
-                    .collect(),
+                original_aggregations: aggregations.to_vec(),
                 group_by: group_by.to_vec(),
                 partial_agg_exprs,
                 final_agg_exprs,
@@ -310,24 +296,20 @@ impl GroupedAggregateSink {
 }
 
 impl BlockingSink for GroupedAggregateSink {
+    type State = GroupedAggregateState;
     #[instrument(skip_all, name = "GroupedAggregateSink::sink")]
     fn sink(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn BlockingSinkState>,
+        mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkSinkResult {
+    ) -> BlockingSinkSinkResult<Self> {
         let params = self.grouped_aggregate_params.clone();
         let strategy_lock = self.global_strategy_lock.clone();
         spawner
             .spawn(
                 async move {
-                    let agg_state = state
-                        .as_any_mut()
-                        .downcast_mut::<GroupedAggregateState>()
-                        .expect("GroupedAggregateSink should have GroupedAggregateState");
-
-                    agg_state.push(input, &params, &strategy_lock)?;
+                    state.push(input, &params, &strategy_lock)?;
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
                 },
                 Span::current(),
@@ -338,9 +320,9 @@ impl BlockingSink for GroupedAggregateSink {
     #[instrument(skip_all, name = "GroupedAggregateSink::finalize")]
     fn finalize(
         &self,
-        states: Vec<Box<dyn BlockingSinkState>>,
+        states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
         let params = self.grouped_aggregate_params.clone();
         let num_partitions = self.num_partitions();
         spawner
@@ -348,14 +330,7 @@ impl BlockingSink for GroupedAggregateSink {
                 async move {
                     let mut state_iters = states
                         .into_iter()
-                        .map(|mut state| {
-                            state
-                                .as_any_mut()
-                                .downcast_mut::<GroupedAggregateState>()
-                                .expect("GroupedAggregateSink should have GroupedAggregateState")
-                                .finalize()
-                                .into_iter()
-                        })
+                        .map(|mut state| state.finalize().into_iter())
                         .collect::<Vec<_>>();
 
                     let mut per_partition_finalize_tasks = tokio::task::JoinSet::new();
@@ -378,7 +353,7 @@ impl BlockingSink for GroupedAggregateSink {
                             }
 
                             // If we have no partially aggregated partitions, aggregate the unaggregated partitions using the original aggregations
-                            if partially_aggregated.is_empty() {
+                            if params.partial_agg_exprs.is_empty() && !unaggregated.is_empty() {
                                 let concated = MicroPartition::concat(&unaggregated)?;
                                 let agged = concated
                                     .agg(&params.original_aggregations, &params.group_by)?;
@@ -417,15 +392,21 @@ impl BlockingSink for GroupedAggregateSink {
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?;
                     let concated = MicroPartition::concat(&results)?;
-                    Ok(Some(Arc::new(concated)))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
+                        concated,
+                    )]))
                 },
                 Span::current(),
             )
             .into()
     }
 
-    fn name(&self) -> &'static str {
-        "GroupedAggregate"
+    fn name(&self) -> NodeName {
+        "GroupedAggregate".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::GroupByAgg
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -453,11 +434,11 @@ impl BlockingSink for GroupedAggregateSink {
         get_compute_pool_num_threads()
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        Ok(Box::new(GroupedAggregateState::new(
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(GroupedAggregateState::new(
             self.num_partitions(),
             self.partial_agg_threshold,
             self.high_cardinality_threshold_ratio,
-        )))
+        ))
     }
 }

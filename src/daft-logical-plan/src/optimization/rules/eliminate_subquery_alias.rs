@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 
 use super::OptimizerRule;
-use crate::{logical_plan::SubqueryAlias, LogicalPlan};
+use crate::{LogicalPlan, logical_plan::SubqueryAlias};
 
 /// Optimization rule for eliminating subquery aliases.
 ///

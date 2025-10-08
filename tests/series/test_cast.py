@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 from datetime import date, datetime, time, timedelta, timezone
+from functools import partial
 
 import numpy as np
 import pandas as pd
@@ -12,6 +13,7 @@ from daft.datatype import DataType, ImageMode, TimeUnit
 from daft.exceptions import DaftCoreException
 from daft.series import Series
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES
+from tests.utils import random_numerical_embedding
 
 daft_int_types = [
     DataType.int8(),
@@ -309,6 +311,7 @@ class PycastableObject:
         return False
 
 
+@pytest.mark.skip(reason="disabled ability to cast arbitrary Python objects")
 @pytest.mark.parametrize(
     ["dtype", "pytype"],
     [
@@ -359,7 +362,7 @@ def test_series_cast_python_to_list(dtype) -> None:
         (1, 2),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.list(DataType.from_arrow_type(dtype))
 
@@ -388,7 +391,7 @@ def test_series_cast_python_to_fixed_size_list(dtype) -> None:
         (1, 2, 3),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.fixed_size_list(DataType.from_arrow_type(dtype), 3)
 
@@ -417,7 +420,7 @@ def test_series_cast_python_to_embedding(dtype) -> None:
         (1, 2, 3),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.embedding(DataType.from_arrow_type(dtype), 3)
 
@@ -464,7 +467,7 @@ def test_series_cast_numpy_to_image() -> None:
         np.arange(12, 39, dtype=np.uint8).reshape((3, 3, 3)),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image("RGB")
 
@@ -482,11 +485,11 @@ def test_series_cast_numpy_to_image() -> None:
 
 def test_series_cast_numpy_to_image_infer_mode() -> None:
     data = [
-        np.arange(4, dtype=np.uint8).reshape((2, 2)),
+        np.arange(6, dtype=np.uint8).reshape((2, 3)),
         np.arange(4, 31, dtype=np.uint8).reshape((3, 3, 3)),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image()
 
@@ -495,7 +498,7 @@ def test_series_cast_numpy_to_image_infer_mode() -> None:
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.list.length().to_pylist() == [4, 27, None]
+    assert t.list.length().to_pylist() == [6, 27, None]
 
     pydata = t.to_arrow().to_pylist()
     assert pydata[0] == {
@@ -503,7 +506,7 @@ def test_series_cast_numpy_to_image_infer_mode() -> None:
         "mode": ImageMode.L,
         "channel": 1,
         "height": 2,
-        "width": 2,
+        "width": 3,
     }
     assert pydata[1] == {
         "data": data[1].ravel().tolist(),
@@ -527,7 +530,7 @@ def test_series_cast_python_to_fixed_shape_image() -> None:
         np.arange(12, 24, dtype=np.uint8).reshape(shape),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image("RGB", height, width)
 
@@ -549,7 +552,7 @@ def test_series_cast_numpy_to_tensor() -> None:
         np.arange(12, 39, dtype=np.uint8).reshape((3, 3, 3)),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.tensor(DataType.uint8())
 
@@ -570,7 +573,7 @@ def test_series_cast_numpy_to_fixed_shape_tensor() -> None:
         np.arange(4, 8, dtype=np.uint8).reshape(shape),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.tensor(DataType.uint8(), shape)
 
@@ -596,7 +599,7 @@ def test_series_cast_image_to_fixed_shape_image() -> None:
         np.arange(12, 24, dtype=np.uint8).reshape(shape),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image("RGB")
 
@@ -621,7 +624,7 @@ def test_series_cast_image_to_tensor() -> None:
         np.arange(12, 39, dtype=np.uint8).reshape((3, 3, 3)),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image("RGB")
 
@@ -650,7 +653,7 @@ def test_series_cast_image_to_fixed_shape_tensor() -> None:
         np.arange(12, 24, dtype=np.uint8).reshape(shape),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image("RGB")
 
@@ -678,7 +681,7 @@ def test_series_cast_fixed_shape_image_to_image() -> None:
         np.arange(12, 24, dtype=np.uint8).reshape(shape),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image("RGB", height, width)
 
@@ -706,7 +709,7 @@ def test_series_cast_fixed_shape_image_to_fixed_shape_tensor() -> None:
         np.arange(12, 24, dtype=np.uint8).reshape(shape),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image("RGB", height, width)
 
@@ -734,7 +737,7 @@ def test_series_cast_fixed_shape_image_to_tensor() -> None:
         np.arange(12, 24, dtype=np.uint8).reshape(shape),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.image("RGB", height, width)
 
@@ -763,7 +766,7 @@ def test_series_cast_fixed_shape_tensor_to_tensor() -> None:
         np.arange(12, 24, dtype=np.uint8).reshape(shape),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.tensor(DataType.uint8(), shape)
 
@@ -785,6 +788,76 @@ def test_series_cast_fixed_shape_tensor_to_tensor() -> None:
 ### Embedding ###
 
 
+@pytest.mark.parametrize(
+    ["dtype", "size"],
+    [
+        (np.float32, 1024),
+        (np.float64, 512),
+        (np.int8, 2048),
+        (np.int16, 512),
+        (np.int32, 256),
+        (np.int64, 128),
+        (np.uint8, 2048),
+        (np.uint16, 512),
+        (np.uint32, 256),
+        (np.uint64, 128),
+    ],
+)
+def test_series_cast_fixed_shape_list_to_embedding(dtype: np.dtype, size: int):
+    daft_dtype = DataType.from_numpy_dtype(dtype)
+    make_array = partial(random_numerical_embedding, np.random.default_rng(), dtype, size)
+
+    data = [make_array() for _ in range(5)]
+    s = Series.from_pylist(data, dtype=DataType.fixed_size_list(daft_dtype, size))
+
+    target_dtype = DataType.embedding(daft_dtype, size)
+    t = s.cast(target_dtype)
+    assert len(t) == len(s)
+    assert t.datatype() == target_dtype, f"Expecting {target_dtype} but cast resulted in {t.datatype()}"
+    for i, (s_lst, t_arr) in enumerate(zip(s, t)):
+        assert len(s_lst) == len(t_arr)
+        assert len(s_lst) == size
+        assert isinstance(s_lst, list)
+        assert isinstance(t_arr, np.ndarray)
+        assert t_arr.shape == (size,)
+        assert (np.array(s_lst) == t_arr).all()
+
+
+@pytest.mark.parametrize(
+    ["dtype", "size"],
+    [
+        (np.float32, 1024),
+        (np.float64, 512),
+        (np.int8, 2048),
+        (np.int16, 512),
+        (np.int32, 256),
+        (np.int64, 128),
+        (np.uint8, 2048),
+        (np.uint16, 512),
+        (np.uint32, 256),
+        (np.uint64, 128),
+    ],
+)
+def test_series_cast_embedding_to_fixed_shape_list(dtype: np.dtype, size: int):
+    daft_dtype = DataType.from_numpy_dtype(dtype)
+    make_array = partial(random_numerical_embedding, np.random.default_rng(), dtype, size)
+
+    data = [make_array() for _ in range(5)]
+    s = Series.from_pylist(data, dtype=DataType.embedding(daft_dtype, size))
+
+    target_dtype = DataType.fixed_size_list(daft_dtype, size)
+    t = s.cast(target_dtype)
+    assert len(t) == len(s)
+    assert t.datatype() == target_dtype, f"Expecting {target_dtype} but cast resulted in {t.datatype()}"
+    for i, (s_arr, t_lst) in enumerate(zip(s, t)):
+        assert len(s_arr) == len(t_lst)
+        assert len(t_lst) == size
+        assert isinstance(s_arr, np.ndarray)
+        assert isinstance(t_lst, list)
+        assert s_arr.shape == (size,)
+        assert (np.array(t_lst) == s_arr).all()
+
+
 def test_series_cast_embedding_to_fixed_shape_tensor() -> None:
     shape = (4,)
     data = [
@@ -792,7 +865,7 @@ def test_series_cast_embedding_to_fixed_shape_tensor() -> None:
         np.arange(4, 8, dtype=np.uint8).reshape(shape),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.embedding(DataType.uint8(), 4)
 
@@ -819,7 +892,7 @@ def test_series_cast_embedding_to_tensor() -> None:
         np.arange(4, 8, dtype=np.uint8).reshape(shape),
         None,
     ]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.embedding(DataType.uint8(), 4)
 
@@ -1302,3 +1375,36 @@ def test_series_cast_fixed_shape_sparse_without_indices_offset_to_regular(sparse
 
     regular_fixed_shape_series = regular_fixed_shape_series.to_pylist()
     np.testing.assert_equal(regular_fixed_shape_series, sparse_tensor_data)
+
+
+# see: https://github.com/Eventual-Inc/Daft/issues/4426
+def test_cast_list_list_to_list_tensor():
+    boxes = [
+        [[100, 100, 200, 200], [300, 300, 400, 400], [500, 500, 600, 600], [700, 700, 800, 800], [900, 900, 1000, 1000]]
+        for _ in range(5)
+    ]
+
+    s = Series.from_pylist(boxes)
+    cast_to = DataType.list(DataType.tensor(DataType.int64(), shape=(4,)))
+    s = s.cast(cast_to)
+    assert s.datatype() == cast_to
+
+
+def test_cast_python_to_struct():
+    data = [{"a": 1, "b": True}, {"a": 3, "b": False}]
+    dtype = DataType.struct({"a": DataType.int64(), "b": DataType.bool()})
+
+    s = Series.from_pylist(data, pyobj="force")
+    s = s.cast(dtype)
+    assert s.datatype() == dtype
+    assert s.to_pylist() == data
+
+
+def test_cast_python_to_list_of_structs():
+    data = [[{"a": 1, "b": True}, {"a": 3, "b": False}]]
+    dtype = DataType.list(DataType.struct({"a": DataType.int64(), "b": DataType.bool()}))
+
+    s = Series.from_pylist(data, pyobj="force")
+    s = s.cast(dtype)
+    assert s.datatype() == dtype
+    assert s.to_pylist() == data

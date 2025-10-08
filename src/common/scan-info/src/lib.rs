@@ -1,4 +1,3 @@
-#![feature(let_chains)]
 #![feature(if_let_guard)]
 
 mod expr_rewriter;
@@ -8,23 +7,48 @@ mod pushdowns;
 pub mod python;
 mod scan_operator;
 mod scan_task;
+mod sharder;
 pub mod test;
 
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 use daft_schema::schema::SchemaRef;
-pub use expr_rewriter::{rewrite_predicate_for_partitioning, PredicateGroups};
+pub use expr_rewriter::{PredicateGroups, rewrite_predicate_for_partitioning};
 pub use partitioning::{PartitionField, PartitionTransform};
-pub use pushdowns::Pushdowns;
+pub use pushdowns::{Pushdowns, SupportsPushdownFilters};
 #[cfg(feature = "python")]
 pub use python::register_modules;
 pub use scan_operator::{ScanOperator, ScanOperatorRef};
-pub use scan_task::{ScanTaskLike, ScanTaskLikeRef, SPLIT_AND_MERGE_PASS};
+pub use scan_task::{SPLIT_AND_MERGE_PASS, ScanTaskLike, ScanTaskLikeRef};
+use serde::{Deserialize, Serialize};
+pub use sharder::{Sharder, ShardingStrategy};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ScanState {
-    Operator(ScanOperatorRef),
     Tasks(Arc<Vec<ScanTaskLikeRef>>),
+    #[serde(
+        serialize_with = "serialize_invalid",
+        deserialize_with = "deserialize_invalid"
+    )]
+    Operator(ScanOperatorRef),
+}
+
+fn serialize_invalid<S>(_: &ScanOperatorRef, _: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    Err(serde::ser::Error::custom(
+        "ScanOperatorRef cannot be serialized",
+    ))
+}
+
+fn deserialize_invalid<'de, D>(_: D) -> Result<ScanOperatorRef, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Err(serde::de::Error::custom(
+        "ScanOperatorRef cannot be deserialized",
+    ))
 }
 
 impl ScanState {
@@ -45,7 +69,7 @@ impl ScanState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PhysicalScanInfo {
     pub scan_state: ScanState,
     pub source_schema: SchemaRef,
@@ -76,6 +100,16 @@ impl PhysicalScanInfo {
             source_schema: self.source_schema.clone(),
             partitioning_keys: self.partitioning_keys.clone(),
             pushdowns,
+        }
+    }
+
+    #[must_use]
+    pub fn with_scan_state(&self, scan_state: ScanState) -> Self {
+        Self {
+            scan_state,
+            source_schema: self.source_schema.clone(),
+            partitioning_keys: self.partitioning_keys.clone(),
+            pushdowns: self.pushdowns.clone(),
         }
     }
 }

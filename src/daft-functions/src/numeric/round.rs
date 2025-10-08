@@ -1,11 +1,11 @@
-use common_error::{ensure, DaftError, DaftResult};
+use common_error::{DaftError, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, Float32Array, Float64Array, Schema},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn},
 };
 use num_traits::Pow;
 use serde::{Deserialize, Serialize};
@@ -13,50 +13,38 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Round;
 
+#[derive(FunctionArgs)]
+struct RoundArgs<T> {
+    input: T,
+    #[arg(optional)]
+    decimals: Option<u32>,
+}
+
 #[typetag::serde]
 impl ScalarUDF for Round {
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        ensure!(
-            inputs.len() == 2 || inputs.len() == 1,
-            "round takes one or two arguments"
-        );
-        let input = inputs.required((0, "input"))?;
-        let precision = if let Some(precision) = inputs.optional((1, "decimal", "precision"))? {
-            ensure!(precision.len() == 1, "expected scalar value for precision");
-            let precision = precision.cast(&DataType::Int32)?;
-            let precision = precision.i32().unwrap().get(0).unwrap();
+    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+        let RoundArgs { input, decimals } = inputs.try_into()?;
 
-            ensure!(precision >= 0, ValueError: "decimal can not be negative: {precision}");
-            precision
-        } else {
-            0
-        };
+        let decimals = decimals.unwrap_or(0);
 
-        series_round(input, precision)
+        series_round(&input, decimals as i32)
     }
 
     fn name(&self) -> &'static str {
         "round"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        ensure!(
-            inputs.len() == 2 || inputs.len() == 1,
-            "round takes one or two arguments"
-        );
-        match inputs {
-            [input] | [input, _] => {
-                let field = input.to_field(schema)?;
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        let RoundArgs { input, .. } = inputs.try_into()?;
 
-                let dtype = field.dtype.to_floating_representation()?;
-                Ok(Field::new(field.name, dtype))
-            }
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg for {}, got {}",
-                self.name(),
-                inputs.len()
-            ))),
-        }
+        let field = input.to_field(schema)?;
+
+        let dtype = field.dtype.to_floating_representation()?;
+        Ok(Field::new(field.name, dtype))
     }
 
     fn docstring(&self) -> &'static str {
@@ -70,7 +58,7 @@ pub fn round(input: ExprRef, decimal: Option<ExprRef>) -> ExprRef {
     if let Some(decimal) = decimal {
         inputs.push(decimal);
     }
-    ScalarFunction::new(Round {}, inputs).into()
+    ScalarFn::builtin(Round {}, inputs).into()
 }
 
 pub fn series_round(s: &Series, decimal: i32) -> DaftResult<Series> {
@@ -106,6 +94,6 @@ fn f64_round(arr: &Float64Array, precision: i32) -> DaftResult<Float64Array> {
         arr.apply(|v| v.round())
     } else {
         let multiplier: f64 = 10.0.pow(precision);
-        arr.apply(|v| ((v * multiplier).round() / multiplier))
+        arr.apply(|v| (v * multiplier).round() / multiplier)
     }
 }

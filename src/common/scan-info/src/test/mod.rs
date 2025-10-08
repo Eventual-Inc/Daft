@@ -8,13 +8,17 @@ use common_daft_config::DaftExecutionConfig;
 use common_display::DisplayAs;
 use common_error::DaftResult;
 use common_file_formats::FileFormatConfig;
+use daft_dsl::ExprRef;
 use daft_schema::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 
-use crate::{PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeRef};
+use crate::{
+    PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeRef, SupportsPushdownFilters,
+};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Hash)]
 struct DummyScanTask {
+    pub file_paths: Vec<String>,
     pub schema: SchemaRef,
     pub pushdowns: Pushdowns,
     pub num_rows: Option<usize>,
@@ -25,6 +29,7 @@ pub struct DummyScanOperator {
     pub schema: SchemaRef,
     pub num_scan_tasks: u32,
     pub num_rows_per_task: Option<usize>,
+    pub supports_count_pushdown_flag: bool,
 }
 
 #[typetag::serde]
@@ -80,15 +85,21 @@ impl ScanTaskLike for DummyScanTask {
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }
+
+    fn get_file_paths(&self) -> Vec<String> {
+        self.file_paths.clone()
+    }
 }
 
 impl DisplayAs for DummyScanTask {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         format!(
             "DummyScanTask:
+File Paths: [{file_paths}]
 Schema: {schema}
 Pushdowns: {pushdowns}
 ",
+            file_paths = self.file_paths.join(", "),
             schema = self.schema,
             pushdowns = self.pushdowns.display_as(level)
         )
@@ -127,19 +138,53 @@ impl ScanOperator for DummyScanOperator {
         false
     }
 
+    fn can_absorb_shard(&self) -> bool {
+        false
+    }
+
     fn multiline_display(&self) -> Vec<String> {
         vec!["DummyScanOperator".to_string()]
     }
 
-    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>> {
-        let scan_task = Arc::new(DummyScanTask {
-            schema: self.schema.clone(),
-            pushdowns,
-            num_rows: self.num_rows_per_task,
-        });
+    fn supports_count_pushdown(&self) -> bool {
+        self.supports_count_pushdown_flag
+    }
 
+    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>> {
         Ok((0..self.num_scan_tasks)
-            .map(|_| scan_task.clone() as Arc<dyn ScanTaskLike>)
+            .map(|i| {
+                let scan_task = Arc::new(DummyScanTask {
+                    file_paths: vec![format!("dummy_file_{}.txt", i)],
+                    schema: self.schema.clone(),
+                    pushdowns: pushdowns.clone(),
+                    num_rows: self.num_rows_per_task,
+                });
+                scan_task as Arc<dyn ScanTaskLike>
+            })
             .collect())
+    }
+
+    fn as_pushdown_filter(&self) -> Option<&dyn SupportsPushdownFilters> {
+        Some(self)
+    }
+}
+
+impl SupportsPushdownFilters for DummyScanOperator {
+    fn push_filters(&self, filters: &[ExprRef]) -> (Vec<ExprRef>, Vec<ExprRef>) {
+        // Split predicates: those containing date functions are not pushable
+        let (pushable, unpushable): (Vec<_>, Vec<_>) = filters
+            .iter()
+            .cloned()
+            .partition(|expr| !contains_in_expression(expr));
+
+        (pushable, unpushable)
+    }
+}
+
+// Helper function to check for date function in expressions
+fn contains_in_expression(expr: &ExprRef) -> bool {
+    match expr.as_ref() {
+        daft_dsl::Expr::IsIn { .. } => true,
+        _ => expr.children().iter().any(contains_in_expression),
     }
 }

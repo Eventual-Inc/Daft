@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 from typing import TYPE_CHECKING
 
@@ -85,7 +87,7 @@ def test_create_table(catalog: Catalog):
     )
     tables = catalog.list_tables()
     assert len(tables) == 1
-    assert table_name in tables
+    assert Identifier.from_str(table_name) in tables
     assert table.name == "T"
 
 
@@ -96,10 +98,10 @@ def test_drop(catalog: Catalog):
     catalog.create_table(table_name, schema({"a": dt.bool()}))
     #
     assert Identifier(ns) in catalog.list_namespaces()
-    assert table_name in catalog.list_tables(ns)
+    assert Identifier.from_str(table_name) in catalog.list_tables(ns)
     #
     catalog.drop_table(table_name)
-    assert table_name not in catalog.list_tables(ns)
+    assert Identifier.from_str(table_name) not in catalog.list_tables(ns)
     #
     catalog.drop_namespace(ns)
     assert Identifier(ns) not in catalog.list_namespaces()
@@ -160,20 +162,20 @@ def test_list_tables(catalog: Catalog):
     # list one
     res = catalog.list_tables(f"{ns1}.tbl1_1")
     assert len(res) == 1
-    assert f"{ns1}.tbl1_1" == res[0]
+    assert Identifier(ns1, "tbl1_1") == res[0]
     #
     # list some
     res = catalog.list_tables(ns1)
     assert len(res) == 3
-    assert f"{ns1}.tbl1_1" in res
-    assert f"{ns1}.tbl1_2" in res
-    assert f"{ns1}.tbl2_1" in res
+    assert Identifier(ns1, "tbl1_1") in res
+    assert Identifier(ns1, "tbl1_2") in res
+    assert Identifier(ns1, "tbl2_1") in res
     #
     # list all
     res = catalog.list_tables()
     assert len(res) == len(tables)
     for table in tables:
-        assert table in res
+        assert Identifier.from_str(table) in res
 
 
 def test_existence_checks(catalog: Catalog):

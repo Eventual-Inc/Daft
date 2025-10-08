@@ -4,15 +4,15 @@ use common_error::{DaftError, DaftResult};
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_algebra::boolean::{combine_conjunction, split_conjunction};
 use daft_core::{join::JoinType, prelude::SchemaRef};
-use daft_dsl::{resolved_col, Column, Expr, ExprRef, Operator, ResolvedColumn, Subquery};
+use daft_dsl::{Column, Expr, ExprRef, Operator, ResolvedColumn, Subquery, resolved_col};
 use itertools::multiunzip;
 use uuid::Uuid;
 
 use super::OptimizerRule;
 use crate::{
-    logical_plan::downcast_subquery,
-    ops::{join::JoinPredicate, Aggregate, Filter, Join, Project},
     LogicalPlan, LogicalPlanRef,
+    logical_plan::downcast_subquery,
+    ops::{Aggregate, Filter, Join, Project, join::JoinPredicate},
 };
 
 /// Rewriter rule to convert scalar subqueries into joins.
@@ -520,14 +520,17 @@ fn pull_up_correlated_cols(
         LogicalPlan::Distinct(..)
         | LogicalPlan::MonotonicallyIncreasingId(..)
         | LogicalPlan::Repartition(..)
+        | LogicalPlan::IntoBatches(..)
         | LogicalPlan::Union(..)
         | LogicalPlan::Intersect(..)
         | LogicalPlan::Sort(..)
         | LogicalPlan::SubqueryAlias(..) => Ok((plan.clone(), subquery_on, outer_on)),
 
         // ops that cannot pull up correlated columns
-        LogicalPlan::ActorPoolProject(..)
+        LogicalPlan::UDFProject(..)
         | LogicalPlan::Limit(..)
+        | LogicalPlan::Offset(..)
+        | LogicalPlan::Shard(..)
         | LogicalPlan::TopN(..)
         | LogicalPlan::Sample(..)
         | LogicalPlan::Source(..)
@@ -585,17 +588,17 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::join::JoinType;
-    use daft_dsl::{unresolved_col, Column, Expr, PlanRef, ResolvedColumn, Subquery};
+    use daft_dsl::{Column, Expr, PlanRef, ResolvedColumn, Subquery, unresolved_col};
     use daft_schema::{dtype::DataType, field::Field};
 
     use super::{UnnestPredicateSubquery, UnnestScalarSubquery};
     use crate::{
+        LogicalPlanRef,
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             test::assert_optimized_plan_with_rules_eq,
         },
         test::{dummy_scan_node, dummy_scan_operator},
-        LogicalPlanRef,
     };
 
     fn assert_scalar_optimized_plan_eq(

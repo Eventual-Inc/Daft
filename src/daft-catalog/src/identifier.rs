@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::error::{Error, Result};
+use crate::error::{CatalogError, CatalogResult};
 
 /// A reference to a catalog object.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,14 +18,16 @@ impl Identifier {
     }
 
     /// Creates a new identifier from an iterator of path parts, returning a Result.
-    pub fn try_new<P, S>(path: P) -> Result<Self>
+    pub fn try_new<P, S>(path: P) -> CatalogResult<Self>
     where
         P: IntoIterator<Item = S>,
         S: Into<String>,
     {
         let path: Vec<String> = path.into_iter().map(Into::into).collect();
         if path.is_empty() {
-            return Err(Error::invalid_identifier("try_new received zero parts"));
+            return Err(CatalogError::invalid_identifier(
+                "try_new received zero parts",
+            ));
         }
         Ok(Self(path))
     }
@@ -100,10 +102,10 @@ impl Identifier {
     }
 
     /// Parses an identifier using sqlparser to validate the input.
-    pub fn from_sql(input: &str, normalize: bool) -> Result<Identifier> {
+    pub fn from_sql(input: &str, normalize: bool) -> CatalogResult<Identifier> {
         // TODO daft should define its own identifier domain.
         use sqlparser::{dialect::PostgreSqlDialect, parser::Parser};
-        let err = Error::InvalidIdentifier {
+        let err = CatalogError::InvalidIdentifier {
             input: input.to_string(),
         };
         let Ok(mut parser) = Parser::new(&PostgreSqlDialect {}).try_with_sql(input) else {
@@ -171,7 +173,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_qualify() -> Result<()> {
+    fn test_qualify() -> CatalogResult<()> {
         // single part
         let id = Identifier::simple("name");
         let qualified = id.qualify(vec!["prefix".to_string()]);
@@ -185,7 +187,7 @@ mod test {
     }
 
     #[test]
-    fn test_drop() -> Result<()> {
+    fn test_drop() -> CatalogResult<()> {
         let id = Identifier::try_new(vec!["a", "b", "c"])?;
         // drop first element
         let dropped = id.drop(1);
@@ -200,7 +202,7 @@ mod test {
     }
 
     #[test]
-    fn test_from_vec() -> Result<()> {
+    fn test_from_vec() -> CatalogResult<()> {
         // single part
         let id = Identifier::try_new(vec!["a"])?;
         assert_eq!(id.0, vec!["a"]);
@@ -212,7 +214,7 @@ mod test {
         assert_eq!(id.0, vec!["a", "b", "c"]);
         // err! empty vec
         let id = Identifier::try_new(vec![] as Vec<String>);
-        assert!(matches!(id, Err(Error::InvalidIdentifier { .. })));
+        assert!(matches!(id, Err(CatalogError::InvalidIdentifier { .. })));
         Ok(())
     }
 }

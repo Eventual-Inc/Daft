@@ -200,7 +200,7 @@
 
         <!-- Toggle to expand nested items with link to index page -->
         {% else %}
-          {% set class = "md-nav__link--active" if index == page %}
+          {% set class = "md-nav__link--active" if index == page or (nav_item.hide_children and page in nav_item.children) %}
           <div class="md-nav__link md-nav__container">
             <a
               href="{{ index.url | url }}"
@@ -219,7 +219,7 @@
                 id="{{ path }}_label"
                 tabindex="{{ tabindex }}"
               >
-                <span class="md-nav__icon md-icon"></span>
+                <span class="md-nav__icon md-icon" {{ "hidden" if nav_item.hide_children }}></span>
               </label>
             {% endif %}
           </div>
@@ -236,7 +236,7 @@
             <span class="md-nav__icon md-icon"></span>
             {{ nav_item.title }}
           </label>
-          <ul class="md-nav__list" data-md-scrollfix>
+          <ul class="md-nav__list" data-md-scrollfix {{ "hidden" if nav_item.hide_children }}>
 
             <!-- Nested navigation item -->
             {% for item in nav_item.children %}

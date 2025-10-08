@@ -1,13 +1,16 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{any::TypeId, collections::HashSet, sync::Arc};
 
-use common_error::{DaftError, DaftResult};
+use common_error::{DaftError, DaftResult, ensure};
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
+    AggExpr, Column, Expr, ExprRef, PlanRef, ResolvedColumn, UnresolvedColumn,
     expr::window::WindowSpec,
-    functions::{struct_::StructExpr, FunctionExpr},
-    has_agg, is_actor_pool_udf, left_col, resolved_col, right_col, AggExpr, Column, Expr, ExprRef,
-    PlanRef, ResolvedColumn, UnresolvedColumn,
+    functions::{
+        BuiltinScalarFn, FunctionArg, FunctionArgs, FunctionExpr, scalar::ScalarFn,
+        struct_::StructExpr,
+    },
+    has_agg, is_actor_pool_udf, left_col, resolved_col, right_col,
 };
 use typed_builder::TypedBuilder;
 
@@ -24,7 +27,8 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
     ) -> DaftResult<()> {
         if wildcard_expansion.is_some() {
             Err(DaftError::ValueError(format!(
-                "Error resolving expression {expr}: cannot have multiple wildcard columns in one expression tree.")))
+                "Error resolving expression {expr}: cannot have multiple wildcard columns in one expression tree."
+            )))
         } else {
             *wildcard_expansion = Some(names.map(ToString::to_string).collect());
 
@@ -151,6 +155,80 @@ fn col_resolves_to_plan(column: &UnresolvedColumn, plan: &LogicalPlanRef) -> Daf
     })
 }
 
+fn replace_element_with_column_ref(expr: ExprRef, replacement: ExprRef) -> DaftResult<ExprRef> {
+    expr.transform(|e| {
+        if matches!(
+            e.as_ref(),
+            Expr::Column(Column::Unresolved(UnresolvedColumn {
+                name,
+                plan_ref: PlanRef::Unqualified,
+                plan_schema: None
+            })) if name.as_ref() == ""
+        ) {
+            Ok(Transformed::yes(replacement.clone()))
+        } else {
+            Ok(Transformed::no(e))
+        }
+    })
+    .map(|res| res.data)
+}
+
+fn resolve_list_evals(expr: ExprRef) -> DaftResult<ExprRef> {
+    // Functions that can support an eval/map context
+
+    let eval_functions: &[TypeId] = &[TypeId::of::<daft_functions_list::ListMap>()];
+
+    expr.transform_down(|e| {
+        let expr_ref = e.as_ref();
+        if let Expr::ScalarFn(ScalarFn::Builtin(sf)) = expr_ref
+            && eval_functions.contains(&sf.udf.type_id())
+        {
+            // the `list` type should always be the first element
+            let inputs = sf.inputs.clone();
+            let list_col = inputs.first().ok_or_else(|| {
+                DaftError::ValueError("list should have at least one element".to_string())
+            })?;
+
+            let exploded = list_col.clone().explode()?;
+
+            let mut new_inputs = Vec::with_capacity(inputs.len());
+            new_inputs.push(FunctionArg::Unnamed(list_col.clone()));
+
+            for input in inputs.iter().skip(1) {
+                ensure!(
+                   !matches!(input.inner().as_ref(), Expr::Column(..)),
+                   ValueError: "unexpected column reference"
+
+                );
+
+                let replaced = match input {
+                    daft_dsl::functions::FunctionArg::Named { name, arg } => {
+                        daft_dsl::functions::FunctionArg::Named {
+                            name: name.clone(),
+                            arg: replace_element_with_column_ref(arg.clone(), exploded.clone())?,
+                        }
+                    }
+                    daft_dsl::functions::FunctionArg::Unnamed(arg) => {
+                        daft_dsl::functions::FunctionArg::Unnamed(replace_element_with_column_ref(
+                            arg.clone(),
+                            exploded.clone(),
+                        )?)
+                    }
+                };
+                new_inputs.push(replaced);
+            }
+            let sf = BuiltinScalarFn {
+                udf: sf.udf.clone(),
+                inputs: FunctionArgs::new_unchecked(new_inputs),
+            };
+            Ok(Transformed::yes(sf.into()))
+        } else {
+            Ok(Transformed::no(e.clone()))
+        }
+    })
+    .map(|res| res.data)
+}
+
 fn resolve_to_basic_and_outer_cols(expr: ExprRef, plan: &LogicalPlanRef) -> DaftResult<ExprRef> {
     expr.transform(|e| {
         if let Expr::Column(Column::Unresolved(column)) = e.as_ref() {
@@ -197,6 +275,8 @@ pub struct ExprResolver<'a> {
     allow_actor_pool_udf: bool,
     #[builder(default)]
     allow_monotonic_id: bool,
+    #[builder(default)]
+    allow_explode: bool,
     #[builder(via_mutators, mutators(
         pub fn in_agg_context(&mut self, in_agg_context: bool) {
             // workaround since typed_builder can't have defaults for mutator requirements
@@ -223,12 +303,20 @@ impl ExprResolver<'_> {
 
         if !self.allow_monotonic_id
             && expr.exists(|e| match e.as_ref() {
-                Expr::ScalarFunction(func) => func.name() == "monotonically_increasing_id",
+                Expr::ScalarFn(ScalarFn::Builtin(func)) => {
+                    func.name() == "monotonically_increasing_id"
+                }
                 _ => false,
             })
         {
             return Err(DaftError::ValueError(
                 "monotonically_increasing_id() is only allowed in projections".to_string(),
+            ));
+        }
+
+        if !self.allow_explode && expr.exists(|e| matches!(e.as_ref(), Expr::ScalarFn(ScalarFn::Builtin(sf)) if sf.is_function_type::<daft_functions_list::Explode>())) {
+            return Err(DaftError::ValueError(
+                "explode() is only allowed in projections".to_string(),
             ));
         }
 
@@ -240,7 +328,8 @@ impl ExprResolver<'_> {
 
         expand_wildcard(expr, plan.clone())?
             .into_iter()
-            .map(|e| resolve_to_basic_and_outer_cols(e, &plan))
+            .map(resolve_list_evals)
+            .map(|e| resolve_to_basic_and_outer_cols(e?, &plan))
             .map(|e| {
                 if self.in_agg_context {
                     self.validate_expr_in_agg(e?)
@@ -331,6 +420,7 @@ impl ExprResolver<'_> {
             partition_by,
             order_by,
             descending: window_spec.descending,
+            nulls_first: window_spec.nulls_first,
             frame: window_spec.frame,
             min_periods: window_spec.min_periods,
         })

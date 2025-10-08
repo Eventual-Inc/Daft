@@ -1,29 +1,32 @@
-use std::{ops::Range, sync::Arc};
+use std::{any::Any, sync::Arc};
 
 use async_trait::async_trait;
-use azure_core::{auth::TokenCredential, new_http_client};
-use azure_identity::{ClientSecretCredential, DefaultAzureCredential, TokenCredentialOptions};
-use azure_storage::{prelude::*, CloudLocation};
+use azure_core::auth::TokenCredential;
+use azure_identity::{
+    ClientSecretCredential, DefaultAzureCredentialBuilder, TokenCredentialOptions,
+};
+use azure_storage::{CloudLocation, prelude::*};
 use azure_storage_blobs::{
     blob::operations::GetBlobResponse,
-    container::{operations::BlobItem, Container},
+    container::{Container, operations::BlobItem},
     prelude::*,
 };
 use common_io_config::AzureConfig;
 use derive_builder::Builder;
-use futures::{stream::BoxStream, StreamExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt, stream::BoxStream};
 use snafu::{IntoError, ResultExt, Snafu};
 
 use crate::{
+    FileFormat, GetResult, InvalidRangeRequestSnafu,
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
+    range::GetRange,
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
-    FileFormat, GetResult,
 };
 
 const AZURE_DELIMITER: &str = "/";
 const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
-const AZURE_STORAGE_RESOURCE: &str = "https://storage.azure.com";
+const AZURE_STORAGE_RESOURCE: &str = "https://storage.azure.com/.default";
 const AZURE_STORE_SUFFIX: &str = ".dfs.core.windows.net";
 
 #[derive(Debug, Snafu)]
@@ -38,7 +41,9 @@ enum Error {
     ContinuationToken { token: String },
 
     // Generic client errors.
-    #[snafu(display("Azure Storage Account not set and is required.\n Set either `AzureConfig.storage_account` or the `AZURE_STORAGE_ACCOUNT` environment variable."))]
+    #[snafu(display(
+        "Azure Storage Account not set and is required.\n Set either `AzureConfig.storage_account` or the `AZURE_STORAGE_ACCOUNT` environment variable."
+    ))]
     StorageAccountNotSet,
     #[snafu(display("Azure client generic error: {}", source))]
     AzureGeneric { source: azure_storage::Error },
@@ -193,7 +198,7 @@ impl AzureBlobSource {
         let storage_credentials = if config.anonymous {
             StorageCredentials::anonymous()
         } else if let Some(access_key) = access_key {
-            StorageCredentials::access_key(&storage_account, access_key.as_string())
+            StorageCredentials::access_key(&storage_account, access_key.as_string().clone())
         } else if let Some(sas_token) = sas_token {
             StorageCredentials::sas_token(sas_token)
                 .map_err(|e| Error::AzureGeneric { source: e })?
@@ -203,22 +208,28 @@ impl AzureBlobSource {
             && let Some(client_id) = &config.client_id
             && let Some(client_secret) = &config.client_secret
         {
+            let options = TokenCredentialOptions::default();
+
             StorageCredentials::token_credential(Arc::new(ClientSecretCredential::new(
-                new_http_client(),
+                options.http_client(),
+                options
+                    .authority_host()
+                    .expect("default authority host should be valid"),
                 tenant_id.clone(),
                 client_id.clone(),
                 client_secret.as_string().clone(),
-                TokenCredentialOptions::default(),
             )))
         } else {
-            let default_creds = Arc::new(DefaultAzureCredential::default());
+            let default_creds = DefaultAzureCredentialBuilder::new()
+                .build()
+                .with_context(|_| AzureGenericSnafu {})?;
 
             if default_creds
-                .get_token(AZURE_STORAGE_RESOURCE)
+                .get_token(std::slice::from_ref(&AZURE_STORAGE_RESOURCE))
                 .await
                 .is_ok()
             {
-                StorageCredentials::token_credential(default_creds)
+                StorageCredentials::token_credential(Arc::new(default_creds))
             } else {
                 log::warn!("Azure credentials resolution failed. Defaulting to anonymous mode.");
                 StorageCredentials::anonymous()
@@ -231,7 +242,10 @@ impl AzureBlobSource {
         };
         let blob_client = if let Some(endpoint_url) = endpoint_url {
             ClientBuilder::with_location(
-                CloudLocation::Custom { uri: endpoint_url },
+                CloudLocation::Custom {
+                    uri: endpoint_url,
+                    account: storage_account,
+                },
                 storage_credentials,
             )
             .blob_service_client()
@@ -239,6 +253,7 @@ impl AzureBlobSource {
             ClientBuilder::with_location(
                 CloudLocation::Custom {
                     uri: format!("https://{storage_account}.blob.fabric.microsoft.com"),
+                    account: storage_account,
                 },
                 storage_credentials,
             )
@@ -257,7 +272,7 @@ impl AzureBlobSource {
         &self,
         protocol: &str,
         io_stats: Option<IOStatsRef>,
-    ) -> BoxStream<super::Result<FileMetadata>> {
+    ) -> BoxStream<'_, super::Result<FileMetadata>> {
         let protocol = protocol.to_string();
 
         // Paginated stream of results from Azure API call.
@@ -298,7 +313,7 @@ impl AzureBlobSource {
         prefix: &str,
         posix: bool,
         io_stats: Option<IOStatsRef>,
-    ) -> BoxStream<super::Result<FileMetadata>> {
+    ) -> BoxStream<'_, super::Result<FileMetadata>> {
         let container_client = self.blob_client.container_client(container_name);
 
         // Clone and own some references that we need for the lifetime of the stream.
@@ -387,7 +402,7 @@ impl AzureBlobSource {
                             // We would like to stop as soon as there is a file match,
                             // or if there is an error.
                             upper_results_stream
-                                .map_ok(|file_info| (file_info.filepath == full_path_with_trailing_delimiter))
+                                .map_ok(|file_info| file_info.filepath == full_path_with_trailing_delimiter)
                                 .try_skip_while(|is_match| futures::future::ready(Ok(!is_match)))
                                 .try_next()
                                 .await?
@@ -429,7 +444,7 @@ impl AzureBlobSource {
         prefix: &str,
         posix: &bool,
         io_stats: Option<IOStatsRef>,
-    ) -> BoxStream<super::Result<FileMetadata>> {
+    ) -> BoxStream<'_, super::Result<FileMetadata>> {
         // Calls Azure list_blobs with the prefix
         // and returns the result flattened and standardized into FileMetadata.
 
@@ -508,10 +523,14 @@ impl AzureBlobSource {
 
 #[async_trait]
 impl ObjectSource for AzureBlobSource {
+    async fn supports_range(&self, _: &str) -> super::Result<bool> {
+        Ok(true)
+    }
+
     async fn get(
         &self,
         uri: &str,
-        range: Option<Range<usize>>,
+        range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
         let parsed_uri = parse_azure_uri(uri)?;
@@ -530,7 +549,16 @@ impl ObjectSource for AzureBlobSource {
         let blob_client = container_client.blob_client(key);
         let request_builder = blob_client.get();
         let request_builder = if let Some(range) = range {
-            request_builder.range(range)
+            range.validate().context(InvalidRangeRequestSnafu)?;
+            match range {
+                GetRange::Bounded(u) => request_builder.range(u),
+                // Note: if n is greater than file size, Azure will whole content.
+                GetRange::Offset(n) => request_builder.range(n..),
+                GetRange::Suffix(n) => {
+                    let size = self.get_size(uri, io_stats.clone()).await?;
+                    request_builder.range(size.saturating_sub(n)..)
+                }
+            }
         } else {
             request_builder
         };
@@ -674,5 +702,9 @@ impl ObjectSource for AzureBlobSource {
             files,
             continuation_token: None,
         })
+    }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
     }
 }

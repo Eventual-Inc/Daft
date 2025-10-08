@@ -4,7 +4,7 @@ import math
 import pathlib
 import random
 import time
-from typing import TYPE_CHECKING, Any, Iterator, Union
+from typing import TYPE_CHECKING, Any, Union
 from uuid import uuid4
 
 from daft.context import get_context
@@ -20,7 +20,7 @@ from daft.daft import (
     StorageConfig,
 )
 from daft.dependencies import pa, pacsv, pads, pq
-from daft.expressions import ExpressionsProjection, col
+from daft.expressions import ExpressionsProjection
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
     canonicalize_protocol,
@@ -41,7 +41,7 @@ from .partitioning import PartitionedTable, partition_strings_to_path
 FileInput = Union[pathlib.Path, str]
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
@@ -246,7 +246,7 @@ class TabularWriteVisitors:
             self.parent = parent
             self.idx = idx
 
-        def __call__(self, written_file):
+        def __call__(self, written_file: pads.WrittenFile) -> None:
             self.parent.paths.append(written_file.path)
             self.parent.partition_indices.append(self.idx)
 
@@ -355,10 +355,10 @@ def write_iceberg(
     partition_spec_id: int,
     partition_cols: ExpressionsProjection,
     io_config: IOConfig | None = None,
-):
+) -> MicroPartition:
     from pyiceberg.io.pyarrow import schema_to_pyarrow
 
-    from daft.iceberg.iceberg_write import (
+    from daft.io.iceberg.iceberg_write import (
         IcebergWriteVisitors,
         partitioned_table_to_iceberg_iter,
     )
@@ -424,10 +424,10 @@ def write_deltalake(
     large_dtypes: bool,
     base_path: str,
     version: int,
-    partition_cols: list[str] | None = None,
+    partition_cols: ExpressionsProjection | None = None,
     io_config: IOConfig | None = None,
-):
-    from daft.delta_lake.delta_lake_write import (
+) -> MicroPartition:
+    from daft.io.delta_lake.delta_lake_write import (
         DeltaLakeWriteVisitors,
         make_deltalake_fs,
         partitioned_table_to_deltalake_iter,
@@ -449,8 +449,7 @@ def write_deltalake(
     format = pads.ParquetFileFormat()
     opts = format.make_write_options(use_compliant_nested_type=False)
 
-    partition_keys = ExpressionsProjection([col(c) for c in partition_cols]) if partition_cols is not None else None
-    partitioned = PartitionedTable(table, partition_keys)
+    partitioned = PartitionedTable(table, partition_cols)
     visitors = DeltaLakeWriteVisitors(fs)
 
     for part_table, part_path, part_values in partitioned_table_to_deltalake_iter(partitioned, large_dtypes):
@@ -486,8 +485,8 @@ def write_lance(
     base_path: str,
     mode: str,
     io_config: IOConfig | None,
-    kwargs: dict | None,
-):
+    kwargs: dict[str, Any] | None,
+) -> MicroPartition:
     import lance
 
     from daft.io.object_store_options import io_config_to_storage_options
@@ -514,7 +513,7 @@ def _retry_with_backoff(
 ) -> Any:
     if retry_error is None:
 
-        def retry_error(_) -> bool:
+        def retry_error(_: Exception) -> bool:
             return True
 
     for attempt in range(num_tries):
@@ -549,10 +548,10 @@ def _write_tabular_arrow_table(
     rows_per_file: int,
     rows_per_row_group: int,
     create_dir: bool,
-    file_visitor: Callable | None,
+    file_visitor: Callable[[pads.WrittenFile], None] | None,
     version: int | None = None,
-):
-    kwargs = dict()
+) -> None:
+    kwargs: dict[str, Any] = {}
 
     kwargs["max_rows_per_file"] = rows_per_file
     kwargs["min_rows_per_group"] = rows_per_row_group
@@ -563,7 +562,7 @@ def _write_tabular_arrow_table(
 
     basename_template = _generate_basename_template(format.default_extname, version)
 
-    def write_dataset():
+    def write_dataset() -> None:
         pads.write_dataset(
             arrow_table,
             schema=schema,
@@ -607,7 +606,7 @@ def write_empty_tabular(
     basename_template = _generate_basename_template(file_format.ext())
     file_path = f"{resolved_path}/{basename_template.format(i=0)}"
 
-    def write_table():
+    def write_table() -> None:
         if file_format == FileFormat.Parquet:
             pq.write_table(
                 table,

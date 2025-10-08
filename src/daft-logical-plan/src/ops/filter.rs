@@ -2,18 +2,20 @@ use std::sync::Arc;
 
 use common_error::DaftError;
 use daft_core::prelude::*;
-use daft_dsl::{estimated_selectivity, ExprRef};
+use daft_dsl::{ExprRef, estimated_selectivity};
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{
+    LogicalPlan,
     logical_plan::{self, CreationSnafu},
     stats::{ApproxStats, PlanStats, StatsState},
-    LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Filter {
     pub plan_id: Option<usize>,
+    pub node_id: Option<usize>,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
     // The Boolean expression to filter on.
@@ -37,6 +39,7 @@ impl Filter {
         }
         Ok(Self {
             plan_id: None,
+            node_id: None,
             input,
             predicate,
             stats_state: StatsState::NotMaterialized,
@@ -45,6 +48,11 @@ impl Filter {
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
         self.plan_id = Some(plan_id);
+        self
+    }
+
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
         self
     }
 

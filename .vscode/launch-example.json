@@ -13,6 +13,11 @@
         "pattern": "pID = ([0-9]+)",
         "action": "startDebugging",
         "name": "Rust LLDB"
+      },
+      "env": {
+        "PYO3_PYTHON_PYLIB": "/usr/lib/x86_64-linux-gnu/libpython3.11.so.1",
+        "PYO3_PYTHON": ".venv/bin/python",
+        "RUSTFLAGS": "-C link-arg=-Wl,-rpath,${PYO3_PYTHON_PYLIB%/*} -C link-arg=-L${PYO3_PYTHON_PYLIB%/*} -C link-arg=-lpython3.11"
       }
     },
     {

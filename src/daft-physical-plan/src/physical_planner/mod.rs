@@ -9,9 +9,12 @@ mod planner;
 use planner::PhysicalPlanTranslator;
 pub use planner::{AdaptivePlanner, MaterializedResults, QueryStageOutput, StageStats};
 
-use crate::{optimization::optimizer::PhysicalOptimizer, PhysicalPlanRef};
+use crate::{PhysicalPlanRef, optimization::optimizer::PhysicalOptimizer};
 mod translate;
-pub use translate::{extract_agg_expr, populate_aggregation_stages};
+pub use translate::{
+    extract_agg_expr, populate_aggregation_stages, populate_aggregation_stages_bound,
+    populate_aggregation_stages_bound_with_schema,
+};
 
 mod display;
 

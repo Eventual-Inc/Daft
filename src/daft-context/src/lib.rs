@@ -1,42 +1,21 @@
-#![feature(mapped_lock_guards)]
-use std::sync::{Arc, OnceLock, RwLock, RwLockReadGuard};
+pub mod partition_cache;
+#[cfg(feature = "python")]
+pub mod python;
+mod subscribers;
+
+use std::{
+    collections::HashMap,
+    sync::{Arc, OnceLock, RwLock},
+};
 
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};
 use common_error::{DaftError, DaftResult};
-#[cfg(feature = "python")]
-use daft_py_runners::{NativeRunner, PyRunner, RayRunner};
-use daft_py_runners::{Runner, RunnerConfig};
+use common_metrics::{QueryID, QueryPlan};
+use daft_micropartition::MicroPartitionRef;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
-#[cfg(feature = "python")]
-mod python;
-
-/// Wrapper around the ContextState to provide a thread-safe interface.
-/// IMPORTANT: Do not create this directly, use `get_context` instead.
-/// This is a singleton, and should only be created once.
-#[derive(Debug, Clone)]
-pub struct DaftContext {
-    state: Arc<RwLock<ContextState>>,
-}
-
-#[derive(Debug)]
-struct ContextState {
-    /// Shared configuration for the context
-    config: Config,
-    /// The runner to use for executing queries.
-    /// most scenarios of etting it more than once will result in an error.
-    /// Since native and py both use the same partition set, they can be swapped out freely
-    /// valid runner changes are:
-    /// native -> py
-    /// py -> native
-    /// but not:
-    /// native -> ray
-    /// py -> ray
-    /// ray -> native
-    /// ray -> py
-    runner: Option<Arc<Runner>>,
-}
+pub use crate::subscribers::Subscriber;
 
 #[derive(Debug, Default)]
 pub struct Config {
@@ -53,124 +32,148 @@ impl Config {
     }
 }
 
-#[cfg(feature = "python")]
-impl ContextState {
-    /// Retrieves the runner.
-    ///
-    /// WARNING: This will set the runner if it has not yet been set.
-    fn get_or_create_runner(&mut self) -> DaftResult<Arc<Runner>> {
-        if let Some(runner) = self.runner.as_ref() {
-            return Ok(runner.clone());
-        }
-
-        let runner_cfg = get_runner_config_from_env();
-        let runner = runner_cfg.create_runner()?;
-
-        let runner = Arc::new(runner);
-        self.runner = Some(runner.clone());
-
-        Ok(runner)
-    }
+#[derive(Debug)]
+struct ContextState {
+    /// Shared configuration for the context
+    config: Config,
+    subscribers: HashMap<String, Arc<dyn Subscriber>>,
 }
 
-#[cfg(not(feature = "python"))]
-impl ContextState {
-    fn get_or_create_runner(&mut self) -> DaftResult<Arc<Runner>> {
-        unimplemented!()
-    }
+/// Wrapper around the ContextState to provide a thread-safe interface.
+/// IMPORTANT: Do not create this directly, use `get_context` instead.
+/// This is a singleton, and should only be created once.
+#[derive(Debug, Clone)]
+pub struct DaftContext {
+    /// Private state field - access only through state() and state_mut() methods
+    state: Arc<RwLock<ContextState>>,
 }
 
-#[cfg(feature = "python")]
 impl DaftContext {
-    /// Retrieves the runner.
-    ///
-    /// WARNING: This will set the runner if it has not yet been set.
-    pub fn get_or_create_runner(&self) -> DaftResult<Arc<Runner>> {
-        let mut lock = self
+    fn with_state<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&ContextState) -> R,
+    {
+        let guard = self
+            .state
+            .read()
+            .expect("Failed to acquire read lock on DaftContext");
+        f(&guard)
+    }
+
+    fn with_state_mut<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut ContextState) -> R,
+    {
+        let mut guard = self
             .state
             .write()
             .expect("Failed to acquire write lock on DaftContext");
-        lock.get_or_create_runner()
-    }
-
-    /// Get the current runner, if one has been set.
-    pub fn runner(&self) -> Option<Arc<Runner>> {
-        self.state.read().unwrap().runner.clone()
-    }
-
-    /// Set the runner.
-    /// IMPORTANT: This can only be set once. Setting it more than once will error.
-    pub fn set_runner(&self, runner: Arc<Runner>) -> DaftResult<()> {
-        use Runner::{Native, Py};
-        if let Some(current_runner) = self.runner() {
-            let runner = match (current_runner.as_ref(), runner.as_ref()) {
-                (Native(_), Native(_)) | (Py(_), Py(_)) => return Ok(()),
-                (Py(_), Native(_)) | (Native(_), Py(_)) => runner,
-
-                _ => {
-                    return Err(DaftError::InternalError(
-                        "Cannot set runner more than once".to_string(),
-                    ));
-                }
-            };
-
-            let mut state = self.state.write().map_err(|_| {
-                DaftError::InternalError("Failed to acquire write lock on DaftContext".to_string())
-            })?;
-
-            state.runner.replace(runner);
-
-            Ok(())
-        } else {
-            let mut state = self.state.write().map_err(|_| {
-                DaftError::InternalError("Failed to acquire write lock on DaftContext".to_string())
-            })?;
-
-            state.runner.replace(runner);
-            Ok(())
-        }
-    }
-
-    /// Get a read only reference to the state.
-    fn state(&self) -> RwLockReadGuard<'_, ContextState> {
-        self.state.read().unwrap()
+        f(&mut guard)
     }
 
     /// get the execution config
     pub fn execution_config(&self) -> Arc<DaftExecutionConfig> {
-        self.state().config.execution.clone()
+        self.with_state(|state| state.config.execution.clone())
     }
 
     /// get the planning config
     pub fn planning_config(&self) -> Arc<DaftPlanningConfig> {
-        self.state().config.planning.clone()
+        self.with_state(|state| state.config.planning.clone())
+    }
+
+    /// set the execution config
+    pub fn set_execution_config(&self, config: Arc<DaftExecutionConfig>) {
+        self.with_state_mut(|state| state.config.execution = config);
+    }
+
+    /// set the planning config
+    pub fn set_planning_config(&self, config: Arc<DaftPlanningConfig>) {
+        self.with_state_mut(|state| state.config.planning = config);
     }
 
     pub fn io_config(&self) -> IOConfig {
-        self.state().config.planning.default_io_config.clone()
-    }
-}
-
-#[cfg(not(feature = "python"))]
-impl DaftContext {
-    pub fn get_or_create_runner(&self) -> DaftResult<Arc<Runner>> {
-        unimplemented!()
+        self.with_state(|state| state.config.planning.default_io_config.clone())
     }
 
-    pub fn runner(&self) -> Option<Arc<Runner>> {
-        unimplemented!()
+    pub fn subscribers(&self) -> Vec<Arc<dyn Subscriber>> {
+        self.with_state(|state| state.subscribers.values().cloned().collect())
     }
 
-    pub fn set_runner(&self, runner: Arc<Runner>) -> DaftResult<()> {
-        unimplemented!()
+    /// Attaches a subscriber to this context.
+    pub fn attach_subscriber(&self, alias: String, subscriber: Arc<dyn Subscriber>) {
+        self.with_state_mut(|state| state.subscribers.insert(alias, subscriber));
     }
 
-    pub fn state(&self) -> RwLockReadGuard<'_, ContextState> {
-        unimplemented!()
+    /// Detaches a subscriber from this context, err if does not exist.
+    pub fn detach_subscriber(&self, alias: &str) -> DaftResult<()> {
+        self.with_state_mut(|state| {
+            if !state.subscribers.contains_key(alias) {
+                return Err(DaftError::ValueError(format!(
+                    "Subscriber `{}` not found in this context",
+                    alias
+                )));
+            }
+
+            state.subscribers.remove(alias);
+            Ok(())
+        })
     }
 
-    pub fn state_mut(&self) -> std::sync::RwLockWriteGuard<'_, ContextState> {
-        unimplemented!()
+    pub fn notify_query_start(
+        &self,
+        query_id: QueryID,
+        unoptimized_plan: QueryPlan,
+    ) -> DaftResult<()> {
+        self.with_state(|state| {
+            for subscriber in state.subscribers.values() {
+                subscriber.on_query_start(query_id.clone(), unoptimized_plan.clone())?;
+            }
+            Ok::<(), DaftError>(())
+        })
+    }
+
+    pub fn notify_query_end(&self, query_id: QueryID) -> DaftResult<()> {
+        self.with_state(move |state| {
+            for subscriber in state.subscribers.values() {
+                subscriber.on_query_end(query_id.clone())?;
+            }
+            Ok::<(), DaftError>(())
+        })
+    }
+
+    pub fn notify_result_out(
+        &self,
+        query_id: QueryID,
+        result: MicroPartitionRef,
+    ) -> DaftResult<()> {
+        self.with_state(|state| {
+            for subscriber in state.subscribers.values() {
+                subscriber.on_result_out(query_id.clone(), result.clone())?;
+            }
+            Ok::<(), DaftError>(())
+        })
+    }
+
+    pub fn notify_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
+        self.with_state(|state| {
+            for subscriber in state.subscribers.values() {
+                subscriber.on_optimization_start(query_id.clone())?;
+            }
+            Ok::<(), DaftError>(())
+        })
+    }
+
+    pub fn notify_optimization_end(
+        &self,
+        query_id: QueryID,
+        optimized_plan: QueryPlan,
+    ) -> DaftResult<()> {
+        self.with_state(|state| {
+            for subscriber in state.subscribers.values() {
+                subscriber.on_optimization_end(query_id.clone(), optimized_plan.clone())?;
+            }
+            Ok::<(), DaftError>(())
+        })
     }
 }
 
@@ -181,9 +184,11 @@ pub fn get_context() -> DaftContext {
     match DAFT_CONTEXT.get() {
         Some(ctx) => ctx.clone(),
         None => {
+            use crate::subscribers::default_subscribers;
+
             let state = ContextState {
                 config: Config::from_env(),
-                runner: None,
+                subscribers: default_subscribers(),
             };
             let state = RwLock::new(state);
             let state = Arc::new(state);
@@ -203,191 +208,8 @@ pub fn get_context() -> DaftContext {
 }
 
 #[cfg(feature = "python")]
-pub fn set_runner_ray(
-    address: Option<String>,
-    max_task_backlog: Option<usize>,
-    force_client_mode: Option<bool>,
-) -> DaftResult<DaftContext> {
-    let ctx = get_context();
-
-    let runner = Runner::Ray(RayRunner::try_new(
-        address,
-        max_task_backlog,
-        force_client_mode,
-    )?);
-    let runner = Arc::new(runner);
-    ctx.set_runner(runner)?;
-
-    Ok(ctx)
-}
-
-#[cfg(not(feature = "python"))]
-pub fn set_runner_ray(
-    _address: Option<String>,
-    _max_task_backlog: Option<usize>,
-    _force_client_mode: Option<bool>,
-) -> DaftResult<DaftContext> {
-    unimplemented!()
-}
-
-#[cfg(feature = "python")]
-pub fn set_runner_native(num_threads: Option<usize>) -> DaftResult<DaftContext> {
-    let ctx = get_context();
-
-    let runner = Runner::Native(NativeRunner::try_new(num_threads)?);
-    let runner = Arc::new(runner);
-
-    ctx.set_runner(runner)?;
-
-    Ok(ctx)
-}
-
-#[cfg(not(feature = "python"))]
-pub fn set_runner_native(num_threads: Option<usize>) -> DaftResult<DaftContext> {
-    unimplemented!()
-}
-
-#[cfg(feature = "python")]
-pub fn set_runner_py(
-    use_thread_pool: Option<bool>,
-    num_threads: Option<usize>,
-) -> DaftResult<DaftContext> {
-    let ctx = get_context();
-
-    let runner = Runner::Py(PyRunner::try_new(use_thread_pool, num_threads)?);
-    let runner = Arc::new(runner);
-
-    ctx.set_runner(runner)?;
-
-    Ok(ctx)
-}
-
-#[cfg(not(feature = "python"))]
-pub fn set_runner_py(_use_thread_pool: Option<bool>) -> DaftResult<DaftContext> {
-    unimplemented!()
-}
-
-/// Helper function to parse a boolean environment variable.
-fn parse_bool_env_var(var_name: &str) -> Option<bool> {
-    std::env::var(var_name)
-        .ok()
-        .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1"))
-}
-
-/// Helper function to parse a numeric environment variable.
-fn parse_usize_env_var(var_name: &str) -> Option<usize> {
-    std::env::var(var_name).ok().and_then(|s| s.parse().ok())
-}
-
-/// Helper function to get the py runner config from the environment.
-#[cfg(feature = "python")]
-fn get_py_runner_config_from_env() -> RunnerConfig {
-    const DAFT_DEVELOPER_USE_THREAD_POOL: &str = "DAFT_DEVELOPER_USE_THREAD_POOL";
-
-    RunnerConfig::Py {
-        use_thread_pool: parse_bool_env_var(DAFT_DEVELOPER_USE_THREAD_POOL),
-        num_threads: None,
-    }
-}
-
-/// Helper function to get the ray runner config from the environment.
-#[cfg(feature = "python")]
-fn get_ray_runner_config_from_env() -> RunnerConfig {
-    const DAFT_RAY_ADDRESS: &str = "DAFT_RAY_ADDRESS";
-    const RAY_ADDRESS: &str = "RAY_ADDRESS";
-    const DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG: &str = "DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG";
-    const DAFT_RAY_FORCE_CLIENT_MODE: &str = "DAFT_RAY_FORCE_CLIENT_MODE";
-
-    let address = if let Ok(address) = std::env::var(DAFT_RAY_ADDRESS) {
-        log::warn!(
-            "Detected usage of the ${} environment variable. This will be deprecated, please use ${} instead.",
-            DAFT_RAY_ADDRESS,
-            RAY_ADDRESS
-        );
-        Some(address)
-    } else {
-        std::env::var(RAY_ADDRESS).ok()
-    };
-    let max_task_backlog = parse_usize_env_var(DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG);
-    let force_client_mode = parse_bool_env_var(DAFT_RAY_FORCE_CLIENT_MODE);
-    RunnerConfig::Ray {
-        address,
-        max_task_backlog,
-        force_client_mode,
-    }
-}
-
-/// Helper function to automatically detect whether to use the ray runner.
-#[cfg(feature = "python")]
-fn detect_ray_state() -> bool {
-    let mut ray_is_in_job = false;
-    let mut in_ray_worker = false;
-    let mut ray_is_initialized = false;
-
-    pyo3::Python::with_gil(|py| {
-        let ray = py.import("ray").ok()?;
-
-        ray_is_initialized = ray
-            .call_method0("is_initialized")
-            .ok()?
-            .extract::<bool>()
-            .ok()?;
-
-        let worker_mode = ray
-            .getattr("_private")
-            .ok()?
-            .getattr("worker")
-            .ok()?
-            .getattr("global_worker")
-            .ok()?
-            .getattr("mode")
-            .ok()?;
-
-        let ray_worker_mode = ray.getattr("WORKER_MODE").ok()?;
-        if worker_mode.eq(ray_worker_mode).ok()? {
-            in_ray_worker = true;
-        }
-        if std::env::var("RAY_JOB_ID").is_ok() {
-            ray_is_in_job = true;
-        }
-        Some(())
-    });
-
-    !in_ray_worker && (ray_is_initialized || ray_is_in_job)
-}
-
-#[cfg(feature = "python")]
-fn get_runner_config_from_env() -> RunnerConfig {
-    const DAFT_RUNNER: &str = "DAFT_RUNNER";
-
-    let runner_from_envvar = std::env::var(DAFT_RUNNER)
-        .unwrap_or_default()
-        .to_lowercase();
-
-    match runner_from_envvar.as_str() {
-        "native" => RunnerConfig::Native { num_threads: None },
-        "ray" => get_ray_runner_config_from_env(),
-        "py" => get_py_runner_config_from_env(),
-        _ if detect_ray_state() => get_ray_runner_config_from_env(),
-        _ => RunnerConfig::Native { num_threads: None },
-    }
-}
-
-#[cfg(not(feature = "python"))]
-fn get_runner_config_from_env() -> RunnerConfig {
-    unimplemented!()
-}
-
-#[cfg(feature = "python")]
-pub fn register_modules(parent: &Bound<PyModule>) -> pyo3::PyResult<()> {
-    parent.add_function(wrap_pyfunction!(
-        python::get_runner_config_from_env,
-        parent
-    )?)?;
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::get_context, parent)?)?;
-    parent.add_function(wrap_pyfunction!(python::set_runner_ray, parent)?)?;
-    parent.add_function(wrap_pyfunction!(python::set_runner_native, parent)?)?;
-    parent.add_function(wrap_pyfunction!(python::set_runner_py, parent)?)?;
     parent.add_class::<python::PyDaftContext>()?;
     Ok(())
 }

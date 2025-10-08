@@ -28,27 +28,30 @@ jobs:
       with:
         key: ${{ runner.os }}-build
         cache-all-crates: 'true'
-    - name: Set up Python ${{ env.python-version }}
-      uses: actions/setup-python@v5
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ env.python-version }}
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install dependencies
-      run: |
-        source venv/bin/activate
-        uv pip install -r requirements-dev.txt
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          source activate
+          uv sync --no-install-project --all-extras --all-groups
+          uv pip install -e docs/plugins/nav_hide_children
     - name: Build Daft in development mode and generate docs
       run: |
         source activate
-        maturin develop
+        maturin develop --uv
         mkdocs build
     - name: Upload built docs
       uses: actions/upload-artifact@v4

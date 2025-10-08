@@ -1,9 +1,16 @@
 use std::sync::Arc;
 
 use common_display::DisplayAs;
-use daft_dsl::{estimated_selectivity, ExprRef};
+use daft_dsl::{ExprRef, estimated_selectivity};
 use daft_schema::schema::Schema;
 use serde::{Deserialize, Serialize};
+
+use crate::Sharder;
+
+pub trait SupportsPushdownFilters {
+    /// Applies filters to the scan operator and returns the pushable filters and the remaining filters.
+    fn push_filters(&self, filter: &[ExprRef]) -> (Vec<ExprRef>, Vec<ExprRef>);
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Pushdowns {
@@ -15,11 +22,22 @@ pub struct Pushdowns {
     pub columns: Option<Arc<Vec<String>>>,
     /// Optional number of rows to read.
     pub limit: Option<usize>,
+    /// Sharding information.
+    pub sharder: Option<Sharder>,
+    /// Optional filters that have been pushed down to the scan operator.
+    /// The `filters` field is kept for backward compatibility;
+    /// it represents all current filters.
+    pub pushed_filters: Option<Vec<ExprRef>>,
+
+    // /// Optional aggregation pushdown.
+    /// This is used to indicate that the scan operator can perform an aggregation.
+    /// This is useful for scans that can perform aggregations like `count`
+    pub aggregation: Option<ExprRef>,
 }
 
 impl Default for Pushdowns {
     fn default() -> Self {
-        Self::new(None, None, None, None)
+        Self::new(None, None, None, None, None, None)
     }
 }
 
@@ -30,12 +48,17 @@ impl Pushdowns {
         partition_filters: Option<ExprRef>,
         columns: Option<Arc<Vec<String>>>,
         limit: Option<usize>,
+        sharder: Option<Sharder>,
+        aggregation: Option<ExprRef>,
     ) -> Self {
         Self {
             filters,
             partition_filters,
             columns,
             limit,
+            sharder,
+            pushed_filters: None,
+            aggregation,
         }
     }
 
@@ -54,6 +77,9 @@ impl Pushdowns {
             partition_filters: self.partition_filters.clone(),
             columns: self.columns.clone(),
             limit,
+            sharder: self.sharder.clone(),
+            pushed_filters: self.pushed_filters.clone(),
+            aggregation: self.aggregation.clone(),
         }
     }
 
@@ -64,6 +90,9 @@ impl Pushdowns {
             partition_filters: self.partition_filters.clone(),
             columns: self.columns.clone(),
             limit: self.limit,
+            sharder: self.sharder.clone(),
+            pushed_filters: self.pushed_filters.clone(),
+            aggregation: self.aggregation.clone(),
         }
     }
 
@@ -74,6 +103,9 @@ impl Pushdowns {
             partition_filters,
             columns: self.columns.clone(),
             limit: self.limit,
+            sharder: self.sharder.clone(),
+            pushed_filters: self.pushed_filters.clone(),
+            aggregation: self.aggregation.clone(),
         }
     }
 
@@ -84,6 +116,48 @@ impl Pushdowns {
             partition_filters: self.partition_filters.clone(),
             columns,
             limit: self.limit,
+            sharder: self.sharder.clone(),
+            pushed_filters: self.pushed_filters.clone(),
+            aggregation: self.aggregation.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_sharder(&self, sharder: Option<Sharder>) -> Self {
+        Self {
+            filters: self.filters.clone(),
+            partition_filters: self.partition_filters.clone(),
+            columns: self.columns.clone(),
+            limit: self.limit,
+            sharder,
+            pushed_filters: self.pushed_filters.clone(),
+            aggregation: self.aggregation.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_pushed_filters(&self, pushed_filters: Option<Vec<ExprRef>>) -> Self {
+        Self {
+            filters: self.filters.clone(),
+            partition_filters: self.partition_filters.clone(),
+            columns: self.columns.clone(),
+            limit: self.limit,
+            sharder: self.sharder.clone(),
+            pushed_filters,
+            aggregation: self.aggregation.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_aggregation(&self, aggregation: Option<ExprRef>) -> Self {
+        Self {
+            filters: self.filters.clone(),
+            partition_filters: self.partition_filters.clone(),
+            columns: self.columns.clone(),
+            limit: self.limit,
+            sharder: self.sharder.clone(),
+            pushed_filters: self.pushed_filters.clone(),
+            aggregation,
         }
     }
 
@@ -101,6 +175,12 @@ impl Pushdowns {
         }
         if let Some(limit) = self.limit {
             res.push(format!("Limit pushdown = {limit}"));
+        }
+        if let Some(sharder) = &self.sharder {
+            res.push(format!("Sharder = {sharder}"));
+        }
+        if let Some(aggregation) = &self.aggregation {
+            res.push(format!("Aggregation pushdown = {aggregation}"));
         }
         res
     }
@@ -132,6 +212,12 @@ impl DisplayAs for Pushdowns {
                 }
                 if let Some(limit) = self.limit {
                     sub_items.push(format!("limit: {limit}"));
+                }
+                if let Some(sharder) = &self.sharder {
+                    sub_items.push(format!("sharder: {sharder}"));
+                }
+                if let Some(aggregation) = &self.aggregation {
+                    sub_items.push(format!("aggregation: {aggregation}"));
                 }
                 s.push_str(&sub_items.join(", "));
                 s.push('}');

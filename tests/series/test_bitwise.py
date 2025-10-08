@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import itertools
 from operator import and_, or_, xor
 

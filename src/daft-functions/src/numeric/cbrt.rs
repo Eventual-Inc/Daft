@@ -1,23 +1,22 @@
-use common_error::{ensure, DaftResult};
+use common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF, UnaryArg, scalar::ScalarFn},
 };
 use serde::{Deserialize, Serialize};
 
-use super::to_field_single_floating;
+use super::to_field_floating;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Cbrt;
 
 #[typetag::serde]
 impl ScalarUDF for Cbrt {
-    fn evaluate(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        ensure!(inputs.len() == 1, "cbrt expects 1 argument");
-        let s = inputs.required((0, "input"))?;
-        let casted_dtype = s.to_floating_data_type()?;
-        let casted_self = s
+    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+        let UnaryArg { input } = inputs.try_into()?;
+        let casted_dtype = input.to_floating_data_type()?;
+        let casted_self = input
             .cast(&casted_dtype)
             .expect("Casting numeric types to their floating point analogues should not fail");
         match casted_dtype {
@@ -31,12 +30,17 @@ impl ScalarUDF for Cbrt {
         "cbrt"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        to_field_single_floating(self, inputs, schema)
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        let UnaryArg { input } = inputs.try_into()?;
+        to_field_floating(&input, schema)
     }
 }
 
 #[must_use]
 pub fn cbrt(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(Cbrt, vec![input]).into()
+    ScalarFn::builtin(Cbrt, vec![input]).into()
 }

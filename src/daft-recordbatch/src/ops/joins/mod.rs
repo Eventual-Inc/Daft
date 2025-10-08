@@ -212,7 +212,7 @@ impl RecordBatch {
             input: &RecordBatch,
             outer_len: usize,
         ) -> DaftResult<RecordBatch> {
-            RecordBatch::concat(&vec![input; outer_len])
+            RecordBatch::concat_or_empty(&vec![input; outer_len], Some(input.schema.clone()))
         }
 
         let (left_table, right_table) = match outer_loop_side {

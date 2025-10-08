@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
 if TYPE_CHECKING:
     from daft.logical.schema import Schema
@@ -59,7 +59,7 @@ class PreviewOptions:
 
     _options: dict[str, object]  # normalized options
 
-    def __init__(self, **options) -> None:
+    def __init__(self, **options: Any) -> None:
         self._options = {
             "verbose": options.get("verbose", False),
             "null": options.get("null", "None"),
@@ -88,7 +88,7 @@ class PreviewFormatter:
         preview: Preview,
         schema: Schema,
         format: PreviewFormat | None = None,
-        **options,
+        **options: Any,
     ) -> None:
         self._preview = preview
         self._schema = schema
@@ -143,3 +143,23 @@ class PreviewFormatter:
                 return self._preview.partition.to_record_batch()._recordbatch.__repr__()
         else:
             return self._schema._truncated_table_string()
+
+    def _generate_interactive_html(self) -> str:
+        """Generate interactive HTML for the current PreviewFormatter's RecordBatch using the dashboard server."""
+        from daft.daft import dashboard as dashboard_native
+        from daft.subscribers import launch
+
+        # Ensure the server is running (no-op if already running)
+        launch(noop_if_initialized=True)
+
+        # Get the RecordBatch from the current preview partition
+        if self._preview.partition is None:
+            raise ValueError("No partition available to generate interactive HTML.")
+
+        rb = self._preview.partition.to_record_batch()
+        df_id = dashboard_native.register_dataframe_for_display(rb._recordbatch)
+        html = dashboard_native.generate_interactive_html(df_id)
+        user_message = self._get_user_message()
+        # Add the user message below the interactive HTML
+        html += f"\n<small>{user_message}</small>"
+        return html

@@ -1,11 +1,11 @@
-use common_error::{ensure, DaftError, DaftResult};
+use common_error::{DaftError, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF, UnaryArg, scalar::ScalarFn},
 };
 use serde::{Deserialize, Serialize};
 
@@ -16,12 +16,8 @@ macro_rules! exp {
 
         #[typetag::serde]
         impl ScalarUDF for $variant {
-            fn evaluate(
-                &self,
-                inputs: daft_dsl::functions::FunctionArgs<Series>,
-            ) -> DaftResult<Series> {
-                ensure!(inputs.len() == 1, "expected 1 input argument");
-                let input = inputs.required((0, "input"))?;
+            fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+                let UnaryArg { input } = inputs.try_into()?;
                 $impl(input)
             }
 
@@ -29,14 +25,13 @@ macro_rules! exp {
                 stringify!($name)
             }
 
-            fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-                if inputs.len() != 1 {
-                    return Err(DaftError::SchemaMismatch(format!(
-                        "Expected 1 input arg, got {}",
-                        inputs.len()
-                    )));
-                };
-                let field = inputs.first().unwrap().to_field(schema)?;
+            fn get_return_field(
+                &self,
+                inputs: FunctionArgs<ExprRef>,
+                schema: &Schema,
+            ) -> DaftResult<Field> {
+                let UnaryArg { input } = inputs.try_into()?;
+                let field = input.to_field(schema)?;
                 let dtype = match field.dtype {
                     DataType::Float32 => DataType::Float32,
                     dt if dt.is_numeric() => DataType::Float64,
@@ -44,7 +39,7 @@ macro_rules! exp {
                         return Err(DaftError::TypeError(format!(
                             "Expected input to compute exp to be numeric, got {}",
                             field.dtype
-                        )))
+                        )));
                     }
                 };
                 Ok(Field::new(field.name, dtype))
@@ -57,7 +52,7 @@ macro_rules! exp {
 
         #[must_use]
         pub fn $name(input: ExprRef) -> ExprRef {
-            ScalarFunction::new($variant, vec![input]).into()
+            ScalarFn::builtin($variant, vec![input]).into()
         }
     };
 }
@@ -75,11 +70,11 @@ exp!(
     "Calculates the exponential of a number minus one (e^x - 1)."
 );
 
-fn exp_impl(s: &Series) -> DaftResult<Series> {
+fn exp_impl(s: Series) -> DaftResult<Series> {
     match s.data_type() {
         DataType::Float32 => Ok(s.f32().unwrap().exp()?.into_series()),
         DataType::Float64 => Ok(s.f64().unwrap().exp()?.into_series()),
-        dt if dt.is_integer() => exp_impl(&s.cast(&DataType::Float64).unwrap()),
+        dt if dt.is_integer() => exp_impl(s.cast(&DataType::Float64).unwrap()),
         dt => Err(DaftError::TypeError(format!(
             "exp not implemented for {}",
             dt
@@ -87,11 +82,11 @@ fn exp_impl(s: &Series) -> DaftResult<Series> {
     }
 }
 
-fn expm1_impl(s: &Series) -> DaftResult<Series> {
+fn expm1_impl(s: Series) -> DaftResult<Series> {
     match s.data_type() {
         DataType::Float32 => Ok(s.f32().unwrap().expm1()?.into_series()),
         DataType::Float64 => Ok(s.f64().unwrap().expm1()?.into_series()),
-        dt if dt.is_integer() => expm1_impl(&s.cast(&DataType::Float64).unwrap()),
+        dt if dt.is_integer() => expm1_impl(s.cast(&DataType::Float64).unwrap()),
         dt => Err(DaftError::TypeError(format!(
             "expm1 not implemented for {}",
             dt

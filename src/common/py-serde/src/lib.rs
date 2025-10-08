@@ -3,4 +3,6 @@ mod python;
 pub use bincode;
 
 #[cfg(feature = "python")]
-pub use crate::{python::deserialize_py_object, python::pickle_dumps, python::serialize_py_object};
+pub use crate::python::{
+    PyObjectWrapper, deserialize_py_object, pickle_dumps, pickle_loads, serialize_py_object,
+};

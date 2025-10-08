@@ -6,14 +6,13 @@ import pandas as pd
 import pytest
 
 from daft import Window, col
+from daft.context import get_context
 from daft.functions import dense_rank, rank
 from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 
-# from daft.expressions import lag, lead
-
-
 pytestmark = pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner"
+    get_tests_daft_runner_name() == "ray" and get_context().daft_execution_config.use_legacy_ray_runner is True,
+    reason="requires Native Runner or Flotilla to be in use",
 )
 
 
@@ -67,6 +66,48 @@ def test_basic_lead_function(make_df):
     ).collect()
 
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+@pytest.mark.parametrize(
+    "desc,nulls_first,expected_lead",
+    [
+        (False, False, [2, 3, 4, None, 6, 7, 8, None, 10, 11, 12, None]),
+        (False, True, [2, 3, None, 1, 6, 7, None, 5, 10, 11, None, 9]),
+        (True, False, [4, 1, 2, None, 8, 5, 6, None, 12, 9, 10, None]),
+        (True, True, [None, 1, 2, 3, None, 5, 6, 7, None, 9, 10, 11]),
+    ],
+)
+def test_lead_nulls_first_or_last(make_df, desc, nulls_first, expected_lead):
+    """Test lag and lead functions with nulls first or last."""
+    data = [
+        {"id": 1, "category": "A", "ts": 1},
+        {"id": 2, "category": "A", "ts": 2},
+        {"id": 3, "category": "A", "ts": 3},
+        {"id": 4, "category": "A", "ts": None},
+        {"id": 5, "category": "B", "ts": 1},
+        {"id": 6, "category": "B", "ts": 2},
+        {"id": 7, "category": "B", "ts": 3},
+        {"id": 8, "category": "B", "ts": None},
+        {"id": 9, "category": "C", "ts": 1},
+        {"id": 10, "category": "C", "ts": 2},
+        {"id": 11, "category": "C", "ts": 3},
+        {"id": 12, "category": "C", "ts": None},
+    ]
+
+    df = make_df(data)
+    window_spec = Window().partition_by("category").order_by("ts", desc=desc, nulls_first=nulls_first)
+    result = df.select(
+        col("id"), col("category"), col("ts"), col("id").lead(1).over(window_spec).alias("lead_value")
+    ).collect()
+
+    expected = {
+        "id": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+        "category": ["A", "A", "A", "A", "B", "B", "B", "B", "C", "C", "C", "C"],
+        "ts": [1, 2, 3, None, 1, 2, 3, None, 1, 2, 3, None],
+        "lead_value": expected_lead,
+    }
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=["id"], check_dtype=False)
 
 
 def test_lag_lead_with_different_offsets(make_df):

@@ -6,24 +6,25 @@ use std::{
 
 use common_arrow_ffi as ffi;
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
-use daft_schema::python::{PyDataType, PyTimeUnit};
+use daft_schema::python::PyDataType;
 use pyo3::{
-    exceptions::PyValueError,
+    exceptions::{PyIndexError, PyStopIteration, PyValueError},
     prelude::*,
     pyclass::CompareOp,
     types::{PyBytes, PyList},
 };
 
 use crate::{
-    array::{
-        ops::{as_arrow::AsArrow, DaftLogical, Utf8NormalizeOptions},
-        pseudo_arrow::PseudoArrowArray,
-        DataArray,
-    },
+    array::ops::DaftLogical,
     count_mode::CountMode,
-    datatypes::{DataType, Field, ImageMode, PythonType},
-    series::{self, IntoSeries, Series},
-    utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
+    datatypes::{DataType, Field},
+    lit::Literal,
+    prelude::PythonArray,
+    series::{self, IntoSeries, Series, from_lit::combine_lit_types},
+    utils::{
+        arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
+        supertype::try_get_collection_supertype,
+    },
 };
 
 #[pyclass]
@@ -31,63 +32,118 @@ use crate::{
 pub struct PySeries {
     pub series: series::Series,
 }
+impl PySeries {
+    pub fn from_pylist_impl(
+        name: &str,
+        vec_pyobj: Vec<Bound<PyAny>>,
+        dtype: DataType,
+    ) -> PyResult<Self> {
+        let pyobjs_arced = vec_pyobj.into_iter().map(|obj| {
+            if obj.is_none() {
+                None
+            } else {
+                Some(Arc::new(obj.unbind()))
+            }
+        });
+        let arr = PythonArray::from_iter(name, pyobjs_arced);
+        let series = arr.cast(&dtype)?;
+
+        Ok(series.into())
+    }
+}
 
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    pub fn from_arrow(py: Python, name: &str, pyarrow_array: Bound<PyAny>) -> PyResult<Self> {
+    #[pyo3(signature = (name, pyarrow_array, dtype=None))]
+    pub fn from_arrow(
+        py: Python,
+        name: &str,
+        pyarrow_array: Bound<PyAny>,
+        dtype: Option<PyDataType>,
+    ) -> PyResult<Self> {
         let arrow_array = ffi::array_to_rust(py, pyarrow_array)?;
         let arrow_array = cast_array_for_daft_if_needed(arrow_array.to_boxed());
-        let series = series::Series::try_from((name, arrow_array))?;
-        Ok(series.into())
-    }
 
-    // This ingests a Python list[object] directly into a Rust PythonArray.
-    #[staticmethod]
-    pub fn from_pylist(
-        py: Python<'_>,
-        name: &str,
-        pylist: Bound<PyAny>,
-        pyobj: &str,
-    ) -> PyResult<Self> {
-        let vec_pyobj: Vec<PyObject> = pylist.extract()?;
-        let dtype = match pyobj {
-            "force" => DataType::Python,
-            "allow" => infer_daft_dtype_for_sequence(&vec_pyobj, py, name)?.unwrap_or(DataType::Python),
-            "disallow" => panic!("Cannot create a Series from a pylist and being strict about only using Arrow types by setting pyobj=disallow"),
-            _ => panic!("Unsupported pyobj behavior when creating Series from pylist: {}", pyobj)
+        let series = if let Some(dtype) = dtype {
+            let field = Field::new(name, dtype.into());
+            series::Series::try_from_field_and_arrow_array(field, arrow_array)?
+        } else {
+            series::Series::try_from((name, arrow_array))?
         };
-        let vec_pyobj_arced = vec_pyobj.into_iter().map(Arc::new).collect();
-        let arrow_array: Box<dyn arrow2::array::Array> =
-            Box::new(PseudoArrowArray::from_pyobj_vec(vec_pyobj_arced));
-        let field = Field::new(name, DataType::Python);
 
-        let data_array = DataArray::<PythonType>::new(field.into(), arrow_array)?;
-        let series = data_array.cast(&dtype)?;
         Ok(series.into())
     }
 
-    // This is for PythonArrays only,
-    // to convert the Rust PythonArray to a Python list[object].
+    #[staticmethod]
+    #[pyo3(signature = (list, name=None, dtype=None))]
+    pub fn from_pylist(
+        list: &Bound<PyList>,
+        name: Option<&str>,
+        dtype: Option<PyDataType>,
+    ) -> PyResult<Self> {
+        let dtype = dtype.map(|t| t.dtype);
+        let literals = list
+            .iter()
+            .map(|elem| Literal::from_pyobj(&elem, dtype.as_ref()))
+            .collect::<PyResult<Vec<_>>>()?;
+
+        let (literals, dtype) = if let Some(dtype) = dtype {
+            (literals, dtype)
+        } else {
+            let supertype = try_get_collection_supertype(literals.iter().map(Literal::get_type))
+                .unwrap_or(DataType::Python);
+
+            let literals_with_supertype = literals
+                .into_iter()
+                .zip(list)
+                .map(|(daft_lit, py_lit)| {
+                    if combine_lit_types(&daft_lit.get_type(), &supertype).as_ref()
+                        == Some(&supertype)
+                    {
+                        Ok(daft_lit)
+                    } else {
+                        // if literal doesn't match supertype, redo conversion so that for the python data type
+                        // as well as nested types with python type, we avoid any lossy conversions and just keep
+                        // stuff as Python objects
+                        Literal::from_pyobj(&py_lit, Some(&supertype))
+                    }
+                })
+                .collect::<PyResult<Vec<_>>>()?;
+
+            (literals_with_supertype, supertype)
+        };
+
+        let mut series = Series::from_literals(literals)?.cast(&dtype)?;
+        if let Some(name) = name {
+            series = series.rename(name);
+        }
+        Ok(series.into())
+    }
     pub fn to_pylist<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyList>> {
-        let pseudo_arrow_array = self.series.python()?.as_arrow();
-        let pyobj_vec = pseudo_arrow_array.to_pyobj_vec();
-
-        let pyobj_vec_cloned = pyobj_vec
-            .into_iter()
-            .map(|pyobj| pyobj.clone_ref(py))
-            .collect::<Vec<_>>();
-
-        PyList::new(py, pyobj_vec_cloned)
+        PyList::new(py, self.series.to_literals())
     }
 
-    pub fn to_arrow(&self) -> PyResult<PyObject> {
+    pub fn to_arrow<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
         let arrow_array = self.series.to_arrow();
         let arrow_array = cast_array_from_daft_if_needed(arrow_array);
-        Python::with_gil(|py| {
-            let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-            Ok(ffi::to_py_array(py, arrow_array, &pyarrow)?.unbind())
-        })
+        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+        ffi::to_py_array(py, arrow_array, &pyarrow)
+    }
+
+    pub fn __iter__(&self) -> PySeriesIterator {
+        PySeriesIterator::new(self.series.clone())
+    }
+
+    pub fn __getitem__(&self, index: usize) -> PyResult<Literal> {
+        let length = self.series.len();
+        if index >= length {
+            Err(PyIndexError::new_err(format!(
+                "Index out of range for series of length {length}: {index}"
+            )))
+        } else {
+            Ok(self.series.get_lit(index))
+        }
     }
 
     pub fn __abs__(&self) -> PyResult<Self> {
@@ -197,23 +253,6 @@ impl PySeries {
 
     pub fn argsort(&self, descending: bool, nulls_first: bool) -> PyResult<Self> {
         Ok(self.series.argsort(descending, nulls_first)?.into())
-    }
-
-    #[pyo3(signature = (seed=None))]
-    pub fn hash(&self, seed: Option<Self>) -> PyResult<Self> {
-        let seed_series;
-        let mut seed_array = None;
-        if let Some(s) = seed {
-            if s.series.data_type() != &DataType::UInt64 {
-                return Err(PyValueError::new_err(format!(
-                    "We can only use UInt64 as a seed for hashing, got {}",
-                    s.series.data_type()
-                )));
-            }
-            seed_series = s.series;
-            seed_array = Some(seed_series.u64()?);
-        }
-        Ok(self.series.hash(seed_array)?.into_series().into())
     }
 
     pub fn minhash(
@@ -329,8 +368,8 @@ impl PySeries {
         Ok(self.series.len())
     }
 
-    pub fn size_bytes(&self) -> PyResult<usize> {
-        Ok(self.series.size_bytes()?)
+    pub fn size_bytes(&self) -> usize {
+        self.series.size_bytes()
     }
 
     pub fn name(&self) -> PyResult<String> {
@@ -343,240 +382,6 @@ impl PySeries {
 
     pub fn data_type(&self) -> PyResult<PyDataType> {
         Ok(self.series.data_type().clone().into())
-    }
-
-    pub fn utf8_endswith(&self, pattern: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_endswith(&pattern.series)?.into())
-    }
-
-    pub fn utf8_startswith(&self, pattern: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_startswith(&pattern.series)?.into())
-    }
-
-    pub fn utf8_contains(&self, pattern: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_contains(&pattern.series)?.into())
-    }
-
-    pub fn utf8_match(&self, pattern: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_match(&pattern.series)?.into())
-    }
-
-    pub fn utf8_split(&self, pattern: &Self, regex: bool) -> PyResult<Self> {
-        Ok(self.series.utf8_split(&pattern.series, regex)?.into())
-    }
-
-    pub fn utf8_extract(&self, pattern: &Self, index: usize) -> PyResult<Self> {
-        Ok(self.series.utf8_extract(&pattern.series, index)?.into())
-    }
-
-    pub fn utf8_extract_all(&self, pattern: &Self, index: usize) -> PyResult<Self> {
-        Ok(self.series.utf8_extract_all(&pattern.series, index)?.into())
-    }
-
-    pub fn utf8_replace(&self, pattern: &Self, replacement: &Self, regex: bool) -> PyResult<Self> {
-        Ok(self
-            .series
-            .utf8_replace(&pattern.series, &replacement.series, regex)?
-            .into())
-    }
-
-    pub fn utf8_length(&self) -> PyResult<Self> {
-        Ok(self.series.utf8_length()?.into())
-    }
-
-    pub fn utf8_length_bytes(&self) -> PyResult<Self> {
-        Ok(self.series.utf8_length_bytes()?.into())
-    }
-
-    pub fn utf8_lower(&self) -> PyResult<Self> {
-        Ok(self.series.utf8_lower()?.into())
-    }
-
-    pub fn utf8_upper(&self) -> PyResult<Self> {
-        Ok(self.series.utf8_upper()?.into())
-    }
-
-    pub fn utf8_lstrip(&self) -> PyResult<Self> {
-        Ok(self.series.utf8_lstrip()?.into())
-    }
-
-    pub fn utf8_rstrip(&self) -> PyResult<Self> {
-        Ok(self.series.utf8_rstrip()?.into())
-    }
-
-    pub fn utf8_reverse(&self) -> PyResult<Self> {
-        Ok(self.series.utf8_reverse()?.into())
-    }
-
-    pub fn utf8_capitalize(&self) -> PyResult<Self> {
-        Ok(self.series.utf8_capitalize()?.into())
-    }
-
-    pub fn utf8_left(&self, nchars: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_left(&nchars.series)?.into())
-    }
-
-    pub fn utf8_right(&self, nchars: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_right(&nchars.series)?.into())
-    }
-
-    pub fn utf8_find(&self, substr: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_find(&substr.series)?.into())
-    }
-
-    pub fn utf8_rpad(&self, length: &Self, character: &Self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .utf8_rpad(&length.series, &character.series)?
-            .into())
-    }
-
-    pub fn utf8_lpad(&self, length: &Self, character: &Self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .utf8_lpad(&length.series, &character.series)?
-            .into())
-    }
-
-    pub fn utf8_repeat(&self, n: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_repeat(&n.series)?.into())
-    }
-
-    pub fn utf8_like(&self, pattern: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_like(&pattern.series)?.into())
-    }
-
-    pub fn utf8_ilike(&self, pattern: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_ilike(&pattern.series)?.into())
-    }
-
-    pub fn utf8_substr(&self, start: &Self, length: &Self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .utf8_substr(&start.series, &length.series)?
-            .into())
-    }
-
-    pub fn utf8_to_date(&self, format: &str) -> PyResult<Self> {
-        Ok(self.series.utf8_to_date(format)?.into())
-    }
-
-    #[pyo3(signature = (format, timezone=None))]
-    pub fn utf8_to_datetime(&self, format: &str, timezone: Option<&str>) -> PyResult<Self> {
-        Ok(self.series.utf8_to_datetime(format, timezone)?.into())
-    }
-
-    pub fn utf8_normalize(
-        &self,
-        remove_punct: bool,
-        lowercase: bool,
-        nfd_unicode: bool,
-        white_space: bool,
-    ) -> PyResult<Self> {
-        let opts = Utf8NormalizeOptions {
-            remove_punct,
-            lowercase,
-            nfd_unicode,
-            white_space,
-        };
-
-        Ok(self.series.utf8_normalize(opts)?.into())
-    }
-
-    pub fn utf8_count_matches(
-        &self,
-        patterns: &Self,
-        whole_word: bool,
-        case_sensitive: bool,
-    ) -> PyResult<Self> {
-        Ok(self
-            .series
-            .utf8_count_matches(&patterns.series, whole_word, case_sensitive)?
-            .into())
-    }
-
-    pub fn dt_date(&self) -> PyResult<Self> {
-        Ok(self.series.dt_date()?.into())
-    }
-
-    pub fn dt_day(&self) -> PyResult<Self> {
-        Ok(self.series.dt_day()?.into())
-    }
-
-    pub fn dt_hour(&self) -> PyResult<Self> {
-        Ok(self.series.dt_hour()?.into())
-    }
-
-    pub fn dt_minute(&self) -> PyResult<Self> {
-        Ok(self.series.dt_minute()?.into())
-    }
-
-    pub fn dt_second(&self) -> PyResult<Self> {
-        Ok(self.series.dt_second()?.into())
-    }
-
-    pub fn dt_millisecond(&self) -> PyResult<Self> {
-        Ok(self.series.dt_millisecond()?.into())
-    }
-
-    pub fn dt_microsecond(&self) -> PyResult<Self> {
-        Ok(self.series.dt_microsecond()?.into())
-    }
-
-    pub fn dt_nanosecond(&self) -> PyResult<Self> {
-        Ok(self.series.dt_nanosecond()?.into())
-    }
-
-    pub fn dt_unix_date(&self) -> PyResult<Self> {
-        Ok(self.series.dt_unix_date()?.into())
-    }
-
-    pub fn dt_time(&self) -> PyResult<Self> {
-        Ok(self.series.dt_time()?.into())
-    }
-
-    pub fn dt_month(&self) -> PyResult<Self> {
-        Ok(self.series.dt_month()?.into())
-    }
-
-    pub fn dt_quarter(&self) -> PyResult<Self> {
-        Ok(self.series.dt_quarter()?.into())
-    }
-
-    pub fn dt_year(&self) -> PyResult<Self> {
-        Ok(self.series.dt_year()?.into())
-    }
-
-    pub fn dt_day_of_week(&self) -> PyResult<Self> {
-        Ok(self.series.dt_day_of_week()?.into())
-    }
-
-    pub fn dt_day_of_month(&self) -> PyResult<Self> {
-        Ok(self.series.dt_day_of_month()?.into())
-    }
-
-    pub fn dt_day_of_year(&self) -> PyResult<Self> {
-        Ok(self.series.dt_day_of_year()?.into())
-    }
-
-    pub fn dt_week_of_year(&self) -> PyResult<Self> {
-        Ok(self.series.dt_week_of_year()?.into())
-    }
-
-    pub fn dt_truncate(&self, interval: &str, relative_to: &Self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .dt_truncate(interval, &relative_to.series)?
-            .into())
-    }
-
-    pub fn dt_to_unix_epoch(&self, unit: PyTimeUnit) -> PyResult<Self> {
-        Ok(self.series.dt_to_unix_epoch(unit.timeunit)?.into())
-    }
-
-    #[pyo3(signature = (format=None))]
-    pub fn dt_strftime(&self, format: Option<&str>) -> PyResult<Self> {
-        Ok(self.series.dt_strftime(format)?.into())
     }
 
     pub fn partitioning_days(&self) -> PyResult<Self> {
@@ -605,25 +410,6 @@ impl PySeries {
 
     pub fn murmur3_32(&self) -> PyResult<Self> {
         Ok(self.series.murmur3_32()?.into_series().into())
-    }
-
-    pub fn list_count(&self, mode: CountMode) -> PyResult<Self> {
-        Ok(self.series.list_count(mode)?.into_series().into())
-    }
-
-    pub fn list_get(&self, idx: &Self, default: &Self) -> PyResult<Self> {
-        Ok(self.series.list_get(&idx.series, &default.series)?.into())
-    }
-
-    pub fn list_slice(&self, start: &Self, end: &Self) -> PyResult<Self> {
-        Ok(self.series.list_slice(&start.series, &end.series)?.into())
-    }
-
-    pub fn list_sort(&self, desc: &Self, nulls_first: &Self) -> PyResult<Self> {
-        Ok(self
-            .series
-            .list_sort(&desc.series, &nulls_first.series)?
-            .into())
     }
 
     pub fn map_get(&self, key: &Self) -> PyResult<Self> {
@@ -677,103 +463,35 @@ impl From<PySeries> for series::Series {
     }
 }
 
-fn infer_daft_dtype_for_sequence(
-    vec_pyobj: &[PyObject],
-    py: pyo3::Python,
-    _name: &str,
-) -> PyResult<Option<DataType>> {
-    let py_pil_image_type = py
-        .import(pyo3::intern!(py, "PIL.Image"))
-        .and_then(|m| m.getattr(pyo3::intern!(py, "Image")));
-    let np_ndarray_type = py
-        .import(pyo3::intern!(py, "numpy"))
-        .and_then(|m| m.getattr(pyo3::intern!(py, "ndarray")));
-    let np_generic_type = py
-        .import(pyo3::intern!(py, "numpy"))
-        .and_then(|m| m.getattr(pyo3::intern!(py, "generic")));
-    let from_numpy_dtype = {
-        py.import(pyo3::intern!(py, "daft.datatype"))?
-            .getattr(pyo3::intern!(py, "DataType"))?
-            .getattr(pyo3::intern!(py, "from_numpy_dtype"))?
-    };
-    let mut dtype: Option<DataType> = None;
-    for obj in vec_pyobj {
-        let obj = obj.bind(py);
-        if let Ok(pil_image_type) = &py_pil_image_type
-            && obj.is_instance(pil_image_type)?
-        {
-            let mode_str = obj
-                .getattr(pyo3::intern!(py, "mode"))?
-                .extract::<String>()?;
-            let mode = ImageMode::from_pil_mode_str(&mode_str)?;
-            match &dtype {
-                Some(DataType::Image(Some(existing_mode))) => {
-                    if *existing_mode != mode {
-                        // Mixed-mode case, set mode to None.
-                        dtype = Some(DataType::Image(None));
-                    }
-                }
-                None => {
-                    // Set to (currently) uniform mode image dtype.
-                    dtype = Some(DataType::Image(Some(mode)));
-                }
-                // No-op, since dtype is already for mixed-mode images.
-                Some(DataType::Image(None)) => {}
-                _ => {
-                    // Images mixed with non-images; short-circuit since union dtypes are not (yet) supported.
-                    dtype = None;
-                    break;
-                }
-            }
-        } else if let Ok(np_ndarray_type) = &np_ndarray_type
-            && let Ok(np_generic_type) = &np_generic_type
-            && (obj.is_instance(np_ndarray_type)? || obj.is_instance(np_generic_type)?)
-        {
-            let np_dtype = obj.getattr(pyo3::intern!(py, "dtype"))?;
-            let inferred_inner_dtype = from_numpy_dtype.call1((np_dtype,)).map(|dt| {
-                dt.getattr(pyo3::intern!(py, "_dtype"))
-                    .unwrap()
-                    .extract::<PyDataType>()
-                    .unwrap()
-                    .dtype
-            });
-            let shape: Vec<u64> = obj.getattr(pyo3::intern!(py, "shape"))?.extract()?;
-            let inferred_dtype = match inferred_inner_dtype {
-                Ok(inferred_inner_dtype) if shape.len() == 1 => {
-                    Some(DataType::List(Box::new(inferred_inner_dtype)))
-                }
-                Ok(inferred_inner_dtype) if shape.len() > 1 => {
-                    Some(DataType::Tensor(Box::new(inferred_inner_dtype)))
-                }
-                _ => None,
-            };
-            match (&dtype, &inferred_dtype) {
-                // Tensors with mixed inner dtypes is not supported, short-circuit.
-                (Some(existing_dtype), Some(inferred_dtype))
-                    if existing_dtype != inferred_dtype =>
-                {
-                    // TODO(Clark): Do some basic type promotion here, e.g. (u32, u64) --> u64.
-                    dtype = None;
-                    break;
-                }
-                // Existing and inferred dtypes must be the same here, so this is a no-op.
-                (Some(_), Some(_)) => {}
-                // No existing dtype and inferred is non-None, so set cached dtype to inferred.
-                (None, Some(inferred_dtype)) => {
-                    dtype = Some(inferred_dtype.clone());
-                }
-                // Inferred inner dtype isn't representable with Arrow, so we'll need to use a plain Python representation.
-                (_, None) => {
-                    dtype = None;
-                    break;
-                }
-            }
-        } else if !obj.is_none() {
-            // Non-image types; short-circuit since only image types are supported and union dtypes are not (yet)
-            // supported.
-            dtype = None;
-            break;
+#[pyclass]
+#[derive(Clone)]
+/// Iterator over elements in a Python Series
+///
+/// Implemented in Rust so that we can more easily optimize it in the future.
+pub struct PySeriesIterator {
+    series: series::Series,
+    idx: usize,
+}
+
+impl PySeriesIterator {
+    fn new(series: series::Series) -> Self {
+        Self { series, idx: 0 }
+    }
+}
+
+#[pymethods]
+impl PySeriesIterator {
+    fn __next__(&mut self) -> PyResult<Literal> {
+        if self.idx == self.series.len() {
+            Err(PyStopIteration::new_err(()))
+        } else {
+            let val = self.series.get_lit(self.idx);
+            self.idx += 1;
+            Ok(val)
         }
     }
-    Ok(dtype)
+
+    fn __iter__(&self) -> Self {
+        self.clone()
+    }
 }

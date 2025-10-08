@@ -38,7 +38,7 @@ Configure Daft in various ways during execution.
 
 Configure behavior when Daft interacts with storage (e.g. credentials, retry policies and various other knobs to control performance/resource usage)
 
-These configurations are most often used as inputs to Daft DataFrame reading I/O functions such as in [Dataframe Creation](dataframe_creation.md).
+These configurations are most often used as inputs to Daft when reading I/O functions such as in [I/O](io.md).
 
 ::: daft.daft.IOConfig
     options:
@@ -57,5 +57,17 @@ These configurations are most often used as inputs to Daft DataFrame reading I/O
         filters: ["!^_"]
 
 ::: daft.io.AzureConfig
+    options:
+        filters: ["!^_"]
+
+::: daft.io.HTTPConfig
+    options:
+        filters: ["!^_"]
+
+::: daft.io.UnityConfig
+    options:
+        filters: ["!^_"]
+
+::: daft.io.HuggingFaceConfig
     options:
         filters: ["!^_"]

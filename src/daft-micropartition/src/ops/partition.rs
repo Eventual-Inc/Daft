@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_dsl::{expr::bound_expr::BoundExpr, ExprRef};
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::IOStatsContext;
 use daft_recordbatch::RecordBatch;
 
@@ -37,7 +37,7 @@ impl MicroPartition {
 
     pub fn partition_by_hash(
         &self,
-        exprs: &[ExprRef],
+        exprs: &[BoundExpr],
         num_partitions: usize,
     ) -> DaftResult<Vec<Self>> {
         let io_stats = IOStatsContext::new("MicroPartition::partition_by_hash");
@@ -52,14 +52,9 @@ impl MicroPartition {
             );
         }
 
-        let exprs = exprs
-            .iter()
-            .map(|expr| BoundExpr::try_new(expr.clone(), &self.schema))
-            .try_collect::<Vec<_>>()?;
-
         let part_tables = tables
             .iter()
-            .map(|t| t.partition_by_hash(&exprs, num_partitions))
+            .map(|t| t.partition_by_hash(exprs, num_partitions))
             .collect::<DaftResult<Vec<_>>>()?;
         self.vec_part_tables_to_mps(part_tables)
     }
@@ -87,7 +82,7 @@ impl MicroPartition {
 
     pub fn partition_by_range(
         &self,
-        partition_keys: &[ExprRef],
+        partition_keys: &[BoundExpr],
         boundaries: &RecordBatch,
         descending: &[bool],
     ) -> DaftResult<Vec<Self>> {
@@ -104,36 +99,29 @@ impl MicroPartition {
             );
         }
 
-        let partition_keys = partition_keys
-            .iter()
-            .map(|expr| BoundExpr::try_new(expr.clone(), &self.schema))
-            .try_collect::<Vec<_>>()?;
-
         let part_tables = tables
             .iter()
-            .map(|t| t.partition_by_range(&partition_keys, boundaries, descending))
+            .map(|t| t.partition_by_range(partition_keys, boundaries, descending))
             .collect::<DaftResult<Vec<_>>>()?;
         self.vec_part_tables_to_mps(part_tables)
     }
 
-    pub fn partition_by_value(&self, partition_keys: &[ExprRef]) -> DaftResult<(Vec<Self>, Self)> {
+    pub fn partition_by_value(
+        &self,
+        partition_keys: &[BoundExpr],
+    ) -> DaftResult<(Vec<Self>, Self)> {
         let io_stats = IOStatsContext::new("MicroPartition::partition_by_value");
 
         let tables = self.concat_or_get(io_stats)?;
 
-        if tables.is_empty() {
+        if tables.is_none() {
             let empty = Self::empty(Some(self.schema.clone()));
             let pkeys = empty.eval_expression_list(partition_keys)?;
             return Ok((vec![], pkeys));
         }
-        let table = tables.first().unwrap();
+        let table = tables.unwrap();
 
-        let partition_keys = partition_keys
-            .iter()
-            .map(|expr| BoundExpr::try_new(expr.clone(), &self.schema))
-            .try_collect::<Vec<_>>()?;
-
-        let (tables, values) = table.partition_by_value(&partition_keys)?;
+        let (tables, values) = table.partition_by_value(partition_keys)?;
 
         let mps = tables
             .into_iter()

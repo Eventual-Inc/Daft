@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 from decimal import Decimal
 
@@ -151,7 +153,7 @@ def test_between_between_different_types(value, lower, upper) -> None:
 
 def test_between_bad_input() -> None:
     daft_recordbatch = MicroPartition.from_pydict({"a": [1, 2, 3]})
-    with pytest.raises(TypeError):
+    with pytest.raises(Exception, match="DaftError::TypeError"):
         daft_recordbatch = daft_recordbatch.eval_expression_list([col("a").between([1, 2, 3], 1)])
 
 

@@ -4,6 +4,7 @@
 
 // Re-export arrow2 bitmap
 pub use arrow2::bitmap;
+pub use daft_schema::image_property::ImageProperty;
 // Re-export core series structures
 pub use daft_schema::schema::{Schema, SchemaRef};
 
@@ -15,6 +16,7 @@ pub use crate::datatypes::prelude::*;
 pub use crate::join::{JoinStrategy, JoinType};
 pub use crate::{
     array::prelude::*,
+    lit::Literal,
     series::{IntoSeries, Series},
 };
 

@@ -1,6 +1,7 @@
 use common_error::DaftResult;
 use common_treenode::Transformed;
-use daft_dsl::{lit, Expr, ExprRef, LiteralValue, Operator};
+use daft_core::lit::Literal;
+use daft_dsl::{Expr, ExprRef, Operator, lit};
 use daft_schema::{dtype::DataType, schema::SchemaRef};
 use indexmap::IndexSet;
 
@@ -9,11 +10,11 @@ use crate::boolean::{
 };
 
 fn is_true(expr: &Expr) -> bool {
-    matches!(expr, Expr::Literal(LiteralValue::Boolean(true)))
+    matches!(expr, Expr::Literal(Literal::Boolean(true)))
 }
 
 fn is_false(expr: &Expr) -> bool {
-    matches!(expr, Expr::Literal(LiteralValue::Boolean(false)))
+    matches!(expr, Expr::Literal(Literal::Boolean(false)))
 }
 
 fn is_bool(expr: &Expr, schema: &SchemaRef) -> DaftResult<bool> {
@@ -50,7 +51,7 @@ pub(crate) fn simplify_boolean_expr(
                 // !!e -> e
                 Expr::Not(not_not) => Transformed::yes(not_not.clone()),
                 // !true -> false, !false -> true
-                Expr::Literal(LiteralValue::Boolean(val)) => Transformed::yes(lit(!val)),
+                Expr::Literal(Literal::Boolean(val)) => Transformed::yes(lit(!val)),
                 _ => Transformed::no(expr),
             }
         }
@@ -295,7 +296,7 @@ mod tests {
 
     use common_error::DaftResult;
     use common_treenode::Transformed;
-    use daft_dsl::{lit, Column, Expr, ExprRef, Operator, ResolvedColumn};
+    use daft_dsl::{Column, Expr, ExprRef, Operator, ResolvedColumn, lit};
     use daft_schema::{dtype::DataType, field::Field, schema::Schema};
 
     use crate::simplify::boolean::simplify_binary_compare;

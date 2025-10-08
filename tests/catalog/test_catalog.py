@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING
 
 from daft.catalog import Catalog, Identifier, Properties, Table
 from daft.dataframe import DataFrame
 from daft.logical.schema import DataType as dt
 from daft.logical.schema import Schema
+
+if TYPE_CHECKING:
+    from daft.io.partitioning import PartitionField
 
 
 def assert_eq(df1, df2):
@@ -34,15 +37,6 @@ def test_try_from_unity():
     # assert doesn't throw!
     assert Catalog._from_obj(unity_catalog) is not None
     assert Catalog.from_unity(unity_catalog) is not None
-
-
-def test_register_python_catalog():
-    import daft.unity_catalog
-
-    # sanity check for backwards compatibility
-    cat1 = daft.unity_catalog.UnityCatalog("", "")
-    daft.catalog.register_python_catalog(cat1, "test")
-    daft.catalog.unregister_catalog("test")
 
 
 def test_from_pydict():
@@ -76,7 +70,6 @@ def test_from_pydict():
 
 
 def test_from_pydict_namespaced():
-    from daft.catalog import Identifier
     from daft.session import Session
 
     # dummy data, we're testing namespaces here
@@ -98,13 +91,6 @@ def test_from_pydict_namespaced():
     assert cat.get_table("ns1.T1") is not None
     assert cat.get_table("ns2.T2") is not None
 
-    assert cat.list_namespaces("XXX") == []
-    assert cat.list_namespaces("ns1") == [Identifier("ns1")]
-    assert cat.list_namespaces("ns2") == [Identifier("ns2")]
-    namespaces = cat.list_namespaces("ns")
-    assert Identifier("ns1") in namespaces
-    assert Identifier("ns2") in namespaces
-
     # session name resolution should still work
     sess = Session()
     sess.attach_catalog(cat)
@@ -125,32 +111,42 @@ class MockCatalog(Catalog):
     def name(self) -> str:
         return "test"
 
-    def create_namespace(self, identifier: Identifier | str):
+    def _create_namespace(self, identifier: Identifier):
         self.create_namespace_calls.append(identifier)
         self.namespaces.add(str(identifier))
 
-    def create_table(
-        self, identifier: Identifier | str, source: Schema | DataFrame, properties: Properties | None = None
+    def _create_table(
+        self,
+        identifier: Identifier,
+        schema: Schema,
+        properties: Properties | None = None,
+        partition_fields: list[PartitionField] | None = None,
     ) -> Table:
         k = str(identifier)
         t = MockTable(k, properties)
         self._tables[k] = t
         return t
 
-    def drop_namespace(self, identifier: Identifier | str):
+    def _drop_namespace(self, identifier: Identifier):
         raise NotImplementedError
 
-    def drop_table(self, identifier: Identifier | str):
+    def _drop_table(self, identifier: Identifier):
         del self._tables[str(identifier)]
 
-    def get_table(self, identifier: Identifier | str) -> Table:
+    def _get_table(self, identifier: Identifier) -> Table:
         return self._tables[str(identifier)]
 
-    def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
+    def _list_namespaces(self, prefix: Identifier | None = None) -> list[Identifier]:
         raise NotImplementedError
 
-    def list_tables(self, pattern: str | None = None) -> list[str]:
+    def _list_tables(self, prefix: Identifier | None = None) -> list[Identifier]:
         raise NotImplementedError
+
+    def _has_namespace(self, ident):
+        raise NotImplementedError
+
+    def _has_table(self, ident):
+        return str(ident) in self._tables
 
 
 class MockTable(Table):
@@ -165,10 +161,16 @@ class MockTable(Table):
     def name(self) -> str:
         return self._name
 
+    def schema(self) -> Schema:
+        raise NotImplementedError
+
     def read(self, **options) -> DataFrame:
         raise NotImplementedError
 
-    def write(self, df: DataFrame, mode: Literal["append"] | Literal["overwrite"] = "append", **options) -> None:
+    def append(self, df: DataFrame, **options) -> None:
+        raise NotImplementedError
+
+    def overwrite(self, df: DataFrame, **options) -> None:
         raise NotImplementedError
 
 

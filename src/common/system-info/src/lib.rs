@@ -11,7 +11,7 @@ impl Default for SystemInfo {
     fn default() -> Self {
         Self {
             info: sysinfo::System::new_with_specifics(
-                RefreshKind::new()
+                RefreshKind::nothing()
                     .with_cpu(CpuRefreshKind::everything())
                     .with_memory(MemoryRefreshKind::everything()),
             ),
@@ -21,7 +21,7 @@ impl Default for SystemInfo {
 
 impl SystemInfo {
     pub fn calculate_cpu_count(&self) -> Option<u64> {
-        self.info.physical_core_count().map(|x| x as u64)
+        sysinfo::System::physical_core_count().map(|x| x as u64)
     }
 
     pub fn calculate_total_memory(&self) -> u64 {

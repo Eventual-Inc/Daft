@@ -13,7 +13,7 @@ DaftExtension = get_super_ext_type()
 
 def test_embedding_arrow_round_trip():
     data = [[1, 2, 3], np.arange(3), ["1", "2", "3"], [1, "2", 3.0], pd.Series([1.1, 2, 3]), (1, 2, 3), None]
-    s = Series.from_pylist(data, pyobj="force")
+    s = Series.from_pylist(data, dtype=DataType.python())
 
     target_dtype = DataType.embedding(DataType.int32(), 3)
 

@@ -1,12 +1,17 @@
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU16, Ordering},
+};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use daft_logical_plan::LogicalPlanBuilder;
+use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder};
+use futures::{Stream, StreamExt, stream};
+use serde::{Deserialize, Serialize};
 
 use crate::{
-    stage::StagePlan,
+    pipeline_node::MaterializedOutput,
     utils::{
         channel::{Receiver, ReceiverStream},
         joinset::JoinSet,
@@ -15,10 +20,15 @@ use crate::{
 };
 
 mod runner;
-pub(crate) use runner::PlanRunner;
+pub(crate) use runner::{PlanConfig, PlanExecutionContext, PlanRunner, TaskIDCounter};
 
+static PLAN_ID_COUNTER: AtomicU16 = AtomicU16::new(0);
+pub(crate) type PlanID = u16;
+
+#[derive(Serialize, Deserialize)]
 pub(crate) struct DistributedPhysicalPlan {
-    stage_plan: StagePlan,
+    id: PlanID,
+    logical_plan: Arc<LogicalPlan>,
     config: Arc<DaftExecutionConfig>,
 }
 
@@ -28,33 +38,44 @@ impl DistributedPhysicalPlan {
         config: Arc<DaftExecutionConfig>,
     ) -> DaftResult<Self> {
         let logical_plan = builder.build();
-        let stage_plan = StagePlan::from_logical_plan(logical_plan)?;
 
-        Ok(Self { stage_plan, config })
+        Ok(Self {
+            id: PLAN_ID_COUNTER.fetch_add(1, Ordering::Relaxed),
+            logical_plan,
+            config,
+        })
+    }
+
+    pub fn id(&self) -> PlanID {
+        self.id
+    }
+
+    pub fn logical_plan(&self) -> &daft_logical_plan::LogicalPlanRef {
+        &self.logical_plan
     }
 
     pub fn execution_config(&self) -> &Arc<DaftExecutionConfig> {
         &self.config
     }
-
-    pub fn stage_plan(&self) -> &StagePlan {
-        &self.stage_plan
-    }
 }
 
-pub(crate) type PlanResultStream = JoinableForwardingStream<ReceiverStream<PartitionRef>>;
+pub(crate) type PlanResultStream =
+    JoinableForwardingStream<Box<dyn Stream<Item = PartitionRef> + Send + Unpin + 'static>>;
 
 pub(crate) struct PlanResult {
     joinset: JoinSet<DaftResult<()>>,
-    rx: Receiver<PartitionRef>,
+    rx: Receiver<MaterializedOutput>,
 }
 
 impl PlanResult {
-    fn new(joinset: JoinSet<DaftResult<()>>, rx: Receiver<PartitionRef>) -> Self {
+    fn new(joinset: JoinSet<DaftResult<()>>, rx: Receiver<MaterializedOutput>) -> Self {
         Self { joinset, rx }
     }
 
     pub fn into_stream(self) -> PlanResultStream {
-        JoinableForwardingStream::new(ReceiverStream::new(self.rx), self.joinset)
+        JoinableForwardingStream::new(
+            Box::new(ReceiverStream::new(self.rx).flat_map(|mat| stream::iter(mat.into_inner().0))),
+            self.joinset,
+        )
     }
 }

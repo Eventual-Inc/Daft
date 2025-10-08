@@ -151,3 +151,22 @@ class PredicateVisitor(ExpressionVisitor[R]):
     def visit_not_null(self, expr: Expression) -> R:
         """Visit an not_null predicate."""
         ...
+
+
+class _ColumnVisitor(ExpressionVisitor[set[str]]):
+    """Visitor which returns a set of columns in the expression."""
+
+    def visit_col(self, name: str) -> set[str]:
+        return {name}
+
+    def visit_lit(self, value: Any) -> set[str]:
+        return set()
+
+    def visit_alias(self, expr: Expression, alias: str) -> set[str]:
+        return self.visit(expr)
+
+    def visit_cast(self, expr: Expression, dtype: DataType) -> set[str]:
+        return self.visit(expr)
+
+    def visit_function(self, name: str, args: list[Expression]) -> set[str]:
+        return set().union(*(self.visit(arg) for arg in args))

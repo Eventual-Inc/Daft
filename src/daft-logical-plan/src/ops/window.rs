@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::prelude::*;
-use daft_dsl::{expr::window::WindowSpec, WindowExpr};
+use daft_dsl::{WindowExpr, expr::window::WindowSpec};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     logical_plan::{LogicalPlan, Result},
@@ -28,10 +29,11 @@ use crate::{
 ///
 /// Multiple window function expressions can be stored in a single Window operator
 /// as long as they share the same window specification.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Window {
     /// An id for the plan.
     pub plan_id: Option<usize>,
+    pub node_id: Option<usize>,
     /// The input plan.
     pub input: Arc<LogicalPlan>,
     /// The window functions to compute.
@@ -39,7 +41,7 @@ pub struct Window {
     /// The window function names to map to the output schema.
     pub aliases: Vec<String>,
     /// The window specification (partition by, order by, frame, etc.)
-    pub window_spec: WindowSpec,
+    pub window_spec: Arc<WindowSpec>,
     /// The output schema.
     pub schema: Arc<Schema>,
     /// The plan statistics.
@@ -51,7 +53,7 @@ impl Window {
         input: Arc<LogicalPlan>,
         window_functions: Vec<WindowExpr>,
         aliases: Vec<String>,
-        window_spec: WindowSpec,
+        window_spec: Arc<WindowSpec>,
     ) -> Result<Self> {
         let input_schema = input.schema();
 
@@ -74,6 +76,7 @@ impl Window {
 
         Ok(Self {
             plan_id: None,
+            node_id: None,
             input,
             window_functions,
             aliases,
@@ -90,16 +93,14 @@ impl Window {
         self
     }
 
-    pub fn with_plan_id(&self, id: Option<usize>) -> LogicalPlan {
-        LogicalPlan::Window(Self {
-            plan_id: id,
-            input: self.input.clone(),
-            window_functions: self.window_functions.clone(),
-            aliases: self.aliases.clone(),
-            window_spec: self.window_spec.clone(),
-            schema: self.schema.clone(),
-            stats_state: self.stats_state.clone(),
-        })
+    pub fn with_plan_id(mut self, id: usize) -> Self {
+        self.plan_id = Some(id);
+        self
+    }
+
+    pub fn with_node_id(mut self, id: usize) -> Self {
+        self.node_id = Some(id);
+        self
     }
 }
 
@@ -128,7 +129,19 @@ impl Window {
                 .order_by
                 .iter()
                 .zip(self.window_spec.descending.iter())
-                .map(|(e, desc)| format!("{} {}", e.name(), if *desc { "DESC" } else { "ASC" }))
+                .zip(self.window_spec.nulls_first.iter())
+                .map(|((e, desc), nulls_first)| {
+                    format!(
+                        "{} {} {}",
+                        e.name(),
+                        if *desc { "DESC" } else { "ASC" },
+                        if *nulls_first {
+                            "NULLS FIRST"
+                        } else {
+                            "NULLS LAST"
+                        }
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join(", ");
             lines.push(format!("  Order by: [{}]", order_cols));

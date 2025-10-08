@@ -18,7 +18,7 @@
 use arrow2::bitmap::Bitmap;
 use arrow2::{
     array::PrimitiveArray,
-    bitmap::{utils::SlicesIterator, MutableBitmap},
+    bitmap::{MutableBitmap, utils::SlicesIterator},
     buffer::Buffer,
     compute::sort::SortOptions,
     types::NativeType,
@@ -163,7 +163,7 @@ where
 #[cfg(test)]
 mod tests {
     use arrow2::{
-        array::{ord, Array},
+        array::{Array, ord},
         datatypes::DataType,
     };
 

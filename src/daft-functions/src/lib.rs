@@ -2,28 +2,30 @@
     deprecated,
     reason = "moving over all scalarUDFs to new pattern. Remove once completed!"
 )]
-pub mod binary;
 pub mod coalesce;
-pub mod count_matches;
 pub mod distance;
 pub mod float;
 pub mod hash;
-pub mod list;
+pub mod length;
 pub mod minhash;
+pub mod monotonically_increasing_id;
 pub mod numeric;
 #[cfg(feature = "python")]
 pub mod python;
-pub mod sequence;
-pub mod temporal;
+pub mod slice;
 pub mod to_struct;
-pub mod tokenize;
-pub mod uri;
-pub mod utf8;
 
 use common_error::DaftError;
+use daft_dsl::functions::{FunctionModule, FunctionRegistry};
+use hash::HashFunction;
+use length::Length;
+use minhash::MinHashFunction;
 #[cfg(feature = "python")]
 pub use python::register as register_modules;
 use snafu::Snafu;
+use to_struct::ToStructFunction;
+
+use crate::slice::Slice;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -50,4 +52,16 @@ macro_rules! invalid_argument_err {
         let msg = format!($($arg)*);
         return Err(common_error::DaftError::TypeError(msg).into());
     }};
+}
+
+pub struct MiscFunctions;
+
+impl FunctionModule for MiscFunctions {
+    fn register(parent: &mut FunctionRegistry) {
+        parent.add_fn(HashFunction);
+        parent.add_fn(MinHashFunction);
+        parent.add_fn(Length);
+        parent.add_fn(ToStructFunction);
+        parent.add_fn(Slice);
+    }
 }

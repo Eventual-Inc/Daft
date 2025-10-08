@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use common_py_serde::impl_bincode_py_state_serialization;
 use derive_more::Display;
 #[cfg(feature = "python")]
-use pyo3::{exceptions::PyValueError, pyclass, pymethods, PyObject, PyResult, Python};
+use pyo3::{PyObject, PyResult, Python, exceptions::PyValueError, pyclass, pymethods};
 use serde::{Deserialize, Serialize};
 
 /// Type of a join operation.
@@ -142,20 +142,13 @@ impl FromStr for JoinStrategy {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
 pub enum JoinSide {
+    #[display("left")]
     Left,
+    #[display("right")]
     Right,
-}
-
-impl Display for JoinSide {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Left => write!(f, "left"),
-            Self::Right => write!(f, "right"),
-        }
-    }
 }
 
 impl Not for JoinSide {

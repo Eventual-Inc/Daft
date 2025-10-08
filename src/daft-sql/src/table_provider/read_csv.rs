@@ -4,7 +4,7 @@ use daft_logical_plan::LogicalPlanBuilder;
 use daft_scan::builder::CsvScanBuilder;
 use sqlparser::ast::TableFunctionArgs;
 
-use super::{try_coerce_list, SQLTableFunction};
+use super::{SQLTableFunction, try_coerce_list};
 use crate::{
     error::{PlannerError, SQLPlannerResult},
     functions::SQLFunctionArguments,
@@ -21,7 +21,6 @@ impl TryFrom<SQLFunctionArguments> for CsvScanBuilder {
 
     fn try_from(args: SQLFunctionArguments) -> Result<Self, Self::Error> {
         // TODO validations (unsure if should carry over from python API)
-        // - schema_hints is deprecated
         // - ensure infer_schema is true if schema is None.
 
         let glob_paths: Vec<String> = if let Some(arg) = args.get_positional(0) {
@@ -51,7 +50,6 @@ impl TryFrom<SQLFunctionArguments> for CsvScanBuilder {
             .map(try_parse_schema)
             .transpose()?
             .map(Arc::new);
-        let schema_hints = None; // TODO
         let io_config = args.get_named("io_config").map(expr_to_iocfg).transpose()?;
 
         Ok(Self {
@@ -70,7 +68,6 @@ impl TryFrom<SQLFunctionArguments> for CsvScanBuilder {
             allow_variable_columns,
             buffer_size,
             chunk_size,
-            schema_hints,
         })
     }
 }
@@ -97,7 +94,6 @@ impl SQLTableFunction for ReadCsvFunction {
                 "io_config",
                 "file_path_column",
                 "hive_partitioning",
-                // "schema_hints",
                 "buffer_size",
                 "chunk_size",
             ],
@@ -105,7 +101,7 @@ impl SQLTableFunction for ReadCsvFunction {
         )?;
 
         let runtime = common_runtime::get_io_runtime(true);
-        let result = runtime.block_on(builder.finish())??;
+        let result = runtime.block_within_async_context(builder.finish())??;
         Ok(result)
     }
 }

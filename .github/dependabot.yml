@@ -3,26 +3,41 @@ updates:
 - package-ecosystem: pip
   directory: /
   schedule:
-    interval: weekly
-    # Add assignees
-  assignees:
-  - samster25
-  - jaychia
+    interval: monthly
+  groups:
+    # Python updates are mainly dev-only, so we can group them together.
+    all:
+      patterns:
+      - "*"
 
 - package-ecosystem: cargo
   directory: /
   schedule:
-    interval: weekly
-    # Add assignees
-  assignees:
-  - samster25
-  - jaychia
+    interval: monthly
+  ignore:
+    # Ignore arrow-rs related updates.
+  - dependency-name: "arrow-array"
+  - dependency-name: "arrow-buffer"
+  - dependency-name: "arrow-data"
+  - dependency-name: "arrow-schema"
+  - dependency-name: "arrow-flight"
+  - dependency-name: "arrow-ipc"
+  groups:
+    # Will group all minor and patch updates together.
+    # Major updates will be kept separate.
+    minor:
+      patterns:
+      - "*"
+      update-types:
+      - minor
+      - patch
 
 - package-ecosystem: github-actions
   directory: /
   schedule:
-    interval: weekly
-    # Add assignees
-  assignees:
-  - samster25
-  - jaychia
+    interval: monthly
+  groups:
+    # Will group all updates together.
+    all:
+      patterns:
+      - "*"

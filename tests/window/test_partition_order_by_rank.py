@@ -6,11 +6,13 @@ import pandas as pd
 import pytest
 
 from daft import Window, col
+from daft.context import get_context
 from daft.functions import dense_rank, rank, row_number
 from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 
 pytestmark = pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="Window tests only run on native runner"
+    get_tests_daft_runner_name() == "ray" and get_context().daft_execution_config.use_legacy_ray_runner is True,
+    reason="requires Native Runner or Flotilla to be in use",
 )
 
 
@@ -239,6 +241,46 @@ def test_rank_function_single_row_per_group(make_df):
     result = df.select(col("category"), col("value"), dense_rank().over(window_spec).alias("rank")).collect()
 
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=["category"], check_dtype=False)
+
+
+@pytest.mark.parametrize(
+    "desc,nulls_first,expected_rank",
+    [
+        (False, False, [1, 2, 1, 2, 1, 2]),
+        (False, True, [2, 1, 2, 1, 2, 1]),
+        (True, False, [1, 2, 1, 2, 1, 2]),
+        (True, True, [2, 1, 2, 1, 2, 1]),
+    ],
+)
+def test_rank_function_single_row_per_group_nulls_first_or_last(make_df, desc, nulls_first, expected_rank):
+    """Test rank function with single row per group and nulls_first or nulls_last."""
+    data = [
+        {"id": 1, "category": "A", "value": 10},
+        {"id": 2, "category": "A", "value": None},
+        {"id": 3, "category": "B", "value": 20},
+        {"id": 4, "category": "B", "value": None},
+        {"id": 5, "category": "C", "value": 30},
+        {"id": 6, "category": "C", "value": None},
+    ]
+
+    df = make_df(data)
+
+    window_spec = Window().partition_by("category").order_by("value", desc=desc, nulls_first=nulls_first)
+
+    result = df.select(col("id"), col("category"), col("value"), rank().over(window_spec).alias("rank")).collect()
+
+    expected = {
+        "id": [1, 2, 3, 4, 5, 6],
+        "category": ["A", "A", "B", "B", "C", "C"],
+        "value": [10, None, 20, None, 30, None],
+        "rank": expected_rank,
+    }
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=["id"], check_dtype=False)
+
+    result = df.select(col("id"), col("category"), col("value"), dense_rank().over(window_spec).alias("rank")).collect()
+
+    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=["id"], check_dtype=False)
 
 
 def test_rank_function_no_order_by(make_df):

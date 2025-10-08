@@ -93,7 +93,7 @@ impl ColumnRangeStatistics {
 
             // UNSUPPORTED TYPES:
             // Types that don't support comparisons and can't be used as ColumnRangeStatistics
-            DataType::List(..) | DataType::FixedSizeList(..) | DataType::Image(..) | DataType::FixedShapeImage(..) | DataType::Tensor(..) | DataType::SparseTensor(..) | DataType::FixedShapeSparseTensor(..) | DataType::FixedShapeTensor(..) | DataType::Struct(..) | DataType::Map { .. } | DataType::Extension(..) | DataType::Embedding(..) | DataType::Unknown => false,
+            DataType::List(..) | DataType::FixedSizeList(..) | DataType::Image(..) | DataType::FixedShapeImage(..) | DataType::Tensor(..) | DataType::SparseTensor(..) | DataType::FixedShapeSparseTensor(..) | DataType::FixedShapeTensor(..) | DataType::Struct(..) | DataType::Map { .. } | DataType::Extension(..) | DataType::Embedding(..) | DataType::Unknown | DataType::File => false,
             #[cfg(feature = "python")]
             DataType::Python => false,
         }
@@ -139,11 +139,7 @@ impl ColumnRangeStatistics {
     pub(crate) fn element_size(&self) -> crate::Result<Option<f64>> {
         match self {
             Self::Missing => Ok(None),
-            Self::Loaded(l, u) => Ok(Some(
-                ((l.size_bytes().context(DaftCoreComputeSnafu)?
-                    + u.size_bytes().context(DaftCoreComputeSnafu)?) as f64)
-                    / 2.,
-            )),
+            Self::Loaded(l, u) => Ok(Some(((l.size_bytes() + u.size_bytes()) as f64) / 2.)),
         }
     }
 
@@ -165,7 +161,6 @@ impl ColumnRangeStatistics {
             .unwrap()
             .get(0)
             .unwrap() as usize;
-        let _num_bytes = series.size_bytes().unwrap();
         Self::Loaded(lower, upper)
     }
 
@@ -241,10 +236,10 @@ impl std::fmt::Debug for ColumnRangeStatistics {
     }
 }
 
-impl TryFrom<&daft_dsl::LiteralValue> for ColumnRangeStatistics {
+impl TryFrom<daft_core::lit::Literal> for ColumnRangeStatistics {
     type Error = crate::Error;
-    fn try_from(value: &daft_dsl::LiteralValue) -> crate::Result<Self, Self::Error> {
-        let series = value.to_series();
+    fn try_from(value: daft_core::lit::Literal) -> crate::Result<Self, Self::Error> {
+        let series: Series = value.into();
         assert_eq!(series.len(), 1);
         Self::new(Some(series.clone()), Some(series))
     }

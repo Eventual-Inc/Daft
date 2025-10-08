@@ -17,7 +17,7 @@ from daft.series import Series
 @pytest.mark.parametrize(
     "data, expected_dtype",
     [
-        (1, DataType.int32()),
+        (1, DataType.int64()),
         (2**32, DataType.int64()),
         (1 << 63, DataType.uint64()),
         (1.2, DataType.float64()),
@@ -25,7 +25,7 @@ from daft.series import Series
         (b"a", DataType.binary()),
         (True, DataType.bool()),
         (None, DataType.null()),
-        (Series.from_pylist([1, 2, 3]), DataType.int64()),
+        (Series.from_pylist([1, 2, 3]), DataType.list(DataType.int64())),
         (date(2023, 1, 1), DataType.date()),
         (time(1, 2, 3, 4), DataType.time(timeunit=TimeUnit.from_str("us"))),
         (datetime(2023, 1, 1), DataType.timestamp(timeunit=TimeUnit.from_str("us"))),
@@ -416,7 +416,7 @@ def test_repr_functions_hash() -> None:
     a = col("a")
     y = a.hash()
     repr_out = repr(y)
-    assert repr_out == "hash(col(a))"
+    assert repr_out == 'hash(col(a), lit("xxhash"))'
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
@@ -425,25 +425,25 @@ def test_repr_functions_hash_2() -> None:
     a = col("a")
     y = a.hash(lit(1))
     repr_out = repr(y)
-    assert repr_out == "hash(col(a), lit(1))"
+    assert repr_out == 'hash(col(a), lit(1), lit("xxhash"))'
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
 
 def test_repr_functions_minhash() -> None:
     a = col("a")
-    y = a.minhash(1, 2)
+    y = a.minhash(num_hashes=1, ngram_size=2)
     repr_out = repr(y)
-    assert repr_out == "minhash(col(a))"
+    assert repr_out == 'minhash(col(a), lit(1), lit(2), lit(1), lit("murmurhash3"))'
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
 
 def test_repr_functions_minhash_2() -> None:
     a = col("a")
-    y = a.minhash(1, 2, 3)
+    y = a.minhash(num_hashes=1, ngram_size=2, seed=3)
     repr_out = repr(y)
-    assert repr_out == "minhash(col(a))"
+    assert repr_out == 'minhash(col(a), lit(1), lit(2), lit(3), lit("murmurhash3"))'
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
@@ -452,7 +452,7 @@ def test_repr_functions_tokenize_encode() -> None:
     a = col("a")
     y = a.str.tokenize_encode("cl100k_base")
     repr_out = repr(y)
-    assert repr_out == "tokenize_encode(col(a))"
+    assert repr_out == 'tokenize_encode(col(a), lit("cl100k_base"))'
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
@@ -461,7 +461,7 @@ def test_repr_functions_tokenize_decode() -> None:
     a = col("a")
     y = a.str.tokenize_decode("cl100k_base")
     repr_out = repr(y)
-    assert repr_out == "tokenize_decode(col(a))"
+    assert repr_out == 'tokenize_decode(col(a), lit("cl100k_base"))'
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
@@ -638,7 +638,7 @@ def test_duration_lit(input, expected) -> None:
     assert output == expected
 
 
-def test_repr_series_lit() -> None:
+def test_repr_list_lit() -> None:
     s = lit(Series.from_pylist([1, 2, 3]))
     output = repr(s)
     assert output == "lit([1, 2, 3])"
@@ -687,14 +687,17 @@ def test_list_value_counts_nested():
     )
 
     # Apply list_value_counts operation and expect an exception
-    with pytest.raises(daft.exceptions.DaftCoreException) as exc_info:
-        mp.eval_expression_list([col("nested_list_col").list.value_counts().alias("value_counts")])
+    result = mp.eval_expression_list([col("nested_list_col").list.value_counts().alias("value_counts")])
+    result_dict = result.to_pydict()
 
-    # Check the exception message
-    assert (
-        'DaftError::ArrowError Invalid argument error: The data type type LargeList(Field { name: "item", data_type: Int64, is_nullable: true, metadata: {} }) has no natural order'
-        in str(exc_info.value)
-    )
+    assert result_dict["value_counts"] == [
+        [([1, 2], 1), ([3, 4], 1)],
+        [([1, 2], 1), ([5, 6], 1)],
+        [([3, 4], 1), ([1, 2], 1)],
+        [],
+        [],
+        [([1, 2], 2)],
+    ]
 
 
 def test_list_value_counts_fixed_size():

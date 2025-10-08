@@ -1,14 +1,17 @@
+from __future__ import annotations
+
 import random
 import tempfile
 from contextlib import contextmanager
 from functools import partial
-from typing import Callable, Optional
+from typing import Callable
 
 import numpy as np
 import pyarrow as pa
 import pytest
 
 import daft
+from daft.context import get_context
 from daft.io._generator import read_generator
 from daft.recordbatch.recordbatch import RecordBatch
 from tests.conftest import get_tests_daft_runner_name
@@ -40,7 +43,7 @@ def generator(
 def pre_shuffle_merge_ctx():
     """Fixture that provides a context manager for pre-shuffle merge testing."""
 
-    def _ctx(threshold: Optional[int] = None):
+    def _ctx(threshold: int | None = None):
         return daft.execution_config_ctx(shuffle_algorithm="pre_shuffle_merge", pre_shuffle_merge_threshold=threshold)
 
     return _ctx
@@ -171,8 +174,8 @@ def test_pre_shuffle_merge_randomly_sized_partitions(pre_shuffle_merge_ctx, inpu
 
 
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() != "ray",
-    reason="shuffle tests are meant for the ray runner",
+    get_tests_daft_runner_name() != "ray" or get_context().daft_execution_config.use_legacy_ray_runner is False,
+    reason="shuffle tests are meant for the ray runner and flight shuffle is not yet supported for flotilla",
 )
 @pytest.mark.parametrize(
     "input_partitions, output_partitions",

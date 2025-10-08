@@ -1,16 +1,19 @@
 use common_display::table_display::StrValue;
 use common_error::DaftResult;
 
+#[cfg(feature = "python")]
+use crate::prelude::PythonArray;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
+        BinaryArray, BooleanArray, DaftNumericType, DataType, Decimal128Array, ExtensionArray,
+        FileArray, FixedSizeBinaryArray, IntervalArray, IntervalValue, NullArray, UInt64Array,
+        Utf8Array,
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftNumericType, DataType, Decimal128Array, ExtensionArray,
-        FixedSizeBinaryArray, IntervalArray, IntervalValue, NullArray, UInt64Array, Utf8Array,
     },
     series::Series,
     utils::display::{
@@ -140,19 +143,23 @@ impl FixedSizeBinaryArray {
         }
     }
 }
+
 #[cfg(feature = "python")]
-impl crate::datatypes::PythonArray {
+impl PythonArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         use pyo3::prelude::*;
 
         let val = self.get(idx);
 
-        let call_result =
-            Python::with_gil(|py| val.call_method0(py, pyo3::intern!(py, "__str__")))?;
-
-        let extracted = Python::with_gil(|py| call_result.extract(py))?;
-
-        Ok(extracted)
+        if let Some(val) = val {
+            Ok(Python::with_gil(|py| {
+                val.bind(py)
+                    .call_method0(pyo3::intern!(py, "__str__"))?
+                    .extract()
+            })?)
+        } else {
+            Ok("None".to_string())
+        }
     }
 }
 
@@ -413,14 +420,41 @@ impl StructArray {
         }
     }
 }
+impl FileArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        Ok(self.get_lit(idx).to_string())
+    }
+}
 
-// Default implementation of html_value: html escape the str_value.
+// Truncate strings so they do not crash the browser when rendering HTML
+fn truncate_for_html(s: &str) -> String {
+    // Limit string length to 1MB to prevent browser crashes
+    const MAX_HTML_STRING_LEN: usize = 1024 * 1024; // 1MB
+
+    if s.len() > MAX_HTML_STRING_LEN {
+        // Find the last character boundary at or before MAX_HTML_STRING_LEN
+        let mut end_idx = MAX_HTML_STRING_LEN;
+        while !s.is_char_boundary(end_idx) && end_idx > 0 {
+            end_idx -= 1;
+        }
+        format!("{}...", &s[..end_idx])
+    } else {
+        s.to_string()
+    }
+}
+
+// Default implementation of html_value: html escape the str_value with truncation.
 macro_rules! impl_array_html_value {
     ($ArrayT:ty) => {
         impl $ArrayT {
-            pub fn html_value(&self, idx: usize) -> String {
+            pub fn html_value(&self, idx: usize, truncate: bool) -> String {
                 let str_value = self.str_value(idx).unwrap();
-                html_escape::encode_text(&str_value)
+                let truncated = if truncate {
+                    truncate_for_html(&str_value)
+                } else {
+                    str_value
+                };
+                html_escape::encode_text(&truncated)
                     .into_owned()
                     .replace('\n', "<br />")
             }
@@ -428,7 +462,20 @@ macro_rules! impl_array_html_value {
     };
 }
 
-impl_array_html_value!(Utf8Array);
+impl Utf8Array {
+    pub fn html_value(&self, idx: usize, truncate: bool) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        let truncated = if truncate {
+            truncate_for_html(&str_value)
+        } else {
+            str_value
+        };
+        html_escape::encode_text(&truncated)
+            .into_owned()
+            .replace('\n', "<br />")
+    }
+}
+
 impl_array_html_value!(BooleanArray);
 impl_array_html_value!(NullArray);
 impl_array_html_value!(BinaryArray);
@@ -447,33 +494,45 @@ impl_array_html_value!(TimestampArray);
 impl_array_html_value!(EmbeddingArray);
 
 #[cfg(feature = "python")]
-impl crate::datatypes::PythonArray {
-    pub fn html_value(&self, idx: usize) -> String {
+impl PythonArray {
+    pub fn html_value(&self, idx: usize, truncate: bool) -> String {
         use pyo3::prelude::*;
 
         let val = self.get(idx);
 
         let custom_viz_hook_result: Option<String> = Python::with_gil(|py| {
-            // Find visualization hooks for this object's class
-            let pyany = val.bind(py);
-            let get_viz_hook = py
-                .import(pyo3::intern!(py, "daft.viz.html_viz_hooks"))?
-                .getattr(pyo3::intern!(py, "get_viz_hook"))?;
-            let hook = get_viz_hook.call1((pyany,))?;
+            if let Some(val) = val {
+                // Find visualization hooks for this object's class
+                let pyany = val.bind(py);
+                let get_viz_hook = py
+                    .import(pyo3::intern!(py, "daft.viz.html_viz_hooks"))?
+                    .getattr(pyo3::intern!(py, "get_viz_hook"))?;
+                let hook = get_viz_hook.call1((pyany,))?;
 
-            if hook.is_none() {
-                Ok(None)
+                if hook.is_none() {
+                    Ok(None)
+                } else {
+                    hook.call1((pyany,))?.extract()
+                }
             } else {
-                hook.call1((pyany,))?.extract()
+                Ok(None)
             }
         })
         .unwrap();
 
         match custom_viz_hook_result {
-            None => html_escape::encode_text(&self.str_value(idx).unwrap())
-                .into_owned()
-                .replace('\n', "<br />"),
-            Some(result) => result,
+            None => {
+                let str_value = self.str_value(idx).unwrap();
+                let truncated = if truncate {
+                    truncate_for_html(&str_value)
+                } else {
+                    str_value
+                };
+                html_escape::encode_text(&truncated)
+                    .into_owned()
+                    .replace('\n', "<br />")
+            }
+            Some(result) => truncate_for_html(&result),
         }
     }
 }
@@ -482,45 +541,84 @@ impl<T> DataArray<T>
 where
     T: DaftNumericType,
 {
-    pub fn html_value(&self, idx: usize) -> String {
+    pub fn html_value(&self, idx: usize, truncate: bool) -> String {
         let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
+        let truncated = if truncate {
+            truncate_for_html(&str_value)
+        } else {
+            str_value
+        };
+        html_escape::encode_text(&truncated)
             .into_owned()
             .replace('\n', "<br />")
     }
 }
 
 impl FixedShapeTensorArray {
-    pub fn html_value(&self, idx: usize) -> String {
+    pub fn html_value(&self, idx: usize, truncate: bool) -> String {
         let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
+        let truncated = if truncate {
+            truncate_for_html(&str_value)
+        } else {
+            str_value
+        };
+        html_escape::encode_text(&truncated)
             .into_owned()
             .replace('\n', "<br />")
     }
 }
 
 impl TensorArray {
-    pub fn html_value(&self, idx: usize) -> String {
+    pub fn html_value(&self, idx: usize, truncate: bool) -> String {
         let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
+        let truncated = if truncate {
+            truncate_for_html(&str_value)
+        } else {
+            str_value
+        };
+        html_escape::encode_text(&truncated)
             .into_owned()
             .replace('\n', "<br />")
     }
 }
 
 impl SparseTensorArray {
-    pub fn html_value(&self, idx: usize) -> String {
+    pub fn html_value(&self, idx: usize, truncate: bool) -> String {
         let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
+        let truncated = if truncate {
+            truncate_for_html(&str_value)
+        } else {
+            str_value
+        };
+        html_escape::encode_text(&truncated)
             .into_owned()
             .replace('\n', "<br />")
     }
 }
 
 impl FixedShapeSparseTensorArray {
-    pub fn html_value(&self, idx: usize) -> String {
+    pub fn html_value(&self, idx: usize, truncate: bool) -> String {
         let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
+        let truncated = if truncate {
+            truncate_for_html(&str_value)
+        } else {
+            str_value
+        };
+        html_escape::encode_text(&truncated)
+            .into_owned()
+            .replace('\n', "<br />")
+    }
+}
+
+impl FileArray {
+    pub fn html_value(&self, idx: usize, truncate: bool) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        let truncated = if truncate {
+            truncate_for_html(&str_value)
+        } else {
+            str_value
+        };
+        html_escape::encode_text(&truncated)
             .into_owned()
             .replace('\n', "<br />")
     }

@@ -1,15 +1,18 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::{array::ops::IntoGroups, prelude::*};
+use daft_core::{
+    array::ops::{IntoGroups, IntoUniqueIdxs},
+    prelude::*,
+};
 use daft_dsl::{
+    AggExpr,
     expr::bound_expr::{BoundAggExpr, BoundExpr},
     functions::FunctionExpr,
-    AggExpr, Expr,
 };
 
 use crate::RecordBatch;
 
 impl RecordBatch {
-    pub fn agg(&self, to_agg: &[BoundExpr], group_by: &[BoundExpr]) -> DaftResult<Self> {
+    pub fn agg(&self, to_agg: &[BoundAggExpr], group_by: &[BoundExpr]) -> DaftResult<Self> {
         // Dispatch depending on whether we're doing groupby or just a global agg.
         match group_by.len() {
             0 => self.agg_global(to_agg),
@@ -17,23 +20,18 @@ impl RecordBatch {
         }
     }
 
-    pub fn agg_global(&self, to_agg: &[BoundExpr]) -> DaftResult<Self> {
-        self.eval_expression_list(to_agg)
+    pub fn agg_global(&self, to_agg: &[BoundAggExpr]) -> DaftResult<Self> {
+        self.eval_expression_list(
+            &to_agg
+                .iter()
+                .map(|agg_expr| BoundExpr::new_unchecked(agg_expr.as_ref().into()))
+                .collect::<Vec<_>>(),
+        )
     }
 
-    pub fn agg_groupby(&self, to_agg: &[BoundExpr], group_by: &[BoundExpr]) -> DaftResult<Self> {
-        let agg_exprs = to_agg
-            .iter()
-            .map(|e| match e.as_ref() {
-                Expr::Agg(e) => Ok(BoundAggExpr::new_unchecked(e.clone())),
-                _ => Err(DaftError::ValueError(format!(
-                    "Trying to run non-Agg expression in Grouped Agg! {e}"
-                ))),
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
-
+    pub fn agg_groupby(&self, to_agg: &[BoundAggExpr], group_by: &[BoundExpr]) -> DaftResult<Self> {
         #[cfg(feature = "python")]
-        if let [agg_expr] = &agg_exprs[..]
+        if let [agg_expr] = to_agg
             && let AggExpr::MapGroups { func, inputs } = agg_expr.as_ref()
         {
             return self.map_groups(
@@ -67,7 +65,7 @@ impl RecordBatch {
             Some(&groupvals_indices)
         };
 
-        let grouped_cols = agg_exprs
+        let grouped_cols = to_agg
             .iter()
             .map(|e| self.eval_agg_expression(e, group_idx_input))
             .collect::<DaftResult<Vec<_>>>()?;
@@ -84,26 +82,26 @@ impl RecordBatch {
         group_by: &[BoundExpr],
     ) -> DaftResult<Self> {
         use daft_core::array::ops::IntoGroups;
-        use daft_dsl::functions::python::PythonUDF;
+        use daft_dsl::functions::python::LegacyPythonUDF;
 
         let udf = match func {
             FunctionExpr::Python(
-                udf @ PythonUDF {
+                udf @ LegacyPythonUDF {
                     concurrency: None, ..
                 },
             ) => udf,
-            FunctionExpr::Python(PythonUDF {
+            FunctionExpr::Python(LegacyPythonUDF {
                 concurrency: Some(_),
                 ..
             }) => {
                 return Err(DaftError::ComputeError(
                     "Cannot run actor pool UDF in MapGroups".to_string(),
-                ))
+                ));
             }
             _ => {
                 return Err(DaftError::ComputeError(
                     "Trying to run non-UDF function in MapGroups!".to_string(),
-                ))
+                ));
             }
         };
 
@@ -121,7 +119,7 @@ impl RecordBatch {
 
         // Take fast path short circuit if there is only 1 group
         let (groupkeys_table, grouped_col) = if groupvals_indices.is_empty() {
-            let empty_groupkeys_table = Self::empty(Some(groupby_table.schema))?;
+            let empty_groupkeys_table = Self::empty(Some(groupby_table.schema));
             let empty_udf_output_col = Series::empty(
                 evaluated_inputs
                     .first()
@@ -193,5 +191,18 @@ impl RecordBatch {
         let final_columns = [&groupkeys_table.columns[..], &[grouped_col]].concat();
         let final_schema = Schema::new(final_columns.iter().map(|s| s.field().clone()));
         Self::new_with_broadcast(final_schema, final_columns, final_len)
+    }
+
+    pub fn dedup(&self, columns: &[BoundExpr]) -> DaftResult<Self> {
+        if columns.is_empty() {
+            return Err(DaftError::ValueError(
+                "Attempting to dedup RecordBatch on no columns".to_string(),
+            ));
+        }
+
+        let dedup_table = self.eval_expression_list(columns)?;
+        let unique_indices = dedup_table.make_unique_idxs()?;
+        let indices_as_series = UInt64Array::from(("", unique_indices)).into_series();
+        self.take(&indices_as_series)
     }
 }

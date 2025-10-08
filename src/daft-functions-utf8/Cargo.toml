@@ -1,0 +1,32 @@
+[dependencies]
+aho-corasick = "1.1.3"
+arrow2 = {workspace = true}
+chrono = {workspace = true}
+chrono-tz = {workspace = true}
+common-error = {path = "../common/error", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+itertools = {workspace = true}
+num-traits = {workspace = true}
+regex = {workspace = true}
+serde = {workspace = true}
+typetag = {workspace = true}
+unicode-normalization = "0.1.24"
+
+[dev-dependencies]
+arrow2 = {workspace = true}
+
+[features]
+python = [
+  "common-error/python",
+  "daft-core/python",
+  "daft-dsl/python"
+]
+
+[lints]
+workspace = true
+
+[package]
+name = "daft-functions-utf8"
+edition.workspace = true
+version.workspace = true

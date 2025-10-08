@@ -8,7 +8,7 @@ from daft import refresh_logger
 def setup_debug_logger(
     exclude_prefix: list[str] = [],
     daft_only: bool = True,
-):
+) -> None:
     logging.basicConfig(level="DEBUG")
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)
