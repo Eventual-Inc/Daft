@@ -119,6 +119,8 @@ jobs:
         KEY=$(aws secretsmanager get-secret-value --secret-id ci-github-actions-ray-cluster-key-3 --query SecretString --output text)
         echo "$KEY" > ~/.ssh/ci-github-actions-ray-cluster-key.pem
         chmod 600 ~/.ssh/ci-github-actions-ray-cluster-key.pem
+    - name: Setup upterm session
+      uses: owenthereal/action-upterm@v1
     - name: Spin up and connect to ray cluster
       run: |
         source .venv/bin/activate
