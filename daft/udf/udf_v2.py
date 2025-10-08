@@ -233,7 +233,7 @@ class ClsBase(ABC, Generic[C]):
 
 
 def wrap_cls(cls: type, gpus: int, use_process: bool | None, max_concurrency: int | None) -> type:
-    class Cls(ClsBase[Any]):
+    class Cls(ClsBase[cls]):  # type: ignore[valid-type]
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             self._daft_setup_args = (args, kwargs)
             self._daft_local_instance = None
@@ -249,7 +249,7 @@ def wrap_cls(cls: type, gpus: int, use_process: bool | None, max_concurrency: in
             self.__dict__.update(state)
             self._daft_local_instance = None
 
-        def __getattr__(self, name: str) -> Func[Any, Any, Any]:
+        def __getattr__(self, name: str) -> Func[Any, Any, cls]:  # type: ignore[valid-type]
             attr = inspect.getattr_static(cls, name)
 
             if not inspect.isfunction(attr) or isinstance(attr, (classmethod, staticmethod)):
@@ -260,7 +260,7 @@ def wrap_cls(cls: type, gpus: int, use_process: bool | None, max_concurrency: in
         def __call__(self, *args: Any, **kwargs: Any) -> Any:
             return self.__getattr__("__call__")(*args, **kwargs)
 
-        def _daft_get_instance(self) -> Any:
+        def _daft_get_instance(self) -> cls:  # type: ignore[valid-type]
             """Get the local instance of the Daft class. If it is not already created, create it and call the setup method."""
             if self._daft_local_instance is None:
                 args, kwargs = self._daft_setup_args
