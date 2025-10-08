@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+from io import StringIO
 
 import pytest
 
@@ -267,17 +268,16 @@ class TestIcebergCountPushdown:
             "test_table_rename",
         ],
     )
-    def test_count_pushdown_basic(self, table_name, local_iceberg_catalog, capsys):
+    def test_count_pushdown_basic(self, table_name, local_iceberg_catalog):
         """Test count pushdown on partitioned tables."""
         catalog_name, pyiceberg_catalog = local_iceberg_catalog
         tab = pyiceberg_catalog.load_table(f"default.{table_name}")
 
         # Test Daft count with pushdown on partitioned table
         df = daft.read_table(f"{catalog_name}.default.{table_name}").count()
-        _ = capsys.readouterr()
-        df.explain(True)
-        actual = capsys.readouterr()
-        assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" in actual.out
+        explain_out = StringIO()
+        df.explain(True, file=explain_out)
+        assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" in explain_out.getvalue()
 
         daft_count = df.collect().to_pydict()["count"][0]
 
@@ -296,17 +296,16 @@ class TestIcebergCountPushdown:
             "test_mixed_delete_types",
         ],
     )
-    def test_count_pushdown_with_delete_files(self, table_name, local_iceberg_catalog, capsys):
+    def test_count_pushdown_with_delete_files(self, table_name, local_iceberg_catalog):
         """Test count with delete files, should not use pushdown optimization."""
         catalog_name, pyiceberg_catalog = local_iceberg_catalog
         tab = pyiceberg_catalog.load_table(f"default.{table_name}")
 
         # Test Daft count with pushdown on partitioned table
         df = daft.read_table(f"{catalog_name}.default.{table_name}").count()
-        _ = capsys.readouterr()
-        df.explain(True)
-        actual = capsys.readouterr()
-        assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" not in actual.out
+        explain_out = StringIO()
+        df.explain(True, file=explain_out)
+        assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" not in explain_out.getvalue()
 
         daft_count = df.collect().to_pydict()["count"][0]
 
@@ -316,7 +315,7 @@ class TestIcebergCountPushdown:
         assert daft_count == iceberg_count
 
     @pytest.mark.integration()
-    def test_count_pushdown_with_filter(self, local_iceberg_catalog, capsys):
+    def test_count_pushdown_with_filter(self, local_iceberg_catalog):
         """Test count with filter - should not use pushdown optimization."""
         catalog_name, pyiceberg_catalog = local_iceberg_catalog
         tab = pyiceberg_catalog.load_table("default.test_partitioned_by_identity")
@@ -325,10 +324,9 @@ class TestIcebergCountPushdown:
         df = daft.read_table(f"{catalog_name}.default.test_partitioned_by_identity")
         df = df.where(df["number"] > 0).count()
 
-        _ = capsys.readouterr()
-        df.explain(True)
-        actual = capsys.readouterr()
-        assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" not in actual.out
+        explain_out = StringIO()
+        df.explain(True, file=explain_out)
+        assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" not in explain_out.getvalue()
 
         daft_count = df.collect().to_pydict()["count"][0]
 
@@ -339,7 +337,7 @@ class TestIcebergCountPushdown:
         assert daft_count == iceberg_count
 
     @pytest.mark.integration()
-    def test_count_pushdown_with_column_selection(self, local_iceberg_catalog, capsys):
+    def test_count_pushdown_with_column_selection(self, local_iceberg_catalog):
         """Test count pushdown works correctly with column selection."""
         catalog_name, pyiceberg_catalog = local_iceberg_catalog
         tab = pyiceberg_catalog.load_table("default.test_all_types")
@@ -348,10 +346,9 @@ class TestIcebergCountPushdown:
         df = daft.read_table(f"{catalog_name}.default.test_all_types")
         df = df.select("id").count() if "id" in df.column_names else df.select(df.column_names[0]).count()
 
-        _ = capsys.readouterr()
-        df.explain(True)
-        actual = capsys.readouterr()
-        assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" in actual.out
+        explain_out = StringIO()
+        df.explain(True, file=explain_out)
+        assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" in explain_out.getvalue()
 
         daft_count = df.collect().to_pydict()["count"][0]
 
@@ -361,7 +358,7 @@ class TestIcebergCountPushdown:
         assert daft_count == iceberg_count
 
     @pytest.mark.integration()
-    def test_count_pushdown_with_limit(self, local_iceberg_catalog, capsys):
+    def test_count_pushdown_with_limit(self, local_iceberg_catalog):
         """Test count behavior with limit operations."""
         catalog_name, _pyiceberg_catalog = local_iceberg_catalog
 
@@ -370,17 +367,16 @@ class TestIcebergCountPushdown:
         df = df.limit(5).count()
         daft_count = df.collect().to_pydict()["count"][0]
 
-        _ = capsys.readouterr()
-        df.explain(True)
-        actual = capsys.readouterr()
-        assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" not in actual.out
+        explain_out = StringIO()
+        df.explain(True, file=explain_out)
+        assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" not in explain_out.getvalue()
 
         # Count after limit should be at most the limit value
         assert daft_count <= 5
         assert daft_count >= 0
 
     @pytest.mark.integration()
-    def test_count_pushdown_snapshot_consistency(self, local_iceberg_catalog, capsys):
+    def test_count_pushdown_snapshot_consistency(self, local_iceberg_catalog):
         """Test count pushdown with different snapshots."""
         _catalog_name, pyiceberg_catalog = local_iceberg_catalog
 
@@ -394,10 +390,9 @@ class TestIcebergCountPushdown:
                     daft_pandas = daft.read_iceberg(tab, snapshot_id=snapshot.snapshot_id)
 
                     df = daft_pandas.count()
-                    _ = capsys.readouterr()
-                    df.explain(True)
-                    actual = capsys.readouterr()
-                    assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" not in actual.out
+                    explain_out = StringIO()
+                    df.explain(True, file=explain_out)
+                    assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" not in explain_out.getvalue()
 
                     daft_count = df.collect().to_pydict()["count"][0]
 
