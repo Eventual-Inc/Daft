@@ -25,7 +25,7 @@ pub enum NodeType {
     // Consumes all input MicroPartitions before producing 1-N outputs
     Aggregate,
     CommitWrite,
-    CrossJoinCollect,
+    JoinCollect,
     Dedup,
     GroupByAgg,
     HashJoinBuild,
@@ -33,7 +33,6 @@ pub enum NodeType {
     Pivot,
     Repartition,
     Sort,
-    SortMergeJoin,
     TopN,
     WindowOrderByOnly,
     WindowPartitionAndDynamicFrame,
@@ -49,6 +48,7 @@ pub enum NodeType {
     Limit,
     MonotonicallyIncreasingId,
     OuterHashJoinProbe,
+    SortMergeJoinProbe,
 }
 
 #[derive(Clone, Debug)]

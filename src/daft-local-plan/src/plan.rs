@@ -54,7 +54,6 @@ pub enum LocalPhysicalPlan {
     Concat(Concat),
     HashJoin(HashJoin),
     CrossJoin(CrossJoin),
-    SortMergeJoin(SortMergeJoin),
     // BroadcastJoin(BroadcastJoin),
     PhysicalWrite(PhysicalWrite),
     CommitWrite(CommitWrite),
@@ -74,6 +73,7 @@ pub enum LocalPhysicalPlan {
     // Flotilla Only Nodes
     Repartition(Repartition),
     IntoPartitions(IntoPartitions),
+    SortMergeJoin(SortMergeJoin),
     #[cfg(feature = "python")]
     DistributedActorPoolProject(DistributedActorPoolProject),
 }
@@ -610,7 +610,7 @@ impl LocalPhysicalPlan {
         right: LocalPhysicalPlanRef,
         left_on: Vec<BoundExpr>,
         right_on: Vec<BoundExpr>,
-        is_sorted: bool,
+        join_type: JoinType,
         schema: SchemaRef,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
@@ -619,7 +619,7 @@ impl LocalPhysicalPlan {
             right,
             left_on,
             right_on,
-            is_sorted,
+            join_type,
             schema,
             stats_state,
         })
@@ -861,7 +861,9 @@ impl LocalPhysicalPlan {
 
             Self::HashJoin(HashJoin { left, right, .. }) => vec![left.clone(), right.clone()],
             Self::CrossJoin(CrossJoin { left, right, .. }) => vec![left.clone(), right.clone()],
-            Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => vec![left.clone(), right.clone()],
+            Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => {
+                vec![left.clone(), right.clone()]
+            }
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { input, .. }) => vec![input.clone()],
             #[cfg(feature = "python")]
@@ -1243,7 +1245,9 @@ impl LocalPhysicalPlan {
                     panic!("LocalPhysicalPlan::with_new_children: CrossJoin should have 2 children")
                 }
                 Self::SortMergeJoin(_) => {
-                    panic!("LocalPhysicalPlan::with_new_children: SortMergeJoin should have 2 children")
+                    panic!(
+                        "LocalPhysicalPlan::with_new_children: SortMergeJoin should have 2 children"
+                    )
                 }
                 Self::Concat(_) => {
                     panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children")
@@ -1283,7 +1287,7 @@ impl LocalPhysicalPlan {
                 Self::SortMergeJoin(SortMergeJoin {
                     left_on,
                     right_on,
-                    is_sorted,
+                    join_type,
                     schema,
                     stats_state,
                     ..
@@ -1292,7 +1296,7 @@ impl LocalPhysicalPlan {
                     new_right.clone(),
                     left_on.clone(),
                     right_on.clone(),
-                    *is_sorted,
+                    *join_type,
                     schema.clone(),
                     stats_state.clone(),
                 ),
@@ -1556,7 +1560,7 @@ pub struct SortMergeJoin {
     pub right: LocalPhysicalPlanRef,
     pub left_on: Vec<BoundExpr>,
     pub right_on: Vec<BoundExpr>,
-    pub is_sorted: bool,
+    pub join_type: JoinType,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }

@@ -14,9 +14,9 @@ use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
     InMemoryScan, IntoBatches, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite,
-    Pivot, Project, Sample, SamplingMethod, Sort, SortMergeJoin, TopN, UDFProject, UnGroupedAggregate, Unpivot,
-    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
-    WindowPartitionOnly,
+    Pivot, Project, Sample, SamplingMethod, Sort, SortMergeJoin, TopN, UDFProject,
+    UnGroupedAggregate, Unpivot, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
+    WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{
@@ -45,15 +45,14 @@ use crate::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
         commit_write::CommitWriteSink,
-        cross_join_collect::CrossJoinCollectSink,
         dedup::DedupSink,
         grouped_aggregate::GroupedAggregateSink,
         hash_join_build::HashJoinBuildSink,
         into_partitions::IntoPartitionsSink,
+        join_collect::JoinCollectSink,
         pivot::PivotSink,
         repartition::RepartitionSink,
         sort::SortSink,
-        sort_merge_join::SortMergeJoinSink,
         top_n::TopNSink,
         window_order_by_only::WindowOrderByOnlySink,
         window_partition_and_dynamic_frame::WindowPartitionAndDynamicFrameSink,
@@ -66,7 +65,7 @@ use crate::{
     streaming_sink::{
         anti_semi_hash_join_probe::AntiSemiProbeSink, base::StreamingSinkNode, concat::ConcatSink,
         limit::LimitSink, monotonically_increasing_id::MonotonicallyIncreasingIdSink,
-        outer_hash_join_probe::OuterHashJoinProbeSink,
+        outer_hash_join_probe::OuterHashJoinProbeSink, sort_merge_join_probe::SortMergeJoinProbe,
     },
 };
 
@@ -1058,7 +1057,7 @@ fn physical_plan_to_pipeline(
 
             let state_bridge = BroadcastStateBridge::new();
             let collect_node = BlockingSinkNode::new(
-                Arc::new(CrossJoinCollectSink::new(state_bridge.clone())),
+                Arc::new(JoinCollectSink::new(state_bridge.clone())),
                 collect_child_node,
                 collect_child.get_stats_state().clone(),
                 ctx,
@@ -1082,27 +1081,32 @@ fn physical_plan_to_pipeline(
             right,
             left_on,
             right_on,
-            is_sorted,
-            schema,
+            join_type,
             stats_state,
             ..
         }) => {
-            let left_child_node = physical_plan_to_pipeline(left, psets, cfg, ctx)?;
-            let right_child_node = physical_plan_to_pipeline(right, psets, cfg, ctx)?;
+            let left_schema = left.schema().clone();
+            let left_node = physical_plan_to_pipeline(left, psets, cfg, ctx)?;
+            let right_node = physical_plan_to_pipeline(right, psets, cfg, ctx)?;
 
-            let sort_merge_join_sink = SortMergeJoinSink::new(
-                left_on.clone(),
-                right_on.clone(),
-                *is_sorted,
-                schema.clone(),
-            );
+            let state_bridge = BroadcastStateBridge::new();
+            let collect_node = BlockingSinkNode::new(
+                Arc::new(JoinCollectSink::new(state_bridge.clone())),
+                left_node,
+                left.get_stats_state().clone(),
+                ctx,
+            )
+            .boxed();
 
-            BlockingSinkNode::new(
-                Arc::new(sort_merge_join_sink),
-                // For now, we'll just use the left child as the input
-                // This is a limitation of the current blocking sink design
-                // In a proper implementation, we'd need a sink that can handle two inputs
-                left_child_node,
+            StreamingSinkNode::new(
+                Arc::new(SortMergeJoinProbe::new(
+                    left_on.clone(),
+                    right_on.clone(),
+                    left_schema,
+                    *join_type,
+                    state_bridge,
+                )),
+                vec![collect_node, right_node],
                 stats_state.clone(),
                 ctx,
             )
