@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 
 use crate::{DaftContext, subscribers};
 
-#[pyclass(frozen)(frozen)(frozen)]
+#[pyclass(frozen)]
 pub struct PyDaftContext {
     inner: DaftContext,
 }

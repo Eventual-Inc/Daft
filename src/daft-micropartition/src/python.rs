@@ -1240,7 +1240,7 @@ impl From<PyMicroPartition> for Arc<MicroPartition> {
     }
 }
 
-#[pyclass(frozen, module = "daft.daft", frozen)]
+#[pyclass(frozen, module = "daft.daft")]
 #[derive(Clone, Debug)]
 pub struct PyMicroPartitionSet(Arc<MicroPartitionSet>);
 
