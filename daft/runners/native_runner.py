@@ -5,7 +5,14 @@ import uuid
 from typing import TYPE_CHECKING
 
 from daft.context import get_context
-from daft.daft import FileFormatConfig, FileInfos, IOConfig, LocalPhysicalPlan, set_compute_runtime_num_worker_threads
+from daft.daft import (
+    FileFormatConfig,
+    FileInfos,
+    IOConfig,
+    LocalPhysicalPlan,
+    PyQueryMetadata,
+    set_compute_runtime_num_worker_threads,
+)
 from daft.execution.native_executor import NativeExecutor
 from daft.filesystem import glob_path_with_stats
 from daft.recordbatch import MicroPartition
@@ -83,9 +90,10 @@ class NativeRunner(Runner[MicroPartition]):
         # NOTE: Freeze and use this same execution config for the entire execution
         ctx = get_context()
         query_id = str(uuid.uuid4())
+        output_schema = builder.schema()
 
         # Optimize the logical plan.
-        ctx._notify_query_start(query_id, repr(builder))
+        ctx._notify_query_start(query_id, PyQueryMetadata(output_schema._schema, repr(builder)))
         ctx._notify_optimization_start(query_id)
         builder = builder.optimize()
         ctx._notify_optimization_end(query_id, repr(builder))

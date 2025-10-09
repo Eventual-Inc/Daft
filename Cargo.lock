@@ -2513,6 +2513,7 @@ dependencies = [
  "daft-io",
  "daft-logical-plan",
  "daft-micropartition",
+ "daft-recordbatch",
  "daft-runners",
  "dashmap",
  "log",
