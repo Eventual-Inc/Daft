@@ -530,11 +530,19 @@ pub mod scalar_fn {
             #[prost(message, optional, tag = "2")]
             pub return_dtype: ::core::option::Option<super::super::DataType>,
             #[prost(message, optional, tag = "3")]
-            pub inner: ::core::option::Option<super::super::PyObject>,
+            pub cls: ::core::option::Option<super::super::PyObject>,
             #[prost(message, optional, tag = "4")]
+            pub method: ::core::option::Option<super::super::PyObject>,
+            #[prost(message, optional, tag = "5")]
             pub original_args: ::core::option::Option<super::super::PyObject>,
-            #[prost(bool, optional, tag = "5")]
+            #[prost(uint64, tag = "6")]
+            pub gpus: u64,
+            #[prost(bool, optional, tag = "7")]
             pub use_process: ::core::option::Option<bool>,
+            #[prost(uint64, optional, tag = "8")]
+            pub max_concurrency: ::core::option::Option<u64>,
+            #[prost(bool, tag = "9")]
+            pub is_async: bool,
         }
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Variant {

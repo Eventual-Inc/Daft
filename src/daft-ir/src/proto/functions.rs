@@ -36,11 +36,15 @@ pub fn from_proto_function(message: proto::ScalarFn) -> ProtoResult<ir::Expr> {
             proto::scalar_fn::py_fn::Variant::RowWise(row_wise_fn) => {
                 let func = ir::functions::RowWisePyFn {
                     function_name: row_wise_fn.name.into(),
-                    inner: from_proto(row_wise_fn.inner)?,
+                    cls: from_proto(row_wise_fn.cls)?,
+                    method: from_proto(row_wise_fn.method)?,
+                    is_async: row_wise_fn.is_async,
                     return_dtype: from_proto(row_wise_fn.return_dtype)?,
                     original_args: from_proto(row_wise_fn.original_args)?,
                     args: args.into_inner(),
+                    gpus: row_wise_fn.gpus as usize,
                     use_process: row_wise_fn.use_process,
+                    max_concurrency: row_wise_fn.max_concurrency.map(|c| c as usize),
                 };
                 ir::rex::from_py_rowwise_func(func)
             }
@@ -99,9 +103,13 @@ pub fn scalar_fn_to_proto(sf: &ir::functions::scalar::ScalarFn) -> ProtoResult<p
                         proto::scalar_fn::py_fn::RowWiseFn {
                             name: row_wise_fn.function_name.to_string(),
                             return_dtype: Some(row_wise_fn.return_dtype.to_proto()?),
-                            inner: Some(row_wise_fn.inner.to_proto()?),
+                            cls: Some(row_wise_fn.cls.to_proto()?),
+                            method: Some(row_wise_fn.method.to_proto()?),
+                            is_async: row_wise_fn.is_async,
                             original_args: Some(row_wise_fn.original_args.to_proto()?),
+                            gpus: row_wise_fn.gpus as u64,
                             use_process: row_wise_fn.use_process,
+                            max_concurrency: row_wise_fn.max_concurrency.map(|c| c as u64),
                         },
                     )),
                 })),

@@ -19,7 +19,11 @@ use serde::{Deserialize, Serialize};
 use super::FunctionExpr;
 #[cfg(feature = "python")]
 use crate::python::PyExpr;
-use crate::{Expr, ExprRef, functions::scalar::ScalarFn};
+use crate::{
+    Expr, ExprRef,
+    functions::scalar::ScalarFn,
+    python_udf::{PyScalarFn, RowWisePyFn},
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum MaybeInitializedUDF {
@@ -281,14 +285,25 @@ impl UDFProperties {
                     concurrency: *concurrency,
                     use_process: *use_process,
                 });
-            } else if let Expr::ScalarFn(ScalarFn::Python(py)) = e.as_ref() {
+            } else if let Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
+                function_name,
+                gpus,
+                max_concurrency,
+                use_process,
+                ..
+            }))) = e.as_ref()
+            {
                 num_udfs += 1;
                 udf_properties = Some(Self {
-                    name: py.name().to_string(),
-                    resource_request: None,
+                    name: function_name.to_string(),
+                    resource_request: Some(ResourceRequest::try_new_internal(
+                        None,
+                        Some(*gpus as f64),
+                        None,
+                    )?),
                     batch_size: None,
-                    concurrency: None,
-                    use_process: None,
+                    concurrency: *max_concurrency,
+                    use_process: *use_process,
                 });
             }
             Ok(TreeNodeRecursion::Continue)
