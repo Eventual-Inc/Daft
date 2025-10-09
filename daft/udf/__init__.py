@@ -283,8 +283,6 @@ def cls(
         ...         "classified": my_model.classify(df["prompt"]),
         ...     }
         ... )
-        >>> # Call methods with scalar arguments to run locally. `__init__` will be called locally first.
-        >>> my_model.generate("hello")
     """
 
     def partial_cls(c: type) -> type:
