@@ -140,6 +140,8 @@ dev = [
   # AI
   "vllm; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
   "openai==1.100",
+  # AV
+  "av==15.0.0",
   # Clickhouse
   "clickhouse-connect",
   # mcap
