@@ -5,6 +5,7 @@ pub mod cross_join_collect;
 pub mod dedup;
 pub mod grouped_aggregate;
 pub mod hash_join_build;
+pub mod into_partitions;
 pub mod pivot;
 pub mod repartition;
 pub mod sort;

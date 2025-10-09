@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use daft_core::prelude::SchemaRef;
-use daft_dsl::LiteralValue;
+use daft_core::prelude::*;
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use indexmap::IndexMap;
 
@@ -52,13 +51,13 @@ pub trait Table: Sync + Send + std::fmt::Debug {
     fn append(
         &self,
         plan: LogicalPlanBuilder,
-        options: IndexMap<String, LiteralValue>,
+        options: IndexMap<String, Literal>,
     ) -> CatalogResult<()>;
     /// Overwrite table with data. Equivalent to `INSERT OVERWRITE` in SQL
     fn overwrite(
         &self,
         plan: LogicalPlanBuilder,
-        options: IndexMap<String, LiteralValue>,
+        options: IndexMap<String, Literal>,
     ) -> CatalogResult<()>;
 
     /// Create/extract a Python object that subclasses the Table ABC
@@ -109,7 +108,7 @@ impl Table for View {
     fn append(
         &self,
         _plan: LogicalPlanBuilder,
-        _options: IndexMap<String, LiteralValue>,
+        _options: IndexMap<String, Literal>,
     ) -> CatalogResult<()> {
         Err(CatalogError::unsupported(
             "cannot modify the data in a view",
@@ -119,7 +118,7 @@ impl Table for View {
     fn overwrite(
         &self,
         _plan: LogicalPlanBuilder,
-        _options: IndexMap<String, LiteralValue>,
+        _options: IndexMap<String, Literal>,
     ) -> CatalogResult<()> {
         Err(CatalogError::unsupported(
             "cannot modify the data in a view",

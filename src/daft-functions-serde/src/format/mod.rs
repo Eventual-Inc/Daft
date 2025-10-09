@@ -1,11 +1,11 @@
 use std::{fmt::Display, str::FromStr};
 
-use common_error::{value_err, DaftError, DaftResult};
+use common_error::{DaftError, DaftResult, value_err};
 use daft_core::{
+    lit::{FromLiteral, Literal},
     prelude::{DataType, Utf8Array},
     series::Series,
 };
-use daft_dsl::{FromLiteral, Literal, LiteralValue};
 use serde::{Deserialize, Serialize};
 
 mod json;
@@ -30,15 +30,15 @@ impl Display for Format {
     }
 }
 
-impl Literal for Format {
-    fn literal_value(self) -> daft_dsl::LiteralValue {
-        LiteralValue::Utf8(self.to_string())
+impl From<Format> for Literal {
+    fn from(value: Format) -> Self {
+        Self::Utf8(value.to_string())
     }
 }
 
 impl FromLiteral for Format {
-    fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
-        if let LiteralValue::Utf8(s) = lit {
+    fn try_from_literal(lit: &Literal) -> DaftResult<Self> {
+        if let Literal::Utf8(s) = lit {
             s.parse()
         } else {
             value_err!("Expected a string literal, got {:?}", lit)

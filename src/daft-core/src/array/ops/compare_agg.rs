@@ -1,7 +1,9 @@
 use arrow2::array::Array;
 use common_error::DaftResult;
 
-use super::{full::FullNull, DaftCompareAggable, GroupIndices};
+use super::{DaftCompareAggable, GroupIndices, full::FullNull};
+#[cfg(feature = "python")]
+use crate::prelude::PythonArray;
 use crate::{
     array::{ListArray, StructArray},
     datatypes::*,

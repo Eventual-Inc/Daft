@@ -5,7 +5,7 @@ mod split_parquet;
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
-use common_scan_info::{ScanTaskLike, ScanTaskLikeRef, SPLIT_AND_MERGE_PASS};
+use common_scan_info::{SPLIT_AND_MERGE_PASS, ScanTaskLike, ScanTaskLikeRef};
 use daft_io::IOStatsContext;
 use daft_parquet::read::read_parquet_metadata;
 use parquet2::metadata::RowGroupList;

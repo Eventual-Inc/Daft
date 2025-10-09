@@ -1,4 +1,6 @@
 name: PR test suite
+permissions:
+  contents: read
 
 on:
   push:
@@ -12,6 +14,7 @@ on:
 env:
   DAFT_ANALYTICS_ENABLED: '0'
   RUST_BACKTRACE: 1
+  DAFT_PROGRESS_BAR: 0
 
 # Cancel in-progress CI runs for outdated PR pushes to save resources.
 # For pull requests, use the PR number to group runs.
@@ -21,30 +24,97 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  skipcheck:
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.filter.outputs.skip }}
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Detect non-trivial changes
+      id: filter
+      run: |
+        set +e
+        set -xo pipefail
+
+        # On main branch, we want to run all tests (no skipping)
+        if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          echo "skip=false" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        # For PRs, check if there are non-trivial changes
+        BASE=${{ github.base_ref || 'origin/main' }}
+        git fetch origin $BASE --depth=1
+
+        if git diff --quiet origin/$BASE -- \
+          . \
+          ':!.vscode/**' \
+          ':!ci/**' \
+          ':!docs/**' \
+          ':!.git-blame-ignore-revs' \
+          ':!.gitignore' \
+          ':!.lldbinit' \
+          ':!.readthedocs.yaml' \
+          ':!CODE_OF_CONDUCT.md' \
+          ':!CONTRIBUTING.md' \
+          ':!LICENSE' \
+          ':!README.rst' \
+          ':!SECURITY.md' \
+          ':!codecov.yml' \
+          ':!mkdocs.yml' \
+          ':!AGENTS.md'
+        then
+          echo "skip=true" >> $GITHUB_OUTPUT
+        else
+          echo "skip=false" >> $GITHUB_OUTPUT
+        fi
+
   unit-test:
+    needs: skipcheck
+    if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.9', '3.10']
+        python-version: ['3.9', '3.12']
         daft-runner: [ray, native]
         pyarrow-version: [8.0.0, 19.0.1]
         flotilla: [1, 0]
         os: [ubuntu-latest, macos-latest]
+        on-main:
+        - ${{ github.ref == 'refs/heads/main' }}
         exclude:
         - daft-runner: native
-          flotilla: 1
+          flotilla: 0
         - daft-runner: ray
-          pyarrow-version: 8.0.0
-        - daft-runner: native
-          python-version: '3.10'
           pyarrow-version: 8.0.0
         - python-version: '3.9'
           os: macos-latest
         - pyarrow-version: 8.0.0
           os: macos-latest
+        - python-version: '3.12'
+          pyarrow-version: 8.0.0
+        - os: macos-latest
+          flotilla: 0
+        # don't run mac unit tests in PRs
+        - os: macos-latest
+          on-main: false
+
     steps:
+    - name: Free Disk Space (Ubuntu) # only run on ubuntu
+      if: ${{ (runner.os == 'Linux') }}
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: false
+        android: true
+        dotnet: false
+        haskell: true
+        large-packages: false
+        docker-images: false
+        swap-storage: true
+
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
       with:
@@ -59,54 +129,41 @@ jobs:
     - name: install llvm tools
       run: rustup component add llvm-tools-preview
 
-    - name: Install Python and uv
-      uses: astral-sh/setup-uv@v5
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ matrix.python-version }}
         enable-cache: true
-        cache-dependency-glob: |
-          **/requirements-dev.txt
-          **/pyproject.toml
+        cache-dependency-glob: "**/pyproject.toml"
+
+    - name: Setup Virtual Env
+      run: |
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
 
     - name: Install dependencies
       uses: nick-fields/retry@v3
       with:
-        timeout_minutes: 10
+        timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 10
-        command: uv pip install -r requirements-dev.txt
+        command: |
+          uv sync --no-install-project --all-extras --all-groups
 
     - name: Override pyarrow
-      run: uv pip install pyarrow==${{ matrix.pyarrow-version }}
-
-    - name: Override deltalake for pyarrow
-      if: ${{ (matrix.pyarrow-version == '8.0.0') }}
-      run: uv pip install deltalake==0.10.0
-
-    # Rust code coverage does not work on ubuntu-latest, so we only run it on macOS
-    # For more info: https://github.com/Eventual-Inc/Daft/issues/3801
-    - name: Build library and Test with pytest (Linux)
-      if: ${{ (runner.os == 'Linux') }}
       run: |
-        maturin develop
-        pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
-        pytest --cov=daft --ignore tests/integration --durations=50
-        coverage combine -a --data-file='.coverage' || true
-        mkdir -p report-output
-        coverage xml -o ./report-output/coverage-${{ join(matrix.*, '-') }}.xml
-      env:
-        CARGO_TARGET_DIR: ./target
+        source .venv/bin/activate
+        uv pip install pyarrow==${{ matrix.pyarrow-version }}
 
-        DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_FLOTILLA: ${{ matrix.flotilla }}
-
-    - name: Build library and Test with pytest with code coverage (macOS)
-      if: ${{ (runner.os == 'macOS') }}
+    - name: Build library and Test with pytest
       run: |
+        set -o pipefail
+        source .venv/bin/activate
         cargo llvm-cov clean --workspace
-        maturin develop
+        maturin develop --uv
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
-        pytest --cov=daft --ignore tests/integration --durations=50
+        pytest --cov=daft --ignore tests/integration --durations=0 | ./tools/capture-durations.sh "pytest_output.txt"
+        python tools/aggregate_test_durations.py pytest_output.txt
         coverage combine -a --data-file='.coverage' || true
         mkdir -p report-output
         coverage xml -o ./report-output/coverage-${{ join(matrix.*, '-') }}.xml
@@ -124,7 +181,6 @@ jobs:
         DAFT_FLOTILLA: ${{ matrix.flotilla }}
 
     - name: Upload coverage report
-      if: ${{ (runner.os == 'macOS') }}
       uses: actions/upload-artifact@v4
       with:
         name: coverage-reports-unit-tests-${{ join(matrix.*, '-') }}
@@ -132,7 +188,7 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
-      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {
@@ -162,6 +218,8 @@ jobs:
       run: exit 1
 
   integration-test-build:
+    needs: skipcheck
+    if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -174,11 +232,18 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v5
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ matrix.python-version }}
-        architecture: x64
-    - run: pip install -U twine toml maturin
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
+    - name: Setup Virtual Env
+      run: |
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+        source .venv/bin/activate
+        uv pip install -U twine toml maturin
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -186,11 +251,9 @@ jobs:
       with:
         key: ${{ runner.os }}-integration-build
         cache-all-crates: 'true'
-
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest
-
     - name: Build dashboard with Bun
       working-directory: ./src/daft-dashboard/frontend
       run: |
@@ -199,7 +262,9 @@ jobs:
 
     # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
     - name: Build wheels
-      run: maturin build --release --compatibility linux --out dist
+      run: |
+        source .venv/bin/activate
+        maturin build --release --compatibility linux --out dist
     - name: Upload wheels
       uses: actions/upload-artifact@v4
       with:
@@ -209,54 +274,41 @@ jobs:
   integration-test-tpch:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs:
-    - integration-test-build
+    needs: [skipcheck, integration-test-build]
+    if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
       package-name: daft
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ['3.9']
-        daft-runner: [ray, native]
-        flotilla: [1, 0]
-        exclude:
-        - daft-runner: native
-          flotilla: 1
     steps:
     - uses: actions/checkout@v4
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
-
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
-
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        python-version: 3.9
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
-
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       uses: nick-fields/retry@v3
       with:
-        timeout_minutes: 10
+        timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          source .venv/bin/activate
+          uv sync --no-install-project --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - uses: actions/cache@v4
       env:
@@ -264,15 +316,37 @@ jobs:
       with:
         path: data/tpch-dbgen
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
-    - name: Run TPCH integration tests
+
+    - name: Run TPCH integration tests (native)
       run: |
-        pytest tests/integration/test_tpch.py --durations=50
+        set -o pipefail
+        source .venv/bin/activate
+        pytest tests/integration/test_tpch.py --durations=0 | ./tools/capture-durations.sh "tpch_pytest_output.txt"
+        python tools/aggregate_test_durations.py tpch_pytest_output.txt
       env:
-        DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_FLOTILLA: ${{ matrix.flotilla }}
+        DAFT_RUNNER: native
+    - name: Run TPCH integration tests (ray)
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        pytest tests/integration/test_tpch.py --durations=0 | ./tools/capture-durations.sh "tpch_pytest_output.txt"
+        python tools/aggregate_test_durations.py tpch_pytest_output.txt
+      env:
+        DAFT_RUNNER: ray
+        DAFT_FLOTILLA: 0
+    - name: Run TPCH integration tests (flotilla)
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        pytest tests/integration/test_tpch.py --durations=0 | ./tools/capture-durations.sh "tpch_pytest_output.txt"
+        python tools/aggregate_test_durations.py tpch_pytest_output.txt
+      env:
+        DAFT_RUNNER: ray
+        DAFT_FLOTILLA: 1
+
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
-      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {
@@ -292,8 +366,8 @@ jobs:
   integration-test-io:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs:
-    - integration-test-build
+    needs: [skipcheck, integration-test-build]
+    if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
       package-name: daft
     strategy:
@@ -310,34 +384,32 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
-
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       uses: nick-fields/retry@v3
       with:
-        timeout_minutes: 10
+        timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          source .venv/bin/activate
+          uv sync --no-install-project --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - name: Prepare tmpdirs for IO services
       run: |
@@ -350,14 +422,17 @@ jobs:
         down-flags: --volumes
     - name: Run IO integration tests
       run: |
-        pytest tests/integration/io -m 'integration and not benchmark' --durations=50
-        pytest tests/io -m 'integration' --durations=50
+        set -o pipefail
+        source .venv/bin/activate
+        pytest tests/integration/io -m 'integration and not benchmark' --durations=0 | ./tools/capture-durations.sh "io_integration_pytest_output.txt"
+        pytest tests/io -m 'integration' --durations=0 | ./tools/capture-durations.sh "io_integration_pytest_output_2.txt"
+        python tools/aggregate_test_durations.py io_integration_pytest_output.txt io_integration_pytest_output_2.txt
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_FLOTILLA: ${{ matrix.flotilla }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
-      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {
@@ -376,11 +451,10 @@ jobs:
 
   # Same as integration-test-io but runs the tests that require credentials, only on `main`
   integration-test-io-credentialed:
-    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs:
-    - integration-test-build
+    needs: [skipcheck, integration-test-build]
+    if: ${{ needs.skipcheck.outputs.skip == 'false' && github.ref == 'refs/heads/main' }}
     env:
       package-name: daft
     strategy:
@@ -402,34 +476,32 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
-
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       uses: nick-fields/retry@v3
       with:
-        timeout_minutes: 10
+        timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          source .venv/bin/activate
+          uv sync --no-install-project --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - name: Prepare tmpdirs for IO services
       run: |
@@ -456,10 +528,14 @@ jobs:
         down-flags: --volumes
     - name: Run IO integration tests
       run: |
-        pytest tests/integration/io -m 'integration and not benchmark' --credentials --durations=50
+        set -o pipefail
+        source .venv/bin/activate
+        pytest tests/integration/io -m 'integration and not benchmark' --credentials --durations=0 | ./tools/capture-durations.sh "io_credentialed_pytest_output.txt"
+        python tools/aggregate_test_durations.py io_credentialed_pytest_output.txt
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_FLOTILLA: ${{ matrix.flotilla }}
+        HF_TOKEN: ${{ secrets.ACTIONS_HF_TOKEN }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() }}
@@ -479,140 +555,44 @@ jobs:
         webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
-  integration-test-iceberg:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs:
-    - integration-test-build
-    env:
-      package-name: daft
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ['3.9']
-        daft-runner: [ray, native]
-        flotilla: [1, 0]
-        exclude:
-        - daft-runner: native
-          flotilla: 1
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-        fetch-depth: 0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
-    - name: Download built wheels
-      uses: actions/download-artifact@v4
-      with:
-        pattern: wheels-*
-        merge-multiple: true
-        path: dist
-    - name: Setup Virtual Env
-      run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
-    - name: Install Daft and dev dependencies
-      uses: nick-fields/retry@v3
-      with:
-        timeout_minutes: 10
-        max_attempts: 3
-        retry_wait_seconds: 10
-        command: |
-          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
-          rm -rf daft
-    - uses: docker/setup-buildx-action@v3
-    - uses: docker/build-push-action@v5
-      with:
-        context: ./tests/integration/iceberg/docker-compose/
-        file: ./tests/integration/iceberg/docker-compose/Dockerfile
-        cache-from: type=gha
-        cache-to: type=gha,mode=min
-    - name: Spin up services
-      run: |
-        pushd ./tests/integration/iceberg/docker-compose/
-        docker compose -f ./docker-compose.yml up -d
-        popd
-    - name: Run Iceberg integration tests
-      run: |
-        pytest tests/integration/iceberg -m 'integration' --durations=50
-      env:
-        DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_FLOTILLA: ${{ matrix.flotilla }}
-    - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
-      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
-      with:
-        payload: |
-          {
-            "blocks": [
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": ":rotating_light: [CI] Iceberg Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
-                }
-              }
-            ]
-          }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
-        webhook-type: incoming-webhook
-
   integration-test-sql:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs:
-    - integration-test-build
+    needs: [skipcheck, integration-test-build]
+    if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
       package-name: daft
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ['3.9']
-        daft-runner: [ray, native]
-        flotilla: [1, 0]
-        exclude:
-        - daft-runner: native
-          flotilla: 1
     steps:
     - uses: actions/checkout@v4
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        python-version: 3.9
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       uses: nick-fields/retry@v3
       with:
-        timeout_minutes: 10
+        timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          source .venv/bin/activate
+          uv sync --no-install-project --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - name: Install ODBC Driver 18 for SQL Server
       run: |
@@ -625,15 +605,37 @@ jobs:
         pushd ./tests/integration/sql/docker-compose/
         docker compose -f ./docker-compose.yml up -d
         popd
-    - name: Run sql integration tests
+
+    - name: Run sql integration tests (native)
       run: |
-        pytest tests/integration/sql -m 'integration or not integration' --durations=50
+        set -o pipefail
+        source .venv/bin/activate
+        pytest tests/integration/sql -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "sql_pytest_output.txt"
+        python tools/aggregate_test_durations.py sql_pytest_output.txt
       env:
-        DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_FLOTILLA: ${{ matrix.flotilla }}
+        DAFT_RUNNER: native
+    - name: Run sql integration tests (ray)
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        pytest tests/integration/sql -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "sql_pytest_output.txt"
+        python tools/aggregate_test_durations.py sql_pytest_output.txt
+      env:
+        DAFT_RUNNER: ray
+        DAFT_FLOTILLA: 0
+    - name: Run sql integration tests (flotilla)
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        pytest tests/integration/sql -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "sql_pytest_output.txt"
+        python tools/aggregate_test_durations.py sql_pytest_output.txt
+      env:
+        DAFT_RUNNER: ray
+        DAFT_FLOTILLA: 1
+
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
-      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {
@@ -650,35 +652,29 @@ jobs:
         webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
-  integration-test-unity:
+  integration-test-catalogs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs:
-    - integration-test-build
+    needs: [skipcheck, integration-test-build]
+    if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
       package-name: daft
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ['3.9']
-        daft-runner: [ray, native]
-        enable-aqe: [1, 0]
-        exclude:
-        - daft-runner: native
-          enable-aqe: 1
     steps:
+    - name: Free Disk Space (Ubuntu) # only run on ubuntu
+      if: ${{ (runner.os == 'Linux') }}
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: false
+        android: true
+        dotnet: false
+        haskell: true
+        large-packages: false
+        docker-images: false
+        swap-storage: true
     - uses: actions/checkout@v4
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
     - uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
@@ -691,36 +687,145 @@ jobs:
         path: unitycatalog
     - name: Start UC Server
       working-directory: ./unitycatalog
-      run: bin/start-uc-server &
+      run: bin/start-uc-server -p 3000 &
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        python-version: 3.9
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       uses: nick-fields/retry@v3
       with:
-        timeout_minutes: 10
+        timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          source .venv/bin/activate
+          uv sync --no-install-project --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
-    - name: Run unity integration tests
+    # Iceberg test setup
+    - uses: docker/setup-buildx-action@v3
+    - uses: docker/build-push-action@v5
+      with:
+        context: ./tests/integration/iceberg/docker-compose/
+        file: ./tests/integration/iceberg/docker-compose/Dockerfile
+        cache-from: type=gha
+        cache-to: type=gha,mode=min
+    - name: Spin up services
       run: |
-        pytest tests/integration/unity -m 'integration or not integration' --durations=50
+        pushd ./tests/integration/iceberg/docker-compose/
+        docker compose -f ./docker-compose.yml up -d
+        popd
+
+    # Unity tests
+    - name: Run Unity integration tests (native)
+      if: always()
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        pytest tests/integration/unity -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
+        python tools/aggregate_test_durations.py unity_pytest_output.txt
       env:
-        DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_ENABLE_AQE: ${{ matrix.enable-aqe }}
+        DAFT_RUNNER: native
+        UNITY_CATALOG_PORT: 3000
+    - name: Run Unity integration tests (ray)
+      if: always()
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        pytest tests/integration/unity -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
+        python tools/aggregate_test_durations.py unity_pytest_output.txt
+      env:
+        DAFT_RUNNER: ray
+        DAFT_FLOTILLA: 0
+        UNITY_CATALOG_PORT: 3000
+    - name: Run Unity integration tests (flotilla)
+      if: always()
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        pytest tests/integration/unity -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
+        python tools/aggregate_test_durations.py unity_pytest_output.txt
+      env:
+        DAFT_RUNNER: ray
+        DAFT_FLOTILLA: 1
+        UNITY_CATALOG_PORT: 3000
+    # Iceberg tests
+    - name: Run Iceberg integration tests (native)
+      if: always()
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        pytest tests/integration/iceberg -m 'integration' --durations=0 | ./tools/capture-durations.sh "iceberg_pytest_output.txt"
+        python tools/aggregate_test_durations.py iceberg_pytest_output.txt
+      env:
+        DAFT_RUNNER: native
+    - name: Run Iceberg integration tests (ray)
+      if: always()
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        pytest tests/integration/iceberg -m 'integration' --durations=0 | ./tools/capture-durations.sh "iceberg_pytest_output.txt"
+        python tools/aggregate_test_durations.py iceberg_pytest_output.txt
+      env:
+        DAFT_RUNNER: ray
+        DAFT_FLOTILLA: 0
+    - name: Run Iceberg integration tests (flotilla)
+      if: always()
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        pytest tests/integration/iceberg -m 'integration' --durations=0 | ./tools/capture-durations.sh "iceberg_pytest_output.txt"
+        python tools/aggregate_test_durations.py iceberg_pytest_output.txt
+      env:
+        DAFT_RUNNER: ray
+        DAFT_FLOTILLA: 1
+    # Delta Lake tests
+    - name: Run Delta Lake integration tests (native)
+      if: always()
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        pytest tests/integration/delta_lake -m 'integration' --durations=0 | ./tools/capture-durations.sh "delta_lake_pytest_output.txt"
+        python tools/aggregate_test_durations.py delta_lake_pytest_output.txt
+      env:
+        DAFT_RUNNER: native
+    - name: Run Delta Lake integration tests (ray)
+      if: always()
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        pytest tests/integration/delta_lake -m 'integration' --durations=0 | ./tools/capture-durations.sh "delta_lake_pytest_output.txt"
+        python tools/aggregate_test_durations.py delta_lake_pytest_output.txt
+      env:
+        DAFT_RUNNER: ray
+        DAFT_FLOTILLA: 0
+    - name: Run Delta Lake integration tests (flotilla)
+      if: always()
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        pytest tests/integration/delta_lake -m 'integration' --durations=0 | ./tools/capture-durations.sh "delta_lake_pytest_output.txt"
+        python tools/aggregate_test_durations.py delta_lake_pytest_output.txt
+      env:
+        DAFT_RUNNER: ray
+        DAFT_FLOTILLA: 1
+
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
-      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {
@@ -729,7 +834,244 @@ jobs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": ":rotating_light: [CI] SQL Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                  "text": ":rotating_light: [CI] Catalog Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                }
+              }
+            ]
+          }
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
+
+
+  integration-test-ai:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [skipcheck, integration-test-build]
+    if: ${{ needs.skipcheck.outputs.skip == 'false' }}
+    env:
+      package-name: daft
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.9']
+        daft-runner: [ray, native]
+        flotilla: [1, 0]
+        exclude:
+        - daft-runner: native
+          flotilla: 1
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+        fetch-depth: 0
+    - name: Download built wheels
+      uses: actions/download-artifact@v4
+      with:
+        pattern: wheels-*
+        merge-multiple: true
+        path: dist
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
+    - name: Setup Virtual Env
+      run: |
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+    - name: Install Daft and dev dependencies
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          source .venv/bin/activate
+          uv sync --no-install-project --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          rm -rf daft
+    - name: Run AI provider integration tests
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        pytest -m integration tests/ai --durations=0 | ./tools/capture-durations.sh "ai_pytest_output.txt"
+        python tools/aggregate_test_durations.py ai_pytest_output.txt
+      env:
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v2.0.0
+      if: ${{ failure() && (github.event_name == 'push') }}
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] AI Provider Integration Test <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                }
+              }
+            ]
+          }
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
+
+
+  integration-test-ai-credentialed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [skipcheck, integration-test-build]
+    if: ${{ needs.skipcheck.outputs.skip == 'false' && github.ref == 'refs/heads/main' }}
+    env:
+      package-name: daft
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.9']
+        daft-runner: [ray, native]
+        flotilla: [1, 0]
+        exclude:
+        - daft-runner: native
+          flotilla: 1
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+        fetch-depth: 0
+    - name: Download built wheels
+      uses: actions/download-artifact@v4
+      with:
+        pattern: wheels-*
+        merge-multiple: true
+        path: dist
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
+    - name: Setup Virtual Env
+      run: |
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+    - name: Install Daft and dev dependencies
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          source .venv/bin/activate
+          uv sync --no-install-project --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          rm -rf daft
+    - name: Run AI provider integration tests
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        pytest -m integration tests/integration/ai --credentials --durations=0 | ./tools/capture-durations.sh "ai_credentialed_pytest_output.txt"
+        python tools/aggregate_test_durations.py ai_credentialed_pytest_output.txt
+      env:
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
+        OPENAI_API_KEY: ${{ secrets.ACTIONS_OPENAI_API_KEY }}
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v2.0.0
+      if: ${{ failure() && (github.event_name == 'push') }}
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] AI Provider Integration Test Credentialed <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                }
+              }
+            ]
+          }
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
+
+  integration-test-ray:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [skipcheck, integration-test-build]
+    if: ${{ needs.skipcheck.outputs.skip == 'false' }}
+    env:
+      package-name: daft
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+        fetch-depth: 0
+    - name: Download built wheels
+      uses: actions/download-artifact@v4
+      with:
+        pattern: wheels-*
+        merge-multiple: true
+        path: dist
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        python-version: 3.9
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
+    - name: Setup Virtual Env
+      run: |
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+    - name: Install Daft and dev dependencies
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: |
+          source .venv/bin/activate
+          uv sync --no-install-project --all-extras --all-groups
+          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+          rm -rf daft
+
+    - name: Run Ray Integration Tests (Ray Runner)
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        test_names=$(pytest --collect-only -q -m integration tests/integration/ray | grep "::test_")
+        for test in $test_names; do
+          echo "Running $test..."
+          pytest -m integration $test --durations=0
+        done
+      env:
+        DAFT_RUNNER: ray
+        DAFT_FLOTILLA: 0
+    - name: Run Ray Integration Tests (Flotilla)
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        test_names=$(pytest --collect-only -q -m integration tests/integration/ray | grep "::test_")
+        for test in $test_names; do
+          echo "Running $test..."
+          pytest -m integration $test --durations=0
+        done
+      env:
+        DAFT_RUNNER: ray
+        DAFT_FLOTILLA: 1
+
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v2.0.0
+      if: ${{ failure() && (github.event_name == 'push') }}
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] Ray Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
                 }
               }
             ]
@@ -743,9 +1085,11 @@ jobs:
     - integration-test-tpch
     - integration-test-io
     - integration-test-io-credentialed
-    - integration-test-iceberg
     - integration-test-sql
-    - integration-test-unity
+    - integration-test-catalogs
+    - integration-test-ai
+    - integration-test-ai-credentialed
+    - integration-test-ray
     if: always()
     steps:
     - name: All tests ok
@@ -756,6 +1100,8 @@ jobs:
       run: exit 1
 
   benchmark-codspeed:
+    needs: skipcheck
+    if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: buildjet-8vcpu-ubuntu-2204
     timeout-minutes: 30
     env:
@@ -775,21 +1121,23 @@ jobs:
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest
-    - uses: actions/setup-python@v5
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
       with:
-        python-version: '3.12' # Codspeed requires Python 3.12
+        python-version: '3.12'  # Codspeed requires Python 3.12
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install dependencies
       uses: nick-fields/retry@v3
       with:
-        timeout_minutes: 10
+        timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 10
-        command: uv pip install -r requirements-dev.txt
+        command: uv sync --no-install-project --all-extras --all-groups
     - name: Build dashboard with Bun
       working-directory: ./src/daft-dashboard/frontend
       run: |
@@ -797,8 +1145,8 @@ jobs:
         bun run build
     - name: Build Rust Library
       run: |
-        source activate
-        maturin develop --profile dev-bench
+        source .venv/bin/activate
+        maturin develop --uv --profile dev-bench
     - uses: actions/cache@v4
       env:
         cache-name: cache-tpch-data
@@ -808,12 +1156,12 @@ jobs:
     - name: Run benchmarks
       uses: CodSpeedHQ/action@v3
       with:
-        run: pytest tests/benchmarks/test_local_tpch.py tests/benchmarks/test_interactive_reads.py -m benchmark --codspeed
+        run: source .venv/bin/activate; pytest tests/benchmarks/test_local_tpch.py tests/benchmarks/test_interactive_reads.py -m benchmark --codspeed
       env:
         DAFT_RUNNER: native
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
-      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {
@@ -831,6 +1179,8 @@ jobs:
         webhook-type: incoming-webhook
 
   rust-tests-platform:
+    needs: skipcheck
+    if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: ${{ matrix.os }}-latest
     timeout-minutes: 45
     strategy:
@@ -862,7 +1212,7 @@ jobs:
         path: ./report-output
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
-      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {
@@ -919,30 +1269,27 @@ jobs:
       with:
         key: ${{ runner.os }}-build
         cache-all-crates: 'true'
-    - name: Set up Python ${{ env.python-version }}
-      uses: actions/setup-python@v5
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ env.python-version }}
-        cache: pip
-        cache-dependency-path: |
-          pyproject.toml
-          requirements-dev.txt
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-        pip install uv
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install dependencies
       uses: nick-fields/retry@v3
       with:
-        timeout_minutes: 10
+        timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 10
-        command: uv pip install -r requirements-dev.txt
+        command: uv sync --no-install-project --all-extras --all-groups
     - name: Run doctests
       run: |
-        source activate
-        maturin develop
+        source .venv/bin/activate
+        maturin develop --uv
         make doctests
       env:
         DAFT_RUNNER: native
@@ -968,7 +1315,7 @@ jobs:
         files: ./report-output/*
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
-      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {
@@ -986,6 +1333,8 @@ jobs:
         webhook-type: incoming-webhook
 
   test-imports-platform:
+    needs: skipcheck
+    if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: ${{ matrix.os }}-latest
     timeout-minutes: 30
     strategy:
@@ -1003,52 +1352,54 @@ jobs:
         key: ${{ runner.os }}-build
         cache-all-crates: 'true'
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ matrix.python-version }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
 
     - name: Unix Build
       if: ${{ (runner.os != 'Windows') }}
       run: |
-        python -m venv venv
-        source venv/bin/activate
-        python -m pip install maturin
+        uv venv --seed .venv
+        source .venv/bin/activate
+        uv pip install maturin
         maturin build --out dist
 
     - name: Windows Build
       if: ${{ (runner.os == 'Windows') }}
       run: |
-        python -m venv venv
-        .\venv\Scripts\activate
-        python -m pip install maturin
+        uv venv --seed .venv
+        .\.venv\Scripts\activate
+        uv pip install maturin
         maturin build --out dist
 
     - name: Test Imports in Clean Env (Unix)
       if: ${{ (runner.os != 'Windows') }}
       run: |
         rm -rf daft
-        rm -rf venv
-        python -m venv venv
-        source venv/bin/activate
+        rm -rf .venv
+        uv venv --seed .venv
+        source .venv/bin/activate
         ls -R ./dist
-        pip install dist/*.whl
+        uv pip install dist/*.whl
         python -c 'import daft; from daft import *'
 
     - name: Test Imports in Clean Env (Windows)
       if: ${{ (runner.os == 'Windows') }}
       run: |
         rd -r daft
-        rd -r venv
-        python -m venv venv
-        .\venv\Scripts\activate
+        rd -r .venv
+        uv venv --seed .venv
+        .\.venv\Scripts\activate
         $FILES = Get-ChildItem -Path .\dist\*.whl -Force -Recurse
-        python -m pip install $FILES[0].FullName
+        uv pip install $FILES[0].FullName
         python -c 'import daft; from daft import *'
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
-      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {
@@ -1086,12 +1437,16 @@ jobs:
       python-version: '3.9'
     steps:
     - uses: actions/checkout@v4
-    - name: Install Python and uv
-      uses: astral-sh/setup-uv@v5
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ env.python-version }}
-    - name: Install pre-commit
-      run: uv pip install pre-commit
+    - name: Setup Virtual Env
+      run: |
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+        source .venv/bin/activate
+        uv pip install pre-commit
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1107,11 +1462,12 @@ jobs:
         key: ${{ runner.os }}-python-${{ env.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
     - name: Python And Rust Style Check
       run: |
-        pre-commit run --all-files
+        source .venv/bin/activate
+        pre-commit run --all-files -v
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
-      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {

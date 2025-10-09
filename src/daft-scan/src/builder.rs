@@ -7,7 +7,7 @@ use common_file_formats::{
 use common_io_config::IOConfig;
 use common_scan_info::ScanOperatorRef;
 use daft_core::prelude::TimeUnit;
-use daft_logical_plan::{builder::IntoGlobPath, LogicalPlanBuilder};
+use daft_logical_plan::{LogicalPlanBuilder, builder::IntoGlobPath};
 use daft_schema::{field::Field, schema::SchemaRef};
 #[cfg(feature = "python")]
 use {crate::python::pylib::ScanOperatorHandle, pyo3::prelude::*};
@@ -116,6 +116,7 @@ impl ParquetScanBuilder {
                 self.schema,
                 self.file_path_column,
                 self.hive_partitioning,
+                false,
             )
             .await?,
         );
@@ -144,7 +145,6 @@ pub struct CsvScanBuilder {
     pub allow_variable_columns: bool,
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
-    pub schema_hints: Option<SchemaRef>,
 }
 
 impl CsvScanBuilder {
@@ -171,7 +171,6 @@ impl CsvScanBuilder {
             allow_variable_columns: false,
             buffer_size: None,
             chunk_size: None,
-            schema_hints: None,
         }
     }
     pub fn infer_schema(mut self, infer_schema: bool) -> Self {
@@ -230,10 +229,6 @@ impl CsvScanBuilder {
         self.chunk_size = Some(chunk_size);
         self
     }
-    pub fn schema_hints(mut self, schema_hints: SchemaRef) -> Self {
-        self.schema_hints = Some(schema_hints);
-        self
-    }
 
     pub async fn finish(self) -> DaftResult<LogicalPlanBuilder> {
         let cfg = CsvSourceConfig {
@@ -257,6 +252,7 @@ impl CsvScanBuilder {
                 self.schema,
                 self.file_path_column,
                 self.hive_partitioning,
+                false,
             )
             .await?,
         );
@@ -273,7 +269,6 @@ pub struct JsonScanBuilder {
     pub schema: Option<SchemaRef>,
     pub file_path_column: Option<String>,
     pub hive_partitioning: bool,
-    pub schema_hints: Option<SchemaRef>,
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
 }
@@ -294,7 +289,6 @@ impl JsonScanBuilder {
             hive_partitioning: false,
             buffer_size: None,
             chunk_size: None,
-            schema_hints: None,
         }
     }
 
@@ -323,11 +317,6 @@ impl JsonScanBuilder {
         self
     }
 
-    pub fn schema_hints(mut self, schema_hints: SchemaRef) -> Self {
-        self.schema_hints = Some(schema_hints);
-        self
-    }
-
     pub fn buffer_size(mut self, buffer_size: usize) -> Self {
         self.buffer_size = Some(buffer_size);
         self
@@ -353,6 +342,7 @@ impl JsonScanBuilder {
                 self.schema,
                 self.file_path_column,
                 self.hive_partitioning,
+                false,
             )
             .await?,
         );
@@ -377,7 +367,7 @@ pub fn delta_scan<T: AsRef<str>>(
         };
 
         // let py_io_config = PyIOConfig { config: io_config };
-        let delta_lake_scan = PyModule::import(py, "daft.delta_lake.delta_lake_scan")?;
+        let delta_lake_scan = PyModule::import(py, "daft.io.delta_lake.delta_lake_scan")?;
         let delta_lake_scan_operator =
             delta_lake_scan.getattr(pyo3::intern!(py, "DeltaLakeScanOperator"))?;
         let delta_lake_operator = delta_lake_scan_operator
@@ -421,7 +411,7 @@ pub fn iceberg_scan<T: AsRef<str>>(
         let iceberg_table =
             iceberg_static_table.call_method1("from_metadata", (metadata_location.as_ref(),))?;
         // iceberg_scan = daft.iceberg.iceberg_scan.IcebergScanOperator(iceberg_table, snapshot_id, storage_config)
-        let iceberg_scan_module = PyModule::import(py, "daft.iceberg.iceberg_scan")?;
+        let iceberg_scan_module = PyModule::import(py, "daft.io.iceberg.iceberg_scan")?;
         let iceberg_scan_class = iceberg_scan_module.getattr("IcebergScanOperator")?;
         let iceberg_scan = iceberg_scan_class
             .call1((iceberg_table, snapshot_id, storage_config))?

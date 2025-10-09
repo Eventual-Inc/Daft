@@ -3,11 +3,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_logical_plan::LanceCatalogInfo;
-use daft_micropartition::{python::PyMicroPartition, MicroPartition};
-use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
-use pyo3::{types::PyAnyMethods, Python};
+use daft_micropartition::{MicroPartition, python::PyMicroPartition};
+use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
+use pyo3::{Python, types::PyAnyMethods};
 
-use crate::{AsyncFileWriter, WriterFactory};
+use crate::{AsyncFileWriter, WriteResult, WriterFactory};
 
 pub struct LanceWriter {
     is_closed: bool,
@@ -32,10 +32,11 @@ impl AsyncFileWriter for LanceWriter {
     type Input = Arc<MicroPartition>;
     type Result = Vec<RecordBatch>;
 
-    async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {
         assert!(!self.is_closed, "Cannot write to a closed LanceWriter");
+        let num_rows = data.len();
         self.bytes_written += data
-            .size_bytes()?
+            .size_bytes()
             .expect("MicroPartition should have size_bytes for LanceWriter");
         Python::with_gil(|py| {
             let py_micropartition = py
@@ -63,7 +64,10 @@ impl AsyncFileWriter for LanceWriter {
                 .getattr(pyo3::intern!(py, "_recordbatch"))?
                 .extract()?;
             self.results.push(written_fragments.into());
-            Ok(self.bytes_written)
+            Ok(WriteResult {
+                bytes_written: self.bytes_written,
+                rows_written: num_rows,
+            })
         })
     }
 

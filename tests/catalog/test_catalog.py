@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from daft.catalog import Catalog, Identifier, Properties, Table
 from daft.dataframe import DataFrame
 from daft.logical.schema import DataType as dt
 from daft.logical.schema import Schema
+
+if TYPE_CHECKING:
+    from daft.io.partitioning import PartitionField
 
 
 def assert_eq(df1, df2):
@@ -110,7 +115,13 @@ class MockCatalog(Catalog):
         self.create_namespace_calls.append(identifier)
         self.namespaces.add(str(identifier))
 
-    def _create_table(self, identifier: Identifier, schema: Schema, properties: Properties | None = None) -> Table:
+    def _create_table(
+        self,
+        identifier: Identifier,
+        schema: Schema,
+        properties: Properties | None = None,
+        partition_fields: list[PartitionField] | None = None,
+    ) -> Table:
         k = str(identifier)
         t = MockTable(k, properties)
         self._tables[k] = t

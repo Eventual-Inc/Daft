@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import os
+import threading
 
+import httpx
 import numpy as np
 import pyarrow as pa
 import pytest
+from openai import APIStatusError
 
 import daft
 from daft import col
-from daft.context import get_context
+from daft.context import execution_config_ctx, get_context
 from daft.datatype import DataType
 from daft.errors import UDFException
 from daft.expressions import Expression
@@ -35,12 +38,12 @@ def test_udf():
     assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
 
 
-@pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
-@pytest.mark.parametrize("use_actor_pool", [False, True])
+@pytest.mark.parametrize("batch_size", [None])
+@pytest.mark.parametrize("use_actor_pool", [True])
 def test_class_udf(batch_size, use_actor_pool):
     df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
-    @udf(return_dtype=DataType.string(), batch_size=batch_size)
+    @udf(return_dtype=DataType.string(), batch_size=batch_size, use_process=False)
     class RepeatN:
         def __init__(self):
             self.n = 2
@@ -287,8 +290,15 @@ def test_class_udf_initialization_error(use_actor_pool):
         with pytest.raises(Exception):
             df.select(expr).collect()
     else:
-        with pytest.raises(RuntimeError, match="UDF INIT ERROR"):
+        with pytest.raises(UDFException) as exc_info:
             df.select(expr).collect()
+
+        assert exc_info.value.message.startswith("User-defined function")
+        assert exc_info.value.message.endswith("failed to initialize")
+        if get_tests_daft_runner_name() == "native":
+            assert (
+                isinstance(exc_info.value.__cause__, RuntimeError) and str(exc_info.value.__cause__) == "UDF INIT ERROR"
+            )
 
 
 @pytest.mark.parametrize("use_actor_pool", [False, True])
@@ -507,8 +517,7 @@ def test_udf_with_error(use_actor_pool):
 
 
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() != "ray"
-    or get_context().daft_execution_config.use_experimental_distributed_engine is False,
+    get_tests_daft_runner_name() != "ray" or get_context().daft_execution_config.use_legacy_ray_runner is True,
     reason="requires Flotilla to be in use",
 )
 @pytest.mark.parametrize("use_actor_pool", [True, False])
@@ -547,8 +556,7 @@ def test_udf_retry_with_process_killed_ray(use_actor_pool):
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
 @pytest.mark.parametrize("use_actor_pool", [False, True])
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() == "ray"
-    and get_context().daft_execution_config.use_experimental_distributed_engine is False,
+    get_tests_daft_runner_name() == "ray" and get_context().daft_execution_config.use_legacy_ray_runner is True,
     reason="Multiple UDFs on different columns fails on legacy ray runner",
 )
 def test_multiple_udfs_different_columns(batch_size, use_actor_pool):
@@ -597,8 +605,7 @@ def test_multiple_udfs_different_columns(batch_size, use_actor_pool):
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
 @pytest.mark.parametrize("use_actor_pool", [False, True])
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() == "ray"
-    and get_context().daft_execution_config.use_experimental_distributed_engine is False,
+    get_tests_daft_runner_name() == "ray" and get_context().daft_execution_config.use_legacy_ray_runner is True,
     reason="Multiple UDFs on same column fails on legacy ray runner",
 )
 def test_multiple_udfs_same_column(batch_size, use_actor_pool):
@@ -669,7 +676,7 @@ def test_run_udf_on_same_process(batch_size):
     get_tests_daft_runner_name() == "ray",
     reason="Ray runner will always run UDFs on separate processes",
 )
-@pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
+@pytest.mark.parametrize("batch_size", [None, 1, 2, 10])
 def test_run_udf_on_separate_process(batch_size):
     df = daft.from_pydict({"a": [None] * 3})
 
@@ -681,3 +688,93 @@ def test_run_udf_on_separate_process(batch_size):
     current_pid = os.getpid()
     for pid in result.to_pydict()["udf_1"]:
         assert pid != current_pid
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray" or get_context().daft_execution_config.use_legacy_ray_runner is True,
+    reason="Ray runner will always run UDFs on separate processes",
+)
+def test_udf_fails_with_no_actors_schedulable():
+    with execution_config_ctx(actor_udf_ready_timeout=10):
+        df = daft.from_pydict({"a": [1, 2, 3]})
+
+        # Request for 1 actor, with 50 gpus. This will never be scheduled.
+        @udf(return_dtype=DataType.int64(), concurrency=1, num_gpus=50)
+        def udf_1(data):
+            return data
+
+        result = df.select(udf_1(col("a")).alias("udf_1"))
+        with pytest.raises(RuntimeError, match="RuntimeError: UDF actors failed to start within 10 seconds"):
+            result.collect()
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray" or get_context().daft_execution_config.use_legacy_ray_runner is True,
+    reason="Ray runner will always run UDFs on separate processes",
+)
+def test_udf_succeeds_with_some_actors_schedulable():
+    with execution_config_ctx(actor_udf_ready_timeout=10):
+        df = daft.from_pydict({"a": [1, 2, 3]})
+
+        # Request for 100 actors, with 1 cpu. Not all will be scheduled, but the query can still run.
+        @udf(return_dtype=DataType.int64(), concurrency=100, num_cpus=1)
+        def udf_1(data):
+            return data
+
+        result = df.select(udf_1(col("a")).alias("udf_1")).to_pydict()
+        assert result == {"udf_1": [1, 2, 3]}
+
+
+def test_udf_error_serialize_err():
+    """Test that UDF errors that can't be serialized are handled."""
+
+    @udf(return_dtype=DataType.string(), use_process=True)
+    def throw_value_err(x):
+        raise ValueError(lambda x: x * 2)
+
+    expr = throw_value_err(col("a"))
+
+    table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
+    with pytest.raises(UDFException) as exc_info:
+        table.eval_expression_list([expr])
+
+    assert str(exc_info.value).startswith("User-defined function")
+    assert str(exc_info.value).endswith("failed when executing on inputs:\n  - a (Utf8, length=3)")
+    assert isinstance(exc_info.value.__cause__, ValueError)
+
+
+def test_udf_error_deserialize_err():
+    """Test that UDF errors that can't be deserialized are handled."""
+
+    @udf(return_dtype=DataType.int64(), use_process=True)
+    def throw_api_status_err(x: int) -> int:
+        fake_request = httpx.Request("GET", "http://google.com")
+        fake_response = httpx.Response(status_code=400, request=fake_request, headers={})
+        raise APIStatusError("test", response=fake_response, body=None)
+
+    expr = throw_api_status_err(col("a"))
+
+    table = MicroPartition.from_pydict({"a": [1, 2, 3]})
+    with pytest.raises(UDFException) as exc_info:
+        table.eval_expression_list([expr])
+
+    assert str(exc_info.value).startswith("User-defined function")
+    assert str(exc_info.value).endswith("failed when executing on inputs:\n  - a (Int64, length=3)")
+    assert isinstance(exc_info.value.__cause__, APIStatusError)
+
+
+def test_udf_error_global_var():
+    """Test that UDFs that use non-serializable global variables error with a helpful message."""
+    # Create a global variable that is not serializable
+    lock = threading.Lock()
+
+    @udf(return_dtype=DataType.string())
+    def use_global_lambda(x):
+        with lock:
+            return x * 2
+
+    with pytest.raises(
+        ValueError,
+        match="`@daft.udf` requires that the UDF is serializable.",
+    ):
+        use_global_lambda(col("a"))

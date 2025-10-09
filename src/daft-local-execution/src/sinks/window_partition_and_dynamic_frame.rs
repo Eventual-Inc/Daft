@@ -1,24 +1,25 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use common_metrics::ops::NodeType;
 use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array, prelude::*};
 use daft_dsl::{
-    expr::bound_expr::{BoundAggExpr, BoundExpr},
     WindowFrame,
+    expr::bound_expr::{BoundAggExpr, BoundExpr},
 };
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::{
     blocking_sink::{
         BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult,
-        BlockingSinkSinkResult, BlockingSinkState,
+        BlockingSinkSinkResult, BlockingSinkStatus,
     },
-    window_base::{base_sink, WindowBaseState, WindowSinkParams},
+    window_base::{WindowBaseState, WindowSinkParams},
 };
-use crate::{pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 struct WindowPartitionAndDynamicFrameParams {
     aggregations: Vec<BoundAggExpr>,
@@ -86,27 +87,34 @@ impl WindowPartitionAndDynamicFrameSink {
 }
 
 impl BlockingSink for WindowPartitionAndDynamicFrameSink {
+    type State = WindowBaseState;
+
     #[instrument(skip_all, name = "WindowPartitionAndDynamicFrameSink::sink")]
     fn sink(
         &self,
         input: Arc<MicroPartition>,
-        state: Box<dyn BlockingSinkState>,
+        mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkSinkResult {
-        base_sink(
-            self.window_partition_and_dynamic_frame_params.clone(),
-            input,
-            state,
-            spawner,
-        )
+    ) -> BlockingSinkSinkResult<Self> {
+        let params = self.window_partition_and_dynamic_frame_params.clone();
+        let sink_name = params.name().to_string();
+        spawner
+            .spawn(
+                async move {
+                    state.push(input, params.partition_by(), &sink_name)?;
+                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                },
+                Span::current(),
+            )
+            .into()
     }
 
     #[instrument(skip_all, name = "WindowPartitionAndDynamicFrameSink::finalize")]
     fn finalize(
         &self,
-        states: Vec<Box<dyn BlockingSinkState>>,
+        states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
         let params = self.window_partition_and_dynamic_frame_params.clone();
         let num_partitions = self.num_partitions();
 
@@ -115,25 +123,16 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                 async move {
                     let mut state_iters = states
                         .into_iter()
-                        .map(|mut state| {
-                            state
-                                .as_any_mut()
-                                .downcast_mut::<WindowBaseState>()
-                                .expect(
-                                    "WindowPartitionAndDynamicFrameSink should have WindowBaseState",
-                                )
-                                .finalize(params.name())
-                                .into_iter()
-                        })
+                        .map(|mut state| state.finalize(params.name()).into_iter())
                         .collect::<Vec<_>>();
 
                     let mut per_partition_tasks = tokio::task::JoinSet::new();
 
                     for _partition_idx in 0..num_partitions {
                         let per_partition_state = state_iters.iter_mut().map(|state| {
-                            state.next().expect(
-                                "WindowBaseState should have SinglePartitionWindowState",
-                            )
+                            state
+                                .next()
+                                .expect("WindowBaseState should have SinglePartitionWindowState")
                         });
 
                         let all_partitions: Vec<RecordBatch> = per_partition_state
@@ -157,24 +156,47 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                             let input_data = RecordBatch::concat(&all_partitions)?;
 
                             if input_data.is_empty() {
-                                return Ok(RecordBatch::empty(Some(params.original_schema.clone())));
+                                return Ok(RecordBatch::empty(Some(
+                                    params.original_schema.clone(),
+                                )));
                             }
 
-                            let partitionby_table = input_data.eval_expression_list(&params.partition_by)?;
+                            let partitionby_table =
+                                input_data.eval_expression_list(&params.partition_by)?;
                             let (_, partitionvals_indices) = partitionby_table.make_groups()?;
 
-                            let mut partitions = partitionvals_indices.iter().map(|indices| {
-                                let indices_series = UInt64Array::from(("indices", indices.clone())).into_series();
-                                input_data.take(&indices_series).unwrap()
-                            }).collect::<Vec<_>>();
+                            let mut partitions = partitionvals_indices
+                                .iter()
+                                .map(|indices| {
+                                    let indices_series =
+                                        UInt64Array::from(("indices", indices.clone()))
+                                            .into_series();
+                                    input_data.take(&indices_series).unwrap()
+                                })
+                                .collect::<Vec<_>>();
 
                             for partition in &mut partitions {
                                 // Sort the partition by the order_by columns
-                                *partition = partition.sort(&params.order_by, &params.descending, &params.nulls_first)?;
+                                *partition = partition.sort(
+                                    &params.order_by,
+                                    &params.descending,
+                                    &params.nulls_first,
+                                )?;
 
-                                for (agg_expr, name) in params.aggregations.iter().zip(params.aliases.iter()) {
-                                    let dtype = agg_expr.as_ref().to_field(&params.original_schema)?.dtype;
-                                    *partition = partition.window_agg_dynamic_frame(name.clone(), agg_expr, &params.order_by, &params.descending, params.min_periods, &dtype, &params.frame)?;
+                                for (agg_expr, name) in
+                                    params.aggregations.iter().zip(params.aliases.iter())
+                                {
+                                    let dtype =
+                                        agg_expr.as_ref().to_field(&params.original_schema)?.dtype;
+                                    *partition = partition.window_agg_dynamic_frame(
+                                        name.clone(),
+                                        agg_expr,
+                                        &params.order_by,
+                                        &params.descending,
+                                        params.min_periods,
+                                        &dtype,
+                                        &params.frame,
+                                    )?;
                                 }
                             }
 
@@ -192,7 +214,9 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                     if results.is_empty() {
                         let empty_result =
                             MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(empty_result)]));
+                        return Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
+                            empty_result,
+                        )]));
                     }
 
                     let final_result = MicroPartition::new_loaded(
@@ -200,7 +224,9 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                         results.into(),
                         None,
                     );
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(final_result)]))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
+                        final_result,
+                    )]))
                 },
                 Span::current(),
             )
@@ -209,6 +235,10 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
 
     fn name(&self) -> NodeName {
         "WindowPartitionAndDynamicFrame".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::WindowPartitionAndDynamicFrame
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -259,7 +289,7 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
         display
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
+    fn make_state(&self) -> DaftResult<Self::State> {
         WindowBaseState::make_base_state(self.num_partitions())
     }
 }

@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 
-use crate::{resolved_col, Expr};
+use crate::{Expr, resolved_col};
 
 #[test]
 fn check_add_expr_type() -> DaftResult<()> {

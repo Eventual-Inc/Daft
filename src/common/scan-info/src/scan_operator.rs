@@ -33,6 +33,14 @@ pub trait ScanOperator: Send + Sync + Debug {
     fn can_absorb_shard(&self) -> bool;
     fn multiline_display(&self) -> Vec<String>;
 
+    fn supports_count_pushdown(&self) -> bool {
+        false
+    }
+
+    fn supported_count_modes(&self) -> Vec<daft_core::count_mode::CountMode> {
+        Vec::new()
+    }
+
     /// If cfg provided, `to_scan_tasks` should apply the appropriate transformations
     /// (merging, splitting) to the outputted scan tasks
     fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>>;

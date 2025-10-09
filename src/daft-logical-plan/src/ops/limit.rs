@@ -3,8 +3,8 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan,
+    stats::{ApproxStats, PlanStats, StatsState},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -15,6 +15,8 @@ pub struct Limit {
     pub input: Arc<LogicalPlan>,
     // Limit on number of rows.
     pub limit: u64,
+    // Offset on number of rows. This is optional, it's equivalent to offset = 0 if not passed.
+    pub offset: Option<u64>,
     // Whether to send tasks in waves (maximize throughput) or
     // eagerly one-at-a-time (maximize time-to-first-result)
     pub eager: bool,
@@ -22,12 +24,18 @@ pub struct Limit {
 }
 
 impl Limit {
-    pub(crate) fn new(input: Arc<LogicalPlan>, limit: u64, eager: bool) -> Self {
+    pub(crate) fn new(
+        input: Arc<LogicalPlan>,
+        limit: u64,
+        offset: Option<u64>,
+        eager: bool,
+    ) -> Self {
         Self {
             plan_id: None,
             node_id: None,
             input,
             limit,
+            offset,
             eager,
             stats_state: StatsState::NotMaterialized,
         }
@@ -45,7 +53,7 @@ impl Limit {
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
         let input_stats = self.input.materialized_stats();
-        let limit = self.limit as usize;
+        let limit = (self.limit + self.offset.unwrap_or(0)) as usize;
         let limit_selectivity = if input_stats.approx_stats.num_rows > limit {
             if input_stats.approx_stats.num_rows == 0 {
                 0.0
@@ -71,7 +79,10 @@ impl Limit {
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec![format!("Limit: {}", self.limit)];
+        let mut res = vec![match &self.offset {
+            Some(offset) => format!("Limit: Num Rows = {}, Offset = {}", self.limit, offset),
+            None => format!("Limit: {}", self.limit),
+        }];
         if let StatsState::Materialized(stats) = &self.stats_state {
             res.push(format!("Stats = {}", stats));
         }

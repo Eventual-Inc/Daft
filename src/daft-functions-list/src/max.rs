@@ -1,11 +1,11 @@
-use common_error::{ensure, DaftResult};
+use common_error::{DaftResult, ensure};
 use daft_core::{
     prelude::{Field, Schema},
     series::Series,
 };
 use daft_dsl::{
-    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn},
 };
 use serde::{Deserialize, Serialize};
 
@@ -33,7 +33,7 @@ impl ScalarUDF for ListMax {
         ensure!(inputs.len() == 1, SchemaMismatch: "Expected 1 input arg, got {}", inputs.len());
         let input = inputs.required((0, "input"))?;
         let field = input.to_field(schema)?.to_exploded_field()?;
-        ensure!(field.dtype.is_numeric(), TypeError: "Expected input to be numeric, got {}", field.dtype);
+        ensure!(field.dtype.is_numeric() || field.dtype.is_boolean(), TypeError: "Expected input to be either numeric or boolean, got {}", field.dtype);
         Ok(field)
     }
 }

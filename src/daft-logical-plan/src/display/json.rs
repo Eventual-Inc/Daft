@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::Write};
 
 use common_error::{DaftError, DaftResult};
 use common_treenode::TreeNodeVisitor;
-use daft_dsl::{resolved_col, Literal};
+use daft_dsl::resolved_col;
 use serde_json::json;
 
 use crate::{LogicalPlan, LogicalPlanRef};
@@ -45,13 +45,24 @@ where
                 "projection": project.projection.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
             }),
             LogicalPlan::UDFProject(project) => json!({
-                "project": project.project.to_string(),
+                "expr": project.expr.to_string(),
             }),
             LogicalPlan::Filter(filter) => json!({
                 "predicate": vec![&filter.predicate.to_string()],
             }),
-            LogicalPlan::Limit(limit) => json!({
-                "limit": vec![&limit.limit.lit().to_string()],
+            LogicalPlan::IntoBatches(into_batches) => json!({
+                "batch_size": into_batches.batch_size,
+            }),
+            LogicalPlan::Limit(limit) => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("limit".to_string(), json!(limit.limit));
+                if let Some(offset) = &limit.offset {
+                    obj.insert("offset".to_string(), json!(offset));
+                }
+                json!(obj)
+            }
+            LogicalPlan::Offset(offset) => json!({
+                "offset": &offset.offset,
             }),
             LogicalPlan::Explode(explode) => json!({
                 "to_explode": explode.to_explode.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
@@ -66,7 +77,6 @@ where
                 "sort_by": sort.sort_by.iter().map(|c| c.to_string()).collect::<Vec<_>>(),
                 "nulls_first": sort.nulls_first,
                 "descending": sort.descending,
-
             }),
             LogicalPlan::Repartition(repartition) => json!({
                 "repartition_spec": repartition.repartition_spec,
@@ -75,7 +85,6 @@ where
             LogicalPlan::Aggregate(aggregate) => json!({
                 "aggregations": aggregate.aggregations.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
                 "groupby": aggregate.groupby.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
-
             }),
             LogicalPlan::Pivot(pivot) => json!({
                 "pivot_column": pivot.pivot_column.to_string(),
@@ -96,7 +105,6 @@ where
                 "on": vec![&join.on.inner().map(|e| e.to_string())],
                 "type": join.join_type,
                 "strategy": join.join_strategy,
-
             }),
             LogicalPlan::Sink(_) => json!({}),
             LogicalPlan::Sample(sample) => json!({
@@ -115,12 +123,26 @@ where
                 "aliases": window.aliases,
                 "window_spec": window.window_spec,
             }),
-            LogicalPlan::TopN(top_n) => json!({
-                "sort_by": top_n.sort_by.iter().map(|c| c.to_string()).collect::<Vec<_>>(),
-                "nulls_first": top_n.nulls_first,
-                "descending": top_n.descending,
-                "limit": top_n.limit,
-            }),
+            LogicalPlan::TopN(top_n) => {
+                let mut obj = serde_json::Map::with_capacity(5);
+                obj.insert(
+                    "sort_by".to_string(),
+                    json!(
+                        top_n
+                            .sort_by
+                            .iter()
+                            .map(|c| c.to_string())
+                            .collect::<Vec<_>>()
+                    ),
+                );
+                obj.insert("nulls_first".to_string(), json!(top_n.nulls_first));
+                obj.insert("descending".to_string(), json!(top_n.descending));
+                obj.insert("limit".to_string(), json!(top_n.limit));
+                if let Some(offset) = &top_n.offset {
+                    obj.insert("offset".to_string(), json!(offset));
+                }
+                json!(obj)
+            }
         }
     }
 }
@@ -192,8 +214,8 @@ mod tests {
     use daft_functions_utf8::{endswith, startswith};
 
     use crate::{
-        display::test::{plan_1, plan_2},
         LogicalPlanBuilder,
+        display::test::{plan_1, plan_2},
     };
 
     #[test]
@@ -208,6 +230,7 @@ mod tests {
                     .and(endswith(resolved_col("last_name"), lit("n"))),
             )?
             .limit(1000, false)?
+            .offset(17)?
             .add_monotonically_increasing_id(Some("id2"), None)?
             .distinct(None)?
             .sort(vec![resolved_col("last_name")], vec![false], vec![false])?
@@ -262,18 +285,24 @@ mod tests {
                                         {
                                           "children": [
                                             {
-                                              "children": [],
-                                              "type": "Source"
+                                              "children": [
+                                                {
+                                                  "children": [],
+                                                  "type": "Source"
+                                                }
+                                              ],
+                                              "predicate": [
+                                                "starts_with(col(last_name), lit(\"S\")) & ends_with(col(last_name), lit(\"n\"))"
+                                              ],
+                                              "type": "Filter"
                                             }
                                           ],
-                                          "predicate": [
-                                            "starts_with(col(last_name), lit(\"S\")) & ends_with(col(last_name), lit(\"n\"))"
-                                          ],
-                                          "type": "Filter"
+                                          "limit": 1000,
+                                          "type": "Limit"
                                         }
                                       ],
-                                      "limit": ["lit(1000)"],
-                                      "type": "Limit"
+                                      "offset": 17,
+                                      "type": "Offset"
                                     }
                                   ],
                                   "column_name": ["col(id2)"],
@@ -302,10 +331,11 @@ mod tests {
               "type": "Project"
             }
           ],
-          "limit": ["lit(10)"],
+          "limit": 10,
           "type": "Limit"
         }
         "#).unwrap();
+
         let actual: serde_json::Value = serde_json::from_str(&output).unwrap();
 
         assert_eq!(actual, expected);

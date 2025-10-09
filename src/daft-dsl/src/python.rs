@@ -12,23 +12,14 @@ use daft_core::{
     datatypes::{IntervalValue, IntervalValueBuilder},
     prelude::*,
     python::{PyDataType, PyField, PySchema, PySeries, PyTimeUnit},
-    utils::display::display_decimal128,
 };
-use indexmap::IndexMap;
-use pyo3::{
-    exceptions::PyValueError,
-    intern,
-    prelude::*,
-    pyclass::CompareOp,
-    types::{PyBool, PyBytes, PyFloat, PyInt, PyNone, PyString},
-    IntoPyObjectExt,
-};
+use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    ExprRef, Operator,
     expr::{Expr, WindowExpr},
     visitor::accept,
-    ExprRef, LiteralValue, Operator,
 };
 
 #[pyfunction]
@@ -42,26 +33,31 @@ pub fn resolved_col(name: &str) -> PyExpr {
 }
 
 #[pyfunction]
+pub fn bound_col(index: usize, field: PyField) -> PyExpr {
+    crate::bound_col(index, field.field).into()
+}
+
+#[pyfunction]
 pub fn date_lit(item: i32) -> PyResult<PyExpr> {
-    let expr = Expr::Literal(LiteralValue::Date(item));
+    let expr = Expr::Literal(Literal::Date(item));
     Ok(expr.into())
 }
 
 #[pyfunction]
 pub fn time_lit(item: i64, tu: PyTimeUnit) -> PyResult<PyExpr> {
-    let expr = Expr::Literal(LiteralValue::Time(item, tu.timeunit));
+    let expr = Expr::Literal(Literal::Time(item, tu.timeunit));
     Ok(expr.into())
 }
 
 #[pyfunction(signature = (val, tu, tz=None))]
 pub fn timestamp_lit(val: i64, tu: PyTimeUnit, tz: Option<String>) -> PyResult<PyExpr> {
-    let expr = Expr::Literal(LiteralValue::Timestamp(val, tu.timeunit, tz));
+    let expr = Expr::Literal(Literal::Timestamp(val, tu.timeunit, tz));
     Ok(expr.into())
 }
 
 #[pyfunction]
 pub fn duration_lit(val: i64, tu: PyTimeUnit) -> PyResult<PyExpr> {
-    let expr = Expr::Literal(LiteralValue::Duration(val, tu.timeunit));
+    let expr = Expr::Literal(Literal::Duration(val, tu.timeunit));
     Ok(expr.into())
 }
 
@@ -115,7 +111,7 @@ pub fn interval_lit(
         nanoseconds: nanos,
     };
     let iv = IntervalValue::try_new(opts)?;
-    let expr = Expr::Literal(LiteralValue::Interval(iv));
+    let expr = Expr::Literal(Literal::Interval(iv));
     Ok(expr.into())
 }
 
@@ -160,7 +156,7 @@ pub fn decimal_lit(sign: bool, digits: Vec<u8>, exp: i32) -> PyResult<PyExpr> {
     if sign {
         v = -v;
     }
-    let expr = Expr::Literal(LiteralValue::Decimal(
+    let expr = Expr::Literal(Literal::Decimal(
         v,
         u8::try_from(precision)?,
         i8::try_from(scale)?,
@@ -169,49 +165,14 @@ pub fn decimal_lit(sign: bool, digits: Vec<u8>, exp: i32) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
-pub fn series_lit(series: PySeries) -> PyResult<PyExpr> {
-    let expr = Expr::Literal(LiteralValue::Series(series.series));
+pub fn list_lit(series: PySeries) -> PyResult<PyExpr> {
+    let expr = Expr::Literal(Literal::List(series.series));
     Ok(expr.into())
 }
 
 #[pyfunction]
 pub fn lit(item: Bound<PyAny>) -> PyResult<PyExpr> {
-    literal_value(item).map(Expr::Literal).map(Into::into)
-}
-
-pub fn literal_value(item: Bound<PyAny>) -> PyResult<LiteralValue> {
-    if item.is_instance_of::<PyBool>() {
-        let val = item.extract::<bool>()?;
-        Ok(crate::literal_value(val))
-    } else if let Ok(int) = item.downcast::<PyInt>() {
-        match int.extract::<i64>() {
-            Ok(val) => {
-                if val >= 0 && val < i32::MAX as i64 || val <= 0 && val > i32::MIN as i64 {
-                    Ok(crate::literal_value(val as i32))
-                } else {
-                    Ok(crate::literal_value(val))
-                }
-            }
-            _ => {
-                let val = int.extract::<u64>()?;
-                Ok(crate::literal_value(val))
-            }
-        }
-    } else if let Ok(float) = item.downcast::<PyFloat>() {
-        let val = float.extract::<f64>()?;
-        Ok(crate::literal_value(val))
-    } else if let Ok(pystr) = item.downcast::<PyString>() {
-        Ok(crate::literal_value(pystr.extract::<String>().expect(
-            "could not transform Python string to Rust Unicode",
-        )))
-    } else if let Ok(pybytes) = item.downcast::<PyBytes>() {
-        let bytes = pybytes.as_bytes();
-        Ok(crate::literal_value(bytes))
-    } else if item.is_none() {
-        Ok(LiteralValue::Null)
-    } else {
-        Ok(crate::literal_value::<PyObject>(item.into()))
-    }
+    Literal::from_pyobj(&item, None).map(|l| Expr::Literal(l).into())
 }
 
 #[pyfunction]
@@ -246,12 +207,12 @@ pub fn udf(
 ) -> PyResult<PyExpr> {
     use crate::functions::python::udf;
 
-    if let Some(batch_size) = batch_size {
-        if batch_size == 0 {
-            return Err(PyValueError::new_err(format!(
-                "Error creating UDF: batch size must be positive (got {batch_size})"
-            )));
-        }
+    if let Some(batch_size) = batch_size
+        && batch_size == 0
+    {
+        return Err(PyValueError::new_err(format!(
+            "Error creating UDF: batch size must be positive (got {batch_size})"
+        )));
     }
 
     let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
@@ -273,10 +234,16 @@ pub fn udf(
 }
 
 #[pyfunction]
+#[allow(clippy::too_many_arguments)]
 pub fn row_wise_udf(
     name: &str,
-    inner: PyObject,
+    cls: PyObject,
+    method: PyObject,
+    is_async: bool,
     return_dtype: PyDataType,
+    gpus: usize,
+    use_process: Option<bool>,
+    max_concurrency: Option<usize>,
     original_args: PyObject,
     expr_args: Vec<PyExpr>,
 ) -> PyExpr {
@@ -287,8 +254,13 @@ pub fn row_wise_udf(
     PyExpr {
         expr: row_wise_udf(
             name,
-            inner.into(),
+            cls.into(),
+            method.into(),
+            is_async,
             return_dtype.into(),
+            gpus,
+            use_process,
+            max_concurrency,
             original_args.into(),
             args,
         )
@@ -304,6 +276,7 @@ pub fn initialize_udfs(expr: PyExpr) -> PyResult<PyExpr> {
 }
 
 /// Get the names of all UDFs in expression
+// TODO: Remove with the old Ray Runner
 #[pyfunction]
 pub fn try_get_udf_name(expr: PyExpr) -> Option<String> {
     use crate::functions::python::try_get_udf_name;
@@ -487,7 +460,7 @@ impl PyExpr {
     }
 
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {
-        use crate::{binary_op, Operator};
+        use crate::{Operator, binary_op};
         match op {
             CompareOp::Lt => Ok(binary_op(Operator::Lt, self.into(), other.into()).into()),
             CompareOp::Le => Ok(binary_op(Operator::LtEq, self.into(), other.into()).into()),
@@ -597,7 +570,7 @@ impl PyExpr {
     pub fn over(&self, window_spec: &crate::expr::window::WindowSpec) -> PyResult<Self> {
         let window_expr = WindowExpr::try_from(self.expr.clone())?;
         Ok(Self {
-            expr: Arc::new(Expr::Over(window_expr, window_spec.clone())),
+            expr: Arc::new(Expr::Over(window_expr, Arc::new(window_spec.clone()))),
         })
     }
 
@@ -669,127 +642,5 @@ impl From<PyExpr> for crate::ExprRef {
 impl From<&PyExpr> for crate::ExprRef {
     fn from(item: &PyExpr) -> Self {
         item.expr.clone()
-    }
-}
-
-impl<'py> IntoPyObject<'py> for LiteralValue {
-    type Target = PyAny;
-
-    type Output = Bound<'py, Self::Target>;
-
-    type Error = PyErr;
-
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        fn div_rem(l: i64, r: i64) -> (i64, i64) {
-            (l / r, l % r)
-        }
-
-        match self {
-            Self::Null => Ok(PyNone::get(py).to_owned().into_any()),
-            Self::Boolean(val) => val.into_bound_py_any(py),
-            Self::Utf8(val) => val.into_bound_py_any(py),
-            Self::Binary(val) => val.into_bound_py_any(py),
-            Self::FixedSizeBinary(val, _) => val.into_bound_py_any(py),
-            Self::Int8(val) => val.into_bound_py_any(py),
-            Self::UInt8(val) => val.into_bound_py_any(py),
-            Self::Int16(val) => val.into_bound_py_any(py),
-            Self::UInt16(val) => val.into_bound_py_any(py),
-            Self::Int32(val) => val.into_bound_py_any(py),
-            Self::UInt32(val) => val.into_bound_py_any(py),
-            Self::Int64(val) => val.into_bound_py_any(py),
-            Self::UInt64(val) => val.into_bound_py_any(py),
-            Self::Timestamp(val, time_unit, tz) => {
-                let ts = (val as f64) / (time_unit.to_scale_factor() as f64);
-
-                py.import(intern!(py, "datetime"))?
-                    .getattr(intern!(py, "datetime"))?
-                    .call_method1(intern!(py, "fromtimestamp"), (ts, tz))
-            }
-            Self::Date(val) => py
-                .import(intern!(py, "datetime"))?
-                .getattr(intern!(py, "date"))?
-                .call_method1(intern!(py, "fromtimestamp"), (val,)),
-            Self::Time(val, time_unit) => {
-                let (h, m, s, us) = match time_unit {
-                    TimeUnit::Nanoseconds => {
-                        let (h, rem) = div_rem(val, 60 * 60 * 1_000_000_000);
-                        let (m, rem) = div_rem(rem, 60 * 1_000_000_000);
-                        let (s, rem) = div_rem(rem, 1_000_000_000);
-                        let us = rem / 1_000;
-                        (h, m, s, us)
-                    }
-                    TimeUnit::Microseconds => {
-                        let (h, rem) = div_rem(val, 60 * 60 * 1_000_000);
-                        let (m, rem) = div_rem(rem, 60 * 1_000_000);
-                        let (s, us) = div_rem(rem, 1_000_000);
-                        (h, m, s, us)
-                    }
-                    TimeUnit::Milliseconds => {
-                        let (h, rem) = div_rem(val, 60 * 60 * 1_000);
-                        let (m, rem) = div_rem(rem, 60 * 1_000);
-                        let (s, ms) = div_rem(rem, 1_000);
-                        let us = ms * 1_000;
-                        (h, m, s, us)
-                    }
-                    TimeUnit::Seconds => {
-                        let (h, rem) = div_rem(val, 60 * 60);
-                        let (m, s) = div_rem(rem, 60);
-                        (h, m, s, 0)
-                    }
-                };
-
-                py.import(intern!(py, "datetime"))?
-                    .getattr(intern!(py, "time"))?
-                    .call1((h, m, s, us))
-            }
-            Self::Duration(val, time_unit) => {
-                let (d, s, us) = match time_unit {
-                    TimeUnit::Nanoseconds => {
-                        let (d, rem) = div_rem(val, 24 * 60 * 60 * 1_000_000_000);
-                        let (s, rem) = div_rem(rem, 1_000_000_000);
-                        let us = rem / 1_000;
-                        (d, s, us)
-                    }
-                    TimeUnit::Microseconds => {
-                        let (d, rem) = div_rem(val, 24 * 60 * 60 * 1_000_000);
-                        let (s, us) = div_rem(rem, 1_000_000);
-                        (d, s, us)
-                    }
-                    TimeUnit::Milliseconds => {
-                        let (d, rem) = div_rem(val, 24 * 60 * 60 * 1_000);
-                        let (s, ms) = div_rem(rem, 1_000);
-                        let us = ms * 1_000;
-                        (d, s, us)
-                    }
-                    TimeUnit::Seconds => {
-                        let (d, s) = div_rem(val, 24 * 60 * 60);
-                        (d, s, 0)
-                    }
-                };
-
-                py.import(intern!(py, "datetime"))?
-                    .getattr(intern!(py, "timedelta"))?
-                    .call1((d, s, us))
-            }
-            Self::Interval(_) => {
-                Err(DaftError::NotImplemented("Interval literal to Python".to_string()).into())
-            }
-            Self::Float64(val) => val.into_bound_py_any(py),
-            Self::Decimal(val, p, s) => py
-                .import(intern!(py, "decimal"))?
-                .getattr(intern!(py, "Decimal"))?
-                .call1((display_decimal128(val, p, s),)),
-            Self::Series(series) => py
-                .import(intern!(py, "daft.series"))?
-                .getattr(intern!(py, "Series"))?
-                .getattr(intern!(py, "_from_pyseries"))?
-                .call1((PySeries { series },)),
-            Self::Python(val) => val.0.as_ref().into_bound_py_any(py),
-            Self::Struct(entries) => entries
-                .into_iter()
-                .map(|(f, v)| (f.name, v))
-                .collect::<IndexMap<_, _>>()
-                .into_bound_py_any(py),
-        }
     }
 }

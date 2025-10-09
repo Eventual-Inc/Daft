@@ -1,16 +1,13 @@
 use std::{fmt::Display, sync::Arc};
 
 use common_error::DaftResult;
-use daft_core::{
-    prelude::{DataType, Field, Schema},
-    series::Series,
-};
+use daft_core::prelude::*;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    Expr, ExprRef,
     functions::{python::RuntimePyObject, scalar::ScalarFn},
-    Expr, ExprRef, LiteralValue,
 };
 
 #[derive(derive_more::Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -20,7 +17,12 @@ pub enum PyScalarFn {
 }
 
 impl PyScalarFn {
-    pub fn call(&self, args: Vec<Series>) -> DaftResult<Series> {
+    pub fn name(&self) -> &str {
+        match self {
+            Self::RowWise(RowWisePyFn { function_name, .. }) => function_name,
+        }
+    }
+    pub fn call(&self, args: &[Series]) -> DaftResult<Series> {
         match self {
             Self::RowWise(func) => func.call(args),
         }
@@ -52,29 +54,45 @@ impl PyScalarFn {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn row_wise_udf(
     name: &str,
-    inner: RuntimePyObject,
+    cls: RuntimePyObject,
+    method: RuntimePyObject,
+    is_async: bool,
     return_dtype: DataType,
+    gpus: usize,
+    use_process: Option<bool>,
+    max_concurrency: Option<usize>,
     original_args: RuntimePyObject,
     args: Vec<ExprRef>,
 ) -> Expr {
     Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
         function_name: Arc::from(name),
-        inner,
+        cls,
+        method,
+        is_async,
         return_dtype,
         original_args,
         args,
+        gpus,
+        use_process,
+        max_concurrency,
     })))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RowWisePyFn {
     pub function_name: Arc<str>,
-    pub inner: RuntimePyObject,
+    pub cls: RuntimePyObject,
+    pub method: RuntimePyObject,
+    pub is_async: bool,
     pub return_dtype: DataType,
     pub original_args: RuntimePyObject,
     pub args: Vec<ExprRef>,
+    pub gpus: usize,
+    pub use_process: Option<bool>,
+    pub max_concurrency: Option<usize>,
 }
 
 impl Display for RowWisePyFn {
@@ -95,29 +113,32 @@ impl RowWisePyFn {
 
         Self {
             function_name: self.function_name.clone(),
-            inner: self.inner.clone(),
+            cls: self.cls.clone(),
+            method: self.method.clone(),
+            is_async: self.is_async,
             return_dtype: self.return_dtype.clone(),
             original_args: self.original_args.clone(),
             args: children,
+            gpus: self.gpus,
+            use_process: self.use_process,
+            max_concurrency: self.max_concurrency,
         }
     }
 
     #[cfg(not(feature = "python"))]
-    pub fn call(&self, _args: Vec<Series>) -> DaftResult<Series> {
+    pub fn call(&self, _args: &[Series]) -> DaftResult<Series> {
         panic!("Cannot evaluate a RowWisePyFn without compiling for Python");
     }
 
     #[cfg(feature = "python")]
-    pub fn call(&self, args: Vec<Series>) -> DaftResult<Series> {
-        use daft_core::python::{PyDataType, PySeries};
-        use pyo3::prelude::*;
-
+    pub fn call(&self, args: &[Series]) -> DaftResult<Series> {
         let num_rows = args
             .iter()
             .map(Series::len)
             .max()
             .expect("RowWisePyFn should have at least one argument");
-        for a in &args {
+
+        for a in args {
             assert!(
                 a.len() == num_rows || a.len() == 1,
                 "arg lengths differ: {} vs {}",
@@ -126,51 +147,89 @@ impl RowWisePyFn {
             );
         }
 
-        let py_return_type = PyDataType::from(self.return_dtype.clone());
+        if self.is_async {
+            self.call_async(args, num_rows)
+        } else {
+            self.call_serial(args, num_rows)
+        }
+    }
 
-        let call_func_with_evaluated_exprs = Python::with_gil(|py| {
-            Ok::<_, PyErr>(
-                py.import(pyo3::intern!(py, "daft.udf.row_wise"))?
-                    .getattr(pyo3::intern!(py, "call_func_with_evaluated_exprs"))?
-                    .unbind(),
-            )
-        })?;
+    #[cfg(feature = "python")]
+    fn call_async(&self, args: &[Series], num_rows: usize) -> DaftResult<Series> {
+        use daft_core::python::PySeries;
+        use pyo3::prelude::*;
+        let py_return_type = daft_core::python::PyDataType::from(self.return_dtype.clone());
+        let cls_ref = self.cls.as_ref();
+        let method_ref = self.method.as_ref();
+        let args_ref = self.original_args.as_ref();
 
-        let outputs = (0..num_rows)
-            .map(|i| {
-                let args_for_row = args
+        Ok(pyo3::Python::with_gil(|py| {
+            let f = py
+                .import(pyo3::intern!(py, "daft.udf.execution"))?
+                .getattr(pyo3::intern!(py, "call_async_batch"))?;
+
+            let mut evaluated_args = Vec::with_capacity(num_rows);
+            for i in 0..num_rows {
+                let py_args_for_row = args
                     .iter()
-                    .map(|a| {
-                        let idx = if a.len() == 1 { 0 } else { i };
-
-                        LiteralValue::get_from_series(a, idx)
+                    .map(|s| {
+                        let idx = if s.len() == 1 { 0 } else { i };
+                        let lit = s.get_lit(idx);
+                        lit.into_pyobject(py).map_err(|e| e.into())
                     })
                     .collect::<DaftResult<Vec<_>>>()?;
 
-                Python::with_gil(|py| {
-                    let py_args = args_for_row
-                        .into_iter()
-                        .map(|a| a.into_pyobject(py))
-                        .collect::<PyResult<Vec<_>>>()?;
+                evaluated_args.push(py_args_for_row);
+            }
 
-                    let result = call_func_with_evaluated_exprs.bind(py).call1((
-                        self.inner.clone().unwrap().as_ref(),
-                        py_return_type.clone(),
-                        self.original_args.clone().unwrap().as_ref(),
-                        py_args,
-                    ))?;
+            let res = f.call1((
+                cls_ref,
+                method_ref,
+                py_return_type.clone(),
+                args_ref,
+                evaluated_args,
+            ))?;
+            let name = args[0].name();
 
-                    let result_series = result.extract::<PySeries>()?.series;
+            let result_series = res.extract::<PySeries>()?.series;
 
-                    Ok(result_series)
-                })
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
+            Ok::<_, PyErr>(result_series.rename(name))
+        })?)
+    }
 
-        let outputs_ref = outputs.iter().collect::<Vec<_>>();
+    #[cfg(feature = "python")]
+    fn call_serial(&self, args: &[Series], num_rows: usize) -> DaftResult<Series> {
+        use daft_core::python::PySeries;
+        use pyo3::prelude::*;
 
+        let cls_ref = self.cls.as_ref();
+        let method_ref = self.method.as_ref();
+        let args_ref = self.original_args.as_ref();
         let name = args[0].name();
 
-        Ok(Series::concat(&outputs_ref)?.rename(name))
+        Python::with_gil(|py| {
+            let func = py
+                .import(pyo3::intern!(py, "daft.udf.execution"))?
+                .getattr(pyo3::intern!(py, "call_func"))?;
+
+            // pre-allocating py_args vector so we're not creating a new vector for each iteration
+            let mut py_args = Vec::with_capacity(args.len());
+            let outputs = (0..num_rows)
+                .map(|i| {
+                    for s in args {
+                        let idx = if s.len() == 1 { 0 } else { i };
+                        let lit = s.get_lit(idx);
+                        let pyarg = lit.into_pyobject(py)?;
+                        py_args.push(pyarg);
+                    }
+
+                    let result = func.call1((cls_ref, method_ref, args_ref, &py_args))?;
+                    py_args.clear();
+                    DaftResult::Ok(result)
+                })
+                .collect::<DaftResult<Vec<_>>>()?;
+
+            Ok(PySeries::from_pylist_impl(name, outputs, self.return_dtype.clone())?.series)
+        })
     }
 }

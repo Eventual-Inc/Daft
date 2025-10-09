@@ -1,10 +1,10 @@
-use proc_macro2::{Ident, TokenStream};
-use proc_macro_crate::{crate_name, FoundCrate};
+use proc_macro_crate::{FoundCrate, crate_name};
 use proc_macro_error::{abort, abort_call_site, emit_error};
+use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
 use syn::{
-    parse_macro_input, spanned::Spanned, Data, DeriveInput, Fields, FieldsNamed, GenericArgument,
-    GenericParam, Generics, LitStr, PathArguments, Type, TypePath,
+    Data, DeriveInput, Fields, FieldsNamed, GenericArgument, GenericParam, Generics, LitStr,
+    PathArguments, Type, TypePath, parse_macro_input, spanned::Spanned,
 };
 
 enum ArgCardinality {
@@ -19,7 +19,7 @@ enum ArgCardinality {
 enum ArgType {
     Generic,
     #[allow(unused)]
-    Concrete(Type),
+    Concrete(Box<Type>),
 }
 
 struct ParsedAttribute {
@@ -65,7 +65,7 @@ pub fn derive_function_args(input: proc_macro::TokenStream) -> proc_macro::Token
     };
 
     let series_to_lit = quote! {
-        |series: #daft_core::series::Series, _name: &str| #daft_dsl::LiteralValue::try_from_single_value_series(&series)
+        |series: #daft_core::series::Series, _name: &str| #daft_core::lit::Literal::try_from_single_value_series(&series)
     };
 
     let expr_impl = derive_for_type(
@@ -109,6 +109,7 @@ fn derive_for_type(
     has_generic: bool,
 ) -> TokenStream {
     let daft_dsl = get_crate_name("daft-dsl");
+    let daft_core = get_crate_name("daft-core");
 
     let num_fields = field_names.len();
 
@@ -125,7 +126,7 @@ fn derive_for_type(
                         .ok_or_else(|| common_error::DaftError::ValueError(format!("Required argument `{}` not found", #n)))?
                 },
                 (ArgCardinality::Required, ArgType::Concrete(_)) => quote! {
-                    #daft_dsl::FromLiteral::try_from_literal(
+                    #daft_core::lit::FromLiteral::try_from_literal(
                         &to_lit(
                             unnamed
                                 .pop_front()
@@ -144,7 +145,7 @@ fn derive_for_type(
                     unnamed
                         .pop_front()
                         .or_else(|| named.remove(#n))
-                        .map(|val| #daft_dsl::FromLiteral::try_from_literal(&to_lit(val, #n)?))
+                        .map(|val| #daft_core::lit::FromLiteral::try_from_literal(&to_lit(val, #n)?))
                         .transpose()?
                         .flatten()
 
@@ -155,7 +156,7 @@ fn derive_for_type(
                 (ArgCardinality::Variadic, ArgType::Concrete(_)) => quote! {
                     unnamed
                         .drain(..)
-                        .map(|val| #daft_dsl::FromLiteral::try_from_literal(&to_lit(val, #n)?))
+                        .map(|val| #daft_core::lit::FromLiteral::try_from_literal(&to_lit(val, #n)?))
                         .collect::<common_error::DaftResult<_>>()?
                 },
             }
@@ -349,27 +350,26 @@ fn get_arg_types(
             {
                 ArgType::Generic
             } else {
-                ArgType::Concrete(ty.clone())
+                ArgType::Concrete(Box::new(ty.clone()))
             }
         })
         .collect()
 }
 
 fn get_option_type_inner(ty: &Type) -> &Type {
-    if let Type::Path(TypePath { qself: None, path }) = ty {
-        if path.segments.len() == 1 {
-            let segment = path.segments.first().unwrap();
+    if let Type::Path(TypePath { qself: None, path }) = ty
+        && path.segments.len() == 1
+    {
+        let segment = path.segments.first().unwrap();
 
-            if segment.ident == "Option" {
-                if let PathArguments::AngleBracketed(args) = &segment.arguments {
-                    if args.args.len() == 1 {
-                        let arg = args.args.first().unwrap();
+        if segment.ident == "Option"
+            && let PathArguments::AngleBracketed(args) = &segment.arguments
+            && args.args.len() == 1
+        {
+            let arg = args.args.first().unwrap();
 
-                        if let GenericArgument::Type(inner_type) = arg {
-                            return inner_type;
-                        }
-                    }
-                }
+            if let GenericArgument::Type(inner_type) = arg {
+                return inner_type;
             }
         }
     }
@@ -381,20 +381,19 @@ fn get_option_type_inner(ty: &Type) -> &Type {
 }
 
 fn get_vec_type_inner(ty: &Type) -> &Type {
-    if let Type::Path(TypePath { qself: None, path }) = ty {
-        if path.segments.len() == 1 {
-            let segment = path.segments.first().unwrap();
+    if let Type::Path(TypePath { qself: None, path }) = ty
+        && path.segments.len() == 1
+    {
+        let segment = path.segments.first().unwrap();
 
-            if segment.ident == "Vec" {
-                if let PathArguments::AngleBracketed(args) = &segment.arguments {
-                    if args.args.len() == 1 {
-                        let arg = args.args.first().unwrap();
+        if segment.ident == "Vec"
+            && let PathArguments::AngleBracketed(args) = &segment.arguments
+            && args.args.len() == 1
+        {
+            let arg = args.args.first().unwrap();
 
-                        if let GenericArgument::Type(inner_type) = arg {
-                            return inner_type;
-                        }
-                    }
-                }
+            if let GenericArgument::Type(inner_type) = arg {
+                return inner_type;
             }
         }
     }

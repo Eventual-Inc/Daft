@@ -11,7 +11,7 @@ use futures::FutureExt;
 use tokio_util::sync::CancellationToken;
 use tracing::instrument;
 
-use super::{default::DefaultScheduler, linear::LinearScheduler, PendingTask, Scheduler};
+use super::{PendingTask, Scheduler, default::DefaultScheduler, linear::LinearScheduler};
 use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
@@ -22,8 +22,8 @@ use crate::{
     statistics::{StatisticsEvent, StatisticsManagerRef},
     utils::{
         channel::{
-            create_oneshot_channel, create_unbounded_channel, OneshotReceiver, OneshotSender,
-            UnboundedReceiver, UnboundedSender,
+            OneshotReceiver, OneshotSender, UnboundedReceiver, UnboundedSender,
+            create_oneshot_channel, create_unbounded_channel,
         },
         joinset::JoinSet,
     },
@@ -44,17 +44,16 @@ impl<W: Worker> SchedulerActor<W, DefaultScheduler<W::Task>> {
     fn default_scheduler(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
         Self {
             worker_manager,
-            scheduler: DefaultScheduler::new(),
+            scheduler: DefaultScheduler::default(),
         }
     }
 }
 
-#[allow(dead_code)]
 impl<W: Worker> SchedulerActor<W, LinearScheduler<W::Task>> {
     fn linear_scheduler(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
         Self {
             worker_manager,
-            scheduler: LinearScheduler::new(),
+            scheduler: LinearScheduler::default(),
         }
     }
 }
@@ -142,7 +141,10 @@ where
         {
             // Update worker snapshots at the start of each loop iteration
             let worker_snapshots = worker_manager.worker_snapshots()?;
-            tracing::info!(target: SCHEDULER_LOG_TARGET, num_workers = worker_snapshots.len(), "Received worker snapshots");
+            tracing::info!(target: SCHEDULER_LOG_TARGET,
+                num_workers = worker_snapshots.len(),
+                pending_tasks = scheduler.num_pending_tasks(),
+                "Received worker snapshots");
             tracing::debug!(target: SCHEDULER_LOG_TARGET, worker_snapshots = %format!("{:#?}", worker_snapshots));
 
             scheduler.update_worker_state(&worker_snapshots);
@@ -195,7 +197,23 @@ where
     }
 }
 
-pub(crate) fn spawn_default_scheduler_actor<W: Worker>(
+pub(crate) fn spawn_scheduler_actor<W: Worker>(
+    worker_manager: Arc<dyn WorkerManager<Worker = W>>,
+    joinset: &mut JoinSet<DaftResult<()>>,
+    statistics_manager: StatisticsManagerRef,
+) -> SchedulerHandle<W::Task> {
+    // Check for environment variable to use linear scheduler
+    if std::env::var("DAFT_SCHEDULER_LINEAR")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+    {
+        spawn_linear_scheduler_actor(worker_manager, joinset, statistics_manager)
+    } else {
+        spawn_default_scheduler_actor(worker_manager, joinset, statistics_manager)
+    }
+}
+
+fn spawn_default_scheduler_actor<W: Worker>(
     worker_manager: Arc<dyn WorkerManager<Worker = W>>,
     joinset: &mut JoinSet<DaftResult<()>>,
     statistics_manager: StatisticsManagerRef,
@@ -206,8 +224,7 @@ pub(crate) fn spawn_default_scheduler_actor<W: Worker>(
     SchedulerActor::spawn_scheduler_actor(scheduler, joinset, statistics_manager)
 }
 
-#[allow(dead_code)]
-pub(crate) fn spawn_linear_scheduler_actor<W: Worker>(
+fn spawn_linear_scheduler_actor<W: Worker>(
     worker_manager: Arc<dyn WorkerManager<Worker = W>>,
     joinset: &mut JoinSet<DaftResult<()>>,
     statistics_manager: StatisticsManagerRef,
@@ -380,8 +397,8 @@ mod tests {
         scheduling::{
             scheduler::test_utils::setup_workers,
             task::tests::MockTaskFailure,
-            tests::{create_mock_partition_ref, MockTask, MockTaskBuilder},
-            worker::{tests::MockWorkerManager, WorkerId},
+            tests::{MockTask, MockTaskBuilder, create_mock_partition_ref},
+            worker::{WorkerId, tests::MockWorkerManager},
         },
         utils::channel::create_channel,
     };

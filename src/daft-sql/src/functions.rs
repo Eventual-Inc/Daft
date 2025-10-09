@@ -5,10 +5,10 @@ use std::{
 
 use daft_core::prelude::Schema;
 use daft_dsl::{
-    binary_op,
+    Expr, ExprRef, Operator, WindowExpr, WindowSpec, binary_op,
     expr::window::{WindowBoundary, WindowFrame},
-    functions::{BuiltinScalarFn, FunctionArgs, ScalarUDF, FUNCTION_REGISTRY},
-    unresolved_col, Expr, ExprRef, Operator, WindowExpr, WindowSpec,
+    functions::{BuiltinScalarFn, FUNCTION_REGISTRY, FunctionArgs, ScalarUDF},
+    unresolved_col,
 };
 use daft_session::Session;
 use sqlparser::ast::{
@@ -269,7 +269,7 @@ impl SQLLiteral for i64 {
         Self: Sized,
     {
         expr.as_literal()
-            .and_then(daft_dsl::LiteralValue::as_i64)
+            .and_then(daft_core::lit::Literal::as_i64)
             .ok_or_else(|| PlannerError::invalid_operation("Expected an integer literal"))
     }
 }
@@ -291,7 +291,7 @@ impl SQLLiteral for bool {
         Self: Sized,
     {
         expr.as_literal()
-            .and_then(daft_dsl::LiteralValue::as_bool)
+            .and_then(daft_core::lit::Literal::as_bool)
             .ok_or_else(|| PlannerError::invalid_operation("Expected a boolean literal"))
     }
 }
@@ -309,13 +309,13 @@ impl<T: SQLLiteral> SQLLiteral for HashMap<String, T> {
         // get reference to struct
         let fields = expr
             .as_literal()
-            .and_then(daft_dsl::LiteralValue::as_struct)
+            .and_then(daft_core::lit::Literal::as_struct)
             .ok_or_else(|| PlannerError::invalid_operation("Expected a struct literal"))?;
         // add literals to new map
         let mut map = Self::new();
-        for (field, lit) in fields {
+        for (key, lit) in fields {
             let e = Expr::Literal(lit.clone()).arced();
-            let k = field.name.clone();
+            let k = key.clone();
             let v = T::from_expr(&e)?;
             map.insert(k, v);
         }
@@ -446,7 +446,7 @@ impl SQLPlanner<'_> {
         };
 
         if func.over.is_some() {
-            let window_spec = self.parse_window_spec(func.over.as_ref().unwrap())?;
+            let window_spec = Arc::new(self.parse_window_spec(func.over.as_ref().unwrap())?);
             let window_fn = fn_match.to_expr(&args, self)?;
             Ok(match &*window_fn {
                 Expr::Agg(agg_expr) => {
@@ -490,24 +490,24 @@ impl SQLPlanner<'_> {
                     }
                 }
 
-                if spec.window_frame.is_some() {
-                    if let Some(sql_frame) = &spec.window_frame {
-                        let is_range_frame =
-                            matches!(sql_frame.units, sqlparser::ast::WindowFrameUnits::Range);
+                if spec.window_frame.is_some()
+                    && let Some(sql_frame) = &spec.window_frame
+                {
+                    let is_range_frame =
+                        matches!(sql_frame.units, sqlparser::ast::WindowFrameUnits::Range);
 
-                        let start = self
-                            .convert_window_frame_bound(&sql_frame.start_bound, is_range_frame)?;
+                    let start =
+                        self.convert_window_frame_bound(&sql_frame.start_bound, is_range_frame)?;
 
-                        // Convert end bound or default to CURRENT ROW if not specified
-                        let end = match &sql_frame.end_bound {
-                            Some(end_bound) => {
-                                self.convert_window_frame_bound(end_bound, is_range_frame)?
-                            }
-                            None => WindowBoundary::Offset(0), // CURRENT ROW
-                        };
+                    // Convert end bound or default to CURRENT ROW if not specified
+                    let end = match &sql_frame.end_bound {
+                        Some(end_bound) => {
+                            self.convert_window_frame_bound(end_bound, is_range_frame)?
+                        }
+                        None => WindowBoundary::Offset(0), // CURRENT ROW
+                    };
 
-                        window_spec.frame = Some(WindowFrame { start, end });
-                    }
+                    window_spec.frame = Some(WindowFrame { start, end });
                 }
 
                 if let Some(current_plan) = &self.current_plan {
@@ -623,7 +623,9 @@ impl SQLPlanner<'_> {
                     }
                     positional_args.insert(idx, self.try_unwrap_function_arg_expr(arg)?);
                 }
-                other => unsupported_sql_err!("unsupported function argument type: {other}, valid function arguments for this function are: {expected_named:?}."),
+                other => unsupported_sql_err!(
+                    "unsupported function argument type: {other}, valid function arguments for this function are: {expected_named:?}."
+                ),
             }
         }
 

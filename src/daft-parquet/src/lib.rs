@@ -1,10 +1,8 @@
-#![feature(let_chains)]
-#![feature(result_flattening)]
-
 use std::{cmp::max, num::NonZeroUsize};
 
+use arrow2::io::parquet::read::schema::{SchemaInferenceOptions, infer_schema_with_options};
 use common_error::DaftError;
-use daft_core::prelude::SchemaRef;
+use daft_core::{prelude::SchemaRef, utils::arrow::coerce_to_daft_compatible_schema};
 use snafu::Snafu;
 
 mod file;
@@ -36,6 +34,15 @@ fn determine_parquet_parallelism(daft_schema: &SchemaRef) -> usize {
         .ceil() as usize
 }
 
+pub fn infer_arrow_schema_from_metadata(
+    metadata: &parquet2::metadata::FileMetaData,
+    options: Option<SchemaInferenceOptions>,
+) -> arrow2::error::Result<arrow2::datatypes::Schema> {
+    let arrow_schema = infer_schema_with_options(metadata, options)?;
+    let coerced_arrow_schema = coerce_to_daft_compatible_schema(arrow_schema);
+    Ok(coerced_arrow_schema)
+}
+
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("{source}"))]
@@ -44,7 +51,9 @@ pub enum Error {
     #[snafu(display("{source}"))]
     DaftIOError { source: daft_io::Error },
 
-    #[snafu(display("Parquet reader timed out while trying to read: {path} with a time budget of {duration_ms} ms"))]
+    #[snafu(display(
+        "Parquet reader timed out while trying to read: {path} with a time budget of {duration_ms} ms"
+    ))]
     FileReadTimeout { path: String, duration_ms: i64 },
     #[snafu(display("Internal IO Error when opening: {path}:\nDetails:\n{source}"))]
     InternalIOError {

@@ -2,6 +2,7 @@
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
+common-io-config = {path = "../common/io-config", default-features = false}
 common-file-formats = {path = "../common/file-formats", default-features = false}
 common-partitioning = {path = "../common/partitioning", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
@@ -10,15 +11,18 @@ common-runtime = {path = "../common/runtime", default-features = false}
 common-scan-info = {path = "../common/scan-info", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-io = {path = "../daft-io", default-features = false}
 daft-local-plan = {path = "../daft-local-plan", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
+daft-micropartition = {path = "../daft-micropartition", default-features = false}
 daft-physical-plan = {path = "../daft-physical-plan", default-features = false}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 daft-schema = {path = "../daft-schema", default-features = false}
 futures = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 pyo3-async-runtimes = {workspace = true, optional = true}
 rand = {workspace = true}
-reqwest = {version = "0.12.19", default-features = false, features = ["json"]}
+reqwest = {workspace = true, default-features = false}
 serde = {workspace = true}
 serde_json = {workspace = true}
 tokio = {workspace = true}

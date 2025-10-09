@@ -143,3 +143,23 @@ class PreviewFormatter:
                 return self._preview.partition.to_record_batch()._recordbatch.__repr__()
         else:
             return self._schema._truncated_table_string()
+
+    def _generate_interactive_html(self) -> str:
+        """Generate interactive HTML for the current PreviewFormatter's RecordBatch using the dashboard server."""
+        from daft.daft import dashboard as dashboard_native
+        from daft.subscribers import launch
+
+        # Ensure the server is running (no-op if already running)
+        launch(noop_if_initialized=True)
+
+        # Get the RecordBatch from the current preview partition
+        if self._preview.partition is None:
+            raise ValueError("No partition available to generate interactive HTML.")
+
+        rb = self._preview.partition.to_record_batch()
+        df_id = dashboard_native.register_dataframe_for_display(rb._recordbatch)
+        html = dashboard_native.generate_interactive_html(df_id)
+        user_message = self._get_user_message()
+        # Add the user message below the interactive HTML
+        html += f"\n<small>{user_message}</small>"
+        return html

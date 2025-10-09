@@ -3,16 +3,17 @@ use std::{
     sync::Arc,
 };
 
+use async_recursion::async_recursion;
 use async_trait::async_trait;
-use common_io_config::HTTPConfig;
+use common_io_config::{HTTPConfig, HuggingFaceConfig};
 use futures::{
-    stream::{self, BoxStream},
     StreamExt, TryStreamExt,
+    stream::{self, BoxStream},
 };
 use reqwest::StatusCode;
 use reqwest_middleware::{
-    reqwest::header::{CONTENT_LENGTH, RANGE},
     ClientWithMiddleware,
+    reqwest::header::{CONTENT_LENGTH, RANGE},
 };
 use serde::{Deserialize, Serialize};
 use snafu::{IntoError, ResultExt, Snafu};
@@ -20,12 +21,12 @@ use uuid::Uuid;
 
 use super::object_io::{GetResult, ObjectSource};
 use crate::{
+    FileFormat, InvalidRangeRequestSnafu,
     http::HttpSource,
     object_io::{FileMetadata, FileType, LSResult},
     range::GetRange,
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
-    FileFormat, InvalidRangeRequestSnafu,
 };
 
 #[derive(Debug, Snafu)]
@@ -92,13 +93,31 @@ struct Item {
     path: String,
 }
 
-#[derive(Debug, PartialEq)]
+enum HFPath {
+    Http(String),
+    Hf(HFPathParts),
+}
+
+#[derive(Clone, Debug, PartialEq)]
 struct HFPathParts {
     bucket: String,
     repository: String,
     revision: String,
     path: String,
 }
+
+impl FromStr for HFPath {
+    type Err = Error;
+
+    fn from_str(uri: &str) -> Result<Self, Self::Err> {
+        if uri.starts_with("http://") || uri.starts_with("https://") {
+            Ok(Self::Http(uri.to_string()))
+        } else {
+            uri.parse().map(Self::Hf)
+        }
+    }
+}
+
 impl FromStr for HFPathParts {
     type Err = Error;
     /// Extracts path components from a hugging face path:
@@ -172,56 +191,67 @@ impl std::fmt::Display for HFPathParts {
     }
 }
 
-impl HFPathParts {
+impl HFPath {
     // There is a bug within huggingface apis that is incorrectly caching files
     // https://github.com/huggingface/datasets/issues/7685
     //
     // So to bypass this, we add a unique parameter to the url to prevent CDN caching.
     fn get_file_uri(&self, cache_bust: bool) -> String {
-        let base = format!(
-            "https://huggingface.co/{BUCKET}/{REPOSITORY}/resolve/{REVISION}/{PATH}",
-            BUCKET = self.bucket,
-            REPOSITORY = self.repository,
-            REVISION = self.revision,
-            PATH = self.path,
-        );
+        let base = match self {
+            Self::Http(base) => base.clone(),
+            Self::Hf(parts) => {
+                format!(
+                    "https://huggingface.co/{BUCKET}/{REPOSITORY}/resolve/{REVISION}/{PATH}",
+                    BUCKET = parts.bucket,
+                    REPOSITORY = parts.repository,
+                    REVISION = parts.revision,
+                    PATH = parts.path,
+                )
+            }
+        };
         if cache_bust {
             let cachebuster = Uuid::new_v4();
             let cachebuster = cachebuster.to_string();
-            format!("{base}?cachebust={cachebuster}")
+            if base.contains('?') {
+                format!("{base}&cachebust={cachebuster}")
+            } else {
+                format!("{base}?cachebust={cachebuster}")
+            }
         } else {
             base
         }
     }
 
     fn get_api_uri(&self) -> String {
-        // "https://huggingface.co/api/ [datasets] / {username} / {reponame} / tree / {revision} / {path from root}"
-        format!(
-            "https://huggingface.co/api/{BUCKET}/{REPOSITORY}/tree/{REVISION}/{PATH}",
-            BUCKET = self.bucket,
-            REPOSITORY = self.repository,
-            REVISION = self.revision,
-            PATH = self.path,
-        )
+        match self {
+            Self::Http(path) => path.clone(),
+            Self::Hf(parts) => {
+                // "https://huggingface.co/api/ [datasets] / {username} / {reponame} / tree / {revision} / {path from root}"
+                format!(
+                    "https://huggingface.co/api/{BUCKET}/{REPOSITORY}/tree/{REVISION}/{PATH}",
+                    BUCKET = parts.bucket,
+                    REPOSITORY = parts.repository,
+                    REVISION = parts.revision,
+                    PATH = parts.path,
+                )
+            }
+        }
     }
 
     fn get_parquet_api_uri(&self) -> String {
-        format!(
-            "https://huggingface.co/api/{BUCKET}/{REPOSITORY}/parquet",
-            BUCKET = self.bucket,
-            REPOSITORY = self.repository,
-        )
+        match self {
+            Self::Http(path) => path.clone(),
+            Self::Hf(parts) => format!(
+                "https://huggingface.co/api/{BUCKET}/{REPOSITORY}/parquet",
+                BUCKET = parts.bucket,
+                REPOSITORY = parts.repository,
+            ),
+        }
     }
 }
 
 pub struct HFSource {
     http_source: HttpSource,
-}
-
-impl From<HttpSource> for HFSource {
-    fn from(http_source: HttpSource) -> Self {
-        Self { http_source }
-    }
 }
 
 impl From<Error> for super::Error {
@@ -248,8 +278,24 @@ impl From<Error> for super::Error {
 }
 
 impl HFSource {
-    pub async fn get_client(config: &HTTPConfig) -> super::Result<Arc<Self>> {
-        let http_source = HttpSource::get_client(config).await?;
+    pub async fn get_client(
+        hf_config: &HuggingFaceConfig,
+        http_config: &HTTPConfig,
+    ) -> super::Result<Arc<Self>> {
+        if http_config.bearer_token.is_some() {
+            log::warn!(
+                "Using `HttpConfig.bearer_token` to authenticate Hugging Face requests is deprecated and will be removed in Daft v0.6. Instead, specify your Hugging Face token in `daft.io.HuggingFaceConfig`."
+            );
+        }
+
+        let mut combined_config = http_config.clone();
+        if hf_config.anonymous {
+            combined_config.bearer_token = None;
+        } else if hf_config.token.is_some() {
+            combined_config.bearer_token.clone_from(&hf_config.token);
+        }
+
+        let http_source = HttpSource::get_client(&combined_config).await?;
         let http_source = Arc::try_unwrap(http_source).expect("Could not unwrap Arc<HttpSource>");
         let client = http_source.client;
         Ok(Self {
@@ -257,80 +303,92 @@ impl HFSource {
         }
         .into())
     }
+
+    #[async_recursion]
+    async fn request(
+        &self,
+        uri: &str,
+        cache_bust: bool,
+        range: Option<&GetRange>,
+        client: &reqwest_middleware::ClientWithMiddleware,
+    ) -> super::Result<(reqwest::Response, bool)> {
+        let (use_range, range) = if cache_bust {
+            if uri.contains("cachebust") {
+                // Hugging Face is buggy with range requests. If we already attempted cache busting, try removing the range request.
+                (false, None)
+            } else {
+                (range.is_some(), range)
+            }
+        } else {
+            (range.is_some(), range)
+        };
+        let path = uri.parse::<HFPath>()?;
+        let uri = &path.get_file_uri(cache_bust);
+        let req = client.get(uri);
+        let req = match &range {
+            None => req,
+            Some(range) => {
+                range.validate().context(InvalidRangeRequestSnafu)?;
+                req.header(RANGE, range.to_string())
+            }
+        };
+
+        let response = req
+            .send()
+            .await
+            .context(UnableToConnectSnafu::<String> { path: uri.clone() })?;
+
+        match response.error_for_status() {
+            Err(e) => {
+                let status_code = e.status();
+                match status_code {
+                    // HTTP 416 (Range Not Satisfiable) occurs due to Hugging Face's buggy caching that incorrectly serves the data.
+                    // Retry with cache busting to bypass the improperly cached response and get correct file metadata.
+                    Some(StatusCode::RANGE_NOT_SATISFIABLE) => {
+                        self.request(uri, true, range, client).await
+                    }
+                    _ => Err(e).context(UnableToOpenFileSnafu::<String> { path: uri.clone() })?,
+                }
+            }
+            Ok(res) => {
+                // Check if we got a 206 (Partial Content) response with zero content length.
+                // This can happen due to Hugging Face's buggy caching. Retry with cache busting.
+                if res.status() == StatusCode::PARTIAL_CONTENT && res.content_length() == Some(0) {
+                    self.request(uri, true, range, client).await
+                } else {
+                    Ok((res, use_range))
+                }
+            }
+        }
+    }
 }
 
 #[async_trait]
 impl ObjectSource for HFSource {
+    async fn supports_range(&self, uri: &str) -> super::Result<bool> {
+        self.http_source.supports_range(uri).await
+    }
+
     async fn get(
         &self,
         uri: &str,
         range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
-        fn make_request(
-            uri: &str,
-            cache_bust: bool,
-            client: &reqwest_middleware::ClientWithMiddleware,
-            range: Option<&GetRange>,
-        ) -> super::Result<reqwest_middleware::RequestBuilder> {
-            let path_parts = uri.parse::<HFPathParts>()?;
-            let uri = &path_parts.get_file_uri(cache_bust);
+        let (response, range_applied) = self
+            .request(uri, false, range.as_ref(), &self.http_source.client)
+            .await?;
 
-            let req = client.get(uri);
-            Ok(match range {
-                None => req,
-                Some(range) => {
-                    range.validate().context(InvalidRangeRequestSnafu)?;
-                    req.header(RANGE, range.to_string())
-                }
-            })
-        }
-        let request = make_request(uri, false, &self.http_source.client, range.as_ref())?;
-
-        let response = request
-            .send()
-            .await
-            .context(UnableToConnectSnafu::<String> {
-                path: uri.to_string(),
-            })?;
-
-        let response = match response.error_for_status() {
-            Err(e) => {
-                let status_code = e.status();
-                match status_code {
-                    Some(StatusCode::UNAUTHORIZED) => Err(Error::Unauthorized),
-                    // HTTP 416 (Range Not Satisfiable) occurs due to Hugging Face's buggy caching that incorrectly serves the data.
-                    // Retry once with cache busting to bypass the improperly cached response and get correct file metadata.
-                    // If it fails again, we'll return the error.
-                    Some(StatusCode::RANGE_NOT_SATISFIABLE) => {
-                        let request =
-                            make_request(uri, true, &self.http_source.client, range.as_ref())?;
-
-                        let response = request.send().await.context(UnableToConnectSnafu::<
-                            String,
-                        > {
-                            path: uri.into(),
-                        })?;
-                        let res = response.error_for_status().map_err(|e| {
-                            if e.status() == Some(StatusCode::UNAUTHORIZED) {
-                                Error::Unauthorized
-                            } else {
-                                Error::UnableToOpenFile {
-                                    path: uri.to_string(),
-                                    source: e,
-                                }
-                            }
-                        })?;
-                        Ok(res)
-                    }
-                    _ => Err(Error::UnableToOpenFile {
-                        path: uri.to_string(),
-                        source: e,
-                    }),
+        let response = response.error_for_status().map_err(|e| {
+            if e.status().map(|s| s.as_u16()) == Some(401) {
+                Error::Unauthorized
+            } else {
+                Error::UnableToOpenFile {
+                    path: uri.to_string(),
+                    source: e,
                 }
             }
-            Ok(res) => Ok(res),
-        }?;
+        })?;
 
         if let Some(is) = io_stats.as_ref() {
             is.mark_get_requests(1);
@@ -345,12 +403,32 @@ impl ObjectSource for HFSource {
             .into_error(e)
             .into()
         });
-        Ok(GetResult::Stream(
-            io_stats_on_bytestream(stream, io_stats),
+
+        let result = GetResult::Stream(
+            io_stats_on_bytestream(stream, io_stats.clone()),
             size_bytes,
             None,
             None,
-        ))
+        );
+
+        if !range_applied && let Some(range) = range {
+            // TODO: make this more efficient
+            let bytes = result.bytes().await?;
+            let len = bytes.len();
+            let range = range.as_range(len).context(InvalidRangeRequestSnafu)?;
+            let bytes_in_range = bytes.slice(range);
+
+            let range_stream = Box::pin(futures::stream::once(async { Ok(bytes_in_range) }));
+
+            Ok(GetResult::Stream(
+                io_stats_on_bytestream(range_stream, io_stats),
+                Some(len),
+                None,
+                None,
+            ))
+        } else {
+            Ok(result)
+        }
     }
 
     async fn put(
@@ -363,8 +441,8 @@ impl ObjectSource for HFSource {
     }
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
-        let path_parts = uri.parse::<HFPathParts>()?;
-        let uri = &path_parts.get_file_uri(false);
+        let path = uri.parse::<HFPath>()?;
+        let uri = &path.get_file_uri(false);
 
         let request = self.http_source.client.head(uri);
         let response = request
@@ -412,45 +490,67 @@ impl ObjectSource for HFSource {
     ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
 
-        // Huggingface has a special API for parquet files
-        // So we'll try to use that API to get the parquet files
-        // This allows us compatibility with datasets that are not natively uploaded as parquet, such as image datasets
+        let path = glob_path.parse::<HFPath>()?;
 
-        // We only want to use this api for datasets, not specific files
-        // such as
-        // hf://datasets/user/repo
-        // but not
-        // hf://datasets/user/repo/file.parquet
-        if file_format == Some(FileFormat::Parquet) {
-            let res =
-                try_parquet_api(glob_path, limit, io_stats.clone(), &self.http_source.client).await;
-            match res {
-                Ok(Some(stream)) => return Ok(stream),
-                Err(e) => return Err(e.into()),
-                Ok(None) => {
-                    // INTENTIONALLY EMPTY
-                    // If we can't determine if the dataset is private, we'll fall back to the default globbing
+        // Ensure fanout_limit is None because HTTP ObjectSource does not support prefix listing
+        let fanout_limit = None;
+        let page_size = None;
+
+        match path {
+            HFPath::Http(_) => {
+                glob(self, glob_path, fanout_limit, page_size, limit, io_stats).await
+            }
+            HFPath::Hf(parts) => {
+                // Huggingface has a special API for parquet files
+                // So we'll try to use that API to get the parquet files
+                // This allows us compatibility with datasets that are not natively uploaded as parquet, such as image datasets
+
+                // We only want to use this api for datasets, not specific files
+                // such as
+                // hf://datasets/user/repo
+                // but not
+                // hf://datasets/user/repo/file.parquet
+                if file_format == Some(FileFormat::Parquet) {
+                    let res =
+                        try_parquet_api(parts, limit, io_stats.clone(), &self.http_source.client)
+                            .await;
+                    match res {
+                        Ok(Some(stream)) => return Ok(stream),
+                        Err(e) => return Err(e.into()),
+                        Ok(None) => {
+                            // INTENTIONALLY EMPTY
+                            // If we can't determine if the dataset is private, we'll fall back to the default globbing
+                        }
+                    }
                 }
+
+                glob(self, glob_path, fanout_limit, page_size, limit, io_stats).await
             }
         }
-
-        glob(self, glob_path, None, None, limit, io_stats).await
     }
 
     async fn ls(
         &self,
         path: &str,
         posix: bool,
-        _continuation_token: Option<&str>,
-        _page_size: Option<i32>,
+        continuation_token: Option<&str>,
+        page_size: Option<i32>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<LSResult> {
         if !posix {
             unimplemented!("Prefix-listing is not implemented for HTTP listing");
         }
-        let path_parts = path.parse::<HFPathParts>()?;
 
-        let api_uri = path_parts.get_api_uri();
+        let hf_path = path.parse::<HFPath>()?;
+
+        let HFPath::Hf(path_parts) = hf_path else {
+            return self
+                .http_source
+                .ls(path, posix, continuation_token, page_size, io_stats)
+                .await;
+        };
+
+        let api_uri = HFPath::Hf(path_parts.clone()).get_api_uri();
 
         let request = self.http_source.client.get(api_uri.clone());
         let response = request
@@ -521,21 +621,20 @@ impl ObjectSource for HFSource {
 }
 
 async fn try_parquet_api(
-    glob_path: &str,
+    hf_glob_path: HFPathParts,
     limit: Option<usize>,
     io_stats: Option<IOStatsRef>,
     client: &ClientWithMiddleware,
 ) -> Result<Option<BoxStream<'static, super::Result<FileMetadata>>>, Error> {
-    let hf_glob_path = glob_path.parse::<HFPathParts>()?;
     if hf_glob_path.path.is_empty() {
-        let api_path = hf_glob_path.get_parquet_api_uri();
+        let api_path = HFPath::Hf(hf_glob_path.clone()).get_parquet_api_uri();
 
         let response = client
             .get(api_path.clone())
             .send()
             .await
             .with_context(|_| UnableToConnectSnafu {
-                path: api_path.to_string(),
+                path: api_path.clone(),
             })?;
 
         if response.status() == 400 {
@@ -544,8 +643,7 @@ async fn try_parquet_api(
                 .get("x-error-message")
                 .and_then(|v| v.to_str().ok())
             {
-                const PRIVATE_DATASET_ERROR: &str =
-                    "Private datasets are only supported for PRO users and Enterprise Hub organizations.";
+                const PRIVATE_DATASET_ERROR: &str = "Private datasets are only supported for PRO users and Enterprise Hub organizations.";
                 if error_message.ends_with(PRIVATE_DATASET_ERROR) {
                     return Err(Error::PrivateDataset);
                 }
@@ -556,7 +654,7 @@ async fn try_parquet_api(
         let response = response
             .error_for_status()
             .with_context(|_| UnableToOpenFileSnafu {
-                path: api_path.to_string(),
+                path: api_path.clone(),
             })?;
 
         if let Some(is) = io_stats.as_ref() {
@@ -595,7 +693,7 @@ async fn try_parquet_api(
 #[cfg(test)]
 mod tests {
     use common_error::DaftResult;
-    use common_io_config::HTTPConfig;
+    use common_io_config::{HTTPConfig, HuggingFaceConfig};
 
     use crate::{
         huggingface::{HFPathParts, HFSource},
@@ -608,7 +706,8 @@ mod tests {
         let test_file_path = "hf://datasets/google/FACTS-grounding-public/README.md";
         let expected_md5 = "46df309e52cf88f458a4e3e2fb692fc1";
 
-        let client = HFSource::get_client(&HTTPConfig::default()).await?;
+        let client =
+            HFSource::get_client(&HuggingFaceConfig::default(), &HTTPConfig::default()).await?;
         let parquet_file = client.get(test_file_path, None, None).await?;
         let bytes = parquet_file.bytes().await?;
         let all_bytes = bytes.as_ref();

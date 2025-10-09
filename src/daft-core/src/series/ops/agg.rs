@@ -3,16 +3,16 @@ use common_error::{DaftError, DaftResult};
 
 use crate::{
     array::{
+        ListArray,
         growable::make_growable,
         ops::{
             DaftApproxSketchAggable, DaftCountAggable, DaftHllMergeAggable, DaftMeanAggable,
             DaftSetAggable, DaftSkewAggable as _, DaftStddevAggable, DaftSumAggable, GroupIndices,
         },
-        ListArray,
     },
     count_mode::CountMode,
     datatypes::*,
-    series::{array_impl::IntoSeries, Series},
+    series::{Series, array_impl::IntoSeries},
     with_match_physical_daft_types,
 };
 
@@ -256,16 +256,6 @@ impl Series {
                     None => Ok(DaftConcatAggable::concat(downcasted)?.into_series()),
                 }
             }
-            #[cfg(feature = "python")]
-            DataType::Python => {
-                let downcasted = self.downcast::<PythonArray>()?;
-                match groups {
-                    Some(groups) => {
-                        Ok(DaftConcatAggable::grouped_concat(downcasted, groups)?.into_series())
-                    }
-                    None => Ok(DaftConcatAggable::concat(downcasted)?.into_series()),
-                }
-            }
             DataType::Utf8 => {
                 let downcasted = self.downcast::<Utf8Array>()?;
                 match groups {
@@ -276,7 +266,7 @@ impl Series {
                 }
             }
             _ => Err(DaftError::TypeError(format!(
-                "concat aggregation is only valid for List, Python types, or Utf8, got {}",
+                "concat aggregation is only valid for List or Utf8, got {}",
                 self.data_type()
             ))),
         }
@@ -361,7 +351,7 @@ impl DaftSetAggable for Series {
         let deduped_series = child_series.take(&indices_array)?;
 
         let offsets = OffsetsBuffer::try_from(vec![0, deduped_series.len() as i64])?;
-        let list_field = self.field().to_list_field()?;
+        let list_field = self.field().to_list_field();
         Ok(ListArray::new(list_field, deduped_series, offsets, None))
     }
 
@@ -398,7 +388,7 @@ impl DaftSetAggable for Series {
             offsets.push(offsets.last().unwrap() + unique_indices.len() as i64);
         }
 
-        let list_field = self.field().to_list_field()?;
+        let list_field = self.field().to_list_field();
         let result = ListArray::new(
             list_field,
             growable.build()?,

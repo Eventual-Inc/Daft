@@ -2,31 +2,40 @@
 
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING, Any
 
 from pyiceberg.catalog import Catalog as InnerCatalog
 from pyiceberg.catalog import load_catalog
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+from pyiceberg.io.pyarrow import _pyarrow_to_schema_without_ids
+from pyiceberg.partitioning import PartitionField as PyIcebergPartitionField
+from pyiceberg.partitioning import PartitionSpec as PyIcebergPartitionSpec
+from pyiceberg.schema import Schema as PyIcebergSchema
+from pyiceberg.schema import assign_fresh_schema_ids
 from pyiceberg.table import Table as InnerTable
+from pyiceberg.transforms import (
+    BucketTransform,
+    DayTransform,
+    HourTransform,
+    IdentityTransform,
+    MonthTransform,
+    TruncateTransform,
+    YearTransform,
+)
 
 from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
 from daft.io.iceberg._iceberg import read_iceberg
 
 if TYPE_CHECKING:
     from daft.dataframe import DataFrame
+    from daft.io.partitioning import PartitionField
 
 
 class IcebergCatalog(Catalog):
     _inner: InnerCatalog
 
-    def __init__(self, pyiceberg_catalog: InnerCatalog):
-        """DEPRECATED: Please use `Catalog.from_iceberg`; version 0.5.0!"""
-        warnings.warn(
-            "This is deprecated and will be removed in daft >= 0.5.0, please use `Catalog.from_iceberg` instead.",
-            category=DeprecationWarning,
-        )
-        self._inner = pyiceberg_catalog
+    def __init__(self) -> None:
+        raise RuntimeError("IcebergCatalog.__init__ is not supported, please use `Catalog.from_iceberg` instead.")
 
     @staticmethod
     def _from_obj(obj: object) -> IcebergCatalog:
@@ -47,6 +56,45 @@ class IcebergCatalog(Catalog):
     def name(self) -> str:
         return self._inner.name
 
+    @staticmethod
+    def _partition_fields_to_pyiceberg_spec(
+        iceberg_schema: PyIcebergSchema, partition_fields: list[PartitionField] | None
+    ) -> PyIcebergPartitionSpec | None:
+        """Converts Daft partition fields to a PyIceberg PartitionSpec."""
+        if not partition_fields:
+            return None
+
+        # Convert Daft schema → PyArrow schema → PyIceberg schema (with IDs)
+        iceberg_partition_fields = []
+        for idx, pf in enumerate(partition_fields):
+            if pf.transform is None or pf.transform.is_identity():
+                transform = IdentityTransform()
+            elif pf.transform.is_year():
+                transform = YearTransform()
+            elif pf.transform.is_month():
+                transform = MonthTransform()
+            elif pf.transform.is_day():
+                transform = DayTransform()
+            elif pf.transform.is_hour():
+                transform = HourTransform()
+            elif pf.transform.is_iceberg_bucket():
+                transform = BucketTransform(num_buckets=pf.transform.num_buckets)
+            elif pf.transform.is_iceberg_truncate():
+                transform = TruncateTransform(width=pf.transform.width)
+            else:
+                raise NotImplementedError(f"Unsupported partition transform: {pf.transform}")
+
+            source_field = iceberg_schema.find_field(pf.field.name)
+            iceberg_partition_fields.append(
+                PyIcebergPartitionField(
+                    source_id=source_field.field_id,
+                    field_id=1000 + idx,
+                    transform=transform,
+                    name=pf.field.name,
+                )
+            )
+        return PyIcebergPartitionSpec(*iceberg_partition_fields)
+
     ###
     # create_*
     ###
@@ -60,10 +108,24 @@ class IcebergCatalog(Catalog):
         identifier: Identifier,
         schema: Schema,
         properties: Properties | None = None,
+        partition_fields: list[PartitionField] | None = None,
     ) -> Table:
         i = _to_pyiceberg_ident(identifier)
+        pa_schema = schema.to_pyarrow_schema()
+        iceberg_schema = assign_fresh_schema_ids(_pyarrow_to_schema_without_ids(pa_schema))
+        partition_spec = self._partition_fields_to_pyiceberg_spec(iceberg_schema, partition_fields)
         t = IcebergTable.__new__(IcebergTable)
-        t._inner = self._inner.create_table(i, schema=schema.to_pyarrow_schema())
+        if partition_spec is not None:
+            t._inner = self._inner.create_table(
+                i,
+                schema=iceberg_schema,
+                partition_spec=partition_spec,
+            )
+        else:
+            t._inner = self._inner.create_table(
+                i,
+                schema=iceberg_schema,
+            )
         return t
 
     ###
@@ -138,13 +200,8 @@ class IcebergTable(Table):
     _read_options = {"snapshot_id"}
     _write_options: set[str] = set()
 
-    def __init__(self, inner: InnerTable):
-        """DEPRECATED: Please use `Table.from_iceberg`; version 0.5.0!"""
-        warnings.warn(
-            "This is deprecated and will be removed in daft >= 0.5.0, please prefer using `Table.from_iceberg` instead; version 0.5.0!",
-            category=DeprecationWarning,
-        )
-        self._inner = inner
+    def __init__(self) -> None:
+        raise RuntimeError("IcebergTable.__init__ is not supported, please use `Table.from_iceberg` instead.")
 
     @property
     def name(self) -> str:

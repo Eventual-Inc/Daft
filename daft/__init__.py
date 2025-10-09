@@ -16,7 +16,7 @@ if "COV_CORE_SOURCE" in os.environ:
         import sys
 
         sys.stderr.write(
-            "pytest-cov: Failed to setup subprocess coverage. " "Environ: {!r} " "Exception: {!r}\n".format(
+            "pytest-cov: Failed to setup subprocess coverage. Environ: {!r} Exception: {!r}\n".format(
                 {k: v for k, v in os.environ.items() if k.startswith("COV_CORE")}, exc
             )
         )
@@ -60,7 +60,12 @@ from daft.catalog import (
     Identifier,
     Table,
 )
-from daft.context import set_execution_config, set_planning_config, execution_config_ctx, planning_config_ctx
+from daft.context import (
+    set_execution_config,
+    set_planning_config,
+    execution_config_ctx,
+    planning_config_ctx,
+)
 from daft.convert import (
     from_arrow,
     from_dask_dataframe,
@@ -69,11 +74,54 @@ from daft.convert import (
     from_pylist,
     from_ray_dataset,
 )
-from daft.daft import ImageFormat, ImageMode, ResourceRequest
+from daft.daft import ImageFormat, ImageMode, ImageProperty, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.schema import Schema
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import Expression, col, element, list_, lit, interval, struct, coalesce
+from daft.series import Series
+from daft.session import (
+    Session,
+    attach,
+    attach_catalog,
+    attach_provider,
+    attach_function,
+    attach_table,
+    create_namespace,
+    create_namespace_if_not_exists,
+    create_table,
+    create_table_if_not_exists,
+    create_temp_table,
+    current_catalog,
+    current_model,
+    current_namespace,
+    current_provider,
+    current_session,
+    detach_catalog,
+    detach_function,
+    detach_provider,
+    detach_table,
+    drop_namespace,
+    drop_table,
+    get_catalog,
+    get_provider,
+    get_table,
+    has_catalog,
+    has_namespace,
+    has_provider,
+    has_table,
+    list_catalogs,
+    list_tables,
+    read_table,
+    session,
+    set_catalog,
+    set_model,
+    set_namespace,
+    set_provider,
+    set_session,
+    write_table,
+)
+from daft.udf import udf, func, cls, method
 from daft.io import (
     DataCatalogTable,
     DataCatalogType,
@@ -88,50 +136,22 @@ from daft.io import (
     read_parquet,
     read_sql,
     read_lance,
+    read_video_frames,
     read_warc,
+    read_huggingface,
+    read_mcap,
 )
-from daft.series import Series
-from daft.session import (
-    Session,
-    attach,
-    attach_catalog,
-    attach_table,
-    create_namespace,
-    create_namespace_if_not_exists,
-    create_table,
-    create_table_if_not_exists,
-    create_temp_table,
-    current_catalog,
-    current_namespace,
-    current_session,
-    detach_catalog,
-    detach_table,
-    drop_namespace,
-    drop_table,
-    get_catalog,
-    get_table,
-    has_catalog,
-    has_namespace,
-    has_table,
-    list_catalogs,
-    list_tables,
-    read_table,
-    set_catalog,
-    set_namespace,
-    set_session,
-    write_table,
-    attach_function,
-    detach_function,
-)
+from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_runner_native, set_runner_ray
 from daft.sql import sql, sql_expr
-from daft.udf import udf, _DaftFuncDecorator as func
 from daft.viz import register_viz_hook
 from daft.window import Window
+from daft.file import File
 
 import daft.context as context
 import daft.io as io
-
-to_struct = Expression.to_struct
+import daft.runners as runners
+import daft.datasets as datasets
+import daft.functions as functions
 
 __all__ = [
     "Catalog",
@@ -140,10 +160,12 @@ __all__ = [
     "DataFrame",
     "DataType",
     "Expression",
+    "File",
     "IOConfig",
     "Identifier",
     "ImageFormat",
     "ImageMode",
+    "ImageProperty",
     "ResourceRequest",
     "Schema",
     "Series",
@@ -154,7 +176,9 @@ __all__ = [
     "attach",
     "attach_catalog",
     "attach_function",
+    "attach_provider",
     "attach_table",
+    "cls",
     "coalesce",
     "col",
     "context",
@@ -164,10 +188,14 @@ __all__ = [
     "create_table_if_not_exists",
     "create_temp_table",
     "current_catalog",
+    "current_model",
     "current_namespace",
+    "current_provider",
     "current_session",
+    "datasets",
     "detach_catalog",
     "detach_function",
+    "detach_provider",
     "detach_table",
     "drop_namespace",
     "drop_table",
@@ -181,10 +209,15 @@ __all__ = [
     "from_pylist",
     "from_ray_dataset",
     "func",
+    "functions",
     "get_catalog",
+    "get_or_create_runner",
+    "get_or_infer_runner_type",
+    "get_provider",
     "get_table",
     "has_catalog",
     "has_namespace",
+    "has_provider",
     "has_table",
     "interval",
     "io",
@@ -192,29 +225,38 @@ __all__ = [
     "list_catalogs",
     "list_tables",
     "lit",
+    "method",
     "planning_config_ctx",
     "range",
     "read_csv",
     "read_deltalake",
     "read_hudi",
+    "read_huggingface",
     "read_iceberg",
     "read_json",
     "read_lance",
+    "read_mcap",
     "read_parquet",
     "read_sql",
     "read_table",
+    "read_video_frames",
     "read_warc",
     "refresh_logger",
     "register_viz_hook",
+    "runners",
+    "session",
     "set_catalog",
     "set_execution_config",
+    "set_model",
     "set_namespace",
     "set_planning_config",
+    "set_provider",
+    "set_runner_native",
+    "set_runner_ray",
     "set_session",
     "sql",
     "sql_expr",
     "struct",
-    "to_struct",
     "udf",
     "write_table",
 ]

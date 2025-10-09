@@ -3,13 +3,13 @@ use std::{collections::HashMap, sync::Arc};
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::join::{JoinSide, JoinType};
-use daft_dsl::{left_col, Column, Expr, ResolvedColumn};
+use daft_dsl::{Column, Expr, ResolvedColumn, left_col};
 use daft_schema::field::Field;
 
 use super::OptimizerRule;
 use crate::{
-    ops::{join::JoinPredicate, Distinct, Filter, Join, Project, Sort},
     LogicalPlan, LogicalPlanRef,
+    ops::{Distinct, Filter, Join, Project, Sort, join::JoinPredicate},
 };
 
 /// Optimizer rule to push anti and semi joins down a plan tree.
@@ -182,7 +182,7 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                                         && let Some(original_name) = renaming_map.get(&field.name)
                                     {
                                         Ok(Transformed::yes(left_col(Field::new(
-                                            (*original_name).to_string(),
+                                            (*original_name).clone(),
                                             field.dtype.clone(),
                                         ))))
                                     } else {
@@ -272,6 +272,15 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                             _ => {}
                         }
                     }
+                    // Anti/semi join cannot be pushed down a non inner join.
+                    LogicalPlan::Join(Join {
+                        left: _,
+                        right: _,
+                        join_type: _,
+                        ..
+                    }) => {
+                        return Ok(Transformed::no(node));
+                    }
                     // Anti/semi join can be trivially pushed down these ops
                     LogicalPlan::Filter(Filter { input, .. })
                     | LogicalPlan::Sort(Sort { input, .. })
@@ -289,7 +298,26 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                             left.with_new_children(&[new_child]),
                         )));
                     }
-                    _ => {}
+                    LogicalPlan::Limit(_)
+                    | LogicalPlan::Offset(_)
+                    | LogicalPlan::TopN(..)
+                    | LogicalPlan::Sample(..)
+                    | LogicalPlan::Explode(..)
+                    | LogicalPlan::Shard(..)
+                    | LogicalPlan::UDFProject(..)
+                    | LogicalPlan::Unpivot(..)
+                    | LogicalPlan::Pivot(..)
+                    | LogicalPlan::Aggregate(..)
+                    | LogicalPlan::Intersect(..)
+                    | LogicalPlan::Union(..)
+                    | LogicalPlan::Sink(..)
+                    | LogicalPlan::MonotonicallyIncreasingId(..)
+                    | LogicalPlan::SubqueryAlias(..)
+                    | LogicalPlan::Window(..)
+                    | LogicalPlan::Source(_)
+                    | LogicalPlan::Repartition(_)
+                    | LogicalPlan::IntoBatches(_)
+                    | LogicalPlan::Concat(_) => {}
                 }
             }
 

@@ -1,17 +1,75 @@
+import copy
 import os
+from dataclasses import dataclass
 
 import griffe
 import mkdocs_gen_files
+import yaml
 from jinja2 import Environment, FileSystemLoader
-
-# map of functions submodule to name displayed on docs
-# also dictates category order
-CATEGORY_TITLES = {"misc": "Miscellaneous", "columnar": "Columnar", "window": "Window", "llm": "LLM"}
 
 # Set up Jinja2 environment
 template_dir = os.path.join(os.path.dirname(__file__), "templates")
 env = Environment(loader=FileSystemLoader(template_dir))
 module = griffe.load("daft.functions")
+
+
+@dataclass
+class FunctionCategory:
+    title: str
+    description: str
+    functions: list[griffe.Function]
+
+
+def build_function_category_map() -> list[FunctionCategory]:
+    categories = {}
+
+    not_functions = list()
+    no_docstrings = set()
+    for fn_name in module.exports:
+        fn: griffe.Function = module[fn_name]
+        if not fn.is_function:
+            not_functions.append(fn_name)
+
+        module_name = fn.module.name
+
+        if module_name not in categories:
+            if not fn.module.has_docstring:
+                no_docstrings.add(fn.module.name)
+                continue
+
+            docstring = fn.module.docstring.value
+
+            # get title and description from docstring
+            docstring_split = docstring.split("\n", 1)
+            if len(docstring_split) == 1:
+                title = docstring_split[0]
+                description = ""
+            else:
+                title = docstring_split[0]
+                description = docstring_split[1]
+
+            # strip period from title
+            if title.endswith("."):
+                title = title[:-1]
+
+            cat = FunctionCategory(title, description, [])
+            categories[module_name] = cat
+
+        categories[module_name].functions.append(fn)
+
+    if len(not_functions) > 0:
+        raise ValueError(f"Expected all `daft.functions` exports to be functions, found: {not_functions}")
+
+    if len(no_docstrings) > 0:
+        raise ValueError(
+            f'Missing docstrings on these modules in `daft.functions`: {no_docstrings}. Add docstrings like this to the top of the module file: \n"""<module_name> Functions.\n\nOptional description of module.\n"""'
+        )
+
+    categories_list = sorted(categories.values(), key=lambda cat: cat.title)
+    for cat in categories_list:
+        cat.functions = sorted(cat.functions, key=lambda fn: fn.name)
+
+    return categories_list
 
 
 def format_function_signature(fn: griffe.Function) -> str:
@@ -58,46 +116,62 @@ def format_function_signature(fn: griffe.Function) -> str:
     return "".join(result_parts)
 
 
-def gen_index():
-    categories = {name: [] for name in CATEGORY_TITLES.keys()}
-
-    for fn_name in module.exports:
-        fn: griffe.Function = module[fn_name]
-        if not fn.is_function:
-            raise ValueError(f"Expected all `daft.functions` exports to be functions, found: {fn_name}")
-
-        category = fn.module.name
-        if category not in categories:
-            raise ValueError(
-                f"`daft.functions.{category}` not in category titles mapping. Add it in `docs/gen_pages/gen_function_pages.py`"
-            )
-
-        # Create enhanced function object with formatted signature
-        fn_data = {
-            "name": fn.name,
-            "signature": format_function_signature(fn),
-            "description": fn.docstring.value.split("\n")[0] if fn.docstring else "",
+def gen_index(categories: list[FunctionCategory]):
+    categories_formatted = [
+        {
+            "title": cat.title,
+            "description": cat.description,
+            "functions": [
+                {
+                    "name": fn.name,
+                    "signature": format_function_signature(fn),
+                    "description": fn.docstring.value.split("\n")[0] if fn.docstring else "",
+                }
+                for fn in cat.functions
+            ],
         }
-        categories[category].append(fn_data)
-
-    empty_categories = [k for k, v in categories.items() if len(v) == 0]
-    if len(empty_categories) > 0:
-        raise ValueError(
-            f"These function submodules no longer exist: {empty_categories}. Remove them from the category titles mapping in `docs/gen_pages/gen_function_pages.py`"
-        )
-
+        for cat in categories
+    ]
     template = env.get_template("functions.md.j2")
-    content = template.render(categories=categories, category_titles=CATEGORY_TITLES)
+    content = template.render(categories=categories_formatted)
 
     with mkdocs_gen_files.open("api/functions/index.md", "w") as f:
         f.write(content)
 
 
-def gen_function_page(fn: griffe.Function):
-    template = env.get_template("function_page.md.j2")
-    content = template.render(fn=fn)
+def build_function_toc(categories: list[FunctionCategory]) -> list:
+    toc = [
+        {
+            "title": cat.title,
+            "url": f"../#{cat.title.lower().replace(' ', '-')}",
+            "children": [
+                {
+                    "title": fn.name,
+                    "url": f"../{fn.name}/",
+                }
+                for fn in cat.functions
+            ],
+        }
+        for cat in categories
+    ]
 
-    with mkdocs_gen_files.open(f"api/functions/{fn.name}.md", "w") as f:
+    return toc
+
+
+def gen_function_page(fn: griffe.Function, toc: list):
+    toc = copy.deepcopy(toc)
+    for category in toc:
+        for child in category["children"]:
+            if child["title"] == fn.name:
+                child["active"] = True
+
+    meta = yaml.dump({"custom_toc": toc})
+
+    template = env.get_template("function_page.md.j2")
+    content = template.render(fn=fn, meta=meta)
+
+    page_name = "index_" if fn.name == "index" else fn.name
+    with mkdocs_gen_files.open(f"api/functions/{page_name}.md", "w") as f:
         f.write(content)
 
 
@@ -106,18 +180,22 @@ def gen_nav_summary():
 
     nav["Functions"] = "index.md"
     for fn_name in module.exports:
-        nav[fn_name] = f"{fn_name}.md"
+        page_name = "index_" if fn_name == "index" else fn_name
+        nav[fn_name] = f"{page_name}.md"
 
     with mkdocs_gen_files.open("api/functions/SUMMARY.md", "w") as f:
         f.writelines(nav.build_literate_nav())
 
 
 def main():
-    gen_nav_summary()
-    gen_index()
+    categories = build_function_category_map()
 
+    gen_nav_summary()
+    gen_index(categories)
+
+    toc = build_function_toc(categories)
     for fn_name in module.exports:
-        gen_function_page(module[fn_name])
+        gen_function_page(module[fn_name], toc)
 
 
 main()

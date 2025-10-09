@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from daft.expressions import Expression
+from daft.expressions.visitor import _ColumnVisitor
 
 if TYPE_CHECKING:
     from daft.daft import PyExpr, PyPushdowns
@@ -37,17 +38,13 @@ class Pushdowns:
             limit=pushdowns.limit,
         )
 
+    def filter_required_column_names(self) -> set[str]:
+        """Returns a set of field names that are required by the filter predicate."""
+        return set() if self.filters is None else _ColumnVisitor().visit(self.filters)
+
     @classmethod
     def empty(cls) -> Pushdowns:
         return cls()
-
-    # TODO(Check if implementation is needed)
-    def merge(self, other: Pushdowns) -> Pushdowns:
-        return Pushdowns(
-            filters=self.filters or other.filters,
-            limit=min(self.limit, other.limit) if self.limit and other.limit else None,
-            columns=self.columns or other.columns,
-        )
 
 
 class SupportsPushdownFilters(abc.ABC):

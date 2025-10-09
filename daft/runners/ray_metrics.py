@@ -12,7 +12,7 @@ try:
     import ray
 except ImportError:
     logger.error(
-        "Error when importing Ray. Please ensure that daft was installed with the Ray extras tag: daft[ray] (https://docs.getdaft.io/en/latest/install)"
+        "Error when importing Ray. Please ensure that daft was installed with the Ray extras tag: daft[ray] (https://docs.daft.ai/en/latest/install)"
     )
     raise
 

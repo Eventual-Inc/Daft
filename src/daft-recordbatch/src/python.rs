@@ -4,21 +4,20 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{
     join::JoinType,
     prelude::*,
-    python::{series::PySeries, PySchema},
+    python::{PySchema, series::PySeries},
 };
 use daft_dsl::{
+    Expr,
     expr::bound_expr::{BoundAggExpr, BoundExpr},
     python::PyExpr,
-    Expr,
 };
 use indexmap::IndexMap;
-use pyo3::{exceptions::PyValueError, prelude::*};
+use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes};
 
 use crate::{
-    ffi,
+    RecordBatch, ffi,
     file_info::{FileInfo, FileInfos},
     preview::{Preview, PreviewFormat, PreviewOptions},
-    RecordBatch,
 };
 
 #[pyclass(frozen)]
@@ -394,8 +393,8 @@ impl PyRecordBatch {
         Ok(self.record_batch.len())
     }
 
-    pub fn size_bytes(&self) -> PyResult<usize> {
-        Ok(self.record_batch.size_bytes()?)
+    pub fn size_bytes(&self) -> usize {
+        self.record_batch.size_bytes()
     }
 
     pub fn get_column(&self, idx: usize) -> PySeries {
@@ -536,6 +535,19 @@ impl PyRecordBatch {
     pub fn from_file_infos(file_infos: &FileInfos) -> PyResult<Self> {
         let table: RecordBatch = file_infos.try_into()?;
         Ok(table.into())
+    }
+
+    #[staticmethod]
+    pub fn from_ipc_stream(bytes: Bound<'_, PyBytes>, py: Python) -> PyResult<Self> {
+        let buffer = bytes.as_bytes();
+        let record_batch = py.allow_threads(|| RecordBatch::from_ipc_stream(buffer))?;
+        Ok(record_batch.into())
+    }
+
+    pub fn to_ipc_stream<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyBytes>> {
+        let buffer = py.allow_threads(|| self.record_batch.to_ipc_stream())?;
+        let bytes = PyBytes::new(py, &buffer);
+        Ok(bytes)
     }
 }
 

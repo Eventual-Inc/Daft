@@ -9,25 +9,25 @@ use daft_core::{
 };
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{
+    Expr,
     expr::bound_expr::{BoundAggExpr, BoundExpr},
     python::PyExpr,
-    Expr,
 };
-use daft_io::{python::IOConfig, IOStatsContext};
+use daft_io::{IOStatsContext, python::IOConfig};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
-use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
+use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
 use daft_scan::{
-    python::pylib::PyScanTask, storage_config::StorageConfig, DataSource, ScanTask, ScanTaskRef,
+    DataSource, ScanTask, ScanTaskRef, python::pylib::PyScanTask, storage_config::StorageConfig,
 };
 use daft_stats::{TableMetadata, TableStatistics};
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes, PyTypeInfo};
+use pyo3::{PyTypeInfo, exceptions::PyValueError, prelude::*, types::PyBytes};
 use snafu::ResultExt;
 
 use crate::{
+    DaftCoreComputeSnafu, PyIOSnafu,
     micropartition::{MicroPartition, TableState},
     partitioning::MicroPartitionSet,
-    DaftCoreComputeSnafu, PyIOSnafu,
 };
 
 #[pyclass(module = "daft.daft", frozen)]
@@ -758,6 +758,7 @@ impl PyMicroPartition {
                 None,
                 None,
                 None,
+                None,
             )
         })?;
         Ok(mp.into())
@@ -818,6 +819,7 @@ impl PyMicroPartition {
                 None,
                 None,
                 chunk_size,
+                None,
                 None,
             )
         })?;
@@ -1113,7 +1115,7 @@ pub fn read_sql_into_py_table(
 }
 
 pub fn read_pyfunc_into_table_iter(
-    scan_task: &ScanTaskRef,
+    scan_task: ScanTaskRef,
 ) -> crate::Result<impl Iterator<Item = crate::Result<RecordBatch>>> {
     let table_iterators = scan_task.sources.iter().map(|source| {
         // Call Python function to create an Iterator (Grabs the GIL and then releases it)
@@ -1139,7 +1141,16 @@ pub fn read_pyfunc_into_table_iter(
     }).collect::<crate::Result<Vec<_>>>()?;
 
     let scan_task_limit = scan_task.pushdowns.limit;
-    let scan_task_filters = scan_task.pushdowns.filters.clone();
+    // If aggregation pushdown is present, the Python factory function is expected to have applied
+    // the filtering semantics already (e.g., filter+count pushdown), so we should not re-apply
+    // post-scan filters here to avoid double filtering on pre-aggregated results.
+    // This removes reliance on any hard-coded Python function names and makes the behavior generic
+    // for all sources that surface aggregation pushdowns.
+    let scan_task_filters = if scan_task.pushdowns.aggregation.is_some() {
+        None
+    } else {
+        scan_task.pushdowns.filters.clone()
+    };
     let res = table_iterators
         .into_iter()
         .flat_map(move |iter| {
@@ -1229,13 +1240,17 @@ impl From<PyMicroPartition> for Arc<MicroPartition> {
     }
 }
 
-/// TODO chore: cutover LocalPartitionSet to use this pyclass.
-#[pyclass(module = "daft.daft", frozen)]
+#[pyclass(frozen, module = "daft.daft", frozen)]
 #[derive(Clone, Debug)]
 pub struct PyMicroPartitionSet(Arc<MicroPartitionSet>);
 
 #[pymethods]
 impl PyMicroPartitionSet {
+    #[new]
+    fn new() -> Self {
+        Self(Arc::new(MicroPartitionSet::empty()))
+    }
+
     fn get_partition(&self, idx: PartitionId) -> PyResult<PyMicroPartition> {
         Ok(self.0.get_partition(&idx)?.into())
     }
@@ -1266,6 +1281,28 @@ impl PyMicroPartitionSet {
 
     fn wait(&self) -> PyResult<()> {
         Ok(())
+    }
+
+    fn get_merged_micropartition(&self) -> PyResult<PyMicroPartition> {
+        Ok(self.0.get_merged_partitions()?.into())
+    }
+
+    fn get_preview_micropartitions(&self, num_rows: usize) -> PyResult<Vec<PyMicroPartition>> {
+        Ok(self
+            .0
+            .get_preview_partitions(num_rows)?
+            .into_iter()
+            .map(|p| p.into())
+            .collect())
+    }
+
+    fn items(&self) -> PyResult<Vec<(PartitionId, PyMicroPartition)>> {
+        Ok(self
+            .0
+            .items()
+            .into_iter()
+            .map(|(k, v)| (k, v.into()))
+            .collect())
     }
 }
 

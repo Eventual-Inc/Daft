@@ -20,10 +20,11 @@ use common_hashable_float_wrapper::FloatWrapper;
 use common_treenode::{Transformed, TreeNode};
 use daft_core::{
     datatypes::{
-        try_mean_aggregation_supertype, try_skew_aggregation_supertype,
-        try_stddev_aggregation_supertype, try_sum_supertype, InferDataType,
+        InferDataType, try_mean_aggregation_supertype, try_skew_aggregation_supertype,
+        try_stddev_aggregation_supertype, try_sum_supertype,
     },
     join::JoinSide,
+    lit::Literal,
     prelude::*,
     utils::supertype::{try_get_collection_supertype, try_get_supertype},
 };
@@ -35,14 +36,13 @@ use super::functions::FunctionExpr;
 use crate::{
     expr::bound_expr::BoundExpr,
     functions::{
+        BuiltinScalarFn, FUNCTION_REGISTRY, FunctionArg, FunctionArgs, FunctionEvaluator,
         function_display_without_formatter, function_semantic_id,
         python::LegacyPythonUDF,
-        scalar::{scalar_function_semantic_id, ScalarFn},
+        scalar::{ScalarFn, scalar_function_semantic_id},
         sketch::{HashableVecPercentiles, SketchExpr},
         struct_::StructExpr,
-        BuiltinScalarFn, FunctionArg, FunctionArgs, FunctionEvaluator, FUNCTION_REGISTRY,
     },
-    lit,
     optimization::{get_required_columns, requires_computation},
     python_udf::{PyScalarFn, RowWisePyFn},
 };
@@ -195,11 +195,11 @@ impl Column {
                 Field { name, .. },
                 PlanRef::Alias(plan_alias),
             )) => format!("{plan_alias}.{name}"),
-            Self::Resolved(ResolvedColumn::OuterRef(Field { name, .. }, _)) => name.to_string(),
+            Self::Resolved(ResolvedColumn::OuterRef(Field { name, .. }, _)) => name.clone(),
             Self::Bound(BoundColumn {
                 field: Field { name, .. },
                 ..
-            }) => name.to_string(),
+            }) => name.clone(),
         }
     }
 }
@@ -245,7 +245,7 @@ pub enum Expr {
 
     // Over represents a window function as it is actually evaluated (since it requires a window spec)
     #[display("{_0} over {_1}")]
-    Over(WindowExpr, window::WindowSpec),
+    Over(WindowExpr, Arc<window::WindowSpec>),
 
     // WindowFunction represents a window function as an expression, this alone cannot be evaluated since
     // it requires a window spec. This variant only exists for constructing window functions in the
@@ -276,7 +276,7 @@ pub enum Expr {
     List(Vec<ExprRef>),
 
     #[display("lit({_0})")]
-    Literal(lit::LiteralValue),
+    Literal(Literal),
 
     #[display("if [{predicate}] then [{if_true}] else [{if_false}]")]
     IfElse {
@@ -398,6 +398,14 @@ pub enum WindowExpr {
 pub enum SketchType {
     DDSketch,
     HyperLogLog,
+}
+
+pub fn lit<L: Into<Literal>>(t: L) -> ExprRef {
+    Arc::new(Expr::Literal(t.into()))
+}
+
+pub fn null_lit() -> ExprRef {
+    Arc::new(Expr::Literal(Literal::Null))
 }
 
 /// Unresolved column with no associated plan ID or schema.
@@ -661,16 +669,21 @@ impl AggExpr {
                 Ok(Field::new(
                     field.name.as_str(),
                     match &field.dtype {
-                        dt if dt.is_numeric() => if percentiles.len() > 1 || *force_list_output {
-                            DataType::FixedSizeList(Box::new(DataType::Float64), percentiles.len())
-                        } else {
-                            DataType::Float64
-                        },
+                        dt if dt.is_numeric() => {
+                            if percentiles.len() > 1 || *force_list_output {
+                                DataType::FixedSizeList(
+                                    Box::new(DataType::Float64),
+                                    percentiles.len(),
+                                )
+                            } else {
+                                DataType::Float64
+                            }
+                        }
                         other => {
                             return Err(DaftError::TypeError(format!(
                                 "Expected input to approx_percentiles() to be numeric but received dtype {} for column \"{}\"",
                                 other, field.name,
-                            )))
+                            )));
                         }
                     },
                 ))
@@ -732,7 +745,7 @@ impl AggExpr {
                 Ok(Field::new(field.name.as_str(), field.dtype))
             }
 
-            Self::List(expr) | Self::Set(expr) => expr.to_field(schema)?.to_list_field(),
+            Self::List(expr) | Self::Set(expr) => Ok(expr.to_field(schema)?.to_list_field()),
 
             Self::BoolAnd(expr) | Self::BoolOr(expr) => {
                 let field = expr.to_field(schema)?;
@@ -744,10 +757,8 @@ impl AggExpr {
                 match field.dtype {
                     DataType::List(..) => Ok(field),
                     DataType::Utf8 => Ok(field),
-                    #[cfg(feature = "python")]
-                    DataType::Python => Ok(field),
                     _ => Err(DaftError::TypeError(format!(
-                        "We can only perform List Concat Agg on List or Python Types, got dtype {} for column \"{}\"",
+                        "We can only perform Concat Agg on List or Utf8 types, got dtype {} for column \"{}\"",
                         field.dtype, field.name
                     ))),
                 }
@@ -939,7 +950,15 @@ impl Expr {
     }
 
     pub fn alias<S: Into<Arc<str>>>(self: &ExprRef, name: S) -> ExprRef {
-        Self::Alias(self.clone(), name.into()).into()
+        Self::Alias(
+            if let Self::Alias(inner, _) = self.as_ref() {
+                inner.clone()
+            } else {
+                self.clone()
+            },
+            name.into(),
+        )
+        .into()
     }
 
     pub fn if_else(self: ExprRef, if_true: ExprRef, if_false: ExprRef) -> ExprRef {
@@ -1281,7 +1300,9 @@ impl Expr {
                     String::new()
                 };
 
-                FieldID::new(format!("{child_id}.window(partition_by=[{partition_by_ids}],order_by=[{order_by_ids}]{frame_details})"))
+                FieldID::new(format!(
+                    "{child_id}.window(partition_by=[{partition_by_ids}],order_by=[{order_by_ids}]{frame_details})"
+                ))
             }
             Self::WindowFunction(window_expr) => {
                 let child_id = window_expr.semantic_id(schema);
@@ -1459,25 +1480,10 @@ impl Expr {
                     inputs: FunctionArgs::new_unchecked(new_children),
                 }))
             }
-            Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
-                function_name: name,
-                inner: func,
-                return_dtype,
-                original_args,
-                args: old_children,
-            }))) => {
-                assert!(
-                    children.len() == old_children.len(),
-                    "Should have same number of children"
-                );
-
-                Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
-                    function_name: name.clone(),
-                    inner: func.clone(),
-                    return_dtype: return_dtype.clone(),
-                    original_args: original_args.clone(),
-                    args: children,
-                })))
+            Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(row_wise_py_fn))) => {
+                Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(
+                    row_wise_py_fn.with_new_children(children),
+                )))
             }
         }
     }
@@ -1526,7 +1532,7 @@ impl Expr {
                     Ok(supertype) => Ok(Field::new(expr_field.name.as_str(), supertype)),
                     Err(_) => Err(DaftError::TypeError(format!(
                         "Expected expr and fill_value arguments for fill_null to be castable to the same supertype, but received {expr_field} and {fill_value_field}",
-                    )))
+                    ))),
                 }
             }
             Self::IsIn(expr, items) => {
@@ -1649,8 +1655,8 @@ impl Expr {
                     )));
                 }
                 match predicate.as_ref() {
-                    Self::Literal(lit::LiteralValue::Boolean(true)) => if_true.to_field(schema),
-                    Self::Literal(lit::LiteralValue::Boolean(false)) => {
+                    Self::Literal(Literal::Boolean(true)) => if_true.to_field(schema),
+                    Self::Literal(Literal::Boolean(false)) => {
                         Ok(if_false.to_field(schema)?.rename(if_true.name()))
                     }
                     _ => {
@@ -1658,7 +1664,9 @@ impl Expr {
                         let if_false_field = if_false.to_field(schema)?;
                         match try_get_supertype(&if_true_field.dtype, &if_false_field.dtype) {
                             Ok(supertype) => Ok(Field::new(if_true_field.name, supertype)),
-                            Err(_) => Err(DaftError::TypeError(format!("Expected if_true and if_false arguments for if_else to be castable to the same supertype, but received {if_true_field} and {if_false_field}")))
+                            Err(_) => Err(DaftError::TypeError(format!(
+                                "Expected if_true and if_false arguments for if_else to be castable to the same supertype, but received {if_true_field} and {if_false_field}"
+                            ))),
                         }
                     }
                 }
@@ -1758,7 +1766,7 @@ impl Expr {
         //   1. There is only one required column
         //   2. No computation is run on this required column
         match (&required_columns[..], requires_computation) {
-            ([required_col], false) => Some(required_col.to_string()),
+            ([required_col], false) => Some(required_col.clone()),
             _ => None,
         }
     }
@@ -1789,7 +1797,7 @@ impl Expr {
                         _ => {
                             return Err(io::Error::other(
                                 "Unsupported operator for SQL translation",
-                            ))
+                            ));
                         }
                     };
                     write!(buffer, " {} ", op)?;
@@ -1838,7 +1846,7 @@ impl Expr {
     }
 
     /// Returns the literal value if this is a literal expression, otherwise none.
-    pub fn as_literal(&self) -> Option<&lit::LiteralValue> {
+    pub fn as_literal(&self) -> Option<&Literal> {
         match self {
             Self::Literal(lit) => Some(lit),
             _ => None,
@@ -2065,6 +2073,7 @@ pub fn is_actor_pool_udf(expr: &ExprRef) -> bool {
     )
 }
 
+/// Check if the top-level expression is a UDF
 #[inline]
 pub fn is_udf(expr: &ExprRef) -> bool {
     matches!(
@@ -2072,46 +2081,8 @@ pub fn is_udf(expr: &ExprRef) -> bool {
         Expr::Function {
             func: FunctionExpr::Python(LegacyPythonUDF { .. }),
             ..
-        }
+        } | Expr::ScalarFn(ScalarFn::Python(_))
     )
-}
-
-pub fn count_udfs(exprs: &[ExprRef]) -> usize {
-    exprs
-        .iter()
-        .map(|expr| {
-            let mut count = 0;
-            expr.apply(|e| {
-                if is_udf(e) {
-                    count += 1;
-                }
-
-                Ok(common_treenode::TreeNodeRecursion::Continue)
-            })
-            .unwrap();
-
-            count
-        })
-        .sum()
-}
-
-pub fn count_actor_pool_udfs(exprs: &[ExprRef]) -> usize {
-    exprs
-        .iter()
-        .map(|expr| {
-            let mut count = 0;
-            expr.apply(|e| {
-                if is_actor_pool_udf(e) {
-                    count += 1;
-                }
-
-                Ok(common_treenode::TreeNodeRecursion::Continue)
-            })
-            .unwrap();
-
-            count
-        })
-        .sum()
 }
 
 pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
@@ -2168,8 +2139,8 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
 
         // Boolean literals
         Expr::Literal(lit) => match lit {
-            lit::LiteralValue::Boolean(true) => 1.0,
-            lit::LiteralValue::Boolean(false) => 0.0,
+            Literal::Boolean(true) => 1.0,
+            Literal::Boolean(false) => 0.0,
             _ => 1.0,
         },
 
@@ -2237,11 +2208,7 @@ pub fn deduplicate_expr_names(exprs: &[ExprRef]) -> Vec<ExprRef> {
 
             names_so_far.insert(new_name.clone());
 
-            if i == 0 {
-                e.clone()
-            } else {
-                e.alias(new_name)
-            }
+            if i == 0 { e.clone() } else { e.alias(new_name) }
         })
         .collect()
 }
@@ -2263,7 +2230,10 @@ fn try_compute_is_in_type(exprs: &[ExprRef], schema: &Schema) -> DaftResult<Opti
         }
         // other != null and dtype is set -> compare or err!
         if dtype.as_ref() != Some(&other_dtype) {
-            return Err(DaftError::TypeError(format!("Expected all arguments to be of the same type {}, but found element with type {other_dtype}", dtype.unwrap())));
+            return Err(DaftError::TypeError(format!(
+                "Expected all arguments to be of the same type {}, but found element with type {other_dtype}",
+                dtype.unwrap()
+            )));
         }
     }
     Ok(dtype)

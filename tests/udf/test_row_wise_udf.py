@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 
 import daft
@@ -60,7 +62,10 @@ def test_row_wise_udf_should_infer_dtype_from_function():
 
 
 def test_func_requires_return_dtype_when_no_annotation():
-    with pytest.raises(ValueError, match="return_dtype is required when function has no return annotation"):
+    with pytest.raises(
+        ValueError,
+        match="Daft functions require either a return type hint or the `return_dtype` argument to be specified.",
+    ):
 
         @daft.func()
         def my_func(a: int, b: int):
@@ -107,3 +112,44 @@ def test_row_wise_udf_kwargs():
 
     dynamic_repeat_df = df.select(my_stringify_and_sum_repeat(col("x"), col("y"), repeat=col("x")))
     assert dynamic_repeat_df.to_pydict() == {"x": ["5", "77", "999"]}
+
+
+def test_row_wise_async_udf():
+    import asyncio
+
+    @daft.func
+    async def my_async_stringify_and_sum(a: int, b: int) -> str:
+        await asyncio.sleep(0.1)
+        return f"{a + b}"
+
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+    async_df = df.select(my_async_stringify_and_sum(col("x"), col("y")))
+    assert async_df.to_pydict() == {"x": ["5", "7", "9"]}
+
+
+def test_row_wise_udf_unnest():
+    @daft.func(
+        return_dtype=daft.DataType.struct(
+            {"id": daft.DataType.int64(), "name": daft.DataType.string(), "score": daft.DataType.float64()}
+        ),
+        unnest=True,
+    )
+    def create_record(value: int):
+        return {"id": value, "name": f"item_{value}", "score": value * 1.5}
+
+    df = daft.from_pydict({"value": [1, 2, 3]})
+    result = df.select(create_record(col("value"))).to_pydict()
+
+    expected = {"id": [1, 2, 3], "name": ["item_1", "item_2", "item_3"], "score": [1.5, 3.0, 4.5]}
+    assert result == expected
+
+
+def test_row_wise_udf_unnest_error_non_struct():
+    with pytest.raises(
+        ValueError,
+        match=re.escape("Expected Daft function `return_dtype` to be `DataType.struct(..)` when `unnest=True`"),
+    ):
+
+        @daft.func(return_dtype=daft.DataType.int64(), unnest=True)
+        def invalid_unnest(a: int):
+            return a

@@ -4,6 +4,7 @@ pub mod explode;
 pub mod filter;
 pub mod inner_hash_join_probe;
 pub mod intermediate_op;
+pub mod into_batches;
 pub mod project;
 pub mod sample;
 pub mod udf;

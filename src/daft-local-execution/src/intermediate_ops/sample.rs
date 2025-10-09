@@ -1,16 +1,23 @@
 use std::sync::Arc;
 
+use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use daft_micropartition::MicroPartition;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
-    IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
+
+#[derive(Debug)]
+enum SamplingMethod {
+    Fraction(f64),
+    Size(usize),
+}
 
 struct SampleParams {
-    fraction: f64,
+    sampling_method: SamplingMethod,
     with_replacement: bool,
     seed: Option<u64>,
 }
@@ -23,7 +30,17 @@ impl SampleOperator {
     pub fn new(fraction: f64, with_replacement: bool, seed: Option<u64>) -> Self {
         Self {
             params: Arc::new(SampleParams {
-                fraction,
+                sampling_method: SamplingMethod::Fraction(fraction),
+                with_replacement,
+                seed,
+            }),
+        }
+    }
+
+    pub fn new_size(size: usize, with_replacement: bool, seed: Option<u64>) -> Self {
+        Self {
+            params: Arc::new(SampleParams {
+                sampling_method: SamplingMethod::Size(size),
                 with_replacement,
                 seed,
             }),
@@ -32,22 +49,29 @@ impl SampleOperator {
 }
 
 impl IntermediateOperator for SampleOperator {
+    type State = ();
+
     #[instrument(skip_all, name = "SampleOperator::execute")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        state: Box<dyn IntermediateOpState>,
+        state: Self::State,
         task_spawner: &ExecutionTaskSpawner,
-    ) -> IntermediateOpExecuteResult {
+    ) -> IntermediateOpExecuteResult<Self> {
         let params = self.params.clone();
         task_spawner
             .spawn(
                 async move {
-                    let out = input.sample_by_fraction(
-                        params.fraction,
-                        params.with_replacement,
-                        params.seed,
-                    )?;
+                    let out = match &params.sampling_method {
+                        SamplingMethod::Fraction(fraction) => input.sample_by_fraction(
+                            *fraction,
+                            params.with_replacement,
+                            params.seed,
+                        )?,
+                        SamplingMethod::Size(size) => {
+                            input.sample_by_size(*size, params.with_replacement, params.seed)?
+                        }
+                    };
                     Ok((
                         state,
                         IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
@@ -60,7 +84,10 @@ impl IntermediateOperator for SampleOperator {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push(format!("Sample: {}", self.params.fraction));
+        match &self.params.sampling_method {
+            SamplingMethod::Fraction(fraction) => res.push(format!("Sample: {}", fraction)),
+            SamplingMethod::Size(size) => res.push(format!("Sample: {} rows", size)),
+        }
         res.push(format!(
             "With replacement = {}",
             self.params.with_replacement
@@ -71,5 +98,13 @@ impl IntermediateOperator for SampleOperator {
 
     fn name(&self) -> NodeName {
         "Sample".into()
+    }
+
+    async fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(())
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::Sample
     }
 }

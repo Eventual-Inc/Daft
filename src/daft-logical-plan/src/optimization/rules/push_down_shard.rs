@@ -5,9 +5,9 @@ use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 use super::OptimizerRule;
 use crate::{
+    LogicalPlan,
     ops::{Shard, Source},
     source_info::SourceInfo,
-    LogicalPlan,
 };
 
 /// Optimization rules for pushing Limits further into the logical plan.
@@ -42,10 +42,13 @@ impl PushDownShard {
                     | LogicalPlan::UDFProject(_)
                     | LogicalPlan::Filter(_)
                     | LogicalPlan::Limit(_)
+                    | LogicalPlan::Offset(_)
+                    | LogicalPlan::Concat(_)
                     | LogicalPlan::Explode(_)
                     | LogicalPlan::Unpivot(_)
                     | LogicalPlan::Sort(_)
                     | LogicalPlan::Repartition(_)
+                    | LogicalPlan::IntoBatches(_)
                     | LogicalPlan::Distinct(_)
                     | LogicalPlan::Aggregate(_)
                     | LogicalPlan::Pivot(_)
@@ -69,6 +72,10 @@ impl PushDownShard {
                             // Shard pushdown is not supported for in-memory sources.
                             SourceInfo::InMemory(_) => Err(DaftError::ValueError(
                                 "Sharding is not supported for in-memory sources".to_string(),
+                            )),
+                            // Shard pushdown is not supported for glob scan sources.
+                            SourceInfo::GlobScan(_) => Err(DaftError::ValueError(
+                                "Sharding is not supported for glob scan sources".to_string(),
                             )),
                             // If there are multiple shards, throw an error.
                             SourceInfo::Physical(external_info)
@@ -99,10 +106,12 @@ impl PushDownShard {
                     LogicalPlan::Shard(_) => Err(DaftError::ValueError(
                         "Shards cannot be folded together".to_string(),
                     )),
-                    op => Err(DaftError::ValueError(format!(
-                        "Shard cannot exist above the non-unary {} operator",
-                        op.name()
-                    ))),
+                    LogicalPlan::Join(_) => Err(DaftError::ValueError(
+                        "Shard cannot exist above join".to_string(),
+                    )),
+                    LogicalPlan::Intersect(_)
+                    | LogicalPlan::Union(_)
+                    | LogicalPlan::SubqueryAlias(_) => Ok(Transformed::no(plan)),
                 }
             }
             _ => Ok(Transformed::no(plan)),

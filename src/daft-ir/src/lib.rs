@@ -23,6 +23,7 @@ pub mod rex {
 
     use daft_dsl::{functions::{python::LegacyPythonUDF, scalar::ScalarFn, BuiltinScalarFn, FunctionArgs, FunctionExpr, ScalarUDF}, python_udf::{PyScalarFn, RowWisePyFn}};
     pub use daft_dsl::*;
+    pub use daft_core::lit::Literal;
 
     /// Creates an expression from a python-scalar function
     pub fn from_py_legacy_func<A, E>(func: LegacyPythonUDF, args: A) -> Expr
@@ -131,13 +132,20 @@ pub mod rel {
     }
 
     /// Creates a new limit relational operator.
-    pub fn new_limit<I>(input: I, limit: u64) -> DaftResult<Limit>
+    pub fn new_limit<I>(input: I, limit: u64, offset: Option<u64>) -> DaftResult<Limit>
     where
         I: Into<Arc<LogicalPlan>>,
     {
         let input: Arc<LogicalPlan> = input.into();
-        Ok(Limit { plan_id: None,
-            node_id: None, input, limit, eager: false, stats_state: stats::StatsState::NotMaterialized })
+        Ok(Limit {
+            plan_id: None,
+            node_id: None,
+            input,
+            limit,
+            offset,
+            eager: false,
+            stats_state: stats::StatsState::NotMaterialized
+        })
     }
 
     /// Creates a new distinct relational operator.
@@ -231,6 +239,7 @@ pub mod schema {
     pub use daft_schema::time_unit::TimeUnit;
     pub use daft_schema::image_format::ImageFormat;
     pub use daft_schema::image_mode::ImageMode;
+    pub use daft_schema::image_property::ImageProperty;
 }
 
 /// Python exports for daft_ir.

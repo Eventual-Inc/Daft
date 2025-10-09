@@ -2,13 +2,15 @@
 
 use std::sync::Arc;
 
+#[cfg(feature = "python")]
+use common_py_serde::PyObjectWrapper;
 use serde::{Deserialize, Serialize};
 
 /// A wrapper around PyObject that is safe to use even when the Python feature flag isn't turned on
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RuntimePyObject {
     #[cfg(feature = "python")]
-    obj: crate::pyobj_serde::PyObjectWrapper,
+    obj: PyObjectWrapper,
 }
 
 impl RuntimePyObject {
@@ -20,7 +22,7 @@ impl RuntimePyObject {
         {
             let none_value = Arc::new(pyo3::Python::with_gil(|py| py.None()));
             Self {
-                obj: crate::pyobj_serde::PyObjectWrapper(none_value),
+                obj: PyObjectWrapper(none_value),
             }
         }
         #[cfg(not(feature = "python"))]
@@ -32,7 +34,7 @@ impl RuntimePyObject {
     #[cfg(feature = "python")]
     pub fn new(value: Arc<pyo3::PyObject>) -> Self {
         Self {
-            obj: crate::pyobj_serde::PyObjectWrapper(value),
+            obj: PyObjectWrapper(value),
         }
     }
 

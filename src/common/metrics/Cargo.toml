@@ -1,0 +1,16 @@
+[dependencies]
+indicatif = "0.17"
+serde = {workspace = true}
+smallvec = {workspace = true, features = ["serde"]}
+pyo3 = {workspace = true, optional = true}
+
+[features]
+python = ["dep:pyo3"]
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "common-metrics"
+version = {workspace = true}

@@ -6,21 +6,26 @@ pub mod coalesce;
 pub mod distance;
 pub mod float;
 pub mod hash;
+pub mod length;
 pub mod minhash;
 pub mod monotonically_increasing_id;
 pub mod numeric;
 #[cfg(feature = "python")]
 pub mod python;
+pub mod slice;
 pub mod to_struct;
 
 use common_error::DaftError;
-use daft_dsl::functions::FunctionModule;
+use daft_dsl::functions::{FunctionModule, FunctionRegistry};
 use hash::HashFunction;
+use length::Length;
 use minhash::MinHashFunction;
 #[cfg(feature = "python")]
 pub use python::register as register_modules;
 use snafu::Snafu;
 use to_struct::ToStructFunction;
+
+use crate::slice::Slice;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -49,19 +54,14 @@ macro_rules! invalid_argument_err {
     }};
 }
 
-pub struct HashFunctions;
+pub struct MiscFunctions;
 
-impl FunctionModule for HashFunctions {
-    fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
+impl FunctionModule for MiscFunctions {
+    fn register(parent: &mut FunctionRegistry) {
         parent.add_fn(HashFunction);
         parent.add_fn(MinHashFunction);
-    }
-}
-
-pub struct StructFunctions;
-
-impl FunctionModule for StructFunctions {
-    fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
+        parent.add_fn(Length);
         parent.add_fn(ToStructFunction);
+        parent.add_fn(Slice);
     }
 }

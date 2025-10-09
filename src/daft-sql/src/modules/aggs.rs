@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use daft_core::prelude::CountMode;
-use daft_dsl::{lit, unresolved_col, AggExpr, Expr, ExprRef, LiteralValue};
+use daft_core::prelude::*;
+use daft_dsl::{AggExpr, Expr, ExprRef, lit, unresolved_col};
 use sqlparser::ast::{FunctionArg, FunctionArgExpr};
 
 use super::SQLModule;
@@ -19,7 +19,7 @@ pub struct SQLModuleAggs;
 impl SQLModule for SQLModuleAggs {
     fn register(parent: &mut SQLFunctions) {
         // HACK TO USE AggExpr as an enum rather than a
-        let nil = Arc::new(Expr::Literal(LiteralValue::Null));
+        let nil = Arc::new(Expr::Literal(Literal::Null));
         parent.add_fn("count", AggExpr::Count(nil.clone(), CountMode::Valid));
         parent.add_fn("count_distinct", AggExpr::CountDistinct(nil.clone()));
         parent.add_fn("sum", AggExpr::Sum(nil.clone()));
@@ -118,7 +118,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
 
             match input.as_literal() {
                 // count(null) always returns 0
-                Some(LiteralValue::Null) => lit(0).alias("count"),
+                Some(Literal::Null) => lit(0).alias("count"),
                 // in SQL, any count(<non null literal>) is functionally the same as count(*)
                 Some(_) => match &planner.current_plan {
                     Some(plan) => {

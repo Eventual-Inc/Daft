@@ -1,26 +1,28 @@
-use std::{borrow::Cow, collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, fmt::Display, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{
+    DisplayLevel,
     ascii::fmt_tree_gitstyle,
     mermaid::{MermaidDisplayVisitor, SubgraphOptions},
     tree::TreeDisplay,
-    DisplayLevel,
 };
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
+use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
 use daft_core::{join::JoinSide, prelude::Schema};
-use daft_dsl::join::get_common_join_cols;
+use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
-    CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
-    InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
-    Project, Sample, Sort, TopN, UDFProject, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
-    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
+    CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, GlobScan, HashAggregate,
+    HashJoin, InMemoryScan, IntoBatches, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId,
+    PhysicalWrite, Pivot, Project, Sample, SamplingMethod, Sort, TopN, UDFProject,
+    UnGroupedAggregate, Unpivot, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
+    WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
-use daft_logical_plan::{stats::StatsState, JoinType};
+use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{
-    partitioning::{MicroPartitionSet, PartitionSetCache},
     MicroPartition, MicroPartitionRef,
+    partitioning::{MicroPartitionSet, PartitionSetCache},
 };
 use daft_scan::ScanTaskRef;
 use daft_writers::make_physical_writer_factory;
@@ -28,15 +30,17 @@ use indexmap::IndexSet;
 use snafu::ResultExt;
 
 use crate::{
+    ExecutionRuntimeContext, PipelineCreationSnafu,
     channel::Receiver,
     intermediate_ops::{
         cross_join::CrossJoinOperator,
         distributed_actor_pool_project::DistributedActorPoolProjectOperator,
         explode::ExplodeOperator, filter::FilterOperator,
         inner_hash_join_probe::InnerHashJoinProbeOperator, intermediate_op::IntermediateNode,
-        project::ProjectOperator, sample::SampleOperator, udf::UdfOperator,
-        unpivot::UnpivotOperator,
+        into_batches::IntoBatchesOperator, project::ProjectOperator, sample::SampleOperator,
+        udf::UdfOperator, unpivot::UnpivotOperator,
     },
+    runtime_stats::RuntimeStats,
     sinks::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
@@ -45,6 +49,7 @@ use crate::{
         dedup::DedupSink,
         grouped_aggregate::GroupedAggregateSink,
         hash_join_build::HashJoinBuildSink,
+        into_partitions::IntoPartitionsSink,
         pivot::PivotSink,
         repartition::RepartitionSink,
         sort::SortSink,
@@ -62,14 +67,85 @@ use crate::{
         limit::LimitSink, monotonically_increasing_id::MonotonicallyIncreasingIdSink,
         outer_hash_join_probe::OuterHashJoinProbeSink,
     },
-    ExecutionRuntimeContext, PipelineCreationSnafu,
 };
 
 pub type NodeName = Cow<'static, str>;
 
+#[derive(Copy, Clone, Debug)]
+pub enum MorselSizeRequirement {
+    // Fixed size morsel
+    Strict(usize),
+    // Flexible size morsel, between lower and upper bound
+    Flexible(usize, usize),
+}
+
+impl Display for MorselSizeRequirement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Strict(size) => write!(f, "{}", size),
+            Self::Flexible(lower, upper) => write!(f, "Range({lower}, {upper}]"),
+        }
+    }
+}
+
+impl Default for MorselSizeRequirement {
+    fn default() -> Self {
+        Self::Flexible(
+            0,
+            common_daft_config::DaftExecutionConfig::default().default_morsel_size,
+        )
+    }
+}
+
+impl MorselSizeRequirement {
+    pub fn combine_requirements(
+        current_requirement: Option<Self>,
+        downstream_requirement: Self,
+    ) -> Self {
+        match (current_requirement, downstream_requirement) {
+            // If there is no current requirement and the downstream requirement is strict, use flexible with 0 as lower bound
+            (None, Self::Strict(size)) => Self::Flexible(0, size),
+            // If there is no current requirement and the downstream requirement is flexible, use flexible with 0 as lower bound
+            (None, Self::Flexible(_, upper)) => Self::Flexible(0, upper),
+            // If the current requirement is strict use it regardless of the downstream requirement
+            (Some(Self::Strict(current_size)), _) => Self::Strict(current_size),
+            // If the current requirement is flexible and the downstream requirement is strict, use the minimum of the two sizes
+            (
+                Some(Self::Flexible(lower_flexible_size, upper_flexible_size)),
+                Self::Strict(strict_size),
+            ) => Self::Flexible(
+                lower_flexible_size.min(strict_size),
+                strict_size.min(upper_flexible_size),
+            ),
+            // If the current requirement is flexible and the downstream requirement is flexible, use the intersection of ranges
+            (
+                Some(Self::Flexible(lower_flexible_size, upper_flexible_size)),
+                Self::Flexible(lower_other_size, upper_other_size),
+            ) => {
+                let lower = lower_flexible_size.max(lower_other_size);
+                let upper = upper_flexible_size.min(upper_other_size);
+
+                // If ranges don't overlap, fall back to downstream requirement
+                if lower > upper {
+                    Self::Flexible(lower_other_size, upper_other_size)
+                } else {
+                    Self::Flexible(lower, upper)
+                }
+            }
+        }
+    }
+}
+
 pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;
+    #[allow(clippy::borrowed_box)]
+    fn boxed_children(&self) -> Vec<&Box<dyn PipelineNode>>;
     fn name(&self) -> Arc<str>;
+    fn propagate_morsel_size_requirement(
+        &mut self,
+        downstream_requirement: MorselSizeRequirement,
+        default_requirement: MorselSizeRequirement,
+    );
     fn start(
         &self,
         maintain_order: bool,
@@ -82,6 +158,24 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn plan_id(&self) -> Arc<str>;
     /// Unique id to identify the node.
     fn node_id(&self) -> usize;
+    // General Node Info
+    fn node_info(&self) -> Arc<NodeInfo>;
+    // Runtime Stats
+    fn runtime_stats(&self) -> Arc<dyn RuntimeStats>;
+}
+
+impl ConcreteTreeNode for Box<dyn PipelineNode> {
+    fn children(&self) -> Vec<&Self> {
+        self.boxed_children()
+    }
+
+    fn take_children(self) -> (Self, Vec<Self>) {
+        unimplemented!("with_new_children is not supported for Box<dyn PipelineNode>")
+    }
+
+    fn with_new_children(self, _children: Vec<Self>) -> DaftResult<Self> {
+        unimplemented!("with_new_children is not supported for Box<dyn PipelineNode>")
+    }
 }
 
 /// Single use context for translating a physical plan to a Pipeline.
@@ -89,14 +183,6 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
 pub struct RuntimeContext {
     index_counter: std::cell::RefCell<usize>,
     context: HashMap<String, String>,
-}
-
-/// Contains information about the node such as name, id, and the plan_id
-#[derive(Clone, Debug)]
-pub struct NodeInfo {
-    pub name: Arc<str>,
-    pub id: usize,
-    pub context: HashMap<String, String>,
 }
 
 impl RuntimeContext {
@@ -123,10 +209,17 @@ impl RuntimeContext {
         index
     }
 
-    pub fn next_node_info(&self, name: Arc<str>) -> NodeInfo {
+    pub fn next_node_info(
+        &self,
+        name: Arc<str>,
+        node_type: NodeType,
+        node_category: NodeCategory,
+    ) -> NodeInfo {
         NodeInfo {
             name,
             id: self.next_id(),
+            node_type,
+            node_category,
             context: self.context.clone(),
         }
     }
@@ -209,7 +302,21 @@ pub fn viz_pipeline_ascii(root: &dyn PipelineNode, simple: bool) -> String {
     s
 }
 
-pub fn physical_plan_to_pipeline(
+pub fn translate_physical_plan_to_pipeline(
+    physical_plan: &LocalPhysicalPlan,
+    psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
+    cfg: &Arc<DaftExecutionConfig>,
+    ctx: &RuntimeContext,
+) -> crate::Result<Box<dyn PipelineNode>> {
+    let mut pipeline_node = physical_plan_to_pipeline(physical_plan, psets, cfg, ctx)?;
+    pipeline_node.propagate_morsel_size_requirement(
+        MorselSizeRequirement::Flexible(0, cfg.default_morsel_size),
+        MorselSizeRequirement::Flexible(0, cfg.default_morsel_size),
+    );
+    Ok(pipeline_node)
+}
+
+fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
     cfg: &Arc<DaftExecutionConfig>,
@@ -218,7 +325,7 @@ pub fn physical_plan_to_pipeline(
     use daft_local_plan::PhysicalScan;
 
     use crate::sources::scan_task::ScanTaskSource;
-    let out: Box<dyn PipelineNode> = match physical_plan {
+    let pipeline_node: Box<dyn PipelineNode> = match physical_plan {
         LocalPhysicalPlan::PlaceholderScan(_) => {
             panic!("PlaceholderScan should not be converted to a pipeline node")
         }
@@ -398,17 +505,22 @@ pub fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::UDFProject(UDFProject {
             input,
-            project,
+            expr,
+            udf_properties,
             passthrough_columns,
             stats_state,
             schema,
-            ..
         }) => {
-            let proj_op =
-                UdfOperator::try_new(project.clone(), passthrough_columns.clone(), schema)
-                    .with_context(|_| PipelineCreationSnafu {
-                        plan_name: physical_plan.name(),
-                    })?;
+            let proj_op = UdfOperator::try_new(
+                expr.clone(),
+                udf_properties.clone(),
+                passthrough_columns.clone(),
+                schema,
+                input.schema(),
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(proj_op),
@@ -448,13 +560,20 @@ pub fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::Sample(Sample {
             input,
-            fraction,
+            sampling_method,
             with_replacement,
             seed,
             stats_state,
             ..
         }) => {
-            let sample_op = SampleOperator::new(*fraction, *with_replacement, *seed);
+            let sample_op = match sampling_method {
+                SamplingMethod::Fraction(fraction) => {
+                    SampleOperator::new(*fraction, *with_replacement, *seed)
+                }
+                SamplingMethod::Size(size) => {
+                    SampleOperator::new_size(*size, *with_replacement, *seed)
+                }
+            };
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(sample_op),
@@ -480,6 +599,23 @@ pub fn physical_plan_to_pipeline(
             )
             .boxed()
         }
+        LocalPhysicalPlan::IntoBatches(IntoBatches {
+            input,
+            batch_size,
+            strict,
+            stats_state,
+            ..
+        }) => {
+            let into_batches_op = IntoBatchesOperator::new(*batch_size, *strict);
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
+            IntermediateNode::new(
+                Arc::new(into_batches_op),
+                vec![child_node],
+                stats_state.clone(),
+                ctx,
+            )
+            .boxed()
+        }
         LocalPhysicalPlan::Explode(Explode {
             input,
             to_explode,
@@ -498,11 +634,13 @@ pub fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::Limit(Limit {
             input,
-            num_rows,
+            limit,
+            offset,
             stats_state,
             ..
         }) => {
-            let sink = LimitSink::new(*num_rows as usize);
+            let (offset, limit) = (*offset, *limit);
+            let sink = LimitSink::new(limit as usize, offset.map(|x| x as usize));
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             StreamingSinkNode::new(Arc::new(sink), vec![child_node], stats_state.clone(), ctx)
                 .boxed()
@@ -595,6 +733,7 @@ pub fn physical_plan_to_pipeline(
             pivot_column,
             value_column,
             aggregation,
+            pre_agg,
             names,
             stats_state,
             ..
@@ -606,6 +745,7 @@ pub fn physical_plan_to_pipeline(
                 value_column.clone(),
                 aggregation.clone(),
                 names.clone(),
+                *pre_agg,
             );
             BlockingSinkNode::new(Arc::new(pivot_sink), child_node, stats_state.clone(), ctx)
                 .boxed()
@@ -627,6 +767,7 @@ pub fn physical_plan_to_pipeline(
             sort_by,
             descending,
             nulls_first,
+            offset,
             limit,
             stats_state,
             ..
@@ -636,6 +777,7 @@ pub fn physical_plan_to_pipeline(
                 descending.clone(),
                 nulls_first.clone(),
                 *limit as usize,
+                offset.map(|x| x as usize),
             );
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             BlockingSinkNode::new(Arc::new(sink), child_node, stats_state.clone(), ctx).boxed()
@@ -669,6 +811,7 @@ pub fn physical_plan_to_pipeline(
             right_on,
             null_equals_null,
             join_type,
+            build_on_left,
             schema,
             stats_state,
             ..
@@ -676,88 +819,100 @@ pub fn physical_plan_to_pipeline(
             let left_schema = left.schema();
             let right_schema = right.schema();
 
-            // To determine whether to use the left or right side of a join for building a probe table, we consider:
-            // 1. Cardinality of the sides. Probe tables should be built on the smaller side.
-            // 2. Join type. Different join types have different requirements for which side can build the probe table.
             let left_stats_state = left.get_stats_state();
             let right_stats_state = right.get_stats_state();
-            let build_on_left = match join_type {
-                // Inner and outer joins can build on either side. If stats are available, choose the smaller side.
-                // Else, default to building on the left.
-                JoinType::Inner | JoinType::Outer => match (left_stats_state, right_stats_state) {
-                    (
-                        StatsState::Materialized(left_stats),
-                        StatsState::Materialized(right_stats),
-                    ) => {
-                        let left_size = left_stats.approx_stats.num_rows;
-                        let right_size = right_stats.approx_stats.num_rows;
-                        left_size <= right_size
+
+            // If the build_on_left argument is specified, we use it.
+            // Else, to determine whether to use the left or right side of a join for building a probe table, we consider:
+            // 1. Cardinality of the sides. Probe tables should be built on the smaller side.
+            // 2. Join type. Different join types have different requirements for which side can build the probe table.
+            let build_on_left = match build_on_left {
+                Some(build_on_left) => *build_on_left,
+                None => match join_type {
+                    // Inner and outer joins can build on either side. If stats are available, choose the smaller side.
+                    // Else, default to building on the left.
+                    JoinType::Inner | JoinType::Outer => {
+                        match (left_stats_state, right_stats_state) {
+                            (
+                                StatsState::Materialized(left_stats),
+                                StatsState::Materialized(right_stats),
+                            ) => {
+                                let left_size = left_stats.approx_stats.num_rows;
+                                let right_size = right_stats.approx_stats.num_rows;
+                                left_size <= right_size
+                            }
+                            // If stats are only available on the right side of the join, and the upper bound bytes on the
+                            // right are under the broadcast join size threshold, we build on the right instead of the left.
+                            (
+                                StatsState::NotMaterialized,
+                                StatsState::Materialized(right_stats),
+                            ) => {
+                                right_stats.approx_stats.size_bytes
+                                    > cfg.broadcast_join_size_bytes_threshold
+                            }
+                            _ => true,
+                        }
                     }
-                    // If stats are only available on the right side of the join, and the upper bound bytes on the
-                    // right are under the broadcast join size threshold, we build on the right instead of the left.
-                    (StatsState::NotMaterialized, StatsState::Materialized(right_stats)) => {
-                        right_stats.approx_stats.size_bytes
-                            > cfg.broadcast_join_size_bytes_threshold
+                    // Left joins can build on the left side, but prefer building on the right because building on left requires keeping track
+                    // of used indices in a bitmap. If stats are available, only select the left side if its smaller than the right side by a factor of 1.5.
+                    JoinType::Left => match (left_stats_state, right_stats_state) {
+                        (
+                            StatsState::Materialized(left_stats),
+                            StatsState::Materialized(right_stats),
+                        ) => {
+                            let left_size = left_stats.approx_stats.num_rows;
+                            let right_size = right_stats.approx_stats.num_rows;
+                            right_size as f64 >= left_size as f64 * 1.5
+                        }
+                        // If stats are only available on the left side of the join, and the upper bound bytes on the left
+                        // are under the broadcast join size threshold, we build on the left instead of the right.
+                        (StatsState::Materialized(left_stats), StatsState::NotMaterialized) => {
+                            left_stats.approx_stats.size_bytes
+                                <= cfg.broadcast_join_size_bytes_threshold
+                        }
+                        _ => false,
+                    },
+                    // Right joins can build on the right side, but prefer building on the left because building on right requires keeping track
+                    // of used indices in a bitmap. If stats are available, only select the right side if its smaller than the left side by a factor of 1.5.
+                    JoinType::Right => match (left_stats_state, right_stats_state) {
+                        (
+                            StatsState::Materialized(left_stats),
+                            StatsState::Materialized(right_stats),
+                        ) => {
+                            let left_size = left_stats.approx_stats.num_rows;
+                            let right_size = right_stats.approx_stats.num_rows;
+                            (right_size as f64 * 1.5) >= left_size as f64
+                        }
+                        // If stats are only available on the right side of the join, and the upper bound bytes on the
+                        // right are under the broadcast join size threshold, we build on the right instead of the left.
+                        (StatsState::NotMaterialized, StatsState::Materialized(right_stats)) => {
+                            right_stats.approx_stats.size_bytes
+                                > cfg.broadcast_join_size_bytes_threshold
+                        }
+                        _ => true,
+                    },
+                    // Anti/semi joins can build on the left side, but prefer building on the right because building on left requires keeping track
+                    // of used indices in a bitmap. If stats are available, only select the left side if its smaller than the right side by a factor of 1.5.
+                    JoinType::Anti | JoinType::Semi => {
+                        match (left_stats_state, right_stats_state) {
+                            (
+                                StatsState::Materialized(left_stats),
+                                StatsState::Materialized(right_stats),
+                            ) => {
+                                let left_size = left_stats.approx_stats.num_rows;
+                                let right_size = right_stats.approx_stats.num_rows;
+                                right_size as f64 > left_size as f64 * 1.5
+                            }
+                            // If stats are only available on the left side of the join, and the upper bound bytes on the left
+                            // are under the broadcast join size threshold, we build on the left instead of the right.
+                            (StatsState::Materialized(left_stats), StatsState::NotMaterialized) => {
+                                left_stats.approx_stats.size_bytes
+                                    <= cfg.broadcast_join_size_bytes_threshold
+                            }
+                            // Else, default to building on the right
+                            _ => false,
+                        }
                     }
-                    _ => true,
-                },
-                // Left joins can build on the left side, but prefer building on the right because building on left requires keeping track
-                // of used indices in a bitmap. If stats are available, only select the left side if its smaller than the right side by a factor of 1.5.
-                JoinType::Left => match (left_stats_state, right_stats_state) {
-                    (
-                        StatsState::Materialized(left_stats),
-                        StatsState::Materialized(right_stats),
-                    ) => {
-                        let left_size = left_stats.approx_stats.num_rows;
-                        let right_size = right_stats.approx_stats.num_rows;
-                        right_size as f64 >= left_size as f64 * 1.5
-                    }
-                    // If stats are only available on the left side of the join, and the upper bound bytes on the left
-                    // are under the broadcast join size threshold, we build on the left instead of the right.
-                    (StatsState::Materialized(left_stats), StatsState::NotMaterialized) => {
-                        left_stats.approx_stats.size_bytes
-                            <= cfg.broadcast_join_size_bytes_threshold
-                    }
-                    _ => false,
-                },
-                // Right joins can build on the right side, but prefer building on the left because building on right requires keeping track
-                // of used indices in a bitmap. If stats are available, only select the right side if its smaller than the left side by a factor of 1.5.
-                JoinType::Right => match (left_stats_state, right_stats_state) {
-                    (
-                        StatsState::Materialized(left_stats),
-                        StatsState::Materialized(right_stats),
-                    ) => {
-                        let left_size = left_stats.approx_stats.num_rows;
-                        let right_size = right_stats.approx_stats.num_rows;
-                        (right_size as f64 * 1.5) >= left_size as f64
-                    }
-                    // If stats are only available on the right side of the join, and the upper bound bytes on the
-                    // right are under the broadcast join size threshold, we build on the right instead of the left.
-                    (StatsState::NotMaterialized, StatsState::Materialized(right_stats)) => {
-                        right_stats.approx_stats.size_bytes
-                            > cfg.broadcast_join_size_bytes_threshold
-                    }
-                    _ => true,
-                },
-                // Anti/semi joins can build on the left side, but prefer building on the right because building on left requires keeping track
-                // of used indices in a bitmap. If stats are available, only select the left side if its smaller than the right side by a factor of 1.5.
-                JoinType::Anti | JoinType::Semi => match (left_stats_state, right_stats_state) {
-                    (
-                        StatsState::Materialized(left_stats),
-                        StatsState::Materialized(right_stats),
-                    ) => {
-                        let left_size = left_stats.approx_stats.num_rows;
-                        let right_size = right_stats.approx_stats.num_rows;
-                        right_size as f64 > left_size as f64 * 1.5
-                    }
-                    // If stats are only available on the left side of the join, and the upper bound bytes on the left
-                    // are under the broadcast join size threshold, we build on the left instead of the right.
-                    (StatsState::Materialized(left_stats), StatsState::NotMaterialized) => {
-                        left_stats.approx_stats.size_bytes
-                            <= cfg.broadcast_join_size_bytes_threshold
-                    }
-                    // Else, default to building on the right
-                    _ => false,
                 },
             };
             let (build_on, probe_on, build_child, probe_child) = match build_on_left {
@@ -1056,14 +1211,14 @@ pub fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::Repartition(daft_local_plan::Repartition {
             input,
-            columns,
+            repartition_spec,
             num_partitions,
             stats_state,
             schema,
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             let repartition_op =
-                RepartitionSink::new(columns.clone(), *num_partitions, schema.clone());
+                RepartitionSink::new(repartition_spec.clone(), *num_partitions, schema.clone());
             BlockingSinkNode::new(
                 Arc::new(repartition_op),
                 child_node,
@@ -1072,7 +1227,39 @@ pub fn physical_plan_to_pipeline(
             )
             .boxed()
         }
+        LocalPhysicalPlan::IntoPartitions(daft_local_plan::IntoPartitions {
+            input,
+            num_partitions,
+            stats_state,
+            schema,
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
+            let into_partitions_op = IntoPartitionsSink::new(*num_partitions, schema.clone());
+            BlockingSinkNode::new(
+                Arc::new(into_partitions_op),
+                child_node,
+                stats_state.clone(),
+                ctx,
+            )
+            .boxed()
+        }
+        LocalPhysicalPlan::GlobScan(GlobScan {
+            glob_paths,
+            pushdowns,
+            schema,
+            stats_state,
+            io_config,
+        }) => {
+            use crate::sources::glob_scan::GlobScanSource;
+            let source = GlobScanSource::new(
+                glob_paths.clone(),
+                pushdowns.clone(),
+                schema.clone(),
+                io_config.clone(),
+            );
+            SourceNode::new(source.arced(), stats_state.clone(), ctx).boxed()
+        }
     };
 
-    Ok(out)
+    Ok(pipeline_node)
 }

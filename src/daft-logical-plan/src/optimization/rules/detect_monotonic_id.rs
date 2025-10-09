@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
-use daft_dsl::{functions::scalar::ScalarFn, Column, Expr, ExprRef, ResolvedColumn};
+use daft_dsl::{Column, Expr, ExprRef, ResolvedColumn, functions::scalar::ScalarFn};
 
 use crate::{
     logical_plan::{LogicalPlan, Project},

@@ -4,13 +4,13 @@ use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime, get_io_runtime};
 use daft_core::prelude::*;
-use daft_io::{parse_url, IOConfig, SourceType};
+use daft_io::{IOConfig, SourceType, parse_url};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use parquet::{
     arrow::{
-        arrow_writer::{compute_leaves, get_column_writers, ArrowColumnChunk, ArrowLeafColumn},
         ArrowSchemaConverter,
+        arrow_writer::{ArrowColumnChunk, ArrowLeafColumn, compute_leaves, get_column_writers},
     },
     basic::Compression,
     file::{
@@ -21,9 +21,9 @@ use parquet::{
 };
 
 use crate::{
+    AsyncFileWriter, WriteResult,
     storage_backend::{FileStorageBackend, S3StorageBackend, StorageBackend},
     utils::build_filename,
-    AsyncFileWriter,
 };
 
 type ColumnWriterFuture = dyn Future<Output = DaftResult<ArrowColumnChunk>> + Send;
@@ -200,7 +200,7 @@ impl<B: StorageBackend> ParquetWriter<B> {
                         None => {
                             return Err(DaftError::InternalError(
                                 "Mismatch between leaves and column slots".to_string(),
-                            ))
+                            ));
                         }
                     }
                 }
@@ -258,10 +258,11 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
-    async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {
         if self.file_writer.is_none() {
             self.create_writer().await?;
         }
+        let num_rows = data.len();
         let record_batches = data.get_tables()?;
 
         let row_group_writer_thread_handle = {
@@ -334,7 +335,10 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
         self.total_bytes_written = file_writer.bytes_written();
         self.file_writer.replace(file_writer);
 
-        Ok(bytes_written)
+        Ok(WriteResult {
+            bytes_written,
+            rows_written: num_rows,
+        })
     }
 
     async fn close(&mut self) -> DaftResult<Self::Result> {

@@ -8,6 +8,7 @@ import ray
 
 import daft
 from daft import udf
+from daft.context import get_context
 from daft.daft import SystemInfo
 from daft.expressions import col
 from daft.internal.gpu import cuda_visible_devices
@@ -141,6 +142,10 @@ RAY_VERSION_LT_2 = int(ray.__version__.split(".")[0]) < 2
     RAY_VERSION_LT_2, reason="The ray.get_runtime_context().get_assigned_resources() was only added in Ray >= 2.0"
 )
 @pytest.mark.skipif(get_tests_daft_runner_name() not in {"ray"}, reason="requires RayRunner to be in use")
+@pytest.mark.skipif(
+    get_context().daft_execution_config.use_legacy_ray_runner is False,
+    reason="resource requests are not fully supported in Flotilla",
+)
 def test_with_column_rayrunner():
     df = daft.from_pydict(DATA).repartition(2)
 
@@ -157,6 +162,10 @@ def test_with_column_rayrunner():
     RAY_VERSION_LT_2, reason="The ray.get_runtime_context().get_assigned_resources() was only added in Ray >= 2.0"
 )
 @pytest.mark.skipif(get_tests_daft_runner_name() not in {"ray"}, reason="requires RayRunner to be in use")
+@pytest.mark.skipif(
+    get_context().daft_execution_config.use_legacy_ray_runner is False,
+    reason="resource requests are not fully supported in Flotilla",
+)
 def test_with_column_folded_rayrunner():
     df = daft.from_pydict(DATA).repartition(2)
 
@@ -202,6 +211,10 @@ def test_with_column_rayrunner_class():
     RAY_VERSION_LT_2, reason="The ray.get_runtime_context().get_assigned_resources() was only added in Ray >= 2.0"
 )
 @pytest.mark.skipif(get_tests_daft_runner_name() not in {"ray"}, reason="requires RayRunner to be in use")
+@pytest.mark.skipif(
+    get_context().daft_execution_config.use_legacy_ray_runner is False,
+    reason="resource requests are not fully supported in Flotilla",
+)
 def test_with_column_folded_rayrunner_class():
     assert_resources = AssertResourcesStateful.with_concurrency(1)
 

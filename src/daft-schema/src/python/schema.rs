@@ -107,6 +107,11 @@ impl PySchema {
     pub fn display_with_metadata(&self, show_metadata: bool) -> String {
         self.schema.display_with_metadata(show_metadata)
     }
+
+    #[pyo3(name = "min_estimated_size_column")]
+    pub fn min_estimated_size_column(&self) -> Option<&str> {
+        self.schema.min_estimated_size_column()
+    }
 }
 
 impl_bincode_py_state_serialization!(PySchema);

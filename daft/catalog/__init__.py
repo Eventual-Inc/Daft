@@ -4,7 +4,7 @@ A Catalog can be understood as a system/service for users to discover, access an
 Most commonly, users' data is represented as a "table". Some more modern Catalogs such as Unity Catalog
 also expose other types of data including files, ML models, registered functions and more.
 
-Examples of Catalogs include AWS Glue, Hive Metastore, Apache Iceberg REST and Unity Catalog.
+Examples of Catalogs include AWS Glue, Hive Metastore, Unity Catalog and S3 Tables.
 
 **Catalog**
 
@@ -54,6 +54,7 @@ from daft.logical.schema import Schema
 if TYPE_CHECKING:
     from daft.utils import ColumnInputType
     from daft.convert import InputListType
+    from daft.io.partitioning import PartitionField
 
 
 __all__ = [
@@ -98,7 +99,13 @@ class Catalog(ABC):
         """Create a namespace in the catalog, erroring if the namespace already exists."""
 
     @abstractmethod
-    def _create_table(self, ident: Identifier, schema: Schema, properties: Properties | None = None) -> Table:
+    def _create_table(
+        self,
+        ident: Identifier,
+        schema: Schema,
+        properties: Properties | None = None,
+        partition_fields: list[PartitionField] | None = None,
+    ) -> Table:
         """Create a table in the catalog, erroring if the table already exists."""
 
     @abstractmethod
@@ -348,6 +355,7 @@ class Catalog(ABC):
         identifier: Identifier | str,
         source: Schema | DataFrame,
         properties: Properties | None = None,
+        partition_fields: list[PartitionField] | None = None,
     ) -> Table:
         """Creates a table in this catalog.
 
@@ -362,7 +370,7 @@ class Catalog(ABC):
             identifier = Identifier.from_str(identifier)
         schema = source.schema() if isinstance(source, DataFrame) else source
 
-        table = self._create_table(identifier, schema, properties)
+        table = self._create_table(identifier, schema, properties, partition_fields)
         if isinstance(source, DataFrame):
             table.append(source)
 

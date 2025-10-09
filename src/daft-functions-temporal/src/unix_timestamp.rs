@@ -1,6 +1,9 @@
 use common_error::DaftError;
-use daft_core::prelude::TimeUnit;
-use daft_dsl::{functions::prelude::*, FromLiteral, LiteralValue};
+use daft_core::{
+    lit::{FromLiteral, Literal},
+    prelude::TimeUnit,
+};
+use daft_dsl::functions::prelude::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct UnixTimestamp;
@@ -9,10 +12,10 @@ pub struct UnixTimestamp;
 struct WrappedTimeUnit(TimeUnit);
 
 impl FromLiteral for WrappedTimeUnit {
-    fn try_from_literal(lit: &daft_dsl::LiteralValue) -> DaftResult<Self> {
+    fn try_from_literal(lit: &daft_core::lit::Literal) -> DaftResult<Self> {
         if let Ok(tu) = TimeUnit::try_from_literal(lit) {
             Ok(Self(tu))
-        } else if let LiteralValue::Utf8(s) = lit {
+        } else if let Literal::Utf8(s) = lit {
             Ok(Self(s.parse()?))
         } else {
             Err(DaftError::type_error(

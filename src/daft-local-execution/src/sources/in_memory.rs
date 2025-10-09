@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
-use daft_micropartition::{partitioning::PartitionSetRef, MicroPartitionRef};
+use daft_micropartition::{MicroPartitionRef, partitioning::PartitionSetRef};
 use tracing::instrument;
 
 use super::source::Source;
@@ -40,6 +41,7 @@ impl Source for InMemorySource {
         &self,
         _maintain_order: bool,
         _io_stats: IOStatsRef,
+        _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         Ok(self
             .data
@@ -48,8 +50,13 @@ impl Source for InMemorySource {
             .clone()
             .to_partition_stream())
     }
+
     fn name(&self) -> NodeName {
         "InMemorySource".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::InMemoryScan
     }
 
     fn multiline_display(&self) -> Vec<String> {

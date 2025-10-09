@@ -1,5 +1,5 @@
 use std::{
-    cmp::{max, min, Ordering},
+    cmp::{Ordering, max, min},
     collections::HashMap,
     sync::Arc,
 };
@@ -7,10 +7,10 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
-use common_scan_info::{PhysicalScanInfo, ScanState, SPLIT_AND_MERGE_PASS};
+use common_scan_info::{PhysicalScanInfo, SPLIT_AND_MERGE_PASS, ScanState};
 use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
-    estimated_selectivity,
+    AggExpr, ApproxPercentileParams, Expr, ExprRef, SketchType, estimated_selectivity,
     expr::{
         bound_col,
         bound_expr::{BoundAggExpr, BoundExpr},
@@ -18,7 +18,7 @@ use daft_dsl::{
     functions::agg::merge_mean,
     is_partition_compatible,
     join::normalize_join_keys,
-    lit, resolved_col, AggExpr, ApproxPercentileParams, Expr, ExprRef, SketchType,
+    lit, resolved_col,
 };
 use daft_functions::numeric::sqrt;
 use daft_functions_list::{count_distinct, distinct};
@@ -26,11 +26,11 @@ use daft_logical_plan::{
     logical_plan::LogicalPlan,
     ops::{
         Aggregate as LogicalAggregate, Distinct as LogicalDistinct, Explode as LogicalExplode,
-        Filter as LogicalFilter, Join as LogicalJoin, Limit as LogicalLimit,
-        MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
-        Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
-        Sink as LogicalSink, Sort as LogicalSort, Source, TopN as LogicalTopN,
-        UDFProject as LogicalUDFProject, Unpivot as LogicalUnpivot,
+        Filter as LogicalFilter, IntoBatches as LogicalIntoBatches, Join as LogicalJoin,
+        Limit as LogicalLimit, MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId,
+        Pivot as LogicalPivot, Project as LogicalProject, Repartition as LogicalRepartition,
+        Sample as LogicalSample, Sink as LogicalSink, Sort as LogicalSort, Source,
+        TopN as LogicalTopN, UDFProject as LogicalUDFProject, Unpivot as LogicalUnpivot,
     },
     partitioning::{
         ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
@@ -40,7 +40,7 @@ use daft_logical_plan::{
 };
 use indexmap::IndexSet;
 
-use crate::{ops::*, PhysicalPlan, PhysicalPlanRef};
+use crate::{PhysicalPlan, PhysicalPlanRef, ops::*};
 
 pub(super) fn translate_single_logical_node(
     logical_plan: &LogicalPlan,
@@ -107,7 +107,14 @@ pub(super) fn translate_single_logical_node(
                 Ok(scan)
             }
             SourceInfo::PlaceHolder(PlaceHolderInfo { .. }) => {
-                panic!("Placeholder should not get to translation. This should have been optimized away");
+                panic!(
+                    "Placeholder should not get to translation. This should have been optimized away"
+                );
+            }
+            SourceInfo::GlobScan(_) => {
+                return Err(DaftError::NotImplemented(
+                    "GlobScan is not yet implemented in physical plan translation".to_string(),
+                ));
             }
         },
         LogicalPlan::Shard(_) => {
@@ -123,16 +130,16 @@ pub(super) fn translate_single_logical_node(
             )
         }
         LogicalPlan::UDFProject(LogicalUDFProject {
-            project,
-            passthrough_columns,
+            expr,
             udf_properties,
+            passthrough_columns,
             ..
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             let projection = passthrough_columns
                 .iter()
-                .chain(std::iter::once(&project.clone()))
                 .cloned()
+                .chain(std::iter::once(expr.clone()))
                 .collect();
             if udf_properties.is_actor_pool_udf() {
                 Ok(PhysicalPlan::ActorPoolProject(ActorPoolProject::try_new(
@@ -157,18 +164,31 @@ pub(super) fn translate_single_logical_node(
             ))
             .arced())
         }
-        LogicalPlan::Limit(LogicalLimit { limit, eager, .. }) => {
+        LogicalPlan::IntoBatches(LogicalIntoBatches { .. }) => Err(DaftError::NotImplemented(
+            "IntoBatches is not implemented in the old physical planner".to_string(),
+        )),
+        LogicalPlan::Limit(LogicalLimit {
+            limit,
+            offset,
+            eager,
+            ..
+        }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             let num_partitions = input_physical.clustering_spec().num_partitions();
-            Ok(
-                PhysicalPlan::Limit(Limit::new(input_physical, *limit, *eager, num_partitions))
-                    .arced(),
-            )
+            Ok(PhysicalPlan::Limit(Limit::new(
+                input_physical,
+                *limit,
+                *offset,
+                *eager,
+                num_partitions,
+            ))
+            .arced())
         }
         LogicalPlan::TopN(LogicalTopN {
             sort_by,
             descending,
             nulls_first,
+            offset,
             limit,
             ..
         }) => {
@@ -180,6 +200,7 @@ pub(super) fn translate_single_logical_node(
                 descending.clone(),
                 nulls_first.clone(),
                 *limit,
+                *offset,
                 num_partitions,
             ))
             .arced())
@@ -249,7 +270,9 @@ pub(super) fn translate_single_logical_node(
                             Ordering::Equal => {
                                 // # of output partitions == # of input partitions; this should have already short-circuited with
                                 // a repartition drop above.
-                                unreachable!("Simple repartitioning with same # of output partitions as the input; this should have been dropped.")
+                                unreachable!(
+                                    "Simple repartitioning with same # of output partitions as the input; this should have been dropped."
+                                )
                             }
                             _ => PhysicalPlan::ShuffleExchange(
                                 ShuffleExchangeFactory::new(input_physical)
@@ -555,15 +578,13 @@ pub(super) fn translate_single_logical_node(
                 .arced(),
             )
         }
-        LogicalPlan::Intersect(_) => Err(DaftError::InternalError(
-            "Intersect should already be optimized away".to_string(),
-        )),
-        LogicalPlan::Union(_) => Err(DaftError::InternalError(
-            "Union should already be optimized away".to_string(),
-        )),
-        LogicalPlan::SubqueryAlias(_) => Err(DaftError::InternalError(
-            "Alias should already be optimized away".to_string(),
-        )),
+        LogicalPlan::Intersect(_)
+        | LogicalPlan::Union(_)
+        | LogicalPlan::SubqueryAlias(_)
+        | LogicalPlan::Offset(_) => Err(DaftError::InternalError(format!(
+            "Logical plan operator {} should already be optimized away",
+            logical_plan.name()
+        ))),
         LogicalPlan::Window(_window) => Err(DaftError::NotImplemented(
             "Window functions are currently only supported on the native runner.".to_string(),
         )),
@@ -602,7 +623,7 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                 }
                 AggExpr::CountDistinct(e) => {
                     AggExpr::CountDistinct(Expr::Alias(e, name.clone()).into())
-                },
+                }
                 AggExpr::Sum(e) => AggExpr::Sum(Expr::Alias(e, name.clone()).into()),
                 AggExpr::ApproxPercentile(ApproxPercentileParams {
                     child: e,
@@ -644,12 +665,10 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                 },
             }
         }),
-        _ => Err(DaftError::InternalError(
-            format!(
-                "Expected non-agg expressions in aggregation to be factored out before plan translation. Got: {:?}",
-                expr
-            )
-        )),
+        _ => Err(DaftError::InternalError(format!(
+            "Expected non-agg expressions in aggregation to be factored out before plan translation. Got: {:?}",
+            expr
+        ))),
     }
 }
 
@@ -1842,9 +1861,9 @@ mod tests {
 
     use super::HashJoin;
     use crate::{
+        PhysicalPlan, PhysicalPlanRef,
         physical_planner::logical_to_physical,
         test::{dummy_scan_node, dummy_scan_operator},
-        PhysicalPlan, PhysicalPlanRef,
     };
 
     /// Tests that planner drops a simple Repartition (e.g. df.into_partitions()) the child already has the desired number of partitions.

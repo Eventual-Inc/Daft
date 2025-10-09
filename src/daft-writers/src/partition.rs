@@ -1,7 +1,4 @@
-use std::{
-    collections::{hash_map::RawEntryMut, HashMap},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use common_error::DaftResult;
@@ -10,8 +7,9 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
+use hashbrown::{HashMap, hash_map::RawEntryMut};
 
-use crate::{AsyncFileWriter, WriterFactory};
+use crate::{AsyncFileWriter, WriteResult, WriterFactory};
 
 /// PartitionedWriter is a writer that partitions the input data by a set of columns, and writes each partition
 /// to a separate file. It uses a map to keep track of the writers for each partition.
@@ -60,16 +58,23 @@ impl AsyncFileWriter for PartitionedWriter {
     type Input = Arc<MicroPartition>;
     type Result = Vec<RecordBatch>;
 
-    async fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<usize> {
+    async fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<WriteResult> {
         assert!(
             !self.is_closed,
             "Cannot write to a closed PartitionedWriter"
         );
+        if input.is_empty() {
+            return Ok(WriteResult {
+                bytes_written: 0,
+                rows_written: 0,
+            });
+        }
 
         let (split_tables, partition_values) =
             Self::partition(self.partition_by.as_slice(), input)?;
         let partition_values_hash = partition_values.hash_rows()?;
         let mut bytes_written = 0;
+        let mut rows_written = 0;
         for (idx, (table, partition_value_hash)) in split_tables
             .into_iter()
             .zip(partition_values_hash.as_arrow().values_iter())
@@ -91,13 +96,15 @@ impl AsyncFileWriter for PartitionedWriter {
                     let mut writer = self
                         .writer_factory
                         .create_writer(0, Some(partition_value_row.as_ref()))?;
-                    bytes_written += writer
+                    let write_result = writer
                         .write(Arc::new(MicroPartition::new_loaded(
                             table.schema.clone(),
                             vec![table].into(),
                             None,
                         )))
                         .await?;
+                    bytes_written += write_result.bytes_written;
+                    rows_written += write_result.rows_written;
                     entry.insert_hashed_nocheck(
                         *partition_value_hash,
                         IndexHash {
@@ -110,17 +117,22 @@ impl AsyncFileWriter for PartitionedWriter {
                 }
                 RawEntryMut::Occupied(mut entry) => {
                     let writer = entry.get_mut();
-                    bytes_written += writer
+                    let write_result = writer
                         .write(Arc::new(MicroPartition::new_loaded(
                             table.schema.clone(),
                             vec![table].into(),
                             None,
                         )))
                         .await?;
+                    bytes_written += write_result.bytes_written;
+                    rows_written += write_result.rows_written;
                 }
             }
         }
-        Ok(bytes_written)
+        Ok(WriteResult {
+            bytes_written,
+            rows_written,
+        })
     }
 
     fn bytes_written(&self) -> usize {

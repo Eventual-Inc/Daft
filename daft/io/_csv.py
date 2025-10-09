@@ -31,7 +31,6 @@ def read_csv(
     io_config: Optional[IOConfig] = None,
     file_path_column: Optional[str] = None,
     hive_partitioning: bool = False,
-    schema_hints: Optional[dict[str, DataType]] = None,
     _buffer_size: Optional[int] = None,
     _chunk_size: Optional[int] = None,
 ) -> DataFrame:
@@ -43,7 +42,7 @@ def read_csv(
         schema (dict[str, DataType]): A schema that is used as the definitive schema for the CSV if infer_schema is False, otherwise it is used as a schema hint that is applied after the schema is inferred.
         has_headers (bool): Whether the CSV has a header or not, defaults to True
         delimiter (Str): Delimiter used in the CSV, defaults to ","
-        doubled_quote (bool): Whether to support double quote escapes, defaults to True
+        double_quote (bool): Whether to support double quote escapes, defaults to True
         escape_char (str): Character to use as the escape character for double quotes, or defaults to `"`
         comment (str): Character to treat as the start of a comment line, or None to not support comments
         allow_variable_columns (bool): Whether to allow for variable number of columns in the CSV, defaults to False. If set to True, Daft will append nulls to rows with less columns than the schema, and ignore extra columns in rows with more columns
@@ -63,11 +62,6 @@ def read_csv(
     """
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from from empty list of CSV filepaths")
-
-    if schema_hints is not None:
-        raise ValueError(
-            "Specifying schema_hints is deprecated from Daft version >= 0.3.0! Instead, please use the 'schema' and 'infer_schema' arguments."
-        )
 
     if not infer_schema and schema is None:
         raise ValueError(

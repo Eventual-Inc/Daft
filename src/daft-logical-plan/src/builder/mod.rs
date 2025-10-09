@@ -16,8 +16,8 @@ use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{
-    left_col, resolved_col, right_col, unresolved_col, Column, Expr, ExprRef, UnresolvedColumn,
-    WindowSpec,
+    Column, Expr, ExprRef, UnresolvedColumn, WindowSpec, left_col, resolved_col, right_col,
+    unresolved_col,
 };
 use daft_schema::schema::{Schema, SchemaRef};
 use indexmap::IndexSet;
@@ -26,6 +26,7 @@ use resolve_expr::ExprResolver;
 use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
     common_daft_config::PyDaftPlanningConfig,
+    common_io_config::python::IOConfig as PyIOConfig,
     daft_dsl::python::PyExpr,
     // daft_scan::python::pylib::ScanOperatorHandle,
     daft_schema::python::schema::PySchema,
@@ -34,20 +35,19 @@ use {
 };
 
 use crate::{
+    LogicalPlanRef,
     display::json::JsonVisitor,
     logical_plan::{LogicalPlan, SubqueryAlias},
     ops::{
-        self,
+        self, Limit, Offset, SetQuantifier, UnionStrategy,
         join::{JoinOptions, JoinPredicate},
-        SetQuantifier, UnionStrategy,
     },
-    optimization::OptimizerBuilder,
+    optimization::{OptimizerBuilder, OptimizerConfig},
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
     sink_info::{OutputFileInfo, SinkInfo},
-    source_info::{InMemoryInfo, SourceInfo},
-    LogicalPlanRef,
+    source_info::{GlobScanInfo, InMemoryInfo, SourceInfo},
 };
 
 /// A logical plan builder, which simplifies constructing logical plans via
@@ -165,6 +165,19 @@ impl LogicalPlanBuilder {
         Ok(Self::from(Arc::new(logical_plan)))
     }
 
+    /// Creates a `LogicalPlan::Source` from glob paths.
+    pub fn from_glob_scan(
+        glob_paths: Vec<String>,
+        io_config: Option<IOConfig>,
+    ) -> DaftResult<Self> {
+        let glob_scan_info = GlobScanInfo::new(glob_paths, io_config);
+        let schema = glob_scan_info.schema.clone();
+        let logical_plan: LogicalPlan =
+            ops::Source::new(schema, SourceInfo::GlobScan(glob_scan_info).into()).into();
+
+        Ok(Self::from(Arc::new(logical_plan)))
+    }
+
     /// Creates a `LogicalPlan::Source` from a scan handle.
     pub fn table_scan(
         scan_operator: ScanOperatorRef,
@@ -179,13 +192,13 @@ impl LogicalPlanBuilder {
             pushdowns.clone().unwrap_or_default(),
         ));
         // If file path column is specified, check that it doesn't conflict with any column names in the schema.
-        if let Some(file_path_column) = &scan_operator.0.file_path_column() {
-            if schema.names().contains(&(*file_path_column).to_string()) {
-                return Err(DaftError::ValueError(format!(
-                    "Attempting to make a Schema with a file path column name that already exists: {}",
-                    file_path_column
-                )));
-            }
+        if let Some(file_path_column) = &scan_operator.0.file_path_column()
+            && schema.names().contains(&(*file_path_column).to_string())
+        {
+            return Err(DaftError::ValueError(format!(
+                "Attempting to make a Schema with a file path column name that already exists: {}",
+                file_path_column
+            )));
         }
         // Add generated fields to the schema.
         let schema_with_generated_fields = {
@@ -311,7 +324,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn filter(&self, predicate: ExprRef) -> DaftResult<Self> {
-        let expr_resolver = ExprResolver::default();
+        let expr_resolver = ExprResolver::builder().allow_actor_pool_udf(true).build();
 
         let predicate = expr_resolver.resolve_single(predicate, self.plan.clone())?;
 
@@ -325,7 +338,21 @@ impl LogicalPlanBuilder {
     }
 
     pub fn limit(&self, limit: u64, eager: bool) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = ops::Limit::new(self.plan.clone(), limit, eager).into();
+        self.limit_with_offset(limit, None, eager)
+    }
+
+    pub(crate) fn limit_with_offset(
+        &self,
+        limit: u64,
+        offset: Option<u64>,
+        eager: bool,
+    ) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = Limit::new(self.plan.clone(), limit, offset, eager).into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
+    pub fn offset(&self, offset: u64) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = Offset::new(self.plan.clone(), offset).into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -426,6 +453,11 @@ impl LogicalPlanBuilder {
             RepartitionSpec::IntoPartitions(IntoPartitionsConfig::new(num_partitions)),
         )
         .into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
+    pub fn into_batches(&self, batch_size: usize) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = ops::IntoBatches::new(self.plan.clone(), batch_size).into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -806,6 +838,18 @@ impl LogicalPlanBuilder {
         std::thread::spawn(move || {
             let optimizer = OptimizerBuilder::default()
                 .when(
+                    cfg.as_ref()
+                        .map(|conf| conf.enable_strict_filter_pushdown)
+                        .unwrap_or(false),
+                    |builder| {
+                        builder.with_optimizer_config(OptimizerConfig {
+                            strict_pushdown: true,
+                            ..Default::default()
+                        })
+                    },
+                )
+                .with_default_optimizations()
+                .when(
                     !cfg.as_ref()
                         .is_some_and(|conf| conf.disable_join_reordering),
                     |builder| builder.reorder_joins(),
@@ -860,6 +904,18 @@ impl LogicalPlanBuilder {
         let unoptimized_plan = self.build();
 
         let optimizer = OptimizerBuilder::default()
+            .when(
+                cfg.as_ref()
+                    .map(|conf| conf.enable_strict_filter_pushdown)
+                    .unwrap_or(false),
+                |builder| {
+                    builder.with_optimizer_config(OptimizerConfig {
+                        strict_pushdown: true,
+                        ..Default::default()
+                    })
+                },
+            )
+            .with_default_optimizations()
             .when(
                 !cfg.as_ref()
                     .is_some_and(|conf| conf.disable_join_reordering),
@@ -1012,6 +1068,14 @@ impl PyLogicalPlanBuilder {
         .into())
     }
 
+    #[staticmethod]
+    pub fn from_glob_scan(
+        glob_paths: Vec<String>,
+        io_config: Option<PyIOConfig>,
+    ) -> PyResult<Self> {
+        Ok(LogicalPlanBuilder::from_glob_scan(glob_paths, io_config.map(|c| c.config))?.into())
+    }
+
     pub fn with_planning_config(
         &self,
         daft_planning_config: PyDaftPlanningConfig,
@@ -1047,6 +1111,16 @@ impl PyLogicalPlanBuilder {
             )));
         }
         Ok(self.builder.limit(limit as u64, eager)?.into())
+    }
+
+    pub fn offset(&self, offset: i64) -> PyResult<Self> {
+        if offset < 0 {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "OFFSET <n> must be greater than or equal to 0, instead got: {}",
+                offset
+            )));
+        }
+        Ok(self.builder.offset(offset as u64)?.into())
     }
 
     pub fn shard(&self, strategy: String, world_size: i64, rank: i64) -> PyResult<Self> {
@@ -1109,6 +1183,10 @@ impl PyLogicalPlanBuilder {
 
     pub fn into_partitions(&self, num_partitions: usize) -> PyResult<Self> {
         Ok(self.builder.into_partitions(num_partitions)?.into())
+    }
+
+    pub fn into_batches(&self, batch_size: usize) -> PyResult<Self> {
+        Ok(self.builder.into_batches(batch_size)?.into())
     }
 
     pub fn describe(&self) -> PyResult<Self> {

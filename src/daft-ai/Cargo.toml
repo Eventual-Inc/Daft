@@ -1,0 +1,12 @@
+[dependencies]
+pyo3 = {workspace = true, optional = true}
+
+[features]
+python = [
+  "dep:pyo3"
+]
+
+[package]
+name = "daft-ai"
+edition.workspace = true
+version.workspace = true

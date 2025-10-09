@@ -19,6 +19,7 @@ def test_aggs_sql():
             [
                 col("values").sum().alias("sum"),
                 col("values").mean().alias("mean"),
+                col("values").avg().alias("avg"),
                 col("values").min().alias("min"),
                 col("values").max().alias("max"),
                 col("values").count().alias("count"),
@@ -35,6 +36,7 @@ def test_aggs_sql():
     SELECT
         sum(values) as sum,
         mean(values) as mean,
+        avg(values) as avg,
         min(values) as min,
         max(values) as max,
         count(values) as count,
@@ -249,3 +251,108 @@ def test_group_by_with_lit_selection():
     res = daft.sql("select 0 from df group by ids", df=df)
     expected = {"literal": [0, 0, 0, 0]}
     assert res.to_pydict() == expected
+
+
+def test_group_by_ordinal_1():
+    df = daft.from_pydict(
+        {
+            "a": ["foo", "foo", "bar", "bar", "foo"],
+            "b": [1, 2, 1, 2, 1],
+            "c": [10, 20, 30, 40, 50],
+        }
+    )
+    expected = df.groupby("a").agg([col("c").sum().alias("total")]).sort("a").collect().to_pydict()
+    actual = daft.sql("SELECT a, SUM(c) as total FROM df GROUP BY 1", df=df).sort("a").collect().to_pydict()
+    assert actual == expected
+
+
+def test_group_by_ordinal_2():
+    df = daft.from_pydict(
+        {
+            "a": ["foo", "foo", "bar", "bar", "foo"],
+            "b": [1, 2, 1, 2, 1],
+            "c": [10, 20, 30, 40, 50],
+        }
+    )
+    expected = df.groupby("b").agg([col("c").sum().alias("total")]).sort("b").collect().to_pydict()
+    actual = daft.sql("SELECT b, SUM(c) as total FROM df GROUP BY 1", df=df).sort("b").collect().to_pydict()
+    assert actual == expected
+
+
+def test_group_by_ordinal_1_2():
+    df = daft.from_pydict(
+        {
+            "a": ["foo", "foo", "bar", "bar", "foo"],
+            "b": [1, 2, 1, 2, 1],
+            "c": [10, 20, 30, 40, 50],
+        }
+    )
+    expected = df.groupby(["a", "b"]).agg([col("c").sum().alias("total")]).sort(["a", "b"]).collect().to_pydict()
+    actual = daft.sql("SELECT a, b, SUM(c) as total FROM df GROUP BY 1,2", df=df).sort(["a", "b"]).collect().to_pydict()
+    assert actual == expected
+
+
+def test_group_by_ordinal_with_expression():
+    df = daft.from_pydict(
+        {
+            "a": ["foo", "foo", "bar", "bar", "foo"],
+            "b": [1, 2, 1, 2, 1],
+            "c": [10, 20, 30, 40, 50],
+        }
+    )
+    expected = (
+        df.with_column("b1", col("b") + 1)
+        .groupby(["a", "b1"])
+        .agg([col("c").sum().alias("total")])
+        .sort(["a", "b1"])
+        .collect()
+        .to_pydict()
+    )
+
+    actual = (
+        daft.sql("SELECT a, b+1 as b1, SUM(c) as total FROM df GROUP BY 1,2", df=df)
+        .sort(["a", "b1"])
+        .collect()
+        .to_pydict()
+    )
+
+    assert actual == expected
+
+
+def test_group_by_ordinal_zero_raises():
+    df = daft.from_pydict(
+        {
+            "a": ["foo", "foo", "bar", "bar", "foo"],
+            "b": [1, 2, 1, 2, 1],
+            "c": [10, 20, 30, 40, 50],
+        }
+    )
+    with pytest.raises(Exception) as excinfo:
+        daft.sql("SELECT a FROM df GROUP BY 0", df=df).collect()
+    assert "GROUP BY position must be >= 1" in str(excinfo.value) or "out of range" in str(excinfo.value)
+
+
+def test_group_by_ordinal_out_of_range_raises():
+    df = daft.from_pydict(
+        {
+            "a": ["foo", "foo", "bar", "bar", "foo"],
+            "b": [1, 2, 1, 2, 1],
+            "c": [10, 20, 30, 40, 50],
+        }
+    )
+    with pytest.raises(Exception) as excinfo:
+        daft.sql("SELECT a FROM df GROUP BY 100", df=df).collect()
+    assert "GROUP BY position 100 is out of range" in str(excinfo.value) or "out of range" in str(excinfo.value)
+
+
+def test_group_by_ordinal_non_integer_raises():
+    df = daft.from_pydict(
+        {
+            "a": ["foo", "foo", "bar", "bar", "foo"],
+            "b": [1, 2, 1, 2, 1],
+            "c": [10, 20, 30, 40, 50],
+        }
+    )
+    with pytest.raises(Exception) as excinfo:
+        daft.sql("SELECT count(1) FROM df GROUP BY 1.5", df=df).collect()
+    assert "GROUP BY position" in str(excinfo.value) or "not a valid non-negative integer" in str(excinfo.value)

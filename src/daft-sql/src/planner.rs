@@ -10,15 +10,18 @@ use common_error::{DaftError, DaftResult};
 use daft_catalog::Identifier;
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{scalar::ScalarFn, ScalarUDF},
-    has_agg, lit, literals_to_series, null_lit, resolved_col, unresolved_col, Column, Expr,
-    ExprRef, LiteralValue, Operator, PlanRef, Subquery, UnresolvedColumn,
+    Column, Expr, ExprRef, Operator, PlanRef, Subquery, UnresolvedColumn,
+    functions::{ScalarUDF, scalar::ScalarFn},
+    has_agg, lit, null_lit, resolved_col, unresolved_col,
 };
-use daft_functions::numeric::{ceil::ceil, floor::floor};
+use daft_functions::{
+    invalid_argument_err,
+    numeric::{ceil::ceil, floor::floor},
+};
 use daft_functions_utf8::{ilike, like, to_date, to_datetime};
 use daft_logical_plan::{
-    ops::{SetQuantifier, UnionStrategy},
     JoinOptions, LogicalPlanBuilder, LogicalPlanRef,
+    ops::{SetQuantifier, UnionStrategy},
 };
 use daft_session::Session;
 use itertools::Itertools;
@@ -176,7 +179,7 @@ impl SQLPlanner<'_> {
         // !! IMPORTANT: name resolution requires adding an alias to each CTE !!
         let ctes_with_alias = ctes
             .iter()
-            .map(|(alias, plan)| (alias.to_string(), plan.alias(alias.as_str())));
+            .map(|(alias, plan)| (alias.clone(), plan.alias(alias.as_str())));
         self.context.borrow_mut().bound_ctes.extend(ctes_with_alias);
         self
     }
@@ -408,10 +411,7 @@ impl SQLPlanner<'_> {
                         }
                         out
                     }
-                    exprs => exprs
-                        .iter()
-                        .map(|expr| self.plan_expr(expr))
-                        .collect::<SQLPlannerResult<Vec<_>>>()?,
+                    exprs => self.plan_group_by_items(projections.as_slice(), exprs)?,
                 };
             }
         }
@@ -457,14 +457,32 @@ impl SQLPlanner<'_> {
             None => {}
         }
 
+        // Daft's SQL dialect closely follows both DuckDB and PostgreSQL, So unlike DataFrame, when
+        // LIMIT and OFFSET appear at the same time, we need to ignore the order of LIMIT and OFFSET
+        // and ensure that OFFSET is a child node of LIMIT.
+        if let Some(offset) = &query.offset {
+            let offset_expr = self.plan_expr(&offset.value)?;
+            match offset_expr.as_ref() {
+                Expr::Literal(Literal::Int64(offset)) if *offset >= 0 => {
+                    self.update_plan(|plan| plan.offset(*offset as u64))?;
+                }
+                Expr::Literal(Literal::Int64(offset)) => invalid_operation_err!(
+                    "OFFSET <n> must be greater than or equal to 0, instead got: {offset}"
+                ),
+                _ => invalid_operation_err!(
+                    "OFFSET <n> must be a constant integer, instead got: {offset_expr}"
+                ),
+            }
+        }
+
         if let Some(limit) = &query.limit {
             let limit_expr = self.plan_expr(limit)?;
             match limit_expr.as_ref() {
-                Expr::Literal(LiteralValue::Int64(limit)) if *limit >= 0 => {
+                Expr::Literal(Literal::Int64(limit)) if *limit >= 0 => {
                     // TODO: Should this be eager or not?
                     self.update_plan(|plan| plan.limit(*limit as u64, true))?;
                 }
-                Expr::Literal(LiteralValue::Int64(limit)) => invalid_operation_err!(
+                Expr::Literal(Literal::Int64(limit)) => invalid_operation_err!(
                     "LIMIT <n> must be greater than or equal to 0, instead got: {limit}"
                 ),
                 _ => invalid_operation_err!(
@@ -474,6 +492,40 @@ impl SQLPlanner<'_> {
         }
 
         Ok(self.current_plan.clone().unwrap())
+    }
+
+    fn plan_group_by_items(
+        &self,
+        select_items: &[ExprRef],
+        exprs: &[ast::Expr],
+    ) -> SQLPlannerResult<Vec<ExprRef>> {
+        let mut group_by_items = vec![];
+        for expr in exprs {
+            if let ast::Expr::Value(ast::Value::Number(number, _)) = expr {
+                let pos: usize = match number.parse() {
+                    Ok(p) => p,
+                    Err(_) => invalid_argument_err!(
+                        "GROUP BY position '{}' is not a valid non-negative integer",
+                        number
+                    ),
+                };
+                if pos == 0 {
+                    invalid_argument_err!("GROUP BY position must be >= 1 (1-based index)",);
+                }
+                if pos > select_items.len() {
+                    invalid_argument_err!(
+                        "GROUP BY position {} is out of range (only {} select items)",
+                        pos,
+                        select_items.len()
+                    );
+                }
+                group_by_items.push(select_items[pos - 1].clone());
+            } else {
+                let group_by_item = self.plan_expr(expr)?;
+                group_by_items.push(group_by_item);
+            }
+        }
+        Ok(group_by_items)
     }
 
     fn plan_non_agg_query(
@@ -897,7 +949,7 @@ impl SQLPlanner<'_> {
         let mut path = vec![];
         for part in &name.0 {
             let part = match part.quote_style {
-                Some('"') => part.value.to_string(),
+                Some('"') => part.value.clone(),
                 None => normalizer(&part.value),
                 Some(c) => unsupported_sql_err!(
                     "Daft only supports delimited identifiers with double-quotes, found {}",
@@ -1015,7 +1067,7 @@ impl SQLPlanner<'_> {
                     return Err(DaftError::ValueError(format!(
                         "Ambiguous column reference in join predicate: {full_name}"
                     ))
-                    .into())
+                    .into());
                 }
                 (Some(schema), None) | (None, Some(schema)) => {
                     if let Some(expr) = expr_from_idents(
@@ -1058,7 +1110,7 @@ impl SQLPlanner<'_> {
         match item {
             SelectItem::ExprWithAlias { expr, alias } => {
                 let expr = self.plan_expr(expr)?;
-                let alias = alias.value.to_string();
+                let alias = alias.value.clone();
                 self.bound_columns.insert(alias.clone(), expr.clone());
                 Ok(vec![expr.alias(alias)])
             }
@@ -1153,24 +1205,24 @@ impl SQLPlanner<'_> {
         Ok(Field::new(name.value.clone(), data_type))
     }
 
-    fn value_to_lit(&self, value: &Value) -> SQLPlannerResult<LiteralValue> {
+    fn value_to_lit(&self, value: &Value) -> SQLPlannerResult<Literal> {
         Ok(match value {
-            Value::SingleQuotedString(s) => LiteralValue::Utf8(s.clone()),
+            Value::SingleQuotedString(s) => Literal::Utf8(s.clone()),
             Value::Number(n, _) => n
                 .parse::<i64>()
-                .map(LiteralValue::Int64)
-                .or_else(|_| n.parse::<f64>().map(LiteralValue::Float64))
+                .map(Literal::Int64)
+                .or_else(|_| n.parse::<f64>().map(Literal::Float64))
                 .map_err(|_| {
                     PlannerError::invalid_operation(format!(
                         "could not parse number literal '{n:?}'"
                     ))
                 })?,
-            Value::Boolean(b) => LiteralValue::Boolean(*b),
-            Value::Null => LiteralValue::Null,
+            Value::Boolean(b) => Literal::Boolean(*b),
+            Value::Null => Literal::Null,
             _ => {
-                return Err(PlannerError::invalid_operation(
-                    format!("Only string, number, boolean and null literals are supported. Instead found: `{value}`"),
-                ))
+                return Err(PlannerError::invalid_operation(format!(
+                    "Only string, number, boolean and null literals are supported. Instead found: `{value}`"
+                )));
             }
         })
     }
@@ -1229,11 +1281,7 @@ impl SQLPlanner<'_> {
                     .collect::<SQLPlannerResult<Vec<_>>>()?;
 
                 let expr = expr.is_in(list);
-                if *negated {
-                    Ok(expr.not())
-                } else {
-                    Ok(expr)
-                }
+                if *negated { Ok(expr.not()) } else { Ok(expr) }
             }
             SQLExpr::InSubquery {
                 expr,
@@ -1262,11 +1310,7 @@ impl SQLPlanner<'_> {
                 let low = self.plan_expr(low)?;
                 let high = self.plan_expr(high)?;
                 let expr = expr.between(low, high);
-                if *negated {
-                    Ok(expr.not())
-                } else {
-                    Ok(expr)
-                }
+                if *negated { Ok(expr.not()) } else { Ok(expr) }
             }
             SQLExpr::Like {
                 negated,
@@ -1280,11 +1324,7 @@ impl SQLPlanner<'_> {
                 let expr = self.plan_expr(expr)?;
                 let pattern = self.plan_expr(pattern)?;
                 let expr = like(expr, pattern);
-                if *negated {
-                    Ok(expr.not())
-                } else {
-                    Ok(expr)
-                }
+                if *negated { Ok(expr.not()) } else { Ok(expr) }
             }
             SQLExpr::ILike {
                 negated,
@@ -1298,11 +1338,7 @@ impl SQLPlanner<'_> {
                 let expr = self.plan_expr(expr)?;
                 let pattern = self.plan_expr(pattern)?;
                 let expr = ilike(expr, pattern);
-                if *negated {
-                    Ok(expr.not())
-                } else {
-                    Ok(expr)
-                }
+                if *negated { Ok(expr.not()) } else { Ok(expr) }
             }
             SQLExpr::SimilarTo { .. } => unsupported_sql_err!("SIMILAR TO"),
             SQLExpr::RLike { .. } => unsupported_sql_err!("RLIKE"),
@@ -1476,7 +1512,7 @@ impl SQLPlanner<'_> {
                     })
                     .collect::<SQLPlannerResult<Vec<_>>>()?;
 
-                let s = literals_to_series(&values)?;
+                let s = Series::from_literals(values)?;
                 let s = FixedSizeListArray::new(
                     Field::new("tuple", s.data_type().clone())
                         .to_fixed_size_list_field(exprs.len())?,
@@ -1498,12 +1534,11 @@ impl SQLPlanner<'_> {
                         let value = value.as_literal().ok_or_else(|| {
                             PlannerError::invalid_operation("Dictionary value is not a literal")
                         })?;
-                        let struct_field = Field::new(key, value.get_type());
-                        Ok((struct_field, value.clone()))
+                        Ok((key, value.clone()))
                     })
                     .collect::<SQLPlannerResult<_>>()?;
 
-                Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
+                Ok(Expr::Literal(Literal::Struct(entries)).arced())
             }
             SQLExpr::Map(_) => unsupported_sql_err!("MAP"),
             SQLExpr::Subscript { expr, subscript } => self.plan_subscript(expr, subscript.as_ref()),
@@ -1557,7 +1592,7 @@ impl SQLPlanner<'_> {
                                 return Err(PlannerError::invalid_operation(format!(
                                     "Invalid interval unit: {}",
                                     &cap[2]
-                                )))
+                                )));
                             }
                         };
 
@@ -1633,15 +1668,21 @@ impl SQLPlanner<'_> {
                             DateTimeField::Hour => (0, 0, count * 3_600_000_000_000),
                             DateTimeField::Minute => (0, 0, count * 60_000_000_000),
                             DateTimeField::Second => (0, 0, count * 1_000_000_000),
-                            DateTimeField::Microsecond | DateTimeField::Microseconds => (0, 0, count * 1_000),
-                            DateTimeField::Millisecond | DateTimeField::Milliseconds => (0, 0, count * 1_000_000),
+                            DateTimeField::Microsecond | DateTimeField::Microseconds => {
+                                (0, 0, count * 1_000)
+                            }
+                            DateTimeField::Millisecond | DateTimeField::Milliseconds => {
+                                (0, 0, count * 1_000_000)
+                            }
                             DateTimeField::Nanosecond | DateTimeField::Nanoseconds => (0, 0, count),
-                            _ => return Err(PlannerError::invalid_operation(format!(
-                                "Invalid interval unit: {time_unit}. Expected one of: year, month, week, day, hour, minute, second, millisecond, microsecond, nanosecond"
-                            ))),
+                            _ => {
+                                return Err(PlannerError::invalid_operation(format!(
+                                    "Invalid interval unit: {time_unit}. Expected one of: year, month, week, day, hour, minute, second, millisecond, microsecond, nanosecond"
+                                )));
+                            }
                         };
 
-                        Ok(Arc::new(Expr::Literal(LiteralValue::Interval(
+                        Ok(Arc::new(Expr::Literal(Literal::Interval(
                             daft_core::datatypes::IntervalValue::new(
                                 months as i32,
                                 days as i32,
@@ -1673,7 +1714,7 @@ impl SQLPlanner<'_> {
 
                         let (months, days, nanoseconds) = interval_parts_to_values(parts);
 
-                        Ok(Arc::new(Expr::Literal(LiteralValue::Interval(
+                        Ok(Arc::new(Expr::Literal(Literal::Interval(
                             daft_core::datatypes::IntervalValue::new(
                                 months as i32,
                                 days as i32,
@@ -1727,10 +1768,10 @@ impl SQLPlanner<'_> {
         let expr = self.plan_expr(expr)?;
         Ok(match (op, expr.as_ref()) {
             // simplify the parse tree by special-casing common unary +/- ops
-            (UnaryOperator::Plus, Expr::Literal(LiteralValue::Int64(n))) => lit(*n),
-            (UnaryOperator::Plus, Expr::Literal(LiteralValue::Float64(n))) => lit(*n),
-            (UnaryOperator::Minus, Expr::Literal(LiteralValue::Int64(n))) => lit(-n),
-            (UnaryOperator::Minus, Expr::Literal(LiteralValue::Float64(n))) => lit(-n),
+            (UnaryOperator::Plus, Expr::Literal(Literal::Int64(n))) => lit(*n),
+            (UnaryOperator::Plus, Expr::Literal(Literal::Float64(n))) => lit(*n),
+            (UnaryOperator::Minus, Expr::Literal(Literal::Int64(n))) => lit(-n),
+            (UnaryOperator::Minus, Expr::Literal(Literal::Float64(n))) => lit(-n),
             // general case
             (UnaryOperator::Plus, _) => lit(0).add(expr),
             (UnaryOperator::Minus, _) => lit(0).sub(expr),
@@ -1785,7 +1826,7 @@ impl SQLPlanner<'_> {
                         let lower = self.plan_expr(lower)?;
                         let upper = self.plan_expr(upper)?;
                         let expr = self.plan_expr(expr)?;
-                        Ok(daft_functions_list::slice(expr, lower, upper))
+                        Ok(daft_functions::slice::slice(expr, lower, upper))
                     }
                     _ => {
                         unsupported_sql_err!("slice with only one bound not yet supported");
@@ -1797,14 +1838,11 @@ impl SQLPlanner<'_> {
 }
 
 /// Checks if the SQL query is valid syntax and doesn't use unsupported features.
-/// /// This function examines various clauses and options in the provided [sqlparser::ast::Query]
+/// This function examines various clauses and options in the provided [sqlparser::ast::Query]
 /// and returns an error if any unsupported features are encountered.
-fn check_query_features(query: &sqlparser::ast::Query) -> SQLPlannerResult<()> {
+fn check_query_features(query: &Query) -> SQLPlannerResult<()> {
     if !query.limit_by.is_empty() {
         unsupported_sql_err!("LIMIT BY");
-    }
-    if query.offset.is_some() {
-        unsupported_sql_err!("OFFSET");
     }
     if query.fetch.is_some() {
         unsupported_sql_err!("FETCH");

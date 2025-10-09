@@ -4,7 +4,7 @@ _Last updated: May 2025_
 
 What is in store for Daft in 2025? This roadmap outlines the big picture of what the Daft team plans to work on in the coming year, as well as some of the features to expect from these.
 
-Please note that items on this roadmap are subject to change any time. If there are features you would like to implement, we highly welcome and encourage open source contributions! Our team is happy to provide guidance, help scope the work, and review PRs. Feel free to open an issue or PR on [Github](https://github.com/Eventual-Inc/Daft) or join our [Daft Slack Community](https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg).
+Please note that items on this roadmap are subject to change any time. If there are features you would like to implement, we highly welcome and encourage open source contributions! Our team is happy to provide guidance, help scope the work, and review PRs. Feel free to open an issue or PR on [GitHub](https://github.com/Eventual-Inc/Daft) or join our [Daft Slack Community](https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg).
 
 <!-- See also [Contribute to Daft](contributing.md) for information. -->
 
@@ -38,7 +38,7 @@ Please note that items on this roadmap are subject to change any time. If there 
 
 ## Out-of-the-box Experience
 
-- Continue expanding feature set and compatibility of [Daft’s PySpark connector](spark_connect.md#show) so that running Spark workloads on Daft is a simple plug-and-play ([issue #3581](https://github.com/Eventual-Inc/Daft/issues/3581))
+- Continue expanding feature set and compatibility of [Daft’s PySpark connector](api/spark_connect.md#show) so that running Spark workloads on Daft is a simple plug-and-play ([issue #3581](https://github.com/Eventual-Inc/Daft/issues/3581))
     - Ordinal column references ([issue #4270](https://github.com/Eventual-Inc/Daft/issues/4270))
     - Window function support ([issue #2108](https://github.com/Eventual-Inc/Daft/issues/2108))
 - Improve catalog and table integrations
@@ -58,6 +58,6 @@ The following features would be valuable additions to Daft, but are not currentl
 - Improved Apache Hudi support (see [roadmap for Apache Hudi](https://github.com/Eventual-Inc/Daft/issues/4389))
 - Expressions parity with PySpark: Temporal ([issue #3798](https://github.com/Eventual-Inc/Daft/issues/3798)), Math ([issue #3793](https://github.com/Eventual-Inc/Daft/issues/3793)), String ([issue #3792](https://github.com/Eventual-Inc/Daft/issues/3792))
 
-If you are interested in working on any of these features, feel free to open an issue or start a discussion on [Github](https://github.com/Eventual-Inc/Daft) or join our [Daft Slack Community](https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg). Our team can provide technical direction and help scope the work appropriately. Thank you in advance 💜
+If you are interested in working on any of these features, feel free to open an issue or start a discussion on [GitHub](https://github.com/Eventual-Inc/Daft) or join our [Daft Slack Community](https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg). Our team can provide technical direction and help scope the work appropriately. Thank you in advance 💜
 
 <!-- See also [Contribute to Daft](contributing.md) for information. -->

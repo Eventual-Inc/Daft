@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use daft_dsl::{
-    functions::{scalar::ScalarFn, FunctionArgs},
-    python_udf::{PyScalarFn, RowWisePyFn},
     Column, ExprRef, ResolvedColumn,
+    expr::bound_expr::BoundExpr,
+    functions::{FunctionArgs, scalar::ScalarFn},
+    python_udf::PyScalarFn,
 };
+use daft_recordbatch::RecordBatch;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -15,6 +17,7 @@ pub enum RepartitionSpec {
     Hash(HashRepartitionConfig),
     Random(RandomShuffleConfig),
     IntoPartitions(IntoPartitionsConfig),
+    Range(RangeRepartitionConfig),
 }
 
 impl RepartitionSpec {
@@ -23,6 +26,7 @@ impl RepartitionSpec {
             Self::Hash(_) => "Hash",
             Self::Random(_) => "Random",
             Self::IntoPartitions(_) => "IntoPartitions",
+            Self::Range(_) => "Range",
         }
     }
 
@@ -38,6 +42,7 @@ impl RepartitionSpec {
             Self::Hash(conf) => conf.multiline_display(),
             Self::Random(conf) => conf.multiline_display(),
             Self::IntoPartitions(conf) => conf.multiline_display(),
+            Self::Range(conf) => conf.multiline_display(),
         }
     }
 
@@ -55,6 +60,16 @@ impl RepartitionSpec {
             Self::IntoPartitions(IntoPartitionsConfig { num_partitions }) => {
                 ClusteringSpec::Unknown(UnknownClusteringConfig::new(*num_partitions))
             }
+            Self::Range(RangeRepartitionConfig {
+                num_partitions,
+                by,
+                descending,
+                ..
+            }) => ClusteringSpec::Range(RangeClusteringConfig::new(
+                num_partitions.unwrap_or(upstream_num_partitions),
+                by.iter().map(|e| e.inner().clone()).collect(),
+                descending.clone(),
+            )),
         }
     }
 }
@@ -93,6 +108,45 @@ impl RandomShuffleConfig {
 
     pub fn multiline_display(&self) -> Vec<String> {
         vec![format!("Num partitions = {:?}", self.num_partitions)]
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+pub struct RangeRepartitionConfig {
+    pub num_partitions: Option<usize>,
+    pub boundaries: RecordBatch,
+    pub by: Vec<BoundExpr>,
+    pub descending: Vec<bool>,
+}
+
+impl RangeRepartitionConfig {
+    pub fn new(
+        num_partitions: Option<usize>,
+        boundaries: RecordBatch,
+        by: Vec<BoundExpr>,
+        descending: Vec<bool>,
+    ) -> Self {
+        Self {
+            num_partitions,
+            boundaries,
+            by,
+            descending,
+        }
+    }
+}
+
+impl RangeRepartitionConfig {
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        let pairs = self
+            .by
+            .iter()
+            .zip(self.descending.iter())
+            .map(|(sb, d)| format!("({}, {})", sb, if *d { "descending" } else { "ascending" },))
+            .join(", ");
+        res.push(format!("Num partitions = {:?}", self.num_partitions));
+        res.push(format!("By = {}", pairs));
+        res
     }
 }
 
@@ -236,7 +290,7 @@ fn translate_clustering_spec_expr(
     //  - Ok(expr) with expr being the translation, or
     //  - Err(()) if no translation is possible in the new projection.
 
-    use daft_dsl::{binary_op, Expr};
+    use daft_dsl::{Expr, binary_op};
 
     match clustering_spec_expr.as_ref() {
         Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
@@ -339,25 +393,14 @@ fn translate_clustering_spec_expr(
 
             Ok(expr.in_subquery(subquery.clone()))
         }
-        Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
-            function_name: name,
-            inner: func,
-            return_dtype,
-            original_args,
-            args: children,
-        }))) => {
-            let new_children = children
+        Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(row_wise_py_fn))) => {
+            let new_children = row_wise_py_fn
+                .args
                 .iter()
                 .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Arc::new(Expr::ScalarFn(ScalarFn::Python(
-                PyScalarFn::RowWise(RowWisePyFn {
-                    function_name: name.clone(),
-                    inner: func.clone(),
-                    return_dtype: return_dtype.clone(),
-                    original_args: original_args.clone(),
-                    args: new_children,
-                }),
+                PyScalarFn::RowWise(row_wise_py_fn.with_new_children(new_children)),
             ))))
         }
         // Cannot have agg exprs or references to other tables in clustering specs.

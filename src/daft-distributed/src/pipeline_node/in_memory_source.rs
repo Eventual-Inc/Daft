@@ -1,20 +1,19 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::LocalPhysicalPlan;
-use daft_logical_plan::{stats::StatsState, ClusteringSpec, InMemoryInfo};
+use daft_logical_plan::{ClusteringSpec, InMemoryInfo, stats::StatsState};
 
-use super::{DistributedPipelineNode, PipelineNodeContext, SubmittableTaskStream};
+use super::{PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream};
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig},
+    pipeline_node::{DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig},
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SubmittableTask,
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
     },
-    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
-    utils::channel::{create_channel, Sender},
+    utils::channel::{Sender, create_channel},
 };
 
 pub(crate) struct InMemorySourceNode {
@@ -29,13 +28,13 @@ impl InMemorySourceNode {
 
     pub fn new(
         node_id: NodeID,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         info: InMemoryInfo,
         input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
         logical_node_id: Option<NodeID>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![],
@@ -47,7 +46,7 @@ impl InMemorySourceNode {
 
         let config = PipelineNodeConfig::new(
             info.source_schema.clone(),
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             Arc::new(ClusteringSpec::unknown_with_num_partitions(num_partitions)),
         );
         Self {
@@ -58,8 +57,8 @@ impl InMemorySourceNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn execution_loop(
@@ -117,8 +116,22 @@ impl InMemorySourceNode {
         );
         Ok(task)
     }
+}
 
-    fn multiline_display(&self) -> Vec<String> {
+impl PipelineNodeImpl for InMemorySourceNode {
+    fn context(&self) -> &PipelineNodeContext {
+        &self.context
+    }
+
+    fn config(&self) -> &PipelineNodeConfig {
+        &self.config
+    }
+
+    fn children(&self) -> Vec<DistributedPipelineNode> {
+        vec![]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         let mut res = vec![];
         res.push("InMemorySource:".to_string());
         res.push(format!(
@@ -128,58 +141,15 @@ impl InMemorySourceNode {
         res.push(format!("Size bytes = {}", self.info.size_bytes));
         res
     }
-}
-
-impl DistributedPipelineNode for InMemorySourceNode {
-    fn context(&self) -> &PipelineNodeContext {
-        &self.context
-    }
-
-    fn config(&self) -> &PipelineNodeConfig {
-        &self.config
-    }
-
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
-        vec![]
-    }
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.execution_loop(result_tx, stage_context.task_id_counter());
-        stage_context.spawn(execution_loop);
+        let execution_loop = self.execution_loop(result_tx, plan_context.task_id_counter());
+        plan_context.spawn(execution_loop);
 
         SubmittableTaskStream::from(result_rx)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
-    }
-}
-
-impl TreeDisplay for InMemorySourceNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.context.node_name).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![]
-    }
-
-    fn get_name(&self) -> String {
-        self.context.node_name.to_string()
     }
 }

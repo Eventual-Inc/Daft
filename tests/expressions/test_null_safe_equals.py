@@ -3,9 +3,7 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
-from daft.daft import series_lit
 from daft.expressions import col, lit
-from daft.expressions.expressions import Expression
 from daft.recordbatch import MicroPartition
 
 
@@ -338,39 +336,6 @@ def test_left_nulls_all_types(type_name, left_data, right_data, expected_values)
     result_values = result.get_column_by_name("left").to_pylist()
 
     assert result_values == expected_values, f"Failed for {type_name} comparison"
-
-
-@pytest.mark.parametrize(
-    "type_name,left_data,right_data",
-    [
-        ("int", [1, 2, 3], [1, 2]),
-        ("float", [1.0, 2.0, 3.0], [1.0, 2.0]),
-        ("boolean", [True, False, True], [True, False]),
-        ("string", ["a", "b", "c"], ["a", "b"]),
-        ("binary", [b"a", b"b", b"c"], [b"a", b"b"]),
-        ("fixed_size_binary", [b"aaa", b"bbb", b"ccc"], [b"aaa", b"bbb"]),
-    ],
-)
-def test_length_mismatch_all_types(type_name, left_data, right_data):
-    """Test that length mismatches raise appropriate error for all data types."""
-    # Create two separate tables
-    left_table = MicroPartition.from_pydict({"value": left_data})
-    right_table = MicroPartition.from_pydict({"value": right_data})
-
-    with pytest.raises(ValueError) as exc_info:
-        result = left_table.eval_expression_list(
-            [
-                col("value").eq_null_safe(
-                    Expression._from_pyexpr(series_lit(right_table.get_column_by_name("value")._series))
-                )
-            ]
-        )
-        # Force evaluation by accessing the result
-        result.get_column_by_name("value").to_pylist()
-
-    # Verify error message format
-    error_msg = str(exc_info.value)
-    assert "trying to compare different length arrays" in error_msg
 
 
 @pytest.mark.parametrize(

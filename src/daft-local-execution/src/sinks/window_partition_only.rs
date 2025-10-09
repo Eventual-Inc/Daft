@@ -1,21 +1,22 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::{
     blocking_sink::{
         BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult,
-        BlockingSinkSinkResult, BlockingSinkState,
+        BlockingSinkSinkResult, BlockingSinkStatus,
     },
-    window_base::{base_sink, WindowBaseState, WindowSinkParams},
+    window_base::{WindowBaseState, WindowSinkParams},
 };
-use crate::{pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 struct WindowPartitionOnlyParams {
     agg_exprs: Vec<BoundAggExpr>,
@@ -65,27 +66,34 @@ impl WindowPartitionOnlySink {
 }
 
 impl BlockingSink for WindowPartitionOnlySink {
+    type State = WindowBaseState;
+
     #[instrument(skip_all, name = "WindowPartitionOnlySink::sink")]
     fn sink(
         &self,
         input: Arc<MicroPartition>,
-        state: Box<dyn BlockingSinkState>,
+        mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkSinkResult {
-        base_sink(
-            self.window_partition_only_params.clone(),
-            input,
-            state,
-            spawner,
-        )
+    ) -> BlockingSinkSinkResult<Self> {
+        let params = self.window_partition_only_params.clone();
+        let sink_name = params.name().to_string();
+        spawner
+            .spawn(
+                async move {
+                    state.push(input, params.partition_by(), &sink_name)?;
+                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                },
+                Span::current(),
+            )
+            .into()
     }
 
     #[instrument(skip_all, name = "WindowPartitionOnlySink::finalize")]
     fn finalize(
         &self,
-        states: Vec<Box<dyn BlockingSinkState>>,
+        states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
         let params = self.window_partition_only_params.clone();
         let num_partitions = self.num_partitions();
 
@@ -94,14 +102,7 @@ impl BlockingSink for WindowPartitionOnlySink {
                 async move {
                     let mut state_iters = states
                         .into_iter()
-                        .map(|mut state| {
-                            state
-                                .as_any_mut()
-                                .downcast_mut::<WindowBaseState>()
-                                .expect("WindowPartitionOnlySink should have WindowBaseState")
-                                .finalize(params.name())
-                                .into_iter()
-                        })
+                        .map(|mut state| state.finalize(params.name()).into_iter())
                         .collect::<Vec<_>>();
 
                     let mut per_partition_tasks = tokio::task::JoinSet::new();
@@ -170,6 +171,10 @@ impl BlockingSink for WindowPartitionOnlySink {
         "WindowPartitionOnly".into()
     }
 
+    fn op_type(&self) -> NodeType {
+        NodeType::WindowPartitionOnly
+    }
+
     fn multiline_display(&self) -> Vec<String> {
         let mut display = vec![];
         display.push(format!(
@@ -191,7 +196,7 @@ impl BlockingSink for WindowPartitionOnlySink {
         display
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
+    fn make_state(&self) -> DaftResult<Self::State> {
         WindowBaseState::make_base_state(self.num_partitions())
     }
 }

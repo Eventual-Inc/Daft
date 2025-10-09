@@ -4,9 +4,9 @@ use daft_core::{
     prelude::*,
 };
 use daft_dsl::{
+    AggExpr,
     expr::bound_expr::{BoundAggExpr, BoundExpr},
     functions::FunctionExpr,
-    AggExpr,
 };
 
 use crate::RecordBatch;
@@ -96,12 +96,12 @@ impl RecordBatch {
             }) => {
                 return Err(DaftError::ComputeError(
                     "Cannot run actor pool UDF in MapGroups".to_string(),
-                ))
+                ));
             }
             _ => {
                 return Err(DaftError::ComputeError(
                     "Trying to run non-UDF function in MapGroups!".to_string(),
-                ))
+                ));
             }
         };
 
@@ -128,7 +128,7 @@ impl RecordBatch {
             );
             (empty_groupkeys_table, empty_udf_output_col)
         } else if groupvals_indices.len() == 1 {
-            let grouped_col = udf.call_udf(evaluated_inputs.as_slice())?.0;
+            let grouped_col = udf.call_udf(evaluated_inputs.as_slice())?;
             let groupkeys_table = {
                 let indices_as_series = UInt64Array::from(("", groupkey_indices)).into_series();
                 groupby_table.take(&indices_as_series)?
@@ -151,7 +151,7 @@ impl RecordBatch {
                             .collect::<DaftResult<Vec<_>>>()?;
 
                         // Call the UDF on the grouped inputs
-                        udf.call_udf(input_groups.as_slice())?.0
+                        udf.call_udf(input_groups.as_slice())?
                     };
 
                     let broadcasted_groupkeys_table = {

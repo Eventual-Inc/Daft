@@ -1,6 +1,5 @@
-use std::sync::{atomic::AtomicU64, Arc};
+use std::sync::{Arc, atomic::AtomicU64};
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
@@ -8,16 +7,16 @@ use daft_schema::schema::SchemaRef;
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        SubmittableTaskStream,
+        PipelineNodeImpl, SubmittableTaskStream,
     },
-    stage::{StageConfig, StageExecutionContext},
+    plan::{PlanConfig, PlanExecutionContext},
 };
 
 pub(crate) struct MonotonicallyIncreasingIdNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     column_name: String,
-    child: Arc<dyn DistributedPipelineNode>,
+    child: DistributedPipelineNode,
 }
 
 impl MonotonicallyIncreasingIdNode {
@@ -26,13 +25,13 @@ impl MonotonicallyIncreasingIdNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         column_name: String,
         schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![child.node_id()],
@@ -41,7 +40,7 @@ impl MonotonicallyIncreasingIdNode {
         );
         let config = PipelineNodeConfig::new(
             schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             child.config().clustering_spec.clone(),
         );
         Self {
@@ -52,37 +51,8 @@ impl MonotonicallyIncreasingIdNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
-    }
-
-    fn multiline_display(&self) -> Vec<String> {
-        vec![format!("MonotonicallyIncreasingId: {}", self.column_name)]
-    }
-}
-
-impl TreeDisplay for MonotonicallyIncreasingIdNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.context.node_name).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_name(&self) -> String {
-        self.context.node_name.to_string()
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 
@@ -94,7 +64,7 @@ impl TreeDisplay for MonotonicallyIncreasingIdNode {
 /// 2^36 ≈ 68 billion rows per partition.
 const MAX_ROWS_PER_PARTITION: u64 = 1u64 << 36;
 
-impl DistributedPipelineNode for MonotonicallyIncreasingIdNode {
+impl PipelineNodeImpl for MonotonicallyIncreasingIdNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -103,21 +73,25 @@ impl DistributedPipelineNode for MonotonicallyIncreasingIdNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        vec![format!("MonotonicallyIncreasingId: {}", self.column_name)]
     }
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_node = self.child.clone().produce_tasks(stage_context);
+        let input_node = self.child.clone().produce_tasks(plan_context);
         let column_name = self.column_name.clone();
         let schema = self.config.schema.clone();
 
         let next_starting_offset = AtomicU64::new(0);
 
-        input_node.pipeline_instruction(self.clone(), move |input| {
+        input_node.pipeline_instruction(self, move |input| {
             LocalPhysicalPlan::monotonically_increasing_id(
                 input,
                 column_name.clone(),
@@ -129,9 +103,5 @@ impl DistributedPipelineNode for MonotonicallyIncreasingIdNode {
                 StatsState::NotMaterialized,
             )
         })
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
     }
 }

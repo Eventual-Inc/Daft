@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::{tree::TreeDisplay, DisplayLevel};
+use crate::{DisplayLevel, tree::TreeDisplay};
 
 // Print the tree recursively, and illustrate the tree structure with a single line per node + indentation.
 fn fmt_tree_indent_style<'a, W: fmt::Write + 'a>(
@@ -9,13 +9,10 @@ fn fmt_tree_indent_style<'a, W: fmt::Write + 'a>(
     s: &'a mut W,
 ) -> fmt::Result {
     // Print the current node.
-    if indent > 0 {
-        writeln!(s)?;
-        write!(s, "{:indent$}", "", indent = 2 * indent)?;
-    }
-
     let node_str = node.display_as(DisplayLevel::Default);
-    s.write_str(&node_str)?;
+    for line in node_str.lines() {
+        writeln!(s, "{:indent$}{}", "", line, indent = 2 * indent)?;
+    }
 
     // Recursively handle children.
     let children = node.get_children();
@@ -45,7 +42,7 @@ pub fn fmt_tree_gitstyle<'a, W: fmt::Write + 'a>(
     s: &'a mut W,
     level: crate::DisplayLevel,
 ) -> fmt::Result {
-    use terminal_size::{terminal_size, Width};
+    use terminal_size::{Width, terminal_size};
 
     // Print the current node.
     // e.g. | | * <node contents line 1>

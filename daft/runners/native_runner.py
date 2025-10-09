@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import TYPE_CHECKING
 
 from daft.context import get_context
@@ -80,10 +81,14 @@ class NativeRunner(Runner[MicroPartition]):
         track_runner_on_scarf(runner=self.name)
 
         # NOTE: Freeze and use this same execution config for the entire execution
-        daft_execution_config = get_context().daft_execution_config
+        ctx = get_context()
+        query_id = str(uuid.uuid4())
 
         # Optimize the logical plan.
+        ctx._notify_query_start(query_id, repr(builder))
+        ctx._notify_optimization_start(query_id)
         builder = builder.optimize()
+        ctx._notify_optimization_end(query_id, repr(builder))
 
         # NOTE: ENABLE FOR DAFT-PROTO TESTING
         # builder = _to_from_proto(builder)
@@ -93,10 +98,16 @@ class NativeRunner(Runner[MicroPartition]):
         results_gen = executor.run(
             plan,
             {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
-            daft_execution_config,
+            ctx,
             results_buffer_size,
+            {"query_id": query_id},
         )
-        yield from results_gen
+
+        for result in results_gen:
+            ctx._notify_result_out(query_id, result.partition())
+            yield result
+
+        ctx._notify_query_end(query_id)
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None

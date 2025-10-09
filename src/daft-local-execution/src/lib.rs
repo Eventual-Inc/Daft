@@ -1,11 +1,8 @@
-#![feature(let_chains)]
-
 mod buffer;
 mod channel;
 mod dispatcher;
 mod intermediate_ops;
 mod pipeline;
-mod progress_bar;
 mod resource_manager;
 mod run;
 mod runtime_stats;
@@ -17,17 +14,18 @@ mod streaming_sink;
 use std::{
     future::Future,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, LazyLock},
     task::{Context, Poll},
 };
 
+use arc_swap::ArcSwap;
 use common_error::{DaftError, DaftResult};
 use common_runtime::{RuntimeRef, RuntimeTask};
-use progress_bar::{OperatorProgressBar, ProgressBarColor, ProgressBarManager};
+use console::style;
 use resource_manager::MemoryManager;
 pub use run::{ExecutionEngineResult, NativeExecutor};
-use runtime_stats::{RuntimeStatsContext, TimedFuture};
-use snafu::{futures::TryFutureExt, ResultExt, Snafu};
+use runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle, TimedFuture};
+use snafu::{ResultExt, Snafu, futures::TryFutureExt};
 use tracing::Instrument;
 
 /// The `OperatorOutput` enum represents the output of an operator.
@@ -128,28 +126,23 @@ impl RuntimeHandle {
 
 pub(crate) struct ExecutionRuntimeContext {
     worker_set: TaskSet<crate::Result<()>>,
-    default_morsel_size: usize,
     memory_manager: Arc<MemoryManager>,
-    progress_bar_manager: Option<Arc<dyn ProgressBarManager>>,
-    rt_stats_handler: Arc<RuntimeStatsEventHandler>,
+    stats_manager: RuntimeStatsManagerHandle,
 }
 
 impl ExecutionRuntimeContext {
     #[must_use]
     pub fn new(
-        default_morsel_size: usize,
         memory_manager: Arc<MemoryManager>,
-        progress_bar_manager: Option<Arc<dyn ProgressBarManager>>,
-        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
+        stats_manager: RuntimeStatsManagerHandle,
     ) -> Self {
         Self {
             worker_set: TaskSet::new(),
-            default_morsel_size,
             memory_manager,
-            progress_bar_manager,
-            rt_stats_handler,
+            stats_manager,
         }
     }
+
     pub fn spawn_local(
         &mut self,
         task: impl std::future::Future<Output = DaftResult<()>> + 'static,
@@ -168,26 +161,6 @@ impl ExecutionRuntimeContext {
         self.worker_set.shutdown().await;
     }
 
-    #[must_use]
-    pub fn default_morsel_size(&self) -> usize {
-        self.default_morsel_size
-    }
-
-    pub fn make_progress_bar(
-        &self,
-        prefix: &str,
-        color: ProgressBarColor,
-        node_id: usize,
-        runtime_stats: Arc<RuntimeStatsContext>,
-    ) -> Option<Arc<OperatorProgressBar>> {
-        if let Some(ref pb_manager) = self.progress_bar_manager {
-            let pb = pb_manager.make_new_bar(color, prefix, node_id).unwrap();
-            Some(Arc::new(OperatorProgressBar::new(pb, runtime_stats)))
-        } else {
-            None
-        }
-    }
-
     pub(crate) fn handle(&self) -> RuntimeHandle {
         RuntimeHandle(tokio::runtime::Handle::current())
     }
@@ -198,24 +171,15 @@ impl ExecutionRuntimeContext {
     }
 
     #[must_use]
-    pub(crate) fn runtime_stats_handler(&self) -> Arc<RuntimeStatsEventHandler> {
-        self.rt_stats_handler.clone()
-    }
-}
-
-impl Drop for ExecutionRuntimeContext {
-    fn drop(&mut self) {
-        if let Some(pbm) = self.progress_bar_manager.take() {
-            let _ = pbm.close_all();
-        }
+    pub(crate) fn stats_manager(&self) -> RuntimeStatsManagerHandle {
+        self.stats_manager.clone()
     }
 }
 
 pub(crate) struct ExecutionTaskSpawner {
     runtime_ref: RuntimeRef,
     memory_manager: Arc<MemoryManager>,
-    runtime_context: Arc<RuntimeStatsContext>,
-    rt_stats_handler: Arc<RuntimeStatsEventHandler>,
+    runtime_stats: Arc<dyn RuntimeStats>,
     outer_span: tracing::Span,
 }
 
@@ -223,15 +187,13 @@ impl ExecutionTaskSpawner {
     pub fn new(
         runtime_ref: RuntimeRef,
         memory_manager: Arc<MemoryManager>,
-        runtime_context: Arc<RuntimeStatsContext>,
-        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
+        runtime_stats: Arc<dyn RuntimeStats>,
         span: tracing::Span,
     ) -> Self {
         Self {
             runtime_ref,
             memory_manager,
-            runtime_context,
-            rt_stats_handler,
+            runtime_stats,
             outer_span: span,
         }
     }
@@ -249,8 +211,7 @@ impl ExecutionTaskSpawner {
         let instrumented = future.instrument(span);
         let timed_fut = TimedFuture::new(
             instrumented,
-            self.runtime_context.clone(),
-            self.rt_stats_handler.clone(),
+            self.runtime_stats.clone(),
             self.outer_span.clone(),
         );
         let memory_manager = self.memory_manager.clone();
@@ -268,18 +229,59 @@ impl ExecutionTaskSpawner {
         let instrumented = future.instrument(inner_span);
         let timed_fut = TimedFuture::new(
             instrumented,
-            self.runtime_context.clone(),
-            self.rt_stats_handler.clone(),
+            self.runtime_stats.clone(),
             self.outer_span.clone(),
         );
         self.runtime_ref.spawn(timed_fut)
     }
 }
 
+// ---------------------------- STDOUT / STDERR PIPING ---------------------------- //
+
+/// Target for printing to.
+trait PythonPrintTarget: Send + Sync + 'static {
+    fn println(&self, message: &str);
+}
+
+/// A static entity that redirects Python sys.stdout / sys.stderr to handle Rust side effects.
+/// Tracks internal tags to reduce interweaving of user prints
+/// Can also register callbacks, for example for suspending the progress bar before prints.
+struct StdoutHandler {
+    target: ArcSwap<Option<Box<dyn PythonPrintTarget>>>,
+}
+
+impl StdoutHandler {
+    pub fn new() -> Self {
+        Self {
+            target: ArcSwap::new(Arc::new(None)),
+        }
+    }
+
+    fn set_target(&self, target: Box<dyn PythonPrintTarget>) {
+        self.target.store(Arc::new(Some(target)));
+    }
+
+    fn reset_target(&self) {
+        self.target.store(Arc::new(None));
+    }
+
+    fn print(&self, prefix: &str, message: &str) {
+        let message = format!("{} {}", style(prefix).magenta(), message);
+
+        if let Some(target) = self.target.load().as_ref() {
+            target.println(&message);
+        } else {
+            println!("{message}");
+        }
+    }
+}
+
+static STDOUT: LazyLock<Arc<StdoutHandler>> = LazyLock::new(|| Arc::new(StdoutHandler::new()));
+
+// -------------------------------------------------------------------------------- //
+
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-
-use crate::runtime_stats::RuntimeStatsEventHandler;
 
 #[derive(Debug, Snafu)]
 pub enum Error {

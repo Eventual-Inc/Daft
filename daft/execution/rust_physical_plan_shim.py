@@ -237,6 +237,7 @@ def top_n(
     descending: list[bool],
     nulls_first: list[bool],
     limit: int,
+    offset: int,
     num_partitions: int,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in sort_by])
@@ -246,6 +247,7 @@ def top_n(
         descending=descending,
         nulls_first=nulls_first,
         limit=limit,
+        offset=offset,
         num_partitions=num_partitions,
     )
 

@@ -150,6 +150,19 @@ class LogicalPlanBuilder:
         builder = logical_plan_table_scan(scan_operator)
         return cls(builder)
 
+    @classmethod
+    @_apply_daft_planning_config_to_initializer
+    def from_glob_scan(
+        cls,
+        glob_paths: list[str],
+        io_config: IOConfig | None = None,
+    ) -> LogicalPlanBuilder:
+        builder = _LogicalPlanBuilder.from_glob_scan(
+            glob_paths,
+            io_config,
+        )
+        return cls(builder)
+
     def select(
         self,
         to_select: list[Expression],
@@ -184,6 +197,10 @@ class LogicalPlanBuilder:
         builder = self._builder.limit(num_rows, eager)
         return LogicalPlanBuilder(builder)
 
+    def offset(self, num_rows: int) -> LogicalPlanBuilder:
+        builder = self._builder.offset(num_rows)
+        return LogicalPlanBuilder(builder)
+
     def shard(self, strategy: str, world_size: int, rank: int) -> LogicalPlanBuilder:
         builder = self._builder.shard(strategy, world_size, rank)
         return LogicalPlanBuilder(builder)
@@ -206,10 +223,13 @@ class LogicalPlanBuilder:
         return LogicalPlanBuilder(builder)
 
     def count(self) -> LogicalPlanBuilder:
-        # TODO(Clark): Add dedicated logical/physical ops when introducing metadata-based count optimizations.
-        first_col = col(self.schema().column_names()[0])
-        builder = self._builder.aggregate([first_col.count(CountMode.All)._expr], [])
-        builder = builder.select([first_col.alias("count")._expr])
+        cheapest_col_name = self.schema()._schema.min_estimated_size_column()
+        if cheapest_col_name is None:
+            cheapest_col_name = self.schema().column_names()[0]
+
+        cheapest_col = col(cheapest_col_name)
+        builder = self._builder.aggregate([cheapest_col.count(CountMode.All)._expr], [])
+        builder = builder.select([cheapest_col.alias("count")._expr])
         return LogicalPlanBuilder(builder)
 
     def distinct(self, on: list[Expression]) -> LogicalPlanBuilder:
@@ -248,6 +268,10 @@ class LogicalPlanBuilder:
 
     def into_partitions(self, num_partitions: int) -> LogicalPlanBuilder:
         builder = self._builder.into_partitions(num_partitions)
+        return LogicalPlanBuilder(builder)
+
+    def into_batches(self, batch_size: int) -> LogicalPlanBuilder:
+        builder = self._builder.into_batches(batch_size)
         return LogicalPlanBuilder(builder)
 
     def agg(
@@ -344,7 +368,7 @@ class LogicalPlanBuilder:
         from daft.io.iceberg.iceberg_write import get_missing_columns, partition_field_to_expr
 
         name = ".".join(table.name())
-        location = f"{table.location()}/data"
+        location = table.metadata.properties.get("write.data.path", f"{table.location()}/data")
         partition_spec = table.spec()
         schema = table.schema()
         missing_columns = get_missing_columns(self.schema().to_pyarrow_schema(), schema)

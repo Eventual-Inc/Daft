@@ -3,11 +3,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_logical_plan::DataSinkInfo;
-use daft_micropartition::{python::PyMicroPartition, MicroPartition};
-use daft_recordbatch::{python::PyRecordBatch, RecordBatch};
-use pyo3::{types::PyAnyMethods, Python};
+use daft_micropartition::{MicroPartition, python::PyMicroPartition};
+use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
+use pyo3::{Python, types::PyAnyMethods};
 
-use crate::{AsyncFileWriter, WriterFactory};
+use crate::{AsyncFileWriter, WriteResult, WriterFactory};
 
 pub struct DataSinkWriter {
     is_closed: bool,
@@ -32,7 +32,8 @@ impl AsyncFileWriter for DataSinkWriter {
     type Input = Arc<MicroPartition>;
     type Result = Vec<RecordBatch>;
 
-    async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {
+        let rows_written = data.len();
         let mut bytes_written = 0;
         let mp_result: PyRecordBatch = Python::with_gil(|py| -> pyo3::PyResult<_> {
             // Grab the current micropartition and pass it to the data sink.
@@ -66,8 +67,14 @@ impl AsyncFileWriter for DataSinkWriter {
                 .extract()
         })?;
 
-        self.results.push(mp_result.into());
-        Ok(bytes_written)
+        let mp_result: RecordBatch = mp_result.into();
+        if !mp_result.is_empty() {
+            self.results.push(mp_result);
+        }
+        Ok(WriteResult {
+            bytes_written,
+            rows_written,
+        })
     }
 
     fn bytes_written(&self) -> usize {

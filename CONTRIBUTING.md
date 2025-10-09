@@ -39,13 +39,13 @@ When proposing features, please include:
 
 To set up your development environment:
 
-1. Ensure that your system has a suitable Python version installed (>=3.9, <=3.12)
+1. Install [uv](https://docs.astral.sh/uv/). You can run `curl -LsSf https://astral.sh/uv/install.sh | sh` on macOS and Linux.
 2. [Install the Rust compilation toolchain](https://www.rust-lang.org/tools/install)
 3. Install [bun](https://bun.sh/) in order to build docs and the daft-dashboard functionality.
 4. Install [cmake](https://cmake.org/). If you use [homebrew](https://brew.sh), you can run `brew install cmake`.
 5. Install [protoc](https://protobuf.dev/installation/). You will need this for release builds -- `make build-release`. With homebrew, installation is `brew install protobuf`.
 6. Clone the Daft repo: `git clone git@github.com:Eventual-Inc/Daft.git`
-7. Run `make .venv` from your new cloned Daft repository to create a new virtual environment with all of Daft's development dependencies installed
+7. Run `make .venv` from your newly cloned Daft repository to create a new virtual environment with all of Daft's development dependencies installed
 8. Run `make hooks` to install pre-commit hooks: these will run tooling on every commit to ensure that your code meets Daft development standards
 
 ### Developing
@@ -218,7 +218,7 @@ Since new expressions are a very common feature request, we wanted to make it ea
 #### Step 1: Implement the function in Rust
 
 Add your function to the appropriate crate (`daft-functions-json`, `daft-functions-utf8`, etc.).
-For more advanced use cases, see existing implementations in [daft-functions-utf8](src/daft-functions-utf8/src/lib.rs)
+For more advanced use cases, see existing implementations in [daft-functions-utf8](https://github.com/Eventual-Inc/Daft/blob/main/src/daft-functions-utf8/src/lib.rs)
 
 ```rs
 // This prelude defines all required ScalarUDF dependencies.

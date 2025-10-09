@@ -1,27 +1,29 @@
 use std::sync::Arc;
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
 use common_error::{DaftError, DaftResult};
 use daft_dsl::{
+    WindowFrame,
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
-    window_to_agg_exprs, WindowFrame,
+    window_to_agg_exprs,
 };
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
 
-use super::{DistributedPipelineNode, SubmittableTaskStream};
+use super::{PipelineNodeImpl, SubmittableTaskStream};
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
-    stage::{StageConfig, StageExecutionContext},
+    pipeline_node::{
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+    },
+    plan::{PlanConfig, PlanExecutionContext},
 };
 
 pub(crate) struct WindowNodeBase {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     aliases: Vec<String>,
-    child: Arc<dyn DistributedPipelineNode>,
+    child: DistributedPipelineNode,
 }
 
 impl WindowNodeBase {
@@ -29,7 +31,7 @@ impl WindowNodeBase {
         config: PipelineNodeConfig,
         context: PipelineNodeContext,
         aliases: Vec<String>,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNode,
     ) -> Self {
         Self {
             config,
@@ -232,7 +234,7 @@ impl WindowNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         partition_by: Vec<BoundExpr>,
         order_by: Vec<BoundExpr>,
         descending: Vec<bool>,
@@ -242,10 +244,10 @@ impl WindowNode {
         window_exprs: Vec<BoundWindowExpr>,
         aliases: Vec<String>,
         schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNode,
     ) -> DaftResult<Self> {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![child.node_id()],
@@ -254,7 +256,7 @@ impl WindowNode {
         );
         let config = PipelineNodeConfig::new(
             schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             Arc::new(
                 HashClusteringConfig::new(
                     child.config().clustering_spec.num_partitions(),
@@ -318,8 +320,8 @@ impl WindowNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     fn base(&self) -> &WindowNodeBase {
@@ -331,7 +333,33 @@ impl WindowNode {
         }
     }
 
-    fn multiline_display(&self) -> Vec<String> {
+    fn config(&self) -> &PipelineNodeConfig {
+        &self.base().config
+    }
+
+    fn context(&self) -> &PipelineNodeContext {
+        &self.base().context
+    }
+
+    fn child(&self) -> &DistributedPipelineNode {
+        &self.base().child
+    }
+}
+
+impl PipelineNodeImpl for WindowNode {
+    fn context(&self) -> &PipelineNodeContext {
+        self.context()
+    }
+
+    fn config(&self) -> &PipelineNodeConfig {
+        self.config()
+    }
+
+    fn children(&self) -> Vec<DistributedPipelineNode> {
+        vec![self.child().clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         let mut res = vec!["Window:".to_string()];
         match self {
             Self::PartitionOnly(node) => {
@@ -350,74 +378,19 @@ impl WindowNode {
         res
     }
 
-    fn config(&self) -> &PipelineNodeConfig {
-        &self.base().config
-    }
-
-    fn context(&self) -> &PipelineNodeContext {
-        &self.base().context
-    }
-
-    fn child(&self) -> &Arc<dyn DistributedPipelineNode> {
-        &self.base().child
-    }
-}
-
-impl TreeDisplay for WindowNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.context().node_name).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child().as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.context().node_name.to_string()
-    }
-}
-
-impl DistributedPipelineNode for WindowNode {
-    fn context(&self) -> &PipelineNodeContext {
-        self.context()
-    }
-
-    fn config(&self) -> &PipelineNodeConfig {
-        self.config()
-    }
-
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
-        vec![self.child().clone()]
-    }
-
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_node = self.child().clone().produce_tasks(stage_context);
+        let input_node = self.child().clone().produce_tasks(plan_context);
 
         // Pipeline the window op
         let self_clone = self.clone();
-        input_node.pipeline_instruction(self.clone(), move |input| match &*self_clone {
+        input_node.pipeline_instruction(self, move |input| match &*self_clone {
             Self::PartitionOnly(node) => node.produce_task(input),
             Self::PartitionAndOrderBy(node) => node.produce_task(input),
             Self::PartitionAndDynamicFrame(node) => node.produce_task(input),
             Self::OrderByOnly(node) => node.produce_task(input),
         })
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
     }
 }

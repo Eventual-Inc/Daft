@@ -1,10 +1,10 @@
 # SQL Data Types
 
-These tables define how Daft's [DataType](../api/datatypes.md) maps to the common SQL types and aliases.
+These tables define how Daft's [DataType](../api/datatypes/index.md) maps to the common SQL types and aliases.
 
 !!! note "Note"
 
-    In these tables, the **Type** column identifies the Daft [DataType](../api/datatypes.md), whereas the **Name** and **Aliases** columns represent supported SQL syntax.
+    In these tables, the **Type** column identifies the Daft [DataType](../api/datatypes/index.md), whereas the **Name** and **Aliases** columns represent supported SQL syntax.
 
 ## Boolean Type
 
@@ -65,7 +65,7 @@ These tables define how Daft's [DataType](../api/datatypes.md) maps to the commo
 
 !!! warning "Warning"
 
-    Daft does not currently support `TIME WITH TIMEZONE` and `TIMESTAMP WITH TIMEZONE`, please see [Github #3957](https://github.com/Eventual-Inc/Daft/issues/3957) and feel free to bump this issue if you need it prioritized.
+    Daft does not currently support `TIME WITH TIMEZONE` and `TIMESTAMP WITH TIMEZONE`, please see [GitHub #3957](https://github.com/Eventual-Inc/Daft/issues/3957) and feel free to bump this issue if you need it prioritized.
 
 
 ## Array Types

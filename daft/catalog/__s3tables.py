@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
     from daft.daft import IOConfig
     from daft.dataframe import DataFrame
+    from daft.io.partitioning import PartitionField
 
 else:
     S3TablesClient = object
@@ -152,6 +153,7 @@ class S3Catalog(Catalog):
         ident: Identifier,
         schema: Schema,
         properties: Properties | None = None,
+        partition_fields: list[PartitionField] | None = None,
     ) -> Table:
         path = S3Path.from_ident(ident)
         if len(path) < 2:

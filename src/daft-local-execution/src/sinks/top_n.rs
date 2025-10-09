@@ -1,16 +1,17 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkState, BlockingSinkStatus,
+    BlockingSinkStatus,
 };
-use crate::{pipeline::NodeName, ExecutionTaskSpawner};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 /// Parameters for the TopN that both the state and sinker need
 struct TopNParams {
@@ -20,10 +21,11 @@ struct TopNParams {
     nulls_first: Vec<bool>,
     // Limit Parameters
     limit: usize,
+    offset: Option<usize>,
 }
 
 /// Current status of the TopN operation
-enum TopNState {
+pub(crate) enum TopNState {
     /// Operator is still collecting input
     Building(Vec<Arc<MicroPartition>>),
     /// Operator has finished collecting all input and ready to produce output
@@ -34,7 +36,7 @@ enum TopNState {
 impl TopNState {
     /// Process a new micro-partition and update the top N values
     fn append(&mut self, part: Arc<MicroPartition>) {
-        let Self::Building(ref mut top_values) = self else {
+        let Self::Building(top_values) = self else {
             panic!("TopNSink should be in Building state");
         };
 
@@ -53,12 +55,6 @@ impl TopNState {
     }
 }
 
-impl BlockingSinkState for TopNState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
 pub struct TopNSink {
     params: Arc<TopNParams>,
 }
@@ -69,6 +65,7 @@ impl TopNSink {
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
         limit: usize,
+        offset: Option<usize>,
     ) -> Self {
         Self {
             params: Arc::new(TopNParams {
@@ -76,39 +73,39 @@ impl TopNSink {
                 descending,
                 nulls_first,
                 limit,
+                offset,
             }),
         }
     }
 }
 
 impl BlockingSink for TopNSink {
+    type State = TopNState;
+
     #[instrument(skip_all, name = "TopNSink::sink")]
     fn sink(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn BlockingSinkState>,
+        mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkSinkResult {
+    ) -> BlockingSinkSinkResult<Self> {
         let params = self.params.clone();
 
         spawner
             .spawn(
                 async move {
-                    let top_n_state = state
-                        .as_any_mut()
-                        .downcast_mut::<TopNState>()
-                        .expect("TopNSink should have top_n state");
-
                     // Find the top N values in the input micro-partition
+                    let limit = params.limit + params.offset.unwrap_or(0);
                     let top_input_rows = input.top_n(
                         &params.sort_by,
                         &params.descending,
                         &params.nulls_first,
-                        params.limit,
+                        limit,
+                        Some(0),
                     )?;
 
                     // Append to the collection of existing top N values
-                    top_n_state.append(Arc::new(top_input_rows));
+                    state.append(Arc::new(top_input_rows));
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
                 },
                 Span::current(),
@@ -119,26 +116,21 @@ impl BlockingSink for TopNSink {
     #[instrument(skip_all, name = "TopNSink::finalize")]
     fn finalize(
         &self,
-        states: Vec<Box<dyn BlockingSinkState>>,
+        states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
         let params = self.params.clone();
         spawner
             .spawn(
                 async move {
-                    let parts = states.into_iter().flat_map(|mut state| {
-                        let state = state
-                            .as_any_mut()
-                            .downcast_mut::<TopNState>()
-                            .expect("State type mismatch");
-                        state.finalize()
-                    });
+                    let parts = states.into_iter().flat_map(|mut state| state.finalize());
                     let concated = MicroPartition::concat(parts)?;
                     let final_output = Arc::new(concated.top_n(
                         &params.sort_by,
                         &params.descending,
                         &params.nulls_first,
                         params.limit,
+                        params.offset,
                     )?);
                     Ok(BlockingSinkFinalizeOutput::Finished(vec![final_output]))
                 },
@@ -149,6 +141,10 @@ impl BlockingSink for TopNSink {
 
     fn name(&self) -> NodeName {
         format!("TopN {}", self.params.limit).into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::TopN
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -169,14 +165,22 @@ impl BlockingSink for TopNSink {
                 )
             })
             .join(", ");
-        lines.push(format!(
-            "TopN: Sort by = {}, Num Rows = {}",
-            pairs, self.params.limit
-        ));
+
+        let limit = self.params.limit;
+        lines.push(match self.params.offset {
+            Some(offset) => {
+                format!(
+                    "TopN: Sort by = {}, Num Rows = {}, Offset = {}",
+                    pairs, limit, offset
+                )
+            }
+            None => format!("TopN: Sort by = {}, Num Rows = {}", pairs, limit),
+        });
+
         lines
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        Ok(Box::new(TopNState::Building(vec![])))
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(TopNState::Building(vec![]))
     }
 }

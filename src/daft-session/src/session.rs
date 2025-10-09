@@ -1,10 +1,12 @@
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
+use daft_ai::provider::ProviderRef;
 use daft_catalog::{Bindings, CatalogRef, Identifier, TableRef, TableSource, View};
 use daft_dsl::functions::python::WrappedUDFClass;
 use uuid::Uuid;
 
 use crate::{
+    ambiguous_identifier_err,
     error::CatalogResult,
     obj_already_exists_err, obj_not_found_err,
     options::{IdentifierMode, Options},
@@ -27,12 +29,15 @@ struct SessionState {
     options: Options,
     /// Bindings for the attached catalogs.
     catalogs: Bindings<CatalogRef>,
+    /// Bindings for the attached providers.
+    providers: Bindings<ProviderRef>,
     /// Bindings for the attached tables.
     tables: Bindings<TableRef>,
     /// User defined functions
     functions: Bindings<WrappedUDFClass>,
 }
 
+// TODO: Session should just use a Result not CatalogResult.
 impl Session {
     /// Creates a new session that shares the same underlying state with the original.
     ///
@@ -64,6 +69,7 @@ impl Session {
             _id: Uuid::new_v4().to_string(),
             options: Options::default(),
             catalogs: Bindings::empty(),
+            providers: Bindings::empty(),
             tables: Bindings::empty(),
             functions: Bindings::empty(),
         };
@@ -92,6 +98,43 @@ impl Session {
             self.state_mut().options.curr_catalog = Some(alias.clone());
         }
         self.state_mut().catalogs.bind(alias, catalog);
+        Ok(())
+    }
+
+    /// Attaches a function to this session, this does NOT err if it already exists.
+    pub fn attach_function(
+        &self,
+        function: WrappedUDFClass,
+        alias: Option<String>,
+    ) -> CatalogResult<()> {
+        #[cfg(feature = "python")]
+        {
+            let name = match alias {
+                Some(name) => name,
+                None => function.name()?,
+            };
+
+            self.state_mut().functions.bind(name, function);
+            Ok(())
+        }
+        #[cfg(not(feature = "python"))]
+        {
+            Err(daft_catalog::error::CatalogError::unsupported(
+                "attach_function without python",
+            ))
+        }
+    }
+
+    /// Attaches a provider to this session, err if already exists.
+    pub fn attach_provider(&self, provider: ProviderRef, alias: String) -> CatalogResult<()> {
+        if self.state().providers.contains(&alias) {
+            obj_already_exists_err!("Provider", &alias.into())
+        }
+        if self.state().providers.is_empty() {
+            // if there are no current providers, then use this provider as the default.
+            self.state_mut().options.curr_provider = Some(alias.clone());
+        }
+        self.state_mut().providers.bind(alias, provider);
         Ok(())
     }
 
@@ -145,6 +188,20 @@ impl Session {
         Ok(self.state().options.curr_namespace.clone())
     }
 
+    /// Returns the session's current provider.
+    pub fn current_provider(&self) -> CatalogResult<Option<ProviderRef>> {
+        if let Some(provider) = &self.state().options.curr_provider {
+            self.get_provider(provider).map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Returns the session's current model.
+    pub fn current_model(&self) -> CatalogResult<Option<String>> {
+        Ok(self.state().options.curr_model.clone())
+    }
+
     /// Detaches a table from this session, err if does not exist.
     pub fn detach_table(&self, alias: &str) -> CatalogResult<()> {
         if !self.state().tables.contains(alias) {
@@ -167,6 +224,25 @@ impl Session {
         Ok(())
     }
 
+    /// Detaches a function from this session. This does NOT err if it does not exist.
+    pub fn detach_function(&self, name: &str) -> CatalogResult<()> {
+        self.state_mut().functions.remove(name);
+        Ok(())
+    }
+
+    /// Detaches a provider from this session, err if does not exist.
+    pub fn detach_provider(&self, alias: &str) -> CatalogResult<()> {
+        if !self.state().providers.contains(alias) {
+            obj_not_found_err!("Provider", &alias.into())
+        }
+        self.state_mut().providers.remove(alias);
+        // cleanup session state
+        if self.state().providers.is_empty() {
+            self.set_provider(None)?;
+        }
+        Ok(())
+    }
+
     /// Returns the catalog or an object not found error.
     pub fn get_catalog(&self, name: &str) -> CatalogResult<CatalogRef> {
         if let Some(catalog) = self.state().get_attached_catalog(name)? {
@@ -176,14 +252,29 @@ impl Session {
         }
     }
 
+    /// Returns the function or none if it does not exist.
+    pub fn get_function(&self, name: &str) -> CatalogResult<Option<WrappedUDFClass>> {
+        // TODO update missing semantics to match other session objects.
+        self.state().get_function(name)
+    }
+
+    /// Returns the provider or an object not found error.
+    pub fn get_provider(&self, name: &str) -> CatalogResult<ProviderRef> {
+        if let Some(provider) = self.state().get_attached_provider(name)? {
+            Ok(provider.clone())
+        } else {
+            obj_not_found_err!("Provider", &name.into())
+        }
+    }
+
     /// Returns the table or an object not found error.
     pub fn get_table(&self, name: &Identifier) -> CatalogResult<TableRef> {
         //
         // Rule 0: check temp tables.
-        if !name.has_qualifier() {
-            if let Some(view) = self.state().get_attached_table(name.name())? {
-                return Ok(view.clone());
-            }
+        if !name.has_qualifier()
+            && let Some(view) = self.state().get_attached_table(name.name())?
+        {
+            return Ok(view.clone());
         }
         //
         // Use session state, but error if there's no catalog and the table was not in temp tables.
@@ -226,6 +317,11 @@ impl Session {
         self.state().catalogs.contains(name)
     }
 
+    /// Returns true iff the session has access to a matching provider.
+    pub fn has_provider(&self, name: &str) -> bool {
+        self.state().providers.contains(name)
+    }
+
     /// Returns true iff the session has access to a matching table.
     pub fn has_table(&self, name: &Identifier) -> bool {
         self.get_table(name).is_ok()
@@ -264,6 +360,26 @@ impl Session {
         Ok(())
     }
 
+    /// Sets the current_provider session property.
+    pub fn set_provider(&self, ident: Option<&str>) -> CatalogResult<()> {
+        if let Some(ident) = ident {
+            self.state_mut().options.curr_provider = Some(ident.to_string());
+        } else {
+            self.state_mut().options.curr_provider = None;
+        }
+        Ok(())
+    }
+
+    /// Sets the current_model session property.
+    pub fn set_model(&self, ident: Option<&str>) -> CatalogResult<()> {
+        if let Some(ident) = ident {
+            self.state_mut().options.curr_model = Some(ident.to_string());
+        } else {
+            self.state_mut().options.curr_model = None;
+        }
+        Ok(())
+    }
+
     /// Returns an identifier normalization function based upon the session options.
     pub fn normalizer(&self) -> impl Fn(&str) -> String {
         match self.state().options.identifier_mode {
@@ -272,56 +388,33 @@ impl Session {
             IdentifierMode::Normalize => str::to_lowercase,
         }
     }
-
-    pub fn attach_function(
-        &self,
-        function: WrappedUDFClass,
-        alias: Option<String>,
-    ) -> CatalogResult<()> {
-        #[cfg(feature = "python")]
-        {
-            let name = match alias {
-                Some(name) => name,
-                None => function.name()?,
-            };
-
-            self.state_mut().functions.bind(name, function);
-            Ok(())
-        }
-        #[cfg(not(feature = "python"))]
-        {
-            Err(daft_catalog::error::CatalogError::unsupported(
-                "attach_function without python",
-            ))
-        }
-    }
-
-    pub fn detach_function(&self, name: &str) -> CatalogResult<()> {
-        self.state_mut().functions.remove(name);
-        Ok(())
-    }
-
-    pub fn get_function(&self, name: &str) -> CatalogResult<Option<WrappedUDFClass>> {
-        self.state().get_function(name)
-    }
 }
 
 impl SessionState {
     /// Get an attached catalog by name using the session's identifier mode.
     pub fn get_attached_catalog(&self, name: &str) -> CatalogResult<Option<CatalogRef>> {
-        match self.catalogs.lookup(name, self.options.find_mode()) {
+        match self.catalogs.lookup(name, self.options.lookup_mode()) {
             catalogs if catalogs.is_empty() => Ok(None),
             catalogs if catalogs.len() == 1 => Ok(Some(catalogs[0].clone())),
-            _ => panic!("ambiguous catalog identifier"),
+            catalogs => ambiguous_identifier_err!("Catalog", catalogs.iter().map(|c| c.name())),
+        }
+    }
+
+    /// Get an attached provider by name using the session's identifier mode.
+    pub fn get_attached_provider(&self, name: &str) -> CatalogResult<Option<ProviderRef>> {
+        match self.providers.lookup(name, self.options.lookup_mode()) {
+            providers if providers.is_empty() => Ok(None),
+            providers if providers.len() == 1 => Ok(Some(providers[0].clone())),
+            providers => ambiguous_identifier_err!("Provider", providers.iter().map(|p| p.name())),
         }
     }
 
     /// Get an attached table by name using the session's identifier mode.
     pub fn get_attached_table(&self, name: &str) -> CatalogResult<Option<TableRef>> {
-        match self.tables.lookup(name, self.options.find_mode()) {
+        match self.tables.lookup(name, self.options.lookup_mode()) {
             tables if tables.is_empty() => Ok(None),
             tables if tables.len() == 1 => Ok(Some(tables[0].clone())),
-            _ => panic!("ambiguous table identifier"),
+            tables => ambiguous_identifier_err!("Table", tables.iter().map(|t| t.name())),
         }
     }
 
@@ -362,8 +455,8 @@ mod tests {
     use daft_catalog::View;
     use daft_core::prelude::*;
     use daft_logical_plan::{
-        ops::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan, LogicalPlanBuilder,
-        LogicalPlanRef, SourceInfo,
+        ClusteringSpec, LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo, ops::Source,
+        source_info::PlaceHolderInfo,
     };
 
     use super::*;
@@ -403,8 +496,9 @@ mod tests {
             .expect("failed to attach table");
 
         assert!(sess.get_table(&Identifier::simple("test_table")).is_ok());
-        assert!(sess
-            .get_table(&Identifier::simple("non_existent_table"))
-            .is_err());
+        assert!(
+            sess.get_table(&Identifier::simple("non_existent_table"))
+                .is_err()
+        );
     }
 }

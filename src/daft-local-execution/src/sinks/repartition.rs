@@ -1,23 +1,23 @@
 use std::{collections::VecDeque, sync::Arc};
 
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::IOStatsContext;
+use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{
-    pipeline::NodeName, sinks::blocking_sink::BlockingSinkFinalizeOutput, ExecutionTaskSpawner,
-};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
-struct RepartitionState {
+pub(crate) struct RepartitionState {
     states: VecDeque<Vec<MicroPartition>>,
 }
 
@@ -33,22 +33,20 @@ impl RepartitionState {
     }
 }
 
-impl BlockingSinkState for RepartitionState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
 pub struct RepartitionSink {
-    columns: Arc<Vec<BoundExpr>>,
+    repartition_spec: RepartitionSpec,
     num_partitions: usize,
     schema: SchemaRef,
 }
 
 impl RepartitionSink {
-    pub fn new(columns: Vec<BoundExpr>, num_partitions: usize, schema: SchemaRef) -> Self {
+    pub fn new(
+        repartition_spec: RepartitionSpec,
+        num_partitions: usize,
+        schema: SchemaRef,
+    ) -> Self {
         Self {
-            columns: Arc::new(columns),
+            repartition_spec,
             num_partitions,
             schema,
         }
@@ -56,24 +54,43 @@ impl RepartitionSink {
 }
 
 impl BlockingSink for RepartitionSink {
+    type State = RepartitionState;
+
     #[instrument(skip_all, name = "RepartitionSink::sink")]
     fn sink(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn BlockingSinkState>,
+        mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkSinkResult {
-        let columns = self.columns.clone();
+    ) -> BlockingSinkSinkResult<Self> {
+        let repartition_spec = self.repartition_spec.clone();
         let num_partitions = self.num_partitions;
+        let schema = self.schema.clone();
         spawner
             .spawn(
                 async move {
-                    let repartition_state = state
-                        .as_any_mut()
-                        .downcast_mut::<RepartitionState>()
-                        .expect("RepartitionSink should have RepartitionState");
-                    let partitioned = input.partition_by_hash(&columns, num_partitions)?;
-                    repartition_state.push(partitioned);
+                    let partitioned = match repartition_spec {
+                        RepartitionSpec::Hash(config) => {
+                            let bound_exprs = config
+                                .by
+                                .iter()
+                                .map(|e| BoundExpr::try_new(e.clone(), &schema))
+                                .collect::<DaftResult<Vec<_>>>()?;
+                            input.partition_by_hash(&bound_exprs, num_partitions)?
+                        }
+                        RepartitionSpec::Random(_) => {
+                            input.partition_by_random(num_partitions, 0)?
+                        }
+                        RepartitionSpec::Range(config) => input.partition_by_range(
+                            &config.by,
+                            &config.boundaries,
+                            &config.descending,
+                        )?,
+                        RepartitionSpec::IntoPartitions(_) => {
+                            todo!("FLOTILLA_MS3: Support other types of repartition");
+                        }
+                    };
+                    state.push(partitioned);
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
                 },
                 Span::current(),
@@ -84,26 +101,16 @@ impl BlockingSink for RepartitionSink {
     #[instrument(skip_all, name = "RepartitionSink::finalize")]
     fn finalize(
         &self,
-        mut states: Vec<Box<dyn BlockingSinkState>>,
+        mut states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
         let num_partitions = self.num_partitions;
         let schema = self.schema.clone();
 
         spawner
             .spawn(
                 async move {
-                    let mut repart_states = states
-                        .iter_mut()
-                        .map(|state| {
-                            let repart_state = state
-                                .as_any_mut()
-                                .downcast_mut::<RepartitionState>()
-                                .expect("RepartitionSink should have RepartitionState");
-
-                            repart_state
-                        })
-                        .collect::<Vec<_>>();
+                    let mut repart_states = states.iter_mut().collect::<Vec<_>>();
 
                     let mut outputs = Vec::new();
                     for _ in 0..num_partitions {
@@ -145,21 +152,49 @@ impl BlockingSink for RepartitionSink {
         "Repartition".into()
     }
 
+    fn op_type(&self) -> NodeType {
+        NodeType::Repartition
+    }
+
     fn multiline_display(&self) -> Vec<String> {
-        vec![format!(
-            "Repartition: By {} into {} partitions",
-            self.columns.iter().map(|e| e.to_string()).join(", "),
-            self.num_partitions
-        )]
+        match &self.repartition_spec {
+            RepartitionSpec::Hash(config) => vec![format!(
+                "Repartition: By {} into {} partitions",
+                config.by.iter().map(|e| e.to_string()).join(", "),
+                self.num_partitions
+            )],
+            RepartitionSpec::Random(_) => vec![format!(
+                "Repartition: Random into {} partitions",
+                self.num_partitions
+            )],
+            RepartitionSpec::IntoPartitions(config) => vec![format!(
+                "Repartition: Into {} partitions",
+                config.num_partitions
+            )],
+            RepartitionSpec::Range(config) => {
+                let pairs = config
+                    .by
+                    .iter()
+                    .zip(config.descending.iter())
+                    .map(|(sb, d)| {
+                        format!("({}, {})", sb, if *d { "descending" } else { "ascending" })
+                    })
+                    .join(", ");
+                vec![
+                    format!("Repartition: Range into {} partitions", self.num_partitions),
+                    format!("By: {:?}", pairs),
+                ]
+            }
+        }
     }
 
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        Ok(Box::new(RepartitionState {
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(RepartitionState {
             states: (0..self.num_partitions).map(|_| vec![]).collect(),
-        }))
+        })
     }
 }

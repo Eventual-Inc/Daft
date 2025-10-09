@@ -311,6 +311,7 @@ class PycastableObject:
         return False
 
 
+@pytest.mark.skip(reason="disabled ability to cast arbitrary Python objects")
 @pytest.mark.parametrize(
     ["dtype", "pytype"],
     [
@@ -484,7 +485,7 @@ def test_series_cast_numpy_to_image() -> None:
 
 def test_series_cast_numpy_to_image_infer_mode() -> None:
     data = [
-        np.arange(4, dtype=np.uint8).reshape((2, 2)),
+        np.arange(6, dtype=np.uint8).reshape((2, 3)),
         np.arange(4, 31, dtype=np.uint8).reshape((3, 3, 3)),
         None,
     ]
@@ -497,7 +498,7 @@ def test_series_cast_numpy_to_image_infer_mode() -> None:
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.list.length().to_pylist() == [4, 27, None]
+    assert t.list.length().to_pylist() == [6, 27, None]
 
     pydata = t.to_arrow().to_pylist()
     assert pydata[0] == {
@@ -505,7 +506,7 @@ def test_series_cast_numpy_to_image_infer_mode() -> None:
         "mode": ImageMode.L,
         "channel": 1,
         "height": 2,
-        "width": 2,
+        "width": 3,
     }
     assert pydata[1] == {
         "data": data[1].ravel().tolist(),
@@ -1387,3 +1388,23 @@ def test_cast_list_list_to_list_tensor():
     cast_to = DataType.list(DataType.tensor(DataType.int64(), shape=(4,)))
     s = s.cast(cast_to)
     assert s.datatype() == cast_to
+
+
+def test_cast_python_to_struct():
+    data = [{"a": 1, "b": True}, {"a": 3, "b": False}]
+    dtype = DataType.struct({"a": DataType.int64(), "b": DataType.bool()})
+
+    s = Series.from_pylist(data, pyobj="force")
+    s = s.cast(dtype)
+    assert s.datatype() == dtype
+    assert s.to_pylist() == data
+
+
+def test_cast_python_to_list_of_structs():
+    data = [[{"a": 1, "b": True}, {"a": 3, "b": False}]]
+    dtype = DataType.list(DataType.struct({"a": DataType.int64(), "b": DataType.bool()}))
+
+    s = Series.from_pylist(data, pyobj="force")
+    s = s.cast(dtype)
+    assert s.datatype() == dtype
+    assert s.to_pylist() == data

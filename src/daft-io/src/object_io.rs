@@ -4,15 +4,15 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use common_error::DaftError;
 use futures::{
-    stream::{BoxStream, Stream},
     StreamExt,
+    stream::{BoxStream, Stream},
 };
 use tokio::sync::OwnedSemaphorePermit;
 
 use crate::{
-    local::{collect_file, LocalFile},
-    stats::IOStatsRef,
     FileFormat,
+    local::{LocalFile, collect_file},
+    stats::IOStatsRef,
 };
 
 pub struct StreamingRetryParams {
@@ -153,7 +153,9 @@ impl TryFrom<std::fs::FileType> for FileType {
         } else if value.is_file() {
             Ok(Self::File)
         } else if value.is_symlink() {
-            Err(DaftError::InternalError(format!("Symlinks should never be encountered when constructing FileMetadata, but got: {value:?}")))
+            Err(DaftError::InternalError(format!(
+                "Symlinks should never be encountered when constructing FileMetadata, but got: {value:?}"
+            )))
         } else {
             unreachable!(
                 "Can only be a directory, file, or symlink, but got: {:?}",
@@ -181,6 +183,12 @@ use crate::range::GetRange;
 
 #[async_trait]
 pub trait ObjectSource: Sync + Send {
+    /// Check if the source supports range requests.
+    /// Most object sources _should_ support range requests.
+    /// Many object sources backed by http servers may not support range requests.
+    /// So we need to check if the source supports range requests.
+    async fn supports_range(&self, uri: &str) -> super::Result<bool>;
+
     /// Return the bytes with given range.
     /// Will return [`Error::InvalidRangeRequest`] if range start is greater than range end
     /// or range start is greater than object size.
@@ -235,10 +243,24 @@ pub trait ObjectSource: Sync + Send {
 
             let mut continuation_token = lsr.continuation_token.clone();
             while continuation_token.is_some() {
-                let lsr = self.ls(&uri, posix, continuation_token.as_deref(), page_size, io_stats.clone()).await?;
-                continuation_token.clone_from(&lsr.continuation_token);
-                for fm in lsr.files {
-                    yield Ok(fm);
+                // Note: There might some race conditions here that the list response is empty
+                // even though the continuation token of previous response is not empty, so skip NotFound error here.
+                // TODO(desmond): Ideally we should patch how `ls` produces NotFound errors. See issue #4982
+                let lsr_result = self.ls(&uri, posix, continuation_token.as_deref(), page_size, io_stats.clone()).await;
+                match lsr_result {
+                    Ok(lsr) => {
+                        continuation_token.clone_from(&lsr.continuation_token);
+                        for fm in lsr.files {
+                            yield Ok(fm);
+                        }
+                    },
+                    Err(err) => {
+                        if matches!(err, super::Error::NotFound { .. }) {
+                            continuation_token = None;
+                        } else {
+                            yield Err(err);
+                        }
+                    }
                 }
             }
         };

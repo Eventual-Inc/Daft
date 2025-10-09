@@ -1,13 +1,13 @@
 use std::{collections::HashSet, iter::repeat_n, path::Path, sync::Arc};
 
-use common_error::{ensure, DaftError, DaftResult};
+use common_error::{DaftError, DaftResult, ensure};
 use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
 use daft_dsl::{
-    functions::{FunctionArgs, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF},
 };
-use daft_io::{get_io_client, IOConfig, IOStatsRef, SourceType};
+use daft_io::{IOConfig, IOStatsRef, SourceType, get_io_client};
 use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
 
@@ -56,7 +56,7 @@ impl ScalarUDF for UrlUpload {
                 return Err(DaftError::ValueError(format!(
                     "Invalid value for 'on_error': {}",
                     on_error
-                )))
+                )));
             }
         };
 
@@ -129,17 +129,16 @@ fn instantiate_and_trim_path(
         } else {
             // If we were given row-specific paths, then we create directories at the parents of the given paths.
             let path = Path::new(local_prefixless_folder_path);
-            if let Some(parent_dir) = path.parent() {
-                if let Some(parent_dir) = parent_dir.to_str() {
-                    if instantiated_folder_paths.insert(parent_dir.to_string()) {
-                        std::fs::create_dir_all(parent_dir).map_err(|e| {
-                            daft_io::Error::UnableToCreateDir {
-                                path: parent_dir.to_string(),
-                                source: e,
-                            }
-                        })?;
+            if let Some(parent_dir) = path.parent()
+                && let Some(parent_dir) = parent_dir.to_str()
+                && instantiated_folder_paths.insert(parent_dir.to_string())
+            {
+                std::fs::create_dir_all(parent_dir).map_err(|e| {
+                    daft_io::Error::UnableToCreateDir {
+                        path: parent_dir.to_string(),
+                        source: e,
                     }
-                }
+                })?;
             }
         }
     }
@@ -238,7 +237,6 @@ pub fn url_upload(
                             i,
                             owned_client
                                 .single_url_upload(
-                                    i,
                                     path,
                                     data,
                                     raise_error_on_failure,

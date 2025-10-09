@@ -3,7 +3,7 @@
 
 from typing import Optional, Union
 
-from daft import context
+from daft import context, runners
 from daft.api_annotations import PublicAPI
 from daft.daft import (
     FileFormatConfig,
@@ -26,7 +26,6 @@ def read_parquet(
     file_path_column: Optional[str] = None,
     hive_partitioning: bool = False,
     coerce_int96_timestamp_unit: Optional[Union[str, TimeUnit]] = None,
-    schema_hints: Optional[dict[str, DataType]] = None,
     _multithreaded_io: Optional[bool] = None,
     _chunk_size: Optional[int] = None,  # A hidden parameter for testing purposes.
 ) -> DataFrame:
@@ -61,15 +60,10 @@ def read_parquet(
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from from empty list of Parquet filepaths")
 
-    if schema_hints is not None:
-        raise ValueError(
-            "Specifying schema_hints is deprecated from Daft version >= 0.3.0! Instead, please use the 'schema' and 'infer_schema' arguments."
-        )
-
     # If running on Ray, we want to limit the amount of concurrency and requests being made.
     # This is because each Ray worker process receives its own pool of thread workers and connections
     multithreaded_io = (
-        (context.get_context().get_or_create_runner().name != "ray") if _multithreaded_io is None else _multithreaded_io
+        (runners.get_or_create_runner().name != "ray") if _multithreaded_io is None else _multithreaded_io
     )
 
     if isinstance(coerce_int96_timestamp_unit, str):

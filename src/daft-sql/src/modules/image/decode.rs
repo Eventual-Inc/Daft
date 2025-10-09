@@ -1,5 +1,5 @@
-use daft_dsl::{Expr, ExprRef, LiteralValue};
-use daft_functions::image::decode::{decode, ImageDecode};
+use daft_dsl::{Expr, ExprRef, Literal};
+use daft_functions::image::decode::{ImageDecode, decode};
 use sqlparser::ast::FunctionArg;
 
 use crate::{
@@ -17,7 +17,7 @@ impl TryFrom<SQLFunctionArguments> for ImageDecode {
         let mode = args
             .get_named("mode")
             .map(|arg| match arg.as_ref() {
-                Expr::Literal(LiteralValue::Utf8(s)) => s.parse().map_err(PlannerError::from),
+                Expr::Literal(Literal::Utf8(s)) => s.parse().map_err(PlannerError::from),
                 _ => unsupported_sql_err!("Expected mode to be a string"),
             })
             .transpose()?;

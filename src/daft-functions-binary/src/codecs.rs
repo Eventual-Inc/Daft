@@ -1,14 +1,17 @@
 use std::{fmt::Display, str::FromStr};
 
 use common_error::{DaftError, DaftResult};
-use daft_core::prelude::DataType;
-use daft_dsl::{FromLiteral, Literal, LiteralValue};
+use daft_core::{
+    lit::{FromLiteral, Literal},
+    prelude::DataType,
+};
 use serde::{Deserialize, Serialize};
 use simdutf8::basic::from_utf8;
 
 /// Supported codecs for the decode and encode functions.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Codec {
+    Base64,
     Deflate,
     Gzip,
     Utf8,
@@ -18,6 +21,7 @@ pub enum Codec {
 impl Display for Codec {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
+            Self::Base64 => "base64",
             Self::Deflate => "deflate",
             Self::Gzip => "gzip",
             Self::Utf8 => "utf8",
@@ -26,15 +30,15 @@ impl Display for Codec {
     }
 }
 
-impl Literal for Codec {
-    fn literal_value(self) -> daft_dsl::LiteralValue {
-        LiteralValue::Utf8(self.to_string())
+impl From<Codec> for Literal {
+    fn from(value: Codec) -> Self {
+        Self::Utf8(value.to_string())
     }
 }
 
 impl FromLiteral for Codec {
-    fn try_from_literal(lit: &LiteralValue) -> DaftResult<Self> {
-        if let LiteralValue::Utf8(s) = lit {
+    fn try_from_literal(lit: &Literal) -> DaftResult<Self> {
+        if let Literal::Utf8(s) = lit {
             s.parse()
         } else {
             Err(DaftError::ValueError(format!(
@@ -59,6 +63,7 @@ pub(crate) type Transform = fn(input: &[u8]) -> DaftResult<Vec<u8>>;
 impl Codec {
     pub(crate) fn encoder(&self) -> Transform {
         match self {
+            Self::Base64 => base64_encoder,
             Self::Deflate => deflate_encoder,
             Self::Gzip => gzip_encoder,
             Self::Utf8 => utf8_encoder,
@@ -68,6 +73,7 @@ impl Codec {
 
     pub(crate) fn decoder(&self) -> Transform {
         match self {
+            Self::Base64 => base64_decoder,
             Self::Deflate => deflate_decoder,
             Self::Gzip => gzip_decoder,
             Self::Utf8 => utf8_decoder,
@@ -77,6 +83,7 @@ impl Codec {
 
     pub(crate) fn kind(&self) -> CodecKind {
         match self {
+            Self::Base64 => CodecKind::Binary,
             Self::Deflate => CodecKind::Binary,
             Self::Gzip => CodecKind::Binary,
             Self::Utf8 => CodecKind::Text,
@@ -97,6 +104,7 @@ impl FromStr for Codec {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
+            "base64" => Ok(Self::Base64),
             "deflate" => Ok(Self::Deflate),
             "gzip" | "gz" => Ok(Self::Gzip),
             "zlib" => Ok(Self::Zlib),
@@ -114,10 +122,17 @@ impl FromStr for Codec {
 //
 
 #[inline]
+fn base64_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+
+    Ok(STANDARD.encode(input).into_bytes())
+}
+
+#[inline]
 fn deflate_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
     use std::io::Write;
 
-    use flate2::{write::DeflateEncoder, Compression};
+    use flate2::{Compression, write::DeflateEncoder};
     let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(input)?;
     Ok(encoder.finish()?)
@@ -127,7 +142,7 @@ fn deflate_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
 fn gzip_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
     use std::io::Write;
 
-    use flate2::{write::GzEncoder, Compression};
+    use flate2::{Compression, write::GzEncoder};
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(input)?;
     Ok(encoder.finish()?)
@@ -148,7 +163,7 @@ fn utf8_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
 fn zlib_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
     use std::io::Write;
 
-    use flate2::{write::ZlibEncoder, Compression};
+    use flate2::{Compression, write::ZlibEncoder};
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(input)?;
     Ok(encoder.finish()?)
@@ -157,6 +172,14 @@ fn zlib_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
 //
 // DECODERS
 //
+
+#[inline]
+fn base64_decoder(input: &[u8]) -> DaftResult<Vec<u8>> {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    STANDARD
+        .decode(input)
+        .map_err(|e| DaftError::ValueError(format!("Invalid base64 input: {}", e)))
+}
 
 #[inline]
 fn deflate_decoder(input: &[u8]) -> DaftResult<Vec<u8>> {
@@ -221,6 +244,8 @@ mod tests {
         assert_eq!("zlib".parse::<Codec>().unwrap(), Codec::Zlib);
         assert_eq!("ZLIB".parse::<Codec>().unwrap(), Codec::Zlib);
         assert_eq!("ZlIb".parse::<Codec>().unwrap(), Codec::Zlib);
+        assert_eq!("base64".parse::<Codec>().unwrap(), Codec::Base64);
+        assert_eq!("BASE64".parse::<Codec>().unwrap(), Codec::Base64);
         assert!("unknown".parse::<Codec>().is_err());
     }
 }

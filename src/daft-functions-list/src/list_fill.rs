@@ -4,8 +4,8 @@ use daft_core::{
     prelude::{Schema, Series},
 };
 use daft_dsl::{
-    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn},
 };
 use serde::{Deserialize, Serialize};
 
@@ -50,7 +50,7 @@ impl ScalarUDF for ListFill {
                 num_field.dtype
             )));
         }
-        elem_field.to_list_field()
+        Ok(elem_field.to_list_field())
     }
 }
 

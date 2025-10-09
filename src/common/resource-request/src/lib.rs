@@ -8,11 +8,10 @@ use common_hashable_float_wrapper::FloatWrapper;
 use common_py_serde::impl_bincode_py_state_serialization;
 #[cfg(feature = "python")]
 use pyo3::{
-    pyclass,
+    Bound, PyObject, PyResult, Python, pyclass,
     pyclass::CompareOp,
     pymethods,
     types::{PyModule, PyModuleMethods},
-    Bound, PyObject, PyResult, Python,
 };
 use serde::{Deserialize, Serialize};
 

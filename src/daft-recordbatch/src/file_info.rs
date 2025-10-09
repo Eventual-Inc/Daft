@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use common_py_serde::impl_bincode_py_state_serialization;
 #[cfg(feature = "python")]
-use pyo3::{exceptions::PyKeyError, pyclass, pymethods, PyObject, PyResult, Python};
+use pyo3::{PyObject, PyResult, Python, exceptions::PyKeyError, pyclass, pymethods};
 use serde::{Deserialize, Serialize};
 
 /// Metadata for a single file.

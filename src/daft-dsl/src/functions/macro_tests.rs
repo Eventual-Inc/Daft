@@ -1,11 +1,12 @@
 mod tests {
     use common_error::DaftError;
-    use daft_core::series::Series;
+    use daft_core::prelude::*;
     use rstest::rstest;
 
     use crate::{
+        ExprRef,
         functions::{FunctionArg, FunctionArgs},
-        lit, literal_value, ExprRef,
+        lit,
     };
 
     #[derive(FunctionArgs)]
@@ -298,22 +299,22 @@ mod tests {
 
     #[rstest]
     #[case(
-        vec![FunctionArg::unnamed(literal_value(1).to_series()), FunctionArg::unnamed(literal_value(2).to_series())],
+        vec![FunctionArg::unnamed(Literal::from(1).into()), FunctionArg::unnamed(Literal::from(2).into())],
     )]
     #[case(
-        vec![FunctionArg::unnamed(literal_value(1).to_series()), FunctionArg::named("arg2", literal_value(2).to_series())],
+        vec![FunctionArg::unnamed(Literal::from(1).into()), FunctionArg::named("arg2", Literal::from(2).into())],
     )]
     #[case(
-        vec![FunctionArg::named("arg1", literal_value(1).to_series()), FunctionArg::named("arg2", literal_value(2).to_series())],
+        vec![FunctionArg::named("arg1", Literal::from(1).into()), FunctionArg::named("arg2", Literal::from(2).into())],
     )]
     #[case(
-        vec![FunctionArg::named("arg2", literal_value(2).to_series()), FunctionArg::named("arg1", literal_value(1).to_series())],
+        vec![FunctionArg::named("arg2", Literal::from(2).into()), FunctionArg::named("arg1", Literal::from(1).into())],
     )]
     fn test_literal_series_valid(#[case] args: Vec<FunctionArg<Series>>) {
         let function_args = FunctionArgs::try_new(args).unwrap();
 
         let parsed_args = LiteralArgs::try_from(function_args).expect("should succeed");
-        assert_eq!(parsed_args.arg1, literal_value(1).to_series());
+        assert_eq!(parsed_args.arg1, Literal::from(1).into());
         assert_eq!(parsed_args.arg2, 2);
     }
 

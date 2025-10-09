@@ -7,7 +7,6 @@ use std::{
     task::{Context, Poll},
 };
 
-use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::{DaftError, DaftResult};
 #[cfg(feature = "python")]
 use common_file_formats::DatabaseSourceConfig;
@@ -16,14 +15,15 @@ use common_runtime::get_io_runtime;
 use common_scan_info::Pushdowns;
 use daft_core::prelude::*;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_dsl::ExprRef;
+use daft_dsl::{AggExpr, Expr, ExprRef};
 use daft_io::{IOClient, IOConfig, IOStatsContext, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
-use daft_parquet::read::{
-    read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
+use daft_parquet::{
+    infer_arrow_schema_from_metadata,
+    read::{ParquetSchemaInferenceOptions, read_parquet_bulk, read_parquet_metadata_bulk},
 };
 use daft_recordbatch::RecordBatch;
-use daft_scan::{storage_config::StorageConfig, ChunkSpec, DataSource, ScanTask};
+use daft_scan::{ChunkSpec, DataSource, ScanTask, storage_config::StorageConfig};
 use daft_stats::{ColumnRangeStatistics, PartitionSpec, TableMetadata, TableStatistics};
 use daft_warc::WarcConvertOptions;
 use futures::{Future, Stream};
@@ -321,7 +321,7 @@ fn materialize_scan_task(
         }
         #[cfg(feature = "python")]
         FileFormatConfig::PythonFunction => {
-            let tables = crate::python::read_pyfunc_into_table_iter(&scan_task)?;
+            let tables = crate::python::read_pyfunc_into_table_iter(scan_task.clone())?;
             tables.collect::<crate::Result<Vec<_>>>()?
         }
     };
@@ -356,7 +356,10 @@ impl MicroPartition {
         metadata: TableMetadata,
         statistics: TableStatistics,
     ) -> Self {
-        assert!(scan_task.pushdowns.filters.is_none(), "Cannot create unloaded MicroPartition from a ScanTask with pushdowns that have filters");
+        assert!(
+            scan_task.pushdowns.filters.is_none(),
+            "Cannot create unloaded MicroPartition from a ScanTask with pushdowns that have filters"
+        );
 
         let schema = scan_task.materialized_schema();
         let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
@@ -387,7 +390,9 @@ impl MicroPartition {
         for batch in record_batches.iter() {
             assert!(
                 batch.schema == schema,
-                "Loaded MicroPartition's batch schema must match its own schema exactly"
+                "Loaded MicroPartition's batch schema must match its own schema exactly, found {} vs {}",
+                batch.schema,
+                schema,
             );
         }
 
@@ -512,6 +517,11 @@ impl MicroPartition {
                     parquet_metadata,
                     chunk_size,
                     scan_task.generated_fields.clone(),
+                    scan_task
+                        .pushdowns
+                        .aggregation
+                        .as_ref()
+                        .map(|agg| agg.as_ref()),
                 )
                 .context(DaftCoreComputeSnafu)
             }
@@ -558,14 +568,12 @@ impl MicroPartition {
         self.len() == 0
     }
 
-    pub fn size_bytes(&self) -> DaftResult<Option<usize>> {
+    pub fn size_bytes(&self) -> Option<usize> {
         let guard = self.state.lock().unwrap();
-        let size_bytes = if let TableState::Loaded(tables) = &*guard {
+        if let TableState::Loaded(tables) = &*guard {
             let total_size: usize = tables
                 .iter()
                 .map(daft_recordbatch::RecordBatch::size_bytes)
-                .collect::<DaftResult<Vec<_>>>()?
-                .iter()
                 .sum();
             Some(total_size)
         } else if let TableState::Unloaded(scan_task) = &*guard {
@@ -575,8 +583,7 @@ impl MicroPartition {
             // If the table is not loaded, we don't have stats, and we don't have the file size in bytes, return None.
             // TODO(Clark): Should we pull in the table or trigger a file metadata fetch instead of returning None here?
             None
-        };
-        Ok(size_bytes)
+        }
     }
 
     /// Retrieves tables from the MicroPartition, reading data if not already loaded.
@@ -680,7 +687,7 @@ impl MicroPartition {
     }
 
     pub fn write_to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
-        let buffer = Vec::with_capacity(self.size_bytes()?.unwrap_or(0));
+        let buffer = Vec::with_capacity(self.size_bytes().unwrap_or(0));
         let schema = self.schema.to_arrow()?;
         let options = arrow2::io::ipc::write::WriteOptions { compression: None };
         let mut writer = arrow2::io::ipc::write::StreamWriter::new(buffer, options);
@@ -1106,6 +1113,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
     parquet_metadata: Option<Vec<Arc<FileMetaData>>>,
     chunk_size: Option<usize>,
     generated_fields: Option<SchemaRef>,
+    aggregation_pushdown: Option<&Expr>,
 ) -> DaftResult<MicroPartition> {
     if let Some(so) = start_offset
         && so > 0
@@ -1153,7 +1161,8 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema = infer_schema_with_options(m, Some((*schema_infer_options).into()))?;
+                let schema =
+                    infer_arrow_schema_from_metadata(m, Some((*schema_infer_options).into()))?;
                 let daft_schema = Schema::from(schema);
                 DaftResult::Ok(Arc::new(daft_schema))
             })
@@ -1177,13 +1186,36 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema = infer_schema_with_options(m, Some((*schema_infer_options).into()))?;
+                let schema =
+                    infer_arrow_schema_from_metadata(m, Some((*schema_infer_options).into()))?;
                 let daft_schema = schema.into();
                 DaftResult::Ok(Arc::new(daft_schema))
             })
             .collect::<DaftResult<Vec<_>>>()?;
         (metadata, schemas)
     };
+
+    // Handle count pushdown aggregation optimization.
+    if let Some(Expr::Agg(AggExpr::Count(_, _))) = aggregation_pushdown {
+        let count: usize = metadata.iter().map(|m| m.num_rows).sum();
+        let count_field = daft_core::datatypes::Field::new(
+            aggregation_pushdown.unwrap().name(),
+            daft_core::datatypes::DataType::UInt64,
+        );
+        let count_array =
+            UInt64Array::from_iter(count_field.clone(), std::iter::once(Some(count as u64)));
+        let count_batch = daft_recordbatch::RecordBatch::new_with_size(
+            Schema::new(vec![count_field]),
+            vec![count_array.into_series()],
+            1,
+        )
+        .context(DaftCoreComputeSnafu)?;
+        return Ok(MicroPartition::new_loaded(
+            count_batch.schema.clone(),
+            Arc::new(vec![count_batch]),
+            None,
+        ));
+    }
 
     let any_stats_avail = metadata
         .iter()
@@ -1296,6 +1328,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
                 }),
                 num_rows,
                 None,
+                None,
             ),
             generated_fields,
         );
@@ -1383,7 +1416,7 @@ impl Stream for MicroPartitionStreamAdapter {
                 }
                 Poll::Ready(Ok(Err(e))) => return Poll::Ready(Some(Err(e))),
                 Poll::Ready(Err(e)) => {
-                    return Poll::Ready(Some(Err(DaftError::InternalError(e.to_string()))))
+                    return Poll::Ready(Some(Err(DaftError::InternalError(e.to_string()))));
                 }
                 Poll::Pending => return Poll::Pending,
             }

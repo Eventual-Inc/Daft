@@ -13,7 +13,8 @@ from daft.context import get_context
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.utils import freeze
-from tests.utils import sort_arrow_table
+from tests.conftest import get_tests_daft_runner_name
+from tests.utils import sort_arrow_table, sort_pydict
 
 
 def _assert_all_hashable(values, test_name=""):
@@ -926,6 +927,26 @@ def test_bool_agg_type_error(make_df):
     assert "bool_or is not implemented for type Int64" in str(exc_info.value)
 
 
+def test_groupby_with_list_cols(make_df):
+    """Test that groupby works with list & fixed-size-list columns."""
+    df = make_df(
+        {
+            "key1": pa.array([[1, 2], [1, 2], [2, 3], [2, 3]], type=pa.list_(pa.int64(), 2)),
+            "key2": pa.array(
+                [["a"], ["a"], ["hello", "world"], ["hello", "world", "and", "beyond"]], type=pa.list_(pa.string())
+            ),
+            "values": pa.array([1.0, 10.0, 3.0, 4.0], type=pa.float64()),
+        }
+    )
+
+    res = df.groupby(["key1", "key2"]).agg(col("values").sum())
+    assert sort_pydict(res.to_pydict(), "values") == {
+        "key1": [[1, 2], [2, 3], [2, 3]],
+        "key2": [["a"], ["hello", "world", "and", "beyond"], ["hello", "world"]],
+        "values": [11.0, 4.0, 3.0],
+    }
+
+
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
 def test_join_followed_by_groupby(make_df, repartition_nparts, with_morsel_size):
     """Test join followed by groupby with simple aggregations."""
@@ -994,7 +1015,7 @@ def test_join_followed_by_groupby(make_df, repartition_nparts, with_morsel_size)
 
 
 @pytest.mark.skipif(
-    get_context().daft_execution_config.use_experimental_distributed_engine is False,
+    get_tests_daft_runner_name() != "ray" or get_context().daft_execution_config.use_legacy_ray_runner is True,
     reason="Legacy ray runner does not support skipping shuffles on already partitioned data",
 )
 def test_join_on_hash_partitioned_df_does_not_shuffle(capsys):
@@ -1005,7 +1026,7 @@ def test_join_on_hash_partitioned_df_does_not_shuffle(capsys):
     df.explain(True)
     captured = capsys.readouterr()
 
-    # Assert that "Repartition" only shows up 3 times in the explain output, logical + optimized + final
+    # Assert that "Repartition" only shows up 3 times in the explain output, logical + optimized + physical
     assert (
         captured.out.count("Repartition") == 3
     ), f"Expected 'Repartition' to appear 3 times, got {captured.out.count('Repartition')}\n{captured.out}"

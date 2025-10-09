@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use arrow2::types::Index;
 use common_error::DaftResult;
 
@@ -9,7 +7,7 @@ use crate::{
         growable::{Growable, GrowableArray},
         prelude::*,
     },
-    datatypes::{prelude::*, IntervalArray},
+    datatypes::{FileArray, IntervalArray, prelude::*},
 };
 
 impl<T> DataArray<T>
@@ -77,6 +75,7 @@ impl_logicalarray_take!(SparseTensorArray);
 impl_logicalarray_take!(FixedShapeSparseTensorArray);
 impl_logicalarray_take!(FixedShapeTensorArray);
 impl_logicalarray_take!(MapArray);
+impl_logicalarray_take!(FileArray);
 
 impl FixedSizeBinaryArray {
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
@@ -108,65 +107,32 @@ impl FixedSizeBinaryArray {
 }
 
 #[cfg(feature = "python")]
-impl crate::datatypes::PythonArray {
+impl PythonArray {
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        use arrow2::array::Array;
-        use pyo3::prelude::*;
+        let mut growable = Self::make_growable(
+            self.name(),
+            self.data_type(),
+            vec![self],
+            idx.data().null_count() > 0,
+            idx.len(),
+        );
 
-        use crate::array::pseudo_arrow::PseudoArrowArray;
+        for i in idx {
+            match i {
+                None => {
+                    growable.add_nulls(1);
+                }
+                Some(i) => {
+                    growable.extend(0, i.to_usize(), 1);
+                }
+            }
+        }
 
-        let indices = idx.as_arrow();
-
-        let old_values = self.as_arrow().values();
-
-        // Execute take on the data values, ignoring validity.
-        let new_values: Vec<Arc<PyObject>> = {
-            let py_none = Arc::new(Python::with_gil(|py: Python| py.None()));
-
-            indices
-                .iter()
-                .map(|maybe_idx| match maybe_idx {
-                    Some(idx) => old_values[arrow2::types::Index::to_usize(idx)].clone(),
-                    None => py_none.clone(),
-                })
-                .collect()
-        };
-
-        // Execute take on the validity bitmap using arrow2::compute.
-        let new_validity = {
-            self.as_arrow()
-                .validity()
-                .map(|old_validity| {
-                    let old_validity_array = {
-                        &arrow2::array::BooleanArray::new(
-                            arrow2::datatypes::DataType::Boolean,
-                            old_validity.clone(),
-                            None,
-                        )
-                    };
-                    arrow2::compute::take::take(old_validity_array, indices)
-                })
-                .transpose()?
-                .map(|new_validity_dynarray| {
-                    let new_validity_iter = new_validity_dynarray
-                        .as_any()
-                        .downcast_ref::<arrow2::array::BooleanArray>()
-                        .unwrap()
-                        .iter();
-                    arrow2::bitmap::Bitmap::from_iter(
-                        new_validity_iter.map(|valid| valid.unwrap_or(false)),
-                    )
-                })
-        };
-
-        let arrow_array: Box<dyn arrow2::array::Array> =
-            Box::new(PseudoArrowArray::new(new_values.into(), new_validity));
-
-        Self::new(self.field().clone().into(), arrow_array)
+        Ok(growable.build()?.downcast::<Self>()?.clone())
     }
 }
 

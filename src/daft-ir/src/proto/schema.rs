@@ -1,4 +1,4 @@
-use super::{from_proto, from_proto_box, ProtoError, ProtoResult, ToFromProto};
+use super::{ProtoError, ProtoResult, ToFromProto, from_proto, from_proto_box};
 use crate::{from_proto_err, proto::UNIT, to_proto_err};
 
 /// Export daft_ir types under an `ir` namespace to concisely disambiguate domains.
@@ -276,6 +276,7 @@ impl ToFromProto for ir::DataType {
                     .into(),
                 )
             }
+            Self::File => todo!(),
             Self::Unknown => proto::DataTypeVariant::Unknown(UNIT),
             #[cfg(feature = "python")]
             Self::Python => proto::DataTypeVariant::Python(UNIT),

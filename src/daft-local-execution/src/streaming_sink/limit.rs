@@ -1,76 +1,91 @@
-use std::sync::Arc;
+use std::{
+    cmp::Ordering::{Equal, Greater, Less},
+    sync::Arc,
+};
 
+use common_metrics::ops::NodeType;
 use daft_micropartition::MicroPartition;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
-    StreamingSinkState,
 };
-use crate::{
-    dispatcher::{DispatchSpawner, UnorderedDispatcher},
-    pipeline::NodeName,
-    ExecutionRuntimeContext, ExecutionTaskSpawner,
-};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
-struct LimitSinkState {
-    remaining: usize,
+pub(crate) struct LimitSinkState {
+    // The remaining number of rows to skip
+    remaining_skip: usize,
+    // The remaining number of rows to fetch
+    remaining_take: usize,
 }
 
 impl LimitSinkState {
-    fn new(remaining: usize) -> Self {
-        Self { remaining }
+    fn new(limit: usize, offset: Option<usize>) -> Self {
+        Self {
+            remaining_skip: offset.unwrap_or(0),
+            remaining_take: limit,
+        }
     }
 
-    fn get_remaining_mut(&mut self) -> &mut usize {
-        &mut self.remaining
-    }
-}
-
-impl StreamingSinkState for LimitSinkState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
+    fn get_state_mut(&mut self) -> (&mut usize, &mut usize) {
+        (&mut self.remaining_skip, &mut self.remaining_take)
     }
 }
 
 pub struct LimitSink {
     limit: usize,
+    offset: Option<usize>,
 }
 
 impl LimitSink {
-    pub fn new(limit: usize) -> Self {
-        Self { limit }
+    pub fn new(limit: usize, offset: Option<usize>) -> Self {
+        Self { limit, offset }
     }
 }
 
 impl StreamingSink for LimitSink {
+    type State = LimitSinkState;
+
     #[instrument(skip_all, name = "LimitSink::sink")]
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
-        mut state: Box<dyn StreamingSinkState>,
+        mut input: Arc<MicroPartition>,
+        mut state: LimitSinkState,
         spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkExecuteResult {
-        let input_num_rows = input.len();
+    ) -> StreamingSinkExecuteResult<Self> {
+        let mut input_num_rows = input.len();
 
-        let remaining = state
-            .as_any_mut()
-            .downcast_mut::<LimitSinkState>()
-            .expect("Limit sink should have LimitSinkState")
-            .get_remaining_mut();
-        use std::cmp::Ordering::{Equal, Greater, Less};
-        match input_num_rows.cmp(remaining) {
+        let (remaining_skip, remaining_take) = state.get_state_mut();
+
+        if *remaining_skip > 0 {
+            let skip_num_rows = (*remaining_skip).min(input_num_rows);
+            *remaining_skip -= skip_num_rows;
+            if skip_num_rows >= input_num_rows {
+                return Ok((
+                    state,
+                    StreamingSinkOutput::NeedMoreInput(Some(
+                        MicroPartition::empty(Some(input.schema())).into(),
+                    )),
+                ))
+                .into();
+            }
+
+            input = input.slice(skip_num_rows, input_num_rows).unwrap().into();
+            input_num_rows = input.len();
+        }
+
+        match input_num_rows.cmp(remaining_take) {
             Less => {
-                *remaining -= input_num_rows;
+                *remaining_take -= input_num_rows;
                 Ok((state, StreamingSinkOutput::NeedMoreInput(Some(input)))).into()
             }
             Equal => {
-                *remaining = 0;
+                *remaining_take = 0;
                 Ok((state, StreamingSinkOutput::Finished(Some(input)))).into()
             }
             Greater => {
-                let to_head = *remaining;
-                *remaining = 0;
+                let to_head = *remaining_take;
+                *remaining_take = 0;
                 spawner
                     .spawn(
                         async move {
@@ -88,33 +103,30 @@ impl StreamingSink for LimitSink {
         format!("Limit {}", self.limit).into()
     }
 
+    fn op_type(&self) -> NodeType {
+        NodeType::Limit
+    }
+
     fn multiline_display(&self) -> Vec<String> {
-        vec![format!("Limit: {}", self.limit)]
+        match &self.offset {
+            Some(o) => vec![format!("Limit: Num Rows = {}, Offset = {}", self.limit, o)],
+            None => vec![format!("Limit: {}", self.limit)],
+        }
     }
 
     fn finalize(
         &self,
-        _states: Vec<Box<dyn StreamingSinkState>>,
+        _states: Vec<Self::State>,
         _spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult {
         Ok(None).into()
     }
 
-    fn make_state(&self) -> Box<dyn StreamingSinkState> {
-        Box::new(LimitSinkState::new(self.limit))
+    fn make_state(&self) -> Self::State {
+        LimitSinkState::new(self.limit, self.offset)
     }
 
     fn max_concurrency(&self) -> usize {
         1
-    }
-
-    fn dispatch_spawner(
-        &self,
-        _runtime_handle: &ExecutionRuntimeContext,
-        _maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner> {
-        // Limits are greedy, so we don't need to buffer any input.
-        // They are also not concurrent, so we don't need to worry about ordering.
-        Arc::new(UnorderedDispatcher::unbounded())
     }
 }

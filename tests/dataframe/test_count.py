@@ -29,3 +29,9 @@ def test_count_mixed_star() -> None:
     df = daft.from_pydict({"a": [1, 2, 3, 4], "b": [1, None, 3, None]})
     with pytest.raises(ValueError, match=r"Cannot call count\(\) with both \* and column names"):
         df.count("*", "a")
+
+
+def test_count_int() -> None:
+    df = daft.from_pydict({"a": [1, 2, 3, 4], "b": [1, None, 3, None]})
+    res = df.count(1).to_pydict()
+    assert res == {"count": [4]}

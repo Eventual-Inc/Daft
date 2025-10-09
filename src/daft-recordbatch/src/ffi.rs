@@ -32,7 +32,11 @@ pub fn record_batch_from_arrow(
             .map(|col| common_arrow_ffi::array_to_rust(py, col))
             .collect::<PyResult<Vec<_>>>()?;
         if names.len() != columns.len() {
-            return Err(PyValueError::new_err(format!("Error when converting Arrow Record Batches to Daft Table. Expected: {} columns, got: {}", names.len(), columns.len())));
+            return Err(PyValueError::new_err(format!(
+                "Error when converting Arrow Record Batches to Daft Table. Expected: {} columns, got: {}",
+                names.len(),
+                columns.len()
+            )));
         }
         extracted_arrow_arrays.push((columns, rb.len()?));
     }

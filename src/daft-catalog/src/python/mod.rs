@@ -4,16 +4,15 @@ mod wrappers;
 
 use std::sync::Arc;
 
-use daft_core::python::PySchema;
-use daft_dsl::LiteralValue;
+use daft_core::{lit::Literal, python::PySchema};
 use daft_logical_plan::PyLogicalPlanBuilder;
 use indexmap::IndexMap;
 use pyo3::{exceptions::PyIndexError, intern, prelude::*, types::PyDict};
 pub use wrappers::{PyCatalogWrapper, PyTableWrapper};
 
 use crate::{
-    impls::memory::{MemoryCatalog, MemoryTable},
     Catalog, CatalogRef, Identifier, Table, TableRef, TableSource,
+    impls::memory::{MemoryCatalog, MemoryTable},
 };
 
 #[derive(Clone)]
@@ -89,15 +88,13 @@ impl PyCatalog {
 pub struct PyTable(pub TableRef);
 
 impl PyTable {
-    fn pydict_to_options(
-        options: Option<&Bound<PyDict>>,
-    ) -> PyResult<IndexMap<String, LiteralValue>> {
+    fn pydict_to_options(options: Option<&Bound<PyDict>>) -> PyResult<IndexMap<String, Literal>> {
         if let Some(options) = options {
             options
                 .iter()
                 .map(|(key, val)| {
                     let key = key.extract()?;
-                    let val = daft_dsl::python::literal_value(val)?;
+                    let val = Literal::from_pyobj(&val, None)?;
 
                     Ok((key, val))
                 })

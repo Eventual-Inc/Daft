@@ -1,15 +1,15 @@
 use std::{fs::File, pin::Pin, sync::Arc};
 
-use arrow2::io::{flight::default_ipc_fields, ipc::write::schema_to_bytes};
 use arrow_flight::{
-    flight_service_server::{FlightService, FlightServiceServer},
     Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightInfo,
     HandshakeRequest, HandshakeResponse, PollInfo, PutResult, SchemaResult, Ticket,
+    flight_service_server::{FlightService, FlightServiceServer},
 };
+use arrow2::io::{flight::default_ipc_fields, ipc::write::schema_to_bytes};
 use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
 use futures::{Stream, StreamExt, TryStreamExt};
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::{Request, Response, Status, transport::Server};
 
 use super::stream::FlightDataStreamReader;
 use crate::shuffle_cache::ShuffleCache;
@@ -169,7 +169,7 @@ impl FlightServerConnectionHandle {
 pub fn start_flight_server(
     shuffle_cache: Arc<ShuffleCache>,
     ip: &str,
-) -> Result<FlightServerConnectionHandle, Status> {
+) -> FlightServerConnectionHandle {
     let io_runtime = common_runtime::get_io_runtime(true);
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
     let (port_tx, port_rx) = tokio::sync::oneshot::channel();
@@ -203,10 +203,9 @@ pub fn start_flight_server(
 
     let port = port_rx.blocking_recv().expect("Failed to receive port");
 
-    let handle = FlightServerConnectionHandle {
+    FlightServerConnectionHandle {
         port,
         shutdown_signal: Some(shutdown_tx),
         server_task: Some(server_task),
-    };
-    Ok(handle)
+    }
 }

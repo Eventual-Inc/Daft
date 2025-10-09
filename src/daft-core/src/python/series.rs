@@ -8,28 +8,48 @@ use common_arrow_ffi as ffi;
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
 use daft_schema::python::PyDataType;
 use pyo3::{
-    exceptions::PyValueError,
+    exceptions::{PyIndexError, PyStopIteration, PyValueError},
     prelude::*,
     pyclass::CompareOp,
     types::{PyBytes, PyList},
 };
 
 use crate::{
-    array::{
-        ops::{as_arrow::AsArrow, DaftLogical},
-        pseudo_arrow::PseudoArrowArray,
-        DataArray,
-    },
+    array::ops::DaftLogical,
     count_mode::CountMode,
-    datatypes::{DataType, Field, PythonType},
-    series::{self, IntoSeries, Series},
-    utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
+    datatypes::{DataType, Field},
+    lit::Literal,
+    prelude::PythonArray,
+    series::{self, IntoSeries, Series, from_lit::combine_lit_types},
+    utils::{
+        arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
+        supertype::try_get_collection_supertype,
+    },
 };
 
 #[pyclass(frozen)]
 #[derive(Clone)]
 pub struct PySeries {
     pub series: series::Series,
+}
+impl PySeries {
+    pub fn from_pylist_impl(
+        name: &str,
+        vec_pyobj: Vec<Bound<PyAny>>,
+        dtype: DataType,
+    ) -> PyResult<Self> {
+        let pyobjs_arced = vec_pyobj.into_iter().map(|obj| {
+            if obj.is_none() {
+                None
+            } else {
+                Some(Arc::new(obj.unbind()))
+            }
+        });
+        let arr = PythonArray::from_iter(name, pyobjs_arced);
+        let series = arr.cast(&dtype)?;
+
+        Ok(series.into())
+    }
 }
 
 #[pymethods]
@@ -55,34 +75,53 @@ impl PySeries {
         Ok(series.into())
     }
 
-    // This ingests a Python list[object] directly into a Rust PythonArray.
     #[staticmethod]
-    pub fn from_pylist(name: &str, pylist: Bound<PyAny>, dtype: PyDataType) -> PyResult<Self> {
-        let vec_pyobj: Vec<PyObject> = pylist.extract()?;
+    #[pyo3(signature = (list, name=None, dtype=None))]
+    pub fn from_pylist(
+        list: &Bound<PyList>,
+        name: Option<&str>,
+        dtype: Option<PyDataType>,
+    ) -> PyResult<Self> {
+        let dtype = dtype.map(|t| t.dtype);
+        let literals = list
+            .iter()
+            .map(|elem| Literal::from_pyobj(&elem, dtype.as_ref()))
+            .collect::<PyResult<Vec<_>>>()?;
 
-        let vec_pyobj_arced = vec_pyobj.into_iter().map(Arc::new).collect();
-        let arrow_array: Box<dyn arrow2::array::Array> =
-            Box::new(PseudoArrowArray::from_pyobj_vec(vec_pyobj_arced));
+        let (literals, dtype) = if let Some(dtype) = dtype {
+            (literals, dtype)
+        } else {
+            let supertype = try_get_collection_supertype(literals.iter().map(Literal::get_type))
+                .unwrap_or(DataType::Python);
 
-        let field = Field::new(name, DataType::Python);
-        let data_array = DataArray::<PythonType>::new(field.into(), arrow_array)?;
-        let series = data_array.cast(&dtype.into())?;
+            let literals_with_supertype = literals
+                .into_iter()
+                .zip(list)
+                .map(|(daft_lit, py_lit)| {
+                    if combine_lit_types(&daft_lit.get_type(), &supertype).as_ref()
+                        == Some(&supertype)
+                    {
+                        Ok(daft_lit)
+                    } else {
+                        // if literal doesn't match supertype, redo conversion so that for the python data type
+                        // as well as nested types with python type, we avoid any lossy conversions and just keep
+                        // stuff as Python objects
+                        Literal::from_pyobj(&py_lit, Some(&supertype))
+                    }
+                })
+                .collect::<PyResult<Vec<_>>>()?;
 
+            (literals_with_supertype, supertype)
+        };
+
+        let mut series = Series::from_literals(literals)?.cast(&dtype)?;
+        if let Some(name) = name {
+            series = series.rename(name);
+        }
         Ok(series.into())
     }
-
-    // This is for PythonArrays only,
-    // to convert the Rust PythonArray to a Python list[object].
     pub fn to_pylist<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyList>> {
-        let pseudo_arrow_array = self.series.python()?.as_arrow();
-        let pyobj_vec = pseudo_arrow_array.to_pyobj_vec();
-
-        let pyobj_vec_cloned = pyobj_vec
-            .into_iter()
-            .map(|pyobj| pyobj.clone_ref(py))
-            .collect::<Vec<_>>();
-
-        PyList::new(py, pyobj_vec_cloned)
+        PyList::new(py, self.series.to_literals())
     }
 
     pub fn to_arrow<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
@@ -90,6 +129,21 @@ impl PySeries {
         let arrow_array = cast_array_from_daft_if_needed(arrow_array);
         let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
         ffi::to_py_array(py, arrow_array, &pyarrow)
+    }
+
+    pub fn __iter__(&self) -> PySeriesIterator {
+        PySeriesIterator::new(self.series.clone())
+    }
+
+    pub fn __getitem__(&self, index: usize) -> PyResult<Literal> {
+        let length = self.series.len();
+        if index >= length {
+            Err(PyIndexError::new_err(format!(
+                "Index out of range for series of length {length}: {index}"
+            )))
+        } else {
+            Ok(self.series.get_lit(index))
+        }
     }
 
     pub fn __abs__(&self) -> PyResult<Self> {
@@ -314,8 +368,8 @@ impl PySeries {
         Ok(self.series.len())
     }
 
-    pub fn size_bytes(&self) -> PyResult<usize> {
-        Ok(self.series.size_bytes()?)
+    pub fn size_bytes(&self) -> usize {
+        self.series.size_bytes()
     }
 
     pub fn name(&self) -> PyResult<String> {
@@ -406,5 +460,38 @@ impl From<series::Series> for PySeries {
 impl From<PySeries> for series::Series {
     fn from(item: PySeries) -> Self {
         item.series
+    }
+}
+
+#[pyclass]
+#[derive(Clone)]
+/// Iterator over elements in a Python Series
+///
+/// Implemented in Rust so that we can more easily optimize it in the future.
+pub struct PySeriesIterator {
+    series: series::Series,
+    idx: usize,
+}
+
+impl PySeriesIterator {
+    fn new(series: series::Series) -> Self {
+        Self { series, idx: 0 }
+    }
+}
+
+#[pymethods]
+impl PySeriesIterator {
+    fn __next__(&mut self) -> PyResult<Literal> {
+        if self.idx == self.series.len() {
+            Err(PyStopIteration::new_err(()))
+        } else {
+            let val = self.series.get_lit(self.idx);
+            self.idx += 1;
+            Ok(val)
+        }
+    }
+
+    fn __iter__(&self) -> Self {
+        self.clone()
     }
 }

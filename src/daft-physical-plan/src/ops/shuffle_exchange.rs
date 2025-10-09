@@ -3,14 +3,14 @@ use std::sync::Arc;
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use daft_dsl::ExprRef;
-use daft_io::{parse_url, SourceType};
+use daft_io::{SourceType, parse_url};
 use daft_logical_plan::partitioning::{
     ClusteringSpec, HashClusteringConfig, RandomClusteringConfig, RangeClusteringConfig,
     UnknownClusteringConfig,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{impl_default_tree_display, PhysicalPlanRef};
+use crate::{PhysicalPlanRef, impl_default_tree_display};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ShuffleExchange {

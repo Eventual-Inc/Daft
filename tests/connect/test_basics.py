@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+
 import pytest
 from pyspark.sql import Row
 from pyspark.sql import functions as F
@@ -120,6 +122,20 @@ def test_range_limit(spark_session):
     limited_df = spark_range.limit(5).toPandas()
     assert len(limited_df) == 5, "Limited DataFrame should have 5 rows"
     assert list(limited_df["id"]) == list(range(5)), "Limited DataFrame should contain values 0-4"
+
+
+def test_range_limit_offset(spark_session):
+    ids = [i for i in range(1024)]
+    random.shuffle(ids)
+    df = spark_session.createDataFrame([(id, f"user_{id}") for id in ids], ["id", "name"])
+
+    ol_df = df.sort("id", ascending=True).offset(2).limit(7).toPandas()
+    assert len(ol_df) == 7, "Limited DataFrame should have 7 rows"
+    assert list(ol_df["id"]) == list(range(2, 9)), "Limited DataFrame should contain values 2-9"
+
+    lo_df = df.sort("id", ascending=True).limit(7).offset(2).toPandas()
+    assert len(lo_df) == 5, "Limited DataFrame should have 5 rows"
+    assert list(lo_df["id"]) == list(range(2, 7)), "Limited DataFrame should contain values 2-7"
 
 
 def test_filter(spark_session):

@@ -1,12 +1,13 @@
-use common_error::{ensure, DaftError, DaftResult};
+use common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
     datatypes::{format_string_has_offset, infer_timeunit_from_format_string},
-    prelude::{AsArrow, DataType, Field, Int64Array, Schema, TimeUnit, TimestampArray, Utf8Array},
-    series::{IntoSeries, Series},
+    prelude::*,
+    series::IntoSeries,
 };
 use daft_dsl::{
-    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
-    lit, ExprRef, LiteralValue,
+    ExprRef,
+    functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn},
+    lit,
 };
 use serde::{Deserialize, Serialize};
 
@@ -57,7 +58,7 @@ impl ScalarUDF for ToDatetime {
         let timezone = if let Some(tz_expr) = inputs.optional("timezone")? {
             let lit = tz_expr.as_literal();
 
-            if lit == Some(&LiteralValue::Null) {
+            if lit == Some(&Literal::Null) {
                 None
             } else {
                 Some(

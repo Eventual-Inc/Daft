@@ -4,7 +4,7 @@ use arrow2::{compute::comparison, scalar::PrimitiveScalar};
 use common_error::{DaftError, DaftResult};
 use num_traits::{NumCast, ToPrimitive};
 
-use super::{as_arrow::AsArrow, from_arrow::FromArrow, full::FullNull, DaftCompare, DaftLogical};
+use super::{DaftCompare, DaftLogical, as_arrow::AsArrow, from_arrow::FromArrow, full::FullNull};
 use crate::{
     array::DataArray,
     datatypes::{
@@ -1053,11 +1053,7 @@ impl DaftLogical<bool> for BooleanArray {
     }
 
     fn xor(&self, rhs: bool) -> Self::Output {
-        if rhs {
-            self.not()
-        } else {
-            Ok(self.clone())
-        }
+        if rhs { self.not() } else { Ok(self.clone()) }
     }
 }
 
@@ -2112,12 +2108,17 @@ impl DaftCompare<&Self> for FixedSizeBinaryArray {
     fn eq_null_safe(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let l_validity = self.as_arrow().validity();
-                let r_validity = rhs.as_arrow().validity();
+                let lhs_arrow = self.as_arrow();
+                let rhs_arrow = rhs.as_arrow();
+                let l_validity = lhs_arrow.validity();
+                let r_validity = rhs_arrow.validity();
 
-                let mut result_values = comparison::eq(self.as_arrow(), rhs.as_arrow())
-                    .values()
-                    .clone();
+                let result_values = lhs_arrow
+                    .values_iter()
+                    .zip(rhs_arrow.values_iter())
+                    .map(|(lhs, rhs)| lhs == rhs);
+                let mut result_values =
+                    arrow2::bitmap::Bitmap::from_trusted_len_iter(result_values);
 
                 match (l_validity, r_validity) {
                     (None, None) => {}
@@ -2239,9 +2240,15 @@ impl DaftCompare<&[u8]> for FixedSizeBinaryArray {
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
+    use common_error::{DaftError, DaftResult};
 
-    use crate::{array::ops::DaftCompare, datatypes::Int64Array};
+    use crate::{
+        array::ops::{DaftCompare, DaftLogical, full::FullNull},
+        datatypes::{
+            BinaryArray, BooleanArray, DataType, FixedSizeBinaryArray, Int64Array, NullArray,
+            Utf8Array,
+        },
+    };
 
     #[test]
     fn equal_int64_array_with_scalar() -> DaftResult<()> {
@@ -2413,5 +2420,314 @@ mod tests {
         let result: Vec<_> = lhs.gte(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [None, None, Some(false)]);
         Ok(())
+    }
+
+    #[test]
+    fn eq_null_safe_int64_handles_null_alignment() -> DaftResult<()> {
+        let lhs = Int64Array::from(("lhs", vec![1, 2, 3, 4]));
+        let lhs = lhs.with_validity_slice(&[true, false, true, false])?;
+        let rhs = Int64Array::from(("rhs", vec![1, 20, 30, 4]));
+        let rhs = rhs.with_validity_slice(&[true, true, false, false])?;
+
+        let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
+        assert_eq!(
+            result,
+            vec![Some(true), Some(false), Some(false), Some(true)]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn eq_null_safe_int64_broadcast_null_rhs() -> DaftResult<()> {
+        let lhs = Int64Array::from(("lhs", vec![1, 2, 3]));
+        let lhs = lhs.with_validity_slice(&[true, false, true])?;
+        let rhs = Int64Array::from(("rhs", vec![0]));
+        let rhs = rhs.with_validity_slice(&[false])?;
+
+        let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
+        assert_eq!(result, vec![Some(false), Some(true), Some(false)]);
+        Ok(())
+    }
+
+    #[test]
+    fn eq_null_safe_int64_broadcast_null_lhs() -> DaftResult<()> {
+        let lhs = Int64Array::from(("lhs", vec![0]));
+        let lhs = lhs.with_validity_slice(&[false])?;
+        let rhs = Int64Array::from(("rhs", vec![1, 2, 3]));
+        let rhs = rhs.with_validity_slice(&[true, false, true])?;
+
+        let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
+        assert_eq!(result, vec![Some(false), Some(true), Some(false)]);
+        Ok(())
+    }
+
+    #[test]
+    fn eq_null_safe_int64_length_mismatch_errors() {
+        let lhs = Int64Array::from(("lhs", vec![1, 2, 3]));
+        let rhs = Int64Array::from(("rhs", vec![1, 2]));
+
+        let err = lhs.eq_null_safe(&rhs).unwrap_err();
+        match err {
+            DaftError::ValueError(msg) => assert!(msg.contains("different length arrays")),
+            other => panic!("expected ValueError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn eq_null_safe_boolean_handles_null_alignment() -> DaftResult<()> {
+        let lhs = BooleanArray::from(("lhs", &[Some(true), None, Some(false), None][..]));
+        let rhs = BooleanArray::from(("rhs", &[Some(true), Some(false), None, None][..]));
+
+        let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
+        assert_eq!(
+            result,
+            vec![Some(true), Some(false), Some(false), Some(true)]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn eq_null_safe_boolean_broadcast_null_rhs() -> DaftResult<()> {
+        let lhs = BooleanArray::from(("lhs", &[Some(true), Some(false), None][..]));
+        let rhs = BooleanArray::from(("rhs", &[None][..]));
+
+        let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
+        assert_eq!(result, vec![Some(false), Some(false), Some(true)]);
+        Ok(())
+    }
+
+    #[test]
+    fn boolean_and_handles_nulls() -> DaftResult<()> {
+        let lhs = BooleanArray::from(("lhs", &[Some(true), Some(false), None][..]));
+        let rhs = BooleanArray::from(("rhs", &[Some(true), None, Some(true)][..]));
+
+        let result: Vec<_> = lhs.and(&rhs)?.into_iter().collect();
+        assert_eq!(result, vec![Some(true), Some(false), None]);
+        Ok(())
+    }
+
+    #[test]
+    fn boolean_or_handles_nulls() -> DaftResult<()> {
+        let lhs = BooleanArray::from(("lhs", &[Some(true), Some(false), None][..]));
+        let rhs = BooleanArray::from(("rhs", &[Some(false), None, Some(true)][..]));
+
+        let result: Vec<_> = lhs.or(&rhs)?.into_iter().collect();
+        assert_eq!(result, vec![Some(true), None, Some(true)]);
+        Ok(())
+    }
+
+    #[test]
+    fn boolean_and_with_null_scalar() -> DaftResult<()> {
+        let lhs = BooleanArray::from(("lhs", &[Some(false), Some(true)][..]));
+        let rhs = BooleanArray::from(("rhs", &[None][..]));
+
+        let result: Vec<_> = lhs.and(&rhs)?.into_iter().collect();
+        assert_eq!(result, vec![Some(false), None]);
+        Ok(())
+    }
+
+    #[test]
+    fn boolean_or_with_null_scalar() -> DaftResult<()> {
+        let lhs = BooleanArray::from(("lhs", &[Some(true), Some(false)][..]));
+        let rhs = BooleanArray::from(("rhs", &[None][..]));
+
+        let result: Vec<_> = lhs.or(&rhs)?.into_iter().collect();
+        assert_eq!(result, vec![Some(true), None]);
+        Ok(())
+    }
+
+    #[test]
+    fn boolean_and_null_lhs_broadcasts() -> DaftResult<()> {
+        let lhs = BooleanArray::from(("lhs", &[None][..]));
+        let rhs = BooleanArray::from(("rhs", &[Some(false), Some(true)][..]));
+
+        let result: Vec<_> = lhs.and(&rhs)?.into_iter().collect();
+        assert_eq!(result, vec![Some(false), None]);
+        Ok(())
+    }
+
+    #[test]
+    fn null_array_equal_returns_nulls() -> DaftResult<()> {
+        let lhs = <NullArray as FullNull>::full_null("lhs", &DataType::Null, 2);
+        let rhs = <NullArray as FullNull>::full_null("rhs", &DataType::Null, 2);
+
+        let eq: Vec<_> = lhs.equal(&rhs)?.into_iter().collect();
+        assert_eq!(eq, vec![None, None]);
+
+        let eq_null_safe: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
+        assert_eq!(eq_null_safe, vec![None, None]);
+        Ok(())
+    }
+
+    #[test]
+    fn null_array_equal_broadcasts() -> DaftResult<()> {
+        let lhs = <NullArray as FullNull>::full_null("lhs", &DataType::Null, 3);
+        let rhs = <NullArray as FullNull>::full_null("rhs", &DataType::Null, 1);
+
+        let result: Vec<_> = lhs.equal(&rhs)?.into_iter().collect();
+        assert_eq!(result, vec![None, None, None]);
+        Ok(())
+    }
+
+    #[test]
+    fn null_array_equal_length_mismatch_errors() {
+        let lhs = <NullArray as FullNull>::full_null("lhs", &DataType::Null, 2);
+        let rhs = <NullArray as FullNull>::full_null("rhs", &DataType::Null, 3);
+
+        let err = lhs.equal(&rhs).unwrap_err();
+        match err {
+            DaftError::ValueError(msg) => assert!(msg.contains("different length arrays")),
+            other => panic!("expected ValueError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn utf8_eq_null_safe_handles_nulls() -> DaftResult<()> {
+        let lhs = Utf8Array::from_iter("lhs", vec![Some("a"), None, Some("c"), None].into_iter());
+        let rhs = Utf8Array::from_iter("rhs", vec![Some("a"), Some("b"), None, None].into_iter());
+
+        let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
+        assert_eq!(
+            result,
+            vec![Some(true), Some(false), Some(false), Some(true)]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn utf8_eq_null_safe_scalar_masks_nulls() -> DaftResult<()> {
+        let array = Utf8Array::from_iter("vals", vec![Some("a"), None, Some("b")].into_iter());
+
+        let result: Vec<_> = array.eq_null_safe("a")?.into_iter().collect();
+        assert_eq!(result, vec![Some(true), Some(false), Some(false)]);
+        Ok(())
+    }
+
+    #[test]
+    fn binary_eq_null_safe_handles_nulls() -> DaftResult<()> {
+        let lhs = BinaryArray::from_iter(
+            "lhs",
+            vec![Some(&b"aa"[..]), None, Some(&b"cc"[..]), None].into_iter(),
+        );
+        let rhs = BinaryArray::from_iter(
+            "rhs",
+            vec![Some(&b"aa"[..]), Some(&b"bb"[..]), None, None].into_iter(),
+        );
+
+        let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
+        assert_eq!(
+            result,
+            vec![Some(true), Some(false), Some(false), Some(true)]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn binary_eq_null_safe_scalar_masks_nulls() -> DaftResult<()> {
+        let array = BinaryArray::from_iter(
+            "vals",
+            vec![Some(&b"aa"[..]), None, Some(&b"bb"[..])].into_iter(),
+        );
+
+        let result: Vec<_> = array.eq_null_safe(&b"aa"[..])?.into_iter().collect();
+        assert_eq!(result, vec![Some(true), Some(false), Some(false)]);
+        Ok(())
+    }
+
+    #[test]
+    fn binary_eq_null_safe_broadcast_null_rhs() -> DaftResult<()> {
+        let lhs = BinaryArray::from_iter(
+            "lhs",
+            vec![Some(&b"aa"[..]), None, Some(&b"cc"[..])].into_iter(),
+        );
+        let rhs = BinaryArray::from_iter("rhs", vec![None::<&[u8]>].into_iter());
+
+        let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
+        assert_eq!(result, vec![Some(false), Some(true), Some(false)]);
+        Ok(())
+    }
+
+    #[test]
+    fn fixed_size_binary_eq_null_safe_handles_nulls() -> DaftResult<()> {
+        let lhs = FixedSizeBinaryArray::from_iter(
+            "lhs",
+            vec![Some([1u8, 1u8]), None, Some([3u8, 3u8]), None].into_iter(),
+            2,
+        );
+        let rhs = FixedSizeBinaryArray::from_iter(
+            "rhs",
+            vec![Some([1u8, 1u8]), Some([2u8, 2u8]), None, None].into_iter(),
+            2,
+        );
+
+        let result: Vec<_> = lhs.eq_null_safe(&rhs).unwrap().into_iter().collect();
+        assert_eq!(
+            result,
+            vec![Some(true), Some(false), Some(false), Some(true)]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn fixed_size_binary_eq_null_safe_scalar_masks_nulls() -> DaftResult<()> {
+        let array = FixedSizeBinaryArray::from_iter(
+            "vals",
+            vec![Some([1u8, 1u8]), None, Some([2u8, 2u8])].into_iter(),
+            2,
+        );
+
+        let result: Vec<_> = array.eq_null_safe(&[1u8, 1u8][..])?.into_iter().collect();
+        assert_eq!(result, vec![Some(true), Some(false), Some(false)]);
+        Ok(())
+    }
+
+    #[test]
+    fn fixed_size_binary_eq_null_safe_broadcast_null_rhs() -> DaftResult<()> {
+        let lhs = FixedSizeBinaryArray::from_iter(
+            "lhs",
+            vec![Some([1u8, 1u8]), None, Some([3u8, 3u8])].into_iter(),
+            2,
+        );
+        let rhs = FixedSizeBinaryArray::from_iter("rhs", vec![None::<&[u8]>].into_iter(), 2);
+
+        let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
+        assert_eq!(result, vec![Some(false), Some(true), Some(false)]);
+        Ok(())
+    }
+
+    #[test]
+    fn fixed_size_binary_equal_broadcast_renames_to_lhs() -> DaftResult<()> {
+        let lhs = FixedSizeBinaryArray::from_iter("lhs", vec![Some([1u8, 1u8])].into_iter(), 2);
+        let rhs = FixedSizeBinaryArray::from_iter(
+            "rhs",
+            vec![Some([1u8, 1u8]), Some([2u8, 2u8])].into_iter(),
+            2,
+        );
+
+        let result = lhs.equal(&rhs)?;
+        assert_eq!(result.name(), "lhs");
+        let collected: Vec<_> = result.into_iter().collect();
+        assert_eq!(collected, vec![Some(true), Some(false)]);
+        Ok(())
+    }
+
+    #[test]
+    fn fixed_size_binary_eq_null_safe_length_mismatch_errors() {
+        let lhs = FixedSizeBinaryArray::from_iter(
+            "lhs",
+            vec![Some([1u8, 1u8]), Some([2u8, 2u8])].into_iter(),
+            2,
+        );
+        let rhs = FixedSizeBinaryArray::from_iter(
+            "rhs",
+            vec![Some([1u8, 1u8]), Some([2u8, 2u8]), Some([3u8, 3u8])].into_iter(),
+            2,
+        );
+
+        let err = lhs.eq_null_safe(&rhs).unwrap_err();
+        match err {
+            DaftError::ValueError(msg) => assert!(msg.contains("different length arrays")),
+            other => panic!("expected ValueError, got {other:?}"),
+        }
     }
 }

@@ -1,18 +1,18 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use daft_core::{join::JoinSide, prelude::SchemaRef};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
-    IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{pipeline::NodeName, state_bridge::BroadcastStateBridgeRef, ExecutionTaskSpawner};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef};
 
-struct CrossJoinState {
+pub(crate) struct CrossJoinState {
     bridge: BroadcastStateBridgeRef<Vec<RecordBatch>>,
     stream_idx: usize,
     collect_idx: usize,
@@ -25,12 +25,6 @@ impl CrossJoinState {
             stream_idx: 0,
             collect_idx: 0,
         }
-    }
-}
-
-impl IntermediateOpState for CrossJoinState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -55,9 +49,9 @@ impl CrossJoinOperator {
 }
 
 fn empty_result(
-    state: Box<dyn IntermediateOpState>,
+    state: CrossJoinState,
     output_schema: SchemaRef,
-) -> DaftResult<(Box<dyn IntermediateOpState>, IntermediateOperatorResult)> {
+) -> DaftResult<(CrossJoinState, IntermediateOperatorResult)> {
     let empty = Arc::new(MicroPartition::empty(Some(output_schema)));
 
     Ok((
@@ -67,13 +61,15 @@ fn empty_result(
 }
 
 impl IntermediateOperator for CrossJoinOperator {
+    type State = CrossJoinState;
+
     #[instrument(skip_all, name = "CrossJoinOperator::execute")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn IntermediateOpState>,
+        mut state: Self::State,
         task_spawner: &ExecutionTaskSpawner,
-    ) -> IntermediateOpExecuteResult {
+    ) -> IntermediateOpExecuteResult<Self> {
         let output_schema = self.output_schema.clone();
 
         if input.is_empty() {
@@ -85,20 +81,15 @@ impl IntermediateOperator for CrossJoinOperator {
         task_spawner
             .spawn(
                 async move {
-                    let cross_join_state = state
-                        .as_any_mut()
-                        .downcast_mut::<CrossJoinState>()
-                        .expect("CrossJoinState should be used with CrossJoinOperator");
-
-                    let collect_tables = cross_join_state.bridge.get_state().await;
+                    let collect_tables = state.bridge.get_state().await;
                     if collect_tables.is_empty() {
                         return empty_result(state, output_schema);
                     }
 
                     let stream_tables = input.get_tables()?;
 
-                    let stream_tbl = &stream_tables[cross_join_state.stream_idx];
-                    let collect_tbl = &collect_tables[cross_join_state.collect_idx];
+                    let stream_tbl = &stream_tables[state.stream_idx];
+                    let collect_tbl = &collect_tables[state.collect_idx];
 
                     let (left_tbl, right_tbl) = match stream_side {
                         JoinSide::Left => (stream_tbl, collect_tbl),
@@ -114,23 +105,20 @@ impl IntermediateOperator for CrossJoinOperator {
                     ));
 
                     // increment inner loop index
-                    cross_join_state.collect_idx =
-                        (cross_join_state.collect_idx + 1) % collect_tables.len();
+                    state.collect_idx = (state.collect_idx + 1) % collect_tables.len();
 
-                    if cross_join_state.collect_idx == 0 {
+                    if state.collect_idx == 0 {
                         // finished the inner loop, increment outer loop index
-                        cross_join_state.stream_idx =
-                            (cross_join_state.stream_idx + 1) % stream_tables.len();
+                        state.stream_idx = (state.stream_idx + 1) % stream_tables.len();
                     }
 
-                    let result =
-                        if cross_join_state.stream_idx == 0 && cross_join_state.collect_idx == 0 {
-                            // finished the outer loop, move onto next input
-                            IntermediateOperatorResult::NeedMoreInput(Some(output_morsel))
-                        } else {
-                            // still looping through tables
-                            IntermediateOperatorResult::HasMoreOutput(output_morsel)
-                        };
+                    let result = if state.stream_idx == 0 && state.collect_idx == 0 {
+                        // finished the outer loop, move onto next input
+                        IntermediateOperatorResult::NeedMoreInput(Some(output_morsel))
+                    } else {
+                        // still looping through tables
+                        IntermediateOperatorResult::HasMoreOutput(output_morsel)
+                    };
                     Ok((state, result))
                 },
                 Span::current(),
@@ -142,6 +130,10 @@ impl IntermediateOperator for CrossJoinOperator {
         "CrossJoin".into()
     }
 
+    fn op_type(&self) -> NodeType {
+        NodeType::CrossJoin
+    }
+
     fn multiline_display(&self) -> Vec<String> {
         vec![
             "CrossJoin:".to_string(),
@@ -149,7 +141,7 @@ impl IntermediateOperator for CrossJoinOperator {
         ]
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
-        Ok(Box::new(CrossJoinState::new(self.state_bridge.clone())))
+    async fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(CrossJoinState::new(self.state_bridge.clone()))
     }
 }

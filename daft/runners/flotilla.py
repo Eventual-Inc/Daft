@@ -12,12 +12,14 @@ from daft.daft import (
     LocalPhysicalPlan,
     NativeExecutor,
     PyDaftExecutionConfig,
+    PyMicroPartition,
     RayPartitionRef,
     RaySwordfishTask,
     RaySwordfishWorker,
     RayTaskResult,
     set_compute_runtime_num_worker_threads,
 )
+from daft.expressions import Expression, ExpressionsProjection
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.partitioning import (
     PartitionMetadata,
@@ -54,7 +56,7 @@ class RaySwordfishActor:
     async def run_plan(
         self,
         plan: LocalPhysicalPlan,
-        config: PyDaftExecutionConfig,
+        exec_cfg: PyDaftExecutionConfig,
         psets: dict[str, list[ray.ObjectRef]],
         context: dict[str, str] | None,
     ) -> AsyncGenerator[MicroPartition | list[PartitionMetadata], None]:
@@ -65,13 +67,41 @@ class RaySwordfishActor:
 
             metas = []
             native_executor = NativeExecutor()
-            async for partition in native_executor.run_async(plan, psets_mp, config, None, context):
+            async for partition in native_executor.run_async(plan, psets_mp, exec_cfg, None, context):
                 if partition is None:
                     break
                 mp = MicroPartition._from_pymicropartition(partition)
                 metas.append(PartitionMetadata.from_table(mp))
                 yield mp
             yield metas
+
+
+@ray.remote  # type: ignore[misc]
+def get_boundaries_remote(
+    sort_by: list[Expression],
+    descending: list[bool],
+    nulls_first: list[bool] | None,
+    num_quantiles: int,
+    *samples: MicroPartition,
+) -> PyMicroPartition:
+    sort_by_exprs = ExpressionsProjection(sort_by)
+
+    mp = MicroPartition.concat(list(samples))
+    nulls_first = nulls_first if nulls_first is not None else descending
+    merged_sorted = mp.sort(sort_by_exprs.to_column_expressions(), descending=descending, nulls_first=nulls_first)
+
+    result = merged_sorted.quantiles(num_quantiles)
+    return result._micropartition
+
+
+async def get_boundaries(
+    samples: list[ray.ObjectRef],
+    sort_by: list[Expression],
+    descending: list[bool],
+    nulls_first: list[bool] | None,
+    num_quantiles: int,
+) -> PyMicroPartition:
+    return await get_boundaries_remote.remote(sort_by, descending, nulls_first, num_quantiles, *samples)
 
 
 @dataclass
@@ -185,17 +215,15 @@ def try_autoscale(bundles: list[dict[str, int]]) -> None:
     )
 
 
-class FlotillaRunnerCore:
-    """Core functionality for running distributed physical plans with Flotilla.
-
-    This class contains the business logic for managing plans and their execution,
-    separate from the Ray actor wrapper.
-    """
-
-    def __init__(self, on_actor: bool = False) -> None:
+@ray.remote(
+    num_cpus=0,
+)
+class RemoteFlotillaRunner:
+    def __init__(self) -> None:
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
-        self.plan_runner = DistributedPhysicalPlanRunner(on_actor)
+        self.plan_runner = DistributedPhysicalPlanRunner()
+        ray._private.worker.blocking_get_inside_async_warned = True
 
     def run_plan(
         self,
@@ -235,58 +263,7 @@ class FlotillaRunnerCore:
         return materialized_result
 
 
-class LocalFlotillaRunner:
-    """Local wrapper around FlotillaPlanRunnerCore.
-
-    This wrapper provides the same interface as FlotillaPlanRunner but without
-    Ray actor overhead, useful for local testing or when distributed execution
-    is not needed.
-    """
-
-    def __init__(self) -> None:
-        self.loop = asyncio.new_event_loop()
-        self.core = self.loop.run_until_complete(self._make_runner())
-
-    async def _make_runner(self) -> FlotillaRunnerCore:
-        return FlotillaRunnerCore(on_actor=False)
-
-    def run_plan(
-        self,
-        plan: DistributedPhysicalPlan,
-        partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
-    ) -> None:
-        self.core.run_plan(plan, partition_sets)
-
-    def get_next_partition(self, plan_id: str) -> RayMaterializedResult | None:
-        """Synchronous version of get_next_partition that internally uses asyncio."""
-        return self.loop.run_until_complete(self.core.get_next_partition(plan_id))
-
-
-@ray.remote(
-    num_cpus=0,
-)
-class RemoteFlotillaRunner:
-    """Ray actor wrapper around FlotillaPlanRunnerCore.
-
-    This actor provides the distributed interface for running plans,
-    while delegating the actual work to the core class.
-    """
-
-    def __init__(self) -> None:
-        self.core = FlotillaRunnerCore(on_actor=True)
-
-    def run_plan(
-        self,
-        plan: DistributedPhysicalPlan,
-        partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
-    ) -> None:
-        self.core.run_plan(plan, partition_sets)
-
-    async def get_next_partition(self, plan_id: str) -> RayMaterializedResult | None:
-        return await self.core.get_next_partition(plan_id)
-
-
-FLOTILLA_RUNER_NAMESPACE = "daft"
+FLOTILLA_RUNNER_NAMESPACE = "daft"
 FLOTILLA_RUNNER_NAME = "flotilla-plan-runner"
 
 
@@ -304,25 +281,21 @@ def get_head_node_id() -> str | None:
 class FlotillaRunner:
     """FlotillaRunner is a wrapper around FlotillaRunnerCore that provides a Ray actor interface."""
 
-    def __init__(self, use_actor: bool = False) -> None:
-        self.use_actor = use_actor
-        if self.use_actor:
-            head_node_id = get_head_node_id()
-            self.runner = RemoteFlotillaRunner.options(  # type: ignore
-                name=FLOTILLA_RUNNER_NAME,
-                namespace=FLOTILLA_RUNER_NAMESPACE,
-                get_if_exists=True,
-                scheduling_strategy=(
-                    ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
-                        node_id=head_node_id,
-                        soft=False,
-                    )
-                    if head_node_id is not None
-                    else "DEFAULT"
-                ),
-            ).remote()
-        else:
-            self.runner = LocalFlotillaRunner()
+    def __init__(self) -> None:
+        head_node_id = get_head_node_id()
+        self.runner = RemoteFlotillaRunner.options(  # type: ignore
+            name=FLOTILLA_RUNNER_NAME,
+            namespace=FLOTILLA_RUNNER_NAMESPACE,
+            get_if_exists=True,
+            scheduling_strategy=(
+                ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                    node_id=head_node_id,
+                    soft=False,
+                )
+                if head_node_id is not None
+                else "DEFAULT"
+            ),
+        ).remote()
 
     def stream_plan(
         self,
@@ -330,17 +303,9 @@ class FlotillaRunner:
         partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
     ) -> Iterator[RayMaterializedResult]:
         plan_id = plan.id()
-        if self.use_actor:
-            ray.get(self.runner.run_plan.remote(plan, partition_sets))
-            while True:
-                materialized_result = ray.get(self.runner.get_next_partition.remote(plan_id))
-                if materialized_result is None:
-                    break
-                yield materialized_result
-        else:
-            self.runner.run_plan(plan, partition_sets)
-            while True:
-                materialized_result = self.runner.get_next_partition(plan_id)
-                if materialized_result is None:
-                    break
-                yield materialized_result
+        ray.get(self.runner.run_plan.remote(plan, partition_sets))
+        while True:
+            materialized_result = ray.get(self.runner.get_next_partition.remote(plan_id))
+            if materialized_result is None:
+                break
+            yield materialized_result

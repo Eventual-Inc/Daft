@@ -3,103 +3,113 @@ use std::sync::Arc;
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
+use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
 
 use crate::{
-    channel::{create_channel, Receiver},
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
+    channel::{Receiver, create_channel},
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
-    pipeline::{NodeInfo, NodeName, PipelineNode, RuntimeContext},
-    progress_bar::ProgressBarColor,
+    pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
-        BaseStatsBuilder, CountingReceiver, CountingSender, RuntimeStatsBuilder,
-        RuntimeStatsContext, RuntimeStatsEventHandler,
+        CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
     },
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
 };
-pub trait BlockingSinkState: Send + Sync {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
-}
 
-pub enum BlockingSinkStatus {
-    NeedMoreInput(Box<dyn BlockingSinkState>),
+pub enum BlockingSinkStatus<Op: BlockingSink> {
+    NeedMoreInput(Op::State),
     #[allow(dead_code)]
-    Finished(Box<dyn BlockingSinkState>),
+    Finished(Op::State),
 }
 
-pub enum BlockingSinkFinalizeOutput {
+pub enum BlockingSinkFinalizeOutput<Op: BlockingSink> {
     #[allow(dead_code)]
     HasMoreOutput {
-        states: Vec<Box<dyn BlockingSinkState>>,
+        states: Vec<Op::State>,
         output: Vec<Arc<MicroPartition>>,
     },
     Finished(Vec<Arc<MicroPartition>>),
 }
 
-pub(crate) type BlockingSinkSinkResult = OperatorOutput<DaftResult<BlockingSinkStatus>>;
-pub(crate) type BlockingSinkFinalizeResult = OperatorOutput<DaftResult<BlockingSinkFinalizeOutput>>;
-pub trait BlockingSink: Send + Sync {
+pub(crate) type BlockingSinkSinkResult<Op> = OperatorOutput<DaftResult<BlockingSinkStatus<Op>>>;
+pub(crate) type BlockingSinkFinalizeResult<Op> =
+    OperatorOutput<DaftResult<BlockingSinkFinalizeOutput<Op>>>;
+pub(crate) trait BlockingSink: Send + Sync {
+    type State: Send + Sync + Unpin;
+
     fn sink(
         &self,
         input: Arc<MicroPartition>,
-        state: Box<dyn BlockingSinkState>,
+        state: Self::State,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkSinkResult;
+    ) -> BlockingSinkSinkResult<Self>
+    where
+        Self: Sized;
     fn finalize(
         &self,
-        states: Vec<Box<dyn BlockingSinkState>>,
+        states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult;
+    ) -> BlockingSinkFinalizeResult<Self>
+    where
+        Self: Sized;
     fn name(&self) -> NodeName;
+    fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
-    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>>;
-    fn make_runtime_stats_builder(&self) -> Arc<dyn RuntimeStatsBuilder> {
-        Arc::new(BaseStatsBuilder {})
+    fn make_state(&self) -> DaftResult<Self::State>;
+    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
+        Arc::new(DefaultRuntimeStats::default())
+    }
+    fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
+        None
     }
     fn dispatch_spawner(
         &self,
-        runtime_handle: &ExecutionRuntimeContext,
+        morsel_size_requirement: Option<MorselSizeRequirement>,
     ) -> Arc<dyn DispatchSpawner> {
-        Arc::new(UnorderedDispatcher::with_fixed_threshold(
-            runtime_handle.default_morsel_size(),
-        ))
+        match morsel_size_requirement {
+            Some(morsel_size_requirement) => {
+                Arc::new(UnorderedDispatcher::new(morsel_size_requirement))
+            }
+            None => Arc::new(UnorderedDispatcher::unbounded()),
+        }
     }
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
     }
 }
 
-pub struct BlockingSinkNode {
-    op: Arc<dyn BlockingSink>,
+pub struct BlockingSinkNode<Op: BlockingSink> {
+    op: Arc<Op>,
     child: Box<dyn PipelineNode>,
-    runtime_stats: Arc<RuntimeStatsContext>,
+    runtime_stats: Arc<dyn RuntimeStats>,
     plan_stats: StatsState,
-    node_info: NodeInfo,
+    morsel_size_requirement: MorselSizeRequirement,
+    node_info: Arc<NodeInfo>,
 }
 
-impl BlockingSinkNode {
+impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
     pub(crate) fn new(
-        op: Arc<dyn BlockingSink>,
+        op: Arc<Op>,
         child: Box<dyn PipelineNode>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
     ) -> Self {
         let name = op.name().into();
-        let node_info = ctx.next_node_info(name);
+        let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::BlockingSink);
+        let runtime_stats = op.make_runtime_stats();
 
-        let runtime_stats = RuntimeStatsContext::new_with_builder(
-            node_info.clone(),
-            op.make_runtime_stats_builder(),
-        );
+        let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
             op,
             child,
             runtime_stats,
             plan_stats,
-            node_info,
+            morsel_size_requirement,
+            node_info: Arc::new(node_info),
         }
     }
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
@@ -108,21 +118,15 @@ impl BlockingSinkNode {
 
     #[instrument(level = "info", skip_all, name = "BlockingSink::run_worker")]
     async fn run_worker(
-        op: Arc<dyn BlockingSink>,
+        op: Arc<Op>,
         input_receiver: Receiver<Arc<MicroPartition>>,
-        rt_context: Arc<RuntimeStatsContext>,
-        rt_stats_handler: Arc<RuntimeStatsEventHandler>,
+        runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
-    ) -> DaftResult<Box<dyn BlockingSinkState>> {
+    ) -> DaftResult<Op::State> {
         let span = info_span!("BlockingSink::Sink");
         let compute_runtime = get_compute_runtime();
-        let spawner = ExecutionTaskSpawner::new(
-            compute_runtime,
-            memory_manager,
-            rt_context,
-            rt_stats_handler,
-            span,
-        );
+        let spawner =
+            ExecutionTaskSpawner::new(compute_runtime, memory_manager, runtime_stats, span);
         let mut state = op.make_state()?;
         while let Some(morsel) = input_receiver.recv().await {
             let result = op.sink(morsel, state, &spawner).await??;
@@ -140,26 +144,24 @@ impl BlockingSinkNode {
     }
 
     fn spawn_workers(
-        op: Arc<dyn BlockingSink>,
+        op: Arc<Op>,
         input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
-        task_set: &mut TaskSet<DaftResult<Box<dyn BlockingSinkState>>>,
-        stats: Arc<RuntimeStatsContext>,
-        stats_handler: Arc<RuntimeStatsEventHandler>,
+        task_set: &mut TaskSet<DaftResult<Op::State>>,
+        runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
     ) {
         for input_receiver in input_receivers {
             task_set.spawn(Self::run_worker(
                 op.clone(),
                 input_receiver,
-                stats.clone(),
-                stats_handler.clone(),
+                runtime_stats.clone(),
                 memory_manager.clone(),
             ));
         }
     }
 }
 
-impl TreeDisplay for BlockingSinkNode {
+impl<Op: BlockingSink> TreeDisplay for BlockingSinkNode<Op> {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -175,8 +177,9 @@ impl TreeDisplay for BlockingSinkNode {
                 if let StatsState::Materialized(stats) = &self.plan_stats {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
+                writeln!(display, "Batch Size = {}", self.morsel_size_requirement).unwrap();
                 if matches!(level, DisplayLevel::Verbose) {
-                    let rt_result = self.runtime_stats.render();
+                    let rt_result = self.runtime_stats.snapshot();
                     for (name, value) in rt_result {
                         writeln!(display, "{} = {}", name.capitalize(), value).unwrap();
                     }
@@ -191,13 +194,32 @@ impl TreeDisplay for BlockingSinkNode {
     }
 }
 
-impl PipelineNode for BlockingSinkNode {
+impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
     fn children(&self) -> Vec<&dyn PipelineNode> {
         vec![self.child.as_ref()]
     }
 
+    fn boxed_children(&self) -> Vec<&Box<dyn PipelineNode>> {
+        vec![&self.child]
+    }
+
     fn name(&self) -> Arc<str> {
         self.node_info.name.clone()
+    }
+
+    fn propagate_morsel_size_requirement(
+        &mut self,
+        _downstream_requirement: MorselSizeRequirement,
+        default_morsel_size: MorselSizeRequirement,
+    ) {
+        let operator_morsel_size_requirement = self.op.morsel_size_requirement();
+        let new_morsel_size_requirement = match operator_morsel_size_requirement {
+            Some(requirement) => requirement,
+            None => default_morsel_size,
+        };
+        self.morsel_size_requirement = new_morsel_size_requirement;
+        self.child
+            .propagate_morsel_size_requirement(new_morsel_size_requirement, default_morsel_size);
     }
 
     fn start(
@@ -205,33 +227,22 @@ impl PipelineNode for BlockingSinkNode {
         _maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
-        let progress_bar = runtime_handle.make_progress_bar(
-            &self.name(),
-            ProgressBarColor::Cyan,
+        let child_results_receiver = self.child.start(false, runtime_handle)?;
+        let counting_receiver = InitializingCountingReceiver::new(
+            child_results_receiver,
             self.node_id(),
             self.runtime_stats.clone(),
-        );
-        let child_results_receiver = self.child.start(false, runtime_handle)?;
-        let counting_receiver = CountingReceiver::new(
-            child_results_receiver,
-            self.runtime_stats.clone(),
-            progress_bar.clone(),
-            runtime_handle.runtime_stats_handler(),
+            runtime_handle.stats_manager(),
         );
 
         let (destination_sender, destination_receiver) = create_channel(0);
-        let counting_sender = CountingSender::new(
-            destination_sender,
-            self.runtime_stats.clone(),
-            progress_bar,
-            runtime_handle.runtime_stats_handler(),
-        );
+        let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
 
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
 
-        let dispatch_spawner = op.dispatch_spawner(runtime_handle);
+        let dispatch_spawner = op.dispatch_spawner(Some(self.morsel_size_requirement));
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             vec![counting_receiver],
             num_workers,
@@ -243,7 +254,8 @@ impl PipelineNode for BlockingSinkNode {
         );
 
         let memory_manager = runtime_handle.memory_manager();
-        let rt_stats_handler = runtime_handle.runtime_stats_handler();
+        let stats_manager = runtime_handle.stats_manager();
+        let node_id = self.node_id();
         runtime_handle.spawn_local(
             async move {
                 let mut task_set = TaskSet::new();
@@ -252,7 +264,6 @@ impl PipelineNode for BlockingSinkNode {
                     spawned_dispatch_result.worker_receivers,
                     &mut task_set,
                     runtime_stats.clone(),
-                    rt_stats_handler.clone(),
                     memory_manager.clone(),
                 );
 
@@ -267,7 +278,6 @@ impl PipelineNode for BlockingSinkNode {
                     compute_runtime,
                     memory_manager,
                     runtime_stats.clone(),
-                    rt_stats_handler,
                     info_span!("BlockingSink::Finalize"),
                 );
                 loop {
@@ -287,6 +297,8 @@ impl PipelineNode for BlockingSinkNode {
                         }
                     }
                 }
+
+                stats_manager.finalize_node(node_id);
                 Ok(())
             },
             &self.name(),
@@ -301,5 +313,11 @@ impl PipelineNode for BlockingSinkNode {
     }
     fn plan_id(&self) -> Arc<str> {
         Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
+    }
+    fn node_info(&self) -> Arc<NodeInfo> {
+        self.node_info.clone()
+    }
+    fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
+        self.runtime_stats.clone()
     }
 }

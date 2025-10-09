@@ -10,6 +10,25 @@ use arrow2::compute::cast;
 static REGISTRY: LazyLock<Mutex<HashMap<std::string::String, arrow2::datatypes::DataType>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+pub fn coerce_to_daft_compatible_schema(
+    schema: arrow2::datatypes::Schema,
+) -> arrow2::datatypes::Schema {
+    let fields = schema
+        .fields
+        .into_iter()
+        .map(|field| {
+            let data_type =
+                coerce_to_daft_compatible_type(field.data_type()).unwrap_or(field.data_type);
+            arrow2::datatypes::Field::new(field.name, data_type, field.is_nullable)
+                .with_metadata(field.metadata)
+        })
+        .collect::<Vec<_>>();
+    arrow2::datatypes::Schema {
+        fields,
+        metadata: schema.metadata,
+    }
+}
+
 fn coerce_to_daft_compatible_type(
     dtype: &arrow2::datatypes::DataType,
 ) -> Option<arrow2::datatypes::DataType> {

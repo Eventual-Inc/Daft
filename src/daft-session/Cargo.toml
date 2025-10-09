@@ -1,4 +1,5 @@
 [dependencies]
+daft-ai = {path = "../daft-ai"}
 daft-catalog = {path = "../daft-catalog"}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl"}

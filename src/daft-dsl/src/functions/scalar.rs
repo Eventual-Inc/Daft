@@ -10,7 +10,7 @@ use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
 use super::function_args::{FunctionArg, FunctionArgs};
-use crate::{python_udf::PyScalarFn, Expr, ExprRef};
+use crate::{Expr, ExprRef, python_udf::PyScalarFn};
 
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ScalarFn {

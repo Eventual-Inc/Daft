@@ -22,21 +22,17 @@ endif
 
 
 .venv:  ## Set up virtual environment
-ifeq (, $(shell which uv))
-	$(PYTHON_VERSION) -m venv $(VENV)
-	$(VENV_BIN)/python -m pip install --upgrade uv
-else
+	@which uv > /dev/null || (echo "Error: uv is required but not installed. Please install uv first." && exit 1)
 	uv venv $(VENV) -p $(PYTHON_VERSION)
-endif
 ifeq ($(IS_M1), 1)
 	## Hacks to deal with grpcio compile errors on m1 macs
 	GRPC_PYTHON_BUILD_SYSTEM_OPENSSL=1 \
 	GRPC_PYTHON_BUILD_SYSTEM_ZLIB=1	\
 	CFLAGS="${CFLAGS} -I /opt/homebrew/opt/openssl/include"	\
 	LDFLAGS="${LDFLAGS} -L /opt/homebrew/opt/openssl/lib" \
-	. $(VENV_BIN)/activate; uv pip install -r requirements-dev.txt
+	uv sync --no-install-project --all-extras --all-groups
 else
-	. $(VENV_BIN)/activate; uv pip install -r requirements-dev.txt
+	uv sync --no-install-project --all-extras --all-groups
 endif
 
 .PHONY: check-toolchain
@@ -75,8 +71,8 @@ test: .venv build  ## Run tests
 	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest --hypothesis-seed=$(HYPOTHESIS_SEED) --ignore tests/integration $(EXTRA_ARGS)
 
 .PHONY: doctests
-doctests:
-	DAFT_BOLD_TABLE_HEADERS=0 pytest --doctest-modules --continue-on-collection-errors --ignore=daft/functions/llm.py daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf/__init__.py daft/functions/ daft/datatype.py
+doctests: .venv
+	DAFT_BOLD_TABLE_HEADERS=0 DAFT_PROGRESS_BAR=0 $(VENV_BIN)/pytest --doctest-modules --continue-on-collection-errors --ignore=daft/functions/llm.py daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf/__init__.py daft/functions/ daft/datatype.py
 
 .PHONY: dsdgen
 dsdgen: .venv ## Generate TPC-DS data
@@ -89,8 +85,8 @@ install-docs-deps:
 		curl -fsSL https://bun.sh/install | bash; \
 		export PATH="$$HOME/.bun/bin:$$PATH"; \
 	fi
-	. $(VENV_BIN)/activate && uv pip install -r requirements-doc.txt
-# 	. $(VENV_BIN)/activate && yamlfix mkdocs.yml
+	source $(VENV_BIN)/activate && uv sync --all-extras --all-groups
+	source $(VENV_BIN)/activate && uv pip install -e docs/plugins/nav_hide_children
 
 .PHONY: docs
 docs: .venv install-docs-deps ## Build Daft documentation

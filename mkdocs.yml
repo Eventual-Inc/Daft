@@ -7,7 +7,6 @@ site_url: https://docs.daft.ai/en/stable/
 site_description: |
   Welcome to Daft Documentation! Daft is a high-performance data engine providing simple and reliable data processing for any modality and scale.
 copyright: '&copy; Copyright 2025, Eventual <img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=2293a436-7808-4c74-9bf3-d3e86e4eed91" />'
-
 # Repository
 repo_name: Daft
 repo_url: https://github.com/Eventual-Inc/Daft
@@ -24,29 +23,30 @@ theme:
   features:
   - search.suggest
   - search.highlight
-  - content.code.copy    # add copy button to code sections
-  - content.tabs.link    # If one tab switches Python to SQL, all tabs switch
+  - content.code.copy   # add copy button to code sections
+  - content.tabs.link   # If one tab switches Python to SQL, all tabs switch
   - toc.follow
   - navigation.footer
-  - navigation.tracking    # url in address bar is automatically updated with active anchor as highlighted in TOC
-  - navigation.tabs    # moves nav bar to top, with secondary left-hand menu
-  - navigation.tabs.sticky    # top nav bar remains visible when scrolling down
-  - navigation.top    # back-to-top button
+  - navigation.tracking   # url in address bar is automatically updated with active anchor as highlighted in TOC
+  - navigation.tabs   # moves nav bar to top, with secondary left-hand menu
+  - navigation.tabs.sticky   # top nav bar remains visible when scrolling down
+  - navigation.top   # back-to-top button
   - navigation.instant
   - navigation.indexes
+  - navigation.expand   # expand navigation sections by default
   palette:
   - media: (prefers-color-scheme)
     toggle:
       icon: material/white-balance-sunny
       name: Switch to light mode
-  - media: '(prefers-color-scheme: light)'
+  - media: "(prefers-color-scheme: light)"
     scheme: default
     primary: custom
     accent: custom
     toggle:
       icon: material/weather-night
       name: Switch to dark mode
-  - media: '(prefers-color-scheme: dark)'
+  - media: "(prefers-color-scheme: dark)"
     scheme: slate
     primary: black
     accent: custom
@@ -82,15 +82,15 @@ extra:
   - icon: fontawesome/brands/github
     link: https://github.com/Eventual-Inc/Daft
   - icon: fontawesome/brands/slack
-    link: https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg
+    link: https://www.daft.ai/slack
   - icon: fontawesome/brands/linkedin
     link: https://www.linkedin.com/showcase/daftengine/
   - icon: fontawesome/brands/x-twitter
     link: https://x.com/daftengine
   - icon: fontawesome/brands/youtube
     link: https://www.youtube.com/@daftengine
-  - icon: simple/substack
-    link: https://blog.getdaft.io/
+  - icon: fontawesome/solid/bookmark
+    link: https://www.daft.ai/blog
   generator: false
 # Additional Style
 extra_css:
@@ -98,17 +98,18 @@ extra_css:
 - css/docsearch.css
 - https://cdn.jsdelivr.net/npm/@docsearch/css@3
 extra_javascript:
+- js/reo.js
 - js/custom.js
 - js/docsearch.js
+- js/install-tool.js
 - https://cdn.jsdelivr.net/npm/@docsearch/js@3
 - js/readthedocs.js
-- js/runllm.js
 # Extensions
 markdown_extensions:
 - admonition
 - toc:
     toc_depth: 4
-    permalink: '#'
+    permalink: "#"
 - pymdownx.tabbed:
     alternate_style: true
 - pymdownx.snippets:
@@ -136,16 +137,41 @@ plugins:
     minify_css: true
 - redirects:
     redirect_maps:
-      integrations/aws.md: io/aws.md
-      integrations/hudi.md: io/hudi.md
-      integrations/iceberg.md: io/iceberg.md
-      integrations/delta_lake.md: io/delta_lake.md
-      integrations/huggingface.md: io/huggingface.md
-      integrations/azure.md: io/azure.md
-      integrations/sql.md: io/sql.md
-      integrations/glue.md: catalogs/glue.md
-      integrations/s3tables.md: catalogs/s3tables.md
-      integrations/unity_catalog.md: catalogs/unity_catalog.md
+      integrations/aws.md: connectors/aws.md
+      io/aws.md: connectors/aws.md
+      integrations/hudi.md: connectors/hudi.md
+      io/hudi.md: connectors/hudi.md
+      integrations/iceberg.md: connectors/iceberg.md
+      io/iceberg.md: connectors/iceberg.md
+      integrations/delta_lake.md: connectors/delta_lake.md
+      io/delta_lake.md: connectors/delta_lake.md
+      integrations/huggingface.md: connectors/huggingface.md
+      io/huggingface.md: connectors/huggingface.md
+      integrations/azure.md: connectors/azure.md
+      io/azure.md: connectors/azure.md
+      integrations/sql.md: connectors/sql.md
+      io/sql.md: connectors/sql.md
+      integrations/glue.md: connectors/glue.md
+      catalogs/glue.md: connectors/glue.md
+      integrations/s3tables.md: connectors/s3tables.md
+      catalogs/s3tables.md: connectors/s3tables.md
+      integrations/unity_catalog.md: connectors/unity_catalog.md
+      catalogs/unity_catalog.md: connectors/unity_catalog.md
+      integrations.md: connectors/index.md
+      io/index.md: connectors/index.md
+      sql_overview.md: sql/index.md
+      sessions.md: api/sessions.md
+      resources/architecture.md: architecture/index.md
+      advanced/memory.md: optimization/memory.md
+      advanced/partitioning.md: optimization/partitioning.md
+      advanced/observability.md: optimization/observability.md
+      resources/telemetry.md: telemetry.md
+      resources/engine_comparison.md: index.md
+      resources/tutorials.md: examples/index.md
+      migration/dask_migration.md: index.md
+      resources/benchmarks/tpch.md: benchmarks/index.md
+      spark_connect.md: api/spark_connect.md
+      core_concepts.md: index.md
 - mkdocstrings:
     handlers:
       python:
@@ -155,7 +181,7 @@ plugins:
           heading_level: 2
           line_length: 60
           merge_init_into_class: true
-          members_order: alphabetical    # or source
+          members_order: alphabetical   # or source
           separate_signature: true
           show_bases: false
           show_labels: false
@@ -176,5 +202,12 @@ plugins:
 - gen-files:
     scripts:
     - docs/gen_pages/gen_function_pages.py
+    - docs/gen_pages/gen_txt_files.py
+    - docs/gen_pages/generate_llms_txt.py
 - literate-nav:
     nav_file: SUMMARY.md
+- nav-hide-children:
+    hide_children:
+    - ["Python API", "Functions"]
+hooks:
+- docs/hooks.py

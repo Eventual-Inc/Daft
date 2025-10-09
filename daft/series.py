@@ -1,52 +1,19 @@
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar
 
 import daft.daft as native
 from daft.arrow_utils import ensure_array, ensure_chunked_array
-from daft.daft import CountMode, ImageFormat, ImageMode, PyExpr, PyRecordBatch, PySeries, series_lit
+from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries, PySeriesIterator
 from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
+from daft.schema import Field
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 
 if TYPE_CHECKING:
     import builtins
-    from collections.abc import Iterator
 
     from daft.daft import PyDataType
-
-
-class SeriesIterable:
-    """Iterable wrapper for Series that efficiently handles different data types."""
-
-    def __init__(self, series: Series):
-        self.series = series
-
-    def __iter__(self) -> Iterator[Any]:
-        dt = self.series.datatype()
-        if dt == DataType.python():
-
-            def yield_pylist() -> Iterator[Any]:
-                yield from self.series._series.to_pylist()
-
-            return yield_pylist()
-        elif dt._should_cast_to_python():
-
-            def yield_pylist() -> Iterator[Any]:
-                yield from self.series._series.cast(DataType.python()._dtype).to_pylist()
-
-            return yield_pylist()
-        else:
-
-            def arrow_to_py() -> Iterator[Any]:
-                # We directly call .to_arrow() on the internal PySeries object since the case
-                # above has already captured the fixed shape tensor case.
-                arrow_data = self.series._series.to_arrow()
-                for item in arrow_data:
-                    yield None if item is None else item.as_py()
-
-            return arrow_to_py()
 
 
 class Series:
@@ -57,10 +24,9 @@ class Series:
     def __init__(self) -> None:
         raise NotImplementedError("We do not support creating a Series via __init__ ")
 
-    def __iter__(self) -> Iterator[Any]:
+    def __iter__(self) -> PySeriesIterator:
         """Return an iterator over the elements of the Series."""
-        iterable = SeriesIterable(self)
-        return iterable.__iter__()
+        return self._series.__iter__()
 
     @staticmethod
     def _from_pyseries(pyseries: PySeries) -> Series:
@@ -81,10 +47,12 @@ class Series:
                 DataType from the data.
         """
         _ensure_registered_super_ext_type()
-        if (dtype and dtype.is_python()) or DataType.from_arrow_type(array.type).is_python():
+        try:
+            DataType.from_arrow_type(array.type, python_fallback=False)
+        except TypeError:
             # If the Arrow type is not natively supported, go through the Python list path.
             return Series.from_pylist(array.to_pylist(), name=name, pyobj="force")
-        elif isinstance(array, pa.Array):
+        if isinstance(array, pa.Array):
             array = ensure_array(array)
             if isinstance(array.type, getattr(pa, "FixedShapeTensorType", ())):
                 series = Series.from_arrow(array.storage, name=name)
@@ -114,8 +82,8 @@ class Series:
         """Construct a Series from a Python list.
 
         If `dtype` is not defined, then the resulting type depends on the setting of `pyobj`:
-            - ``"allow"``: Arrow-backed types if possible, else PyObject;
-            - ``"disallow"``: Arrow-backed types only, raising error if not convertible;
+            - ``"allow"``: Daft-native types if possible, else PyObject;
+            - ``"disallow"``: Daft-native types only, raising error if not convertible;
             - ``"force"``: Always store as PyObject types. Equivalent to `dtype=daft.DataType.python()`.
 
         Args:
@@ -132,28 +100,16 @@ class Series:
         if pyobj not in {"allow", "disallow", "force"}:
             raise ValueError(f"pyobj: expected either 'allow', 'disallow', or 'force', but got {pyobj})")
 
-        # If output is Python objects, we can just use the Python list directly.
-        if (dtype and dtype == DataType.python()) or pyobj == "force":
-            pys = PySeries.from_pylist(name, data, DataType.python()._dtype)
-            return Series._from_pyseries(pys)
+        if pyobj == "force":
+            dtype = DataType.python()
 
-        # Otherwise, try to infer from parameters provided
-        try:
-            # Workaround: wrap list of np.datetime64 in an np.array
-            #   - https://github.com/apache/arrow/issues/40580
-            #   - https://github.com/Eventual-Inc/Daft/issues/3826
-            if data and np.module_available() and isinstance(data[0], np.datetime64):  # type: ignore[attr-defined]
-                np_arr = np.array(data)
-                arrow_array = pa.array(np_arr)
-            else:
-                arrow_array = pa.array(data, type=dtype.to_arrow_dtype() if dtype else None)
-            return Series.from_arrow(arrow_array, name=name, dtype=dtype)
-        except (pa.lib.ArrowInvalid, pa.lib.ArrowTypeError, pa.lib.ArrowNotImplementedError):
-            if pyobj == "disallow":
-                raise
-            dtype = dtype or DataType._infer_dtype_from_pylist(data) or DataType.python()
-            pys = PySeries.from_pylist(name, data, dtype._dtype)
-            return Series._from_pyseries(pys)
+        pys = PySeries.from_pylist(data, name, None if dtype is None else dtype._dtype)
+        series = Series._from_pyseries(pys)
+
+        if pyobj == "disallow" and series.datatype().is_python():
+            raise TypeError("Could not convert Python list to a Daft-native type, and pyobj='disallow' was set.")
+
+        return series
 
     @classmethod
     def from_numpy(
@@ -182,8 +138,7 @@ class Series:
                 return cls.from_arrow(arrow_array, name=name, dtype=dtype)
         # TODO(Clark): Represent the tensor series with an Arrow extension type in order
         # to keep the series data contiguous.
-        list_ndarray = [np.asarray(item) for item in data]
-        return cls.from_pylist(list_ndarray, name=name, dtype=dtype)
+        return cls.from_pylist(list(data), name=name, dtype=dtype)
 
     @classmethod
     def from_pandas(cls, data: pd.Series[Any], name: str = "pd_series", dtype: DataType | None = None) -> Series:
@@ -225,19 +180,6 @@ class Series:
 
     def cast(self, dtype: DataType) -> Series:
         return Series._from_pyseries(self._series.cast(dtype._dtype))
-
-    def _cast_to_python(self) -> Series:
-        """Convert this Series into a Series of Python objects.
-
-        Call Series.to_pylist() and create a new Series from the raw Pylist directly.
-
-        This logic is needed by the Rust implementation of cast(),
-        but is written here (i.e. not in Rust) for conciseness.
-
-        Do not call this method directly in Python; call cast() instead.
-        """
-        pylist = self.to_pylist()
-        return Series.from_pylist(pylist, self.name(), dtype=DataType.python())
 
     def _pycast_to_pynative(self, typefn: type, dtype: PyDataType) -> Series:
         """Apply Python-level casting to this Series.
@@ -289,12 +231,7 @@ class Series:
 
     def to_pylist(self) -> list[Any]:
         """Convert this Series to a Python list."""
-        if self.datatype().is_python():
-            return self._series.to_pylist()
-        elif self.datatype()._should_cast_to_python():
-            return self._series.cast(DataType.python()._dtype).to_pylist()
-        else:
-            return self._series.to_arrow().to_pylist()
+        return self._series.to_pylist()
 
     def filter(self, mask: Series) -> Series:
         if not isinstance(mask, Series):
@@ -338,9 +275,12 @@ class Series:
     def __repr__(self) -> str:
         return repr(self._series)
 
+    def __getitem__(self, index: int) -> Any:
+        return self._series[index]
+
     def __bool__(self) -> bool:
         raise ValueError(
-            "Series don't have a truth value." "If you reached this error using `and` / `or`, use `&` / `|` instead."
+            "Series don't have a truth value. If you reached this error using `and` / `or`, use `&` / `|` instead."
         )
 
     def __len__(self) -> int:
@@ -666,6 +606,15 @@ class Series:
         assert self._series is not None and fill_value._series is not None
         return Series._from_pyseries(self._series.fill_null(fill_value._series))
 
+    def regexp_count(
+        self,
+        patterns: str | Series,
+    ) -> Series:
+        return self._eval_expressions(
+            "regexp_count",
+            patterns=patterns,
+        )
+
     def minhash(
         self,
         num_hashes: int,
@@ -757,10 +706,7 @@ class Series:
             tuple[pa.Array | pa.ChunkedArray, builtins.str, DataType],
         ]
     ):
-        if self.datatype().is_python():
-            return (Series.from_pylist, (self.to_pylist(), self.name(), self.datatype()))
-        else:
-            return (Series.from_arrow, (self.to_arrow(), self.name(), self.datatype()))
+        return (Series.from_arrow, (self.to_arrow(), self.name(), self.datatype()))
 
     def _debug_bincode_serialize(self) -> bytes:
         return self._series._debug_bincode_serialize()
@@ -772,39 +718,45 @@ class Series:
     def _eval_expressions(
         self,
         func_name: builtins.str,
-        *others: Series | None,
+        *args: Any,
         **kwargs: Any,
     ) -> Series:
         from daft.expressions.expressions import lit
 
-        name = self._series.name()
-        s = self._series
-        other_series_list = []
-        col_names = []
-        for i, other in enumerate(others):
-            col_name = f"c{i}"
+        inputs: list[PySeries] = []
+        arg_exprs = []
+        kwarg_exprs = {}
 
-            if other is None:
-                continue
-            if not isinstance(other, Series):
-                try:
-                    other_series_list.append(Series.from_pylist([other])._series.rename(col_name))
-                    col_names.append(col_name)
-                except AttributeError:
-                    raise ValueError(f"expected another Series but got {type(other)}")
+        for arg in [self, *args]:
+            if isinstance(arg, Series):
+                index = len(inputs)
+                field = Field.create(arg.name(), arg.datatype())
+                inputs.append(arg._series)
+
+                arg_exprs.append(native.bound_col(index, field._field))
             else:
-                other_series_list.append(other._series.rename(col_name))
-                col_names.append(col_name)
+                arg_exprs.append(lit(arg)._expr)
 
-        rb = PyRecordBatch.from_pyseries_list([s] + other_series_list)
+        for name, arg in kwargs.items():
+            if arg is None:
+                continue
 
-        args = [native.unresolved_col(name)] + [native.unresolved_col(col_name) for col_name in col_names]
+            if isinstance(arg, Series):
+                index = len(inputs)
+                field = Field.create(arg.name(), arg.datatype())
+                inputs.append(arg._series)
+
+                kwarg_exprs[name] = native.bound_col(index, field._field)
+            else:
+                kwarg_exprs[name] = lit(arg)._expr
+
+        rb = PyRecordBatch.from_pyseries_list(inputs)
 
         f = native.get_function_from_registry(func_name)
         expr = f(
-            *args,
-            **{name: lit(v)._expr if not isinstance(v, PyExpr) else v for name, v in kwargs.items() if v is not None},
-        ).alias(name)
+            *arg_exprs,
+            **kwarg_exprs,
+        ).alias(self.name())
 
         rb = rb.eval_expression_list([expr])
         pyseries = rb.get_column(0)
@@ -844,9 +796,9 @@ class SeriesNamespace:
         ns._series = series._series
         return ns
 
-    def _eval_expressions(self, func_name: builtins.str, *others: Series | None, **kwargs: Any) -> Series:
+    def _eval_expressions(self, func_name: builtins.str, *args: Any, **kwargs: Any) -> Series:
         s = Series._from_pyseries(self._series)
-        return s._eval_expressions(func_name, *others, **kwargs)
+        return s._eval_expressions(func_name, *args, **kwargs)
 
 
 class SeriesFloatNamespace(SeriesNamespace):
@@ -877,8 +829,36 @@ class SeriesStringNamespace(SeriesNamespace):
         return self._eval_expressions("regexp_match", pattern)
 
     def split(self, pattern: Series, regex: bool = False) -> Series:
-        f_name = "regexp_split" if regex else "split"
-        return self._eval_expressions(f_name, pattern)
+        """Splits each string on the given literal pattern, into a list of strings.
+
+        Args:
+            pattern: The literal pattern on which each string should be split.
+            regex: DEPRECATED. Use regexp_split() instead for regex patterns.
+
+        Returns:
+            Series: A List[Utf8] series containing the string splits for each string.
+        """
+        if regex:
+            import warnings
+
+            warnings.warn(
+                "The 'regex' parameter in str.split() is deprecated and will be removed in v0.7.0. Use str.regexp_split() instead for regex patterns.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return self.regexp_split(pattern)
+        return self._eval_expressions("split", pattern)
+
+    def regexp_split(self, pattern: Series) -> Series:
+        """Splits each string on the given regex pattern, into a list of strings.
+
+        Args:
+            pattern: The regex pattern on which each string should be split.
+
+        Returns:
+            Series: A List[Utf8] series containing the string splits for each string.
+        """
+        return self._eval_expressions("regexp_split", pattern)
 
     def concat(self, other: Series) -> Series:
         if not isinstance(other, Series):
@@ -971,15 +951,14 @@ class SeriesStringNamespace(SeriesNamespace):
 
     def count_matches(
         self,
-        patterns: Series,
+        patterns: str | list[str],
         *,
         whole_words: bool = False,
         case_sensitive: bool = True,
     ) -> Series:
-        pattern_expr = series_lit(patterns._series)
         return self._eval_expressions(
             "count_matches",
-            patterns=pattern_expr,
+            patterns=patterns,
             whole_words=whole_words,
             case_sensitive=case_sensitive,
         )
@@ -1089,14 +1068,6 @@ class SeriesPartitioningNamespace(SeriesNamespace):
 
 
 class SeriesListNamespace(SeriesNamespace):
-    def lengths(self) -> Series:
-        warnings.warn(
-            "This function will be deprecated from Daft version >= 0.3.5!  Instead, please use 'length'",
-            category=DeprecationWarning,
-        )
-
-        return self._eval_expressions("list_count", mode=CountMode.All)
-
     def length(self) -> Series:
         return self._eval_expressions("list_count", mode=CountMode.All)
 
@@ -1104,8 +1075,7 @@ class SeriesListNamespace(SeriesNamespace):
         return self._eval_expressions("list_get", idx=idx, default=default)
 
     def sort(self, desc: bool | Series = False, nulls_first: bool | Series | None = None) -> Series:
-        desc_expr = series_lit(desc._series) if isinstance(desc, Series) else desc
-        return self._eval_expressions("list_sort", desc=desc_expr, nulls_first=nulls_first)
+        return self._eval_expressions("list_sort", desc=desc, nulls_first=nulls_first)
 
 
 class SeriesMapNamespace(SeriesNamespace):

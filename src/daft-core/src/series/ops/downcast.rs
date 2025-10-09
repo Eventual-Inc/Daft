@@ -5,13 +5,15 @@ use logical::{
 };
 
 use self::logical::{DurationArray, ImageArray, MapArray};
+#[cfg(feature = "python")]
+use crate::prelude::PythonArray;
 use crate::{
     array::{ListArray, StructArray},
     datatypes::{
         logical::{DateArray, FixedShapeImageArray, TimeArray, TimestampArray},
         *,
     },
-    series::{array_impl::ArrayWrapper, Series},
+    series::{Series, array_impl::ArrayWrapper},
 };
 
 impl Series {
@@ -166,6 +168,9 @@ impl Series {
     }
 
     pub fn fixed_shape_sparse_tensor(&self) -> DaftResult<&FixedShapeSparseTensorArray> {
+        self.downcast()
+    }
+    pub fn file(&self) -> DaftResult<&FileArray> {
         self.downcast()
     }
 }

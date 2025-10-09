@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING, Any
 
 from unitycatalog import NotFoundError as UnityNotFoundError
@@ -14,18 +13,14 @@ from daft.unity_catalog import UnityCatalogTable as InnerTable  # noqa: TID253
 
 if TYPE_CHECKING:
     from daft.dataframe import DataFrame
+    from daft.io.partitioning import PartitionField
 
 
 class UnityCatalog(Catalog):
     _inner: InnerCatalog
 
-    def __init__(self, unity_catalog: InnerCatalog):
-        """DEPRECATED: Please use `Catalog.from_unity`; version 0.5.0!"""
-        warnings.warn(
-            "This is deprecated and will be removed in daft >= 0.5.0, please prefer using `Catalog.from_unity` instead; version 0.5.0!",
-            category=DeprecationWarning,
-        )
-        self._inner = unity_catalog
+    def __init__(self) -> None:
+        raise RuntimeError("UnityCatalog.__init__ is not supported, please use `Catalog.from_unity` instead.")
 
     @property
     def name(self) -> str:
@@ -36,7 +31,9 @@ class UnityCatalog(Catalog):
     def _from_obj(obj: object) -> UnityCatalog:
         """Returns an UnityCatalog instance if the given object can be adapted so."""
         if isinstance(obj, InnerCatalog):
-            return UnityCatalog(obj)
+            catalog = UnityCatalog.__new__(UnityCatalog)
+            catalog._inner = obj
+            return catalog
         raise ValueError(f"Unsupported unity catalog type: {type(obj)}")
 
     ###
@@ -51,6 +48,7 @@ class UnityCatalog(Catalog):
         identifier: Identifier,
         source: Schema,
         properties: Properties | None = None,
+        partition_fields: list[PartitionField] | None = None,
     ) -> Table:
         raise NotImplementedError("Unity create_table not yet supported.")
 
@@ -70,7 +68,7 @@ class UnityCatalog(Catalog):
 
     def _get_table(self, ident: Identifier) -> UnityTable:
         try:
-            return UnityTable(self._inner.load_table(str(ident)))
+            return UnityTable._from_obj(self._inner.load_table(str(ident)))
         except UnityNotFoundError:
             raise NotFoundError(f"Table {ident} not found!")
 
@@ -133,13 +131,8 @@ class UnityTable(Table):
         "allow_unsafe_rename",
     }
 
-    def __init__(self, unity_table: InnerTable):
-        """DEPRECATED: Please use `Table.from_unity`; version 0.5.0!"""
-        warnings.warn(
-            "This is deprecated and will be removed in daft >= 0.5.0, please prefer using `Table.from_unity` instead; version 0.5.0!",
-            category=DeprecationWarning,
-        )
-        self._inner = unity_table
+    def __init__(self) -> None:
+        raise RuntimeError("UnityTable.__init__ is not supported, please use `Table.from_unity` instead.")
 
     @property
     def name(self) -> str:

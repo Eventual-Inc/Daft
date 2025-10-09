@@ -6,6 +6,8 @@ import inspect
 import sys
 from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
 
+from .udf_v2 import check_serializable
+
 if sys.version_info >= (3, 10):
     from typing import TypeAlias
 else:
@@ -32,13 +34,18 @@ UserDefinedPyFuncLike: TypeAlias = Union[UserDefinedPyFunc, type]
 @dataclasses.dataclass(frozen=True)
 class UninitializedUdf:
     inner: Callable[..., UserDefinedPyFunc]
+    name: str
 
     def initialize(self, init_args: InitArgsType) -> UserDefinedPyFunc:
-        if init_args is None:
-            return self.inner()
-        else:
-            args, kwargs = init_args
-            return self.inner(*args, **kwargs)
+        try:
+            if init_args is None:
+                return self.inner()
+            else:
+                args, kwargs = init_args
+                return self.inner(*args, **kwargs)
+        except Exception as init_exc:
+            error_note = f"User-defined function `{self.name}` failed to initialize"
+            raise UDFException(error_note) from init_exc
 
 
 @dataclasses.dataclass(frozen=True)
@@ -266,19 +273,17 @@ class UDF:
 
         # construct the UninitializedUdf here so that the constructed expressions can maintain equality
         if isinstance(self.inner, type):
-            if self.concurrency is None:
-                import warnings
-
-                warnings.warn(
-                    "Class UDF was created with `concurrency=None`. Consider setting the concurrency if UDF instances can be reused."
-                )
-
-            self.wrapped_inner = UninitializedUdf(self.inner)
+            self.wrapped_inner = UninitializedUdf(self.inner, self.name)
         else:
-            self.wrapped_inner = UninitializedUdf(lambda: self.inner)
+            self.wrapped_inner = UninitializedUdf(lambda: self.inner, self.name)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Expression:
         self._validate_init_args()
+
+        check_serializable(
+            self.inner,
+            "`@daft.udf` requires that the UDF is serializable. Please double-check that the function does not use any global variables.\n\nIf it does, please use the legacy `@daft.udf` with a class UDF instead and initialize the global in the `__init__` method.",
+        )
 
         bound_args = self._bind_args(*args, **kwargs)
         expressions = list(bound_args.expressions().values())
@@ -509,8 +514,8 @@ def udf(
         2. Iterates over the ``x`` Daft Series
         3. Adds a Python constant value ``c`` to every element in ``x``
         4. Returns a new list of Python values which will be coerced to the specified return type: ``return_dtype=DataType.int64()``.
-        5. We can call our UDF on a dataframe using any of the dataframe projection operations ([df.with_column()](https://docs.getdaft.io/en/latest/api/dataframe/#daft.DataFrame.with_column),
-        [df.select()](https://docs.getdaft.io/en/latest/api/dataframe/#daft.DataFrame.select), etc.)
+        5. We can call our UDF on a dataframe using any of the dataframe projection operations ([df.with_column()](https://docs.daft.ai/en/latest/api/dataframe/#daft.DataFrame.with_column),
+        [df.select()](https://docs.daft.ai/en/latest/api/dataframe/#daft.DataFrame.select), etc.)
 
         >>> import daft
         >>> @daft.udf(return_dtype=daft.DataType.int64())
@@ -608,7 +613,7 @@ def udf(
         ...         return self.model(data.to_pylist())
 
     """
-    inferred_return_dtype = DataType._infer_type(return_dtype)
+    inferred_return_dtype = DataType._infer(return_dtype)
 
     def _udf(f: UserDefinedPyFuncLike) -> UDF:
         # Grab a name for the UDF. It **should** be unique.

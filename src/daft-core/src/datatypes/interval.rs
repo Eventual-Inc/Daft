@@ -235,6 +235,12 @@ impl From<months_days_ns> for IntervalValue {
     }
 }
 
+impl From<IntervalValue> for months_days_ns {
+    fn from(value: IntervalValue) -> Self {
+        Self(value.months, value.days, value.nanoseconds)
+    }
+}
+
 impl Display for IntervalValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // from months, we convert that to years + months

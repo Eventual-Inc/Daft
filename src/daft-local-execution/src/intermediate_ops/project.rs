@@ -1,23 +1,26 @@
 use std::{cmp::max, sync::Arc};
 
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use common_runtime::get_compute_pool_num_threads;
 use daft_dsl::{
+    Expr,
     common_treenode::{self, TreeNode},
     expr::bound_expr::BoundExpr,
-    functions::{scalar::ScalarFn, BuiltinScalarFn},
-    Expr,
+    functions::{BuiltinScalarFn, scalar::ScalarFn},
 };
 use daft_functions_uri::download::UrlDownloadArgs;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
-    IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{pipeline::NodeName, ExecutionRuntimeContext, ExecutionTaskSpawner};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{MorselSizeRequirement, NodeName},
+};
 fn num_parallel_exprs(projection: &[BoundExpr]) -> usize {
     max(
         projection
@@ -41,7 +44,6 @@ const CONNECTION_BATCH_FACTOR: usize = 4;
 const DEFAULT_URL_MAX_CONNECTIONS: usize = 32;
 
 /// Gets the batch size from the first UDF encountered in a given slice of expressions
-/// Errors if no UDF is found
 pub fn try_get_batch_size(exprs: &[BoundExpr]) -> Option<usize> {
     let mut projection_batch_size = None;
     for expr in exprs {
@@ -111,13 +113,15 @@ impl ProjectOperator {
 }
 
 impl IntermediateOperator for ProjectOperator {
+    type State = ();
+
     #[instrument(skip_all, name = "ProjectOperator::execute")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        state: Box<dyn IntermediateOpState>,
+        state: Self::State,
         task_spawner: &ExecutionTaskSpawner,
-    ) -> IntermediateOpExecuteResult {
+    ) -> IntermediateOpExecuteResult<Self> {
         let projection = self.projection.clone();
         let num_parallel_exprs = self.parallel_exprs;
         task_spawner
@@ -144,6 +148,10 @@ impl IntermediateOperator for ProjectOperator {
         "Project".into()
     }
 
+    fn op_type(&self) -> NodeType {
+        NodeType::Project
+    }
+
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push(format!(
@@ -157,12 +165,13 @@ impl IntermediateOperator for ProjectOperator {
         Ok(self.max_concurrency)
     }
 
-    fn morsel_size_range(&self, runtime_handle: &ExecutionRuntimeContext) -> (usize, usize) {
-        if let Some(batch_size) = self.batch_size {
-            (batch_size, batch_size)
-        } else {
-            (0, runtime_handle.default_morsel_size())
-        }
+    fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
+        self.batch_size
+            .map(|batch_size| MorselSizeRequirement::Flexible(0, batch_size))
+    }
+
+    async fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(())
     }
 }
 

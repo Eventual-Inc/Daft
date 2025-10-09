@@ -5,7 +5,8 @@ mod numeric;
 use boolean::{simplify_binary_compare, simplify_boolean_expr};
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
-use daft_dsl::{lit, Expr, ExprRef, LiteralValue};
+use daft_core::lit::Literal;
+use daft_dsl::{Expr, ExprRef, lit};
 use daft_schema::schema::SchemaRef;
 use null::simplify_expr_with_null;
 use numeric::simplify_numeric_expr;
@@ -70,11 +71,11 @@ fn simplify_is_in_expr(expr: ExprRef, _schema: &SchemaRef) -> DaftResult<Transfo
         // e IN (1, 2, 3) -> e = 1 OR e = 2 OR e = 3
         Expr::IsIn(e, list)
             if list.len() <= MAX_IS_IN_CHAIN_LENGTH
-                && list.iter().all(|e| matches!(e.as_ref(), Expr::Literal(l) if !matches!(l, LiteralValue::Series(_)))) =>
+                && list.iter().all(
+                    |e| matches!(e.as_ref(), Expr::Literal(l) if !matches!(l, Literal::List(_))),
+                ) =>
         {
-            let chain_of_eqs = list
-                .iter()
-                .map(|item| e.clone().eq(item.clone()));
+            let chain_of_eqs = list.iter().map(|item| e.clone().eq(item.clone()));
             Transformed::yes(combine_disjunction(chain_of_eqs).unwrap())
         }
         _ => Transformed::no(expr),
@@ -85,7 +86,7 @@ mod test {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_dsl::{lit, null_lit, resolved_col, ExprRef};
+    use daft_dsl::{ExprRef, lit, null_lit, resolved_col};
     use daft_schema::{
         dtype::DataType,
         field::Field,

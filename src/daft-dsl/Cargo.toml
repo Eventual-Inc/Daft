@@ -1,8 +1,6 @@
 [dependencies]
-bincode = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
-common-io-config = {path = "../common/io-config", default-features = false}
 common-macros = {path = "../common/macros"}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 common-resource-request = {path = "../common/resource-request", default-features = false}
@@ -12,7 +10,6 @@ daft-sketch = {path = "../daft-sketch", default-features = false}
 derive_more = {workspace = true}
 indexmap = {workspace = true}
 itertools = {workspace = true}
-num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 typetag = {workspace = true}
@@ -25,7 +22,6 @@ python = [
   "dep:pyo3",
   "common-error/python",
   "daft-core/python",
-  "common-io-config/python",
   "common-treenode/python",
   "common-py-serde/python",
   "common-resource-request/python"

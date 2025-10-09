@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from contextvars import ContextVar, Token
+from typing import TYPE_CHECKING, Any, Literal
 
+from daft.ai.provider import PROVIDERS, Provider, load_provider
 from daft.catalog import Catalog, Identifier, Table
 from daft.context import get_context
 from daft.daft import LogicalPlanBuilder as PyBuilder
@@ -11,11 +13,15 @@ from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 from daft.udf import UDF
 
+if TYPE_CHECKING:
+    from types import TracebackType
+
 __all__ = [
     "Session",
     "attach",
     "attach_catalog",
     "attach_function",
+    "attach_provider",
     "attach_table",
     "create_namespace",
     "create_namespace_if_not_exists",
@@ -23,27 +29,49 @@ __all__ = [
     "create_table_if_not_exists",
     "create_temp_table",
     "current_catalog",
+    "current_model",
     "current_namespace",
+    "current_provider",
     "current_session",
     "detach_catalog",
     "detach_function",
+    "detach_provider",
     "detach_table",
     "drop_namespace",
     "drop_table",
     "get_catalog",
+    "get_provider",
     "get_table",
     "has_catalog",
     "has_namespace",
+    "has_provider",
     "has_table",
     "list_catalogs",
     "list_namespaces",
     "list_tables",
     "read_table",
     "set_catalog",
+    "set_model",
     "set_namespace",
+    "set_provider",
     "set_session",
     "write_table",
 ]
+
+
+_current_session: ContextVar[Session | None] = ContextVar("current_session", default=None)
+
+
+def session() -> Session:
+    """Creates a default daft session to be used with a context manager.
+
+    Examples:
+        >>> import daft
+        >>>
+        >>> with daft.session() as sess:
+        >>>     sess.sql("SELECT 1")  # doctest: +SKIP
+    """
+    return Session()
 
 
 class Session:
@@ -73,6 +101,24 @@ class Session:
 
     def __init__(self) -> None:
         self._session = PySession.empty()
+        self._token: Token[Session | None] | None = None
+
+    ###
+    # context manager methods
+    ###
+
+    def __enter__(self) -> Session:
+        self._token = _current_session.set(self)
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        if self._token is not None:
+            _current_session.reset(self._token)
 
     ###
     # factory methods
@@ -118,7 +164,7 @@ class Session:
     # attach & detach
     ###
 
-    def attach(self, object: Catalog | Table | UDF, alias: str | None = None) -> None:
+    def attach(self, object: Catalog | Provider | Table | UDF, alias: str | None = None) -> None:
         """Attaches a known attachable object like a Catalog, Table or UDF.
 
         Args:
@@ -129,6 +175,8 @@ class Session:
         """
         if isinstance(object, Catalog):
             self.attach_catalog(object, alias)
+        elif isinstance(object, Provider):
+            self.attach_provider(object, alias)
         elif isinstance(object, Table):
             self.attach_table(object, alias)
         elif isinstance(object, UDF):
@@ -150,6 +198,25 @@ class Session:
         a = alias if alias else c.name
         self._session.attach_catalog(c, a)
         return c
+
+    def attach_function(self, function: UDF, alias: str | None = None) -> None:
+        """Attaches a Python function as a UDF in the current session."""
+        self._session.attach_function(function, alias)
+
+    def attach_provider(self, provider: Provider, alias: str | None = None) -> Provider:
+        """Attaches a provider instance to this session.
+
+        Args:
+            provider (Provider): provider instance
+            alias (str | None): optional alias for name resolution
+
+        Returns:
+            Provider: the provider instance
+        """
+        p = provider  # TODO: support attaching provider-like objects e.g. OpenAI client.
+        a = alias if alias else p.name
+        self._session.attach_provider(p, a)
+        return p
 
     def attach_table(self, table: Table | object, alias: str | None = None) -> Table:
         """Attaches an external table instance to this session.
@@ -173,6 +240,18 @@ class Session:
             alias (str): catalog alias to detach
         """
         return self._session.detach_catalog(alias)
+
+    def detach_function(self, alias: str) -> None:
+        """Detaches a Python function as a UDF in the current session."""
+        self._session.detach_function(alias)
+
+    def detach_provider(self, alias: str) -> None:
+        """Detaches the provider from this session or raises if the provider does not exist.
+
+        Args:
+            alias (str): provider alias to detach
+        """
+        return self._session.detach_provider(alias)
 
     def detach_table(self, alias: str) -> None:
         """Detaches the table from this session or raises if the table does not exist.
@@ -341,6 +420,22 @@ class Session:
         ident = self._session.current_namespace()
         return Identifier._from_pyidentifier(ident) if ident else None
 
+    def current_provider(self) -> Provider | None:
+        """Get the session's current provider or None.
+
+        Returns:
+            str: the session's default provider identifier
+        """
+        return self._session.current_provider()
+
+    def current_model(self) -> str | None:
+        """Get the session's current model or None.
+
+        Returns:
+            str: the session's default model identifier
+        """
+        return self._session.current_model()
+
     ###
     # get_*
     ###
@@ -358,6 +453,20 @@ class Session:
             ValueError: If the catalog does not exist.
         """
         return self._session.get_catalog(identifier)
+
+    def get_provider(self, identifier: str) -> Provider:
+        """Returns the provider or raises an exception if it does not exist.
+
+        Args:
+            identifier (str): provider identifier e.g. "openai", "anthropic", "transformers"
+
+        Returns:
+            Provider: The provider object.
+
+        Raises:
+            ValueError: If the provider does not exist.
+        """
+        return self._session.get_provider(identifier)
 
     def get_table(self, identifier: Identifier | str) -> Table:
         """Returns the table or raises an exception if it does not exist.
@@ -388,6 +497,10 @@ class Session:
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot call has_namespace without a current catalog")
         return catalog.has_namespace(identifier)
+
+    def has_provider(self, identifier: str) -> bool:
+        """Returns true if a provider with the given identifier exists."""
+        return self._session.has_provider(identifier)
 
     def has_table(self, identifier: Identifier | str) -> bool:
         """Returns true if a table with the given identifier exists."""
@@ -473,6 +586,33 @@ class Session:
             identifier = Identifier.from_str(identifier)
         self._session.set_namespace(identifier._ident if identifier else None)
 
+    def set_provider(self, identifier: str | None, **options: Any) -> None:
+        """Set the default model provider with associated options.
+
+        Args:
+            identifier (str | None): provider identifier string or None.
+            **options (Any): provider specific options such as an API key or retry limit.
+
+        Note:
+            If there are no providers, and you give a known provider identifier
+            like "openai", then we will create and attach this known provider.
+            For example, `daft.set_provider("openai")` works.
+        """
+        # consider using @overload on known providers for better type hints
+        if identifier is not None and not self._session.has_provider(identifier) and identifier in PROVIDERS:
+            # upsert semantic for known providers e.g. daft.set_provider("openai")
+            provider = load_provider(identifier, name=None, **options)
+            self.attach_provider(provider)
+        self._session.set_provider(identifier)
+
+    def set_model(self, identifier: str | None) -> None:
+        """Set the default model type.
+
+        Args:
+            identifier (str | None): model identifier string.
+        """
+        self._session.set_model(identifier)
+
     ###
     # write_*
     ###
@@ -497,17 +637,6 @@ class Session:
 
         self._session.get_table(identifier._ident).write(df, mode=mode, **options)
 
-    ###
-    # functions
-    ###
-    def attach_function(self, function: UDF, alias: str | None = None) -> None:
-        """Attaches a Python function as a UDF in the current session."""
-        self._session.attach_function(function, alias)
-
-    def detach_function(self, alias: str) -> None:
-        """Detaches a Python function as a UDF in the current session."""
-        self._session.detach_function(alias)
-
 
 ###
 # global active session
@@ -517,17 +646,16 @@ _SESSION: Session | None = None
 
 
 def _session() -> Session:
-    # Consider registering into the global context
-    # ```
-    # ctx = get_context()
-    # if not ctx._session
-    #     set_session(Session.from_env())
-    # return ctx._session
-    # ```
-    global _SESSION
-    if not _SESSION:
-        _SESSION = Session._from_env()
-    return _SESSION
+    """Returns the active session for this scope."""
+    if sess := _current_session.get():
+        # this implies we are within a session context manager block.
+        return sess
+    else:
+        # fallback to the global active session, consider registering to the context.
+        global _SESSION
+        if not _SESSION:
+            _SESSION = Session._from_env()
+        return _SESSION
 
 
 ###
@@ -535,7 +663,7 @@ def _session() -> Session:
 ###
 
 
-def attach(object: Catalog | Table | UDF, alias: str | None = None) -> None:
+def attach(object: Catalog | Provider | Table | UDF, alias: str | None = None) -> None:
     """Attaches a known attachable object like a Catalog or Table."""
     return _session().attach(object, alias)
 
@@ -543,6 +671,16 @@ def attach(object: Catalog | Table | UDF, alias: str | None = None) -> None:
 def attach_catalog(catalog: object | Catalog, alias: str | None = None) -> Catalog:
     """Attaches an external catalog to the current session."""
     return _session().attach_catalog(catalog, alias)
+
+
+def attach_function(function: UDF, alias: str | None = None) -> None:
+    """Attaches a Python function as a UDF in the current session."""
+    _session().attach_function(function, alias)
+
+
+def attach_provider(provider: Provider, alias: str | None = None) -> Provider:
+    """Attaches a provider instance to the current session."""
+    return _session().attach_provider(provider, alias)
 
 
 def attach_table(table: object | Table, alias: str | None = None) -> Table:
@@ -553,6 +691,16 @@ def attach_table(table: object | Table, alias: str | None = None) -> Table:
 def detach_catalog(alias: str) -> None:
     """Detaches the catalog from the current session."""
     return _session().detach_catalog(alias)
+
+
+def detach_function(alias: str) -> None:
+    """Detaches a Python function as a UDF in the current session."""
+    _session().detach_function(alias)
+
+
+def detach_provider(alias: str) -> None:
+    """Detaches the provider from the current session."""
+    return _session().detach_provider(alias)
 
 
 def detach_table(alias: str) -> None:
@@ -611,17 +759,27 @@ def drop_table(identifier: Identifier | str) -> None:
 
 
 def current_catalog() -> Catalog | None:
-    """Returns the session's current catalog or None."""
+    """Returns the active session's current catalog or None."""
     return _session().current_catalog()
 
 
 def current_namespace() -> Identifier | None:
-    """Returns the session's current namespace or None."""
+    """Returns the active session's current namespace or None."""
     return _session().current_namespace()
 
 
+def current_model() -> str | None:
+    """Returns the active session's current model or None."""
+    return _session().current_model()
+
+
+def current_provider() -> Provider | None:
+    """Returns the active session's current provider or None."""
+    return _session().current_provider()
+
+
 def current_session() -> Session:
-    """Returns the global context's current session."""
+    """Returns the active session's current session."""
     return _session()
 
 
@@ -633,6 +791,11 @@ def current_session() -> Session:
 def get_catalog(identifier: str) -> Catalog:
     """Returns the catalog from the current session or raises an exception if it does not exist."""
     return _session().get_catalog(identifier)
+
+
+def get_provider(identifier: str) -> Provider:
+    """Returns the provider from the current session or raises an exception if it does not exist."""
+    return _session().get_provider(identifier)
 
 
 def get_table(identifier: Identifier | str) -> Table:
@@ -648,6 +811,11 @@ def get_table(identifier: Identifier | str) -> Table:
 def has_catalog(identifier: str) -> bool:
     """Returns true if a catalog with the given identifier exists in the current session."""
     return _session().has_catalog(identifier)
+
+
+def has_provider(identifier: str) -> bool:
+    """Returns true if a provider with the given identifier exists in the current session."""
+    return _session().has_provider(identifier)
 
 
 def has_namespace(identifier: Identifier | str) -> bool:
@@ -716,8 +884,18 @@ def set_catalog(identifier: str | None) -> None:
 
 
 def set_namespace(identifier: Identifier | str | None) -> None:
-    """Set the given namespace as current_namespace for the current session."""
+    """Set the given namespace as current_namespace for the active session."""
     _session().set_namespace(identifier)
+
+
+def set_provider(identifier: str | None, **options: Any) -> None:
+    """Set the given provider as current_provider for the active session."""
+    _session().set_provider(identifier, **options)
+
+
+def set_model(identifier: str | None) -> None:
+    """Set the given model as current_model for the active session."""
+    _session().set_model(identifier)
 
 
 def set_session(session: Session) -> None:
@@ -730,18 +908,3 @@ def set_session(session: Session) -> None:
     # ```
     global _SESSION
     _SESSION = session
-
-
-###
-# functions
-###
-
-
-def attach_function(function: UDF, alias: str | None = None) -> None:
-    """Attaches a Python function as a UDF in the current session."""
-    _session().attach_function(function, alias)
-
-
-def detach_function(alias: str) -> None:
-    """Detaches a Python function as a UDF in the current session."""
-    _session().detach_function(alias)

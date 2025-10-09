@@ -1,15 +1,16 @@
 use std::sync::Arc;
 
-use common_display::{tree::TreeDisplay, DisplayLevel};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
-use super::{DistributedPipelineNode, SubmittableTaskStream};
+use super::{PipelineNodeImpl, SubmittableTaskStream};
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
-    stage::{StageConfig, StageExecutionContext},
+    pipeline_node::{
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+    },
+    plan::{PlanConfig, PlanExecutionContext},
 };
 
 pub(crate) struct TopNNode {
@@ -20,7 +21,8 @@ pub(crate) struct TopNNode {
     descending: Vec<bool>,
     nulls_first: Vec<bool>,
     limit: u64,
-    child: Arc<dyn DistributedPipelineNode>,
+    offset: Option<u64>,
+    child: DistributedPipelineNode,
 }
 
 impl TopNNode {
@@ -30,16 +32,17 @@ impl TopNNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         sort_by: Vec<BoundExpr>,
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
         limit: u64,
+        offset: Option<u64>,
         output_schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![child.node_id()],
@@ -48,7 +51,7 @@ impl TopNNode {
         );
         let config = PipelineNodeConfig::new(
             output_schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             child.config().clustering_spec.clone(),
         );
         Self {
@@ -58,16 +61,32 @@ impl TopNNode {
             descending,
             nulls_first,
             limit,
+            offset,
             child,
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
+    }
+}
+
+impl PipelineNodeImpl for TopNNode {
+    fn context(&self) -> &PipelineNodeContext {
+        &self.context
     }
 
-    fn multiline_display(&self) -> Vec<String> {
+    fn config(&self) -> &PipelineNodeConfig {
+        &self.config
+    }
+
+    fn children(&self) -> Vec<DistributedPipelineNode> {
+        vec![self.child.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         use itertools::Itertools;
+
         let mut res = vec!["TopN".to_string()];
         res.push(format!(
             "Sort by: {}",
@@ -81,70 +100,33 @@ impl TopNNode {
             "Nulls first = {}",
             self.nulls_first.iter().map(|e| e.to_string()).join(", ")
         ));
-        res.push(format!("Limit = {}", self.limit));
-        res
-    }
-}
+        res.push(format!("Num Rows = {}", self.limit));
 
-impl TreeDisplay for TopNNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.context.node_name).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
+        if let Some(offset) = self.offset {
+            res.push(format!("Offset = {}", offset));
         }
-        display
-    }
 
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.context.node_name.to_string()
-    }
-}
-
-impl DistributedPipelineNode for TopNNode {
-    fn context(&self) -> &PipelineNodeContext {
-        &self.context
-    }
-
-    fn config(&self) -> &PipelineNodeConfig {
-        &self.config
-    }
-
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
-        vec![self.child.clone()]
+        res
     }
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_node = self.child.clone().produce_tasks(stage_context);
+        let input_node = self.child.clone().produce_tasks(plan_context);
 
         // Pipeline the top-n
         let self_clone = self.clone();
-        input_node.pipeline_instruction(self.clone(), move |input| {
+        input_node.pipeline_instruction(self, move |input| {
             LocalPhysicalPlan::top_n(
                 input,
                 self_clone.sort_by.clone(),
                 self_clone.descending.clone(),
                 self_clone.nulls_first.clone(),
                 self_clone.limit,
+                self_clone.offset,
                 StatsState::NotMaterialized,
             )
         })
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
     }
 }

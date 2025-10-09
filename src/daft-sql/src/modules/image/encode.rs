@@ -1,6 +1,6 @@
 use common_error::DaftError;
-use daft_dsl::{Expr, ExprRef, LiteralValue};
-use daft_functions::image::encode::{encode, ImageEncode};
+use daft_dsl::{Expr, ExprRef, Literal};
+use daft_functions::image::encode::{ImageEncode, encode};
 
 use crate::{
     error::{PlannerError, SQLPlannerResult},
@@ -17,7 +17,7 @@ impl TryFrom<SQLFunctionArguments> for ImageEncode {
         let image_format = args
             .get_named("image_format")
             .map(|arg| match arg.as_ref() {
-                Expr::Literal(LiteralValue::Utf8(s)) => {
+                Expr::Literal(Literal::Utf8(s)) => {
                     s.parse().map_err(|e: DaftError| PlannerError::from(e))
                 }
                 _ => unsupported_sql_err!("Expected image_format to be a string"),

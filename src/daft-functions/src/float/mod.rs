@@ -4,11 +4,11 @@ mod is_nan;
 mod not_nan;
 
 use daft_dsl::functions::{FunctionModule, FunctionRegistry};
-pub use fill_nan::fill_nan;
 use fill_nan::FillNan;
-pub use is_inf::{is_inf, IsInf};
-pub use is_nan::{is_nan, IsNan};
-pub use not_nan::{not_nan, NotNan};
+pub use fill_nan::fill_nan;
+pub use is_inf::{IsInf, is_inf};
+pub use is_nan::{IsNan, is_nan};
+pub use not_nan::{NotNan, not_nan};
 
 pub struct FloatFunctions;
 

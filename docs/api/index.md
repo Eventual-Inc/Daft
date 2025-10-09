@@ -4,6 +4,11 @@ Welcome to Daft Python API Documentation. For Daft User Guide, head to [User Gui
 
 <div class="grid cards" markdown>
 
+- [**AI**](ai.md)
+
+    Functions and interfaces for building AI applications with daft. This includes providers
+    and various model inference protocols such as text embedding.
+
 - [**I/O**](io.md)
 
     Variety of approaches to creating a DataFrame from reading various data sources like in-memory data, files, data catalogs, and integrations and writing to various data sources.
@@ -11,6 +16,10 @@ Welcome to Daft Python API Documentation. For Daft User Guide, head to [User Gui
 - [**DataFrame**](dataframe.md)
 
     Available DataFrame methods that are enqueued in the DataFrame's internal query plan and executed when Execution DataFrame methods are called.
+
+- [**Datasets**](datasets.md)
+
+    Simple, performant, and responsible ways to access useful datasets like Common Crawl.
 
 - [**Expressions**](expressions.md)
 
@@ -40,7 +49,7 @@ Welcome to Daft Python API Documentation. For Daft User Guide, head to [User Gui
 
     Daft can display your DataFrame's schema without materializing it by performing intelligent sampling of your data to determine appropriate schema.
 
-- [**Data Types**](datatypes.md)
+- [**Data Types**](datatypes/index.md)
 
     Daft provides simple DataTypes that are ubiquituous in many DataFrames such as numbers, strings, dates, tensors, and images.
 

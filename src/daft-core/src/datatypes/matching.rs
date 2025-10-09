@@ -47,6 +47,7 @@ macro_rules! with_match_daft_types {
             DataType::Utf8 => __with_ty__! { Utf8Type },
             #[cfg(feature = "python")]
             DataType::Python => __with_ty__! { PythonType },
+            DataType::File => __with_ty__! { FileType },
 
             // NOTE: We should not implement a default for match here, because this is meant to be
             // an exhaustive match across **all** Daft types.

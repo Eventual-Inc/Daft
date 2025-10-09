@@ -7,7 +7,7 @@ use derive_more::derive::Display;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    bound_col, AggExpr, Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowExpr,
+    AggExpr, Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowExpr, bound_col,
 };
 
 #[derive(Clone, Display, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
@@ -71,6 +71,10 @@ impl BoundExpr {
 
     pub fn inner(&self) -> &ExprRef {
         &self.0
+    }
+
+    pub fn into_inner(self) -> ExprRef {
+        self.0
     }
 
     pub fn bind_all(
@@ -138,6 +142,10 @@ macro_rules! impl_bound_wrapper {
                 exprs.iter()
                     .map(|expr| Self::try_new(expr.clone(), schema))
                     .collect()
+            }
+
+            pub fn inner(&self) -> &$inner {
+                &self.0
             }
         }
 

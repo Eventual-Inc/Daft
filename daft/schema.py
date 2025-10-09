@@ -145,8 +145,6 @@ class Schema:
     def column_names(self) -> list[str]:
         """Returns a list of the names of the columns in the schema.
 
-        Args:
-            None
         Returns:
             list[str]: List of column names in the schema.
         """
@@ -155,8 +153,6 @@ class Schema:
     def estimate_row_size_bytes(self) -> float:
         """Estimates the size of a row in bytes based on the schema.
 
-        Args:
-            None
         Returns:
             float: Estimated size of a row in bytes.
         """
@@ -172,8 +168,6 @@ class Schema:
     def to_name_set(self) -> set[str]:
         """Returns a set of column names in the schema.
 
-        Args:
-            None
         Returns:
             set[str]: Set of column names in the schema.
         """
@@ -185,6 +179,10 @@ class Schema:
     def display_with_metadata(self, include_metadata: bool = False) -> str:
         """Returns a string representation of the schema, optionally including metadata."""
         return self._schema.display_with_metadata(include_metadata)
+
+    def min_estimated_size_column(self) -> str | None:
+        """Returns the name of the column with the minimum estimated size."""
+        return self._schema.min_estimated_size_column()
 
     def _repr_html_(self) -> str:
         return self._schema._repr_html_()

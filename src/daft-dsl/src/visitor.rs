@@ -1,15 +1,15 @@
-use daft_core::{prelude::DataType, python::PyDataType};
+use daft_core::{lit::Literal, prelude::DataType, python::PyDataType};
 use pyo3::{
+    Bound, PyAny, PyResult, Python,
     exceptions::PyValueError,
     types::{PyAnyMethods, PyList, PyListMethods},
-    Bound, PyAny, PyResult, Python,
 };
 
 use crate::{
-    functions::{scalar::ScalarFn, BuiltinScalarFn, FunctionExpr},
+    AggExpr, Column, Expr, ExprRef, Operator, Subquery, WindowExpr, WindowSpec,
+    functions::{BuiltinScalarFn, FunctionExpr, scalar::ScalarFn},
     python::PyExpr,
     python_udf::{PyScalarFn, RowWisePyFn},
-    AggExpr, Column, Expr, ExprRef, LiteralValue, Operator, Subquery, WindowExpr, WindowSpec,
 };
 
 /// The generic `R` of the py visitor implementation.
@@ -72,7 +72,7 @@ impl<'py> PyVisitor<'py> {
         self.visitor.call_method1(attr, args)
     }
 
-    fn visit_lit(&self, lit: &LiteralValue) -> PyVisitorResult<'py> {
+    fn visit_lit(&self, lit: &Literal) -> PyVisitorResult<'py> {
         let attr = "visit_lit";
         self.visitor.call_method1(attr, (lit.clone(),))
     }
@@ -145,13 +145,13 @@ impl<'py> PyVisitor<'py> {
                 PartitioningExpr::Days => "days",
                 PartitioningExpr::Hours => "hours",
                 PartitioningExpr::IcebergBucket(b) => {
-                    let b = Expr::Literal(LiteralValue::Int32(*b)).arced();
+                    let b = Expr::Literal(Literal::Int32(*b)).arced();
                     let b = self.to_expr(&b)?;
                     args.push(b);
                     "iceberg_bucket"
                 }
                 PartitioningExpr::IcebergTruncate(w) => {
-                    let w = Expr::Literal(LiteralValue::Int64(*w)).arced();
+                    let w = Expr::Literal(Literal::Int64(*w)).arced();
                     let w = self.to_expr(&w)?;
                     args.push(w);
                     "iceberg_truncate"
@@ -160,7 +160,7 @@ impl<'py> PyVisitor<'py> {
             _ => {
                 return Err(PyValueError::new_err(
                     "Visitor does not support function expressions",
-                ))
+                ));
             }
         };
 

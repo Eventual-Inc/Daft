@@ -1,21 +1,31 @@
-use std::{fmt, sync::Arc};
-
-#[cfg(feature = "python")]
-use pyo3::{types::PyAnyMethods, PyObject, PyResult, Python};
-use serde::{
-    de::{Error as DeError, Visitor},
-    ser::Error as SerError,
-    Deserializer, Serializer,
+use std::{
+    fmt,
+    hash::{Hash, Hasher},
+    io::Write,
+    sync::Arc,
 };
 
 #[cfg(feature = "python")]
-pub fn pickle_dumps(obj: &PyObject) -> PyResult<Vec<u8>> {
-    Python::with_gil(|py| {
-        py.import(pyo3::intern!(py, "daft.pickle"))
-            .and_then(|m| m.getattr(pyo3::intern!(py, "dumps")))
-            .and_then(|f| f.call1((obj,)))
-            .and_then(|b| b.extract::<Vec<u8>>())
-    })
+use pyo3::{Bound, PyAny, PyObject, PyResult, Python, types::PyAnyMethods};
+use serde::{
+    Deserialize, Deserializer, Serialize, Serializer,
+    de::{Error as DeError, Visitor},
+    ser::Error as SerError,
+};
+
+#[cfg(feature = "python")]
+pub fn pickle_dumps(py: Python, obj: &PyObject) -> PyResult<Vec<u8>> {
+    py.import(pyo3::intern!(py, "daft.pickle"))?
+        .getattr(pyo3::intern!(py, "dumps"))?
+        .call1((obj,))?
+        .extract::<Vec<u8>>()
+}
+
+#[cfg(feature = "python")]
+pub fn pickle_loads(py: Python, bytes: impl AsRef<[u8]>) -> PyResult<Bound<PyAny>> {
+    py.import(pyo3::intern!(py, "daft.pickle"))?
+        .getattr(pyo3::intern!(py, "loads"))?
+        .call1((bytes.as_ref(),))
 }
 
 #[cfg(feature = "python")]
@@ -23,7 +33,8 @@ pub fn serialize_py_object<S>(obj: &PyObject, s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let bytes = pickle_dumps(obj).map_err(|e| SerError::custom(e.to_string()))?;
+    let bytes =
+        Python::with_gil(|py| pickle_dumps(py, obj).map_err(|e| SerError::custom(e.to_string())))?;
 
     s.serialize_bytes(bytes.as_slice())
 }
@@ -89,9 +100,9 @@ macro_rules! impl_bincode_py_state_serialization {
                 py: Python<'py>,
             ) -> PyResult<(PyObject, (pyo3::Bound<'py, pyo3::types::PyBytes>,))> {
                 use pyo3::{
+                    PyErr, PyTypeInfo,
                     exceptions::PyRuntimeError,
                     types::{PyAnyMethods, PyBytes},
-                    PyErr, PyTypeInfo,
                 };
                 Ok((
                     Self::type_object(py)
@@ -115,4 +126,63 @@ macro_rules! impl_bincode_py_state_serialization {
             }
         }
     };
+}
+
+#[cfg(feature = "python")]
+// This is a Rust wrapper on top of a Python UDF to make it serde-able and hashable
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PyObjectWrapper(
+    #[serde(
+        serialize_with = "serialize_py_object",
+        deserialize_with = "deserialize_py_object"
+    )]
+    pub Arc<PyObject>,
+);
+
+#[cfg(feature = "python")]
+impl PartialEq for PyObjectWrapper {
+    fn eq(&self, other: &Self) -> bool {
+        Python::with_gil(|py| self.0.bind(py).eq(other.0.bind(py)).unwrap())
+    }
+}
+
+#[cfg(feature = "python")]
+impl Eq for PyObjectWrapper {}
+
+#[cfg(feature = "python")]
+impl Hash for PyObjectWrapper {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let py_obj_hash = Python::with_gil(|py| self.0.bind(py).hash());
+        match py_obj_hash {
+            // If Python object is hashable, hash the Python-side hash.
+            Ok(py_obj_hash) => py_obj_hash.hash(state),
+            // Fall back to hashing the pickled Python object.
+            Err(_) => {
+                let hasher = HashWriter { state };
+                bincode::serialize_into(hasher, self)
+                    .expect("Pickling error occurred when computing hash of Pyobject");
+            }
+        }
+    }
+}
+
+#[cfg(feature = "python")]
+impl From<Arc<PyObject>> for PyObjectWrapper {
+    fn from(value: Arc<PyObject>) -> Self {
+        Self(value)
+    }
+}
+
+struct HashWriter<'a, H: Hasher> {
+    state: &'a mut H,
+}
+
+impl<H: Hasher> Write for HashWriter<'_, H> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        buf.hash(self.state);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }

@@ -10,11 +10,9 @@ use common_error::{DaftError, DaftResult};
 use daft_core::prelude::SchemaRef;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
-    partitioning::{MicroPartitionSet, PartitionCacheEntry, PartitionSet},
     MicroPartition,
+    partitioning::{MicroPartitionSet, PartitionCacheEntry, PartitionSet},
 };
-
-use crate::get_context;
 
 /// Create an in-memory scan from arrow arrays, like `DataFrame._from_arrow`
 pub fn logical_plan_from_arrow<S: Into<SchemaRef>>(
@@ -66,9 +64,9 @@ pub fn put_partition_set_into_cache(
     pset: Arc<MicroPartitionSet>,
 ) -> DaftResult<PartitionCacheEntry> {
     use daft_micropartition::python::PyMicroPartitionSet;
-    use pyo3::{types::PyAnyMethods, Python};
+    use pyo3::{Python, types::PyAnyMethods};
 
-    let runner = get_context().get_or_create_runner()?;
+    let runner = daft_runners::get_or_create_runner()?;
     Python::with_gil(|py| {
         // get runner as python object so we can add a partition to the cache
         let py_runner = runner.to_pyobj(py);

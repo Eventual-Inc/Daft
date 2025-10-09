@@ -1,3 +1,5 @@
+"""LLM Functions."""
+
 from __future__ import annotations
 
 from typing import Any, Literal
@@ -6,11 +8,11 @@ from daft import DataType, Expression, Series, udf
 
 
 def llm_generate(
-    input_column: Expression,
+    text: Expression,
     model: str = "facebook/opt-125m",
     provider: Literal["vllm", "openai"] = "vllm",
     concurrency: int = 1,
-    batch_size: int = 1024,
+    batch_size: int | None = None,
     num_cpus: int | None = None,
     num_gpus: int | None = None,
     **generation_config: dict[str, Any],
@@ -21,33 +23,59 @@ def llm_generate(
     By default, it uses vLLM for efficient local inference.
 
     Args:
-        model: str, default="facebook/opt-125m"
+        text (String Expression):
+            The input text column to generate from
+        model (str, default="facebook/opt-125m"):
             The model identifier to use for generation
-        provider: str, default="vllm"
+        provider (str, default="vllm"):
             The LLM provider to use for generation. Supported values: "vllm", "openai"
-        concurrency: int, default=1
+        concurrency (int, default=1):
             The number of concurrent instances of the model to run
-        batch_size: int, default=1024
-            The batch size for the UDF
-        num_cpus: float, default=None
+        batch_size (int, default=None):
+            The batch size for the UDF. If None, the batch size will be determined by defaults based on the provider.
+        num_cpus (int, default=None):
             The number of CPUs to use for the UDF
-        num_gpus: float, default=None
+        num_gpus (int, default=None):
             The number of GPUs to use for the UDF
-        generation_config: dict, default={}
+        generation_config (dict, default={}):
             Configuration parameters for text generation (e.g., temperature, max_tokens)
+
+    Returns:
+        Expression (String Expression): The generated text column
 
     Examples:
         Use vLLM provider:
         >>> import daft
         >>> from daft import col
-        >>> from daft.functions import llm_generate
-        >>> df = daft.read_csv("prompts.csv")
-        >>> df = df.with_column("response", llm_generate(col("prompt"), model="facebook/opt-125m"))
+        >>> from daft.functions import llm_generate, format
+        >>>
+        >>> df = daft.from_pydict({"city": ["Paris", "Tokyo", "New York"]})
+        >>> df = df.with_column(
+        ...     "description",
+        ...     llm_generate(
+        ...         format(
+        ...             "Describe the main attractions and unique features of this city: {}.",
+        ...             col("city"),
+        ...         ),
+        ...         model="facebook/opt-125m",
+        ...     ),
+        ... )
         >>> df.collect()
 
         Use OpenAI provider:
-        >>> df = daft.read_csv("prompts.csv")
-        >>> df = df.with_column("response", llm_generate(col("prompt"), model="gpt-4o", api_key="xxx", provider="openai"))
+        >>> df = daft.from_pydict({"city": ["Paris", "Tokyo", "New York"]})
+        >>> df = df.with_column(
+        ...     "description",
+        ...     llm_generate(
+        ...         format(
+        ...             "Describe the main attractions and unique features of this city: {}.",
+        ...             col("city"),
+        ...         ),
+        ...         model="gpt-4o",
+        ...         api_key="xxx",
+        ...         provider="openai",
+        ...     ),
+        ... )
         >>> df.collect()
 
     Note:
@@ -56,8 +84,12 @@ def llm_generate(
     cls: Any = None
     if provider == "vllm":
         cls = _vLLMGenerator
+        if batch_size is None:
+            batch_size = 1024
     elif provider == "openai":
         cls = _OpenAIGenerator
+        if batch_size is None:
+            batch_size = 128
     else:
         raise ValueError(f"Unsupported provider: {provider}")
 
@@ -72,7 +104,7 @@ def llm_generate(
         generation_config=generation_config,
     )
 
-    return llm_generator(input_column)
+    return llm_generator(text)
 
 
 class _vLLMGenerator:
@@ -103,8 +135,10 @@ class _OpenAIGenerator:
         model: str = "gpt-4o",
         generation_config: dict[str, Any] = {},
     ) -> None:
+        import asyncio
+
         try:
-            from openai import OpenAI
+            from openai import AsyncOpenAI
         except ImportError:
             raise ImportError("Please install the openai package to use this provider.")
         self.model = model
@@ -113,17 +147,36 @@ class _OpenAIGenerator:
 
         self.generation_config = {k: v for k, v in generation_config.items() if k not in client_params_keys}
 
-        self.llm = OpenAI(**client_params_opts)
+        self.llm = AsyncOpenAI(**client_params_opts)
+        try:
+            self.loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.loop = asyncio.new_event_loop()
 
     def __call__(self, input_prompt_column: Series) -> list[str]:
-        prompts = input_prompt_column.to_pylist()
-        outputs = []
-        for prompt in prompts:
+        import asyncio
+
+        async def get_completion(prompt: str) -> str:
             messages = [{"role": "user", "content": prompt}]
-            completion = self.llm.chat.completions.create(
+            completion = await self.llm.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 **self.generation_config,
             )
-            outputs.append(completion.choices[0].message.content)
+            return completion.choices[0].message.content
+
+        prompts = input_prompt_column.to_pylist()
+
+        async def gather_completions() -> list[str]:
+            tasks = [get_completion(prompt) for prompt in prompts]
+            return await asyncio.gather(*tasks)
+
+        try:
+            outputs = self.loop.run_until_complete(gather_completions())
+        except Exception as e:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.exception(e)
+            raise
         return outputs

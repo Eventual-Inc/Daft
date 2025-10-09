@@ -72,6 +72,7 @@ impl ConnectSession {
             mut gcs,
             mut http,
             unity,
+            hf,
         } = get_context().io_config();
 
         self.s3_config_helper(&mut s3)?;
@@ -85,6 +86,7 @@ impl ConnectSession {
             gcs,
             http,
             unity,
+            hf,
         })
     }
 
@@ -246,19 +248,11 @@ impl ConnectSession {
     }
 
     fn http_config_helper(&self, http_conf: &mut HTTPConfig) -> DaftResult<()> {
-        if let Some(value) = self
-            .config_values
-            .get("daft.io.http.user_agent")
-            .map(|s| s.to_string())
-        {
+        if let Some(value) = self.config_values.get("daft.io.http.user_agent").cloned() {
             http_conf.user_agent = value;
         }
 
-        if let Some(value) = self
-            .config_values
-            .get("daft.io.http.bearer_token")
-            .map(|s| s.to_string())
-        {
+        if let Some(value) = self.config_values.get("daft.io.http.bearer_token").cloned() {
             http_conf.bearer_token = Some(value.into());
         }
 

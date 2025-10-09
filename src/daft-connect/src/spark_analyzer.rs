@@ -5,16 +5,16 @@ pub(crate) mod expr_analyzer;
 
 use std::{collections::HashMap, io::Cursor, rc::Rc, sync::Arc};
 
-use arrow2::io::ipc::read::{read_stream_metadata, StreamReader, StreamState};
+use arrow2::io::ipc::read::{StreamReader, StreamState, read_stream_metadata};
 use daft_core::series::Series;
 use daft_dsl::unresolved_col;
 use daft_logical_plan::{
-    ops::{SetQuantifier, UnionStrategy},
     JoinType, LogicalPlanBuilder, PyLogicalPlanBuilder,
+    ops::{SetQuantifier, UnionStrategy},
 };
-use daft_micropartition::{self, python::PyMicroPartition, MicroPartition};
+use daft_micropartition::{self, MicroPartition, python::PyMicroPartition};
 use daft_recordbatch::RecordBatch;
-use daft_scan::builder::{delta_scan, CsvScanBuilder, JsonScanBuilder, ParquetScanBuilder};
+use daft_scan::builder::{CsvScanBuilder, JsonScanBuilder, ParquetScanBuilder, delta_scan};
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_sql::SQLPlanner;
 use datatype::to_daft_datatype;
@@ -23,17 +23,17 @@ use expr_analyzer::analyze_expr;
 use itertools::zip_eq;
 use pyo3::{intern, prelude::*};
 use spark_connect::{
+    Deduplicate, Expression, Join, Limit, Offset, Range, Relation, SetOperation, Sort, Sql,
     aggregate::GroupType,
     data_type::StructField,
     expression::{
-        sort_order::{NullOrdering, SortDirection},
         ExprType, SortOrder,
+        sort_order::{NullOrdering, SortDirection},
     },
     join::JoinType as SparkJoinType,
     read::ReadType,
     relation::RelType,
     set_operation::SetOpType,
-    Deduplicate, Expression, Join, Limit, Range, Relation, SetOperation, Sort, Sql,
 };
 use tracing::debug;
 
@@ -101,6 +101,7 @@ impl SparkAnalyzer<'_> {
 
         let lp = match rel_type {
             RelType::Limit(l) => self.limit(*l).await,
+            RelType::Offset(o) => self.offset(*o).await,
             RelType::Range(r) => self.range(r),
             RelType::Project(p) => self.project(*p).await,
             RelType::Aggregate(a) => self.aggregate(*a).await,
@@ -141,6 +142,22 @@ impl SparkAnalyzer<'_> {
         })?;
 
         plan.limit(limit, false).map_err(Into::into)
+    }
+
+    async fn offset(&self, offset: Offset) -> ConnectResult<LogicalPlanBuilder> {
+        let Offset { input, offset } = offset;
+        let input = input.required("input")?;
+
+        let plan = Box::pin(self.to_logical_plan(*input)).await?;
+
+        let offset = u64::try_from(offset).map_err(|_| {
+            ConnectError::invalid_argument(format!(
+                "OFFSET <n> must be greater than or equal to 0, instead got: {}",
+                offset
+            ))
+        })?;
+
+        plan.offset(offset).map_err(Into::into)
     }
 
     async fn deduplicate(&self, deduplicate: Deduplicate) -> ConnectResult<LogicalPlanBuilder> {
@@ -770,10 +787,10 @@ impl SparkAnalyzer<'_> {
     }
 
     pub async fn relation_to_daft_schema(&self, input: Relation) -> ConnectResult<SchemaRef> {
-        if let Some(common) = &input.common {
-            if common.origin.is_some() {
-                debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
-            }
+        if let Some(common) = &input.common
+            && common.origin.is_some()
+        {
+            debug!("Ignoring common metadata for relation: {common:?}; not yet implemented");
         }
 
         let plan = Box::pin(self.to_logical_plan(input)).await?;

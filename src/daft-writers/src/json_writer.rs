@@ -1,19 +1,19 @@
 use std::{path::PathBuf, sync::Arc};
 
 use arrow_array::RecordBatch as ArrowRecordBatch;
-use arrow_json::{writer::LineDelimited, LineDelimitedWriter, WriterBuilder};
+use arrow_json::{LineDelimitedWriter, WriterBuilder, writer::LineDelimited};
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
-use daft_io::{parse_url, IOConfig, SourceType};
+use daft_io::{IOConfig, SourceType, parse_url};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
 use crate::{
+    AsyncFileWriter, WriteResult,
     storage_backend::{FileStorageBackend, S3StorageBackend, StorageBackend},
     utils::build_filename,
-    AsyncFileWriter,
 };
 
 /// Helper function that checks if we support native writes given the file format, root directory, and schema.
@@ -94,7 +94,7 @@ impl<B: StorageBackend> JsonWriter<B> {
     /// Estimates the number of bytes that will be written for the given data.
     /// This is a temporary workaround since arrow-json doesn't provide bytes written or access to the underlying writer.
     fn estimate_bytes_to_write(&self, data: &MicroPartition) -> DaftResult<usize> {
-        let base_size = data.size_bytes()?.unwrap_or(0);
+        let base_size = data.size_bytes().unwrap_or(0);
         let estimated_size = (base_size as f64 * Self::INFLATION_FACTOR) as usize;
         Ok(estimated_size)
     }
@@ -113,10 +113,11 @@ impl<B: StorageBackend> AsyncFileWriter for JsonWriter<B> {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
-    async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {
         if self.file_writer.is_none() {
             self.create_writer().await?;
         }
+        let num_rows = data.len();
         // TODO(desmond): This is a hack to estimate the size in bytes. Arrow-json currently doesn't support getting the
         // bytes written, nor does it allow us to access the LineDelimitedWriter's inner writer which prevents
         // us from using a counting writer. We need to fix this upstream.
@@ -144,7 +145,10 @@ impl<B: StorageBackend> AsyncFileWriter for JsonWriter<B> {
             .map_err(|e| DaftError::ParquetError(e.to_string()))??;
         self.file_writer.replace(file_writer);
 
-        Ok(est_bytes_to_write)
+        Ok(WriteResult {
+            bytes_written: est_bytes_to_write,
+            rows_written: num_rows,
+        })
     }
 
     async fn close(&mut self) -> DaftResult<Self::Result> {

@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
     from daft.daft import IOConfig
     from daft.dataframe import DataFrame
+    from daft.io.partitioning import PartitionField
     from daft.unity_catalog import UnityCatalogTable
 else:
     GlueClient = Any
@@ -151,6 +152,7 @@ class GlueCatalog(Catalog):
         identifier: Identifier,
         schema: Schema,
         properties: Properties | None = None,
+        partition_fields: list[PartitionField] | None = None,
     ) -> Table:
         # Table creation implementation will be added later
         raise NotImplementedError("Table creation not yet implemented")
@@ -406,7 +408,6 @@ class GlueParquetTable(GlueTable):
             file_path_column=None,
             hive_partitioning=self._hive_partitioning,
             coerce_int96_timestamp_unit=None,
-            schema_hints=None,
         )
 
     def append(self, df: DataFrame, **options: Any) -> None:

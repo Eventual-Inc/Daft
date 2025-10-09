@@ -42,7 +42,7 @@ from daft.recordbatch import MicroPartition
 )
 def test_json_query_ok(data, query, expected):
     mp = MicroPartition.from_pydict({"col": data})
-    result = mp.eval_expression_list([col("col").json.query(query)])
+    result = mp.eval_expression_list([col("col").jq(query)])
     assert result.to_pydict() == {"col": expected}
 
 
@@ -57,29 +57,29 @@ def test_json_query_ok(data, query, expected):
 )
 def test_json_query_null_results(data, query, expected):
     mp = MicroPartition.from_pydict({"col": data})
-    result = mp.eval_expression_list([col("col").json.query(query)])
+    result = mp.eval_expression_list([col("col").jq(query)])
     assert result.to_pydict() == {"col": expected}
 
 
 def test_json_query_invalid_query():
     mp = MicroPartition.from_pydict({"col": ["a", "b", "c"]})
     with pytest.raises(ValueError, match="Error parsing jq filter"):
-        mp.eval_expression_list([col("col").json.query("")])
+        mp.eval_expression_list([col("col").jq("")])
 
 
 def test_json_query_invalid_filter():
     mp = MicroPartition.from_pydict({"col": ["a", "b", "c"]})
     with pytest.raises(ValueError, match="Error compiling jq filter"):
-        mp.eval_expression_list([col("col").json.query("a")])
+        mp.eval_expression_list([col("col").jq("a")])
 
 
 def test_json_query_invalid_json():
     mp = MicroPartition.from_pydict({"col": ["a", "b", "c"]})
     with pytest.raises(ValueError, match="DaftError::SerdeJsonError"):
-        mp.eval_expression_list([col("col").json.query(".a")])
+        mp.eval_expression_list([col("col").jq(".a")])
 
 
 def test_json_query_failed_query():
     mp = MicroPartition.from_pydict({"col": ["[1, 2, 3]"]})
     with pytest.raises(ValueError, match="Error running jq filter"):
-        mp.eval_expression_list([col("col").json.query('split(",")')])
+        mp.eval_expression_list([col("col").jq('split(",")')])

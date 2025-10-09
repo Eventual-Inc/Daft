@@ -3,7 +3,8 @@ use std::sync::Arc;
 use super::{ArrayWrapper, IntoSeries, Series};
 use crate::{
     array::{ops::GroupIndices, prelude::*},
-    datatypes::prelude::*,
+    datatypes::{FileArray, prelude::*},
+    lit::Literal,
     series::{DaftResult, SeriesLike},
     with_match_integer_daft_types,
 };
@@ -97,7 +98,7 @@ macro_rules! impl_series_like_for_logical_array {
                 self.0.physical.len()
             }
 
-            fn size_bytes(&self) -> DaftResult<usize> {
+            fn size_bytes(&self) -> usize {
                 self.0.physical.size_bytes()
             }
 
@@ -151,12 +152,12 @@ macro_rules! impl_series_like_for_logical_array {
             }
 
             fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-                use crate::array::{ops::DaftListAggable, ListArray};
+                use crate::array::{ListArray, ops::DaftListAggable};
                 let data_array = match groups {
                     Some(groups) => self.0.physical.grouped_list(groups)?,
                     None => self.0.physical.list()?,
                 };
-                let new_field = self.field().to_list_field()?;
+                let new_field = self.field().to_list_field();
                 Ok(ListArray::new(
                     new_field,
                     data_array.flat_child.cast(self.data_type())?,
@@ -167,12 +168,12 @@ macro_rules! impl_series_like_for_logical_array {
             }
 
             fn agg_set(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-                use crate::array::{ops::DaftSetAggable, ListArray};
+                use crate::array::{ListArray, ops::DaftSetAggable};
                 let data_array = match groups {
                     Some(groups) => self.0.physical.clone().into_series().grouped_set(groups)?,
                     None => self.0.physical.clone().into_series().set()?,
                 };
-                let new_field = self.field().to_list_field()?;
+                let new_field = self.field().to_list_field();
                 Ok(ListArray::new(
                     new_field,
                     data_array.flat_child.cast(self.data_type())?,
@@ -180,6 +181,10 @@ macro_rules! impl_series_like_for_logical_array {
                     data_array.validity().cloned(),
                 )
                 .into_series())
+            }
+
+            fn get_lit(&self, idx: usize) -> Literal {
+                self.0.get_lit(idx)
             }
         }
     };
@@ -198,3 +203,4 @@ impl_series_like_for_logical_array!(FixedShapeTensorArray);
 impl_series_like_for_logical_array!(SparseTensorArray);
 impl_series_like_for_logical_array!(FixedShapeSparseTensorArray);
 impl_series_like_for_logical_array!(MapArray);
+impl_series_like_for_logical_array!(FileArray);

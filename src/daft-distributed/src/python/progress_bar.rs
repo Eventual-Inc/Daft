@@ -1,5 +1,5 @@
 use common_error::DaftResult;
-use pyo3::{types::PyAnyMethods, PyObject, PyResult, Python};
+use pyo3::{PyObject, PyResult, Python, types::PyAnyMethods};
 
 use crate::{
     scheduling::task::TaskContext,
@@ -11,11 +11,7 @@ struct BarId(i64);
 
 impl From<&TaskContext> for BarId {
     fn from(task_context: &TaskContext) -> Self {
-        Self(
-            ((task_context.stage_id as i64) << 48)
-                | ((task_context.plan_id as i64) << 32)
-                | (task_context.node_id as i64),
-        )
+        Self(((task_context.plan_id as i64) << 32) | (task_context.node_id as i64))
     }
 }
 
@@ -24,12 +20,10 @@ pub(crate) struct FlotillaProgressBar {
 }
 
 impl FlotillaProgressBar {
-    pub fn try_new(py: Python, use_ray_tqdm: bool) -> PyResult<Self> {
+    pub fn try_new(py: Python) -> PyResult<Self> {
         let progress_bar_module = py.import(pyo3::intern!(py, "daft.runners.progress_bar"))?;
         let progress_bar_class = progress_bar_module.getattr(pyo3::intern!(py, "ProgressBar"))?;
-        let progress_bar = progress_bar_class
-            .call1((use_ray_tqdm,))?
-            .extract::<PyObject>()?;
+        let progress_bar = progress_bar_class.call1((true,))?.extract::<PyObject>()?;
         Ok(Self {
             progress_bar_pyobject: progress_bar,
         })

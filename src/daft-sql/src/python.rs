@@ -1,11 +1,11 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use common_daft_config::PyDaftPlanningConfig;
 use daft_core::python::PyDataType;
 use daft_dsl::python::PyExpr;
-use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder, PyLogicalPlanBuilder};
+use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_session::python::PySession;
-use pyo3::{prelude::*, types::PyDict, IntoPyObjectExt};
+use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{exec::execute_statement, functions::SQL_FUNCTIONS, schema::try_parse_dtype};
 
@@ -81,67 +81,9 @@ pub fn list_sql_functions() -> Vec<SQLFunctionStub> {
             let (docstring, args) = SQL_FUNCTIONS.docsmap.get(&name).unwrap();
             SQLFunctionStub {
                 name,
-                docstring: docstring.to_string(),
+                docstring: docstring.clone(),
                 arg_names: args.to_vec(),
             }
         })
         .collect()
-}
-
-/// SQLCatalog is DEPRECATED in 0.5 and will be REMOVED in 0.6.
-///
-/// TODO remove once session is removed on python side
-/// PyCatalog is the Python interface to the Catalog.
-// Note that this is unsendable because Mutex is not cloneable.
-#[pyclass(module = "daft.daft", unsendable)]
-#[derive(Debug, Clone)]
-pub struct PySqlCatalog {
-    tables: HashMap<String, Arc<LogicalPlan>>,
-}
-
-#[pymethods]
-impl PySqlCatalog {
-    /// Construct an empty PyCatalog.
-    #[staticmethod]
-    pub fn new() -> Self {
-        Self {
-            tables: HashMap::new(),
-        }
-    }
-
-    /// Register a table with the catalog.
-    pub fn register_table(&mut self, name: &str, dataframe: &PyLogicalPlanBuilder) -> PyResult<()> {
-        // TODO this is being removed, but do not parse python strings as SQL strings.
-        let plan = dataframe.builder.build();
-        self.tables.insert(name.to_string(), plan);
-        Ok(())
-    }
-
-    /// Copy from another catalog, using tables from other in case of conflict
-    pub fn copy_from(&mut self, other: &Self) {
-        for (name, plan) in &other.tables {
-            self.tables.insert(name.clone(), plan.clone());
-        }
-    }
-
-    /// __str__ to print the catalog's tables
-    fn __str__(&self) -> String {
-        format!("{:?}", self.tables)
-    }
-
-    /// Convert the catalog's tables to a Python dictionary
-    fn to_pydict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new(py);
-        for (name, plan) in &self.tables {
-            let builder = PyLogicalPlanBuilder::from(LogicalPlanBuilder::new(plan.clone(), None));
-            dict.set_item(name, builder)?;
-        }
-        Ok(dict.into())
-    }
-}
-
-impl Default for PySqlCatalog {
-    fn default() -> Self {
-        Self::new()
-    }
 }

@@ -256,7 +256,7 @@ def test_visit_lit():
     assert len(lit_9_trace) == 1
     assert len(lit_9_trace[0].args) == 1
     assert lit_9_trace[0].attr == "visit_lit"
-    assert lit_9_trace[0].args[0].to_pylist() == [[1, 2, 3]]
+    assert lit_9_trace[0].args[0] == [1, 2, 3]
 
     # struct literal
     lit_10 = lit({"a": 1, "b": 2})

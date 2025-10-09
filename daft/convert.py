@@ -83,7 +83,9 @@ def from_pydict(data: dict[str, InputListType]) -> "DataFrame":
 
 
 @PublicAPI
-def from_arrow(data: Union["pa.Table", list["pa.Table"], Iterable["pa.Table"]]) -> "DataFrame":
+def from_arrow(
+    data: Union["pa.Table", list["pa.Table"], Iterable["pa.Table"]],
+) -> "DataFrame":
     """Creates a DataFrame from a pyarrow Table.
 
     Args:
@@ -165,6 +167,27 @@ def from_ray_dataset(ds: "RayDataset") -> "DataFrame":
     Note:
         This function can only work if Daft is running using the RayRunner
 
+    Examples:
+        >>> import ray
+        >>> import daft
+        >>>
+        >>> daft.context.set_runner_ray()  # doctest: +SKIP
+        >>>
+        >>> ds = ray.data.from_items([{"a": 1, "b": "foo"}, {"a": 2, "b": "bar"}])  # doctest: +SKIP
+        >>> df = daft.from_ray_dataset(ds)  # doctest: +SKIP
+        >>> df.show()  # doctest: +SKIP
+        ╭───────┬──────╮
+        │ a     ┆ b    │
+        │ ---   ┆ ---  │
+        │ Int64 ┆ Utf8 │
+        ╞═══════╪══════╡
+        │ 1     ┆ foo  │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2     ┆ bar  │
+        ╰───────┴──────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+
     """
     from daft import DataFrame
 
@@ -180,8 +203,34 @@ def from_dask_dataframe(ddf: "dask.DataFrame") -> "DataFrame":
     Args:
         ddf: The Dask DataFrame to create a Daft DataFrame from.
 
+    Returns:
+        DataFrame: Daft DataFrame created from the provided Dask DataFrame.
+
     Note:
         This function can only work if Daft is running using the RayRunner
+
+    Examples:
+        >>> import dask.dataframe as dd
+        >>> import pandas as pd
+        >>> import daft
+        >>> import ray
+        >>>
+        >>> daft.context.set_runner_ray()  # doctest: +SKIP
+        >>>
+        >>> ddf = dd.from_pandas(pd.DataFrame({"a": [1, 2], "b": ["foo", "bar"]}), npartitions=2)  # doctest: +SKIP
+        >>> df = daft.from_dask_dataframe(ddf)  # doctest: +SKIP
+        >>> df.show()  # doctest: +SKIP
+        ╭───────┬──────╮
+        │ a     ┆ b    │
+        │ ---   ┆ ---  │
+        │ Int64 ┆ Utf8 │
+        ╞═══════╪══════╡
+        │ 1     ┆ foo  │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2     ┆ bar  │
+        ╰───────┴──────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
 
     """
     from daft import DataFrame

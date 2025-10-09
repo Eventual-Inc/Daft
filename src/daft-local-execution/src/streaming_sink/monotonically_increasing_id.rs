@@ -1,20 +1,16 @@
 use std::sync::Arc;
 
+use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
-use tracing::{instrument, Span};
+use tracing::{Span, instrument};
 
 use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
-    StreamingSinkState,
 };
-use crate::{
-    dispatcher::{DispatchSpawner, UnorderedDispatcher},
-    pipeline::NodeName,
-    ExecutionRuntimeContext, ExecutionTaskSpawner,
-};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
-struct MonotonicallyIncreasingIdState {
+pub(crate) struct MonotonicallyIncreasingIdState {
     id_offset: u64,
 }
 
@@ -23,12 +19,6 @@ impl MonotonicallyIncreasingIdState {
         let id_offset = self.id_offset;
         self.id_offset += increment;
         id_offset
-    }
-}
-
-impl StreamingSinkState for MonotonicallyIncreasingIdState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -58,81 +48,77 @@ impl MonotonicallyIncreasingIdSink {
 }
 
 impl StreamingSink for MonotonicallyIncreasingIdSink {
+    type State = MonotonicallyIncreasingIdState;
     #[instrument(skip_all, name = "MonotonicallyIncreasingIdSink::sink")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        mut state: Box<dyn StreamingSinkState>,
+        mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkExecuteResult {
+    ) -> StreamingSinkExecuteResult<Self> {
         let params = self.params.clone();
         spawner
-            .spawn(async move {
-                let mut id_offset = state
-                    .as_any_mut()
-                    .downcast_mut::<MonotonicallyIncreasingIdState>()
-                    .expect("MonotonicallyIncreasingIdOperator should have MonotonicallyIncreasingIdState")
-                    .fetch_and_increment_offset(input.len() as u64);
+            .spawn(
+                async move {
+                    let mut id_offset = state.fetch_and_increment_offset(input.len() as u64);
 
-                let tables = input.get_tables()?;
-                let mut results = Vec::with_capacity(tables.len());
-                for t in tables.iter() {
-                    let len = t.len() as u64;
-                    results.push(t.add_monotonically_increasing_id(
-                        0,
-                        id_offset,
-                        &params.column_name,
-                    )?);
-                    id_offset += len;
-                }
+                    let tables = input.get_tables()?;
+                    let mut results = Vec::with_capacity(tables.len());
+                    for t in tables.iter() {
+                        let len = t.len() as u64;
+                        results.push(t.add_monotonically_increasing_id(
+                            0,
+                            id_offset,
+                            &params.column_name,
+                        )?);
+                        id_offset += len;
+                    }
 
-                let out = MicroPartition::new_loaded(
-                    params.output_schema.clone(),
-                    results.into(),
-                    None,
-                );
+                    let out = MicroPartition::new_loaded(
+                        params.output_schema.clone(),
+                        results.into(),
+                        None,
+                    );
 
-                Ok((
-                    state,
-                    StreamingSinkOutput::NeedMoreInput(Some(Arc::new(out))),
-                ))
-            }, Span::current())
+                    Ok((
+                        state,
+                        StreamingSinkOutput::NeedMoreInput(Some(Arc::new(out))),
+                    ))
+                },
+                Span::current(),
+            )
             .into()
     }
 
     fn name(&self) -> NodeName {
-        "MonotonicallyIncreasingId".into()
+        "Monotonic ID".into()
+    }
+
+    fn op_type(&self) -> NodeType {
+        NodeType::MonotonicallyIncreasingId
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        vec!["MonotonicallyIncreasingId".to_string()]
+        vec!["Monotonic ID".to_string()]
     }
 
     fn finalize(
         &self,
-        _states: Vec<Box<dyn StreamingSinkState>>,
+        _states: Vec<Self::State>,
         _spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult {
         Ok(None).into()
     }
 
-    fn make_state(&self) -> Box<dyn StreamingSinkState> {
-        Box::new(MonotonicallyIncreasingIdState {
+    fn make_state(&self) -> Self::State {
+        MonotonicallyIncreasingIdState {
             id_offset: self.params.starting_offset.unwrap_or(0),
-        })
+        }
     }
 
     // Monotonically increasing id is a memory-bound operation, so there's no performance benefit to parallelizing it.
     // Furthermore, it is much simpler to implement as a single-threaded operation, since we can just keep track of the current id offset without synchronization.
     fn max_concurrency(&self) -> usize {
         1
-    }
-
-    fn dispatch_spawner(
-        &self,
-        _runtime_handle: &ExecutionRuntimeContext,
-        _maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner> {
-        Arc::new(UnorderedDispatcher::unbounded())
     }
 }

@@ -1,5 +1,3 @@
-#![feature(let_chains)]
-
 #[cfg(feature = "python")]
 pub mod python;
 
@@ -7,6 +5,7 @@ mod azure;
 mod config;
 mod gcs;
 mod http;
+mod huggingface;
 mod s3;
 mod unity;
 
@@ -23,6 +22,7 @@ pub use crate::{
     config::IOConfig,
     gcs::GCSConfig,
     http::HTTPConfig,
+    huggingface::HuggingFaceConfig,
     s3::{S3Config, S3Credentials},
     unity::UnityConfig,
 };

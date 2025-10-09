@@ -1,20 +1,19 @@
-use std::{io::ErrorKind, pin::pin};
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use pyo3::{exceptions, pyclass, pyfunction, pymethods, PyErr, PyResult, Python};
+use pyo3::{PyErr, PyResult, exceptions, pyclass, pyfunction, pymethods};
 use tokio::{
     runtime::{Builder, Runtime},
     sync::oneshot,
 };
 
-use crate::DashboardState;
+use crate::{DEFAULT_SERVER_PORT, state::GLOBAL_DASHBOARD_STATE};
+
+static DASHBOARD_ENABLED: AtomicBool = AtomicBool::new(false);
 
 #[pyclass]
 pub struct ConnectionHandle {
     shutdown_signal: Option<oneshot::Sender<()>>,
-}
-
-fn make_listener() -> std::io::Result<std::net::TcpListener> {
-    std::net::TcpListener::bind((super::SERVER_ADDR, super::SERVER_PORT))
+    port: u16,
 }
 
 #[pymethods]
@@ -30,61 +29,75 @@ impl ConnectionHandle {
             )),
         }
     }
+
+    pub fn get_port(&self) -> u16 {
+        self.port
+    }
 }
 
 #[pyfunction]
-pub fn launch(noop_if_initialized: bool, py: Python) -> PyResult<ConnectionHandle> {
-    match (make_listener(), noop_if_initialized) {
-        (Err(_), true) => Ok(ConnectionHandle {
-            shutdown_signal: None,
-        }),
-        (Err(e), false) if e.kind() == ErrorKind::AddrInUse => {
-            Err(PyErr::new::<exceptions::PyRuntimeError, _>(
-                "Port is already in use",
-            ))
-        }
-        (Err(e), _) => Err(PyErr::new::<exceptions::PyRuntimeError, _>(e)),
-        (Ok(listener), _) => {
-            let (send, recv) = oneshot::channel::<()>();
-
-            let handle = ConnectionHandle {
-                shutdown_signal: Some(send),
-            };
-
-            py.allow_threads(move || {
-                std::thread::spawn(move || {
-                    tokio_runtime().block_on(async { run(listener, recv).await })
-                });
-            });
-            Ok(handle)
-        }
-    }
+pub fn register_dataframe_for_display(
+    record_batch: daft_recordbatch::python::PyRecordBatch,
+) -> PyResult<String> {
+    let df_id = GLOBAL_DASHBOARD_STATE.register_dataframe_preview(record_batch.record_batch);
+    Ok(df_id)
 }
 
-async fn run(
-    listener: std::net::TcpListener,
-    mut recv: oneshot::Receiver<()>,
-) -> anyhow::Result<()> {
-    listener.set_nonblocking(true).map_err(anyhow::Error::new)?;
+#[pyfunction]
+pub fn generate_interactive_html(df_id: String) -> PyResult<String> {
+    let record_batch = GLOBAL_DASHBOARD_STATE
+        .get_dataframe_preview(&df_id)
+        .ok_or_else(|| {
+            PyErr::new::<exceptions::PyRuntimeError, _>(format!(
+                "DataFrame with id '{}' does not exist",
+                df_id
+            ))
+        })?;
 
-    let listener = tokio::net::TcpListener::from_std(listener).map_err(anyhow::Error::new)?;
-
-    let mut api_signal = pin!(recv);
-    let state = DashboardState::new();
-
-    loop {
-        tokio::select! {
-            stream = listener.accept() => match stream {
-                Ok((stream, _)) => super::handle_stream(stream, state.clone()),
-                Err(error) => log::warn!("Unable to accept incoming connection: {error}"),
-            },
-            Ok(()) = &mut api_signal => break,
-        }
-    }
-
-    Ok(())
+    let html = super::generate_interactive_html(
+        &record_batch,
+        &df_id,
+        &super::DEFAULT_SERVER_ADDR.to_string(),
+        DEFAULT_SERVER_PORT,
+    );
+    Ok(html)
 }
 
 fn tokio_runtime() -> Runtime {
     Builder::new_current_thread().enable_all().build().unwrap()
+}
+
+#[pyfunction]
+pub fn launch(noop_if_initialized: bool) -> PyResult<ConnectionHandle> {
+    // Check if server is already running
+    if DASHBOARD_ENABLED.load(Ordering::SeqCst) {
+        if noop_if_initialized {
+            return Ok(ConnectionHandle {
+                shutdown_signal: None,
+                port: super::DEFAULT_SERVER_PORT,
+            });
+        } else {
+            return Err(PyErr::new::<exceptions::PyRuntimeError, _>(
+                "Server is already running",
+            ));
+        }
+    }
+
+    let port = super::DEFAULT_SERVER_PORT; // TODO: Make configurable
+    let (send, recv) = oneshot::channel::<()>();
+
+    let handle = ConnectionHandle {
+        shutdown_signal: Some(send),
+        port,
+    };
+    let _ = std::thread::spawn(move || {
+        DASHBOARD_ENABLED.store(true, Ordering::SeqCst);
+        let res = tokio_runtime().block_on(async {
+            super::launch_server(port, async move { recv.await.unwrap() }).await
+        });
+        DASHBOARD_ENABLED.store(false, Ordering::SeqCst);
+        res
+    });
+
+    Ok(handle)
 }

@@ -379,5 +379,5 @@ def test_parquet_read_string_utf8_into_binary(parquet_path: Path):
     schema = read_back.schema
     assert len(schema) == 1
     assert schema[0].name == "invalid_string"
-    assert schema[0].type == pa.binary()
+    assert schema[0].type == pa.large_binary()
     assert read_back["invalid_string"][0].as_py() == b"\x80\x80\x80"

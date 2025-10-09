@@ -2,21 +2,21 @@ use std::{borrow::Cow, collections::HashSet, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
-use daft_dsl::{expr::bound_expr::BoundExpr, Expr, ExprRef};
+use daft_dsl::{Expr, ExprRef, expr::bound_expr::BoundExpr};
 use daft_recordbatch::RecordBatch;
 use indexmap::IndexMap;
 use num_traits::Pow;
-use rayon::{prelude::*, ThreadPoolBuilder};
+use rayon::{ThreadPoolBuilder, prelude::*};
 use serde_json::value::RawValue;
 use snafu::ResultExt;
 
 use crate::{
+    ArrowSnafu, JsonConvertOptions, JsonParseOptions, JsonReadOptions, RayonThreadPoolSnafu,
+    StdIOSnafu,
     decoding::{allocate_array, deserialize_into},
     deserializer::Value,
     inference::{column_types_map_to_fields, infer_records_schema},
     read::tables_concat,
-    ArrowSnafu, JsonConvertOptions, JsonParseOptions, JsonReadOptions, RayonThreadPoolSnafu,
-    StdIOSnafu,
 };
 
 const NEWLINE: u8 = b'\n';
@@ -79,12 +79,7 @@ pub fn read_json_array_impl(
     let mut columns = arrow_schema
         .fields
         .iter()
-        .map(|f| {
-            (
-                Cow::Owned(f.name.to_string()),
-                allocate_array(f, bytes.len()),
-            )
-        })
+        .map(|f| (Cow::Owned(f.name.clone()), allocate_array(f, bytes.len())))
         .collect::<IndexMap<_, _>>();
 
     let mut num_rows = 0;
@@ -104,9 +99,7 @@ pub fn read_json_array_impl(
                                     deserialize_into(inner, &[value]);
                                 }
                                 None => {
-                                    Err(super::Error::JsonDeserializationError {
-                                        string: "Field not found in schema".to_string(),
-                                    })?;
+                                    inner.push_null();
                                 }
                             }
                         }
@@ -125,9 +118,7 @@ pub fn read_json_array_impl(
                             deserialize_into(inner, &[value]);
                         }
                         None => {
-                            Err(super::Error::JsonDeserializationError {
-                                string: "Field not found in schema".to_string(),
-                            })?;
+                            inner.push_null();
                         }
                     }
                 }
@@ -239,10 +230,10 @@ impl<'a> JsonReader<'a> {
                 // the guessed upper bound of the no. of bytes in the file
                 let n_bytes = (line_length_upper_bound * (n_rows as f32)) as usize;
 
-                if n_bytes < bytes.len() {
-                    if let Some(pos) = next_line_position(&bytes[n_bytes..]) {
-                        bytes = &bytes[..n_bytes + pos];
-                    }
+                if n_bytes < bytes.len()
+                    && let Some(pos) = next_line_position(&bytes[n_bytes..])
+                {
+                    bytes = &bytes[..n_bytes + pos];
                 }
             }
         }
@@ -268,10 +259,10 @@ impl<'a> JsonReader<'a> {
         let tbl = tables_concat(tbls)?;
 
         // The `limit` is not guaranteed to be fully applied from the byte slice, so we need to properly apply the limit after concatenating the tables
-        if let Some(limit) = self.n_rows {
-            if tbl.len() > limit {
-                return tbl.head(limit);
-            }
+        if let Some(limit) = self.n_rows
+            && tbl.len() > limit
+        {
+            return tbl.head(limit);
         }
         Ok(tbl)
     }
@@ -294,12 +285,7 @@ impl<'a> JsonReader<'a> {
         let mut columns = arrow_schema
             .fields
             .iter()
-            .map(|f| {
-                (
-                    Cow::Owned(f.name.to_string()),
-                    allocate_array(f, chunk_size),
-                )
-            })
+            .map(|f| (Cow::Owned(f.name.clone()), allocate_array(f, chunk_size)))
             .collect::<IndexMap<_, _>>();
 
         let mut num_rows = 0;
@@ -317,9 +303,7 @@ impl<'a> JsonReader<'a> {
                                 deserialize_into(inner, &[value]);
                             }
                             None => {
-                                Err(super::Error::JsonDeserializationError {
-                                    string: "Field not found in schema".to_string(),
-                                })?;
+                                inner.push_null();
                             }
                         }
                     }
@@ -343,7 +327,7 @@ impl<'a> JsonReader<'a> {
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let tbl = RecordBatch::new_unchecked(self.schema.clone(), columns, num_rows);
+        let tbl = RecordBatch::new_with_size(self.schema.clone(), columns, num_rows)?;
 
         if let Some(pred) = &self.predicate {
             let pred = BoundExpr::try_new(pred.clone(), &self.schema)?;

@@ -14,7 +14,7 @@ use daft_core::{
     utils::arrow::cast_array_for_daft_if_needed,
 };
 use daft_decoding::deserialize::deserialize_column;
-use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns, Expr};
+use daft_dsl::{Expr, expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_io::{IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use futures::{Stream, StreamExt, TryStreamExt};
@@ -26,9 +26,9 @@ use smallvec::SmallVec;
 use snafu::ResultExt;
 
 use crate::{
+    ArrowSnafu, CsvConvertOptions, CsvParseOptions, CsvReadOptions, JoinSnafu,
     metadata::read_csv_schema_single,
     read::{fields_to_projection_indices, tables_concat},
-    ArrowSnafu, CsvConvertOptions, CsvParseOptions, CsvReadOptions, JoinSnafu,
 };
 
 mod pool;
@@ -151,7 +151,7 @@ pub async fn read_csv_local(
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<RecordBatch> {
     let stream = stream_csv_local(
-        uri,
+        uri.to_string(),
         convert_options.clone(),
         parse_options.clone(),
         read_options,
@@ -193,7 +193,7 @@ pub async fn read_csv_local(
 
 /// Reads a single local CSV file in a streaming fashion.
 pub async fn stream_csv_local(
-    uri: &str,
+    uri: String,
     convert_options: Option<CsvConvertOptions>,
     parse_options: CsvParseOptions,
     read_options: Option<CsvReadOptions>,
@@ -689,6 +689,7 @@ impl Read for MultiSliceReader<'_> {
 
 // TODO(desmond): The Daft read_csv API does not currently accept non-\n record terminators. We should
 // make this user configurable.
+const CARRIAGE_RETURN: u8 = b'\r';
 const NEWLINE: u8 = b'\n';
 const DOUBLE_QUOTE: u8 = b'"';
 
@@ -699,14 +700,14 @@ struct CsvValidator {
     num_fields_seen: usize,
     quote_char: u8,
     field_delimiter: u8,
-    escape_char: Option<u8>,
+    escape_char: u8,
     double_quote_escape_allowed: bool,
     // The transition table only needs to consider 256 possible inputs, because the only characters
     // that are valid for transitioning the table state are single-byte ASCII characters. Furthermore,
     // even when reading UTF-8, upon encountering a byte that matches the value for an ASCII character,
     // this byte will always correspond to the ASCII character.
     // For more details, see: https://en.wikipedia.org/wiki/UTF-8#Encoding
-    transition_table: [[CsvState; 256]; 6],
+    transition_table: [[CsvState; 256]; 7],
 }
 
 /// Csv states used by the state machine in `validate_csv_record`.
@@ -718,6 +719,7 @@ enum CsvState {
     QuotedField,
     Unquote,
     Escape,
+    CarriageReturn,
     Invalid,
 }
 
@@ -729,6 +731,7 @@ impl CsvValidator {
         escape_char: Option<u8>,
         double_quote_escape_allowed: bool,
     ) -> Self {
+        let escape_char = escape_char.unwrap_or(DOUBLE_QUOTE);
         let mut validator = Self {
             state: CsvState::FieldStart,
             num_fields,
@@ -737,7 +740,7 @@ impl CsvValidator {
             field_delimiter,
             escape_char,
             double_quote_escape_allowed,
-            transition_table: [[CsvState::Invalid; 256]; 6],
+            transition_table: [[CsvState::Invalid; 256]; 7],
         };
         validator.build_transition_table();
         validator
@@ -748,6 +751,8 @@ impl CsvValidator {
         self.transition_table[CsvState::FieldStart as usize] = [CsvState::UnquotedField; 256];
         self.transition_table[CsvState::FieldStart as usize][NEWLINE as usize] =
             CsvState::RecordEnd;
+        self.transition_table[CsvState::FieldStart as usize][CARRIAGE_RETURN as usize] =
+            CsvState::CarriageReturn;
         self.transition_table[CsvState::FieldStart as usize][self.quote_char as usize] =
             CsvState::QuotedField;
         self.transition_table[CsvState::FieldStart as usize][self.field_delimiter as usize] =
@@ -757,15 +762,15 @@ impl CsvValidator {
         self.transition_table[CsvState::UnquotedField as usize] = [CsvState::UnquotedField; 256];
         self.transition_table[CsvState::UnquotedField as usize][NEWLINE as usize] =
             CsvState::RecordEnd;
+        self.transition_table[CsvState::UnquotedField as usize][CARRIAGE_RETURN as usize] =
+            CsvState::CarriageReturn;
         self.transition_table[CsvState::UnquotedField as usize][self.field_delimiter as usize] =
             CsvState::FieldStart;
 
         // QuotedField transitions.
         self.transition_table[CsvState::QuotedField as usize] = [CsvState::QuotedField; 256];
-        if let Some(escape_char) = self.escape_char {
-            self.transition_table[CsvState::QuotedField as usize][escape_char as usize] =
-                CsvState::Escape;
-        }
+        self.transition_table[CsvState::QuotedField as usize][self.escape_char as usize] =
+            CsvState::Escape;
         // The quote char transition must be defined after the escape transition, because the most common
         // escape char in CSV is the quote char itself ("._.)
         self.transition_table[CsvState::QuotedField as usize][self.quote_char as usize] =
@@ -773,10 +778,12 @@ impl CsvValidator {
 
         // Unquote transitions.
         self.transition_table[CsvState::Unquote as usize][NEWLINE as usize] = CsvState::RecordEnd;
+        self.transition_table[CsvState::Unquote as usize][CARRIAGE_RETURN as usize] =
+            CsvState::CarriageReturn;
         self.transition_table[CsvState::Unquote as usize][self.field_delimiter as usize] =
             CsvState::FieldStart;
-        if let Some(escape_char) = self.escape_char
-            && escape_char == self.quote_char
+
+        if self.escape_char == self.quote_char
             && (self.quote_char != DOUBLE_QUOTE || self.double_quote_escape_allowed)
         {
             self.transition_table[CsvState::Unquote as usize][self.quote_char as usize] =
@@ -785,6 +792,10 @@ impl CsvValidator {
 
         // Escape transitions.
         self.transition_table[CsvState::Escape as usize] = [CsvState::QuotedField; 256];
+
+        // CarriageReturn transitions.
+        self.transition_table[CsvState::CarriageReturn as usize][NEWLINE as usize] =
+            CsvState::RecordEnd;
     }
 
     fn validate_record<'a>(&mut self, iter: &mut impl Iterator<Item = &'a u8>) -> Option<bool> {
@@ -901,7 +912,7 @@ where
         let table = RecordBatch::new_unchecked(read_schema.clone(), chunk, num_rows);
         let table = if let Some(predicate) = &predicate {
             let predicate = BoundExpr::try_new(predicate.clone(), &read_schema)?;
-            let filtered = table.filter(&[predicate.clone()])?;
+            let filtered = table.filter(std::slice::from_ref(&predicate))?;
             if let Some(include_columns) = &include_columns {
                 let include_column_indices = include_columns
                     .iter()

@@ -1,5 +1,3 @@
-#![feature(let_chains)]
-
 pub mod error;
 pub mod functions;
 
@@ -19,7 +17,6 @@ use pyo3::prelude::*;
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_class::<python::PySqlCatalog>()?;
     parent.add_function(wrap_pyfunction!(python::sql_exec, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::sql_expr, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::sql_datatype, parent)?)?;
@@ -31,12 +28,11 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
 mod tests {
     use std::sync::{Arc, LazyLock};
 
-    use common_error::DaftError;
     use daft_core::prelude::*;
-    use daft_dsl::{lit, unresolved_col, Expr, ExprRef, PlanRef, Subquery, UnresolvedColumn};
+    use daft_dsl::{Expr, ExprRef, PlanRef, Subquery, UnresolvedColumn, lit, unresolved_col};
     use daft_logical_plan::{
-        logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, JoinOptions,
-        LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
+        ClusteringSpec, JoinOptions, LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
+        logical_plan::Source, source_info::PlaceHolderInfo,
     };
     use daft_session::Session;
     use error::SQLPlannerResult;
@@ -127,6 +123,7 @@ mod tests {
     #[rstest]
     #[case::basic("select * from tbl1")]
     #[case::select_with_limit("select * from tbl1 limit 1")]
+    #[case::limit_with_offset("select * from tbl1 offset 2 limit 7")]
     #[case::exclude("select * exclude utf8 from tbl1")]
     #[case::exclude2("select * exclude (utf8, i32) from tbl1")]
     #[case("select utf8 from tbl1")]
@@ -226,6 +223,29 @@ mod tests {
     }
 
     #[rstest]
+    fn test_limit_offset(
+        mut planner: SQLPlanner,
+        tbl_1: LogicalPlanRef,
+        #[values(
+            "select test as a from tbl1 limit 10 offset 7",
+            "select test as a from tbl1 offset 7 limit 10"
+        )]
+        sql: &str,
+    ) -> SQLPlannerResult<()> {
+        let plan = planner.plan_sql(sql)?;
+
+        let expected = LogicalPlanBuilder::from(tbl_1)
+            .alias("tbl1")
+            .select(vec![unresolved_col("test").alias("a")])?
+            .offset(7)?
+            .limit(10, true)?
+            .build();
+
+        assert_eq!(plan, expected);
+        Ok(())
+    }
+
+    #[rstest]
     fn test_negative_limit(mut planner: SQLPlanner) -> SQLPlannerResult<()> {
         let sql = "select test as a from tbl1 limit -1";
         let plan = planner.plan_sql(sql);
@@ -234,6 +254,23 @@ mod tests {
                 assert_eq!(
                     message,
                     "LIMIT <n> must be greater than or equal to 0, instead got: -1"
+                );
+            }
+            _ => panic!("Unexpected result"),
+        }
+
+        Ok(())
+    }
+
+    #[rstest]
+    fn test_negative_offset(mut planner: SQLPlanner) -> SQLPlannerResult<()> {
+        let sql = "select test as a from tbl1 offset -1";
+        let plan = planner.plan_sql(sql);
+        match plan {
+            Err(PlannerError::InvalidOperation { message }) => {
+                assert_eq!(
+                    message,
+                    "OFFSET <n> must be greater than or equal to 0, instead got: -1"
                 );
             }
             _ => panic!("Unexpected result"),

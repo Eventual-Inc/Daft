@@ -7,8 +7,8 @@ use std::{
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use common_runtime::{get_io_runtime, RuntimeTask};
-use daft_io::{get_io_client, IOConfig, S3LikeSource, S3MultipartWriter, S3PartBuffer};
+use common_runtime::{RuntimeTask, get_io_runtime};
+use daft_io::{IOConfig, S3LikeSource, S3MultipartWriter, S3PartBuffer, get_io_client};
 use parking_lot::Mutex;
 
 /// A trait for storage backends. Currently only supports files and S3 as backends.
@@ -60,9 +60,6 @@ pub(crate) struct S3StorageBackend {
 }
 
 impl S3StorageBackend {
-    const S3_MULTIPART_PART_SIZE: usize = 8 * 1024 * 1024; // 8 MB
-    const S3_MULTIPART_MAX_CONCURRENT_UPLOADS_PER_OBJECT: usize = 100; // 100 uploads per S3 object
-
     pub(crate) fn new(scheme: String, io_config: IOConfig) -> Self {
         Self {
             scheme,
@@ -95,7 +92,7 @@ impl StorageBackend for S3StorageBackend {
 
     async fn create_writer(&mut self, filename: &Path) -> DaftResult<Self::Writer> {
         let filename = filename.to_string_lossy().to_string();
-        let part_size = NonZeroUsize::new(Self::S3_MULTIPART_PART_SIZE)
+        let part_size = NonZeroUsize::new(self.io_config.s3.multipart_size as usize)
             .expect("S3 multipart part size must be non-zero");
         let (tx, mut rx) = tokio::sync::mpsc::channel(1);
 
@@ -129,7 +126,7 @@ impl StorageBackend for S3StorageBackend {
         let mut s3_multipart_writer = S3MultipartWriter::create(
             uri,
             part_size,
-            NonZeroUsize::new(Self::S3_MULTIPART_MAX_CONCURRENT_UPLOADS_PER_OBJECT)
+            NonZeroUsize::new(self.io_config.s3.multipart_max_concurrency as usize)
                 .expect("S3 multipart concurrent uploads per object must be non-zero"),
             s3_client,
         )

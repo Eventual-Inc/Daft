@@ -144,7 +144,7 @@ impl<T> FunctionArgs<T> {
             .collect()
     }
 
-    pub fn iter(&self) -> std::slice::Iter<FunctionArg<T>> {
+    pub fn iter(&self) -> std::slice::Iter<'_, FunctionArg<T>> {
         self.0.iter()
     }
 
