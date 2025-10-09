@@ -8,6 +8,7 @@ import {
   getSortedRowModel,
   useReactTable,
   createColumnHelper,
+  VisibilityState
 } from "@tanstack/react-table";
 import { ChevronDown, Columns3 } from "lucide-react";
 
@@ -32,6 +33,7 @@ import { QuerySummary, useQueries } from "@/hooks/use-queries";
 import { toHumanReadableDate } from "@/lib/utils";
 import Status from "./status";
 import Link from "next/link";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
 
 const STATUS: string = "state";
 
@@ -54,32 +56,40 @@ const statusSortingFn = (rowA: any, rowB: any, columnId: string) => {
   return priorityA - priorityB;
 };
 
+// Column ID to Name
+const columnIdToName = {
+  id: "ID",
+  name: "Name",
+  status: "Status",
+  start_sec: "Start Time",
+};
+
 // Handling of query data to column parsing
 const columnHelper = createColumnHelper<QuerySummary>();
 const columns = [
   columnHelper.accessor("id", {
-    header: "ID",
+    header: columnIdToName.id,
     cell: info => info.getValue(),
     sortingFn: "alphanumeric",
   }),
   columnHelper.accessor("name", {
-    header: "Name",
+    header: columnIdToName.name,
     cell: info => info.getValue(),
     sortingFn: "alphanumeric",
   }),
   columnHelper.accessor("status", {
-    header: "Status",
+    header: columnIdToName.status,
     cell: info => <Status state={info.getValue()} />,
     sortingFn: statusSortingFn,
   }),
   columnHelper.accessor("start_sec", {
-    header: "Start Time",
+    header: columnIdToName.start_sec,
     cell: info => toHumanReadableDate(info.getValue()),
     sortingFn: "basic",
   }),
 ];
 
-const initialColumnVisibility: Record<string, boolean> = {
+const initialColumnVisibility: VisibilityState = {
   id: false,
   name: true,
   status: true,
@@ -94,16 +104,14 @@ export default function QueryList() {
 
   const { queries, isLoading } = useQueries();
   const router = useRouter();
-  const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
-  const [columnVisibility, setColumnVisibility] = React.useState<
-    Record<string, boolean>
-  >(initialColumnVisibility);
+  const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>(initialColumnVisibility);
 
   const table = useReactTable({
     data: queries,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    onColumnVisibilityChange: setColumnVisibility,
     state: {
       columnVisibility,
     },
@@ -143,53 +151,26 @@ export default function QueryList() {
           </BreadcrumbList>
         </Breadcrumb>
 
-        <div className="relative columns-dropdown">
-          <Button
-            variant="outline"
-            size="sm"
-            className="font-mono bg-zinc-800 hover:bg-zinc-700"
-            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-          >
-            <Columns3 className="h-4 w-4" />
-            Columns
-            <ChevronDown className="h-4 w-4" />
-          </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" className="ml-auto bg-zinc-800 hover:bg-zinc-700">
+              <Columns3 className="h-4 w-4" />
+              Columns
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="bg-zinc-800">
+            {table.getAllColumns().map((column) => (
+              <DropdownMenuCheckboxItem key={column.id} className="capitalize hover:bg-zinc-700" checked={column.getIsVisible()} onCheckedChange={(value) => column.toggleVisibility(!!value)}>
+                {columnIdToName[column.id as keyof typeof columnIdToName]}
+              </DropdownMenuCheckboxItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
 
-          {isDropdownOpen && (
-            <div className="absolute right-0 top-full mt-2 w-48 bg-zinc-800 border border-zinc-700 shadow-lg z-50">
-              <div className="p-2">
-                <div className="space-y-2">
-                  {columns.map(column => (
-                    <div
-                      key={column.id}
-                      className="flex items-center space-x-2"
-                    >
-                      <input
-                        type="checkbox"
-                        id={column.id}
-                        checked={columnVisibility[column.accessorKey || ""]}
-                        onChange={() =>
-                          setColumnVisibility(prev => ({
-                            ...prev,
-                            [column.accessorKey || ""]:
-                              !prev[column.accessorKey || ""],
-                          }))
-                        }
-                        className="h-4 w-4 rounded border-gray-300"
-                      />
-                      <label
-                        htmlFor={column.id}
-                        className="text-sm font-medium font-mono cursor-pointer"
-                      >
-                        {column.header}
-                      </label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+      <div className="flex items-center justify-between">
+
       </div>
 
       <div className="border">
