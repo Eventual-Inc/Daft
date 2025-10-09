@@ -14,7 +14,7 @@
         * [JSON and Nested Data](modalities/json.md)
     * Running Custom Python Code
         * [User-Defined Functions (UDFs)](custom-code/udfs.md)
-        * [Next-Generation UDFs with `@daft.func`](custom-code/func.md)
+        * [Next-Generation UDFs](custom-code/func.md)
     * Models and Providers
         * [Models and Providers](models/index.md)
     * Datasets
