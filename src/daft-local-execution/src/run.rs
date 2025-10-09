@@ -26,9 +26,7 @@ use {
     daft_context::python::PyDaftContext,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    pyo3::{
-        Bound, IntoPyObject, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python, pyclass, pymethods,
-    },
+    pyo3::{Bound, IntoPyObject, PyAny, PyObject, PyRef, PyResult, Python, pyclass, pymethods},
 };
 
 use crate::{

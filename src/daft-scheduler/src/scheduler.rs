@@ -32,7 +32,7 @@ use {
     daft_logical_plan::{OutputFileInfo, PyLogicalPlanBuilder},
     daft_scan::python::pylib::PyScanTask,
     pyo3::{
-        Bound, Py, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python, pyclass, pymethods,
+        Bound, Py, PyAny, PyObject, PyRef, PyResult, Python, pyclass, pymethods,
         types::{PyAnyMethods, PyDict, PyList},
     },
 };
