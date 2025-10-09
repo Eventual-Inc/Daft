@@ -30,6 +30,24 @@ def test_cls():
     assert result.to_pydict() == {"a": [["foo", "foo"], ["bar", "bar"], ["baz", "baz"]]}
 
 
+def test_cls_scalar_eval():
+    @daft.cls
+    class RepeatN:
+        def __init__(self, n: int):
+            self.n = n
+
+        def __call__(self, x) -> str:
+            return x * self.n
+
+        @daft.method(return_dtype=DataType.list(DataType.string()))
+        def repeat_list(self, x):
+            return [x] * self.n
+
+    repeat_2 = RepeatN(2)
+    assert repeat_2("foo") == "foofoo"
+    assert repeat_2.repeat_list("foo") == ["foo", "foo"]
+
+
 def test_cls_method_without_decorator():
     df = daft.from_pydict({"a": [1, 2, 3]})
 
