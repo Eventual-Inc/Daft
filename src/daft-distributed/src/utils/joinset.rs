@@ -87,14 +87,12 @@ pub(crate) fn create_join_set<T: Send + 'static>() -> JoinSet<T> {
     JoinSet::new()
 }
 
-#[allow(dead_code)]
 pub(crate) struct OrderedJoinSet<T> {
     join_set: JoinSet<T>,
     order: VecDeque<tokio::task::Id>,
     finished: HashMap<tokio::task::Id, DaftResult<T>>,
 }
 
-#[allow(dead_code)]
 impl<T: Send + 'static> OrderedJoinSet<T> {
     pub fn new() -> Self {
         Self {
