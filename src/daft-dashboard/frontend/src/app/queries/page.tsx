@@ -8,7 +8,9 @@ import {
   getSortedRowModel,
   useReactTable,
   createColumnHelper,
-  VisibilityState
+  VisibilityState,
+  getFilteredRowModel,
+  ColumnFiltersState
 } from "@tanstack/react-table";
 import { ChevronDown, Columns3 } from "lucide-react";
 
@@ -34,6 +36,7 @@ import { toHumanReadableDate } from "@/lib/utils";
 import Status from "./status";
 import Link from "next/link";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 
 const STATUS: string = "state";
 
@@ -105,15 +108,19 @@ export default function QueryList() {
   const { queries, isLoading } = useQueries();
   const router = useRouter();
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>(initialColumnVisibility);
+  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
 
   const table = useReactTable({
     data: queries,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
+    onColumnFiltersChange: setColumnFilters,
     state: {
       columnVisibility,
+      columnFilters,
     },
     initialState: {
       sorting: [
@@ -169,8 +176,18 @@ export default function QueryList() {
         </DropdownMenu>
       </div>
 
-      <div className="flex items-center justify-between">
-
+      <div className="flex items-center justify-between on:bg-zinc-900">
+        <Input
+            type="text"
+            autoComplete="off"
+            data-1p-ignore data-lpignore="true" data-protonpass-ignore="true"
+            placeholder="Filter by Name..."
+            value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
+            onChange={(event) =>
+              table.getColumn("name")?.setFilterValue(event.target.value)
+            }
+            className="max-w-sm"
+          />
       </div>
 
       <div className="border">
