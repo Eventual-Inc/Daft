@@ -5,6 +5,7 @@ use std::{
 };
 
 use common_error::DaftResult;
+use common_resource_request::ResourceRequest;
 use pyo3::prelude::*;
 
 use super::{task::RayTaskResultHandle, worker::RaySwordfishWorker};
@@ -15,12 +16,11 @@ use crate::scheduling::{
 };
 
 const REFRESH_INTERVAL_SECS: u64 = 5;
-const AUTOSCALE_INTERVAL_SECS: u64 = 5;
 
 struct RayWorkerManagerState {
     ray_workers: HashMap<WorkerId, RaySwordfishWorker>,
     last_refresh: Option<Instant>,
-    last_autoscale: Option<Instant>,
+    max_resources_requested: ResourceRequest,
 }
 
 impl RayWorkerManagerState {
@@ -76,7 +76,7 @@ impl RayWorkerManager {
             state: Arc::new(Mutex::new(RayWorkerManagerState {
                 ray_workers: HashMap::new(),
                 last_refresh: None,
-                last_autoscale: None,
+                max_resources_requested: ResourceRequest::default(),
             })),
             task_locals,
         })
@@ -161,39 +161,67 @@ impl WorkerManager for RayWorkerManager {
     }
 
     fn try_autoscale(&self, bundles: Vec<TaskResourceRequest>) -> DaftResult<()> {
+        let (requested_num_cpus, requested_num_gpus, requested_memory_bytes) =
+            bundles.iter().fold((0.0, 0.0, 0), |acc, bundle| {
+                (
+                    acc.0 + bundle.resource_request.num_cpus().unwrap_or(0.0),
+                    acc.1 + bundle.resource_request.num_gpus().unwrap_or(0.0),
+                    acc.2 + bundle.resource_request.memory_bytes().unwrap_or(0),
+                )
+            });
+
         let mut state = self
             .state
             .lock()
             .expect("Failed to lock RayWorkerManagerState");
 
-        // Check if we should throttle autoscaling
-        let should_autoscale = match state.last_autoscale {
-            None => true,
-            Some(last_time) => last_time.elapsed() > Duration::from_secs(AUTOSCALE_INTERVAL_SECS),
-        };
+        let (cluster_num_cpus, cluster_num_gpus, cluster_memory_bytes) = state
+            .ray_workers
+            .values()
+            .fold((0.0, 0.0, 0), |acc, worker| {
+                (
+                    acc.0 + worker.total_num_cpus(),
+                    acc.1 + worker.total_num_gpus(),
+                    acc.2 + worker.total_memory_bytes(),
+                )
+            });
 
-        if !should_autoscale {
-            tracing::debug!("Skipping autoscale request due to throttling");
-            return Ok(());
+        let resource_request_greater_than_current_capacity = requested_num_cpus > cluster_num_cpus
+            || requested_num_gpus > cluster_num_gpus
+            || requested_memory_bytes > cluster_memory_bytes;
+
+        let resource_request_greater_than_max_requested = requested_num_cpus
+            > state.max_resources_requested.num_cpus().unwrap_or(0.0)
+            || requested_num_gpus > state.max_resources_requested.num_gpus().unwrap_or(0.0)
+            || requested_memory_bytes > state.max_resources_requested.memory_bytes().unwrap_or(0);
+
+        // Only autoscale if we need more capacity AND this is greater than we've seen before
+        if resource_request_greater_than_current_capacity
+            && resource_request_greater_than_max_requested
+        {
+            state.max_resources_requested = ResourceRequest::try_new_internal(
+                Some(requested_num_cpus),
+                Some(requested_num_gpus),
+                Some(requested_memory_bytes),
+            )?;
+            let python_bundles = bundles
+                .iter()
+                .map(|bundle| {
+                    let mut dict = HashMap::new();
+                    dict.insert("CPU", bundle.num_cpus().ceil() as i64);
+                    dict.insert("GPU", bundle.num_gpus().ceil() as i64);
+                    dict.insert("memory", bundle.memory_bytes() as i64);
+                    dict
+                })
+                .collect::<Vec<_>>();
+
+            Python::with_gil(|py| -> DaftResult<()> {
+                let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+                flotilla_module
+                    .call_method1(pyo3::intern!(py, "try_autoscale"), (python_bundles,))?;
+                Ok(())
+            })?;
         }
-
-        let bundles = bundles
-            .into_iter()
-            .map(|bundle| {
-                let mut dict = HashMap::new();
-                dict.insert("CPU", bundle.num_cpus().ceil() as i64);
-                dict.insert("GPU", bundle.num_gpus().ceil() as i64);
-                dict.insert("memory", bundle.memory_bytes() as i64);
-                dict
-            })
-            .collect::<Vec<_>>();
-        Python::with_gil(|py| -> DaftResult<()> {
-            let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
-            flotilla_module.call_method1(pyo3::intern!(py, "try_autoscale"), (bundles,))?;
-            Ok(())
-        })?;
-
-        state.last_autoscale = Some(Instant::now());
         Ok(())
     }
 }
