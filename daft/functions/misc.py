@@ -334,7 +334,7 @@ def length(expr: Expression) -> Expression:
     """Retrieves the length of the given expression.
 
     Args:
-        expr (List | Binary | String Expression): expression to compute the length of.
+        expr (List or Binary or String Expression): expression to compute the length of.
 
     The behavior depends on the input type:
     - For strings, returns the number of characters.
@@ -409,8 +409,8 @@ def concat(left: Expression | str | bytes, right: Expression | str | bytes) -> E
     r"""Concatenates two string or binary values.
 
     Args:
-        left ((String | Binary Expression) | str | bytes): the left value to concatenate
-        right ((String | Binary Expression) | str | bytes): the right value to concatenate
+        left ((String or Binary Expression) | str | bytes): the left value to concatenate
+        right ((String or Binary Expression) | str | bytes): the right value to concatenate
 
     Returns:
         Expression: an expression with the same type as the inputs
@@ -501,7 +501,7 @@ def get(expr: Expression, key: int | str | Expression, default: Any = None) -> E
     """Get an index from a list expression or a field from a struct expression.
 
     Args:
-        expr (List | Struct Expression): to get value from
+        expr (List or Struct Expression): to get value from
         key: integer index for list or string field for struct. List index can be negative to index from the end of the list.
         default: default value if out of bounds. Only supported for list get
 
