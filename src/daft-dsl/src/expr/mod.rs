@@ -1480,27 +1480,10 @@ impl Expr {
                     inputs: FunctionArgs::new_unchecked(new_children),
                 }))
             }
-            Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
-                function_name: name,
-                inner: func,
-                return_dtype,
-                original_args,
-                args: old_children,
-                use_process,
-            }))) => {
-                assert!(
-                    children.len() == old_children.len(),
-                    "Should have same number of children"
-                );
-
-                Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
-                    function_name: name.clone(),
-                    inner: func.clone(),
-                    return_dtype: return_dtype.clone(),
-                    original_args: original_args.clone(),
-                    args: children,
-                    use_process: *use_process,
-                })))
+            Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(row_wise_py_fn))) => {
+                Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(
+                    row_wise_py_fn.with_new_children(children),
+                )))
             }
         }
     }

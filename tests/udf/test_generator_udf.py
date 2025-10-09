@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import collections.abc
+import re
 import typing
 
 import pytest
@@ -121,7 +122,8 @@ def test_generator_udf_unnest_empty_generator():
 
 def test_generator_udf_unnest_error_non_struct():
     with pytest.raises(
-        ValueError, match="Expected Daft function `return_dtype` to be `DataType.struct` when `unnest=True`"
+        ValueError,
+        match=re.escape("Expected Daft function `return_dtype` to be `DataType.struct(..)` when `unnest=True`"),
     ):
 
         @daft.func(return_dtype=daft.DataType.string(), unnest=True)

@@ -7,7 +7,8 @@ from openai import OpenAI, OpenAIError, RateLimitError
 
 from daft import DataType
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
-from daft.ai.typing import EmbeddingDimensions, Options
+from daft.ai.typing import EmbeddingDimensions, Options, UDFOptions
+from daft.ai.utils import get_http_udf_options
 from daft.dependencies import np
 
 if TYPE_CHECKING:
@@ -78,6 +79,9 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
     def get_dimensions(self) -> EmbeddingDimensions:
         return _models[self.model_name].dimensions
 
+    def get_udf_options(self) -> UDFOptions:
+        return get_http_udf_options()
+
     def instantiate(self) -> TextEmbedder:
         return OpenAITextEmbedder(
             client=OpenAI(**self.provider_options),
@@ -119,6 +123,9 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
             return EmbeddingDimensions(size=size, dtype=DataType.float32())
         except Exception as ex:
             raise ValueError("Failed to determine embedding dimensions from LM Studio.") from ex
+
+    def get_udf_options(self) -> UDFOptions:
+        return get_http_udf_options()
 
     def instantiate(self) -> TextEmbedder:
         return OpenAITextEmbedder(

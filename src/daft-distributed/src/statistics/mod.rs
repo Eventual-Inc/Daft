@@ -52,7 +52,7 @@ pub(crate) enum StatisticsEvent {
         context: TaskContext,
         name: TaskName,
     },
-    #[allow(dead_code)]
+
     TaskScheduled {
         context: TaskContext,
     },
