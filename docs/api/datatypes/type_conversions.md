@@ -108,7 +108,7 @@ The following table show the mapping from `jaxtyping` types to Daft DataType. Th
 
 ##### Shape Inference
 
-The second generic parameter of a `jaxtyping` type is a string of space-separate symbols representing the shape of the array. Daft will attempt to infer the tensor shape from the string.
+The second generic parameter of a `jaxtyping` type is a string of space-separated symbols representing the shape of the array. Daft will attempt to infer the tensor shape from the string.
 
 - If all dimensions are fixed-size, Daft will infer a FixedShapeTensor with those dimensions.
     - E.g. `"1 2 3"`, `"rows=4 cols=3"`, or `""` (scalar shape)
