@@ -85,10 +85,11 @@ def embed_text(
     text_embedder = _resolve_provider(provider, "sentence_transformers").get_text_embedder(model, **options)
 
     # implemented as a class-based udf for now
+    udf_options = text_embedder.get_udf_options()
     expr_callable = udf(
         return_dtype=text_embedder.get_dimensions().as_dtype(),
-        concurrency=1,
-        use_process=False,
+        concurrency=udf_options.concurrency,
+        num_gpus=udf_options.num_gpus,
     )
 
     expr = expr_callable(_TextEmbedderExpression)
@@ -123,10 +124,11 @@ def embed_image(
     image_embedder = _resolve_provider(provider, "transformers").get_image_embedder(model, **options)
 
     # implemented as a class-based udf for now
+    udf_options = image_embedder.get_udf_options()
     expr_udf = udf(
         return_dtype=image_embedder.get_dimensions().as_dtype(),
-        concurrency=1,
-        use_process=False,
+        concurrency=udf_options.concurrency,
+        num_gpus=udf_options.num_gpus,
     )
 
     expr = expr_udf(_ImageEmbedderExpression)
@@ -171,10 +173,11 @@ def classify_text(
     label_list = [labels] if isinstance(labels, str) else labels
 
     # implemented as a class-based udf for now
+    udf_options = text_classifier.get_udf_options()
     expr_callable = udf(
         return_dtype=DataType.string(),
-        concurrency=1,
-        use_process=False,
+        concurrency=udf_options.concurrency,
+        num_gpus=udf_options.num_gpus,
     )
 
     expr = expr_callable(_TextClassificationExpression)

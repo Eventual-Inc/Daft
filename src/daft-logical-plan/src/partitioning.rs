@@ -4,7 +4,7 @@ use daft_dsl::{
     Column, ExprRef, ResolvedColumn,
     expr::bound_expr::BoundExpr,
     functions::{FunctionArgs, scalar::ScalarFn},
-    python_udf::{PyScalarFn, RowWisePyFn},
+    python_udf::PyScalarFn,
 };
 use daft_recordbatch::RecordBatch;
 use indexmap::IndexMap;
@@ -393,27 +393,14 @@ fn translate_clustering_spec_expr(
 
             Ok(expr.in_subquery(subquery.clone()))
         }
-        Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
-            function_name: name,
-            inner: func,
-            return_dtype,
-            original_args,
-            args: children,
-            use_process,
-        }))) => {
-            let new_children = children
+        Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(row_wise_py_fn))) => {
+            let new_children = row_wise_py_fn
+                .args
                 .iter()
                 .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Arc::new(Expr::ScalarFn(ScalarFn::Python(
-                PyScalarFn::RowWise(RowWisePyFn {
-                    function_name: name.clone(),
-                    inner: func.clone(),
-                    return_dtype: return_dtype.clone(),
-                    original_args: original_args.clone(),
-                    args: new_children,
-                    use_process: *use_process,
-                }),
+                PyScalarFn::RowWise(row_wise_py_fn.with_new_children(new_children)),
             ))))
         }
         // Cannot have agg exprs or references to other tables in clustering specs.

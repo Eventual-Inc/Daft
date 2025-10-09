@@ -103,7 +103,7 @@ mod tests {
     use super::*;
     use crate::{
         scheduling::{
-            scheduler::{SubmittableTask, spawn_default_scheduler_actor},
+            scheduler::{SubmittableTask, spawn_scheduler_actor},
             tests::{
                 MockTask, MockTaskBuilder, MockTaskFailure, MockWorkerManager,
                 create_mock_partition_ref, setup_workers,
@@ -123,7 +123,7 @@ mod tests {
             let workers = setup_workers(worker_configs);
             let worker_manager = Arc::new(MockWorkerManager::new(workers));
             let mut joinset = JoinSet::new();
-            let scheduler_handle = spawn_default_scheduler_actor(
+            let scheduler_handle = spawn_scheduler_actor(
                 worker_manager,
                 &mut joinset,
                 StatisticsManagerRef::default(),
