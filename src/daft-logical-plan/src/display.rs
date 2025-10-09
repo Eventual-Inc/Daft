@@ -3,12 +3,18 @@ use std::fmt::{self, Display};
 
 use common_display::{DisplayLevel, tree::TreeDisplay};
 
+use crate::display::json::to_json_value;
+
 impl TreeDisplay for crate::LogicalPlan {
     fn display_as(&self, level: DisplayLevel) -> String {
         match level {
             DisplayLevel::Compact => self.name().to_string(),
             DisplayLevel::Default | DisplayLevel::Verbose => self.multiline_display().join("\n"),
         }
+    }
+
+    fn repr_json(&self) -> serde_json::Value {
+        to_json_value(self)
     }
 
     fn get_name(&self) -> String {
