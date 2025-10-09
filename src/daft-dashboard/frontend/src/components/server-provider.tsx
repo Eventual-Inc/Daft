@@ -2,7 +2,11 @@
 
 import { SWRConfig } from "swr";
 import React, { useEffect, useState } from "react";
-import { QuerySummaryMap, QueriesContext, QuerySummary } from "@/hooks/use-queries";
+import {
+  QuerySummaryMap,
+  QueriesContext,
+  QuerySummary,
+} from "@/hooks/use-queries";
 
 // ---------------------- Utils ---------------------- //
 

@@ -84,7 +84,7 @@ const initialColumnVisibility: Record<string, boolean> = {
   name: true,
   status: true,
   start_sec: true,
-};  
+};
 
 /**
  *  Main Component to display the queries in a table
@@ -95,8 +95,9 @@ export default function QueryList() {
   const { queries, isLoading } = useQueries();
   const router = useRouter();
   const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
-  const [columnVisibility, setColumnVisibility] = React.useState<Record<string, boolean>>(initialColumnVisibility);
-  
+  const [columnVisibility, setColumnVisibility] = React.useState<
+    Record<string, boolean>
+  >(initialColumnVisibility);
 
   const table = useReactTable({
     data: queries,
@@ -143,9 +144,9 @@ export default function QueryList() {
         </Breadcrumb>
 
         <div className="relative columns-dropdown">
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="outline"
+            size="sm"
             className="font-mono bg-zinc-800 hover:bg-zinc-700"
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
           >
@@ -153,18 +154,27 @@ export default function QueryList() {
             Columns
             <ChevronDown className="h-4 w-4" />
           </Button>
-          
+
           {isDropdownOpen && (
             <div className="absolute right-0 top-full mt-2 w-48 bg-zinc-800 border border-zinc-700 shadow-lg z-50">
               <div className="p-2">
                 <div className="space-y-2">
-                  {columns.map((column) => (
-                    <div key={column.id} className="flex items-center space-x-2">
+                  {columns.map(column => (
+                    <div
+                      key={column.id}
+                      className="flex items-center space-x-2"
+                    >
                       <input
                         type="checkbox"
                         id={column.id}
                         checked={columnVisibility[column.accessorKey || ""]}
-                        onChange={() => setColumnVisibility(prev => ({ ...prev, [column.accessorKey || ""]: !prev[column.accessorKey || ""] }))}
+                        onChange={() =>
+                          setColumnVisibility(prev => ({
+                            ...prev,
+                            [column.accessorKey || ""]:
+                              !prev[column.accessorKey || ""],
+                          }))
+                        }
                         className="h-4 w-4 rounded border-gray-300"
                       />
                       <label
