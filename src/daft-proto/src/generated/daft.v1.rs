@@ -969,6 +969,8 @@ pub struct IoConfig {
     pub unity: ::core::option::Option<UnityConfig>,
     #[prost(message, optional, tag = "6")]
     pub hf: ::core::option::Option<HuggingFaceConfig>,
+    #[prost(message, optional, tag = "7")]
+    pub tos: ::core::option::Option<TosConfig>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct S3Config {
@@ -1099,6 +1101,33 @@ pub struct HuggingFaceConfig {
     pub target_filesize: u64,
     #[prost(uint64, tag = "6")]
     pub max_operations_per_commit: u64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TosConfig {
+    #[prost(string, optional, tag = "1")]
+    pub region: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "2")]
+    pub endpoint: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "3")]
+    pub access_key: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "4")]
+    pub secret_key: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "5")]
+    pub security_token: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(bool, tag = "6")]
+    pub anonymous: bool,
+    #[prost(uint32, tag = "7")]
+    pub max_retries: u32,
+    #[prost(uint64, tag = "8")]
+    pub retry_timeout_ms: u64,
+    #[prost(uint64, tag = "9")]
+    pub connect_timeout_ms: u64,
+    #[prost(uint64, tag = "10")]
+    pub read_timeout_ms: u64,
+    #[prost(uint32, tag = "11")]
+    pub max_concurrent_requests: u32,
+    #[prost(uint32, tag = "12")]
+    pub max_connections_per_io_thread: u32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PartitionFields {

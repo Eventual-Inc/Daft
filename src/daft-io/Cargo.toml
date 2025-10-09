@@ -38,6 +38,7 @@ tokio-stream = {workspace = true}
 tracing = {workspace = true}
 url = {workspace = true}
 uuid = {workspace = true}
+ve-tos-rust-sdk = "2.3.0"
 
 [dependencies.reqwest]
 default-features = false
