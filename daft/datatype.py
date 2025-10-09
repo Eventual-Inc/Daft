@@ -210,18 +210,19 @@ class DataType:
             )
             return cls.python()
         elif check_type("numpy.ndarray"):
+            inner_dtype = None
             if len(args) == 2:
                 # https://numpy.org/doc/2.3/reference/typing.html#numpy.typing.NDArray
                 numpy_dtype_args = typing.get_args(args[1])
                 if len(numpy_dtype_args) == 1:
                     inner_dtype = cls.infer_from_type(numpy_dtype_args[0])
-                else:
-                    warnings.warn(
-                        f"Cannot derive inner type from {t}, defaulting to DataType.python() for ndarray inner type"
-                    )
-                    inner_dtype = cls.python()
-            else:
+
+            if inner_dtype is None:
+                warnings.warn(
+                    f"Cannot derive inner type from {t}, defaulting to DataType.python() for ndarray inner type"
+                )
                 inner_dtype = cls.python()
+
             return cls.tensor(inner_dtype)
         elif (
             check_type("torch.Tensor")
@@ -598,7 +599,7 @@ class DataType:
         """
         if shape is not None:
             if not isinstance(shape, tuple) or any(not isinstance(n, int) for n in shape):
-                raise ValueError("Tensor shape must be a non-empty tuple of ints, but got: ", shape)
+                raise ValueError("Tensor shape must be a tuple of ints, but got: ", shape)
         return cls._from_pydatatype(PyDataType.tensor(dtype._dtype, shape))
 
     @classmethod
