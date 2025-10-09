@@ -189,7 +189,6 @@ impl MapArray {
 
 impl FileArray {
     #[inline]
-    #[cfg(feature = "python")]
     pub fn get(&self, idx: usize) -> Option<FileReference> {
         let discriminant_array = self.discriminant_array();
         let discriminant = discriminant_array.get(idx)?;
@@ -201,22 +200,21 @@ impl FileArray {
                 let url_array = self.physical.get("url").expect("url exists");
                 let io_config_array = self.physical.get("io_config").expect("io_config exists");
                 let url_array = url_array.utf8().expect("url is utf8");
-                let io_config_array = io_config_array.python().expect("io_config is python");
+                let io_config_array = io_config_array.binary().expect("io_config is binary");
 
                 let data = url_array.get(idx)?;
                 let io_config = io_config_array.get(idx);
-                let io_config: Option<common_io_config::python::IOConfig> =
-                    pyo3::Python::with_gil(|py| {
-                        io_config
-                            .map(|io_config| io_config.extract(py))
-                            .transpose()
-                            .ok()
-                            .flatten()
-                    });
+                let io_config: Option<common_io_config::IOConfig> = {
+                    io_config
+                        .map(bincode::deserialize)
+                        .transpose()
+                        .ok()
+                        .flatten()
+                };
 
                 Some(FileReference::new_from_reference(
                     data.to_string(),
-                    io_config.map(|conf| conf.config),
+                    io_config,
                 ))
             }
             DaftFileType::Data => {
@@ -227,12 +225,6 @@ impl FileArray {
                 Some(FileReference::new_from_data(data))
             }
         }
-    }
-
-    #[inline]
-    #[cfg(not(feature = "python"))]
-    pub fn get(&self, idx: usize) -> Option<FileReference> {
-        unreachable!("FileArray.get() requires Python feature")
     }
 }
 

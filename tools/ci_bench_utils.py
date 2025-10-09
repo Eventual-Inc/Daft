@@ -2,6 +2,7 @@ import os
 from datetime import datetime, timezone
 
 import gspread
+from ray.job_submission import JobDetails, JobSubmissionClient
 
 import daft
 
@@ -23,3 +24,10 @@ def get_run_metadata():
         "github ref": os.getenv("GITHUB_REF_NAME"),
         "github sha": os.getenv("GITHUB_SHA"),
     }
+
+
+async def tail_logs(client: JobSubmissionClient, submission_id: str) -> JobDetails:
+    async for lines in client.tail_job_logs(submission_id):
+        print(lines, end="")
+
+    return client.get_job_info(submission_id)
