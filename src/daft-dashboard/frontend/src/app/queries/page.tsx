@@ -55,7 +55,7 @@ const statusSortingFn = (rowA: any, rowB: any, columnId: string) => {
 // Handling of query data to column parsing
 const columnHelper = createColumnHelper<QuerySummary>();
 const columns = [
-  columnHelper.accessor("id", {
+  columnHelper.accessor("name", {
     header: "Name",
     cell: info => info.getValue(),
     sortingFn: "alphanumeric",
@@ -145,7 +145,7 @@ export default function QueryList() {
               table.getRowModel().rows.map(row => (
                 <TableRow
                   key={row.id}
-                  className="hover:bg-zinc-800 transition-colors duration-50 cursor-pointer"
+                  className="hover:bg-zinc-800 transition-colors duration-50 cursor-pointer font-mono"
                   onClick={() => handleRowClick(row.original.id)}
                 >
                   {row.getAllCells().map(cell => (

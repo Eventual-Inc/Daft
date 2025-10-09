@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, LazyLock, atomic::AtomicUsize},
 };
 
-use common_metrics::{NodeID, QueryID, QueryPlan, Stat, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryName, QueryPlan, Stat, ops::NodeInfo};
 use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;
 use serde::Serialize;
@@ -52,6 +52,7 @@ pub(crate) enum QueryStatus {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct QuerySummary {
     pub id: QueryID,
+    pub name: QueryName,
     pub start_sec: u64,
     pub status: QueryStatus,
 }
@@ -89,6 +90,7 @@ pub(crate) enum QueryState {
 pub(crate) struct QueryInfo {
     pub id: QueryID,
     pub start_sec: u64,
+    pub name: QueryName,
     pub unoptimized_plan: QueryPlan,
     pub state: QueryState,
 }
@@ -118,6 +120,7 @@ impl QueryInfo {
     pub fn summarize(&self) -> QuerySummary {
         QuerySummary {
             id: self.id.clone(),
+            name: self.name.clone(),
             start_sec: self.start_sec,
             status: self.status(),
         }

@@ -17,7 +17,9 @@ impl PyQueryMetadata {
     #[pyo3(signature = (name, output_schema, unoptimized_plan))]
     fn __new__(name: Option<&str>, output_schema: PySchema, unoptimized_plan: &str) -> Self {
         Self(Arc::new(QueryMetadata {
-            name: name.map(|name| name.into()).unwrap_or_else(|| petname::petname(2, "-").unwrap_or_default().into()),
+            name: name
+                .map(|name| name.into())
+                .unwrap_or_else(|| petname::petname(2, "-").unwrap_or_default().into()),
             output_schema: output_schema.into(),
             unoptimized_plan: unoptimized_plan.into(),
         }))

@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::QueryName;
-use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryName, QueryPlan, StatSnapshotView, ops::NodeInfo};
 use daft_micropartition::MicroPartitionRef;
 use dashmap::DashMap;
 
@@ -32,7 +31,8 @@ impl Subscriber for DebugSubscriber {
             metadata.name,
             metadata.unoptimized_plan.as_ref()
         );
-        self.query_names.insert(query_id.clone(), metadata.name.clone());
+        self.query_names
+            .insert(query_id.clone(), metadata.name.clone());
         self.rows_out.insert(query_id, 0);
         Ok(())
     }
@@ -40,7 +40,10 @@ impl Subscriber for DebugSubscriber {
     fn on_query_end(&self, query_id: QueryID) -> DaftResult<()> {
         eprintln!(
             "Ended query `{}` with result of {} rows",
-            self.query_names.get(&query_id).expect("Query not found").value(),
+            self.query_names
+                .get(&query_id)
+                .expect("Query not found")
+                .value(),
             self.rows_out
                 .get(&query_id)
                 .expect("Query not found")
@@ -59,21 +62,36 @@ impl Subscriber for DebugSubscriber {
     }
 
     fn on_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
-        eprintln!("Started planning query `{}`", self.query_names.get(&query_id).expect("Query not found").value());
+        eprintln!(
+            "Started planning query `{}`",
+            self.query_names
+                .get(&query_id)
+                .expect("Query not found")
+                .value()
+        );
         Ok(())
     }
 
     fn on_optimization_end(&self, query_id: QueryID, optimized_plan: QueryPlan) -> DaftResult<()> {
         eprintln!(
             "Finished planning query `{}` with optimized plan:\n{}",
-            self.query_names.get(&query_id).expect("Query not found").value(),
+            self.query_names
+                .get(&query_id)
+                .expect("Query not found")
+                .value(),
             optimized_plan
         );
         Ok(())
     }
 
     fn on_exec_start(&self, query_id: QueryID, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()> {
-        eprintln!("Started executing query `{}`", self.query_names.get(&query_id).expect("Query not found").value());
+        eprintln!(
+            "Started executing query `{}`",
+            self.query_names
+                .get(&query_id)
+                .expect("Query not found")
+                .value()
+        );
         for node_info in node_infos {
             eprintln!("  - Node {}: {}", node_info.id, node_info.name);
         }
@@ -83,7 +101,11 @@ impl Subscriber for DebugSubscriber {
     async fn on_exec_operator_start(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
         eprintln!(
             "Started executing operator `{}` in query `{}`",
-            node_id, self.query_names.get(&query_id).expect("Query not found").value()
+            node_id,
+            self.query_names
+                .get(&query_id)
+                .expect("Query not found")
+                .value()
         );
         Ok(())
     }
@@ -93,7 +115,13 @@ impl Subscriber for DebugSubscriber {
         query_id: QueryID,
         stats: &[(NodeID, StatSnapshotView)],
     ) -> DaftResult<()> {
-        eprintln!("Emitting execution stats for query `{}`", self.query_names.get(&query_id).expect("Query not found").value());
+        eprintln!(
+            "Emitting execution stats for query `{}`",
+            self.query_names
+                .get(&query_id)
+                .expect("Query not found")
+                .value()
+        );
         for node_id in stats {
             eprintln!("  Node `{}`", node_id.0);
             for (name, stat) in node_id.1.clone() {
@@ -106,13 +134,23 @@ impl Subscriber for DebugSubscriber {
     async fn on_exec_operator_end(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
         eprintln!(
             "Finished executing operator `{}` in query `{}`",
-            node_id, self.query_names.get(&query_id).expect("Query not found").value()
+            node_id,
+            self.query_names
+                .get(&query_id)
+                .expect("Query not found")
+                .value()
         );
         Ok(())
     }
 
     async fn on_exec_end(&self, query_id: QueryID) -> DaftResult<()> {
-        eprintln!("Finished executing query `{}`", self.query_names.get(&query_id).expect("Query not found").value());
+        eprintln!(
+            "Finished executing query `{}`",
+            self.query_names
+                .get(&query_id)
+                .expect("Query not found")
+                .value()
+        );
         Ok(())
     }
 }

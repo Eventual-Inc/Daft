@@ -40,6 +40,7 @@ export type QueryStatusName = "Pending" | "Optimizing" | "Setup" | "Executing" |
 
 export type QuerySummary = {
   id: string;
+  name: string;
   start_sec: number;
   status: QueryStatus;
 };

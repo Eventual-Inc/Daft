@@ -2,7 +2,7 @@ use std::{sync::Arc, time::SystemTime};
 
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
-use common_metrics::{NodeID, QueryID, QueryName, QueryPlan, StatSnapshotView, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo};
 use common_runtime::{RuntimeRef, get_io_runtime};
 use daft_io::IOStatsContext;
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
@@ -98,6 +98,7 @@ impl Subscriber for DashboardSubscriber {
                     .post(format!("{}/engine/query/{}/start", self.url, query_id))
                     .json(&daft_dashboard::engine::StartQueryArgs {
                         start_sec: secs_from_epoch(),
+                        name: metadata.name.clone(),
                         unoptimized_plan: metadata.unoptimized_plan.clone(),
                     }),
             )

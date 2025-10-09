@@ -6,7 +6,7 @@ use axum::{
     http::StatusCode,
     routing::post,
 };
-use common_metrics::{QueryID, QueryPlan, Stat, ops::NodeInfo};
+use common_metrics::{QueryID, QueryName, QueryPlan, Stat, ops::NodeInfo};
 use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +17,7 @@ use crate::state::{
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StartQueryArgs {
     pub start_sec: u64,
+    pub name: QueryName,
     pub unoptimized_plan: QueryPlan,
 }
 
@@ -32,6 +33,7 @@ async fn query_start(
     let query_info = QueryInfo {
         id: query_id.clone().into(),
         start_sec: args.start_sec,
+        name: args.name,
         unoptimized_plan: args.unoptimized_plan,
         state: QueryState::Pending,
     };

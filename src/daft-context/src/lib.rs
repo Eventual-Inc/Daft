@@ -10,7 +10,7 @@ use std::{
 
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};
 use common_error::{DaftError, DaftResult};
-use common_metrics::{QueryID, QueryName, QueryPlan};
+use common_metrics::{QueryID, QueryPlan};
 use daft_micropartition::MicroPartitionRef;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;

@@ -3960,7 +3960,7 @@ class DataFrame:
     def _materialize_results(self, _query_name: Optional[str] = None) -> None:
         """Materializes the results of for this DataFrame and hold a pointer to the results."""
         if self._result is None:
-            self._result_cache = get_or_create_runner().run(self._builder, _query_name=_query_name)
+            self._result_cache = get_or_create_runner().run(self._builder, query_name=_query_name)
             result = self._result
             assert result is not None
             result.wait()
@@ -4174,7 +4174,9 @@ class DataFrame:
         return col_name in self.column_names
 
     @DataframePublicAPI
-    def to_pandas(self, coerce_temporal_nanoseconds: bool = False, _query_name: Optional[str] = None) -> "pandas.DataFrame":
+    def to_pandas(
+        self, coerce_temporal_nanoseconds: bool = False, _query_name: Optional[str] = None
+    ) -> "pandas.DataFrame":
         """Converts the current DataFrame to a [pandas DataFrame](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html).
 
         If results have not computed yet, collect will be called.

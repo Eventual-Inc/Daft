@@ -95,7 +95,7 @@ export function AppSidebar() {
                         <div className="flex items-center gap-2 w-full h-[40px]">
                           <AnimatedFish />
                           <span className="font-mono text-sm truncate flex-1">
-                            {query.id}
+                            {query.name}
                           </span>
                         </div>
                       </Link>
