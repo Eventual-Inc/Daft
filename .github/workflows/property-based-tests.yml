@@ -18,7 +18,7 @@ jobs:
         python-version: ['3.9']
         daft_runner: [ray, native]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -63,7 +63,7 @@ jobs:
         HYPOTHESIS_MAX_EXAMPLES: 10000
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
