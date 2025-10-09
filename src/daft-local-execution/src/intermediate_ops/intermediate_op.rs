@@ -206,6 +206,14 @@ impl<Op: IntermediateOperator + 'static> TreeDisplay for IntermediateNode<Op> {
         display
     }
 
+    fn repr_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "id": self.id(),
+            "type": self.intermediate_op.op_type().to_string(),
+            "name": self.name(),
+        })
+    }
+
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
         self.children.iter().map(|v| v.as_tree_display()).collect()
     }

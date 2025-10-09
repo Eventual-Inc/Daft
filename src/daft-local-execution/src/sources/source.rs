@@ -136,6 +136,14 @@ impl TreeDisplay for SourceNode {
         }
         display
     }
+
+    fn repr_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "id": self.id(),
+            "name": self.name(),
+        })
+    }
+
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
         self.children()
             .iter()
