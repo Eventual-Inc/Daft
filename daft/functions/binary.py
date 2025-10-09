@@ -14,11 +14,11 @@ def encode(expr: Expression, charset: ENCODING_CHARSET) -> Expression:
     """Encode binary or string values using the specified character set.
 
     Args:
-        expr: The expression to encode.
-        charset: The encoding character set (utf-8, base64).
+        expr (Binary or String Expression): The expression to encode.
+        charset (str): The encoding character set (utf-8, base64).
 
     Returns:
-        Expression: A binary expression with the encoded value.
+        Expression (Binary Expression): A binary expression with the encoded value.
 
     Note:
         This inputs either a string or binary and returns a binary.
@@ -28,15 +28,15 @@ def encode(expr: Expression, charset: ENCODING_CHARSET) -> Expression:
     return Expression._call_builtin_scalar_fn("encode", expr, codec=charset)
 
 
-def decode(expr: Expression, charset: ENCODING_CHARSET) -> Expression:
+def decode(bytes: Expression, charset: ENCODING_CHARSET) -> Expression:
     """Decodes binary values using the specified character set.
 
     Args:
-        expr: The expression to decode.
-        charset: The decoding character set (utf-8, base64).
+        bytes (Binary Expression): The expression to decode.
+        charset (str): The decoding character set (utf-8, base64).
 
     Returns:
-        Expression: A string expression with the decoded values.
+        Expression (Binary Expression): A binary expression with the decoded values.
 
     Examples:
         >>> import daft
@@ -53,7 +53,7 @@ def decode(expr: Expression, charset: ENCODING_CHARSET) -> Expression:
         <BLANKLINE>
         (Showing first 1 of 1 rows)
     """
-    return Expression._call_builtin_scalar_fn("decode", expr, codec=charset)
+    return Expression._call_builtin_scalar_fn("decode", bytes, codec=charset)
 
 
 def try_encode(expr: Expression, charset: ENCODING_CHARSET) -> Expression:
@@ -65,24 +65,24 @@ def try_encode(expr: Expression, charset: ENCODING_CHARSET) -> Expression:
     return Expression._call_builtin_scalar_fn("try_encode", expr, codec=charset)
 
 
-def try_decode(expr: Expression, charset: ENCODING_CHARSET) -> Expression:
+def try_decode(bytes: Expression, charset: ENCODING_CHARSET) -> Expression:
     """Decode or null if unsuccessful.
 
     Tip: See Also
         [`daft.functions.decode`](https://docs.daft.ai/en/stable/api/functions/decode/)
     """
-    return Expression._call_builtin_scalar_fn("try_decode", expr, codec=charset)
+    return Expression._call_builtin_scalar_fn("try_decode", bytes, codec=charset)
 
 
 def compress(expr: Expression, codec: COMPRESSION_CODEC) -> Expression:
     r"""Compress binary or string values using the specified codec.
 
     Args:
-        expr: The expression to compress.
-        codec: The compression codec (deflate, gzip, or zlib)
+        expr (String | Binary Expression): The expression to compress.
+        codec (str) The compression codec (deflate, gzip, or zlib)
 
     Returns:
-        Expression: A binary expression with the compressed value.
+        Expression (Binary Expression): A binary expression with the compressed value.
 
     Examples:
         >>> import daft
@@ -115,12 +115,12 @@ def compress(expr: Expression, codec: COMPRESSION_CODEC) -> Expression:
     return Expression._call_builtin_scalar_fn("encode", expr, codec=codec)
 
 
-def decompress(expr: Expression, codec: COMPRESSION_CODEC) -> Expression:
+def decompress(bytes: Expression, codec: COMPRESSION_CODEC) -> Expression:
     """Decompress binary values using the specified codec.
 
     Args:
-        expr: The expression to decompress.
-        codec: The decompression codec (deflate, gzip, zlib)
+        bytes (Binray Expression): The binary expression to decompress.
+        codec (str): The decompression codec (deflate, gzip, zlib)
 
     Returns:
         Expression: A binary expression with the decoded values.
@@ -142,7 +142,7 @@ def decompress(expr: Expression, codec: COMPRESSION_CODEC) -> Expression:
         (Showing first 1 of 1 rows)
 
     """
-    return Expression._call_builtin_scalar_fn("decode", expr, codec=codec)
+    return Expression._call_builtin_scalar_fn("decode", bytes, codec=codec)
 
 
 def try_compress(expr: Expression, codec: COMPRESSION_CODEC) -> Expression:
