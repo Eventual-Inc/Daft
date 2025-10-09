@@ -3,11 +3,15 @@ from __future__ import annotations
 import datetime
 import decimal
 
+import jax
+import jaxtyping
 import numpy as np
 import numpy.typing as npt
 import pandas
 import PIL.Image
 import pytest
+import tensorflow
+import torch
 from typing_extensions import TypedDict
 
 from daft import DataType as dt
@@ -41,6 +45,9 @@ from daft.file import File
         (tuple[str, ...], dt.list(dt.string())),
         (tuple[str, int], dt.struct({"_0": dt.string(), "_1": dt.int64()})),
         (np.ndarray, dt.tensor(dt.python())),
+        (torch.Tensor, dt.tensor(dt.python())),
+        (tensorflow.Tensor, dt.tensor(dt.python())),
+        (jax.Array, dt.tensor(dt.python())),
         (npt.NDArray[int], dt.tensor(dt.int64())),
         (np.bool_, dt.bool()),
         (np.int8, dt.int8()),
@@ -64,6 +71,60 @@ from daft.file import File
 def test_infer_from_type(user_provided_type, expected_datatype):
     actual = dt.infer_from_type(user_provided_type)
     assert actual == expected_datatype
+
+
+@pytest.mark.parametrize(
+    "dtype_class, expected_dtype",
+    [
+        (jaxtyping.Bool, dt.bool()),
+        (jaxtyping.Int8, dt.int8()),
+        (jaxtyping.UInt8, dt.uint8()),
+        (jaxtyping.Int16, dt.int16()),
+        (jaxtyping.UInt16, dt.uint16()),
+        (jaxtyping.Int32, dt.int32()),
+        (jaxtyping.UInt32, dt.uint32()),
+        (jaxtyping.Int64, dt.int64()),
+        (jaxtyping.Int, dt.int64()),
+        (jaxtyping.Integer, dt.int64()),
+        (jaxtyping.UInt64, dt.uint64()),
+        (jaxtyping.UInt, dt.uint64()),
+        (jaxtyping.Float32, dt.float32()),
+        (jaxtyping.Float64, dt.float64()),
+        (jaxtyping.Float, dt.float64()),
+        (jaxtyping.Real, dt.float64()),
+        (jaxtyping.Shaped, dt.python()),
+        (jaxtyping.Complex, dt.python()),
+    ],
+)
+@pytest.mark.parametrize(
+    "shape_spec, expected_shape",
+    [
+        ("", ()),
+        ("10", (10,)),
+        ("10 20", (10, 20)),
+        ("3 224 224", (3, 224, 224)),
+        ("n", None),
+        ("n d", None),
+        ("n 512", None),
+        ("512 512 _", None),
+        ("... 1 2 3", None),
+    ],
+)
+@pytest.mark.parametrize(
+    "array_type",
+    [
+        jax.Array,
+        np.ndarray,
+        torch.Tensor,
+        tensorflow.Tensor,
+    ],
+)
+def test_infer_from_jaxtyping(dtype_class, expected_dtype, shape_spec, expected_shape, array_type):
+    jaxtyping_annotation = dtype_class[array_type, shape_spec]
+    actual_datatype = dt.infer_from_type(jaxtyping_annotation)
+
+    expected_datatype = dt.tensor(expected_dtype, shape=expected_shape)
+    assert actual_datatype == expected_datatype
 
 
 @pytest.mark.parametrize(
@@ -94,6 +155,9 @@ def test_infer_from_type(user_provided_type, expected_datatype):
         (decimal.Decimal("7.89E+3"), dt.decimal128(38, 0)),  # 7890
         (decimal.Decimal("1.2345e-4"), dt.decimal128(38, 8)),  # 0.00012345
         (np.array([1, 2, 3]), dt.tensor(dt.int64())),
+        (torch.tensor([1, 2, 3]), dt.tensor(dt.int64())),
+        (tensorflow.constant([1, 2, 3]), dt.tensor(dt.int32())),
+        (jax.numpy.array([1, 2, 3]), dt.tensor(dt.int32())),
         (np.bool_(False), dt.bool()),
         (np.int8(1), dt.int8()),
         (np.uint8(1), dt.uint8()),
@@ -289,3 +353,12 @@ def test_decimals_with_scientific_notation():
 
     # assert roundtrip equality
     assert daft.from_pydict({"col": decimals}).to_pydict()["col"] == decimals
+
+
+def test_cupy():
+    cupy = pytest.importorskip("cupy")
+
+    assert dt.infer_from_type(cupy.ndarray) == dt.tensor(dt.python())
+
+    arr = cupy.array([1, 2, 3])
+    assert dt.infer_from_object(arr) == dt.tensor(dt.int64())
