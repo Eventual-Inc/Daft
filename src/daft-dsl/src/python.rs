@@ -234,11 +234,16 @@ pub fn udf(
 }
 
 #[pyfunction]
+#[allow(clippy::too_many_arguments)]
 pub fn row_wise_udf(
     name: &str,
-    inner: PyObject,
+    cls: PyObject,
+    method: PyObject,
+    is_async: bool,
     return_dtype: PyDataType,
+    gpus: usize,
     use_process: Option<bool>,
+    max_concurrency: Option<usize>,
     original_args: PyObject,
     expr_args: Vec<PyExpr>,
 ) -> PyExpr {
@@ -249,9 +254,13 @@ pub fn row_wise_udf(
     PyExpr {
         expr: row_wise_udf(
             name,
-            inner.into(),
+            cls.into(),
+            method.into(),
+            is_async,
             return_dtype.into(),
+            gpus,
             use_process,
+            max_concurrency,
             original_args.into(),
             args,
         )
