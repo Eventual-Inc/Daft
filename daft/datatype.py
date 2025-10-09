@@ -209,6 +209,8 @@ class DataType:
                 "Cannot derive precision and scale from decimal.Decimal type, defaulting to DataType.python()"
             )
             return cls.python()
+        elif check_type("jaxtyping.AbstractArray"):
+            return cls._infer_from_jaxtyping(origin)
         elif check_type("numpy.ndarray"):
             inner_dtype = None
             if len(args) == 2:
@@ -224,6 +226,22 @@ class DataType:
                 inner_dtype = cls.python()
 
             return cls.tensor(inner_dtype)
+        elif check_type("torch.FloatTensor"):
+            return cls.tensor(cls.float32())
+        elif check_type("torch.DoubleTensor"):
+            return cls.tensor(cls.float64())
+        elif check_type("torch.ByteTensor"):
+            return cls.tensor(cls.uint8())
+        elif check_type("torch.CharTensor"):
+            return cls.tensor(cls.int8())
+        elif check_type("torch.ShortTensor"):
+            return cls.tensor(cls.int16())
+        elif check_type("torch.IntTensor"):
+            return cls.tensor(cls.int32())
+        elif check_type("torch.LongTensor"):
+            return cls.tensor(cls.int64())
+        elif check_type("torch.BoolTensor"):
+            return cls.tensor(cls.bool())
         elif (
             check_type("torch.Tensor")
             or check_type("tensorflow.Tensor")
@@ -231,8 +249,6 @@ class DataType:
             or check_type("cupy.ndarray")
         ):
             return cls.tensor(cls.python())
-        elif check_type("jaxtyping.AbstractArray"):
-            return cls._infer_from_jaxtyping(origin)
         elif check_type("numpy.generic"):
             return cls._infer_from_numpy_scalar_dtype(origin)
         elif check_type("pandas.Series"):
@@ -288,6 +304,8 @@ class DataType:
 
     @classmethod
     def _infer_from_jaxtyping(cls, t: jaxtyping.AbstractArray) -> DataType:
+        print("inferring jaxtyping", t)
+
         import jaxtyping
         from jaxtyping._array_types import _FixedDim
 
@@ -296,27 +314,30 @@ class DataType:
             # if we do not support converting the array type to a tensor, do not infer an inner dtype or shape
             return inferred_array_type
 
-        if t.dtype is jaxtyping.Bool:
+        def is_dtype(dtype: jaxtyping.AbstractDtype) -> bool:
+            return t.dtypes == dtype[Any, "..."].dtypes
+
+        if is_dtype(jaxtyping.Bool):
             inner_dtype = cls.bool()
-        elif t.dtype is jaxtyping.Int8:
+        elif is_dtype(jaxtyping.Int8):
             inner_dtype = cls.int8()
-        elif t.dtype is jaxtyping.UInt8:
+        elif is_dtype(jaxtyping.UInt8):
             inner_dtype = cls.uint8()
-        elif t.dtype is jaxtyping.Int16:
+        elif is_dtype(jaxtyping.Int16):
             inner_dtype = cls.int16()
-        elif t.dtype is jaxtyping.UInt16:
+        elif is_dtype(jaxtyping.UInt16):
             inner_dtype = cls.uint16()
-        elif t.dtype is jaxtyping.Int32:
+        elif is_dtype(jaxtyping.Int32):
             inner_dtype = cls.int32()
-        elif t.dtype is jaxtyping.UInt32:
+        elif is_dtype(jaxtyping.UInt32):
             inner_dtype = cls.uint32()
-        elif t.dtype is jaxtyping.Int64 or t.dtype is jaxtyping.Int or t.dtype is jaxtyping.Integer:
+        elif is_dtype(jaxtyping.Int64) or is_dtype(jaxtyping.Int) or is_dtype(jaxtyping.Integer):
             inner_dtype = cls.int64()
-        elif t.dtype is jaxtyping.UInt64 or t.dtype is jaxtyping.UInt:
+        elif is_dtype(jaxtyping.UInt64) or is_dtype(jaxtyping.UInt):
             inner_dtype = cls.uint64()
-        elif t.dtype is jaxtyping.Float32:
+        elif is_dtype(jaxtyping.Float32):
             inner_dtype = cls.float32()
-        elif t.dtype is jaxtyping.Float64 or t.dtype is jaxtyping.Float or t.dtype is jaxtyping.Real:
+        elif is_dtype(jaxtyping.Float64) or is_dtype(jaxtyping.Float) or is_dtype(jaxtyping.Real):
             inner_dtype = cls.float64()
         else:
             inner_dtype = cls.python()

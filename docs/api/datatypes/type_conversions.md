@@ -59,6 +59,14 @@ To check the inferred DataType for a Python type, use [`DataType.infer_from_type
 | `tuple[T, ...]`                                                                           | List[T]                             |
 | `numpy.ndarray`<br>`torch.Tensor`<br>`tensorflow.Tensor`<br>`jax.Array`<br>`cupy.ndarray` | Tensor[Python]                      |
 | `numpy.typing.NDArray[T]`                                                                 | Tensor[T]                           |
+| `torch.FloatTensor`                                                                       | Tensor[Float32]                     |
+| `torch.DoubleTensor`                                                                      | Tensor[Float64]                     |
+| `torch.ByteTensor`                                                                        | Tensor[UInt8]                       |
+| `torch.CharTensor`                                                                        | Tensor[Int8]                        |
+| `torch.ShortTensor`                                                                       | Tensor[Int16]                       |
+| `torch.IntTensor`                                                                         | Tensor[Int32]                       |
+| `torch.LongTensor`                                                                        | Tensor[Int64]                       |
+| `torch.BoolTensor`                                                                        | Tensor[Boolean]                     |
 | `jaxtyping` types (see [jaxtyping](#jaxtyping))                                           | Tensor or FixedShapeTensor          |
 | `numpy.bool_`                                                                             | Boolean                             |
 | `numpy.int8`                                                                              | Int8                                |
