@@ -1,5 +1,10 @@
 "use client";
 
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
+import useSWR from "swr";
+
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -7,10 +12,8 @@ import {
   BreadcrumbList,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { Suspense } from "react";
-import useSWR from "swr";
+import LoadingPage from "@/components/loading";
+
 
 type PlanInfo = {
   plan_start_sec: number;
@@ -112,7 +115,7 @@ function QueryPageInner() {
   );
 
   if (isLoading || !data) {
-    return <div>Loading...</div>;
+    return <LoadingPage />;
   }
 
   if (error) {
@@ -151,7 +154,7 @@ function QueryPageInner() {
 
 export default function QueryPage() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense fallback={<LoadingPage />}>
       <QueryPageInner />
     </Suspense>
   );

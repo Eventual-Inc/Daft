@@ -1088,7 +1088,7 @@ impl RecordBatch {
 
     pub fn from_ipc_stream(buffer: &[u8]) -> DaftResult<Self> {
         let mut cursor = Cursor::new(buffer);
-        let stream_metadata = arrow2::io::ipc::read::read_stream_metadata(&mut cursor).unwrap();
+        let stream_metadata = arrow2::io::ipc::read::read_stream_metadata(&mut cursor)?;
         let schema = Arc::new(Schema::from(stream_metadata.schema.clone()));
         let reader = arrow2::io::ipc::read::StreamReader::new(cursor, stream_metadata, None);
 

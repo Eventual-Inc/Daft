@@ -3,7 +3,7 @@
 import React from "react";
 import { Wifi, WifiOff } from "lucide-react";
 import useSWR from "swr";
-import { genUrl } from "../server-provider";
+import { genApiUrl } from "../server-provider";
 
 // Fetcher function for SWR
 const connectionFetcher = async (url: string): Promise<boolean> => {
@@ -20,7 +20,7 @@ const connectionFetcher = async (url: string): Promise<boolean> => {
 
 export function ConnectionStatus() {
   const { data: isConnected, isLoading } = useSWR<boolean>(
-    genUrl("/api/ping"),
+    genApiUrl("/api/ping"),
     connectionFetcher,
     {
       refreshInterval: 3000, // Refresh every 3 seconds

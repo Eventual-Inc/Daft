@@ -59,8 +59,7 @@ def test_decimal_sum(prec, partitions) -> None:
     assert res.to_pydict()["decimal128"] == [decimal.Decimal("108.001")]
 
     schema = res.schema()
-    expected_prec = min(38, prec + 19)  # see agg_ops.rs
-    assert schema["decimal128"].dtype == daft.DataType.decimal128(expected_prec, 3)
+    assert schema["decimal128"].dtype == daft.DataType.decimal128(38, 3)
 
 
 @pytest.mark.parametrize("prec, partitions", itertools.product([5, 30], [1, 2]))
@@ -72,8 +71,7 @@ def test_decimal_mean(prec, partitions) -> None:
     assert res.to_pydict()["decimal128"] == [decimal.Decimal("36.0003333")]
 
     schema = res.schema()
-    expected_prec = min(38, prec + 19)  # see agg_ops.rs
-    assert schema["decimal128"].dtype == daft.DataType.decimal128(expected_prec, 7)
+    assert schema["decimal128"].dtype == daft.DataType.decimal128(38, 7)
 
 
 @pytest.mark.parametrize("prec, partitions", itertools.product([5, 30], [1, 2]))

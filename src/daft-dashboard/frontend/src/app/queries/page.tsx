@@ -24,6 +24,7 @@ import {
   BreadcrumbItem,
   BreadcrumbLink,
 } from "@/components/ui/breadcrumb";
+import LoadingPage from "@/components/loading";
 
 import { QuerySummary, useQueries } from "@/hooks/use-queries";
 import { toHumanReadableDate } from "@/lib/utils";
@@ -101,7 +102,7 @@ export default function QueryList() {
   };
 
   if (isLoading) {
-    return <div>Loading...</div>;
+    return <LoadingPage />;
   }
 
   return (

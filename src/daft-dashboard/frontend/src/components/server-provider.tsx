@@ -9,7 +9,7 @@ import { QuerySummaryMap, QueriesContext, QuerySummary } from "@/hooks/use-queri
 /**
  * Get the API base URL from environment variables or use default
  */
-export function genUrl(path: string): string {
+export function genApiUrl(path: string): string {
   let base;
 
   // For same-port deployment (Axum serving both frontend and API)
@@ -30,7 +30,7 @@ export function fetcher(
   path: string,
   options?: RequestInit
 ): Promise<Response> {
-  const url = genUrl(path);
+  const url = genApiUrl(path);
   return fetch(url, options).then(res => res.json());
 }
 
@@ -41,7 +41,7 @@ export function ServerProvider({ children }: { children: React.ReactNode }) {
 
   // TODO: Play around with useSWRSubscription again
   useEffect(() => {
-    const es = new EventSource(genUrl("/client/queries/subscribe"));
+    const es = new EventSource(genApiUrl("/client/queries/subscribe"));
     es.onopen = () => {
       console.warn("Connected to queries SSE endpoint");
     };

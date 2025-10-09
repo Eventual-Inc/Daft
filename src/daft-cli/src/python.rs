@@ -45,7 +45,6 @@ fn run_dashboard(py: Python, args: DashboardArgs) {
         .init();
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
-        .max_blocking_threads(2)
         .enable_all()
         .build()
         .expect("Failed to create tokio runtime");
@@ -68,8 +67,13 @@ fn run_dashboard(py: Python, args: DashboardArgs) {
             shutdown_tx
                 .send(())
                 .expect("Failed to shutdown Daft Dashboard");
-            break;
+            return;
         }
+        // Necessary to allow other threads to acquire the GIL
+        // Such as for Python array deserialization
+        py.allow_threads(|| {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        });
     }
 }
 

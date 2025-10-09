@@ -16,6 +16,8 @@ use tokio_stream::{
 
 use crate::state::{DashboardState, QueryInfo, QuerySummary};
 
+/// Get the summaries of all queries
+/// Note, this is used for internal testing, not by the frontend
 async fn get_query_summaries(
     State(state): State<Arc<DashboardState>>,
 ) -> Json<HashMap<QueryID, QuerySummary>> {
@@ -63,6 +65,8 @@ async fn subscribe_queries_updates(
     )
 }
 
+/// Get the info of a specific query
+/// Note, this is used for internal testing, not by the frontend
 async fn get_query(
     State(state): State<Arc<DashboardState>>,
     Path(query_id): Path<QueryID>,

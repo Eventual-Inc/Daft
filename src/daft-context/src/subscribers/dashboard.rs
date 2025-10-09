@@ -124,7 +124,7 @@ impl Subscriber for DashboardSubscriber {
 
         let all_results = entry.value_mut();
         let num_rows = all_results.len();
-        if num_rows < TOTAL_ROWS {
+        if num_rows < TOTAL_ROWS && result.is_empty() {
             let result = result.head(TOTAL_ROWS - num_rows)?;
             *all_results = Arc::new(MicroPartition::concat(vec![
                 all_results.clone(),
@@ -147,7 +147,7 @@ impl Subscriber for DashboardSubscriber {
         let end_sec = secs_from_epoch();
         let result = results
             .concat_or_get(io_stats)?
-            .unwrap_or_else(|| RecordBatch::empty(None));
+            .unwrap_or_else(|| RecordBatch::empty(Some(results.schema())));
 
         self.runtime.block_on_current_thread(async {
             Self::handle_request(

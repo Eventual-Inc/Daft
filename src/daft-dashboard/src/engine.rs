@@ -252,6 +252,7 @@ async fn query_end(
 ) -> StatusCode {
     let query_info = state.queries.get_mut(&query_id);
     let Some(mut query_info) = query_info else {
+        tracing::error!("Query `{}` not found", query_id);
         return StatusCode::BAD_REQUEST;
     };
     let QueryState::Finalizing {
@@ -260,11 +261,20 @@ async fn query_end(
         exec_end_sec,
     } = &query_info.state
     else {
+        tracing::error!("Query `{}` not in finalizing state", query_id);
         return StatusCode::BAD_REQUEST;
     };
 
-    let Ok(results) = RecordBatch::from_ipc_stream(&args.results) else {
-        return StatusCode::BAD_REQUEST;
+    let results = match RecordBatch::from_ipc_stream(&args.results) {
+        Ok(results) => results,
+        Err(e) => {
+            tracing::error!(
+                "Failed to deserialize results for query `{}`: {}",
+                query_id,
+                e
+            );
+            return StatusCode::BAD_REQUEST;
+        }
     };
     query_info.state = QueryState::Finished {
         plan_info: plan_info.clone(),
@@ -273,8 +283,8 @@ async fn query_end(
         end_sec: args.end_sec,
         results,
     };
-    let summary = query_info.summarize();
-    state.ping_clients(summary);
+
+    state.ping_clients(query_info.summarize());
     StatusCode::OK
 }
 

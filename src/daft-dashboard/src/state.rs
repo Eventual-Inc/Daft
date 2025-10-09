@@ -156,14 +156,12 @@ impl DashboardState {
     // -------------------- Updating Queries -------------------- //
 
     pub fn ping_clients(&self, summary: QuerySummary) {
-        // TODO: Error handling?
         let id = self
             .event_counter
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-        if self.clients.receiver_count() > 0 {
-            self.clients.send((id, summary)).unwrap();
-        }
+        // Returns error if there are no receivers, it's ok to ignore
+        let _ = self.clients.send((id, summary));
     }
 }
 

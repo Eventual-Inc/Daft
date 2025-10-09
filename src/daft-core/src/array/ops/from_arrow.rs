@@ -221,7 +221,7 @@ impl FromArrow for PythonArray {
         let physical_arrow_array = physical_arrow_array
             .as_any()
             .downcast_ref::<arrow2::array::BinaryArray<i64>>() // list array with i64 offsets
-            .unwrap();
+            .expect("PythonArray::from_arrow: Failed to downcast to BinaryArray<i64>");
 
         Self::from_iter_pickled(&field.name, physical_arrow_array.iter())
     }
