@@ -9,6 +9,7 @@ import {
   useReactTable,
   createColumnHelper,
 } from "@tanstack/react-table";
+import { ChevronDown, Columns3 } from "lucide-react";
 
 import {
   Table,
@@ -24,6 +25,7 @@ import {
   BreadcrumbItem,
   BreadcrumbLink,
 } from "@/components/ui/breadcrumb";
+import { Button } from "@/components/ui/button";
 import LoadingPage from "@/components/loading";
 
 import { QuerySummary, useQueries } from "@/hooks/use-queries";
@@ -55,6 +57,11 @@ const statusSortingFn = (rowA: any, rowB: any, columnId: string) => {
 // Handling of query data to column parsing
 const columnHelper = createColumnHelper<QuerySummary>();
 const columns = [
+  columnHelper.accessor("id", {
+    header: "ID",
+    cell: info => info.getValue(),
+    sortingFn: "alphanumeric",
+  }),
   columnHelper.accessor("name", {
     header: "Name",
     cell: info => info.getValue(),
@@ -72,6 +79,13 @@ const columns = [
   }),
 ];
 
+const initialColumnVisibility: Record<string, boolean> = {
+  id: false,
+  name: true,
+  status: true,
+  start_sec: true,
+};  
+
 /**
  *  Main Component to display the queries in a table
  */
@@ -80,12 +94,18 @@ export default function QueryList() {
 
   const { queries, isLoading } = useQueries();
   const router = useRouter();
+  const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
+  const [columnVisibility, setColumnVisibility] = React.useState<Record<string, boolean>>(initialColumnVisibility);
+  
 
   const table = useReactTable({
     data: queries,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    state: {
+      columnVisibility,
+    },
     initialState: {
       sorting: [
         { id: "status", desc: false },
@@ -107,19 +127,60 @@ export default function QueryList() {
 
   return (
     <div className="space-y-4">
-      <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbLink
-              asChild
-              href="/queries"
-              className="text-lg font-mono font-bold"
-            >
-              <Link href="/queries">All Queries</Link>
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
+      <div className="flex items-center justify-between">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink
+                asChild
+                href="/queries"
+                className="text-lg font-mono font-bold"
+              >
+                <Link href="/queries">All Queries</Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+
+        <div className="relative columns-dropdown">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="font-mono bg-zinc-800 hover:bg-zinc-700"
+            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+          >
+            <Columns3 className="h-4 w-4" />
+            Columns
+            <ChevronDown className="h-4 w-4" />
+          </Button>
+          
+          {isDropdownOpen && (
+            <div className="absolute right-0 top-full mt-2 w-48 bg-zinc-800 border border-zinc-700 shadow-lg z-50">
+              <div className="p-2">
+                <div className="space-y-2">
+                  {columns.map((column) => (
+                    <div key={column.id} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id={column.id}
+                        checked={columnVisibility[column.accessorKey || ""]}
+                        onChange={() => setColumnVisibility(prev => ({ ...prev, [column.accessorKey || ""]: !prev[column.accessorKey || ""] }))}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      <label
+                        htmlFor={column.id}
+                        className="text-sm font-medium font-mono cursor-pointer"
+                      >
+                        {column.header}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="border">
         <Table>
@@ -148,7 +209,7 @@ export default function QueryList() {
                   className="hover:bg-zinc-800 transition-colors duration-50 cursor-pointer font-mono"
                   onClick={() => handleRowClick(row.original.id)}
                 >
-                  {row.getAllCells().map(cell => (
+                  {row.getVisibleCells().map(cell => (
                     <TableCell
                       key={cell.id}
                       className={`py-[15px] ${spacing(cell)}`}
@@ -166,7 +227,7 @@ export default function QueryList() {
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={columns.length}
+                  colSpan={table.getVisibleFlatColumns().length}
                   className="h-24 text-center"
                 >
                   No results

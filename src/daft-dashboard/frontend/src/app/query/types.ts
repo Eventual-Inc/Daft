@@ -82,6 +82,7 @@ export type QueryState =
 
 export type QueryInfo = {
   id: string;
+  name: string;
   start_sec: number;
   unoptimized_plan: string;
   state: QueryState;

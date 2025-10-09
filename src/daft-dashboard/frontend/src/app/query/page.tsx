@@ -100,7 +100,7 @@ function QueryPageInner() {
             <BreadcrumbSeparator />
             <BreadcrumbItem>
               <BreadcrumbLink asChild className="text-lg font-mono font-bold">
-                <p>Query {queryId}</p>
+                <p>Query {query.name}</p>
               </BreadcrumbLink>
             </BreadcrumbItem>
           </BreadcrumbList>
