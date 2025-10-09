@@ -7,7 +7,7 @@ use daft_dsl::{
     AggExpr, ApproxPercentileParams, Column, Expr, ExprRef,
     functions::{FunctionArgs, scalar::ScalarFn},
     optimization,
-    python_udf::{PyScalarFn, RowWisePyFn},
+    python_udf::PyScalarFn,
     resolved_col,
 };
 use indexmap::{IndexMap, IndexSet};
@@ -480,15 +480,9 @@ fn replace_column_with_semantic_id(
                     Transformed::yes(Expr::InSubquery(expr.data, subquery.clone()).into())
                 }
             }
-            Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
-                function_name: name,
-                inner: func,
-                return_dtype,
-                original_args,
-                args: children,
-                use_process,
-            }))) => {
-                let transforms = children
+            Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(row_wise_py_fn))) => {
+                let transforms = row_wise_py_fn
+                    .args
                     .iter()
                     .map(|e| {
                         replace_column_with_semantic_id(e.clone(), subexprs_to_replace, schema)
@@ -503,14 +497,7 @@ fn replace_column_with_semantic_id(
                         .map(|t| t.data.clone())
                         .collect::<Vec<_>>();
                     Transformed::yes(Arc::new(Expr::ScalarFn(ScalarFn::Python(
-                        PyScalarFn::RowWise(RowWisePyFn {
-                            function_name: name.clone(),
-                            inner: func.clone(),
-                            return_dtype: return_dtype.clone(),
-                            original_args: original_args.clone(),
-                            args: new_children,
-                            use_process: *use_process,
-                        }),
+                        PyScalarFn::RowWise(row_wise_py_fn.with_new_children(new_children)).into(),
                     ))))
                 }
             }

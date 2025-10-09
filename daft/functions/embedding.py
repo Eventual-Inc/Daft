@@ -5,11 +5,15 @@ from __future__ import annotations
 from daft.expressions import Expression
 
 
-def cosine_distance(left: Expression, right: Expression) -> Expression:
+def cosine_distance(left_embedding: Expression, right_embedding: Expression) -> Expression:
     """Compute the cosine distance between two embeddings.
 
+    Args:
+        left_embedding (FixedSizeList or Embedding Expression): The left embedding
+        right_embedding (FixedSizeList or Embedding Expression): The right embedding
+
     Returns:
-        Expression: a Float64 Expression with the cosine distance between the two embeddings.
+        Expression (Float64 Expression): an expression with the cosine distance between the two embeddings.
 
     Examples:
         >>> import daft
@@ -32,4 +36,4 @@ def cosine_distance(left: Expression, right: Expression) -> Expression:
         (Showing first 2 of 2 rows)
 
     """
-    return Expression._call_builtin_scalar_fn("cosine_distance", left, right)
+    return Expression._call_builtin_scalar_fn("cosine_distance", left_embedding, right_embedding)

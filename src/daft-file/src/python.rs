@@ -110,7 +110,7 @@ impl PyDaftFile {
     }
 
     #[pyo3(signature=(size=-1))]
-    fn read(&mut self, size: isize) -> PyResult<Option<Vec<u8>>> {
+    fn read(&mut self, size: isize) -> PyResult<Vec<u8>> {
         self.check_context()?;
         let cursor = self
             .inner
@@ -127,12 +127,12 @@ impl PyDaftFile {
             buffer.truncate(bytes_read);
             self.inner.position = bytes_read;
 
-            Ok(Some(buffer))
+            Ok(buffer)
         } else {
             let mut buffer = vec![0u8; size as usize];
 
             if self.inner.position == cursor.size() {
-                return Ok(None);
+                return Ok(vec![]);
             }
 
             let bytes_read = cursor
@@ -142,7 +142,7 @@ impl PyDaftFile {
             buffer.truncate(bytes_read);
             self.position += bytes_read;
 
-            Ok(Some(buffer))
+            Ok(buffer)
         }
     }
 

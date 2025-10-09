@@ -8,7 +8,8 @@ from openai import OpenAI
 from daft import DataType
 from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedder
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
-from daft.ai.typing import EmbeddingDimensions, Options
+from daft.ai.typing import EmbeddingDimensions, Options, UDFOptions
+from daft.ai.utils import get_http_udf_options
 
 if TYPE_CHECKING:
     from daft.ai.openai.typing import OpenAIProviderOptions
@@ -35,6 +36,9 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
 
     def get_options(self) -> Options:
         return self.model_options
+
+    def get_udf_options(self) -> UDFOptions:
+        return get_http_udf_options()
 
     def get_dimensions(self) -> EmbeddingDimensions:
         try:
