@@ -98,6 +98,7 @@ dev = [
   "torch>=2.5.1",
   "torchvision>=0.20.1",
   "tensorflow>=2.18.1",
+  "tf-keras>=2.18.0",
   "jax>=0.4.30",
   "jaxtyping>=0.2.36",
   # Pyarrow
