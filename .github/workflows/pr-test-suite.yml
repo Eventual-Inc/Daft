@@ -757,7 +757,6 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        sleep 30s
         pytest tests/integration/iceberg -m 'integration' --durations=0 | ./tools/capture-durations.sh "iceberg_pytest_output.txt"
         python tools/aggregate_test_durations.py iceberg_pytest_output.txt
       env:
