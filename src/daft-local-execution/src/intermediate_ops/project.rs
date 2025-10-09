@@ -44,7 +44,6 @@ const CONNECTION_BATCH_FACTOR: usize = 4;
 const DEFAULT_URL_MAX_CONNECTIONS: usize = 32;
 
 /// Gets the batch size from the first UDF encountered in a given slice of expressions
-/// Errors if no UDF is found
 pub fn try_get_batch_size(exprs: &[BoundExpr]) -> Option<usize> {
     let mut projection_batch_size = None;
     for expr in exprs {

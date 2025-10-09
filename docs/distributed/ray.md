@@ -1,9 +1,5 @@
 # Running on Ray
 
-By default, Daft runs using your local machine's resources and your operations are thus limited by the CPUs, memory and GPUs available to you in your single local development machine. Daft's native support for [Ray](https://docs.ray.io/en/latest/ray-overview/index.html), an open-source framework for distributed computing, enables you to run distributed DataFrame workloads at scale across a cluster of machines.
-
-## Setting Up Ray with Daft
-
 You can run Daft on Ray in multiple ways:
 
 ### Simple Local Setup
@@ -11,7 +7,7 @@ You can run Daft on Ray in multiple ways:
 If you want to start a single node ray cluster on your local machine, you can do the following:
 
 ```bash
-pip install ray[default]
+pip install "daft[ray]"
 ray start --head
 ```
 

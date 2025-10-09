@@ -290,8 +290,15 @@ def test_class_udf_initialization_error(use_actor_pool):
         with pytest.raises(Exception):
             df.select(expr).collect()
     else:
-        with pytest.raises(RuntimeError, match="UDF INIT ERROR"):
+        with pytest.raises(UDFException) as exc_info:
             df.select(expr).collect()
+
+        assert exc_info.value.message.startswith("User-defined function")
+        assert exc_info.value.message.endswith("failed to initialize")
+        if get_tests_daft_runner_name() == "native":
+            assert (
+                isinstance(exc_info.value.__cause__, RuntimeError) and str(exc_info.value.__cause__) == "UDF INIT ERROR"
+            )
 
 
 @pytest.mark.parametrize("use_actor_pool", [False, True])

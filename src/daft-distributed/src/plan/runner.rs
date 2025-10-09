@@ -19,7 +19,7 @@ use crate::{
         materialize::materialize_all_pipeline_outputs,
     },
     scheduling::{
-        scheduler::{SchedulerHandle, spawn_default_scheduler_actor},
+        scheduler::{SchedulerHandle, spawn_scheduler_actor},
         task::{SwordfishTask, TaskID},
         worker::{Worker, WorkerManager},
     },
@@ -173,7 +173,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
 
         let joinset = runtime.block_on_current_thread(async move {
             let mut joinset = create_join_set();
-            let scheduler_handle = spawn_default_scheduler_actor(
+            let scheduler_handle = spawn_scheduler_actor(
                 self.worker_manager.clone(),
                 &mut joinset,
                 statistics_manager.clone(),

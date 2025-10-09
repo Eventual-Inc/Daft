@@ -2634,6 +2634,7 @@ dependencies = [
  "common-display",
  "common-error",
  "common-file-formats",
+ "common-io-config",
  "common-partitioning",
  "common-py-serde",
  "common-resource-request",
@@ -2917,6 +2918,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "bincode",
  "common-error",
+ "common-io-config",
  "common-resource-request",
  "common-scan-info",
  "daft-core",
@@ -2972,6 +2974,7 @@ dependencies = [
  "common-display",
  "common-error",
  "common-file-formats",
+ "common-io-config",
  "common-logging",
  "common-metrics",
  "common-py-serde",
@@ -3022,6 +3025,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-error",
  "common-file-formats",
+ "common-io-config",
  "common-py-serde",
  "common-resource-request",
  "common-scan-info",

@@ -180,7 +180,7 @@ This UDF:
 
 ## Step 4: Configure Distributed Processing
 
-You can run this script locally, but if you're interested in running this pipeline on a cluster, check out our guide on [scaling up](../distributed.md). In this example,
+You can run this script locally, but if you're interested in running this pipeline on a cluster, check out our guide on [scaling up](../distributed/index.md). In this example,
 we ran on a ray cluster with 8 [g5.2xlarge](https://aws.amazon.com/ec2/instance-types/g5/) workers (each comes with an A10G GPU). To configure our Daft script to use the ray cluster, we added:
 
 ```python
@@ -232,7 +232,7 @@ Now we'll execute the complete data processing pipeline:
 5. **Generate embeddings**: Apply embedding UDF to text
 6. **Create IDs**: Generate unique IDs combining URL and chunk_id
 7. **Select columns**: Keep only the necessary columns
-8. **Write to Turbopuffer**: Store data and vectors in Turbopuffer using Daft's [`DataFrame.write_turbopuffer`](../api/dataframe#daft.DataFrame.write_turbopuffer) method
+8. **Write to Turbopuffer**: Store data and vectors in Turbopuffer using Daft's [`DataFrame.write_turbopuffer`][daft.DataFrame.write_turbopuffer] method
 
 If all works out well, when you run this script on your cluster, you should notice that network I/O, CPU work, and GPU work are pipelined to run in parallel, and you should see high GPU utilization :)
 

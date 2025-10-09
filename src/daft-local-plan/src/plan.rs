@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult, ensure};
+use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use common_py_serde::{PyObjectWrapper, deserialize_py_object, serialize_py_object};
 use common_resource_request::ResourceRequest;
@@ -8,12 +9,12 @@ use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use common_treenode::{DynTreeNode, TreeNode, TreeNodeRecursion};
 use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
-    Column, WindowExpr, WindowFrame, WindowSpec,
+    Column, ExprRef, WindowExpr, WindowFrame, WindowSpec,
     expr::{
         BoundColumn,
         bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
     },
-    functions::python::get_resource_request,
+    functions::python::{UDFProperties, get_resource_request},
 };
 use daft_logical_plan::{
     InMemoryInfo, OutputFileInfo,
@@ -27,6 +28,7 @@ pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
 pub enum LocalPhysicalPlan {
     InMemoryScan(InMemoryScan),
     PhysicalScan(PhysicalScan),
+    GlobScan(GlobScan),
     EmptyScan(EmptyScan),
     PlaceholderScan(PlaceholderScan),
     Project(Project),
@@ -94,6 +96,7 @@ impl LocalPhysicalPlan {
         match self {
             Self::InMemoryScan(InMemoryScan { stats_state, .. })
             | Self::PhysicalScan(PhysicalScan { stats_state, .. })
+            | Self::GlobScan(GlobScan { stats_state, .. })
             | Self::PlaceholderScan(PlaceholderScan { stats_state, .. })
             | Self::EmptyScan(EmptyScan { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
@@ -157,6 +160,23 @@ impl LocalPhysicalPlan {
             pushdowns,
             schema,
             stats_state,
+        })
+        .arced()
+    }
+
+    pub fn glob_scan(
+        glob_paths: Arc<Vec<String>>,
+        pushdowns: Pushdowns,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        io_config: Option<IOConfig>,
+    ) -> LocalPhysicalPlanRef {
+        Self::GlobScan(GlobScan {
+            glob_paths,
+            pushdowns,
+            schema,
+            stats_state,
+            io_config,
         })
         .arced()
     }
@@ -258,14 +278,16 @@ impl LocalPhysicalPlan {
 
     pub fn udf_project(
         input: LocalPhysicalPlanRef,
-        project: BoundExpr,
+        expr: BoundExpr,
+        udf_properties: UDFProperties,
         passthrough_columns: Vec<BoundExpr>,
         schema: SchemaRef,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
         Self::UDFProject(UDFProject {
             input,
-            project,
+            expr,
+            udf_properties,
             passthrough_columns,
             schema,
             stats_state,
@@ -738,6 +760,7 @@ impl LocalPhysicalPlan {
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
+            | Self::GlobScan(GlobScan { schema, .. })
             | Self::PlaceholderScan(PlaceholderScan { schema, .. })
             | Self::EmptyScan(EmptyScan { schema, .. })
             | Self::Filter(Filter { schema, .. })
@@ -785,9 +808,13 @@ impl LocalPhysicalPlan {
     pub fn resource_request(self: &Arc<Self>) -> ResourceRequest {
         let mut base = ResourceRequest::default_cpu();
         self.apply(|plan| match plan.as_ref() {
-            Self::UDFProject(UDFProject { project, .. }) => {
-                if let Some(resource_request) = get_resource_request([project]) {
-                    base = base.max(&resource_request);
+            Self::UDFProject(UDFProject {
+                expr,
+                udf_properties,
+                ..
+            }) => {
+                if let Some(resource_request) = &udf_properties.resource_request {
+                    base = base.max(resource_request);
                 }
                 Ok(TreeNodeRecursion::Continue)
             }
@@ -810,6 +837,7 @@ impl LocalPhysicalPlan {
     fn children(&self) -> Vec<LocalPhysicalPlanRef> {
         match self {
             Self::PhysicalScan(_)
+            | Self::GlobScan(_)
             | Self::PlaceholderScan(_)
             | Self::EmptyScan(_)
             | Self::InMemoryScan(_) => vec![],
@@ -892,13 +920,15 @@ impl LocalPhysicalPlan {
                     StatsState::NotMaterialized,
                 ),
                 Self::UDFProject(UDFProject {
-                    project,
+                    expr,
+                    udf_properties,
                     passthrough_columns,
                     schema,
                     ..
                 }) => Self::udf_project(
                     new_child.clone(),
-                    project.clone(),
+                    expr.clone(),
+                    udf_properties.clone(),
                     passthrough_columns.clone(),
                     schema.clone(),
                     StatsState::NotMaterialized,
@@ -1221,6 +1251,9 @@ impl LocalPhysicalPlan {
                 Self::Concat(_) => {
                     panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children")
                 }
+                Self::GlobScan(_) => {
+                    panic!("LocalPhysicalPlan::with_new_children: GlobScan does not have children")
+                }
             },
             [new_left, new_right] => match self {
                 Self::HashJoin(HashJoin {
@@ -1318,6 +1351,15 @@ pub struct PhysicalScan {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct GlobScan {
+    pub glob_paths: Arc<Vec<String>>,
+    pub pushdowns: Pushdowns,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub io_config: Option<common_io_config::IOConfig>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PlaceholderScan {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
@@ -1340,7 +1382,8 @@ pub struct Project {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UDFProject {
     pub input: LocalPhysicalPlanRef,
-    pub project: BoundExpr,
+    pub expr: BoundExpr,
+    pub udf_properties: UDFProperties,
     pub passthrough_columns: Vec<BoundExpr>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,

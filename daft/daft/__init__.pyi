@@ -1,8 +1,14 @@
 import builtins
 import datetime
+import sys
 from collections.abc import AsyncIterator, Iterator
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar
+
+if sys.version_info < (3, 10):
+    from typing_extensions import Concatenate
+else:
+    from typing import Concatenate
 
 from daft.dataframe.display import MermaidOptions
 from daft.execution import physical_plan
@@ -25,6 +31,7 @@ if TYPE_CHECKING:
     from daft.expressions.visitor import ExpressionVisitor
     from daft.runners.runner import Runner
     from daft.subscribers import Subscriber
+    from daft.udf.udf_v2 import ClsBase
 
 R = TypeVar("R")
 
@@ -1341,12 +1348,19 @@ def udf(
 ) -> PyExpr: ...
 def row_wise_udf(
     name: str,
-    inner: Callable[..., Any],
+    cls: ClsBase[Any],
+    method: Callable[Concatenate[Any, ...], Any],
+    is_async: bool,
     return_dtype: PyDataType,
+    gpus: int,
+    use_process: bool | None,
+    max_concurrency: int | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
 ) -> PyExpr: ...
 def initialize_udfs(expression: PyExpr) -> PyExpr: ...
+
+# TODO: Remove with the old Ray Runner
 def try_get_udf_name(expression: PyExpr) -> str | None: ...
 def resolve_expr(expr: PyExpr, schema: PySchema) -> tuple[PyExpr, PyField]: ...
 def row_number() -> PyExpr: ...
@@ -1548,6 +1562,9 @@ class PyRecordBatch:
     @staticmethod
     def from_file_infos(file_infos: FileInfos) -> PyRecordBatch: ...
     def to_file_infos(self) -> FileInfos: ...
+    @staticmethod
+    def from_ipc_stream(bytes: bytes) -> PyRecordBatch: ...
+    def to_ipc_stream(self) -> bytes: ...
 
 class PyMicroPartition:
     def schema(self) -> PySchema: ...
@@ -1760,6 +1777,11 @@ class LogicalPlanBuilder:
         num_partitions: int,
         size_bytes: int,
         num_rows: int,
+    ) -> LogicalPlanBuilder: ...
+    @staticmethod
+    def from_glob_scan(
+        glob_paths: list[str],
+        io_config: IOConfig | None = None,
     ) -> LogicalPlanBuilder: ...
     def with_planning_config(self, daft_planning_config: PyDaftPlanningConfig) -> LogicalPlanBuilder: ...
     def select(self, to_select: list[PyExpr]) -> LogicalPlanBuilder: ...

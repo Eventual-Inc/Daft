@@ -38,6 +38,7 @@ mod concat;
 mod distinct;
 mod explode;
 mod filter;
+mod glob_scan_source;
 mod in_memory_source;
 mod into_batches;
 mod into_partitions;
@@ -85,7 +86,6 @@ impl MaterializedOutput {
         &self.partition
     }
 
-    #[allow(dead_code)]
     pub fn worker_id(&self) -> &WorkerId {
         &self.worker_id
     }
@@ -184,7 +184,7 @@ impl PipelineNodeContext {
 pub(crate) trait PipelineNodeImpl: Send + Sync {
     fn context(&self) -> &PipelineNodeContext;
     fn config(&self) -> &PipelineNodeConfig;
-    #[allow(dead_code)]
+
     fn children(&self) -> Vec<DistributedPipelineNode>;
     fn produce_tasks(
         self: Arc<Self>,

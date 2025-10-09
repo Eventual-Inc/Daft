@@ -53,4 +53,4 @@ This example does the following:
 
 For a more a detailed example, check out [our guide on generating text embeddings](../examples/text-embeddings.md).
 
-Check out our [`DataFrame.write_turbopuffer` documentation](../../api/dataframe#daft.DataFrame.write_turbopuffer) for more customization options.
+Check out our [`DataFrame.write_turbopuffer` documentation][daft.DataFrame.write_turbopuffer] for more customization options.

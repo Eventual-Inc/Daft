@@ -53,15 +53,14 @@ impl UDFActors {
         let num_actors = udf_properties
             .concurrency
             .expect("ActorUDF should have concurrency specified");
-        let (gpu_request, cpu_request, memory_request) =
-            match udf_properties.resource_request.clone() {
-                Some(resource_request) => (
-                    resource_request.num_gpus().unwrap_or(0.0),
-                    resource_request.num_cpus().unwrap_or(0.0),
-                    resource_request.memory_bytes().unwrap_or(0),
-                ),
-                None => (0.0, 0.0, 0),
-            };
+        let (gpu_request, cpu_request, memory_request) = match &udf_properties.resource_request {
+            Some(resource_request) => (
+                resource_request.num_gpus().unwrap_or(0.0),
+                resource_request.num_cpus().unwrap_or(0.0),
+                resource_request.memory_bytes().unwrap_or(0),
+            ),
+            None => (0.0, 0.0, 0),
+        };
 
         // Use async pattern similar to DistributedActorPoolProjectOperator
         let await_coroutine = async move {
@@ -213,7 +212,7 @@ impl ActorUDF {
         let memory_request = self
             .udf_properties
             .resource_request
-            .clone()
+            .as_ref()
             .and_then(|req| req.memory_bytes())
             .map(|m| m as u64)
             .unwrap_or(0);
@@ -265,7 +264,7 @@ impl PipelineNodeImpl for ActorUDF {
                 .concurrency
                 .expect("ActorUDF should have concurrency specified")
         ));
-        if let Some(resource_request) = self.udf_properties.resource_request.clone() {
+        if let Some(resource_request) = &self.udf_properties.resource_request {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
                 "Resource request = {{ {} }}",

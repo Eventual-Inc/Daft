@@ -19,8 +19,9 @@ use daft_schema::schema::Schema;
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, concat::ConcatNode, distinct::DistinctNode,
-        explode::ExplodeNode, filter::FilterNode, in_memory_source::InMemorySourceNode,
-        into_batches::IntoBatchesNode, into_partitions::IntoPartitionsNode, limit::LimitNode,
+        explode::ExplodeNode, filter::FilterNode, glob_scan_source::GlobScanSourceNode,
+        in_memory_source::InMemorySourceNode, into_batches::IntoBatchesNode,
+        into_partitions::IntoPartitionsNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, pivot::PivotNode,
         project::ProjectNode, sample::SampleNode, scan_source::ScanSourceNode, sink::SinkNode,
         sort::SortNode, top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode, window::WindowNode,
@@ -99,6 +100,16 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         )
                         .into_node()
                     }
+                    SourceInfo::GlobScan(info) => GlobScanSourceNode::new(
+                        self.get_next_pipeline_node_id(),
+                        &self.plan_config,
+                        info.glob_paths.clone(),
+                        info.pushdowns.clone(),
+                        source.output_schema.clone(),
+                        logical_node_id,
+                        info.io_config.clone().map(|c| *c),
+                    )
+                    .into_node(),
                     SourceInfo::PlaceHolder(_) => unreachable!(
                         "PlaceHolder should not be present in the logical plan for pipeline node translation"
                     ),
@@ -110,7 +121,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     let projection = udf
                         .passthrough_columns
                         .iter()
-                        .chain(std::iter::once(&udf.project.clone()))
+                        .chain(std::iter::once(&udf.expr))
                         .cloned()
                         .collect::<Vec<_>>();
                     let projection =
@@ -132,7 +143,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 }
             }
             LogicalPlan::UDFProject(udf) => {
-                let project = BoundExpr::try_new(udf.project.clone(), &udf.input.schema())?;
+                let expr = BoundExpr::try_new(udf.expr.clone(), &udf.input.schema())?;
                 let passthrough_columns =
                     BoundExpr::bind_all(&udf.passthrough_columns, &udf.input.schema())?;
 
@@ -140,9 +151,9 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     self.get_next_pipeline_node_id(),
                     logical_node_id,
                     &self.plan_config,
-                    project,
-                    passthrough_columns,
+                    expr,
                     udf.udf_properties.clone(),
+                    passthrough_columns,
                     node.schema(),
                     self.curr_node.pop().unwrap(),
                 )
