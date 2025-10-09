@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
 use pyo3::prelude::*;
 
@@ -102,9 +102,11 @@ impl WorkerManager for RayWorkerManager {
                 let handles = state
                     .ray_workers
                     .get_mut(&worker_id)
-                    .unwrap_or_else(|| {
-                        panic!("Worker {worker_id} should be present in RayWorkerManager")
-                    })
+                    .ok_or_else(|| {
+                        DaftError::ValueError(format!(
+                            "Worker {worker_id} not found in RayWorkerManager when submitting tasks"
+                        ))
+                    })?
                     .submit_tasks(tasks, py, &self.task_locals)?;
                 task_result_handles.extend(handles);
             }
