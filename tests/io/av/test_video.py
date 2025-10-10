@@ -46,15 +46,11 @@ def test_read_video_frames_s3(pytestconfig):
     if not pytestconfig.getoption("--credentials"):
         pytest.skip(reason="Video test requires credentials and `--credentials` flag")
 
-    # Read video frames from S3 using anonymous access
     df = daft.read_video_frames(
         "s3://daft-public-datasets/Hollywood2-actions/actionclipautoautotrain00002.avi",
         image_height=480,
         image_width=640,
-    )
-
-    # Collect to verify it works
-    df = df.collect()
+    ).collect()
 
     # Verify expected number of frames
     assert len(df) == 231
