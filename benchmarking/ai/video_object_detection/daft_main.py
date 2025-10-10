@@ -27,7 +27,7 @@ ray.get([warmup.remote() for _ in range(64)])
 
 @daft.cls(
     max_concurrency=NUM_GPU_NODES,
-    gpus=1.0,
+    gpus=1,
 )
 class ExtractImageFeatures:
     def __init__(self):
