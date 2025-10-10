@@ -7,6 +7,7 @@ from daft.daft import (
     HTTPConfig,
     S3Config,
     S3Credentials,
+    TosConfig,
     UnityConfig,
     HuggingFaceConfig,
 )
@@ -41,6 +42,7 @@ __all__ = [
     "IOConfig",
     "S3Config",
     "S3Credentials",
+    "TosConfig",
     "UnityConfig",
     "_range",
     "from_glob_path",
