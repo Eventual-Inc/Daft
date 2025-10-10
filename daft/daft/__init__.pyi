@@ -767,6 +767,85 @@ class HuggingFaceConfig:
         """Replaces values if provided, returning a new HuggingFaceConfig."""
         ...
 
+class TosConfig:
+    """I/O configuration for accessing Volcengine TOS (Torch Object Storage).
+
+    Args:
+        region (str, optional): Name of the region to be used, defaults to None which will attempt to auto-detect.
+        endpoint (str, optional): URL to the TOS endpoint, defaults to endpoints for Volcengine TOS.
+        access_key (str, optional): TOS Access Key ID, defaults to auto-detection from the current environment.
+        secret_key (str, optional): TOS Secret Access Key, defaults to auto-detection from the current environment.
+        security_token (str, optional): TOS Security Token, required for temporary credentials.
+        anonymous (bool, optional): Whether to use "anonymous mode" or not, which will access TOS without any credentials. Defaults to False.
+        max_retries (int, optional): Maximum number of retries for failed requests, defaults to 3.
+        retry_timeout_ms (int, optional): Timeout duration for retry attempts in milliseconds, defaults to 30000ms.
+        connect_timeout_ms (int, optional): Timeout duration to wait to make a connection to TOS in milliseconds, defaults to 10000ms.
+        read_timeout_ms (int, optional): Timeout duration to wait to read the first byte from TOS in milliseconds, defaults to 30000ms.
+        max_concurrent_requests (int, optional): Maximum number of concurrent requests to TOS at any time per IO thread, defaults to 50.
+        max_connections_per_io_thread (int, optional): Maximum number of connections to TOS per IO thread, defaults to 50.
+
+    Examples:
+        >>> # For Volcengine TOS
+        >>> io_config = IOConfig(
+        ...     tos=TosConfig(
+        ...         region="cn-beijing",
+        ...         endpoint="https://tos-cn-beijing.volces.com",
+        ...         access_key="your-access-key-id",
+        ...         secret_key="your-secret-access-key",
+        ...     )
+        ... )
+        >>> daft.read_parquet("tos://some-path", io_config=io_config)
+    """
+
+    region: str | None
+    endpoint: str | None
+    access_key: str | None
+    secret_key: str | None
+    security_token: str | None
+    anonymous: bool
+    max_retries: int
+    retry_timeout_ms: int
+    connect_timeout_ms: int
+    read_timeout_ms: int
+    max_concurrent_requests: int
+    max_connections_per_io_thread: int
+
+    def __init__(
+        self,
+        region: str | None = None,
+        endpoint: str | None = None,
+        access_key: str | None = None,
+        secret_key: str | None = None,
+        security_token: str | None = None,
+        anonymous: bool | None = None,
+        max_retries: int | None = None,
+        retry_timeout_ms: int | None = None,
+        connect_timeout_ms: int | None = None,
+        read_timeout_ms: int | None = None,
+        max_concurrent_requests: int | None = None,
+        max_connections_per_io_thread: int | None = None,
+    ): ...
+    def replace(
+        self,
+        region: str | None = None,
+        endpoint: str | None = None,
+        access_key: str | None = None,
+        secret_key: str | None = None,
+        security_token: str | None = None,
+        anonymous: bool | None = None,
+        max_retries: int | None = None,
+        retry_timeout_ms: int | None = None,
+        connect_timeout_ms: int | None = None,
+        read_timeout_ms: int | None = None,
+        max_concurrent_requests: int | None = None,
+        max_connections_per_io_thread: int | None = None,
+    ) -> TosConfig:
+        """Replaces values if provided, returning a new TosConfig."""
+        ...
+    @staticmethod
+    def from_env() -> TosConfig:
+        """Creates a TosConfig, retrieving credentials and configurations from the current environment."""
+
 class IOConfig:
     """Configuration for the native I/O layer, e.g. credentials for accessing cloud storage systems."""
 
@@ -776,6 +855,7 @@ class IOConfig:
     http: HTTPConfig
     unity: UnityConfig
     hf: HuggingFaceConfig
+    tos: TosConfig
 
     def __init__(
         self,
@@ -785,6 +865,7 @@ class IOConfig:
         http: HTTPConfig | None = None,
         unity: UnityConfig | None = None,
         hf: HuggingFaceConfig | None = None,
+        tos: TosConfig | None = None,
     ): ...
     def replace(
         self,
@@ -794,6 +875,7 @@ class IOConfig:
         http: HTTPConfig | None = None,
         unity: UnityConfig | None = None,
         hf: HuggingFaceConfig | None = None,
+        tos: TosConfig | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig."""
         ...
