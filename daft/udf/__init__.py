@@ -236,7 +236,7 @@ class _FuncDecorator:
             use_process: Whether to run each instance of the function in a separate process. If unset, Daft will automatically choose based on runtime performance.
             batch_size: The max number of rows in each input batch.
 
-        Batch functions receive `daft.Series` arguments, and return a `daft.Series` result.
+        Batch functions receive `daft.Series` arguments, and return a `daft.Series`, `list`, `numpy.ndarray`, or `pyarrow.Array`.
         You can also call them with scalar arguments, which will be passed in without modification.
         When called without Expression arguments, they execute immediately and the behavior is the same as if the function was not decorated.
 
@@ -253,7 +253,7 @@ class _FuncDecorator:
             ...     a = a.to_arrow()
             ...     b = b.to_arrow()
             ...     result = pc.add(a, b)
-            ...     return Series.from_arrow(result)
+            ...     return result
             >>>
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
             >>> df.select(my_sum(df["x"], df["y"])).collect()
@@ -279,7 +279,7 @@ class _FuncDecorator:
             ...
             ...     a = a.to_arrow()
             ...     result = pc.add(a, b)
-            ...     return daft.Series.from_arrow(result)
+            ...     return result
             >>>
             >>> df = daft.from_pydict({"x": [1, 2, 3]})
             >>> df.select(my_sum_with_scalar(df["x"], 4)).collect()
@@ -379,7 +379,7 @@ def cls(
         ...
         ...     # batch method
         ...     @daft.method.batch(return_dtype=DataType.list(DataType.string()))
-        ...     def batch_classify(self, value: str):
+        ...     def batch_classify(self, value: daft.Series):
         ...         return self.model.batch_classify(value)
         >>>
         >>> # Specify the initialization arguments for the class. `__init__` will not be called yet.
@@ -451,7 +451,7 @@ class _MethodDecorator:
             unnest: Whether to unnest/flatten out return type fields into columns. Return dtype must be `DataType.struct(..)` when this is set to true.
             batch_size: The max number of rows in each input batch.
 
-        Batch methods receive `daft.Series` arguments, and return a `daft.Series` result.
+        Batch methods receive `daft.Series` arguments, and return a `daft.Series`, `list`, `numpy.ndarray`, or `pyarrow.Array`.
         You can also call them with scalar arguments, which will be passed in without modification.
         When called without Expression arguments, they execute immediately, first initializing a local instance of the class if it does not already exist.
 

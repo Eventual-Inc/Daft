@@ -47,12 +47,7 @@ def chunk(text):
     return chunks
 
 
-@daft.udf(
-    return_dtype=daft.DataType.fixed_size_list(daft.DataType.float32(), EMBEDDING_DIM),
-    concurrency=NUM_GPU_NODES,
-    num_gpus=1.0,
-    batch_size=EMBEDDING_BATCH_SIZE,
-)
+@daft.cls(max_concurrency=NUM_GPU_NODES, gpus=1.0)
 class Embedder:
     def __init__(self):
         from sentence_transformers import SentenceTransformer
@@ -61,6 +56,10 @@ class Embedder:
         self.model = SentenceTransformer(EMBED_MODEL_ID, device=device)
         self.model.compile()
 
+    @daft.method.batch(
+        return_dtype=daft.DataType.fixed_size_list(daft.DataType.float32(), EMBEDDING_DIM),
+        batch_size=EMBEDDING_BATCH_SIZE,
+    )
     def __call__(self, text_col):
         if len(text_col) == 0:
             return []
@@ -90,6 +89,6 @@ df = df.with_column(
 df = df.explode("chunks")
 df = df.with_columns({"chunk": col("chunks")["text"], "chunk_id": col("chunks")["chunk_id"]})
 df = df.where(daft.col("chunk").not_null())
-df = df.with_column("embedding", Embedder(df["chunk"]))
+df = df.with_column("embedding", Embedder()(df["chunk"]))
 df = df.select("uploaded_pdf_path", "page_number", "chunk_id", "chunk", "embedding")
 df.write_parquet(OUTPUT_PATH)

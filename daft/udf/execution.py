@@ -4,6 +4,7 @@ import sys
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
 from daft.datatype import DataType
+from daft.dependencies import np, pa
 from daft.expressions.expressions import Expression
 from daft.series import Series
 
@@ -90,5 +91,15 @@ def call_batch(
     bound_method = cls._daft_bind_method(method)
 
     output = bound_method(*args, **kwargs)
+    if isinstance(output, Series):
+        output_series = output
+    elif isinstance(output, list):
+        output_series = Series.from_pylist(output)
+    elif np.module_available() and isinstance(output, np.ndarray):
+        output_series = Series.from_numpy(output)
+    elif pa.module_available() and isinstance(output, (pa.Array, pa.ChunkedArray)):
+        output_series = Series.from_arrow(output)
+    else:
+        raise ValueError(f"Expected output to be a Series, list, numpy array, or pyarrow array, got {type(output)}")
 
-    return output._series
+    return output_series._series

@@ -525,7 +525,7 @@ Use batch UDFs when:
 
 ### Basic Batch UDF
 
-Batch UDFs receive `daft.Series` objects as arguments and must return a `daft.Series`:
+Batch UDFs receive `daft.Series` objects as arguments and return a `daft.Series`, `list`, `numpy.ndarray`, or `pyarrow.Array`:
 
 ```python
 import daft
@@ -540,7 +540,7 @@ def add_series(a: Series, b: Series) -> Series:
     b_arrow = b.to_arrow()
     result = pc.add(a_arrow, b_arrow)
 
-    return Series.from_arrow(result)
+    return result
 
 df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
 df = df.select(add_series(df["x"], df["y"]))
@@ -572,7 +572,7 @@ def add_constant(a: Series, constant: int) -> Series:
 
     a_arrow = a.to_arrow()
     result = pc.add(a_arrow, constant)
-    return Series.from_arrow(result)
+    return result
 
 df = daft.from_pydict({"x": [1, 2, 3]})
 df = df.select(add_constant(df["x"], 100))
@@ -605,7 +605,7 @@ def multiply(a: Series, b: Series) -> Series:
     a_arrow = a.to_arrow()
     b_arrow = b.to_arrow()
     result = pc.multiply(a_arrow, b_arrow)
-    return Series.from_arrow(result)
+    return result
 
 # Lazy execution - returns Expression
 expr = multiply(df["x"], df["y"])
@@ -630,7 +630,7 @@ class Model:
     @daft.method.batch(return_dtype=DataType.int64())
     def predict(self, x: Series) -> Series:
         predictions = self.model.predict(x.to_arrow().to_numpy())
-        return Series.from_numpy(predictions)
+        return predictions
 
 model = Model("resnet50")
 df = daft.from_pydict({"x": [1, 2, 3]})
