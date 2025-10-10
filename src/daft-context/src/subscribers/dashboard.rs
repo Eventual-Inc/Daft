@@ -124,7 +124,7 @@ impl Subscriber for DashboardSubscriber {
 
         let all_results = entry.value_mut();
         let num_rows = all_results.len();
-        if num_rows < TOTAL_ROWS && result.is_empty() {
+        if num_rows < TOTAL_ROWS && !result.is_empty() {
             let result = result.head(TOTAL_ROWS - num_rows)?;
             *all_results = Arc::new(MicroPartition::concat(vec![
                 all_results.clone(),

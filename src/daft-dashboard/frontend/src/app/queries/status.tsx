@@ -114,7 +114,7 @@ const Naruto = () => (
   <Image
     src={FishCake}
     alt="Fish Cake"
-    className="animate-[spin_5s_linear_infinite]"
+    className="animate-[spin_5s_linear_none]"
     height={20}
     width={20}
   />
