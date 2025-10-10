@@ -45,6 +45,7 @@ fn run_dashboard(py: Python, args: DashboardArgs) {
         .init();
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
+        .max_blocking_threads(2)
         .enable_all()
         .build()
         .expect("Failed to create tokio runtime");

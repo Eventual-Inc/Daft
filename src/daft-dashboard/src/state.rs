@@ -123,12 +123,20 @@ impl QueryInfo {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", content = "update")]
+pub(crate) enum QueryUpdate {
+    OperatorInfo(HashMap<NodeID, OperatorInfo>),
+    QueryInfo(QueryInfo),
+}
+
 #[derive(Debug)]
 pub(crate) struct DashboardState {
     // Mapping from query id to query info
     pub queries: DashMap<QueryID, QueryInfo>,
     pub dataframe_previews: DashMap<String, RecordBatch>,
     pub clients: broadcast::Sender<(usize, QuerySummary)>,
+    pub query_clients: DashMap<QueryID, broadcast::Sender<(usize, QueryUpdate)>>,
     pub event_counter: AtomicUsize,
 }
 
@@ -139,6 +147,7 @@ impl DashboardState {
             dataframe_previews: Default::default(),
             // TODO: Ideally this should never drop events, we need an unbounded broadcast channel
             clients: broadcast::Sender::new(256),
+            query_clients: Default::default(),
             event_counter: AtomicUsize::new(0),
         }
     }
@@ -155,13 +164,37 @@ impl DashboardState {
 
     // -------------------- Updating Queries -------------------- //
 
-    pub fn ping_clients(&self, summary: QuerySummary) {
+    pub fn ping_query(&self, query_id: QueryID) {
+        // TODO: Error handling?
         let id = self
             .event_counter
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-        // Returns error if there are no receivers, it's ok to ignore
-        let _ = self.clients.send((id, summary));
+        let info = self.queries.get(&query_id).expect("Query not found");
+        let info = info.value();
+
+        if let Some(query_client) = self.query_clients.get(&query_id) {
+            let _ = query_client.send((id, QueryUpdate::QueryInfo(info.clone())));
+        }
+
+        let _ = self.clients.send((id, info.summarize()));
+    }
+
+    pub fn ping_operator(&self, query_id: QueryID) {
+        let id = self
+            .event_counter
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        if let Some(query_client) = self.query_clients.get(&query_id) {
+            let QueryState::Executing { exec_info, .. } =
+                &self.queries.get(&query_id).expect("Query not found").state
+            else {
+                panic!("Query is not executing");
+            };
+
+            let operator_info = exec_info.operators.clone();
+            let _ = query_client.send((id, QueryUpdate::OperatorInfo(operator_info)));
+        }
     }
 }
 
