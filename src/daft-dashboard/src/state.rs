@@ -1,12 +1,13 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, LazyLock},
+    sync::{Arc, LazyLock, atomic::AtomicUsize},
 };
 
 use common_metrics::{NodeID, QueryID, QueryPlan, Stat, ops::NodeInfo};
 use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;
 use serde::Serialize;
+use tokio::sync::broadcast;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -38,22 +39,33 @@ pub(crate) struct ExecInfo {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(tag = "status")]
 pub(crate) enum QueryStatus {
-    Pending,
-    Optimizing,
+    Pending { start_sec: u64 },
+    Optimizing { plan_start_sec: u64 },
     Setup,
-    Executing,
+    Executing { exec_start_sec: u64 },
     Finalizing,
-    Finished,
+    Finished { duration_sec: u64 },
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub(crate) struct QuerySummary {
+    pub id: QueryID,
+    pub start_sec: u64,
+    pub status: QueryStatus,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "status")]
 pub(crate) enum QueryState {
     Pending,
     Optimizing {
         plan_start_sec: u64,
     },
-    Setup(PlanInfo),
+    Setup {
+        plan_info: PlanInfo,
+    },
     Executing {
         plan_info: PlanInfo,
         exec_info: ExecInfo,
@@ -77,25 +89,36 @@ pub(crate) struct QueryInfo {
     pub id: QueryID,
     pub start_sec: u64,
     pub unoptimized_plan: QueryPlan,
-    pub status: QueryState,
+    pub state: QueryState,
 }
 
 impl QueryInfo {
-    pub fn summarize(&self) -> (QueryStatus, u64) {
-        match &self.status {
-            QueryState::Pending => (QueryStatus::Pending, self.start_sec),
-            QueryState::Optimizing { plan_start_sec } => (QueryStatus::Optimizing, *plan_start_sec),
-            // Pending between planning and execution
-            QueryState::Setup(plan_info) => (QueryStatus::Setup, plan_info.plan_end_sec),
-            QueryState::Executing { exec_info, .. } => {
-                (QueryStatus::Executing, exec_info.exec_start_sec)
-            }
+    pub fn status(&self) -> QueryStatus {
+        match &self.state {
+            QueryState::Pending => QueryStatus::Pending {
+                start_sec: self.start_sec,
+            },
+            QueryState::Optimizing { plan_start_sec } => QueryStatus::Optimizing {
+                plan_start_sec: *plan_start_sec,
+            },
+            // Pending between optimizing and execution
+            QueryState::Setup { .. } => QueryStatus::Setup,
+            QueryState::Executing { exec_info, .. } => QueryStatus::Executing {
+                exec_start_sec: exec_info.exec_start_sec,
+            },
             // Finalizing may take longer so just in case
-            QueryState::Finalizing { exec_end_sec, .. } => (QueryStatus::Finalizing, *exec_end_sec),
-            // Returns duration in seconds instead of start_sec
-            QueryState::Finished { end_sec, .. } => {
-                (QueryStatus::Finished, end_sec - self.start_sec)
-            }
+            QueryState::Finalizing { .. } => QueryStatus::Finalizing,
+            QueryState::Finished { end_sec, .. } => QueryStatus::Finished {
+                duration_sec: end_sec - self.start_sec,
+            },
+        }
+    }
+
+    pub fn summarize(&self) -> QuerySummary {
+        QuerySummary {
+            id: self.id.clone(),
+            start_sec: self.start_sec,
+            status: self.status(),
         }
     }
 }
@@ -105,6 +128,8 @@ pub(crate) struct DashboardState {
     // Mapping from query id to query info
     pub queries: DashMap<QueryID, QueryInfo>,
     pub dataframe_previews: DashMap<String, RecordBatch>,
+    pub clients: broadcast::Sender<(usize, QuerySummary)>,
+    pub event_counter: AtomicUsize,
 }
 
 impl DashboardState {
@@ -112,6 +137,9 @@ impl DashboardState {
         Self {
             queries: Default::default(),
             dataframe_previews: Default::default(),
+            // TODO: Ideally this should never drop events, we need an unbounded broadcast channel
+            clients: broadcast::Sender::new(256),
+            event_counter: AtomicUsize::new(0),
         }
     }
 
@@ -123,6 +151,17 @@ impl DashboardState {
 
     pub fn get_dataframe_preview(&self, id: &str) -> Option<RecordBatch> {
         self.dataframe_previews.get(id).map(|r| r.value().clone())
+    }
+
+    // -------------------- Updating Queries -------------------- //
+
+    pub fn ping_clients(&self, summary: QuerySummary) {
+        let id = self
+            .event_counter
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        // Returns error if there are no receivers, it's ok to ignore
+        let _ = self.clients.send((id, summary));
     }
 }
 

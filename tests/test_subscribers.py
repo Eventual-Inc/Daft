@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 import daft
-from daft.daft import PyMicroPartition, PyNodeInfo
+from daft.daft import PyMicroPartition, PyNodeInfo, PyQueryMetadata
 from daft.recordbatch import MicroPartition
 from daft.subscribers import StatType, Subscriber
 from tests.conftest import get_tests_daft_runner_name
@@ -19,19 +19,19 @@ pytestmark = pytest.mark.skipif(
 
 
 class MockSubscriber(Subscriber):
-    query_unoptimized_plan: dict[str, str]
+    query_metadata: dict[str, PyQueryMetadata]
     query_optimized_plan: dict[str, str]
     query_node_stats: defaultdict[str, defaultdict[int, dict[str, Any]]]
     query_results: defaultdict[str, list[PyMicroPartition]]
 
     def __init__(self):
-        self.query_unoptimized_plan = {}
+        self.query_metadata = {}
         self.query_optimized_plan = {}
         self.query_node_stats = defaultdict(lambda: defaultdict(dict))
         self.query_results = defaultdict(list)
 
-    def on_query_start(self, query_id: str, unoptimized_plan: str) -> None:
-        self.query_unoptimized_plan[query_id] = unoptimized_plan
+    def on_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None:
+        self.query_metadata[query_id] = metadata
 
     def on_query_end(self, query_id: str) -> None:
         pass
@@ -75,10 +75,12 @@ def test_subscriber_template():
     string_io = io.StringIO()
     df.explain(file=string_io)
     unoptimized_plan = string_io.getvalue().removeprefix("== Unoptimized Logical Plan ==\n\n")
+    output_schema = df.schema()
     df = df.collect()
 
-    query_id = next(iter(subscriber.query_unoptimized_plan.keys()))
-    assert subscriber.query_unoptimized_plan[query_id] in unoptimized_plan
+    query_id = next(iter(subscriber.query_metadata.keys()))
+    assert subscriber.query_metadata[query_id].unoptimized_plan in unoptimized_plan
+    assert subscriber.query_metadata[query_id].output_schema == output_schema._schema
     assert subscriber.query_optimized_plan[query_id] not in unoptimized_plan
 
     # Test output
@@ -97,4 +99,4 @@ def test_subscriber_template():
     df = df.with_column("y", df["x"] + 1)
     df.collect()
     # Should only have the previous query
-    assert len(subscriber.query_unoptimized_plan) == 1
+    assert len(subscriber.query_metadata) == 1

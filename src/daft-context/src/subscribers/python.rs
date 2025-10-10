@@ -6,7 +6,10 @@ use common_metrics::{QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo, python
 use daft_micropartition::{MicroPartitionRef, python::PyMicroPartition};
 use pyo3::{IntoPyObject, PyObject, Python, intern};
 
-use crate::subscribers::{NodeID, Subscriber};
+use crate::{
+    python::PyQueryMetadata,
+    subscribers::{NodeID, QueryMetadata, Subscriber},
+};
 
 /// Wrapper around a Python object that implements the Subscriber trait
 #[derive(Debug)]
@@ -14,12 +17,12 @@ pub struct PySubscriberWrapper(pub(crate) PyObject);
 
 #[async_trait]
 impl Subscriber for PySubscriberWrapper {
-    fn on_query_start(&self, query_id: QueryID, unoptimized_plan: QueryPlan) -> DaftResult<()> {
+    fn on_query_start(&self, query_id: QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()> {
         Python::with_gil(|py| {
             self.0.call_method1(
                 py,
                 intern!(py, "on_query_start"),
-                (query_id.to_string(), unoptimized_plan.to_string()),
+                (query_id.to_string(), PyQueryMetadata::from(metadata)),
             )?;
             Ok(())
         })
