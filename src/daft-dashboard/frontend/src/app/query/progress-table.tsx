@@ -86,8 +86,6 @@ export default function ProgressTable({ exec_state }: { exec_state: ExecutingSta
         <div className="divide-y divide-zinc-700">
           {Object.entries(exec_state.exec_info.operators).map(([operatorId, operator]) => {
             const name = operator.node_info.name;
-            const category = operator.node_info.node_category;
-            console.log("Category:", category);
 
             // Extract important stats from operator.stats
             const rowsIn = operator.stats["rows in"]?.value || 0;
