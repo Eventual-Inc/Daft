@@ -7,11 +7,11 @@ use common_scan_info::ScanState;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
-    resolved_col,
+    is_partition_compatible, resolved_col,
 };
 use daft_logical_plan::{
     LogicalPlan, LogicalPlanRef, SourceInfo,
-    partitioning::{HashRepartitionConfig, RepartitionSpec},
+    partitioning::{ClusteringSpec, HashRepartitionConfig, RepartitionSpec},
 };
 use daft_physical_plan::extract_agg_expr;
 use daft_schema::schema::Schema;
@@ -329,39 +329,71 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         .collect::<Vec<_>>()
                 });
                 let columns = BoundExpr::bind_all(&columns, &distinct.input.schema())?;
+                let input_node = self.curr_node.pop().unwrap();
 
-                // First stage: Initial local distinct to reduce the dataset
-                let initial_distinct = DistinctNode::new(
-                    self.get_next_pipeline_node_id(),
-                    logical_node_id,
-                    &self.plan_config,
-                    columns.clone(),
-                    distinct.input.schema(),
-                    self.curr_node.pop().unwrap(),
-                )
-                .into_node();
+                // Check if we can elide the repartition
+                let input_clustering_spec = &input_node.config().clustering_spec;
+                // If there is only one partition, or the input is already partitioned by the distinct columns,
+                // then we can just do a single stage distinct and skip the shuffle.
+                let is_hash_partitioned_by_columns =
+                    matches!(input_clustering_spec.as_ref(), ClusteringSpec::Hash(_))
+                        && !columns.is_empty()
+                        && is_partition_compatible(
+                            BoundExpr::bind_all(
+                                &input_clustering_spec.partition_by(),
+                                &input_node.config().schema,
+                            )?
+                            .iter()
+                            .map(|e| e.inner()),
+                            columns.iter().map(|e| e.inner()),
+                        );
 
-                // Second stage: Repartition to distribute the dataset
-                let repartition = self.gen_shuffle_node(
-                    logical_node_id,
-                    RepartitionSpec::Hash(HashRepartitionConfig::new(
-                        None,
-                        columns.clone().into_iter().map(|e| e.into()).collect(),
-                    )),
-                    distinct.input.schema(),
-                    initial_distinct,
-                )?;
+                if input_clustering_spec.num_partitions() == 1 || is_hash_partitioned_by_columns {
+                    // Single partition or already properly partitioned - skip shuffle
+                    DistinctNode::new(
+                        self.get_next_pipeline_node_id(),
+                        logical_node_id,
+                        &self.plan_config,
+                        columns,
+                        distinct.input.schema(),
+                        input_node,
+                    )
+                    .into_node()
+                } else {
+                    // Need full 2-stage distinct with shuffle
+                    // First stage: Initial local distinct to reduce the dataset
+                    let initial_distinct = DistinctNode::new(
+                        self.get_next_pipeline_node_id(),
+                        logical_node_id,
+                        &self.plan_config,
+                        columns.clone(),
+                        distinct.input.schema(),
+                        input_node,
+                    )
+                    .into_node();
 
-                // Last stage: Redo the distinct to get the final result
-                DistinctNode::new(
-                    self.get_next_pipeline_node_id(),
-                    logical_node_id,
-                    &self.plan_config,
-                    columns,
-                    distinct.input.schema(),
-                    repartition,
-                )
-                .into_node()
+                    // Second stage: Repartition to distribute the dataset
+                    let repartition = self.gen_shuffle_node(
+                        logical_node_id,
+                        RepartitionSpec::Hash(HashRepartitionConfig::new(
+                            None,
+                            columns.clone().into_iter().map(|e| e.into()).collect(),
+                        )),
+                        distinct.input.schema(),
+                        initial_distinct,
+                    )?;
+
+                    // Last stage: Redo the distinct to get the final result
+                    DistinctNode::new(
+                        self.get_next_pipeline_node_id(),
+                        logical_node_id,
+                        &self.plan_config,
+                        columns,
+                        distinct.input.schema(),
+                        repartition,
+                    )
+                    .into_node()
+                }
             }
             LogicalPlan::Window(window) => {
                 let partition_by =
