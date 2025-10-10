@@ -300,7 +300,7 @@ impl ConnectSession {
 
         set_opt_str!(region);
         set_opt_str!(endpoint);
-        set_opt_from_config!(access_key);
+        set_opt_str!(access_key);
         set_opt_from_config!(secret_key);
         set_opt_from_config!(security_token);
         set_from_config!(anonymous);
