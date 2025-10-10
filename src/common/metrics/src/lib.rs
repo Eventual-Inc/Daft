@@ -22,7 +22,7 @@ pub type QueryPlan = Arc<str>;
 /// Unique identifier for a node in the execution plan.
 pub type NodeID = usize;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Stat {
     // Integer Representations
     Count(u64),
@@ -100,35 +100,8 @@ macro_rules! snapshot {
 ///
 /// This should match the format of the sendable snapshot, but is a different
 /// type for deserialization
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct StatSnapshotRecv(Vec<(String, Stat)>);
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct StatSnapshotView<'a>(SmallVec<[(&'a str, Stat); 3]>);
-
-impl From<StatSnapshotSend> for StatSnapshotView<'static> {
-    fn from(snapshot: StatSnapshotSend) -> Self {
-        Self(snapshot.0)
-    }
-}
-
-impl<'a> IntoIterator for StatSnapshotView<'a> {
-    type Item = (&'a str, Stat);
-    type IntoIter = smallvec::IntoIter<[(&'a str, Stat); 3]>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
-impl<'de, 'a> IntoIterator for &'de StatSnapshotView<'a> {
-    type Item = &'de (&'a str, Stat);
-    type IntoIter = std::slice::Iter<'de, (&'a str, Stat)>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.iter()
-    }
-}
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {

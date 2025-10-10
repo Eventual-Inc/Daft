@@ -67,8 +67,8 @@ impl PyDaftContext {
     pub fn notify_query_start(
         &self,
         py: Python,
-        query_id: String,
-        unoptimized_plan: String,
+        query_id: &str,
+        unoptimized_plan: &str,
     ) -> PyResult<()> {
         py.allow_threads(|| {
             self.inner
@@ -85,7 +85,7 @@ impl PyDaftContext {
     pub fn notify_result_out(
         &self,
         py: Python,
-        query_id: String,
+        query_id: &str,
         result: PyMicroPartition,
     ) -> PyResult<()> {
         py.allow_threads(|| self.inner.notify_result_out(query_id.into(), result.into()))?;
@@ -100,8 +100,8 @@ impl PyDaftContext {
     pub fn notify_optimization_end(
         &self,
         py: Python,
-        query_id: String,
-        optimized_plan: String,
+        query_id: &str,
+        optimized_plan: &str,
     ) -> PyResult<()> {
         py.allow_threads(|| {
             self.inner

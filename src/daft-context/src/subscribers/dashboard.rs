@@ -2,7 +2,7 @@ use std::{sync::Arc, time::SystemTime};
 
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
-use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotSend, ops::NodeInfo};
 use common_runtime::{RuntimeRef, get_io_runtime};
 use daft_io::IOStatsContext;
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
@@ -90,7 +90,7 @@ const TOTAL_ROWS: usize = 10;
 
 #[async_trait]
 impl Subscriber for DashboardSubscriber {
-    fn on_query_start(&self, query_id: QueryID, unoptimized_plan: QueryPlan) -> DaftResult<()> {
+    fn on_query_start(&self, query_id: &QueryID, unoptimized_plan: QueryPlan) -> DaftResult<()> {
         self.runtime.block_on_current_thread(async {
             Self::handle_request(
                 self.client
@@ -105,13 +105,13 @@ impl Subscriber for DashboardSubscriber {
         })
     }
 
-    fn on_result_out(&self, query_id: QueryID, result: MicroPartitionRef) -> DaftResult<()> {
+    fn on_result_out(&self, query_id: &QueryID, result: MicroPartitionRef) -> DaftResult<()> {
         // Limit to TOTAL_ROWS rows
         // TODO: Limit by X MB and # of rows
-        let entry = self.preview_rows.get_mut(&query_id);
+        let entry = self.preview_rows.get_mut(query_id);
         if entry.is_none() {
             let result = result.head(TOTAL_ROWS)?;
-            self.preview_rows.insert(query_id, Arc::new(result));
+            self.preview_rows.insert(query_id.clone(), Arc::new(result));
             return Ok(());
         }
 
@@ -128,10 +128,10 @@ impl Subscriber for DashboardSubscriber {
         Ok(())
     }
 
-    fn on_query_end(&self, query_id: QueryID) -> DaftResult<()> {
+    fn on_query_end(&self, query_id: &QueryID) -> DaftResult<()> {
         let result = self
             .preview_rows
-            .view(&query_id, |_, v| v.clone())
+            .view(query_id, |_, v| v.clone())
             .unwrap_or_else(|| Arc::new(MicroPartition::empty(None)));
 
         debug_assert!(result.len() <= TOTAL_ROWS);
@@ -159,7 +159,7 @@ impl Subscriber for DashboardSubscriber {
         })
     }
 
-    fn on_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
+    fn on_optimization_start(&self, query_id: &QueryID) -> DaftResult<()> {
         self.runtime.block_on_current_thread(async {
             Self::handle_request(
                 self.client
@@ -173,7 +173,7 @@ impl Subscriber for DashboardSubscriber {
         })
     }
 
-    fn on_optimization_end(&self, query_id: QueryID, optimized_plan: QueryPlan) -> DaftResult<()> {
+    fn on_optimization_end(&self, query_id: &QueryID, optimized_plan: QueryPlan) -> DaftResult<()> {
         let plan_end_sec = secs_from_epoch();
         self.runtime.block_on_current_thread(async {
             Self::handle_request(
@@ -189,7 +189,7 @@ impl Subscriber for DashboardSubscriber {
         })
     }
 
-    fn on_exec_start(&self, query_id: QueryID, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()> {
+    fn on_exec_start(&self, query_id: &QueryID, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()> {
         let exec_start_sec = secs_from_epoch();
         self.runtime.block_on_current_thread(async {
             Self::handle_request(
@@ -208,7 +208,7 @@ impl Subscriber for DashboardSubscriber {
         })
     }
 
-    async fn on_exec_operator_start(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
+    async fn on_exec_operator_start(&self, query_id: &QueryID, node_id: NodeID) -> DaftResult<()> {
         Self::handle_request(self.client.post(format!(
             "{}/engine/query/{}/exec/{}/start",
             self.url, query_id, node_id
@@ -219,8 +219,8 @@ impl Subscriber for DashboardSubscriber {
 
     async fn on_exec_emit_stats(
         &self,
-        query_id: QueryID,
-        stats: &[(NodeID, StatSnapshotView)],
+        query_id: &QueryID,
+        stats: &[(NodeID, StatSnapshotSend)],
     ) -> DaftResult<()> {
         Self::handle_request(
             self.client
@@ -228,26 +228,13 @@ impl Subscriber for DashboardSubscriber {
                     "{}/engine/query/{}/exec/emit_stats",
                     self.url, query_id
                 ))
-                .json(&daft_dashboard::engine::ExecEmitStatsArgsSend {
-                    stats: stats
-                        .iter()
-                        .map(|(node_id, stats)| {
-                            (
-                                *node_id,
-                                stats
-                                    .into_iter()
-                                    .map(|(name, stat)| (*name, stat.clone()))
-                                    .collect(),
-                            )
-                        })
-                        .collect::<Vec<_>>(),
-                }),
+                .json(stats),
         )
         .await?;
         Ok(())
     }
 
-    async fn on_exec_operator_end(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
+    async fn on_exec_operator_end(&self, query_id: &QueryID, node_id: NodeID) -> DaftResult<()> {
         Self::handle_request(self.client.post(format!(
             "{}/engine/query/{}/exec/{}/end",
             self.url, query_id, node_id
@@ -256,7 +243,7 @@ impl Subscriber for DashboardSubscriber {
         Ok(())
     }
 
-    async fn on_exec_end(&self, query_id: QueryID) -> DaftResult<()> {
+    async fn on_exec_end(&self, query_id: &QueryID) -> DaftResult<()> {
         let exec_end_sec = secs_from_epoch();
 
         Self::handle_request(
