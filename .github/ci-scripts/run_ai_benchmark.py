@@ -14,7 +14,7 @@ import time
 from ray.job_submission import JobStatus, JobSubmissionClient
 
 import daft
-from tools.ci_bench_utils import get_run_metadata, tail_logs
+from tools.ci_bench_utils import get_run_metadata, tail_logs, upload_to_google_sheets
 
 
 def run_benchmark(benchmark_name: str):
@@ -69,14 +69,33 @@ def main():
     print(f"Starting {benchmark_name} benchmark...")
     print(f"Daft version: {metadata['daft version']}")
 
-    # Run benchmark
-    execution_time = run_benchmark(benchmark_name)
+    # Warmup run
+    print("\nPerforming warmup run...")
+    run_benchmark(benchmark_name)
+    print("Warmup completed.\n")
+
+    # Run benchmark multiple times and take average
+    num_runs = 2
+    print(f"Running benchmark {num_runs} times...")
+    execution_times = []
+    for i in range(num_runs):
+        print(f"\nRun {i + 1}/{num_runs}:")
+        execution_time = run_benchmark(benchmark_name)
+        execution_times.append(execution_time)
+
+    avg_execution_time = sum(execution_times) / len(execution_times)
+    print(f"\nExecution times: {[f'{t:.2f}s' for t in execution_times]}")
+    print(f"Average execution time: {avg_execution_time:.2f}s")
 
     # Prepare data for upload
-    data_dict = {**metadata, "benchmark_type": benchmark_name, benchmark_name: execution_time}
+    data_dict = {**metadata, "benchmark_type": benchmark_name, benchmark_name: avg_execution_time}
 
-    print(f"\n{benchmark_name} benchmark completed in {execution_time:.2f}s")
+    print(f"\n{benchmark_name} benchmark completed in {avg_execution_time:.2f}s (average of {num_runs} runs)")
     print(f"Results: {data_dict}")
+
+    # Upload results to Google Sheets
+    upload_to_google_sheets("AI Benchmarks", list(data_dict.values()))
+    print("Results uploaded to Google Sheets")
 
     print(f"{benchmark_name} benchmark completed successfully!")
 
