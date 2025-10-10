@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from daft.context import get_context
+
 if TYPE_CHECKING:
     from daft.dataframe.dataframe import DataFrame
     from daft.daft import IOConfig
@@ -67,6 +69,8 @@ def read_video_frames(
         from daft.io.av._read_video_frames import _VideoFramesSource
     except ImportError as e:
         raise ImportError("read_video_frames requires PyAV. Please install it with `pip install av`.") from e
+
+    io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
     return _VideoFramesSource(
         paths=[path] if isinstance(path, str) else path,
         image_height=image_height,
