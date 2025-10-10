@@ -4,7 +4,6 @@ use daft_dsl::{
     Column, ExprRef, ResolvedColumn,
     expr::bound_expr::BoundExpr,
     functions::{FunctionArgs, scalar::ScalarFn},
-    python_udf::PyScalarFn,
 };
 use daft_recordbatch::RecordBatch;
 use indexmap::IndexMap;
@@ -393,14 +392,14 @@ fn translate_clustering_spec_expr(
 
             Ok(expr.in_subquery(subquery.clone()))
         }
-        Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(row_wise_py_fn))) => {
-            let new_children = row_wise_py_fn
-                .args
+        Expr::ScalarFn(ScalarFn::Python(udf)) => {
+            let new_children = udf
+                .args()
                 .iter()
                 .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Arc::new(Expr::ScalarFn(ScalarFn::Python(
-                PyScalarFn::RowWise(row_wise_py_fn.with_new_children(new_children)),
+                udf.with_new_children(new_children),
             ))))
         }
         // Cannot have agg exprs or references to other tables in clustering specs.

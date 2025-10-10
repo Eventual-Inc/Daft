@@ -22,7 +22,7 @@ use crate::python::PyExpr;
 use crate::{
     Expr, ExprRef,
     functions::scalar::ScalarFn,
-    python_udf::{PyScalarFn, RowWisePyFn},
+    python_udf::{BatchPyFn, PyScalarFn, RowWisePyFn},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -264,47 +264,70 @@ impl UDFProperties {
         let mut num_udfs = 0;
 
         expr.apply(|e| {
-            if let Expr::Function {
-                func:
-                    FunctionExpr::Python(LegacyPythonUDF {
-                        name,
-                        resource_request,
-                        batch_size,
-                        concurrency,
-                        use_process,
-                        ..
-                    }),
-                ..
-            } = e.as_ref()
-            {
-                num_udfs += 1;
-                udf_properties = Some(Self {
-                    name: name.as_ref().clone(),
-                    resource_request: resource_request.clone(),
-                    batch_size: *batch_size,
-                    concurrency: *concurrency,
-                    use_process: *use_process,
-                });
-            } else if let Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
-                function_name,
-                gpus,
-                max_concurrency,
-                use_process,
-                ..
-            }))) = e.as_ref()
-            {
-                num_udfs += 1;
-                udf_properties = Some(Self {
-                    name: function_name.to_string(),
-                    resource_request: Some(ResourceRequest::try_new_internal(
-                        None,
-                        Some(*gpus as f64),
-                        None,
-                    )?),
-                    batch_size: None,
-                    concurrency: *max_concurrency,
-                    use_process: *use_process,
-                });
+            match e.as_ref() {
+                Expr::Function {
+                    func:
+                        FunctionExpr::Python(LegacyPythonUDF {
+                            name,
+                            resource_request,
+                            batch_size,
+                            concurrency,
+                            use_process,
+                            ..
+                        }),
+                    ..
+                } => {
+                    num_udfs += 1;
+                    udf_properties = Some(Self {
+                        name: name.as_ref().clone(),
+                        resource_request: resource_request.clone(),
+                        batch_size: *batch_size,
+                        concurrency: *concurrency,
+                        use_process: *use_process,
+                    });
+                }
+                Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
+                    function_name,
+                    gpus,
+                    max_concurrency,
+                    use_process,
+                    ..
+                }))) => {
+                    num_udfs += 1;
+                    udf_properties = Some(Self {
+                        name: function_name.to_string(),
+                        resource_request: Some(ResourceRequest::try_new_internal(
+                            None,
+                            Some(*gpus as f64),
+                            None,
+                        )?),
+                        batch_size: None,
+                        concurrency: *max_concurrency,
+                        use_process: *use_process,
+                    });
+                }
+                Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
+                    function_name,
+                    gpus,
+                    max_concurrency,
+                    use_process,
+                    batch_size,
+                    ..
+                }))) => {
+                    num_udfs += 1;
+                    udf_properties = Some(Self {
+                        name: function_name.to_string(),
+                        resource_request: Some(ResourceRequest::try_new_internal(
+                            None,
+                            Some(*gpus as f64),
+                            None,
+                        )?),
+                        batch_size: *batch_size,
+                        concurrency: *max_concurrency,
+                        use_process: *use_process,
+                    });
+                }
+                _ => {}
             }
             Ok(TreeNodeRecursion::Continue)
         })

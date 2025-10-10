@@ -48,6 +48,21 @@ pub fn from_proto_function(message: proto::ScalarFn) -> ProtoResult<ir::Expr> {
                 };
                 ir::rex::from_py_rowwise_func(func)
             }
+            proto::scalar_fn::py_fn::Variant::Batch(batch_fn) => {
+                let func = ir::functions::BatchPyFn {
+                    function_name: batch_fn.name.into(),
+                    cls: from_proto(batch_fn.cls)?,
+                    method: from_proto(batch_fn.method)?,
+                    return_dtype: from_proto(batch_fn.return_dtype)?,
+                    gpus: batch_fn.gpus as usize,
+                    use_process: batch_fn.use_process,
+                    max_concurrency: batch_fn.max_concurrency.map(|c| c as usize),
+                    batch_size: batch_fn.batch_size.map(|b| b as usize),
+                    original_args: from_proto(batch_fn.original_args)?,
+                    args: args.into_inner(),
+                };
+                ir::rex::from_py_batch_func(func)
+            }
         },
         proto::scalar_fn::Descriptor::Builtin(builtin_fn) => {
             // handle special form, otherwise it's a ScalarFn
@@ -110,6 +125,34 @@ pub fn scalar_fn_to_proto(sf: &ir::functions::scalar::ScalarFn) -> ProtoResult<p
                             gpus: row_wise_fn.gpus as u64,
                             use_process: row_wise_fn.use_process,
                             max_concurrency: row_wise_fn.max_concurrency.map(|c| c as u64),
+                        },
+                    )),
+                })),
+                args: Some(args),
+            })
+        }
+        ir::functions::scalar::ScalarFn::Python(ir::functions::PyScalarFn::Batch(batch_fn)) => {
+            let function_args = batch_fn
+                .args
+                .iter()
+                .map(|arg| ir::functions::FunctionArg::Unnamed(arg.clone()))
+                .collect();
+            let function_args = ir::functions::FunctionArgs::new_unchecked(function_args);
+            let args = function_args.to_proto()?;
+
+            Ok(proto::ScalarFn {
+                descriptor: Some(proto::scalar_fn::Descriptor::Py(proto::scalar_fn::PyFn {
+                    variant: Some(proto::scalar_fn::py_fn::Variant::Batch(
+                        proto::scalar_fn::py_fn::BatchFn {
+                            name: batch_fn.function_name.to_string(),
+                            return_dtype: Some(batch_fn.return_dtype.to_proto()?),
+                            cls: Some(batch_fn.cls.to_proto()?),
+                            method: Some(batch_fn.method.to_proto()?),
+                            original_args: Some(batch_fn.original_args.to_proto()?),
+                            gpus: batch_fn.gpus as u64,
+                            use_process: batch_fn.use_process,
+                            max_concurrency: batch_fn.max_concurrency.map(|c| c as u64),
+                            batch_size: batch_fn.batch_size.map(|b| b as u64),
                         },
                     )),
                 })),
