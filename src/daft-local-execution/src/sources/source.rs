@@ -89,8 +89,18 @@ pub(crate) struct SourceNode {
 }
 
 impl SourceNode {
-    pub fn new(source: Arc<dyn Source>, plan_stats: StatsState, ctx: &RuntimeContext) -> Self {
-        let info = ctx.next_node_info(source.name().into(), source.op_type(), NodeCategory::Source);
+    pub fn new(
+        source: Arc<dyn Source>,
+        plan_stats: StatsState,
+        ctx: &RuntimeContext,
+        output_schema: SchemaRef,
+    ) -> Self {
+        let info = ctx.next_node_info(
+            source.name().into(),
+            source.op_type(),
+            NodeCategory::Source,
+            output_schema,
+        );
         let runtime_stats = source.make_runtime_stats();
         Self {
             source,

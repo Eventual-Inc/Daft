@@ -5,6 +5,7 @@ use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
+use daft_core::prelude::SchemaRef;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
@@ -90,11 +91,13 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         children: Vec<Box<dyn PipelineNode>>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
+        output_schema: SchemaRef,
     ) -> Self {
         let info = ctx.next_node_info(
             Arc::from(intermediate_op.name()),
             intermediate_op.op_type(),
             NodeCategory::Intermediate,
+            output_schema,
         );
         let runtime_stats = intermediate_op.make_runtime_stats();
         let morsel_size_requirement = intermediate_op
