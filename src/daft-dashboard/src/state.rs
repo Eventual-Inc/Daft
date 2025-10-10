@@ -80,6 +80,7 @@ pub(crate) enum QueryState {
         exec_info: ExecInfo,
         exec_end_sec: u64,
         end_sec: u64,
+        #[serde(skip_serializing)]
         results: RecordBatch,
     },
 }

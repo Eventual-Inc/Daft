@@ -13,7 +13,7 @@ export function genApiUrl(path: string): string {
   let base;
 
   // For same-port deployment (Axum serving both frontend and API)
-  if (typeof window !== "undefined") {
+  if (process.env.NODE_ENV !== "development" && typeof window !== "undefined") {
     base = window.location.origin; // Uses current host and port
   } else {
     // Default fallback for development
