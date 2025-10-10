@@ -66,11 +66,11 @@ class LazyImport:
                 return lazy_submodule
             raise e
 
-    def __getstate__(self) -> dict:
+    def __getstate__(self) -> dict[str, Any]:
         # Only serialize the module name, don't serialize the loaded module to avoid pickling issues
-        return {'_module_name': self._module_name}
+        return {"_module_name": self._module_name}
 
-    def __setstate__(self, state: dict) -> None:
+    def __setstate__(self, state: dict[str, Any]) -> None:
         # Restore the module name and initialize module as None
-        self._module_name = state['_module_name']
+        self._module_name = state["_module_name"]
         self._module = None
