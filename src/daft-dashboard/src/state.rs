@@ -166,7 +166,6 @@ impl DashboardState {
     // -------------------- Updating Queries -------------------- //
 
     pub fn ping_query(&self, query_id: QueryID) {
-        // TODO: Error handling?
         let id = self
             .event_counter
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);

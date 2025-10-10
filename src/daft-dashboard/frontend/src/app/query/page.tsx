@@ -39,13 +39,11 @@ function QueryPageInner() {
     // These overwrite
     es.addEventListener("initial_state", event => {
       const data: QueryInfo = JSON.parse(event.data);
-      console.log("initial_state", data);
       setQuery(data);
     });
     // TODO: Consistent ordering of statistics
     es.addEventListener("query_info", event => {
       const data: QueryInfo = JSON.parse(event.data);
-      console.log("query_info", data);
       setQuery(data);
     });
     // Merges with existing info
@@ -57,7 +55,6 @@ function QueryPageInner() {
         const old_exec_info = "exec_info" in prev.state ? prev.state.exec_info : undefined;
         const data: Record<number, OperatorInfo> = JSON.parse(event.data).update;
 
-        console.log("operator_info", data)
         if (plan_info && old_exec_info && old_exec_info.exec_start_sec !== undefined) {
           const new_exec_info = { ...old_exec_info, operators: data };
           const new_state = {
