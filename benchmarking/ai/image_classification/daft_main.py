@@ -30,7 +30,7 @@ transform = transforms.Compose([transforms.ToTensor(), weights.transforms()])
 
 @daft.cls(
     max_concurrency=NUM_GPU_NODES,
-    gpus=1.0,
+    gpus=1,
 )
 class ResNetModel:
     def __init__(self):

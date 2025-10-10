@@ -56,7 +56,7 @@ def chunk(text):
     return chunks
 
 
-@daft.cls(max_concurrency=NUM_GPU_NODES, gpus=1.0)
+@daft.cls(max_concurrency=NUM_GPU_NODES, gpus=1)
 class Embedder:
     def __init__(self):
         from sentence_transformers import SentenceTransformer
