@@ -1,13 +1,10 @@
 import { AnimatedFish, Naruto } from "@/components/icons";
 import { ExecutingState, OperatorStatus, Stat } from "./types";
 
-
 const getStatusIcon = (status: OperatorStatus) => {
   switch (status) {
     case "Finished":
-      return (
-        <Naruto />
-      );
+      return <Naruto />;
     case "Executing":
       return <AnimatedFish />;
     case "Pending":
@@ -67,61 +64,83 @@ const formatStatValue = (stat: Stat) => {
   }
 };
 
-
-export default function ProgressTable({ exec_state }: { exec_state: ExecutingState }) {
+export default function ProgressTable({
+  exec_state,
+}: {
+  exec_state: ExecutingState;
+}) {
   return (
     <div className="overflow-auto h-full">
       <div className="min-w-[710px]">
         {/* Table Headers */}
         <div className="bg-zinc-800 grid grid-cols-[50px_100px_200px_120px_120px_1fr] gap-0 items-center min-h-[55px] border-b border-zinc-600">
           <div className="px-3 py-4"></div>
-          <div className="px-3 py-4 text-right text-sm font-medium text-zinc-300">Status</div>
-          <div className="px-3 py-4 text-sm font-medium text-zinc-300">Name</div>
-          <div className="px-3 py-4 text-right text-sm font-medium text-zinc-300">Rows In</div>
-          <div className="px-3 py-4 text-right text-sm font-medium text-zinc-300">Rows Out</div>
-          <div className="px-3 py-4 text-sm font-medium text-zinc-300">Extra Stats</div>
+          <div className="px-3 py-4 text-right text-sm font-medium text-zinc-300">
+            Status
+          </div>
+          <div className="px-3 py-4 text-sm font-medium text-zinc-300">
+            Name
+          </div>
+          <div className="px-3 py-4 text-right text-sm font-medium text-zinc-300">
+            Rows In
+          </div>
+          <div className="px-3 py-4 text-right text-sm font-medium text-zinc-300">
+            Rows Out
+          </div>
+          <div className="px-3 py-4 text-sm font-medium text-zinc-300">
+            Extra Stats
+          </div>
         </div>
 
         {/* Operator Rows */}
         <div className="divide-y divide-zinc-700">
-          {Object.entries(exec_state.exec_info.operators).map(([operatorId, operator]) => {
-            const name = operator.node_info.name;
+          {Object.entries(exec_state.exec_info.operators).map(
+            ([operatorId, operator]) => {
+              const name = operator.node_info.name;
 
-            // Extract important stats from operator.stats
-            const rowsIn = operator.stats["rows in"]?.value || 0;
-            const rowsOut = operator.stats["rows out"]?.value || 0;
+              // Extract important stats from operator.stats
+              const rowsIn = operator.stats["rows in"]?.value || 0;
+              const rowsOut = operator.stats["rows out"]?.value || 0;
 
-            const extraStats = Object.entries(operator.stats)
-              .filter(([key]) => !["rows in", "rows out", "cpu us"].includes(key))
-              .map(([key, stat]) => `${key.charAt(0).toUpperCase() + key.slice(1)}: ${formatStatValue(stat)}`)
-              .join(", ");
+              const extraStats = Object.entries(operator.stats)
+                .filter(
+                  ([key]) => !["rows in", "rows out", "cpu us"].includes(key)
+                )
+                .map(
+                  ([key, stat]) =>
+                    `${key.charAt(0).toUpperCase() + key.slice(1)}: ${formatStatValue(stat)}`
+                )
+                .join(", ");
 
-            return (
-              <div
-                key={operatorId}
-                className="grid grid-cols-[50px_100px_200px_120px_120px_1fr] gap-0 items-center min-h-[55px] transition-colors"
-              >
-                <div className="px-3 py-4 flex items-center justify-end">
-                  {getStatusIcon(operator.status)}
+              return (
+                <div
+                  key={operatorId}
+                  className="grid grid-cols-[50px_100px_200px_120px_120px_1fr] gap-0 items-center min-h-[55px] transition-colors"
+                >
+                  <div className="px-3 py-4 flex items-center justify-end">
+                    {getStatusIcon(operator.status)}
+                  </div>
+                  <div className="pr-3 py-4 text-right text-sm">
+                    <span className={getStatusColor(operator.status)}>
+                      {getStatusText(operator.status)}
+                    </span>
+                  </div>
+                  <div className={`px-3 py-4 text-sm text-zinc-300 truncate`}>
+                    {name}
+                  </div>
+                  <div className="px-3 py-4 text-right text-sm text-zinc-300 font-mono">
+                    {name.includes("Scan") ? "-" : rowsIn.toLocaleString()}
+                  </div>
+                  <div className="px-3 py-4 text-right text-sm text-zinc-300 font-mono">
+                    {name.includes("Sink") ? "-" : rowsOut.toLocaleString()}
+                  </div>
+                  <div className="px-3 py-4 text-sm text-zinc-400 font-mono">
+                    {extraStats || "-"}
+                  </div>
                 </div>
-                <div className="pr-3 py-4 text-right text-sm">
-                  <span className={getStatusColor(operator.status)}>{getStatusText(operator.status)}</span>
-                </div>
-                <div className={`px-3 py-4 text-sm text-zinc-300 truncate`}>
-                  {name}
-                </div>
-                <div className="px-3 py-4 text-right text-sm text-zinc-300 font-mono">
-                  {name.includes("Scan") ? "-" : rowsIn.toLocaleString()}
-                </div>
-                <div className="px-3 py-4 text-right text-sm text-zinc-300 font-mono">
-                  {name.includes("Sink") ? "-" : rowsOut.toLocaleString()}
-                </div>
-                <div className="px-3 py-4 text-sm text-zinc-400 font-mono">
-                  {extraStats || "-"}
-                </div>
-              </div>
-            );
-          })}
+              );
+            }
+          )}
         </div>
       </div>
     </div>

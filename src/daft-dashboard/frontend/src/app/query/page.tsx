@@ -18,7 +18,6 @@ import { Status } from "./status";
 import { ExecutingState, OperatorInfo, QueryInfo } from "./types";
 import ProgressTable from "./progress-table";
 
-
 /**
  * Query detail page component
  * Displays details for a specific query by ID using query parameters
@@ -51,11 +50,19 @@ function QueryPageInner() {
       setQuery(prev => {
         if (!prev) return prev;
 
-        const plan_info = "plan_info" in prev.state ? prev.state.plan_info : undefined;
-        const old_exec_info = "exec_info" in prev.state ? prev.state.exec_info : undefined;
-        const data: Record<number, OperatorInfo> = JSON.parse(event.data).update;
+        const plan_info =
+          "plan_info" in prev.state ? prev.state.plan_info : undefined;
+        const old_exec_info =
+          "exec_info" in prev.state ? prev.state.exec_info : undefined;
+        const data: Record<number, OperatorInfo> = JSON.parse(
+          event.data
+        ).update;
 
-        if (plan_info && old_exec_info && old_exec_info.exec_start_sec !== undefined) {
+        if (
+          plan_info &&
+          old_exec_info &&
+          old_exec_info.exec_start_sec !== undefined
+        ) {
           const new_exec_info = { ...old_exec_info, operators: data };
           const new_state = {
             status: "Executing" as const,
@@ -78,7 +85,8 @@ function QueryPageInner() {
     return <LoadingPage />;
   }
 
-  const end_sec = query.state.status === "Finished" ? query.state.end_sec : null;
+  const end_sec =
+    query.state.status === "Finished" ? query.state.end_sec : null;
 
   return (
     <div className="h-full flex flex-col">
@@ -105,13 +113,19 @@ function QueryPageInner() {
 
         <div className="w-full h-[150px] flex">
           <div className="w-1/4 h-full border-r px-6 py-4">
-            <Status status={query.state.status} start_sec={query.start_sec} end_sec={end_sec} />
+            <Status
+              status={query.state.status}
+              start_sec={query.start_sec}
+              end_sec={end_sec}
+            />
           </div>
           <div className="flex-1 h-full px-6 py-4">
             <div className="grid grid-cols-2 gap-6 h-full">
               <div className="space-y-3">
                 <div>
-                  <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
+                  <h3
+                    className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}
+                  >
                     Query ID
                   </h3>
                   <p className={`${main.className} text-lg font-mono`}>
@@ -119,7 +133,9 @@ function QueryPageInner() {
                   </p>
                 </div>
                 <div>
-                  <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
+                  <h3
+                    className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}
+                  >
                     Start Time
                   </h3>
                   <p className={`${main.className} text-lg font-mono`}>
@@ -129,7 +145,9 @@ function QueryPageInner() {
               </div>
               <div className="space-y-3">
                 <div>
-                  <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
+                  <h3
+                    className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}
+                  >
                     Runner
                   </h3>
                   <p className={`${main.className} text-lg font-mono`}>
@@ -137,7 +155,9 @@ function QueryPageInner() {
                   </p>
                 </div>
                 <div>
-                  <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
+                  <h3
+                    className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}
+                  >
                     End Time
                   </h3>
                   <p className={`${main.className} text-lg font-mono`}>
@@ -153,43 +173,75 @@ function QueryPageInner() {
 
       {/* Scrollable Content Section */}
       <div className="flex-1">
-        <Tabs defaultValue="unoptimized-plan" className="w-full h-full flex flex-col">
+        <Tabs
+          defaultValue="unoptimized-plan"
+          className="w-full h-full flex flex-col"
+        >
           <TabsList className="grid w-full grid-cols-4 flex-shrink-0">
             <TabsTrigger value="unoptimized-plan">Unoptimized Plan</TabsTrigger>
-            <TabsTrigger value="optimized-plan" disabled={!("plan_info" in query.state)}>Optimized Plan</TabsTrigger>
+            <TabsTrigger
+              value="optimized-plan"
+              disabled={!("plan_info" in query.state)}
+            >
+              Optimized Plan
+            </TabsTrigger>
             <TabsTrigger
               value="progress-table"
-              disabled={query.state.status === "Pending" || query.state.status === "Optimizing" || query.state.status === "Setup"}
+              disabled={
+                query.state.status === "Pending" ||
+                query.state.status === "Optimizing" ||
+                query.state.status === "Setup"
+              }
             >
               Progress Table
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="unoptimized-plan" className="mt-4 flex-1 overflow-auto">
+          <TabsContent
+            value="unoptimized-plan"
+            className="mt-4 flex-1 overflow-auto"
+          >
             <div className="bg-zinc-900 p-4">
-              <pre className={`${main.className} text-sm font-mono text-zinc-300 whitespace-pre-wrap`}>
+              <pre
+                className={`${main.className} text-sm font-mono text-zinc-300 whitespace-pre-wrap`}
+              >
                 {query.unoptimized_plan}
               </pre>
             </div>
           </TabsContent>
 
-          <TabsContent value="optimized-plan" className="mt-4 flex-1 overflow-auto">
+          <TabsContent
+            value="optimized-plan"
+            className="mt-4 flex-1 overflow-auto"
+          >
             <div className="bg-zinc-900 p-4">
               {query.state.status === "Pending" ? (
-                <p className={`${main.className} text-zinc-400`}>Plan not yet optimized</p>
+                <p className={`${main.className} text-zinc-400`}>
+                  Plan not yet optimized
+                </p>
               ) : (
-                <pre className={`${main.className} text-sm font-mono text-zinc-300 whitespace-pre-wrap`}>
-                  {"plan_info" in query.state ? query.state.plan_info.optimized_plan : "No optimized plan available"}
+                <pre
+                  className={`${main.className} text-sm font-mono text-zinc-300 whitespace-pre-wrap`}
+                >
+                  {"plan_info" in query.state
+                    ? query.state.plan_info.optimized_plan
+                    : "No optimized plan available"}
                 </pre>
               )}
             </div>
           </TabsContent>
 
-          <TabsContent value="progress-table" className="mt-4 flex-1 overflow-auto">
+          <TabsContent
+            value="progress-table"
+            className="mt-4 flex-1 overflow-auto"
+          >
             <div className="bg-zinc-900 h-full">
-              {query.state.status === "Pending" || query.state.status === "Optimizing" ? (
+              {query.state.status === "Pending" ||
+              query.state.status === "Optimizing" ? (
                 <div className="p-8 text-center">
-                  <p className={`${main.className} text-zinc-400`}>Execution not yet started</p>
+                  <p className={`${main.className} text-zinc-400`}>
+                    Execution not yet started
+                  </p>
                 </div>
               ) : (
                 <ProgressTable exec_state={query.state as ExecutingState} />
