@@ -41,8 +41,11 @@ def test_read_video_eof():
 
 
 @pytest.mark.integration()
-def test_read_video_frames_s3():
+def test_read_video_frames_s3(pytestconfig):
     """Test that we can read video frames from S3."""
+    if not pytestconfig.getoption("--credentials"):
+        pytest.skip(reason="Video test requires credentials and `--credentials` flag")
+
     # Read video frames from S3 using anonymous access
     df = daft.read_video_frames(
         "s3://daft-public-datasets/Hollywood2-actions/actionclipautoautotrain00002.avi",
