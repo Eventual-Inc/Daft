@@ -9,8 +9,8 @@ use crate::ObfuscatedString;
     region: {region:?}
     endpoint: {endpoint:?}
     access_key: {access_key:?}
-    secret_key: {secret_key:?}
-    security_token: {security_token:?}
+    secret_key: ***
+    security_token: ***
     anonymous: {anonymous}
     max_retries: {max_retries}
     retry_timeout_ms: {retry_timeout_ms}
@@ -74,7 +74,7 @@ impl TosConfig {
         }
         res.push(format!("Anonymous = {}", self.anonymous));
         res.push(format!("Max retries = {}", self.max_retries));
-        res.push(format!("Retry timeout = {}ms", self.read_timeout_ms));
+        res.push(format!("Retry timeout = {}ms", self.retry_timeout_ms));
         res.push(format!("Connect timeout = {}ms", self.connect_timeout_ms));
         res.push(format!("Read timeout = {}ms", self.read_timeout_ms));
         res.push(format!(

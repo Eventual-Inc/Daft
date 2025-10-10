@@ -6,7 +6,6 @@ use std::{
     time::Duration,
 };
 
-use async_recursion::async_recursion;
 use async_trait::async_trait;
 use bytes::Bytes;
 use common_io_config::TosConfig;
@@ -134,23 +133,24 @@ impl TosSource {
             .unwrap_or_else(|| format!("https://tos-{}.volces.com", region));
 
         let mut builder = tos::builder::<TokioRuntime>()
-            .max_connections(config.connect_timeout_ms as isize)
+            .max_connections(config.max_concurrent_requests as isize)
+            .connection_timeout(config.connect_timeout_ms as isize)
             .request_timeout(config.read_timeout_ms as isize)
             .max_retry_count(config.max_retries as isize)
             .region(region)
             .endpoint(endpoint);
 
         if let Some(access_key) = config.access_key.clone() {
-            builder = builder.ak(access_key)
-        };
+            builder = builder.ak(access_key);
+        }
 
         if let Some(secret_key) = config.secret_key.clone() {
-            builder = builder.sk(secret_key.as_string().clone())
-        };
+            builder = builder.sk(secret_key.as_string().clone());
+        }
 
         if let Some(session_token) = config.security_token.clone() {
-            builder = builder.security_token(session_token.as_string().clone())
-        };
+            builder = builder.security_token(session_token.as_string().clone());
+        }
 
         let client = builder.build().map_err(|e| Error::ClientCreation {
             source: Box::new(e),
@@ -199,7 +199,6 @@ impl TosSource {
         Ok((bucket, key))
     }
 
-    #[async_recursion]
     async fn get_impl(
         &self,
         permit: OwnedSemaphorePermit,
@@ -210,7 +209,7 @@ impl TosSource {
         let mut request = GetObjectInput::new(bucket, key);
         if let Some(range) = range {
             range.validate().context(InvalidRangeRequestSnafu)?;
-            request.set_range(range.to_string())
+            request.set_range(range.to_string());
         }
 
         // TODO Add retry logic for some specific errors
@@ -308,7 +307,6 @@ impl TosSource {
         }
 
         // TODO Add retry logic for some specific errors
-        let uri = &format!("tos://{bucket}/{key}");
         let result = self
             .client
             .list_objects_type2(&request)
@@ -339,7 +337,7 @@ impl TosSource {
                 }
             })
             .context(UnableToListObjectsSnafu {
-                path: uri.to_string(),
+                path: format!("tos://{bucket}/{key}"),
             })?;
         Ok(result)
     }

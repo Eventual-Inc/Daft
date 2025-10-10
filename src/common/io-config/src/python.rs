@@ -1362,8 +1362,8 @@ impl TosConfig {
     #[pyo3(signature = (
         region=None,
         endpoint=None,
-        access_key_id=None,
-        secret_access_key=None,
+        access_key=None,
+        secret_key=None,
         security_token=None,
         anonymous=None,
         max_retries=None,
@@ -1377,8 +1377,8 @@ impl TosConfig {
         &self,
         region: Option<String>,
         endpoint: Option<String>,
-        access_key_id: Option<String>,
-        secret_access_key: Option<String>,
+        access_key: Option<String>,
+        secret_key: Option<String>,
         security_token: Option<String>,
         anonymous: Option<bool>,
         max_retries: Option<u32>,
@@ -1392,8 +1392,8 @@ impl TosConfig {
             config: crate::TosConfig {
                 region: region.or_else(|| self.config.region.clone()),
                 endpoint: endpoint.or_else(|| self.config.endpoint.clone()),
-                access_key: access_key_id.or_else(|| self.config.access_key.clone()),
-                secret_key: secret_access_key
+                access_key: access_key.or_else(|| self.config.access_key.clone()),
+                secret_key: secret_key
                     .map(std::convert::Into::into)
                     .or_else(|| self.config.secret_key.clone()),
                 security_token: security_token
@@ -1414,33 +1414,36 @@ impl TosConfig {
 
     #[staticmethod]
     pub fn from_env(_py: Python) -> PyResult<Self> {
-        let (endpoint, region) = match (option_env!("TOS_ENDPOINT"), option_env!("TOS_REGION")) {
-            (Some(ep), Some(re)) => (ep.to_string(), re.to_string()),
+        let default_region = "cn-beijing";
+
+        let (endpoint, region) = match (
+            std::env::var("TOS_ENDPOINT").ok(),
+            std::env::var("TOS_REGION").ok(),
+        ) {
+            (Some(ep), Some(re)) => (ep, re),
             (Some(ep), None) => {
-                let re = extract_region(ep);
-                (
-                    ep.to_string(),
-                    re.unwrap_or_else(|| "cn-beijing".to_string()),
-                )
+                let re = extract_region(&ep);
+                (ep, re.unwrap_or_else(|| default_region.to_string()))
             }
-            (None, Some(re)) => (format!("tos-{}.volces.com", re), re.to_string()),
+            (None, Some(re)) => (format!("tos-{}.volces.com", re), re),
             (None, None) => (
-                format!("tos-{}.volces.com", "cn-beijing"),
-                "cn-beijing".to_string(),
+                format!("tos-{}.volces.com", default_region),
+                default_region.to_string(),
             ),
         };
 
-        let access_key: Option<&str> = option_env!("TOS_ACCESS_KEY");
-        let secret_key: Option<&str> = option_env!("TOS_SECRET_KEY");
-        let session_token: Option<&str> = option_env!("TOS_SESSION_TOKEN");
+        let access_key: Option<String> = std::env::var("TOS_ACCESS_KEY").ok();
+        let secret_key: Option<String> = std::env::var("TOS_SECRET_KEY").ok();
+        let session_token: Option<String> = std::env::var("TOS_SESSION_TOKEN").ok();
+        let anonymous = access_key.is_none();
         Ok(Self {
             config: crate::TosConfig {
                 endpoint: Some(endpoint),
                 region: Some(region),
-                access_key: access_key.map(|s| s.to_string()),
-                secret_key: secret_key.map(|s| s.to_string().into()),
-                security_token: session_token.map(|s| s.to_string().into()),
-                anonymous: access_key.is_none(),
+                access_key,
+                secret_key: secret_key.map(|s| s.into()),
+                security_token: session_token.map(|s| s.into()),
+                anonymous,
                 ..Default::default()
             },
         })
