@@ -29,7 +29,7 @@ The complete benchmark code is available in our repository:
 
 Each benchmark includes implementations for Daft, Ray Data, and EMR Spark, along with cluster configurations and dependencies.
 
-**Benchmark Date**: September 22, 2024
+**Benchmark Date**: September 22, 2025
 
 **Engine Versions**: Daft 0.6.2, Ray Data 2.49.2, AWS EMR Spark 7.10.0
 
