@@ -5,14 +5,14 @@ use common_file_formats::{
     CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig,
 };
 use common_io_config::IOConfig;
-use common_scan_info::ScanOperatorRef;
+use common_scan_info::{ScanOperatorRef, StorageConfig};
 use daft_core::prelude::TimeUnit;
 use daft_logical_plan::{LogicalPlanBuilder, builder::IntoGlobPath};
 use daft_schema::{field::Field, schema::SchemaRef};
 #[cfg(feature = "python")]
 use {crate::python::pylib::ScanOperatorHandle, pyo3::prelude::*};
 
-use crate::{glob::GlobScanOperator, storage_config::StorageConfig};
+use crate::glob::GlobScanOperator;
 
 pub struct ParquetScanBuilder {
     pub glob_paths: Vec<String>,
@@ -364,8 +364,6 @@ pub fn delta_scan<T: AsRef<str>>(
     io_config: Option<IOConfig>,
     multithreaded_io: bool,
 ) -> DaftResult<LogicalPlanBuilder> {
-    use crate::storage_config::StorageConfig;
-
     Python::attach(|py| {
         let io_config = io_config.unwrap_or_default();
 

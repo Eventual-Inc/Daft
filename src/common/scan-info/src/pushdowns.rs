@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use common_display::DisplayAs;
-use daft_dsl::{ExprRef, estimated_selectivity};
+use daft_core::count_mode::CountMode;
+use daft_dsl::{AggExpr, Expr, ExprRef, estimated_selectivity, optimization::get_required_columns};
 use daft_schema::schema::Schema;
 use serde::{Deserialize, Serialize};
 
@@ -9,7 +10,7 @@ use crate::Sharder;
 
 pub trait SupportsPushdownFilters {
     /// Applies filters to the scan operator and returns the pushable filters and the remaining filters.
-    fn push_filters(&self, filter: &[ExprRef]) -> (Vec<ExprRef>, Vec<ExprRef>);
+    fn push_filters(&self, filters: &[ExprRef]) -> (Vec<ExprRef>, Vec<ExprRef>);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -191,6 +192,23 @@ impl Pushdowns {
         } else {
             1.0
         }
+    }
+
+    pub fn filter_required_columns(&self) -> Option<Vec<String>> {
+        self.filters.as_ref().map(get_required_columns)
+    }
+
+    pub fn aggregation_required_columns(&self) -> Option<Vec<String>> {
+        self.aggregation.as_ref().map(get_required_columns)
+    }
+
+    pub fn aggregation_count_mode(&self) -> Option<CountMode> {
+        self.aggregation
+            .as_ref()
+            .and_then(|expr| match expr.as_ref() {
+                Expr::Agg(AggExpr::Count(_, count_mode)) => Some(*count_mode),
+                _ => None,
+            })
     }
 }
 

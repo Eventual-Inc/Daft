@@ -4,9 +4,9 @@ import pathlib
 import warnings
 from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 
-from daft import context
+from daft import context, runners
 from daft.api_annotations import PublicAPI
-from daft.daft import IOConfig, ScanOperatorHandle
+from daft.daft import FileFormatConfig, IOConfig, LanceSourceConfig, ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
 from daft.io.lance.lance_merge_column import merge_columns_internal
 from daft.io.lance.lance_scan import LanceDBScanOperator
@@ -40,6 +40,7 @@ def read_lance(
     metadata_cache_size_bytes: Optional[int] = None,
     fragment_group_size: Optional[int] = None,
     include_fragment_id: Optional[bool] = None,
+    use_native_reader: bool = False,
 ) -> DataFrame:
     """Create a DataFrame from a LanceDB table.
 
@@ -91,6 +92,8 @@ def read_lance(
         include_fragment_id : Optional, bool
             Whether to display fragment_id.
             if you have the behavior of 'merge_columns_df' or 'write_lance(mode = 'merge')', the `include_fragment_id` must be set to True
+        use_native_reader : bool
+            Whether to use the native Lance Rust SDK for reading. Defaults to False.
 
     Returns:
         DataFrame: a DataFrame with the schema converted from the specified LanceDB table
@@ -118,10 +121,44 @@ def read_lance(
         >>> df.show()
     """
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
-    storage_options = io_config_to_storage_options(io_config, uri)
+    table_uri = str(uri) if isinstance(uri, pathlib.Path) else uri
 
+    if use_native_reader:
+        # TODO(zhenchao): support asof, default_scan_options, fragment_group_size, commit_lock
+        if (
+            asof is not None
+            or default_scan_options is not None
+            or fragment_group_size is not None
+            or commit_lock is not None
+            or include_fragment_id is not None
+        ):
+            raise NotImplementedError(
+                "Native lance reader doesn't support setting asof, default_scan_options, "
+                "fragment_group_size, include_fragment_id and commit_lock"
+            )
+
+        file_format_config = FileFormatConfig.from_lance_config(
+            LanceSourceConfig(
+                version=version,
+                block_size=block_size,
+                index_cache_size=index_cache_size,
+                metadata_cache_size=metadata_cache_size_bytes,
+            )
+        )
+        storage_config = StorageConfig(
+            multithreaded_io=runners.get_or_create_runner().name != "ray", io_config=io_config
+        )
+        handle = ScanOperatorHandle.native_scan(
+            uri=table_uri,
+            file_format_config=file_format_config,
+            storage_config=storage_config,
+        )
+        builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
+        return DataFrame(builder)
+
+    storage_options = io_config_to_storage_options(io_config, uri)
     ds = construct_lance_dataset(
-        uri,
+        uri=table_uri,
         storage_options=storage_options,
         version=version,
         asof=asof,

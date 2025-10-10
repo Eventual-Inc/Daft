@@ -4,7 +4,7 @@ pub mod pylib {
     use std::sync::Arc;
 
     use daft_core::count_mode::CountMode;
-    use daft_dsl::{AggExpr, Expr, python::PyExpr};
+    use daft_dsl::python::PyExpr;
     use daft_schema::python::field::PyField;
     use pyo3::{exceptions::PyAttributeError, prelude::*, pyclass};
     use serde::{Deserialize, Serialize};
@@ -226,27 +226,15 @@ pub mod pylib {
         }
 
         pub fn filter_required_column_names(&self) -> Option<Vec<String>> {
-            self.0
-                .filters
-                .as_ref()
-                .map(daft_dsl::optimization::get_required_columns)
+            self.0.filter_required_columns()
         }
 
         pub fn aggregation_required_column_names(&self) -> Option<Vec<String>> {
-            self.0
-                .aggregation
-                .as_ref()
-                .map(daft_dsl::optimization::get_required_columns)
+            self.0.aggregation_required_columns()
         }
 
         pub fn aggregation_count_mode(&self) -> Option<CountMode> {
-            match self.0.aggregation.as_ref() {
-                Some(expr) => match expr.as_ref() {
-                    Expr::Agg(AggExpr::Count(_, count_mode)) => Some(*count_mode),
-                    _ => None,
-                },
-                None => None,
-            }
+            self.0.aggregation_count_mode()
         }
     }
 }

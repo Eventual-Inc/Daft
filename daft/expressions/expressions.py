@@ -163,6 +163,15 @@ class Expression:
         else:
             return lit(obj)
 
+    @staticmethod
+    def is_arrow_expr(pyexpr: _PyExpr) -> bool:
+        try:
+            expr = Expression._from_pyexpr(pyexpr)
+            expr.to_arrow_expr()
+            return True
+        except Exception:
+            return False
+
     def to_arrow_expr(self) -> pc.Expression:
         """Returns this expression as a pyarrow.compute.Expression for integrations with other systems."""
         from daft.expressions.pyarrow_visitor import _PyArrowExpressionVisitor

@@ -121,8 +121,11 @@ jobs:
     - name: Install cargo-llvm-cov
       uses: taiki-e/install-action@cargo-llvm-cov
 
-    - name: install llvm tools
+    - name: Install llvm tools
       run: rustup component add llvm-tools-preview
+
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
 
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
@@ -215,7 +218,7 @@ jobs:
     needs: skipcheck
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       package-name: daft
     strategy:
@@ -226,6 +229,8 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1071,6 +1076,8 @@ jobs:
         key: ${{ runner.os }}-benchmark-build
         cache-all-crates: 'true'
         cache-provider: buildjet
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1130,7 +1137,7 @@ jobs:
     needs: skipcheck
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: ${{ matrix.os }}-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
@@ -1151,6 +1158,8 @@ jobs:
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
     - name: Generate code coverage
       run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --lcov --output-path ./report-output/lcov.info
     - name: Upload coverage report
@@ -1228,6 +1237,8 @@ jobs:
       with:
         prefix-key: ${{ runner.os }}-build
         cache-all-crates: 'true'
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1295,7 +1306,7 @@ jobs:
     needs: skipcheck
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: ${{ matrix.os }}-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -1310,7 +1321,8 @@ jobs:
       with:
         prefix-key: ${{ runner.os }}-build
         cache-all-crates: 'true'
-
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1391,7 +1403,7 @@ jobs:
 
   style:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       python-version: '3.10'
     steps:
@@ -1400,6 +1412,8 @@ jobs:
       uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ env.python-version }}
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
     - name: Setup Virtual Env
       run: |
         uv venv --seed .venv

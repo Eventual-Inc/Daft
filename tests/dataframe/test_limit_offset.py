@@ -7,7 +7,7 @@ from daft import col
 from daft.functions import format
 
 
-@pytest.fixture(params=["memory", "parquet", "lance"], scope="session")
+@pytest.fixture(params=[("memory", False), ("parquet", False), ("lance", False), ("lance", True)], scope="session")
 def input_df(request, tmp_path_factory):
     with daft.execution_config_ctx(enable_dynamic_batching=True):
         df = daft.range(start=0, end=1024, partitions=100)
@@ -18,14 +18,16 @@ def input_df(request, tmp_path_factory):
             }
         )
 
-        path = str(tmp_path_factory.mktemp(request.param))
-        if request.param == "parquet":
+        source, native_read = request.param
+
+        path = str(tmp_path_factory.mktemp(source))
+        if source == "parquet":
             df.write_parquet(path)
             return daft.read_parquet(path)
-        elif request.param == "lance":
+        elif source == "lance":
             lance = pytest.importorskip("lance")
             lance.write_dataset(df.to_arrow(), path)
-            return daft.read_lance(path)
+            return daft.read_lance(uri=path, use_native_reader=native_read)
         else:
             return df
 
