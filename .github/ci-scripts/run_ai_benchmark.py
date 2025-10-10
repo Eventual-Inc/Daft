@@ -94,7 +94,7 @@ def main():
     print(f"Results: {data_dict}")
 
     # Upload results to Google Sheets
-    upload_to_google_sheets("AI Benchmarks", list(data_dict.values()))
+    upload_to_google_sheets(benchmark_name, list(data_dict.values()))
     print("Results uploaded to Google Sheets")
 
     print(f"{benchmark_name} benchmark completed successfully!")
