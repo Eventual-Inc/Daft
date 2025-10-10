@@ -1,12 +1,12 @@
 # Benchmarks
 
+## AI Benchmarks
+
 !!! info "Powered by Flotilla"
 
     These benchmarks showcase [Flotilla](https://www.daft.ai/blog/introducing-flotilla-simplifying-multimodal-data-processing-at-scale), Daft's distributed engine optimized for multimodal data processing.
 
     [Daft vs Spark vs Ray Data: Benchmarks for Multimodal AI Workloads](https://www.daft.ai/blog/benchmarks-for-multimodal-ai-workloads) - Full methodology and technical deep-dive.
-
-## AI Benchmarks
 
 Modern AI workloads demand simple, fast, and scalable data engines. Daft is purpose-built for these workloads, excelling where traditional big data frameworks fall short.
 
