@@ -7,7 +7,12 @@ use serde::{Deserialize, Serialize};
 use {
     common_py_serde::{deserialize_py_object, serialize_py_object},
     daft_schema::python::{datatype::PyTimeUnit, field::PyField},
-    pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods, types::PyAnyMethods},
+    pyo3::{
+        Py, PyAny, PyResult, Python,
+        exceptions::PyIOError,
+        pyclass, pymethods,
+        types::{PyAnyMethods, PyInt, PyString, PyStringMethods},
+    },
 };
 
 use crate::FileFormat;
@@ -20,6 +25,7 @@ pub enum FileFormatConfig {
     Csv(CsvSourceConfig),
     Json(JsonSourceConfig),
     Warc(WarcSourceConfig),
+    Lance(LanceSourceConfig),
     #[cfg(feature = "python")]
     Database(DatabaseSourceConfig),
     #[cfg(feature = "python")]
@@ -49,6 +55,7 @@ impl FileFormatConfig {
             Self::Csv(_) => "Csv".to_string(),
             Self::Json(_) => "Json".to_string(),
             Self::Warc(_) => "Warc".to_string(),
+            Self::Lance(_) => "Lance".to_string(),
             #[cfg(feature = "python")]
             Self::Database(_) => "Database".to_string(),
             #[cfg(feature = "python")]
@@ -76,6 +83,7 @@ impl FileFormatConfig {
             Self::Csv(source) => source.multiline_display(),
             Self::Json(source) => source.multiline_display(),
             Self::Warc(source) => source.multiline_display(),
+            Self::Lance(source) => source.multiline_display(),
             #[cfg(feature = "python")]
             Self::Database(source) => source.multiline_display(),
             #[cfg(feature = "python")]
@@ -431,3 +439,88 @@ impl WarcSourceConfig {
 }
 
 impl_bincode_py_state_serialization!(WarcSourceConfig);
+
+/// Configuration for a Lance data source.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+pub struct LanceSourceConfig {
+    pub version: Option<u64>,
+    pub tag: Option<String>,
+    pub block_size: Option<usize>,
+    pub index_cache_size: Option<usize>,
+    pub metadata_cache_size: Option<usize>,
+    pub storage_options: Option<BTreeMap<String, String>>,
+}
+
+impl LanceSourceConfig {
+    #[must_use]
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+
+        if let Some(version) = &self.version {
+            res.push(format!("Version = {version}"));
+        }
+
+        if let Some(tag) = &self.tag {
+            res.push(format!("Tag = {tag}"));
+        }
+
+        if let Some(block_size) = &self.block_size {
+            res.push(format!("Block size = {block_size}"));
+        }
+
+        if let Some(index_cache_size) = &self.index_cache_size {
+            res.push(format!("Index cache size = {index_cache_size}"));
+        }
+
+        if let Some(metadata_cache_size) = &self.metadata_cache_size {
+            res.push(format!("Metadata cache size = {metadata_cache_size}"));
+        }
+
+        res
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl LanceSourceConfig {
+    /// Create a config for a Lance data source.
+    #[new]
+    #[pyo3(signature=(version=None, block_size=None, index_cache_size=None, metadata_cache_size=None, storage_options=None))]
+    fn new(
+        py: Python,
+        version: Option<Py<PyAny>>,
+        block_size: Option<usize>,
+        index_cache_size: Option<usize>,
+        metadata_cache_size: Option<usize>,
+        // commit_handler: Option<PyAny>,
+        storage_options: Option<BTreeMap<String, String>>,
+    ) -> PyResult<Self> {
+        let (version, tag) = if let Some(ver) = version {
+            if let Ok(i) = ver.cast_bound::<PyInt>(py) {
+                let v: u64 = i.extract()?;
+                (Some(v), None)
+            } else if let Ok(s) = ver.cast_bound::<PyString>(py) {
+                let t: &str = &s.to_string_lossy();
+                (None, Some(t.to_string()))
+            } else {
+                return Err(PyIOError::new_err(
+                    "version must be an integer or a string.",
+                ));
+            }
+        } else {
+            (None, None)
+        };
+
+        Ok(Self {
+            version,
+            tag,
+            block_size,
+            index_cache_size,
+            metadata_cache_size,
+            storage_options,
+        })
+    }
+}
+
+impl_bincode_py_state_serialization!(LanceSourceConfig);

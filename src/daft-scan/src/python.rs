@@ -88,7 +88,7 @@ pub mod pylib {
     use super::PythonTablesFactoryArgs;
     use crate::{
         DataSource, ScanTask, anonymous::AnonymousScanOperator, glob::GlobScanOperator,
-        storage_config::StorageConfig,
+        lance::LanceScanOperator, storage_config::StorageConfig,
     };
 
     #[pyclass(module = "daft.daft", frozen)]
@@ -165,6 +165,26 @@ pub mod pylib {
 
                 let operator = executor.block_within_async_context(task)??;
                 let operator = Arc::new(operator);
+
+                Ok(Self {
+                    scan_op: ScanOperatorRef(operator),
+                })
+            })
+        }
+
+        #[staticmethod]
+        pub fn lance_scan(
+            py: Python,
+            uri: String,
+            file_format_config: PyFileFormatConfig,
+            storage_config: StorageConfig,
+        ) -> PyResult<Self> {
+            py.detach(|| {
+                let operator = Arc::new(LanceScanOperator::try_new(
+                    uri,
+                    file_format_config.into(),
+                    storage_config.into(),
+                )?);
 
                 Ok(Self {
                     scan_op: ScanOperatorRef(operator),

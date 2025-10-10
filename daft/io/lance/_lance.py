@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
-from daft.daft import IOConfig, ScanOperatorHandle
+from daft.daft import FileFormatConfig, IOConfig, LanceSourceConfig, ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
 from daft.io.lance.lance_merge_column import merge_columns_internal
 from daft.io.lance.lance_scan import LanceDBScanOperator
@@ -33,6 +33,7 @@ def read_lance(
     default_scan_options: Optional[dict[str, str]] = None,
     metadata_cache_size_bytes: Optional[int] = None,
     fragment_group_size: Optional[int] = None,
+    use_native_reader: bool = False,
 ) -> DataFrame:
     """Create a DataFrame from a LanceDB table.
 
@@ -78,6 +79,8 @@ def read_lance(
         fragment_group_size : optional, int
             Number of fragments to group together in a single scan task. If None or <= 1,
             each fragment will be processed individually (default behavior).
+        use_native_reader : bool
+            Whether to use the native Lance Rust SDK for reading. Defaults to False.
 
     Returns:
         DataFrame: a DataFrame with the schema converted from the specified LanceDB table
@@ -104,15 +107,40 @@ def read_lance(
         >>> df = daft.read_lance("s3://my-lancedb-bucket/data/", fragment_group_size=5)
         >>> df.show()
     """
+    io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+    storage_options = io_config_to_storage_options(
+        io_config=io_config, table_uri=str(uri) if isinstance(uri, pathlib.Path) else uri
+    )
+
+    if use_native_reader:
+        file_format_config = FileFormatConfig.from_lance_config(
+            LanceSourceConfig(
+                storage_options=storage_options,
+                version=version,
+                # asof=asof,
+                block_size=block_size,
+                # commit_lock=commit_lock,
+                index_cache_size=index_cache_size,
+                # default_scan_options=default_scan_options,
+                metadata_cache_size=metadata_cache_size_bytes,
+            )
+        )
+        storage_config = StorageConfig(True, io_config)  # FIXME True? by zhenchao
+        # FIXME lance scan?
+        handle = ScanOperatorHandle.lance_scan(
+            uri=str(uri) if isinstance(uri, pathlib.Path) else uri,
+            file_format_config=file_format_config,
+            storage_config=storage_config,
+        )
+        builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
+        return DataFrame(builder)
+
     try:
         import lance
     except ImportError as e:
         raise ImportError(
             "Unable to import the `lance` package, please ensure that Daft is installed with the lance extra dependency: `pip install daft[lance]`"
         ) from e
-
-    io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
-    storage_options = io_config_to_storage_options(io_config, str(uri) if isinstance(uri, pathlib.Path) else uri)
 
     ds = lance.dataset(
         uri,

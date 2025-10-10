@@ -18,6 +18,7 @@ use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, SubmittableTaskStream,
         logical_plan_to_pipeline_node, materialize::materialize_all_pipeline_outputs,
+        viz_distributed_pipeline_ascii,
     },
     scheduling::{
         scheduler::{SchedulerHandle, spawn_scheduler_actor},
@@ -161,6 +162,8 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
 
         let pipeline_node =
             logical_plan_to_pipeline_node(plan_config, logical_plan, Arc::new(psets))?;
+        // FIXME by zhenchao
+        println!("{}", viz_distributed_pipeline_ascii(&pipeline_node, false));
 
         // Extract runtime stats from pipeline nodes to create the StatisticsManager
         let mut runtime_stats = HashMap::new();

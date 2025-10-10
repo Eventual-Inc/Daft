@@ -1,6 +1,6 @@
-use super::{Field, Metadata};
-
 use serde::{Deserialize, Serialize};
+
+use super::{Field, Metadata};
 
 /// An ordered sequence of [`Field`]s with associated [`Metadata`].
 ///
@@ -54,5 +54,23 @@ impl From<Vec<Field>> for Schema {
             fields,
             ..Default::default()
         }
+    }
+}
+
+impl From<arrow_schema::Schema> for Schema {
+    fn from(schema: arrow_schema::Schema) -> Self {
+        let fields = schema
+            .fields()
+            .iter()
+            .map(|field| Field::from(field.clone()))
+            .collect();
+
+        let metadata: Metadata = schema
+            .metadata()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+
+        Schema { fields, metadata }
     }
 }
