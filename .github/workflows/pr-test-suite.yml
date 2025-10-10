@@ -121,8 +121,11 @@ jobs:
     - name: Install cargo-llvm-cov
       uses: taiki-e/install-action@cargo-llvm-cov
 
-    - name: install llvm tools
+    - name: Install llvm tools
       run: rustup component add llvm-tools-preview
+
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
 
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
@@ -226,6 +229,8 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1071,6 +1076,8 @@ jobs:
         key: ${{ runner.os }}-benchmark-build
         cache-all-crates: 'true'
         cache-provider: buildjet
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1157,6 +1164,8 @@ jobs:
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
     - name: Generate code coverage
       run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --lcov --output-path ./report-output/lcov.info
     - name: Upload coverage report
@@ -1234,6 +1243,8 @@ jobs:
       with:
         prefix-key: ${{ runner.os }}-build
         cache-all-crates: 'true'
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1316,7 +1327,8 @@ jobs:
       with:
         prefix-key: ${{ runner.os }}-build
         cache-all-crates: 'true'
-
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1406,6 +1418,8 @@ jobs:
       uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ env.python-version }}
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
     - name: Setup Virtual Env
       run: |
         uv venv --seed .venv

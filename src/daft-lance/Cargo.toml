@@ -1,0 +1,40 @@
+[package]
+name = "daft-lance"
+edition.workspace = true
+version.workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["serde"]
+
+[dependencies]
+pyo3 = {workspace = true, optional = true}
+common-error = {path = "../common/error", default-features = false}
+common-daft-config = {path = "../common/daft-config", default-features = false}
+common-file-formats = {path = "../common/file-formats", default-features = false}
+common-runtime = {path = "../common/runtime", default-features = false}
+common-scan-info = {path = "../common/scan-info", default-features = false}
+common-display = {path = "../common/display", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-io = {path = "../daft-io", default-features = false}
+daft-arrow = {path = "../daft-arrow"}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
+daft-schema = {path = "../daft-schema", default-features = false}
+daft-stats = {path = "../daft-stats", default-features = false}
+futures = {workspace = true}
+# TODO(zhenchao) bump lance version
+lance = {version = "0.28.0"}
+arrow-schema = {version = "54.2.1"}
+typetag = {workspace = true}
+serde = {workspace = true}
+moka = {workspace = true}
+
+[features]
+python = [
+  "dep:pyo3",
+  "common-error/python",
+  "daft-dsl/python"
+]
+
+[lints]
+workspace = true

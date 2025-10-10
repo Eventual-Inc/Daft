@@ -309,6 +309,22 @@ class WarcSourceConfig:
 
     def __init__(self) -> None: ...
 
+class LanceSourceConfig:
+    """Configuration of a Lance data source."""
+
+    version: int | str | None
+    block_size: int | None
+    index_cache_size: int | None
+    metadata_cache_size: int | None
+
+    def __init__(
+        self,
+        version: int | str | None = None,
+        block_size: int | None = None,
+        index_cache_size: int | None = None,
+        metadata_cache_size: int | None = None,
+    ) -> None: ...
+
 class DatabaseSourceConfig:
     """Configuration of a database data source."""
 
@@ -320,7 +336,14 @@ class DatabaseSourceConfig:
 class FileFormatConfig:
     """Configuration for parsing a particular file format (Parquet, CSV, JSON)."""
 
-    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig | DatabaseSourceConfig | WarcSourceConfig
+    config: (
+        ParquetSourceConfig
+        | CsvSourceConfig
+        | JsonSourceConfig
+        | DatabaseSourceConfig
+        | WarcSourceConfig
+        | LanceSourceConfig
+    )
 
     @staticmethod
     def from_parquet_config(config: ParquetSourceConfig) -> FileFormatConfig:
@@ -345,6 +368,11 @@ class FileFormatConfig:
     @staticmethod
     def from_database_config(config: DatabaseSourceConfig) -> FileFormatConfig:
         """Create a database file format config."""
+        ...
+
+    @staticmethod
+    def from_lance_config(config: LanceSourceConfig) -> FileFormatConfig:
+        """Create a Lance file format config."""
         ...
 
     def file_format(self) -> FileFormat:
@@ -980,6 +1008,12 @@ class ScanOperatorHandle:
         schema: PySchema | None = None,
         file_path_column: str | None = None,
         skip_glob: bool = False,
+    ) -> ScanOperatorHandle: ...
+    @staticmethod
+    def native_scan(
+        uri: str,
+        file_format_config: FileFormatConfig,
+        storage_config: StorageConfig,
     ) -> ScanOperatorHandle: ...
     @staticmethod
     def from_python_scan_operator(operator: ScanOperator) -> ScanOperatorHandle: ...
