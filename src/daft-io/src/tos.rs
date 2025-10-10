@@ -328,8 +328,8 @@ impl TosSource {
                         filetype: FileType::File,
                     }))
                     .collect();
-
-                let continuation_token = Some(r.next_continuation_token().to_string());
+                let continuation_token = (!r.next_continuation_token().is_empty())
+                    .then(|| r.next_continuation_token().to_string());
 
                 LSResult {
                     files,
