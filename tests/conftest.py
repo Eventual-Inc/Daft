@@ -79,17 +79,6 @@ def data_source(request):
 
 
 @pytest.fixture(scope="function")
-def join_strategy(request):
-    # Modifies the join strategy parametrization to toggle a specialized presorting path for sort-merge joins, where
-    # each side of the join is sorted such that their boundaries will align.
-    if request.param != "sort_merge_aligned_boundaries":
-        yield request.param
-    else:
-        with daft.execution_config_ctx(sort_merge_join_sort_with_aligned_boundaries=True):
-            yield "sort_merge"
-
-
-@pytest.fixture(scope="function")
 def make_spark_df(spark_session):
     def _make_spark_df(data: dict[str, Any]):
         fields = [name for name in data]

@@ -140,6 +140,10 @@ impl StreamingSink for SortMergeJoinProbe {
         vec!["SortMergeJoinProbe".to_string()]
     }
 
+    fn max_concurrency(&self) -> usize {
+        1
+    }
+
     fn make_state(&self) -> Self::State {
         SortMergeJoinProbeState::Building(self.state_bridge.clone())
     }

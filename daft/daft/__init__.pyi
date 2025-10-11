@@ -1957,7 +1957,6 @@ class PyDaftExecutionConfig:
         max_sources_per_scan_task: int | None = None,
         broadcast_join_size_bytes_threshold: int | None = None,
         parquet_split_row_groups_max_files: int | None = None,
-        sort_merge_join_sort_with_aligned_boundaries: bool | None = None,
         hash_join_partition_size_leniency: float | None = None,
         sample_size_for_sort: int | None = None,
         num_preview_rows: int | None = None,
@@ -1991,8 +1990,6 @@ class PyDaftExecutionConfig:
     def max_sources_per_scan_task(self) -> int: ...
     @property
     def broadcast_join_size_bytes_threshold(self) -> int: ...
-    @property
-    def sort_merge_join_sort_with_aligned_boundaries(self) -> bool: ...
     @property
     def hash_join_partition_size_leniency(self) -> float: ...
     @property

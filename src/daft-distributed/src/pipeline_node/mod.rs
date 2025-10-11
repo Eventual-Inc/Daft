@@ -276,7 +276,7 @@ impl Stream for SubmittableTaskStream {
     }
 }
 
-fn make_in_memory_scan_from_materialized_outputs(
+pub(crate) fn make_in_memory_scan_from_materialized_outputs(
     materialized_outputs: &[MaterializedOutput],
     schema: SchemaRef,
     node_id: NodeID,
@@ -305,7 +305,7 @@ fn make_in_memory_scan_from_materialized_outputs(
     Ok(in_memory_source_plan)
 }
 
-fn make_new_task_from_materialized_outputs<F>(
+pub(crate) fn make_new_task_from_materialized_outputs<F>(
     task_context: TaskContext,
     materialized_outputs: Vec<MaterializedOutput>,
     node: &Arc<dyn DistributedPipelineNode>,

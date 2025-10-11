@@ -17,7 +17,7 @@ def skip_invalid_join_strategies(join_strategy):
 
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
+    [None, "hash", "sort_merge", "broadcast"],
     indirect=True,
 )
 def test_simple_join(join_strategy, daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
@@ -40,7 +40,7 @@ def test_simple_join(join_strategy, daft_df, service_requests_csv_pd_df, reparti
 
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
+    [None, "hash", "sort_merge", "broadcast"],
     indirect=True,
 )
 def test_simple_self_join(join_strategy, daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
@@ -67,7 +67,7 @@ def test_simple_self_join(join_strategy, daft_df, service_requests_csv_pd_df, re
 
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
+    [None, "hash", "sort_merge", "broadcast"],
     indirect=True,
 )
 def test_simple_join_missing_rvalues(
@@ -95,7 +95,7 @@ def test_simple_join_missing_rvalues(
 
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
+    [None, "hash", "sort_merge", "broadcast"],
     indirect=True,
 )
 def test_simple_join_missing_lvalues(

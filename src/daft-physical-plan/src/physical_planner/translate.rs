@@ -1705,36 +1705,29 @@ fn translate_join(
                 ));
             }
 
-            let needs_presort = if cfg.sort_merge_join_sort_with_aligned_boundaries {
-                // Use the special-purpose presorting that ensures join inputs are sorted with aligned
-                // boundaries, allowing for a more efficient downstream merge-join (~one-to-one zip).
-                !is_left_sort_partitioned || !is_right_sort_partitioned
-            } else {
-                // Manually insert presorting ops for each side of the join that needs it.
-                // Note that these merge-join inputs will most likely not have aligned boundaries, which could
-                // result in less efficient merge-joins (~all-to-all broadcast).
-                if !is_left_sort_partitioned {
-                    left_physical = PhysicalPlan::Sort(Sort::new(
-                        left_physical,
-                        left_on.clone(),
-                        std::iter::repeat_n(false, left_on.len()).collect(),
-                        std::iter::repeat_n(false, left_on.len()).collect(),
-                        num_partitions,
-                    ))
-                    .arced();
-                }
-                if !is_right_sort_partitioned {
-                    right_physical = PhysicalPlan::Sort(Sort::new(
-                        right_physical,
-                        right_on.clone(),
-                        std::iter::repeat_n(false, right_on.len()).collect(),
-                        std::iter::repeat_n(false, right_on.len()).collect(),
-                        num_partitions,
-                    ))
-                    .arced();
-                }
-                false
-            };
+            // Manually insert presorting ops for each side of the join that needs it.
+            // Note that these merge-join inputs will most likely not have aligned boundaries, which could
+            // result in less efficient merge-joins (~all-to-all broadcast).
+            if !is_left_sort_partitioned {
+                left_physical = PhysicalPlan::Sort(Sort::new(
+                    left_physical,
+                    left_on.clone(),
+                    std::iter::repeat_n(false, left_on.len()).collect(),
+                    std::iter::repeat_n(false, left_on.len()).collect(),
+                    num_partitions,
+                ))
+                .arced();
+            }
+            if !is_right_sort_partitioned {
+                right_physical = PhysicalPlan::Sort(Sort::new(
+                    right_physical,
+                    right_on.clone(),
+                    std::iter::repeat_n(false, right_on.len()).collect(),
+                    std::iter::repeat_n(false, right_on.len()).collect(),
+                    num_partitions,
+                ))
+                .arced();
+            }
             Ok((
                 PhysicalPlan::SortMergeJoin(SortMergeJoin::new(
                     left_physical,
@@ -1744,7 +1737,7 @@ fn translate_join(
                     *join_type,
                     num_partitions,
                     left_is_larger,
-                    needs_presort,
+                    true,
                 ))
                 .arced(),
                 None,
