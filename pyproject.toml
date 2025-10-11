@@ -29,7 +29,7 @@ homepage = "https://www.daft.ai"
 repository = "https://github.com/Eventual-Inc/Daft"
 
 [project.optional-dependencies]
-all = ["daft[aws, azure, clickhouse, deltalake, gcp, hudi, huggingface, iceberg, lance, numpy, openai, pandas, ray, sentence-transformers, spark, sql, transformers, turbopuffer, unity]"]
+all = ["daft[aws, azure, clickhouse, deltalake, gcp, hudi, huggingface, iceberg, lance, numpy, openai, pandas, ray, sentence-transformers, spark, sql, transformers, turbopuffer, unity, video]"]
 aws = ["boto3"]
 azure = []
 clickhouse = ["clickhouse_connect"]
@@ -59,6 +59,7 @@ spark = ["googleapis-common-protos >= 1.56.4", "grpcio >= 1.48", "grpcio-status 
 sql = ["connectorx", "sqlalchemy", "sqlglot"]
 turbopuffer = ["turbopuffer"]
 unity = ["httpx <= 0.27.2", "unitycatalog"]
+video = ["av >= 16.0.0"]
 viz = []
 
 [dependency-groups]
