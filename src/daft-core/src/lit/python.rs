@@ -333,8 +333,13 @@ impl Literal {
             pytuple_to_struct_lit(ob, dtype)?
         } else if isinstance!(ob, "decimal", "Decimal") {
             pydecimal_to_decimal_lit(ob)?
-        } else if isinstance!(ob, "numpy", "ndarray") {
-            numpy_array_to_tensor_lit(ob)?
+        } else if isinstance!(ob, "numpy", "ndarray")
+            || isinstance!(ob, "torch", "Tensor")
+            || isinstance!(ob, "tensorflow", "Tensor")
+            || isinstance!(ob, "jax", "Array")
+            || isinstance!(ob, "cupy", "ndarray")
+        {
+            numpy_array_like_to_tensor_lit(ob)?
         } else if isinstance!(ob, "numpy", "bool_") {
             Self::Boolean(extract_numpy_scalar(ob)?)
         } else if isinstance!(ob, "numpy", "int8") {
@@ -611,15 +616,18 @@ fn pydecimal_to_decimal_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
     Ok(Literal::Decimal(val, precision, scale))
 }
 
-fn numpy_array_to_tensor_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
+fn numpy_array_like_to_tensor_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
+    let py = ob.py();
+    let np_asarray = py
+        .import(intern!(py, "numpy"))?
+        .getattr(intern!(py, "asarray"))?;
+    let ob = np_asarray.call1((ob,))?;
+
     let arr = if let Ok(arr) = ob.extract::<NumpyArray>() {
         arr
     } else {
         // if we do not support the element type, fall back to Python.
         // Series::from_ndarray_flattened will then call Literal::from_pyobj to try to convert each element.
-        let py = ob.py();
-
-        // cast elements to Python object (character code "O")
         let object_array = ob
             .call_method1(intern!(py, "astype"), (intern!(py, "O"),))?
             .extract()?;

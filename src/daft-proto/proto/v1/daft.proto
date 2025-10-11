@@ -341,6 +341,7 @@ message ScalarFn {
     oneof variant {
       LegacyFn legacy = 1;
       RowWiseFn row_wise = 2;
+      BatchFn batch = 3;
     }
 
     message LegacyFn {
@@ -363,9 +364,25 @@ message ScalarFn {
     message RowWiseFn {
       string name = 1;
       DataType return_dtype = 2;
-      PyObject inner = 3;
-      PyObject original_args = 4;
-      optional bool use_process = 5;
+      PyObject cls = 3;
+      PyObject method = 4;
+      PyObject original_args = 5;
+      uint64 gpus = 6;
+      optional bool use_process = 7;
+      optional uint64 max_concurrency = 8;
+      bool is_async = 9;
+    }
+
+    message BatchFn {
+      string name = 1;
+      DataType return_dtype = 2;
+      PyObject cls = 3;
+      PyObject method = 4;
+      PyObject original_args = 5;
+      uint64 gpus = 6;
+      optional bool use_process = 7;
+      optional uint64 max_concurrency = 8;
+      optional uint64 batch_size = 9;
     }
   }
 }

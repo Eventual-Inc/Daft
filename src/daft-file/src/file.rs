@@ -8,7 +8,6 @@ use common_error::{DaftError, DaftResult};
 use common_file::FileReference;
 use daft_io::{GetRange, IOConfig, IOStatsRef, ObjectSource};
 
-// #[cfg_attr(feature = "python", pyo3::pyclass(name = "PyDaftFile"))]
 pub struct DaftFile {
     pub(crate) cursor: Option<FileCursor>,
     pub(crate) position: usize,

@@ -1,8 +1,14 @@
 import builtins
 import datetime
+import sys
 from collections.abc import AsyncIterator, Iterator
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar
+
+if sys.version_info < (3, 10):
+    from typing_extensions import Concatenate
+else:
+    from typing import Concatenate
 
 from daft.dataframe.display import MermaidOptions
 from daft.execution import physical_plan
@@ -25,6 +31,7 @@ if TYPE_CHECKING:
     from daft.expressions.visitor import ExpressionVisitor
     from daft.runners.runner import Runner
     from daft.subscribers import Subscriber
+    from daft.udf.udf_v2 import ClsBase
 
 R = TypeVar("R")
 
@@ -1432,9 +1439,25 @@ def udf(
 ) -> PyExpr: ...
 def row_wise_udf(
     name: str,
-    inner: Callable[..., Any],
+    cls: ClsBase[Any],
+    method: Callable[Concatenate[Any, ...], Any],
+    is_async: bool,
     return_dtype: PyDataType,
+    gpus: int,
     use_process: bool | None,
+    max_concurrency: int | None,
+    original_args: tuple[tuple[Any, ...], dict[str, Any]],
+    expr_args: list[PyExpr],
+) -> PyExpr: ...
+def batch_udf(
+    name: str,
+    cls: ClsBase[Any],
+    method: Callable[Concatenate[Any, ...], Any],
+    return_dtype: PyDataType,
+    gpus: int,
+    use_process: bool | None,
+    max_concurrency: int | None,
+    batch_size: int | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
 ) -> PyExpr: ...
@@ -2174,6 +2197,12 @@ class PyNodeInfo:
     node_category: str
     context: dict[str, str]
 
+class PyQueryMetadata:
+    output_schema: PySchema
+    unoptimized_plan: str
+
+    def __init__(self, output_schema: PySchema, unoptimized_plan: str) -> None: ...
+
 class PyDaftContext:
     def __init__(self) -> None: ...
 
@@ -2188,7 +2217,7 @@ class PyDaftContext:
     # Subscriber methods
     def attach_subscriber(self, alias: str, subscriber: Subscriber) -> None: ...
     def detach_subscriber(self, alias: str) -> None: ...
-    def notify_query_start(self, query_id: str, unoptimized_plan: str) -> None: ...
+    def notify_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None: ...
     def notify_query_end(self, query_id: str) -> None: ...
     def notify_result_out(self, query_id: str, result: PartitionT) -> None: ...
     def notify_optimization_start(self, query_id: str) -> None: ...

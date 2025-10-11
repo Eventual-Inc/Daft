@@ -21,7 +21,7 @@ pub use crate::{
 pub mod rex {
     use std::sync::Arc;
 
-    use daft_dsl::{functions::{python::LegacyPythonUDF, scalar::ScalarFn, BuiltinScalarFn, FunctionArgs, FunctionExpr, ScalarUDF}, python_udf::{PyScalarFn, RowWisePyFn}};
+    use daft_dsl::{functions::{python::LegacyPythonUDF, scalar::ScalarFn, BuiltinScalarFn, FunctionArgs, FunctionExpr, ScalarUDF}, python_udf::{BatchPyFn, PyScalarFn, RowWisePyFn}};
     pub use daft_dsl::*;
     pub use daft_core::lit::Literal;
 
@@ -43,9 +43,14 @@ pub mod rex {
         Expr::ScalarFn(ScalarFn::Builtin(func))
     }
 
-    /// Creates an expression from a python-scalar function
+    /// Creates an expression from a python row-wise function
     pub fn from_py_rowwise_func(func: RowWisePyFn) -> Expr {
         Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(func)))
+    }
+
+    /// Creates an expression from a python batch function
+    pub fn from_py_batch_func(func: BatchPyFn) -> Expr {
+        Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(func)))
     }
 }
 

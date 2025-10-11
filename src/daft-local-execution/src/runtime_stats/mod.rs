@@ -346,7 +346,7 @@ mod tests {
 
     use async_trait::async_trait;
     use common_error::DaftResult;
-    use common_metrics::{Stat, StatSnapshotSend};
+    use common_metrics::{NodeID, Stat, StatSnapshotSend};
     use tokio::time::{Duration, sleep};
 
     use super::*;

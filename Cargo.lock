@@ -2539,6 +2539,7 @@ dependencies = [
  "daft-io",
  "daft-logical-plan",
  "daft-micropartition",
+ "daft-recordbatch",
  "daft-runners",
  "dashmap",
  "log",
@@ -2624,11 +2625,15 @@ dependencies = [
  "common-metrics",
  "daft-recordbatch",
  "dashmap",
+ "futures",
  "include_dir",
+ "mime",
+ "mime_guess",
  "pyo3",
  "serde",
  "serde_json",
  "tokio",
+ "tokio-stream",
  "tower 0.5.2",
  "tower-http",
  "tracing",
@@ -8397,6 +8402,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

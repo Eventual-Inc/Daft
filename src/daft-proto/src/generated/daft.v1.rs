@@ -487,7 +487,7 @@ pub mod scalar_fn {
     /// For python functions (UDF), we need the pickled object and bound args.
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct PyFn {
-        #[prost(oneof = "py_fn::Variant", tags = "1, 2")]
+        #[prost(oneof = "py_fn::Variant", tags = "1, 2, 3")]
         pub variant: ::core::option::Option<py_fn::Variant>,
     }
     /// Nested message and enum types in `PyFn`.
@@ -530,11 +530,40 @@ pub mod scalar_fn {
             #[prost(message, optional, tag = "2")]
             pub return_dtype: ::core::option::Option<super::super::DataType>,
             #[prost(message, optional, tag = "3")]
-            pub inner: ::core::option::Option<super::super::PyObject>,
+            pub cls: ::core::option::Option<super::super::PyObject>,
             #[prost(message, optional, tag = "4")]
+            pub method: ::core::option::Option<super::super::PyObject>,
+            #[prost(message, optional, tag = "5")]
             pub original_args: ::core::option::Option<super::super::PyObject>,
-            #[prost(bool, optional, tag = "5")]
+            #[prost(uint64, tag = "6")]
+            pub gpus: u64,
+            #[prost(bool, optional, tag = "7")]
             pub use_process: ::core::option::Option<bool>,
+            #[prost(uint64, optional, tag = "8")]
+            pub max_concurrency: ::core::option::Option<u64>,
+            #[prost(bool, tag = "9")]
+            pub is_async: bool,
+        }
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct BatchFn {
+            #[prost(string, tag = "1")]
+            pub name: ::prost::alloc::string::String,
+            #[prost(message, optional, tag = "2")]
+            pub return_dtype: ::core::option::Option<super::super::DataType>,
+            #[prost(message, optional, tag = "3")]
+            pub cls: ::core::option::Option<super::super::PyObject>,
+            #[prost(message, optional, tag = "4")]
+            pub method: ::core::option::Option<super::super::PyObject>,
+            #[prost(message, optional, tag = "5")]
+            pub original_args: ::core::option::Option<super::super::PyObject>,
+            #[prost(uint64, tag = "6")]
+            pub gpus: u64,
+            #[prost(bool, optional, tag = "7")]
+            pub use_process: ::core::option::Option<bool>,
+            #[prost(uint64, optional, tag = "8")]
+            pub max_concurrency: ::core::option::Option<u64>,
+            #[prost(uint64, optional, tag = "9")]
+            pub batch_size: ::core::option::Option<u64>,
         }
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Variant {
@@ -542,6 +571,8 @@ pub mod scalar_fn {
             Legacy(LegacyFn),
             #[prost(message, tag = "2")]
             RowWise(RowWiseFn),
+            #[prost(message, tag = "3")]
+            Batch(BatchFn),
         }
     }
     #[derive(Clone, PartialEq, ::prost::Oneof)]

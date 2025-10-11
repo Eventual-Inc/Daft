@@ -14,7 +14,7 @@
         * [JSON and Nested Data](modalities/json.md)
     * Running Custom Python Code
         * [User-Defined Functions (UDFs)](custom-code/udfs.md)
-        * [Next-Generation UDFs with `@daft.func`](custom-code/func.md)
+        * [Next-Generation UDFs](custom-code/func.md)
     * Models and Providers
         * [Models and Providers](models/index.md)
     * Datasets
@@ -40,9 +40,8 @@
     * Architecture
         * [Architecture](architecture/index.md)
     * Optimization and Debugging
-        * [Optimization](optimization/index.md)
         * [Managing Memory Usage](optimization/memory.md)
-        * [Partitioning](optimization/partitioning.md)
+        * [Partitioning and Batching](optimization/partitioning.md)
         * [Observability](optimization/observability.md)
     * [Benchmarks](benchmarks/index.md)
     * [Community <sup>↗</sup>](http://www.daft.ai/slack)
