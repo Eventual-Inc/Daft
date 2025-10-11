@@ -51,6 +51,14 @@ impl TreeDisplay for PhysicalPlan {
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
         self.children().into_iter().map(|x| x as _).collect()
     }
+
+    fn repr_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "id": self.id(),
+            "type": self.name(),
+            "name": self.name(),
+        })
+    }
 }
 
 // Single node display.

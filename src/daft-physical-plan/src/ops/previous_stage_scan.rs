@@ -47,4 +47,8 @@ Clustering spec = {{ {} }}",
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
         vec![]
     }
+
+    fn repr_json(&self) -> serde_json::Value {
+        unimplemented!("repr_json for any PhysicalPlan node is not supported")
+    }
 }
