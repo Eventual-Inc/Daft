@@ -17,7 +17,6 @@ pub(crate) struct RaySwordfishWorker {
     worker_id: WorkerId,
     ray_worker_handle: Arc<PyObject>,
     num_cpus: f64,
-    #[allow(dead_code)]
     total_memory_bytes: usize,
     num_gpus: f64,
     active_task_details: ActiveTaskDetails,
@@ -45,6 +44,10 @@ impl RaySwordfishWorker {
 }
 
 impl RaySwordfishWorker {
+    pub fn total_memory_bytes(&self) -> usize {
+        self.total_memory_bytes
+    }
+
     pub fn mark_task_finished(&mut self, task_context: &TaskContext) {
         self.active_task_details.remove(task_context);
     }
