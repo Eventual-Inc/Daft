@@ -1,7 +1,7 @@
 use std::{future, sync::Arc};
 
 use common_display::{DisplayLevel, tree::TreeDisplay};
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalPhysicalPlan, SamplingMethod};
 use daft_logical_plan::{
@@ -12,11 +12,6 @@ use daft_logical_plan::{
 use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
 use futures::{TryStreamExt, future::try_join_all};
-#[cfg(feature = "python")]
-use {
-    daft_io::IOStatsContext,
-    pyo3::{Python, prelude::*},
-};
 
 use crate::{
     pipeline_node::{
@@ -120,86 +115,18 @@ impl SortMergeJoinNode {
         let mut all_samples = left_samples;
         all_samples.extend(right_samples);
 
-        let ray_partition_refs = all_samples
-            .into_iter()
-            .flat_map(|mo| mo.into_inner().0)
-            .map(|pr| {
-                let ray_partition_ref = pr
-                    .as_any()
-                    .downcast_ref::<crate::python::ray::RayPartitionRef>()
-                    .ok_or(DaftError::InternalError(
-                        "Failed to downcast partition ref".to_string(),
-                    ))?;
-                Ok(ray_partition_ref.clone())
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
+        let descending = vec![false; self.left_on.len()];
+        let nulls_first = vec![false; self.left_on.len()];
 
-        let (task_locals, py_object_refs, py_sort_by, descending, nulls_first) =
-            Python::with_gil(|py| {
-                let task_locals = crate::utils::runtime::PYO3_ASYNC_RUNTIME_LOCALS
-                    .get()
-                    .expect("Python task locals not initialized")
-                    .clone_ref(py);
-
-                let py_object_refs = ray_partition_refs
-                    .into_iter()
-                    .map(|pr| pr.get_object_ref(py))
-                    .collect::<Vec<_>>();
-
-                let py_sort_by = self
-                    .left_on
-                    .iter()
-                    .map(|e| daft_dsl::python::PyExpr {
-                        expr: e.inner().clone(),
-                    })
-                    .collect::<Vec<_>>();
-
-                let descending = vec![false; self.left_on.len()];
-                let nulls_first = vec![false; self.left_on.len()];
-
-                (
-                    task_locals,
-                    py_object_refs,
-                    py_sort_by,
-                    descending,
-                    nulls_first,
-                )
-            });
-
-        let await_coroutine = async move {
-            let result = Python::with_gil(|py| {
-                let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
-
-                let coroutine = flotilla_module.call_method1(
-                    pyo3::intern!(py, "get_boundaries"),
-                    (
-                        py_object_refs,
-                        py_sort_by,
-                        descending,
-                        nulls_first,
-                        num_partitions,
-                    ),
-                )?;
-                pyo3_async_runtimes::tokio::into_future(coroutine)
-            })?
-            .await?;
-            DaftResult::Ok(result)
-        };
-
-        let boundaries = pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine).await?;
-        let boundaries = Python::with_gil(|py| {
-            boundaries.extract::<daft_micropartition::python::PyMicroPartition>(py)
-        })?;
-
-        let boundaries = boundaries
-            .inner
-            .concat_or_get(IOStatsContext::new(
-                "daft-distributed::sort_merge_join::get_boundaries",
-            ))?
-            .ok_or(DaftError::InternalError(
-                "No boundaries found for sort merge join node".to_string(),
-            ))?;
-        Ok(boundaries)
+        crate::pipeline_node::get_partition_boundaries_from_samples(
+            all_samples,
+            &self.left_on,
+            descending,
+            nulls_first,
+            num_partitions,
+            "daft-distributed::sort_merge_join::get_boundaries".to_string(),
+        )
+        .await
     }
 
     #[cfg(not(feature = "python"))]
