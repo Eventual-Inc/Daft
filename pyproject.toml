@@ -110,7 +110,7 @@ dev = [
   "pylance>=0.20.0",
   # Iceberg
   "pyiceberg==0.7.0",
-  "pydantic==2.10.6",
+  "pydantic==2.12.0",
   "tenacity==8.2.3",
   # Delta Lake
   "deltalake==0.5.8; platform_system == \"Windows\"",

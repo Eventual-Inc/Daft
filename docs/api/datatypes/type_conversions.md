@@ -57,6 +57,7 @@ To check the inferred DataType for a Python type, use [`DataType.infer_from_type
 | `typing.TypedDict("...", { "k1": T1, "k2": T2, ... })`                                    | Struct[k1: T1, k2: T2, ...]         |
 | `tuple[T0, T1, ..., TN]` (no ellipsis in actual type)                                     | Struct[_0: T0, _1: T1, ..., _N: TN] |
 | `tuple[T, ...]`                                                                           | List[T]                             |
+| `pydantic.BaseModel` with serialized fields `f1: T1`, `f2: T2`, ...                       | Struct[f1: T1, f2: T2, ...]         |
 | `numpy.ndarray`<br>`torch.Tensor`<br>`tensorflow.Tensor`<br>`jax.Array`<br>`cupy.ndarray` | Tensor[Python]                      |
 | `numpy.typing.NDArray[T]`                                                                 | Tensor[T]                           |
 | `torch.FloatTensor`                                                                       | Tensor[Float32]                     |
