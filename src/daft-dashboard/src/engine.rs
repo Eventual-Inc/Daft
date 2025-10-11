@@ -35,10 +35,9 @@ async fn query_start(
         unoptimized_plan: args.unoptimized_plan,
         state: QueryState::Pending,
     };
-    let summary = query_info.summarize();
 
-    state.queries.insert(query_id, query_info);
-    state.ping_clients(summary);
+    state.queries.insert(query_id.clone(), query_info);
+    state.ping_query(query_id);
     StatusCode::OK
 }
 
@@ -52,20 +51,23 @@ async fn plan_start(
     Path(query_id): Path<QueryID>,
     Json(args): Json<PlanStartArgs>,
 ) -> StatusCode {
-    let query_info = state.queries.get_mut(&query_id);
-    let Some(mut query_info) = query_info else {
-        return StatusCode::BAD_REQUEST;
-    };
-    if !matches!(query_info.state, QueryState::Pending) {
-        return StatusCode::BAD_REQUEST;
+    {
+        let query_info = state.queries.get_mut(&query_id);
+        let Some(mut query_info) = query_info else {
+            tracing::error!("Query `{}` not found", query_id);
+            return StatusCode::BAD_REQUEST;
+        };
+        if !matches!(query_info.state, QueryState::Pending) {
+            tracing::error!("Query `{}` is not pending", query_id);
+            return StatusCode::BAD_REQUEST;
+        }
+
+        query_info.state = QueryState::Optimizing {
+            plan_start_sec: args.plan_start_sec,
+        };
     }
 
-    query_info.state = QueryState::Optimizing {
-        plan_start_sec: args.plan_start_sec,
-    };
-    let summary = query_info.summarize();
-    state.ping_clients(summary);
-
+    state.ping_query(query_id);
     StatusCode::OK
 }
 
@@ -80,24 +82,25 @@ async fn plan_end(
     Path(query_id): Path<QueryID>,
     Json(args): Json<PlanEndArgs>,
 ) -> StatusCode {
-    let query_info = state.queries.get_mut(&query_id);
-    let Some(mut query_info) = query_info else {
-        return StatusCode::BAD_REQUEST;
-    };
-    let QueryState::Optimizing { plan_start_sec } = query_info.state else {
-        return StatusCode::BAD_REQUEST;
-    };
+    {
+        let query_info = state.queries.get_mut(&query_id);
+        let Some(mut query_info) = query_info else {
+            return StatusCode::BAD_REQUEST;
+        };
+        let QueryState::Optimizing { plan_start_sec } = query_info.state else {
+            return StatusCode::BAD_REQUEST;
+        };
 
-    query_info.state = QueryState::Setup {
-        plan_info: PlanInfo {
-            plan_start_sec,
-            plan_end_sec: args.plan_end_sec,
-            optimized_plan: args.optimized_plan,
-        },
-    };
-    let summary = query_info.summarize();
-    state.ping_clients(summary);
+        query_info.state = QueryState::Setup {
+            plan_info: PlanInfo {
+                plan_start_sec,
+                plan_end_sec: args.plan_end_sec,
+                optimized_plan: args.optimized_plan,
+            },
+        };
+    }
 
+    state.ping_query(query_id);
     StatusCode::OK
 }
 
@@ -112,36 +115,38 @@ async fn exec_start(
     Path(query_id): Path<QueryID>,
     Json(args): Json<ExecStartArgs>,
 ) -> StatusCode {
-    let query_info = state.queries.get_mut(&query_id);
-    let Some(mut query_info) = query_info else {
-        return StatusCode::BAD_REQUEST;
-    };
-    let QueryState::Setup { plan_info } = &query_info.state else {
-        return StatusCode::BAD_REQUEST;
-    };
+    {
+        let query_info = state.queries.get_mut(&query_id);
+        let Some(mut query_info) = query_info else {
+            return StatusCode::BAD_REQUEST;
+        };
+        let QueryState::Setup { plan_info } = &query_info.state else {
+            return StatusCode::BAD_REQUEST;
+        };
 
-    query_info.state = QueryState::Executing {
-        plan_info: plan_info.clone(),
-        exec_info: ExecInfo {
-            exec_start_sec: args.exec_start_sec,
-            operators: args
-                .node_infos
-                .into_iter()
-                .map(|node_info| {
-                    (
-                        node_info.id,
-                        OperatorInfo {
-                            status: OperatorStatus::Pending,
-                            node_info,
-                            stats: HashMap::new(),
-                        },
-                    )
-                })
-                .collect(),
-        },
-    };
-    let summary = query_info.summarize();
-    state.ping_clients(summary);
+        query_info.state = QueryState::Executing {
+            plan_info: plan_info.clone(),
+            exec_info: ExecInfo {
+                exec_start_sec: args.exec_start_sec,
+                operators: args
+                    .node_infos
+                    .into_iter()
+                    .map(|node_info| {
+                        (
+                            node_info.id,
+                            OperatorInfo {
+                                status: OperatorStatus::Pending,
+                                node_info,
+                                stats: HashMap::new(),
+                            },
+                        )
+                    })
+                    .collect(),
+            },
+        };
+    }
+
+    state.ping_query(query_id);
     StatusCode::OK
 }
 
@@ -149,15 +154,19 @@ async fn exec_op_start(
     State(state): State<Arc<DashboardState>>,
     Path((query_id, op_id)): Path<(QueryID, usize)>,
 ) -> StatusCode {
-    let query_info = state.queries.get_mut(&query_id);
-    let Some(mut query_info) = query_info else {
-        return StatusCode::BAD_REQUEST;
-    };
-    let QueryState::Executing { exec_info, .. } = &mut query_info.state else {
-        return StatusCode::BAD_REQUEST;
-    };
+    {
+        let query_info = state.queries.get_mut(&query_id);
+        let Some(mut query_info) = query_info else {
+            return StatusCode::BAD_REQUEST;
+        };
+        let QueryState::Executing { exec_info, .. } = &mut query_info.state else {
+            return StatusCode::BAD_REQUEST;
+        };
 
-    exec_info.operators.get_mut(&op_id).unwrap().status = OperatorStatus::Executing;
+        exec_info.operators.get_mut(&op_id).unwrap().status = OperatorStatus::Executing;
+    }
+
+    state.ping_operator(query_id);
     StatusCode::OK
 }
 
@@ -165,15 +174,19 @@ async fn exec_op_end(
     State(state): State<Arc<DashboardState>>,
     Path((query_id, op_id)): Path<(QueryID, usize)>,
 ) -> StatusCode {
-    let query_info = state.queries.get_mut(&query_id);
-    let Some(mut query_info) = query_info else {
-        return StatusCode::BAD_REQUEST;
-    };
-    let QueryState::Executing { exec_info, .. } = &mut query_info.state else {
-        return StatusCode::BAD_REQUEST;
-    };
+    {
+        let query_info = state.queries.get_mut(&query_id);
+        let Some(mut query_info) = query_info else {
+            return StatusCode::BAD_REQUEST;
+        };
+        let QueryState::Executing { exec_info, .. } = &mut query_info.state else {
+            return StatusCode::BAD_REQUEST;
+        };
 
-    exec_info.operators.get_mut(&op_id).unwrap().status = OperatorStatus::Finished;
+        exec_info.operators.get_mut(&op_id).unwrap().status = OperatorStatus::Finished;
+    }
+
+    state.ping_operator(query_id);
     StatusCode::OK
 }
 
@@ -192,17 +205,21 @@ async fn exec_emit_stats(
     Path(query_id): Path<QueryID>,
     Json(args): Json<ExecEmitStatsArgsRecv>,
 ) -> StatusCode {
-    let query_info = state.queries.get_mut(&query_id);
-    let Some(mut query_info) = query_info else {
-        return StatusCode::BAD_REQUEST;
-    };
-    let QueryState::Executing { exec_info, .. } = &mut query_info.state else {
-        return StatusCode::BAD_REQUEST;
-    };
+    {
+        let query_info = state.queries.get_mut(&query_id);
+        let Some(mut query_info) = query_info else {
+            return StatusCode::BAD_REQUEST;
+        };
+        let QueryState::Executing { exec_info, .. } = &mut query_info.state else {
+            return StatusCode::BAD_REQUEST;
+        };
 
-    for (operator_id, stats) in args.stats {
-        exec_info.operators.get_mut(&operator_id).unwrap().stats = stats;
+        for (operator_id, stats) in args.stats {
+            exec_info.operators.get_mut(&operator_id).unwrap().stats = stats;
+        }
     }
+
+    state.ping_operator(query_id);
     StatusCode::OK
 }
 
@@ -216,25 +233,27 @@ async fn exec_end(
     Path(query_id): Path<QueryID>,
     Json(args): Json<ExecEndArgs>,
 ) -> StatusCode {
-    let query_info = state.queries.get_mut(&query_id);
-    let Some(mut query_info) = query_info else {
-        return StatusCode::BAD_REQUEST;
-    };
-    let QueryState::Executing {
-        exec_info,
-        plan_info,
-    } = &query_info.state
-    else {
-        return StatusCode::BAD_REQUEST;
-    };
+    {
+        let query_info = state.queries.get_mut(&query_id);
+        let Some(mut query_info) = query_info else {
+            return StatusCode::BAD_REQUEST;
+        };
+        let QueryState::Executing {
+            exec_info,
+            plan_info,
+        } = &query_info.state
+        else {
+            return StatusCode::BAD_REQUEST;
+        };
 
-    query_info.state = QueryState::Finalizing {
-        plan_info: plan_info.clone(),
-        exec_info: exec_info.clone(),
-        exec_end_sec: args.exec_end_sec,
-    };
-    let summary = query_info.summarize();
-    state.ping_clients(summary);
+        query_info.state = QueryState::Finalizing {
+            plan_info: plan_info.clone(),
+            exec_info: exec_info.clone(),
+            exec_end_sec: args.exec_end_sec,
+        };
+    }
+
+    state.ping_query(query_id);
     StatusCode::OK
 }
 
@@ -250,41 +269,43 @@ async fn query_end(
     Path(query_id): Path<QueryID>,
     Json(args): Json<FinalizeArgs>,
 ) -> StatusCode {
-    let query_info = state.queries.get_mut(&query_id);
-    let Some(mut query_info) = query_info else {
-        tracing::error!("Query `{}` not found", query_id);
-        return StatusCode::BAD_REQUEST;
-    };
-    let QueryState::Finalizing {
-        exec_info,
-        plan_info,
-        exec_end_sec,
-    } = &query_info.state
-    else {
-        tracing::error!("Query `{}` not in finalizing state", query_id);
-        return StatusCode::BAD_REQUEST;
-    };
-
-    let results = match RecordBatch::from_ipc_stream(&args.results) {
-        Ok(results) => results,
-        Err(e) => {
-            tracing::error!(
-                "Failed to deserialize results for query `{}`: {}",
-                query_id,
-                e
-            );
+    {
+        let query_info = state.queries.get_mut(&query_id);
+        let Some(mut query_info) = query_info else {
+            tracing::error!("Query `{}` not found", query_id);
             return StatusCode::BAD_REQUEST;
-        }
-    };
-    query_info.state = QueryState::Finished {
-        plan_info: plan_info.clone(),
-        exec_info: exec_info.clone(),
-        exec_end_sec: *exec_end_sec,
-        end_sec: args.end_sec,
-        results,
-    };
+        };
+        let QueryState::Finalizing {
+            exec_info,
+            plan_info,
+            exec_end_sec,
+        } = &query_info.state
+        else {
+            tracing::error!("Query `{}` not in finalizing state", query_id);
+            return StatusCode::BAD_REQUEST;
+        };
 
-    state.ping_clients(query_info.summarize());
+        let results = match RecordBatch::from_ipc_stream(&args.results) {
+            Ok(results) => results,
+            Err(e) => {
+                tracing::error!(
+                    "Failed to deserialize results for query `{}`: {}",
+                    query_id,
+                    e
+                );
+                return StatusCode::BAD_REQUEST;
+            }
+        };
+        query_info.state = QueryState::Finished {
+            plan_info: plan_info.clone(),
+            exec_info: exec_info.clone(),
+            exec_end_sec: *exec_end_sec,
+            end_sec: args.end_sec,
+            results,
+        };
+    }
+
+    state.ping_query(query_id);
     StatusCode::OK
 }
 

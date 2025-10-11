@@ -9,12 +9,13 @@ use axum::{
 };
 use common_metrics::QueryID;
 use futures::future::ok;
+use tokio::sync::broadcast;
 use tokio_stream::{
     Stream, StreamExt as _,
     wrappers::{BroadcastStream, errors::BroadcastStreamRecvError},
 };
 
-use crate::state::{DashboardState, QueryInfo, QuerySummary};
+use crate::state::{DashboardState, QueryInfo, QuerySummary, QueryUpdate};
 
 /// Get the summaries of all queries
 /// Note, this is used for internal testing, not by the frontend
@@ -80,9 +81,55 @@ async fn get_query(
     }
 }
 
+async fn subscribe_query_updates(
+    State(state): State<Arc<DashboardState>>,
+    Path(query_id): Path<QueryID>,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, StatusCode> {
+    // Initial event with the current query state
+    let Some(query_info) = state.queries.get(&query_id) else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+    let query_info = query_info.value();
+
+    let tx = state
+        .query_clients
+        .entry(query_id)
+        .or_insert_with(|| broadcast::Sender::new(512));
+    let rx = tx.subscribe();
+
+    let stream = BroadcastStream::new(rx).filter_map(|event| match event {
+        Ok((id, operator_info)) => {
+            let event_type = match operator_info {
+                QueryUpdate::OperatorInfo(_) => "operator_info",
+                QueryUpdate::QueryInfo(_) => "query_info",
+            };
+
+            let event = Event::default()
+                .id(id.to_string())
+                .event(event_type)
+                .data(serde_json::to_string(&operator_info).unwrap());
+            Some(Ok(event))
+        }
+        Err(BroadcastStreamRecvError::Lagged(_)) => None,
+    });
+
+    // Initial event with the current state
+    let stream = futures::stream::once(ok(Event::default()
+        .event("initial_state")
+        .data(serde_json::to_string(query_info).unwrap())))
+    .chain(stream);
+
+    Ok(Sse::new(stream).keep_alive(
+        axum::response::sse::KeepAlive::new()
+            .interval(std::time::Duration::from_secs(15))
+            .text("keep-alive"),
+    ))
+}
+
 pub(crate) fn routes() -> Router<Arc<DashboardState>> {
     Router::new()
         .route("/queries", get(get_query_summaries))
         .route("/queries/subscribe", get(subscribe_queries_updates))
         .route("/query/{query_id}", get(get_query))
+        .route("/query/{query_id}/subscribe", get(subscribe_query_updates))
 }
