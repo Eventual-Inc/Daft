@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{LocalPhysicalPlanRef, translate};
 
-#[pyclass(module = "daft.daft", name = "LocalPhysicalPlan")]
+#[pyclass(module = "daft.daft", name = "LocalPhysicalPlan", frozen)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PyLocalPhysicalPlan {
     pub plan: LocalPhysicalPlanRef,

@@ -147,7 +147,7 @@ def _glob_path_into_file_infos(
     for path in set(paths):
         try:
             path_file_infos = glob_path_with_stats(path, file_format=file_format, io_config=io_config)
-            file_infos.merge(path_file_infos)
+            file_infos = file_infos.merge(path_file_infos)
         except FileNotFoundError:
             logger.debug("%s is not found.", path)
 
