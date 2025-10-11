@@ -6,7 +6,7 @@ use std::{
 use common_error::DaftResult;
 use common_runtime::RuntimeRef;
 use daft_context::get_context;
-use daft_io::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config};
+use daft_io::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config, TosConfig};
 use daft_session::Session;
 use uuid::Uuid;
 
@@ -73,12 +73,14 @@ impl ConnectSession {
             mut http,
             unity,
             hf,
+            mut tos,
         } = get_context().io_config();
 
         self.s3_config_helper(&mut s3)?;
         self.azure_config_helper(&mut azure)?;
         self.gcs_config_helper(&mut gcs)?;
         self.http_config_helper(&mut http)?;
+        self.tos_config_helper(&mut tos)?;
 
         Ok(IOConfig {
             s3,
@@ -87,6 +89,7 @@ impl ConnectSession {
             http,
             unity,
             hf,
+            tos,
         })
     }
 
@@ -255,6 +258,58 @@ impl ConnectSession {
         if let Some(value) = self.config_values.get("daft.io.http.bearer_token").cloned() {
             http_conf.bearer_token = Some(value.into());
         }
+
+        Ok(())
+    }
+
+    fn tos_config_helper(&self, tos_conf: &mut TosConfig) -> DaftResult<()> {
+        macro_rules! set_opt_str {
+            ($field:ident) => {
+                if let Some(value) = self
+                    .config_values
+                    .get(concat!("daft.io.tos.", stringify!($field)))
+                    .map(|s| s.to_string())
+                {
+                    tos_conf.$field = Some(value);
+                }
+            };
+        }
+        macro_rules! set_from_config {
+            ($field:ident) => {
+                if let Some(value) = self
+                    .config_values
+                    .get(concat!("daft.io.tos.", stringify!($field)))
+                    .map(|s| s.parse().ok())
+                    .flatten()
+                {
+                    tos_conf.$field = value;
+                }
+            };
+        }
+        macro_rules! set_opt_from_config {
+            ($field:ident) => {
+                if let Some(value) = self
+                    .config_values
+                    .get(concat!("daft.io.tos.", stringify!($field)))
+                    .map(|s| s.parse().ok())
+                {
+                    tos_conf.$field = value;
+                }
+            };
+        }
+
+        set_opt_str!(region);
+        set_opt_str!(endpoint);
+        set_opt_str!(access_key);
+        set_opt_from_config!(secret_key);
+        set_opt_from_config!(security_token);
+        set_from_config!(anonymous);
+        set_from_config!(max_retries);
+        set_from_config!(retry_timeout_ms);
+        set_from_config!(connect_timeout_ms);
+        set_from_config!(read_timeout_ms);
+        set_from_config!(max_concurrent_requests);
+        set_from_config!(max_connections_per_io_thread);
 
         Ok(())
     }
