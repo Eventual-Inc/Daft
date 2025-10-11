@@ -26,7 +26,8 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     config.addinivalue_line(
-        "markers", "integration: mark test as an integration test that runs with external dependencies"
+        "markers",
+        "integration: mark test as an integration test that runs with external dependencies",
     )
 
 
@@ -107,7 +108,10 @@ def assert_spark_equals(spark_session):
 
 class MakeDF(Protocol):
     def __call__(
-        self, data: pa.Table | dict | list, repartition: int = 1, repartition_columns: list[str] = []
+        self,
+        data: pa.Table | dict | list,
+        repartition: int = 1,
+        repartition_columns: list[str] = [],
     ) -> daft.DataFrame: ...
 
 
@@ -216,7 +220,13 @@ def check_answer(df: daft.DataFrame, expected_answer: dict[str, Any], is_sorted:
         assert_df_equals(daft_df, expected_df, assert_ordering=True, check_dtype=check_dtype)
     else:
         sort_keys = df.column_names
-        assert_df_equals(daft_df, expected_df, sort_key=sort_keys, assert_ordering=False, check_dtype=check_dtype)
+        assert_df_equals(
+            daft_df,
+            expected_df,
+            sort_key=sort_keys,
+            assert_ordering=False,
+            check_dtype=check_dtype,
+        )
 
 
 @pytest.fixture(
