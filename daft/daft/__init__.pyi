@@ -771,27 +771,29 @@ class TosConfig:
     """I/O configuration for accessing Volcengine TOS (Torch Object Storage).
 
     Args:
-        region (str, optional): Name of the region to be used, defaults to None which will attempt to auto-detect.
-        endpoint (str, optional): URL to the TOS endpoint, defaults to endpoints for Volcengine TOS.
-        access_key (str, optional): TOS Access Key ID, defaults to auto-detection from the current environment.
-        secret_key (str, optional): TOS Secret Access Key, defaults to auto-detection from the current environment.
-        security_token (str, optional): TOS Security Token, required for temporary credentials.
+        region (str, optional): Name of the region to be used, defaults to None, it can be detected automatically from endpoint if standard endpoint is set.
+        endpoint (str, optional): URL to the TOS endpoint, defaults to None for Volcengine TOS, it can be inferred from region.
+        access_key (str, optional): TOS Access Key, defaults to None.
+        secret_key (str, optional): TOS Secret Key, defaults to None.
+        security_token (str, optional): TOS Security Token, required for temporary credentials, defaults to None.
         anonymous (bool, optional): Whether to use "anonymous mode" or not, which will access TOS without any credentials. Defaults to False.
         max_retries (int, optional): Maximum number of retries for failed requests, defaults to 3.
         retry_timeout_ms (int, optional): Timeout duration for retry attempts in milliseconds, defaults to 30000ms.
         connect_timeout_ms (int, optional): Timeout duration to wait to make a connection to TOS in milliseconds, defaults to 10000ms.
         read_timeout_ms (int, optional): Timeout duration to wait to read the first byte from TOS in milliseconds, defaults to 30000ms.
-        max_concurrent_requests (int, optional): Maximum number of concurrent requests to TOS at any time per IO thread, defaults to 50.
+        max_concurrent_requests (int, optional): Maximum number of concurrent requests to TOS at any time, defaults to 50.
         max_connections_per_io_thread (int, optional): Maximum number of connections to TOS per IO thread, defaults to 50.
 
     Examples:
-        >>> # For Volcengine TOS
+        >>> # For Volcengine & byteplus TOS, refer to https://www.volcengine.com/docs/6349/107356
+        >>> # or https://docs.byteplus.com/en/docs/tos/docs-region-and-endpoint or get endpoint and region info.
+        >>>
         >>> io_config = IOConfig(
         ...     tos=TosConfig(
         ...         region="cn-beijing",
         ...         endpoint="https://tos-cn-beijing.volces.com",
-        ...         access_key="your-access-key-id",
-        ...         secret_key="your-secret-access-key",
+        ...         access_key="your-access-key",
+        ...         secret_key="your-secret-key",
         ...     )
         ... )
         >>> daft.read_parquet("tos://some-path", io_config=io_config)
@@ -844,7 +846,14 @@ class TosConfig:
         ...
     @staticmethod
     def from_env() -> TosConfig:
-        """Creates a TosConfig, retrieving credentials and configurations from the current environment."""
+        """Creates a TosConfig, retrieving credentials and configurations from the current environment.
+
+        TOS_ENDPOINT: Endpoint of the TOS service.
+        TOS_REGION: Region of the TOS service.
+        TOS_ACCESS_KEY: Access key for TOS authentication.
+        TOS_SECRET_KEY: Secret key for TOS authentication.
+        TOS_SECURITY_TOKEN: Security token for TOS authentication.
+        """
 
 class IOConfig:
     """Configuration for the native I/O layer, e.g. credentials for accessing cloud storage systems."""

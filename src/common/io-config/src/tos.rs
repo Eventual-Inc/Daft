@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::ObfuscatedString;
 
+pub const DEFAULT_REGION: &str = "cn-beijing";
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Display)]
 #[display(
     "TosConfig
@@ -63,8 +65,8 @@ impl TosConfig {
         if let Some(endpoint) = &self.endpoint {
             res.push(format!("Endpoint URL = {endpoint}"));
         }
-        if let Some(access_key_id) = &self.access_key {
-            res.push(format!("Access key id = {access_key_id}"));
+        if let Some(access_key) = &self.access_key {
+            res.push(format!("Access key id = {access_key}"));
         }
         if self.secret_key.is_some() {
             res.push("Secret access key = ***".to_string());
@@ -87,4 +89,49 @@ impl TosConfig {
         ));
         res
     }
+
+    pub fn endpoint_and_region(&self) -> (String, String) {
+        match (self.endpoint.clone(), self.region.clone()) {
+            (Some(ep), Some(re)) => (ep, re),
+            (Some(ep), None) => {
+                let region = extract_region(&ep)
+                    .unwrap_or_else(|| {
+                        log::warn!("Cannot extract region from endpoint {ep}, use default region {DEFAULT_REGION}");
+                        DEFAULT_REGION.to_string()
+                    });
+                (ep, region)
+            }
+            (None, Some(re)) => {
+                log::warn!(
+                    "Endpoint is not set but found region {re}, use default endpoint tos-{re}.volces.com"
+                );
+                (format!("tos-{re}.volces.com"), re)
+            }
+            (None, None) => {
+                log::warn!(
+                    "Both endpoint and region are not found, use default endpoint tos-{DEFAULT_REGION}.volces.com"
+                );
+                (
+                    format!("tos-{DEFAULT_REGION}.volces.com"),
+                    DEFAULT_REGION.to_string(),
+                )
+            }
+        }
+    }
+}
+
+pub fn extract_region(endpoint: &str) -> Option<String> {
+    let host = endpoint
+        .trim_start_matches(|c: char| !c.is_ascii_alphanumeric())
+        .trim_start_matches("://")
+        .split('/')
+        .next()?;
+
+    for part in host.split('.') {
+        if let Some(region) = part.strip_prefix("tos-") {
+            return Some(region.to_string());
+        }
+    }
+
+    None
 }
