@@ -3,7 +3,6 @@ use std::{future, sync::Arc};
 use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::{DaftError, DaftResult};
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_io::IOStatsContext;
 use daft_local_plan::{LocalPhysicalPlan, SamplingMethod};
 use daft_logical_plan::{
     JoinType,
@@ -14,12 +13,16 @@ use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
 use futures::{TryStreamExt, future::try_join_all};
 #[cfg(feature = "python")]
-use pyo3::{Python, prelude::*};
+use {
+    daft_io::IOStatsContext,
+    pyo3::{Python, prelude::*},
+};
 
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
-        PipelineNodeContext, SubmittableTaskStream, make_new_task_from_materialized_outputs,
+        PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream,
+        make_new_task_from_materialized_outputs,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -43,8 +46,8 @@ pub(crate) struct SortMergeJoinNode {
     null_equals_nulls: Option<Vec<bool>>,
     join_type: JoinType,
 
-    left: Arc<dyn DistributedPipelineNode>,
-    right: Arc<dyn DistributedPipelineNode>,
+    left: DistributedPipelineNode,
+    right: DistributedPipelineNode,
 }
 
 impl SortMergeJoinNode {
@@ -60,8 +63,8 @@ impl SortMergeJoinNode {
         null_equals_nulls: Option<Vec<bool>>,
         join_type: JoinType,
         _num_partitions: usize,
-        left: Arc<dyn DistributedPipelineNode>,
-        right: Arc<dyn DistributedPipelineNode>,
+        left: DistributedPipelineNode,
+        right: DistributedPipelineNode,
         output_schema: SchemaRef,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -89,8 +92,8 @@ impl SortMergeJoinNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -202,9 +205,9 @@ impl SortMergeJoinNode {
     #[cfg(not(feature = "python"))]
     async fn get_partition_boundaries(
         &self,
-        left_samples: Vec<MaterializedOutput>,
-        right_samples: Vec<MaterializedOutput>,
-        num_partitions: usize,
+        _left_samples: Vec<MaterializedOutput>,
+        _right_samples: Vec<MaterializedOutput>,
+        _num_partitions: usize,
     ) -> DaftResult<RecordBatch> {
         unimplemented!("Distributed sort merge join requires Python feature to be enabled")
     }
@@ -326,29 +329,30 @@ impl SortMergeJoinNode {
         }
 
         // Sample both sides
+        let sample_size = self.config.execution_config.sample_size_for_sort;
         let left_sample_tasks = left_materialized
             .clone()
             .into_iter()
             .map(|mo| {
                 let self_clone = self.clone();
+                let left_on = self_clone.left_on.clone();
+                let schema = self_clone.config.schema.clone();
                 let task = make_new_task_from_materialized_outputs(
                     TaskContext::from((&self.context, task_id_counter.next())),
                     vec![mo],
-                    &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                    &(self_clone as Arc<dyn PipelineNodeImpl>),
                     move |input| {
                         let sample = LocalPhysicalPlan::sample(
                             input,
-                            SamplingMethod::Size(
-                                self_clone.config.execution_config.sample_size_for_sort,
-                            ),
+                            SamplingMethod::Size(sample_size),
                             false,
                             None,
                             StatsState::NotMaterialized,
                         );
                         LocalPhysicalPlan::project(
                             sample,
-                            self_clone.left_on.clone(),
-                            self_clone.config.schema.clone(),
+                            left_on,
+                            schema,
                             StatsState::NotMaterialized,
                         )
                     },
@@ -364,24 +368,24 @@ impl SortMergeJoinNode {
             .into_iter()
             .map(|mo| {
                 let self_clone = self.clone();
+                let right_on = self_clone.right_on.clone();
+                let schema = self_clone.config.schema.clone();
                 let task = make_new_task_from_materialized_outputs(
                     TaskContext::from((&self.context, task_id_counter.next())),
                     vec![mo],
-                    &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                    &(self_clone as Arc<dyn PipelineNodeImpl>),
                     move |input| {
                         let sample = LocalPhysicalPlan::sample(
                             input,
-                            SamplingMethod::Size(
-                                self_clone.config.execution_config.sample_size_for_sort,
-                            ),
+                            SamplingMethod::Size(sample_size),
                             false,
                             None,
                             StatsState::NotMaterialized,
                         );
                         LocalPhysicalPlan::project(
                             sample,
-                            self_clone.right_on.clone(),
-                            self_clone.config.schema.clone(),
+                            right_on,
+                            schema,
                             StatsState::NotMaterialized,
                         )
                     },
@@ -415,23 +419,25 @@ impl SortMergeJoinNode {
             .into_iter()
             .map(|mo| {
                 let self_clone = self.clone();
-                let boundaries = boundaries.clone();
+                let boundaries_clone = boundaries.clone();
                 let task = make_new_task_from_materialized_outputs(
                     TaskContext::from((&self.context, task_id_counter.next())),
                     vec![mo],
-                    &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                    &(self_clone.clone() as Arc<dyn PipelineNodeImpl>),
                     move |input| {
+                        let left_on = self_clone.left_on.clone();
+                        let left_schema = self_clone.left.config().schema.clone();
                         let descending = vec![false; self_clone.left_on.len()];
                         LocalPhysicalPlan::repartition(
                             input,
                             RepartitionSpec::Range(RangeRepartitionConfig::new(
                                 Some(num_partitions),
-                                boundaries,
-                                self_clone.left_on.clone(),
+                                boundaries_clone,
+                                left_on,
                                 descending,
                             )),
                             num_partitions,
-                            self_clone.left.config().schema.clone(),
+                            left_schema,
                             StatsState::NotMaterialized,
                         )
                     },
@@ -447,23 +453,25 @@ impl SortMergeJoinNode {
             .into_iter()
             .map(|mo| {
                 let self_clone = self.clone();
-                let boundaries = boundaries.clone();
+                let boundaries_clone = boundaries.clone();
                 let task = make_new_task_from_materialized_outputs(
                     TaskContext::from((&self.context, task_id_counter.next())),
                     vec![mo],
-                    &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                    &(self_clone.clone() as Arc<dyn PipelineNodeImpl>),
                     move |input| {
+                        let right_on = self_clone.right_on.clone();
+                        let right_schema = self_clone.right.config().schema.clone();
                         let descending = vec![false; self_clone.right_on.len()];
                         LocalPhysicalPlan::repartition(
                             input,
                             RepartitionSpec::Range(RangeRepartitionConfig::new(
                                 Some(num_partitions),
-                                boundaries,
-                                self_clone.right_on.clone(),
+                                boundaries_clone,
+                                right_on,
                                 descending,
                             )),
                             num_partitions,
-                            self_clone.right.config().schema.clone(),
+                            right_schema,
                             StatsState::NotMaterialized,
                         )
                     },
@@ -609,7 +617,7 @@ impl TreeDisplay for SortMergeJoinNode {
     }
 }
 
-impl DistributedPipelineNode for SortMergeJoinNode {
+impl PipelineNodeImpl for SortMergeJoinNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -618,8 +626,12 @@ impl DistributedPipelineNode for SortMergeJoinNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.left.clone(), self.right.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        self.multiline_display()
     }
 
     fn produce_tasks(
@@ -637,9 +649,5 @@ impl DistributedPipelineNode for SortMergeJoinNode {
             plan_context.scheduler_handle(),
         ));
         SubmittableTaskStream::from(result_rx)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
     }
 }

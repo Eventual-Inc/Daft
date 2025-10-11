@@ -28,6 +28,7 @@ impl Project {
         })
     }
 
+    // TODO: Remove with the old Ray Runner
     pub fn resource_request(&self) -> Option<ResourceRequest> {
         get_resource_request(self.projection.as_slice())
     }

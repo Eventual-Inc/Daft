@@ -15,7 +15,7 @@ The benchmarks cover four different workload types, each designed to test differ
 
 | Workload | Data Size | Daft | Ray Data | Spark |
 |----------|-----------|------|----------|-------|
-| Audio Transcription | 113,800 audio files | 6m 25s | 13m 48s | 42m 2s |
-| Document Embedding | 10,000 PDFs | 1m 54s | 16m 10s | 8m 4s |
-| Image Classification | 803,580 images | 3m 14s | 26m 5s | 34m 6s |
-| Video Object Detection | 1,000 videos | 12m 17s | 34m 20s | 2h 18m |
+| Audio Transcription | 113,800 audio files | 6m 22s | 29m 20s | 25m 46s |
+| Document Embedding | 10,000 PDFs | 1m 54s | 14m 32s | 8m 4s |
+| Image Classification | 803,580 images | 4m 23s | 23m 30s | 45m 7s |
+| Video Object Detection | 1,000 videos | 11m 46s | 25m 54s | 3h 36m |

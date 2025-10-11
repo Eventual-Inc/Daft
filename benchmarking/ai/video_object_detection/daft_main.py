@@ -4,18 +4,26 @@ import torch
 import torchvision
 from PIL import Image
 from ultralytics import YOLO
+import ray
+import time
 
 import daft
 from daft.expressions import col
 
 NUM_GPU_NODES = 8
 YOLO_MODEL = "yolo11n.pt"
-INPUT_DATA_PATH = "s3://daft-public-data/videos/Hollywood2-actions-videos/Hollywood2/AVIClips/"
-OUTPUT_PATH = "s3://desmond-test/colin-test/video-object-detection-result"
+INPUT_PATH = (
+    "s3://daft-public-data/videos/Hollywood2-actions-videos/Hollywood2/AVIClips/"
+)
+OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/video-object-detection-result"
 IMAGE_HEIGHT = 640
 IMAGE_WIDTH = 640
-BATCH_SIZE = 100
 
+# Wait for Ray cluster to be ready
+@ray.remote
+def warmup():
+    pass
+ray.get([warmup.remote() for _ in range(64)])
 
 @daft.udf(
     return_dtype=daft.DataType.list(
@@ -29,7 +37,6 @@ BATCH_SIZE = 100
     ),
     concurrency=NUM_GPU_NODES,
     num_gpus=1.0,
-    batch_size=BATCH_SIZE,
 )
 class ExtractImageFeatures:
     def __init__(self):
@@ -57,13 +64,18 @@ class ExtractImageFeatures:
 
 daft.context.set_runner_ray()
 
+start_time = time.time()
+
 df = daft.read_video_frames(
-    INPUT_DATA_PATH,
+    INPUT_PATH,
     image_height=IMAGE_HEIGHT,
     image_width=IMAGE_WIDTH,
 )
 df = df.with_column("features", ExtractImageFeatures(col("data")))
 df = df.explode("features")
-df = df.with_column("object", daft.col("data").image.crop(daft.col("features")["bbox"]))
+df = df.with_column("object", daft.col("data").image.crop(daft.col("features")["bbox"]).image.encode("png"))
 df = df.exclude("data")
 df.write_parquet(OUTPUT_PATH)
+
+end_time = time.time()
+print(f"Time taken: {end_time - start_time} seconds")

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_metrics::ops::NodeType;
 use daft_core::{join::JoinType, prelude::SchemaRef};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
@@ -8,7 +9,6 @@ use tracing::{Span, instrument};
 
 use crate::{
     ExecutionTaskSpawner,
-    ops::NodeType,
     pipeline::NodeName,
     state_bridge::BroadcastStateBridgeRef,
     streaming_sink::base::{

@@ -150,6 +150,19 @@ class LogicalPlanBuilder:
         builder = logical_plan_table_scan(scan_operator)
         return cls(builder)
 
+    @classmethod
+    @_apply_daft_planning_config_to_initializer
+    def from_glob_scan(
+        cls,
+        glob_paths: list[str],
+        io_config: IOConfig | None = None,
+    ) -> LogicalPlanBuilder:
+        builder = _LogicalPlanBuilder.from_glob_scan(
+            glob_paths,
+            io_config,
+        )
+        return cls(builder)
+
     def select(
         self,
         to_select: list[Expression],

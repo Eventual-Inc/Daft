@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
-use super::{DistributedPipelineNode, SubmittableTaskStream};
+use super::{PipelineNodeImpl, SubmittableTaskStream};
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
+    pipeline_node::{
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+    },
     plan::{PlanConfig, PlanExecutionContext},
 };
 
@@ -19,7 +20,7 @@ pub(crate) struct UnpivotNode {
     values: Vec<BoundExpr>,
     variable_name: String,
     value_name: String,
-    child: Arc<dyn DistributedPipelineNode>,
+    child: DistributedPipelineNode,
 }
 
 impl UnpivotNode {
@@ -35,7 +36,7 @@ impl UnpivotNode {
         variable_name: String,
         value_name: String,
         schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -61,11 +62,25 @@ impl UnpivotNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
+    }
+}
+
+impl PipelineNodeImpl for UnpivotNode {
+    fn context(&self) -> &PipelineNodeContext {
+        &self.context
     }
 
-    fn multiline_display(&self) -> Vec<String> {
+    fn config(&self) -> &PipelineNodeConfig {
+        &self.config
+    }
+
+    fn children(&self) -> Vec<DistributedPipelineNode> {
+        vec![self.child.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         use itertools::Itertools;
         let mut res = vec![];
         res.push(format!(
@@ -79,45 +94,6 @@ impl UnpivotNode {
         res.push(format!("Variable name = {}", self.variable_name));
         res.push(format!("Value name = {}", self.value_name));
         res
-    }
-}
-
-impl TreeDisplay for UnpivotNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.context.node_name).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.context.node_name.to_string()
-    }
-}
-
-impl DistributedPipelineNode for UnpivotNode {
-    fn context(&self) -> &PipelineNodeContext {
-        &self.context
-    }
-
-    fn config(&self) -> &PipelineNodeConfig {
-        &self.config
-    }
-
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
-        vec![self.child.clone()]
     }
 
     fn produce_tasks(
@@ -139,10 +115,6 @@ impl DistributedPipelineNode for UnpivotNode {
             )
         };
 
-        input_node.pipeline_instruction(self.clone(), plan_builder)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
+        input_node.pipeline_instruction(self, plan_builder)
     }
 }

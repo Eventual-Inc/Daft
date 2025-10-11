@@ -3,6 +3,8 @@ use std::{iter::repeat, sync::Arc};
 use common_error::DaftResult;
 
 use super::{DaftIsNull, DaftNotNull};
+#[cfg(feature = "python")]
+use crate::prelude::PythonArray;
 use crate::{
     array::{ListArray, StructArray},
     datatypes::*,
@@ -50,6 +52,45 @@ impl<T> DaftNotNull for DataArray<T>
 where
     T: DaftPhysicalType,
 {
+    type Output = DaftResult<DataArray<BooleanType>>;
+
+    fn not_null(&self) -> Self::Output {
+        self.check_nullity(false)
+    }
+}
+
+#[cfg(feature = "python")]
+impl PythonArray {
+    // Common functionality for nullity checks
+    fn check_nullity(&self, is_null: bool) -> DaftResult<DataArray<BooleanType>> {
+        let bitmap = if let Some(validity) = self.validity() {
+            if is_null { !validity } else { validity.clone() }
+        } else {
+            arrow2::bitmap::Bitmap::new_constant(!is_null, self.len())
+        };
+
+        BooleanArray::new(
+            Arc::new(Field::new(self.name(), DataType::Boolean)),
+            Box::new(arrow2::array::BooleanArray::new(
+                arrow2::datatypes::DataType::Boolean,
+                bitmap,
+                None,
+            )),
+        )
+    }
+}
+
+#[cfg(feature = "python")]
+impl DaftIsNull for PythonArray {
+    type Output = DaftResult<DataArray<BooleanType>>;
+
+    fn is_null(&self) -> Self::Output {
+        self.check_nullity(true)
+    }
+}
+
+#[cfg(feature = "python")]
+impl DaftNotNull for PythonArray {
     type Output = DaftResult<DataArray<BooleanType>>;
 
     fn not_null(&self) -> Self::Output {

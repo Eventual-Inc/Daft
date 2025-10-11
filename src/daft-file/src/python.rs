@@ -1,68 +1,119 @@
 use std::{
     io::{Read, Seek, SeekFrom},
-    sync::Arc,
+    ops::{Deref, DerefMut},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use common_error::DaftError;
 use common_file::FileReference;
-use daft_io::python::IOConfig as PyIOConfig;
 use pyo3::{
-    exceptions::{PyIOError, PyTypeError, PyValueError},
+    exceptions::{PyIOError, PyRuntimeError, PyValueError},
     prelude::*,
-    types::{PyBytes, PyString, PyTuple},
 };
 
 use crate::file::{DaftFile, FileCursor};
 
-#[cfg_attr(feature = "python", pymethods)]
-impl DaftFile {
-    pub fn _get_file(&self) -> PyResult<FileReference> {
-        match &self.cursor {
-            Some(FileCursor::ObjectReader(reader)) => {
-                let reader = reader.get_ref();
+#[pyclass]
+#[derive(Clone)]
+struct PyFileReference {
+    inner: Arc<FileReference>,
+}
 
-                Ok(FileReference::Reference(
-                    reader.uri.clone(),
-                    reader.io_config.clone(),
-                ))
-            }
-            Some(FileCursor::Memory(cursor)) => {
-                Ok(FileReference::Data(Arc::new(cursor.get_ref().clone())))
-            }
-            None => Err(PyIOError::new_err("file is not open")),
-        }
-    }
-
+#[pymethods]
+impl PyFileReference {
     #[staticmethod]
     fn _from_tuple(tuple: Bound<'_, PyAny>) -> PyResult<Self> {
-        let tuple = tuple.downcast::<PyTuple>()?;
-        let first = tuple.get_item(0)?;
-        if first.is_instance_of::<PyString>() {
-            let url = first.extract::<String>()?;
-            let io_config = tuple.get_item(1)?.extract::<Option<PyIOConfig>>()?;
-            Self::_from_path(url, io_config)
-        } else if first.is_instance_of::<PyBytes>() {
-            let data = first.extract::<Vec<u8>>()?;
-            Ok(Self::_from_bytes(data))
-        } else {
-            Err(PyErr::new::<PyTypeError, _>("Expected a string or bytes"))
+        let f: FileReference = tuple.extract()?;
+        Ok(Self { inner: Arc::new(f) })
+    }
+
+    pub fn __enter__(&self) -> PyResult<PyDaftFile> {
+        Ok(DaftFile::try_from(self.inner.as_ref().clone())?.into())
+    }
+
+    pub fn _get_file(&self) -> FileReference {
+        self.inner.as_ref().clone()
+    }
+
+    fn __exit__(
+        &mut self,
+        _exc_type: Option<PyObject>,
+        _exc_value: Option<PyObject>,
+        _traceback: Option<PyObject>,
+    ) -> PyResult<()> {
+        Ok(())
+    }
+
+    fn seekable(&self) -> PyResult<bool> {
+        Ok(true)
+    }
+
+    fn readable(&self) -> PyResult<bool> {
+        Ok(true)
+    }
+
+    fn isatty(&self) -> PyResult<bool> {
+        Ok(false)
+    }
+
+    fn writable(&self) -> PyResult<bool> {
+        Ok(false)
+    }
+}
+
+#[pyclass]
+struct PyDaftFile {
+    inner: DaftFile,
+    inside_context: AtomicBool,
+}
+
+impl From<DaftFile> for PyDaftFile {
+    fn from(inner: DaftFile) -> Self {
+        Self {
+            inner,
+            inside_context: AtomicBool::new(false),
         }
     }
+}
+impl Deref for PyDaftFile {
+    type Target = DaftFile;
 
-    #[staticmethod]
-    #[pyo3(signature = (path, io_config = None))]
-    fn _from_path(path: String, io_config: Option<PyIOConfig>) -> PyResult<Self> {
-        Ok(Self::from_path(path, io_config.map(|conf| conf.config))?)
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
+}
+impl DerefMut for PyDaftFile {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
 
+impl PyDaftFile {
+    fn check_context(&self) -> PyResult<()> {
+        if self.inside_context.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        Err(PyRuntimeError::new_err(
+            "File not opened inside a context manager. use `with file.open() as f:`",
+        ))
+    }
+}
+
+#[cfg_attr(feature = "python", pymethods)]
+impl PyDaftFile {
     #[staticmethod]
-    fn _from_bytes(bytes: Vec<u8>) -> Self {
-        Self::from_bytes(bytes)
+    fn _from_file_reference(f: PyFileReference) -> PyResult<Self> {
+        Ok(DaftFile::try_from(f.inner.as_ref().clone())?.into())
     }
 
     #[pyo3(signature=(size=-1))]
-    fn read(&mut self, size: isize) -> PyResult<Option<Vec<u8>>> {
+    fn read(&mut self, size: isize) -> PyResult<Vec<u8>> {
+        self.check_context()?;
         let cursor = self
+            .inner
             .cursor
             .as_mut()
             .ok_or_else(|| PyIOError::new_err("File not open"))?;
@@ -74,14 +125,14 @@ impl DaftFile {
                 .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
             buffer.truncate(bytes_read);
-            self.position = bytes_read;
+            self.inner.position = bytes_read;
 
-            Ok(Some(buffer))
+            Ok(buffer)
         } else {
             let mut buffer = vec![0u8; size as usize];
 
-            if self.position == cursor.size() {
-                return Ok(None);
+            if self.inner.position == cursor.size() {
+                return Ok(vec![]);
             }
 
             let bytes_read = cursor
@@ -91,12 +142,14 @@ impl DaftFile {
             buffer.truncate(bytes_read);
             self.position += bytes_read;
 
-            Ok(Some(buffer))
+            Ok(buffer)
         }
     }
 
     // Seek to position
+    #[pyo3(signature=(offset, whence=Some(0)))]
     fn seek(&mut self, offset: i64, whence: Option<usize>) -> PyResult<u64> {
+        self.check_context()?;
         let whence = match whence.unwrap_or(0) {
             0 => {
                 if offset < 0 {
@@ -139,6 +192,7 @@ impl DaftFile {
 
     // Context manager support
     fn __enter__(slf: PyRef<Self>) -> PyRef<Self> {
+        slf.inside_context.store(true, Ordering::SeqCst);
         slf
     }
 
@@ -148,6 +202,7 @@ impl DaftFile {
         _exc_value: Option<PyObject>,
         _traceback: Option<PyObject>,
     ) -> PyResult<()> {
+        self.inside_context.store(false, Ordering::SeqCst);
         self.close()
     }
 
@@ -160,7 +215,7 @@ impl DaftFile {
         Ok(self.cursor.is_none())
     }
 
-    fn supports_range_requests(&mut self) -> PyResult<bool> {
+    fn _supports_range_requests(&mut self) -> PyResult<bool> {
         let cursor = self
             .cursor
             .as_mut()
@@ -191,7 +246,8 @@ impl DaftFile {
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_class::<DaftFile>()?;
+    parent.add_class::<PyDaftFile>()?;
+    parent.add_class::<PyFileReference>()?;
 
     Ok(())
 }

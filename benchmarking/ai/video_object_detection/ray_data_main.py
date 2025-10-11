@@ -1,19 +1,20 @@
-from __future__ import annotations
-
-import numpy as np
+from PIL import Image
 import ray
+from ultralytics import YOLO
 import torch
 import torchvision
-from PIL import Image
-from ultralytics import YOLO
+import numpy as np
+import io
 
 NUM_GPU_NODES = 8
 YOLO_MODEL = "yolo11n.pt"
-INPUT_PATH = "s3://daft-public-data/videos/Hollywood2-actions-videos/Hollywood2/AVIClips/"
-OUTPUT_PATH = "s3://desmond-test/colin-test/video-object-detection-result"
+INPUT_PATH = (
+    "s3://daft-public-data/videos/Hollywood2-actions-videos/Hollywood2/AVIClips/"
+)
+OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/video-object-detection-result"
 IMAGE_HEIGHT = 640
 IMAGE_WIDTH = 640
-BATCH_SIZE = 100
+BATCH_SIZE = 64
 
 ray.init()
 
@@ -31,7 +32,9 @@ class ExtractImageFeatures:
                 "confidence": confidence.item(),
                 "bbox": bbox.tolist(),
             }
-            for label, confidence, bbox in zip(res.names, res.boxes.conf, res.boxes.xyxy)
+            for label, confidence, bbox in zip(
+                res.names, res.boxes.conf, res.boxes.xyxy
+            )
         ]
 
     def __call__(self, batch):
@@ -39,7 +42,10 @@ class ExtractImageFeatures:
         if len(frames) == 0:
             batch["features"] = []
             return batch
-        tensor_batch = [torchvision.transforms.functional.to_tensor(Image.fromarray(frame)) for frame in frames]
+        tensor_batch = [
+            torchvision.transforms.functional.to_tensor(Image.fromarray(frame))
+            for frame in frames
+        ]
         stack = torch.stack(tensor_batch, dim=0)
         results = self.model(stack)
         features = [self.to_features(res) for res in results]
@@ -56,16 +62,6 @@ def resize_frame(row):
     return row
 
 
-def crop_image(row):
-    frame = row["frame"]
-    bbox = row["features"]["bbox"]
-    x1, y1, x2, y2 = map(int, bbox)
-    pil_image = Image.fromarray(frame)
-    cropped_pil = pil_image.crop((x1, y1, x2, y2))
-    row["object"] = cropped_pil
-    return row
-
-
 def explode_features(row):
     features_list = row["features"]
     for feature in features_list:
@@ -73,9 +69,26 @@ def explode_features(row):
         yield row
 
 
+def crop_image(row):
+    frame = row["frame"]
+    bbox = row["features"]["bbox"]
+    x1, y1, x2, y2 = map(int, bbox)
+    pil_image = Image.fromarray(frame)
+    cropped_pil = pil_image.crop((x1, y1, x2, y2))
+
+    buf = io.BytesIO()
+    cropped_pil.save(buf, format="PNG")
+    cropped_pil_png = buf.getvalue()
+
+    row["object"] = cropped_pil_png
+    return row
+
+
 ds = ray.data.read_videos(INPUT_PATH)
 ds = ds.map(resize_frame)
-ds = ds.map_batches(ExtractImageFeatures, batch_size=BATCH_SIZE, num_gpus=1.0, concurrency=NUM_GPU_NODES)
+ds = ds.map_batches(
+    ExtractImageFeatures, batch_size=BATCH_SIZE, num_gpus=1.0, concurrency=NUM_GPU_NODES
+)
 ds = ds.flat_map(explode_features)
 ds = ds.map(crop_image)
 ds = ds.drop_columns(["frame"])

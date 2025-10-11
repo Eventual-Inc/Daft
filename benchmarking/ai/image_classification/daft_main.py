@@ -4,17 +4,25 @@ import numpy as np
 import torch
 from torchvision import transforms
 from torchvision.models import ResNet18_Weights, resnet18
+import time
+import ray
 
 import daft
 from daft import col
 
 NUM_GPU_NODES = 8
 INPUT_PATH = "s3://daft-public-datasets/imagenet/benchmark"
-OUTPUT_PATH = "s3://desmond-test/colin-test/image_classification_results"
+OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/image-classification-results"
 BATCH_SIZE = 100
 IMAGE_DIM = (3, 224, 224)
 
 daft.context.set_runner_ray()
+
+# Wait for Ray cluster to be ready
+@ray.remote
+def warmup():
+    pass
+ray.get([warmup.remote() for _ in range(64)])
 
 weights = ResNet18_Weights.DEFAULT
 transform = transforms.Compose([transforms.ToTensor(), weights.transforms()])
@@ -43,6 +51,7 @@ class ResNetModel:
             predicted_labels = [self.weights.meta["categories"][i] for i in predicted_classes]
             return predicted_labels
 
+start_time = time.time()
 
 df = daft.read_parquet(INPUT_PATH)
 df = df.with_column(
@@ -59,3 +68,6 @@ df = df.with_column(
 df = df.with_column("label", ResNetModel(col("norm_image")))
 df = df.select("image_url", "label")
 df.write_parquet(OUTPUT_PATH)
+
+end_time = time.time()
+print(f"Time taken: {end_time - start_time} seconds")

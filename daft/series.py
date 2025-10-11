@@ -7,7 +7,6 @@ from daft.arrow_utils import ensure_array, ensure_chunked_array
 from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries, PySeriesIterator
 from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
-from daft.file import File
 from daft.schema import Field
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 
@@ -48,10 +47,12 @@ class Series:
                 DataType from the data.
         """
         _ensure_registered_super_ext_type()
-        if (dtype and dtype.is_python()) or DataType.from_arrow_type(array.type).is_python():
+        try:
+            DataType.from_arrow_type(array.type, python_fallback=False)
+        except TypeError:
             # If the Arrow type is not natively supported, go through the Python list path.
             return Series.from_pylist(array.to_pylist(), name=name, pyobj="force")
-        elif isinstance(array, pa.Array):
+        if isinstance(array, pa.Array):
             array = ensure_array(array)
             if isinstance(array.type, getattr(pa, "FixedShapeTensorType", ())):
                 series = Series.from_arrow(array.storage, name=name)
@@ -81,8 +82,8 @@ class Series:
         """Construct a Series from a Python list.
 
         If `dtype` is not defined, then the resulting type depends on the setting of `pyobj`:
-            - ``"allow"``: Arrow-backed types if possible, else PyObject;
-            - ``"disallow"``: Arrow-backed types only, raising error if not convertible;
+            - ``"allow"``: Daft-native types if possible, else PyObject;
+            - ``"disallow"``: Daft-native types only, raising error if not convertible;
             - ``"force"``: Always store as PyObject types. Equivalent to `dtype=daft.DataType.python()`.
 
         Args:
@@ -99,34 +100,16 @@ class Series:
         if pyobj not in {"allow", "disallow", "force"}:
             raise ValueError(f"pyobj: expected either 'allow', 'disallow', or 'force', but got {pyobj})")
 
-        # If output is Python objects, we can just use the Python list directly.
-        if (dtype and dtype == DataType.python()) or pyobj == "force":
-            pys = PySeries.from_pylist(name, data, DataType.python()._dtype)
-            return Series._from_pyseries(pys)
+        if pyobj == "force":
+            dtype = DataType.python()
 
-        # Otherwise, try to infer from parameters provided
-        try:
-            if data and isinstance(data[0], File):
-                pys = PySeries.from_pylist_of_files(name, data)
-                return Series._from_pyseries(pys)
-            # Workaround: wrap list of np.datetime64 in an np.array
-            #   - https://github.com/apache/arrow/issues/40580
-            #   - https://github.com/Eventual-Inc/Daft/issues/3826
-            if data and np.module_available() and isinstance(data[0], np.datetime64):  # type: ignore[attr-defined]
-                np_arr = np.array(data)
-                arrow_array = pa.array(np_arr)
-            elif data and isinstance(data[0], tuple):
-                dtype = DataType._infer_dtype_from_pylist(data)
-                arrow_array = pa.array(data, type=dtype.to_arrow_dtype() if dtype else None)
-            else:
-                arrow_array = pa.array(data, type=dtype.to_arrow_dtype() if dtype else None)
-            return Series.from_arrow(arrow_array, name=name, dtype=dtype)
-        except (pa.lib.ArrowInvalid, pa.lib.ArrowTypeError, pa.lib.ArrowNotImplementedError):
-            if pyobj == "disallow":
-                raise
-            dtype = dtype or DataType._infer_dtype_from_pylist(data) or DataType.python()
-            pys = PySeries.from_pylist(name, data, dtype._dtype)
-            return Series._from_pyseries(pys)
+        pys = PySeries.from_pylist(data, name, None if dtype is None else dtype._dtype)
+        series = Series._from_pyseries(pys)
+
+        if pyobj == "disallow" and series.datatype().is_python():
+            raise TypeError("Could not convert Python list to a Daft-native type, and pyobj='disallow' was set.")
+
+        return series
 
     @classmethod
     def from_numpy(
@@ -155,8 +138,7 @@ class Series:
                 return cls.from_arrow(arrow_array, name=name, dtype=dtype)
         # TODO(Clark): Represent the tensor series with an Arrow extension type in order
         # to keep the series data contiguous.
-        list_ndarray = [np.asarray(item) for item in data]
-        return cls.from_pylist(list_ndarray, name=name, dtype=dtype)
+        return cls.from_pylist(list(data), name=name, dtype=dtype)
 
     @classmethod
     def from_pandas(cls, data: pd.Series[Any], name: str = "pd_series", dtype: DataType | None = None) -> Series:
@@ -724,10 +706,7 @@ class Series:
             tuple[pa.Array | pa.ChunkedArray, builtins.str, DataType],
         ]
     ):
-        if self.datatype().is_python():
-            return (Series.from_pylist, (self.to_pylist(), self.name(), self.datatype()))
-        else:
-            return (Series.from_arrow, (self.to_arrow(), self.name(), self.datatype()))
+        return (Series.from_arrow, (self.to_arrow(), self.name(), self.datatype()))
 
     def _debug_bincode_serialize(self) -> bytes:
         return self._series._debug_bincode_serialize()

@@ -16,7 +16,7 @@ if "COV_CORE_SOURCE" in os.environ:
         import sys
 
         sys.stderr.write(
-            "pytest-cov: Failed to setup subprocess coverage. " "Environ: {!r} " "Exception: {!r}\n".format(
+            "pytest-cov: Failed to setup subprocess coverage. Environ: {!r} Exception: {!r}\n".format(
                 {k: v for k, v in os.environ.items() if k.startswith("COV_CORE")}, exc
             )
         )
@@ -121,7 +121,7 @@ from daft.session import (
     set_session,
     write_table,
 )
-from daft.udf import udf, _DaftFuncDecorator as func
+from daft.udf import udf, func, cls, method
 from daft.io import (
     DataCatalogTable,
     DataCatalogType,
@@ -150,6 +150,7 @@ from daft.file import File
 import daft.context as context
 import daft.io as io
 import daft.runners as runners
+import daft.datasets as datasets
 import daft.functions as functions
 
 __all__ = [
@@ -177,6 +178,7 @@ __all__ = [
     "attach_function",
     "attach_provider",
     "attach_table",
+    "cls",
     "coalesce",
     "col",
     "context",
@@ -190,6 +192,7 @@ __all__ = [
     "current_namespace",
     "current_provider",
     "current_session",
+    "datasets",
     "detach_catalog",
     "detach_function",
     "detach_provider",
@@ -222,6 +225,7 @@ __all__ = [
     "list_catalogs",
     "list_tables",
     "lit",
+    "method",
     "planning_config_ctx",
     "range",
     "read_csv",

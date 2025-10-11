@@ -732,7 +732,7 @@ def test_global_pyobj_list_aggs() -> None:
     input = [object(), object(), object()]
     table = MicroPartition.from_pydict({"input": input})
     result = table.eval_expression_list([col("input").alias("list").agg_list()])
-    assert result.get_column_by_name("list").datatype() == DataType.python()
+    assert result.get_column_by_name("list").datatype() == DataType.list(DataType.python())
     assert result.to_pydict()["list"][0] == input
 
 
@@ -905,7 +905,7 @@ def test_global_concat_aggs_pyobj() -> None:
 
     table = MicroPartition.from_pydict({"input": input})
     concatted = table.agg([col("input").alias("concat").agg_concat()])
-    assert concatted.get_column_by_name("concat").datatype() == DataType.python()
+    assert concatted.get_column_by_name("concat").datatype() == DataType.list(DataType.python())
     assert concatted.to_pydict()["concat"] == [expected]
 
 
@@ -948,12 +948,12 @@ def test_grouped_concat_aggs_pyobj() -> None:
 
     table = MicroPartition.from_pydict({"input": input, "groups": [1, 2, 3, 3, 4]})
     concatted = table.agg([col("input").alias("concat").agg_concat()], group_by=[col("groups")]).sort([col("groups")])
-    assert concatted.get_column_by_name("concat").datatype() == DataType.python()
+    assert concatted.get_column_by_name("concat").datatype() == DataType.list(DataType.python())
     assert concatted.to_pydict() == {
         "groups": [1, 2, 3, 4],
         "concat": [
             [objects[0], objects[1]],
-            [],
+            None,
             [objects[2]],
             [None, objects[3]],
         ],

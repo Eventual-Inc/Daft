@@ -1241,22 +1241,26 @@ impl From<PyMicroPartition> for Arc<MicroPartition> {
     }
 }
 
-/// TODO chore: cutover LocalPartitionSet to use this pyclass.
-#[pyclass(module = "daft.daft")]
+#[pyclass(frozen, module = "daft.daft")]
 #[derive(Clone, Debug)]
 pub struct PyMicroPartitionSet(Arc<MicroPartitionSet>);
 
 #[pymethods]
 impl PyMicroPartitionSet {
+    #[new]
+    fn new() -> Self {
+        Self(Arc::new(MicroPartitionSet::empty()))
+    }
+
     fn get_partition(&self, idx: PartitionId) -> PyResult<PyMicroPartition> {
         Ok(self.0.get_partition(&idx)?.into())
     }
 
-    fn set_partition(&mut self, idx: PartitionId, part: PyMicroPartition) -> PyResult<()> {
+    fn set_partition(&self, idx: PartitionId, part: PyMicroPartition) -> PyResult<()> {
         Ok(self.0.set_partition(idx, &part.inner)?)
     }
 
-    fn delete_partition(&mut self, idx: PartitionId) -> PyResult<()> {
+    fn delete_partition(&self, idx: PartitionId) -> PyResult<()> {
         Ok(self.0.delete_partition(&idx)?)
     }
 
@@ -1278,6 +1282,28 @@ impl PyMicroPartitionSet {
 
     fn wait(&self) -> PyResult<()> {
         Ok(())
+    }
+
+    fn get_merged_micropartition(&self) -> PyResult<PyMicroPartition> {
+        Ok(self.0.get_merged_partitions()?.into())
+    }
+
+    fn get_preview_micropartitions(&self, num_rows: usize) -> PyResult<Vec<PyMicroPartition>> {
+        Ok(self
+            .0
+            .get_preview_partitions(num_rows)?
+            .into_iter()
+            .map(|p| p.into())
+            .collect())
+    }
+
+    fn items(&self) -> PyResult<Vec<(PartitionId, PyMicroPartition)>> {
+        Ok(self
+            .0
+            .items()
+            .into_iter()
+            .map(|(k, v)| (k, v.into()))
+            .collect())
     }
 }
 

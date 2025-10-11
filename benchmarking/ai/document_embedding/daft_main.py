@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import pymupdf
 import torch
+import ray
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+import time
+import ray
 
 import daft
 from daft import col
@@ -10,14 +13,20 @@ from daft import col
 EMBED_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DIM = 384
 NUM_GPU_NODES = 8
-INPUT_PATH = "s3://eventual-data-test-bucket/digitalcorpora/metadata/original_file_name_to_s3_path_10k"
-OUTPUT_PATH = "s3://desmond-test/colin-test/document-embedding-results"
+INPUT_PATH = "s3://daft-public-datasets/digitalcorpora_metadata"
+OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/document-embedding-results"
 MAX_PDF_PAGES = 100
 CHUNK_SIZE = 2048
 CHUNK_OVERLAP = 200
 EMBEDDING_BATCH_SIZE = 10
 
 daft.context.set_runner_ray()
+
+# Wait for Ray cluster to be ready
+@ray.remote
+def warmup():
+    pass
+ray.get([warmup.remote() for _ in range(64)])
 
 
 def extract_text_from_parsed_pdf(pdf_bytes):
@@ -66,12 +75,10 @@ class Embedder:
             return []
         embeddings = self.model.encode(
             text_col.to_pylist(),
-            convert_to_tensor=True,
-            torch_dtype=torch.bfloat16,
         )
-        return embeddings.cpu().numpy()
+        return embeddings
 
-
+start_time = time.time()
 df = daft.read_parquet(INPUT_PATH)
 df = df.where(daft.col("file_name").str.endswith(".pdf"))
 df = df.with_column("pdf_bytes", df["uploaded_pdf_path"].url.download())
@@ -79,7 +86,7 @@ df = df.with_column(
     "pages",
     df["pdf_bytes"].apply(
         extract_text_from_parsed_pdf,
-        return_dtype=list[{"text": str, "page_number": int}],
+        return_dtype=daft.DataType.list(daft.DataType.struct({"text": daft.DataType.string(), "page_number": daft.DataType.int64()})),
     ),
 )
 df = df.explode("pages")
@@ -87,7 +94,8 @@ df = df.with_columns({"page_text": col("pages")["text"], "page_number": col("pag
 df = df.where(daft.col("page_text").not_null())
 df = df.with_column(
     "chunks",
-    df["page_text"].apply(chunk, return_dtype=list[{"text": str, "chunk_id": int}]),
+    df["page_text"].apply(chunk, return_dtype=daft.DataType.list(daft.DataType.struct({"text": daft.DataType.string(), "chunk_id": daft.DataType.int64()})),
+    ),
 )
 df = df.explode("chunks")
 df = df.with_columns({"chunk": col("chunks")["text"], "chunk_id": col("chunks")["chunk_id"]})
@@ -95,3 +103,6 @@ df = df.where(daft.col("chunk").not_null())
 df = df.with_column("embedding", Embedder(df["chunk"]))
 df = df.select("uploaded_pdf_path", "page_number", "chunk_id", "chunk", "embedding")
 df.write_parquet(OUTPUT_PATH)
+
+end_time = time.time()
+print(f"Time taken: {end_time - start_time} seconds")
