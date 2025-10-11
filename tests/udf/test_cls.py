@@ -231,3 +231,46 @@ def test_cls_with_list_operations():
         "filtered": [[], [], [6, 7, 8, 9]],
         "count": [0, 0, 4],
     }
+
+
+def test_cls_batch_method():
+    df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+
+    @daft.cls
+    class BatchAdder:
+        def __init__(self, offset: int):
+            self.offset = offset
+
+        @daft.method.batch(return_dtype=DataType.int64())
+        def add(self, a: daft.Series, b: daft.Series) -> daft.Series:
+            import pyarrow.compute as pc
+
+            a_arrow = a.to_arrow()
+            b_arrow = b.to_arrow()
+            result = pc.add(a_arrow, b_arrow)
+            result = pc.add(result, self.offset)
+            return daft.Series.from_arrow(result)
+
+    adder = BatchAdder(10)
+    result = df.select(adder.add(df["a"], df["b"]))
+    assert result.to_pydict() == {"a": [15, 17, 19]}
+
+
+def test_cls_batch_method_scalar_eval():
+    @daft.cls
+    class BatchMultiplier:
+        def __init__(self, factor: int):
+            self.factor = factor
+
+        @daft.method.batch(return_dtype=DataType.int64())
+        def multiply(self, a: daft.Series) -> daft.Series:
+            import pyarrow.compute as pc
+
+            a_arrow = a.to_arrow()
+            result = pc.multiply(a_arrow, self.factor)
+            return daft.Series.from_arrow(result)
+
+    multiplier = BatchMultiplier(5)
+    # When called with a scalar, should execute eagerly
+    a = daft.Series.from_pylist([1, 2, 3])
+    assert multiplier.multiply(a).to_pylist() == [5, 10, 15]

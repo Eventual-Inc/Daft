@@ -28,11 +28,9 @@ weights = ResNet18_Weights.DEFAULT
 transform = transforms.Compose([transforms.ToTensor(), weights.transforms()])
 
 
-@daft.udf(
-    return_dtype=daft.DataType.string(),
-    concurrency=NUM_GPU_NODES,
-    num_gpus=1.0,
-    batch_size=BATCH_SIZE,
+@daft.cls(
+    max_concurrency=NUM_GPU_NODES,
+    gpus=1,
 )
 class ResNetModel:
     def __init__(self):
@@ -41,6 +39,10 @@ class ResNetModel:
         self.model = resnet18(weights=weights).to(self.device)
         self.model.eval()
 
+    @daft.method.batch(
+        return_dtype=daft.DataType.string(),
+        batch_size=BATCH_SIZE,
+    )
     def __call__(self, images):
         if len(images) == 0:
             return []
@@ -65,7 +67,7 @@ df = df.with_column(
         return_dtype=daft.DataType.tensor(dtype=daft.DataType.float32(), shape=IMAGE_DIM),
     ),
 )
-df = df.with_column("label", ResNetModel(col("norm_image")))
+df = df.with_column("label", ResNetModel()(col("norm_image")))
 df = df.select("image_url", "label")
 df.write_parquet(OUTPUT_PATH)
 

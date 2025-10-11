@@ -23,12 +23,15 @@ if sys.version_info < (3, 10):
 else:
     from typing import Concatenate, ParamSpec
 
+from daft.daft import batch_udf, row_wise_udf
 from daft.datatype import DataType, DataTypeLike
 from daft.expressions.expressions import Expression
 
 RETURN_DTYPE_ATTR = "_daft_return_dtype"
 UNNEST_ATTR = "_daft_unnest"
 USE_PROCESS_ATTR = "_daft_use_process"
+BATCH_ATTR = "_daft_batch_method"
+BATCH_SIZE_ATTR = "_daft_batch_size"
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -50,6 +53,8 @@ class Func(Generic[P, T, C]):
     _method: Callable[Concatenate[C, P], T]
     is_generator: bool
     is_async: bool
+    is_batch: bool
+    batch_size: int | None
     unnest: bool
     gpus: int
     use_process: bool | None
@@ -59,7 +64,13 @@ class Func(Generic[P, T, C]):
 
     @classmethod
     def _from_func(
-        cls, fn: Callable[P, T], return_dtype: DataTypeLike | None, unnest: bool, use_process: bool | None
+        cls,
+        fn: Callable[P, T],
+        return_dtype: DataTypeLike | None,
+        unnest: bool,
+        use_process: bool | None,
+        is_batch: bool,
+        batch_size: int | None,
     ) -> Func[P, T, None]:
         # create a class instance with no setup method
         class NoopCls(ClsBase[None]):
@@ -75,9 +86,21 @@ class Func(Generic[P, T, C]):
         is_generator = inspect.isgeneratorfunction(fn)
         is_async = inspect.iscoroutinefunction(fn)
 
-        return_dtype = cls._get_return_dtype(fn, return_dtype, is_generator)
+        return_dtype = cls._get_return_dtype(fn, return_dtype, is_generator, is_batch)
 
-        return Func(NoopCls(), method, is_generator, is_async, unnest, 0, use_process, None, return_dtype)  # type: ignore[arg-type]
+        return Func(
+            NoopCls(),
+            method,  # type: ignore[arg-type]
+            is_generator,
+            is_async,
+            is_batch,
+            batch_size,
+            unnest,
+            0,
+            use_process,
+            None,
+            return_dtype,
+        )
 
     @classmethod
     def _from_method(
@@ -92,10 +115,24 @@ class Func(Generic[P, T, C]):
         is_async = inspect.iscoroutinefunction(method)
 
         unnest = getattr(method, UNNEST_ATTR, False)
+        is_batch = getattr(method, BATCH_ATTR, False)
+        batch_size = getattr(method, BATCH_SIZE_ATTR, None)
         return_dtype = getattr(method, RETURN_DTYPE_ATTR, None)
-        return_dtype = cls._get_return_dtype(method, return_dtype, is_generator)
+        return_dtype = cls._get_return_dtype(method, return_dtype, is_generator, is_batch)
 
-        return cls(cls_, method, is_generator, is_async, unnest, gpus, use_process, max_concurrency, return_dtype)
+        return cls(
+            cls_,
+            method,
+            is_generator,
+            is_async,
+            is_batch,
+            batch_size,
+            unnest,
+            gpus,
+            use_process,
+            max_concurrency,
+            return_dtype,
+        )
 
     def __post_init__(self) -> None:
         """Post-init checks and setup."""
@@ -107,6 +144,15 @@ class Func(Generic[P, T, C]):
                 f"Expected Daft function `return_dtype` to be `DataType.struct(..)` when `unnest=True`, instead found: {self.return_dtype}"
             )
 
+        if self.is_batch and (self.is_async or self.is_generator):
+            raise ValueError("Daft batch functions do not yet support async or generator functions.")
+
+        if not self.is_batch and self.batch_size is not None:
+            raise ValueError("Non-batch Daft functions cannot have a batch size.")
+
+        if self.is_async and self.is_generator:
+            raise ValueError("Daft functions do not yet support both async and generator functions.")
+
     def _derive_function_name(self) -> str:
         """Compute a unique name for the function using its module and qualified name."""
         module_name = getattr(self, "__module__")
@@ -117,8 +163,15 @@ class Func(Generic[P, T, C]):
             return f"{qual_name}-{uuid.uuid4()}"
 
     @staticmethod
-    def _get_return_dtype(fn: Callable[..., Any], return_dtype: DataTypeLike | None, is_generator: bool) -> DataType:
+    def _get_return_dtype(
+        fn: Callable[..., Any], return_dtype: DataTypeLike | None, is_generator: bool, is_batch: bool
+    ) -> DataType:
         if return_dtype is None:
+            if is_batch:
+                raise ValueError(
+                    "Daft batch functions require a return type to be explicitly specified using the `return_dtype` argument."
+                )
+
             type_hints = get_type_hints(fn)
             if "return" not in type_hints:
                 raise ValueError(
@@ -144,8 +197,6 @@ class Func(Generic[P, T, C]):
     def __call__(self, *args: Any, **kwargs: Any) -> Expression | T: ...
 
     def __call__(self, *args: Any, **kwargs: Any) -> Expression | T:
-        from daft.daft import row_wise_udf
-
         expr_args = []
         for arg in args:
             if isinstance(arg, Expression):
@@ -188,6 +239,21 @@ class Func(Generic[P, T, C]):
                     expr_args,
                 )
             ).explode()
+        elif self.is_batch:
+            expr = Expression._from_pyexpr(
+                batch_udf(
+                    self.name,
+                    self._cls,
+                    self._method,
+                    self.return_dtype._dtype,
+                    self.gpus,
+                    self.use_process,
+                    self.max_concurrency,
+                    self.batch_size,
+                    (args, kwargs),
+                    expr_args,
+                )
+            )
         else:
             expr = Expression._from_pyexpr(
                 row_wise_udf(
@@ -210,10 +276,14 @@ class Func(Generic[P, T, C]):
         return expr
 
 
-def mark_cls_method(method: Callable[P, T], return_dtype: DataTypeLike | None, unnest: bool) -> Callable[P, T]:
+def mark_cls_method(
+    method: Callable[P, T], return_dtype: DataTypeLike | None, unnest: bool, is_batch: bool, batch_size: int | None
+) -> Callable[P, T]:
     """Mark a Daft class method as a Daft method, along with decorator arguments."""
     setattr(method, RETURN_DTYPE_ATTR, return_dtype)
     setattr(method, UNNEST_ATTR, unnest)
+    setattr(method, BATCH_ATTR, is_batch)
+    setattr(method, BATCH_SIZE_ATTR, batch_size)
     return method
 
 

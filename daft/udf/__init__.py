@@ -39,12 +39,12 @@ class _FuncDecorator:
 
     def __call__(
         self,
-        fn: Callable[P, Any] | None = None,
+        fn: Callable[P, T] | None = None,
         *,
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
         use_process: bool | None = None,
-    ) -> Callable[[Callable[P, T]], Func[P, T, None]] | Func[P, Any, None]:
+    ) -> Callable[[Callable[P, T]], Func[P, T, None]] | Func[P, T, None]:
         """Decorator to convert a Python function into a Daft user-defined function.
 
         Args:
@@ -216,9 +216,92 @@ class _FuncDecorator:
         """
 
         def partial_func(fn: Callable[P, T]) -> Func[P, T, None]:
-            return Func._from_func(fn, return_dtype, unnest, use_process)
+            return Func._from_func(fn, return_dtype, unnest, use_process, False, None)
 
         return partial_func if fn is None else partial_func(fn)
+
+    def batch(
+        self,
+        *,
+        return_dtype: DataTypeLike,
+        unnest: bool = False,
+        use_process: bool | None = None,
+        batch_size: int | None = None,
+    ) -> Callable[[Callable[P, T]], Func[P, T, None]]:
+        """Decorator to convert a Python function into a Daft user-defined batch function.
+
+        Args:
+            return_dtype: The data type that this function should return.
+            unnest: Whether to unnest/flatten out return type fields into columns. Return dtype must be `DataType.struct(..)` when this is set to true.
+            use_process: Whether to run each instance of the function in a separate process. If unset, Daft will automatically choose based on runtime performance.
+            batch_size: The max number of rows in each input batch.
+
+        Batch functions receive `daft.Series` arguments, and return a `daft.Series`, `list`, `numpy.ndarray`, or `pyarrow.Array`.
+        You can also call them with scalar arguments, which will be passed in without modification.
+        When called without Expression arguments, they execute immediately and the behavior is the same as if the function was not decorated.
+
+        Examples:
+            Basic Usage
+
+            >>> import daft
+            >>> from daft import DataType, Series
+            >>>
+            >>> @daft.func.batch(return_dtype=DataType.int64())
+            ... def my_sum(a: Series, b: Series) -> Series:
+            ...     import pyarrow.compute as pc
+            ...
+            ...     a = a.to_arrow()
+            ...     b = b.to_arrow()
+            ...     result = pc.add(a, b)
+            ...     return result
+            >>>
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> df.select(my_sum(df["x"], df["y"])).collect()
+            ╭───────╮
+            │ x     │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 5     │
+            ├╌╌╌╌╌╌╌┤
+            │ 7     │
+            ├╌╌╌╌╌╌╌┤
+            │ 9     │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+            Mixing Series and Scalar Arguments
+
+            >>> @daft.func.batch(return_dtype=daft.DataType.int64())
+            ... def my_sum_with_scalar(a: daft.Series, b: int) -> daft.Series:
+            ...     import pyarrow.compute as pc
+            ...
+            ...     a = a.to_arrow()
+            ...     result = pc.add(a, b)
+            ...     return result
+            >>>
+            >>> df = daft.from_pydict({"x": [1, 2, 3]})
+            >>> df.select(my_sum_with_scalar(df["x"], 4)).collect()
+            ╭───────╮
+            │ x     │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 5     │
+            ├╌╌╌╌╌╌╌┤
+            │ 6     │
+            ├╌╌╌╌╌╌╌┤
+            │ 7     │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+        """
+
+        def partial_func(fn: Callable[P, T]) -> Func[P, T, None]:
+            return Func._from_func(fn, return_dtype, unnest, use_process, True, batch_size)
+
+        return partial_func
 
 
 func = _FuncDecorator()
@@ -255,6 +338,29 @@ def cls(
     Methods in a Daft class can be used as Daft functions. Use the `@daft.method` decorator to override default arguments.
 
     Examples:
+        Basic Usage
+
+        >>> import daft
+        >>> from daft import DataType
+        >>> @daft.cls
+        ... class MyModel:
+        ...     def __init__(self, model_path: str):
+        ...         self.model = some_slow_initialization_step(model_path)
+        ...
+        ...     def __call__(self, prompt: str) -> str:
+        ...         return self.model(prompt)
+        >>>
+        >>> my_model = MyModel("path/to/model")
+        >>>
+        >>> df = daft.from_pydict({"prompt": ["hello", "world", "daft"]})
+        >>> df = df.with_columns(
+        ...     {
+        ...         "generated": my_model(df["prompt"]),
+        ...     }
+        ... )
+
+        Multiple Methods
+
         >>> import daft
         >>> from daft import DataType
         >>> @daft.cls
@@ -270,6 +376,11 @@ def cls(
         ...     @daft.method(return_dtype=DataType.list(DataType.string()))
         ...     def classify(self, value: str):
         ...         return self.model.classify(value)
+        ...
+        ...     # batch method
+        ...     @daft.method.batch(return_dtype=DataType.list(DataType.string()))
+        ...     def batch_classify(self, value: daft.Series):
+        ...         return self.model.batch_classify(value)
         >>>
         >>> # Specify the initialization arguments for the class. `__init__` will not be called yet.
         >>> my_model = MyModel("path/to/model")
@@ -281,6 +392,7 @@ def cls(
         ...     {
         ...         "generated": my_model.generate(df["prompt"]),
         ...         "classified": my_model.classify(df["prompt"]),
+        ...         "batch_classified": my_model.batch_classify(df["prompt"]),
         ...     }
         ... )
     """
@@ -317,13 +429,39 @@ class _MethodDecorator:
         When any arguments are Expressions, they return a Daft Expression that can be used in DataFrame operations.
         When called without Expression arguments, methods execute immediately, first initializing a local instance of the class if it does not already exist.
 
-        See `@daft.cls` for more details.
+        See `@daft.func` and `@daft.cls` for more details.
         """
 
         def partial_method(m: Callable[P, T]) -> Callable[P, T]:
-            return mark_cls_method(m, return_dtype=return_dtype, unnest=unnest)
+            return mark_cls_method(m, return_dtype, unnest, False, None)
 
         return partial_method if method is None else partial_method(method)
+
+    def batch(
+        self,
+        *,
+        return_dtype: DataTypeLike,
+        unnest: bool = False,
+        batch_size: int | None = None,
+    ) -> Callable[[Callable[P, T]], Callable[P, T]]:
+        """Decorator to convert a Python method into a Daft user-defined batch function. This should be used in a class that is decorated with `@daft.cls`.
+
+        Args:
+            return_dtype: The data type that this function should return.
+            unnest: Whether to unnest/flatten out return type fields into columns. Return dtype must be `DataType.struct(..)` when this is set to true.
+            batch_size: The max number of rows in each input batch.
+
+        Batch methods receive `daft.Series` arguments, and return a `daft.Series`, `list`, `numpy.ndarray`, or `pyarrow.Array`.
+        You can also call them with scalar arguments, which will be passed in without modification.
+        When called without Expression arguments, they execute immediately, first initializing a local instance of the class if it does not already exist.
+
+        See `@daft.func.batch` and `@daft.cls` for more details.
+        """
+
+        def partial_method(m: Callable[P, T]) -> Callable[P, T]:
+            return mark_cls_method(m, return_dtype, unnest, True, batch_size)
+
+        return partial_method
 
 
 method = _MethodDecorator()
