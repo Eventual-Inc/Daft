@@ -1865,6 +1865,7 @@ dependencies = [
  "common-py-serde",
  "derive_more",
  "educe",
+ "log",
  "pyo3",
  "secrecy",
  "serde",
@@ -4942,7 +4943,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b0f83760fb341a774ed326568e19f5a863af4a952def8c39f9ab92fd95b88e5"
 dependencies = [
  "equivalent",
- "hashbrown 0.16.0",
+ "hashbrown 0.15.4",
  "serde",
  "serde_core",
 ]

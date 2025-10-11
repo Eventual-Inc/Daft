@@ -123,14 +123,7 @@ pub struct TosSource {
 
 impl TosSource {
     pub async fn get_client(config: &TosConfig) -> Result<Arc<Self>> {
-        let region = config
-            .region
-            .clone()
-            .unwrap_or_else(|| "cn-beijing".to_string());
-        let endpoint = config
-            .endpoint
-            .clone()
-            .unwrap_or_else(|| format!("https://tos-{}.volces.com", region));
+        let (endpoint, region) = config.endpoint_and_region();
 
         let mut builder = tos::builder::<TokioRuntime>()
             .max_connections(config.max_concurrent_requests as isize)
