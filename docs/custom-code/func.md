@@ -520,7 +520,7 @@ For performance-critical operations, batch UDFs process entire batches of data a
 Use batch UDFs when:
 
 - **Performance is critical**: Vectorized operations may be significantly faster than row-wise processing
-- **Working with optimized libraries**: You want to use PyArrow compute functions, NumPy operations, or other batch-oriented libraries
+- **Working with optimized libraries**: You want to use PyArrow compute functions, NumPy operations, or other libraries that support vectorized operations on batch data
 - **Running batch inference**: You are running a model that supports batch inference
 
 ### Basic Batch UDF
