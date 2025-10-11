@@ -56,7 +56,6 @@ pub enum LocalPhysicalPlan {
     Concat(Concat),
     HashJoin(HashJoin),
     CrossJoin(CrossJoin),
-    // SortMergeJoin(SortMergeJoin),
     // BroadcastJoin(BroadcastJoin),
     PhysicalWrite(PhysicalWrite),
     CommitWrite(CommitWrite),
@@ -76,6 +75,7 @@ pub enum LocalPhysicalPlan {
     // Flotilla Only Nodes
     Repartition(Repartition),
     IntoPartitions(IntoPartitions),
+    SortMergeJoin(SortMergeJoin),
     #[cfg(feature = "python")]
     DistributedActorPoolProject(DistributedActorPoolProject),
 }
@@ -117,6 +117,7 @@ impl LocalPhysicalPlan {
             | Self::Concat(Concat { stats_state, .. })
             | Self::HashJoin(HashJoin { stats_state, .. })
             | Self::CrossJoin(CrossJoin { stats_state, .. })
+            | Self::SortMergeJoin(SortMergeJoin { stats_state, .. })
             | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
             | Self::CommitWrite(CommitWrite { stats_state, .. })
             | Self::Repartition(Repartition { stats_state, .. })
@@ -626,6 +627,27 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub fn sort_merge_join(
+        left: LocalPhysicalPlanRef,
+        right: LocalPhysicalPlanRef,
+        left_on: Vec<BoundExpr>,
+        right_on: Vec<BoundExpr>,
+        join_type: JoinType,
+        schema: SchemaRef,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        Self::SortMergeJoin(SortMergeJoin {
+            left,
+            right,
+            left_on,
+            right_on,
+            join_type,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
     pub(crate) fn concat(
         input: LocalPhysicalPlanRef,
         other: LocalPhysicalPlanRef,
@@ -777,6 +799,7 @@ impl LocalPhysicalPlan {
             | Self::Sample(Sample { schema, .. })
             | Self::HashJoin(HashJoin { schema, .. })
             | Self::CrossJoin(CrossJoin { schema, .. })
+            | Self::SortMergeJoin(SortMergeJoin { schema, .. })
             | Self::Explode(Explode { schema, .. })
             | Self::Unpivot(Unpivot { schema, .. })
             | Self::Concat(Concat { schema, .. })
@@ -866,6 +889,9 @@ impl LocalPhysicalPlan {
 
             Self::HashJoin(HashJoin { left, right, .. }) => vec![left.clone(), right.clone()],
             Self::CrossJoin(CrossJoin { left, right, .. }) => vec![left.clone(), right.clone()],
+            Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => {
+                vec![left.clone(), right.clone()]
+            }
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { input, .. }) => vec![input.clone()],
             #[cfg(feature = "python")]
@@ -1248,6 +1274,11 @@ impl LocalPhysicalPlan {
                 Self::CrossJoin(_) => {
                     panic!("LocalPhysicalPlan::with_new_children: CrossJoin should have 2 children")
                 }
+                Self::SortMergeJoin(_) => {
+                    panic!(
+                        "LocalPhysicalPlan::with_new_children: SortMergeJoin should have 2 children"
+                    )
+                }
                 Self::Concat(_) => {
                     panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children")
                 }
@@ -1283,6 +1314,22 @@ impl LocalPhysicalPlan {
                 }) => Self::cross_join(
                     new_left.clone(),
                     new_right.clone(),
+                    schema.clone(),
+                    stats_state.clone(),
+                ),
+                Self::SortMergeJoin(SortMergeJoin {
+                    left_on,
+                    right_on,
+                    join_type,
+                    schema,
+                    stats_state,
+                    ..
+                }) => Self::sort_merge_join(
+                    new_left.clone(),
+                    new_right.clone(),
+                    left_on.clone(),
+                    right_on.clone(),
+                    *join_type,
                     schema.clone(),
                     stats_state.clone(),
                 ),
@@ -1546,6 +1593,17 @@ pub struct HashJoin {
 pub struct CrossJoin {
     pub left: LocalPhysicalPlanRef,
     pub right: LocalPhysicalPlanRef,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SortMergeJoin {
+    pub left: LocalPhysicalPlanRef,
+    pub right: LocalPhysicalPlanRef,
+    pub left_on: Vec<BoundExpr>,
+    pub right_on: Vec<BoundExpr>,
+    pub join_type: JoinType,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }
