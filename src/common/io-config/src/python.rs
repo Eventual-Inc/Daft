@@ -1414,32 +1414,17 @@ impl TosConfig {
 
     #[staticmethod]
     pub fn from_env(_py: Python) -> PyResult<Self> {
-        let default_region = "cn-beijing";
-
-        let (endpoint, region) = match (
-            std::env::var("TOS_ENDPOINT").ok(),
-            std::env::var("TOS_REGION").ok(),
-        ) {
-            (Some(ep), Some(re)) => (ep, re),
-            (Some(ep), None) => {
-                let re = extract_region(&ep);
-                (ep, re.unwrap_or_else(|| default_region.to_string()))
-            }
-            (None, Some(re)) => (format!("tos-{}.volces.com", re), re),
-            (None, None) => (
-                format!("tos-{}.volces.com", default_region),
-                default_region.to_string(),
-            ),
-        };
-
+        let endpoint = std::env::var("TOS_ENDPOINT").ok();
+        let region = std::env::var("TOS_REGION").ok();
         let access_key: Option<String> = std::env::var("TOS_ACCESS_KEY").ok();
         let secret_key: Option<String> = std::env::var("TOS_SECRET_KEY").ok();
         let session_token: Option<String> = std::env::var("TOS_SESSION_TOKEN").ok();
         let anonymous = access_key.is_none();
+
         Ok(Self {
             config: crate::TosConfig {
-                endpoint: Some(endpoint),
-                region: Some(region),
+                endpoint,
+                region,
                 access_key,
                 secret_key: secret_key.map(|s| s.into()),
                 security_token: session_token.map(|s| s.into()),
@@ -1492,22 +1477,6 @@ impl TosConfig {
     pub fn max_connections(&self) -> PyResult<u32> {
         Ok(self.config.max_connections_per_io_thread)
     }
-}
-
-pub fn extract_region(endpoint: &str) -> Option<String> {
-    let host = endpoint
-        .trim_start_matches(|c: char| !c.is_ascii_alphanumeric())
-        .trim_start_matches("://")
-        .split('/')
-        .next()?;
-
-    for part in host.split('.') {
-        if let Some(region) = part.strip_prefix("tos-") {
-            return Some(region.to_string());
-        }
-    }
-
-    None
 }
 
 impl_bincode_py_state_serialization!(IOConfig);
