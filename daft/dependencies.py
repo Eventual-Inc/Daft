@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from daft.lazy_import import LazyImport
+
+logger = logging.getLogger(__name__)
+
 
 if TYPE_CHECKING:
     import fsspec
@@ -17,6 +21,13 @@ if TYPE_CHECKING:
     import pyarrow.fs as pafs
     import pyarrow.json as pajson
     import pyarrow.parquet as pq
+
+    try:
+        import pydantic as pyd
+        import pydantic_to_pyarrow as pyd_arr
+    except ImportError:
+        logger.error("pydantic is not installed. Install with `pip install daft[pydantic]` or just `pip install daft`")
+        raise
 else:
     fsspec = LazyImport("fsspec")
     np = LazyImport("numpy")
@@ -30,10 +41,17 @@ else:
     pc = LazyImport("pyarrow.compute")
     pq = LazyImport("pyarrow.parquet")
     flight = LazyImport("pyarrow.flight")
+    pyd = LazyImport(
+        "pydantic", "pydantic is not installed. Install with `pip install daft[pydantic]` or just `pip install daft`"
+    )
+    pyd_arr = LazyImport(
+        "pydantic_to_pyarrow",
+        "pydantic is not installed. Install with `pip install daft[pydantic]` or just `pip install daft`",
+    )
 
 unity_catalog = LazyImport("daft.unity_catalog")
 
-__all__ = [
+__all__: tuple[str, ...] = (
     "flight",
     "fsspec",
     "np",
@@ -46,5 +64,7 @@ __all__ = [
     "pd",
     "pil_image",
     "pq",
+    "pyd",
+    "pyd_arr",
     "unity_catalog",
-]
+)
