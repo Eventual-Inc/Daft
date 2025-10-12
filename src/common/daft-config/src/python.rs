@@ -106,7 +106,6 @@ impl PyDaftExecutionConfig {
         partial_aggregation_threshold=None,
         high_cardinality_aggregation_threshold=None,
         read_sql_partition_size_bytes=None,
-        enable_aqe=None,
         default_morsel_size=None,
         shuffle_algorithm=None,
         pre_shuffle_merge_threshold=None,
@@ -137,7 +136,6 @@ impl PyDaftExecutionConfig {
         partial_aggregation_threshold: Option<usize>,
         high_cardinality_aggregation_threshold: Option<f64>,
         read_sql_partition_size_bytes: Option<usize>,
-        enable_aqe: Option<bool>,
         default_morsel_size: Option<usize>,
         shuffle_algorithm: Option<&str>,
         pre_shuffle_merge_threshold: Option<usize>,
@@ -205,9 +203,6 @@ impl PyDaftExecutionConfig {
             config.read_sql_partition_size_bytes = read_sql_partition_size_bytes;
         }
 
-        if let Some(enable_aqe) = enable_aqe {
-            config.enable_aqe = enable_aqe;
-        }
         if let Some(default_morsel_size) = default_morsel_size {
             config.default_morsel_size = default_morsel_size;
         }
@@ -341,10 +336,6 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn get_read_sql_partition_size_bytes(&self) -> PyResult<usize> {
         Ok(self.config.read_sql_partition_size_bytes)
-    }
-    #[getter]
-    fn enable_aqe(&self) -> PyResult<bool> {
-        Ok(self.config.enable_aqe)
     }
     #[getter]
     fn default_morsel_size(&self) -> PyResult<usize> {

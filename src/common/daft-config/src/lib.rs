@@ -62,7 +62,6 @@ pub struct DaftExecutionConfig {
     pub partial_aggregation_threshold: usize,
     pub high_cardinality_aggregation_threshold: f64,
     pub read_sql_partition_size_bytes: usize,
-    pub enable_aqe: bool,
     pub default_morsel_size: usize,
     pub shuffle_algorithm: String,
     pub pre_shuffle_merge_threshold: usize,
@@ -97,7 +96,6 @@ impl Default for DaftExecutionConfig {
             partial_aggregation_threshold: 10000,
             high_cardinality_aggregation_threshold: 0.8,
             read_sql_partition_size_bytes: 512 * 1024 * 1024, // 512MB
-            enable_aqe: false,
             default_morsel_size: 128 * 1024,
             shuffle_algorithm: "auto".to_string(),
             pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
@@ -116,12 +114,6 @@ impl DaftExecutionConfig {
     #[must_use]
     pub fn from_env() -> Self {
         let mut cfg = Self::default();
-        let aqe_env_var_name = "DAFT_ENABLE_AQE";
-        if let Ok(val) = std::env::var(aqe_env_var_name)
-            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
-        {
-            cfg.enable_aqe = true;
-        }
         let ray_tracing_env_var_name = "DAFT_ENABLE_RAY_TRACING";
         if let Ok(val) = std::env::var(ray_tracing_env_var_name)
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")

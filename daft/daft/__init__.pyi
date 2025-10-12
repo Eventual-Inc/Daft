@@ -1997,7 +1997,6 @@ class PyDaftExecutionConfig:
         partial_aggregation_threshold: int | None = None,
         high_cardinality_aggregation_threshold: float | None = None,
         read_sql_partition_size_bytes: int | None = None,
-        enable_aqe: bool | None = None,
         default_morsel_size: int | None = None,
         enable_ray_tracing: bool | None = None,
         shuffle_algorithm: str | None = None,
@@ -2041,8 +2040,6 @@ class PyDaftExecutionConfig:
     def high_cardinality_aggregation_threshold(self) -> float: ...
     @property
     def read_sql_partition_size_bytes(self) -> int: ...
-    @property
-    def enable_aqe(self) -> bool: ...
     @property
     def default_morsel_size(self) -> int: ...
     @property
