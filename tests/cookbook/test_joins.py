@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-from daft.context import get_context
 from daft.expressions import col
 from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 
@@ -11,8 +10,6 @@ def skip_invalid_join_strategies(join_strategy):
     if get_tests_daft_runner_name() == "native":
         if join_strategy not in [None, "hash"]:
             pytest.skip("Native executor fails for these tests")
-    elif not get_context().daft_execution_config.use_legacy_ray_runner and join_strategy == "sort_merge":
-        pytest.skip("Sort merge joins are not supported on Flotilla")
 
 
 @pytest.mark.parametrize(

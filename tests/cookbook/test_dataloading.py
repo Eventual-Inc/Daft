@@ -196,7 +196,7 @@ def test_glob_files_from_multiple_path(tmpdir):
 
 @pytest.mark.skipif(
     get_context().daft_execution_config.use_legacy_ray_runner is True,
-    reason="resource requests are not fully supported in Flotilla",
+    reason="Limit pushdown on glob files is not supported on the legacy ray runner",
 )
 @pytest.mark.parametrize("batch_size", list(range(1, 10)))
 def test_glob_files_with_limit(batch_size, tmpdir):
