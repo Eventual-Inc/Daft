@@ -258,7 +258,6 @@ def set_execution_config(
     scantask_splitting_level: int | None = None,
     scantask_max_parallel: int | None = None,
     native_parquet_writer: bool | None = None,
-    use_legacy_ray_runner: bool | None = None,
     min_cpu_per_task: float | None = None,
     actor_udf_ready_timeout: int | None = None,
 ) -> DaftContext:
@@ -305,7 +304,6 @@ def set_execution_config(
         scantask_splitting_level: How aggressively to split scan tasks. Setting this to `2` will use a more aggressive ScanTask splitting algorithm which might be more expensive to run but results in more even splits of partitions. Defaults to 1.
         scantask_max_parallel: Set the max parallelism for running scan tasks simultaneously. Currently, this only works for Native Runner. If set to 0, all available CPUs will be used. Defaults to 8.
         native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
-        use_legacy_ray_runner: Whether to use the legacy ray runner. Defaults to `False`.
         min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 0.5.
         actor_udf_ready_timeout: Timeout for UDF actors to be ready. Defaults to 60 seconds.
     """
@@ -341,7 +339,6 @@ def set_execution_config(
             scantask_splitting_level=scantask_splitting_level,
             scantask_max_parallel=scantask_max_parallel,
             native_parquet_writer=native_parquet_writer,
-            use_legacy_ray_runner=use_legacy_ray_runner,
             min_cpu_per_task=min_cpu_per_task,
             actor_udf_ready_timeout=actor_udf_ready_timeout,
         )

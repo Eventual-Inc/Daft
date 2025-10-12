@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import logging
-import os
 import threading
 import time
 import uuid
@@ -1329,67 +1328,13 @@ class RayRunner(Runner[ray.ObjectRef]):
         # Optimize the logical plan.
         builder = builder.optimize()
 
-        if daft_execution_config.use_legacy_ray_runner:
-            if daft_execution_config.enable_aqe:
-                adaptive_planner = builder.to_adaptive_physical_plan_scheduler(daft_execution_config)
-                while not adaptive_planner.is_done():
-                    stage_id, plan_scheduler = adaptive_planner.next()
-                    start_time = time.time()
-                    # don't store partition sets in variable to avoid reference
-                    result_uuid = self._start_plan(
-                        plan_scheduler, daft_execution_config, results_buffer_size=results_buffer_size
-                    )
-                    del plan_scheduler
-                    results_iter = self._stream_plan(result_uuid)
-                    # if stage_id is None that means this is the final stage
-                    if stage_id is None:
-                        num_rows_processed = 0
-                        bytes_processed = 0
+        distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(builder._builder, daft_execution_config)
+        if self.flotilla_plan_runner is None:
+            self.flotilla_plan_runner = FlotillaRunner()
 
-                        for result in results_iter:
-                            num_rows_processed += result.metadata().num_rows
-                            size_bytes = result.metadata().size_bytes
-                            if size_bytes is not None:
-                                bytes_processed += size_bytes
-                            yield result
-                        adaptive_planner.update_stats(
-                            time.time() - start_time, bytes_processed, num_rows_processed, stage_id
-                        )
-                    else:
-                        cache_entry = self._collect_into_cache(results_iter)
-                        adaptive_planner.update_stats(
-                            time.time() - start_time, cache_entry.size_bytes(), cache_entry.num_rows(), stage_id
-                        )
-                        adaptive_planner.update(stage_id, cache_entry)
-                        del cache_entry
-
-                enable_explain_analyze = os.getenv("DAFT_DEV_ENABLE_EXPLAIN_ANALYZE")
-                ray_logs_location = ray_tracing.get_log_location()
-                should_explain_analyze = (
-                    ray_logs_location.exists()
-                    and enable_explain_analyze is not None
-                    and enable_explain_analyze in ["1", "true"]
-                )
-                if should_explain_analyze:
-                    explain_analyze_dir = ray_tracing.get_daft_trace_location(ray_logs_location)
-                    explain_analyze_dir.mkdir(exist_ok=True, parents=True)
-                    adaptive_planner.explain_analyze(str(explain_analyze_dir))
-            else:
-                plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
-                result_uuid = self._start_plan(
-                    plan_scheduler, daft_execution_config, results_buffer_size=results_buffer_size
-                )
-                yield from self._stream_plan(result_uuid)
-        else:
-            distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
-                builder._builder, daft_execution_config
-            )
-            if self.flotilla_plan_runner is None:
-                self.flotilla_plan_runner = FlotillaRunner()
-
-            yield from self.flotilla_plan_runner.stream_plan(
-                distributed_plan, self._part_set_cache.get_all_partition_sets()
-            )
+        yield from self.flotilla_plan_runner.stream_plan(
+            distributed_plan, self._part_set_cache.get_all_partition_sets()
+        )
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None

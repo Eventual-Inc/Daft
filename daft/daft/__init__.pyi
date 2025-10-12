@@ -2006,7 +2006,6 @@ class PyDaftExecutionConfig:
         scantask_splitting_level: int | None = None,
         scantask_max_parallel: int | None = None,
         native_parquet_writer: bool | None = None,
-        use_legacy_ray_runner: bool | None = None,
         min_cpu_per_task: float | None = None,
         actor_udf_ready_timeout: int | None = None,
     ) -> PyDaftExecutionConfig: ...
@@ -2054,8 +2053,6 @@ class PyDaftExecutionConfig:
     def flight_shuffle_dirs(self) -> list[str]: ...
     @property
     def enable_ray_tracing(self) -> bool: ...
-    @property
-    def use_legacy_ray_runner(self) -> bool: ...
     @property
     def min_cpu_per_task(self) -> float: ...
     @property

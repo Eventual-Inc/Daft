@@ -286,19 +286,15 @@ class DataFrame:
             print_to_file("\n== Physical Plan ==\n")
             if get_or_create_runner().name != "native":
                 daft_execution_config = get_context().daft_execution_config
-                if daft_execution_config.use_legacy_ray_runner:
-                    physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
-                    print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
-                else:
-                    from daft.daft import DistributedPhysicalPlan
+                from daft.daft import DistributedPhysicalPlan
 
-                    distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
-                        builder._builder, daft_execution_config
-                    )
-                    if format == "ascii":
-                        print_to_file(distributed_plan.repr_ascii(simple))
-                    elif format == "mermaid":
-                        print_to_file(distributed_plan.repr_mermaid(MermaidOptions(simple)))
+                distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
+                    builder._builder, daft_execution_config
+                )
+                if format == "ascii":
+                    print_to_file(distributed_plan.repr_ascii(simple))
+                elif format == "mermaid":
+                    print_to_file(distributed_plan.repr_mermaid(MermaidOptions(simple)))
             else:
                 native_executor = NativeExecutor()
                 print_to_file(
