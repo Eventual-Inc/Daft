@@ -3,11 +3,8 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import logging
-import threading
 import time
-import uuid
 from collections.abc import Generator, Iterable, Iterator
-from datetime import datetime
 from queue import Full, Queue
 from typing import TYPE_CHECKING, Any, Union, cast
 
@@ -25,12 +22,12 @@ from daft.dependencies import np
 from daft.recordbatch import RecordBatch
 from daft.runners import ray_tracing
 from daft.runners.flotilla import FlotillaRunner
-from daft.runners.progress_bar import ProgressBar
 from daft.scarf_telemetry import track_runner_on_scarf
 from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterable, Iterator
+    import threading
 
     import dask
     import dask.dataframe
@@ -60,11 +57,9 @@ from daft.execution.execution_step import (
     ActorPoolProject,
     FanoutInstruction,
     Instruction,
-    MultiOutputPartitionTask,
     PartitionTask,
     ReduceInstruction,
     ScanWithTask,
-    SingleOutputPartitionTask,
 )
 from daft.execution.physical_plan import ActorPoolManager
 from daft.expressions import ExpressionsProjection
@@ -80,7 +75,6 @@ from daft.runners.partitioning import (
     PartitionSet,
     PartitionSetCache,
 )
-from daft.runners.profiler import profiler
 from daft.runners.runner import Runner
 
 if TYPE_CHECKING:
@@ -90,7 +84,6 @@ if TYPE_CHECKING:
     from ray.data.dataset import Dataset as RayDataset
 
     from daft.logical.builder import LogicalPlanBuilder
-    from daft.plan_scheduler import PhysicalPlanScheduler
     from daft.runners.partitioning import PartialPartitionMetadata
     from daft.runners.ray_tracing import RunnerTracer
 
@@ -654,31 +647,6 @@ class Scheduler(ActorPoolManager):
 
         return result  # type: ignore[return-value]
 
-    def start_plan(
-        self,
-        plan_scheduler: PhysicalPlanScheduler,
-        psets: dict[str, MaterializedResult[ray.ObjectRef]],
-        result_uuid: str,
-        daft_execution_config: PyDaftExecutionConfig,
-        results_buffer_size: int | None = None,
-    ) -> None:
-        self.results_by_df[result_uuid] = Queue(maxsize=1 if results_buffer_size is not None else -1)
-        self.active_by_df[result_uuid] = True
-        self.results_buffer_size_by_df[result_uuid] = results_buffer_size
-
-        t = threading.Thread(
-            target=self._run_plan,
-            name=result_uuid,
-            kwargs={
-                "plan_scheduler": plan_scheduler,
-                "psets": psets,
-                "result_uuid": result_uuid,
-                "daft_execution_config": daft_execution_config,
-            },
-        )
-        t.start()
-        self.threads_by_df[result_uuid] = t
-
     def active_plans(self) -> list[str]:
         return [r_uuid for r_uuid, is_active in self.active_by_df.items() if is_active]
 
@@ -864,143 +832,6 @@ class Scheduler(ActorPoolManager):
                 break
             except Full:
                 pass
-
-    def _run_plan(
-        self,
-        plan_scheduler: PhysicalPlanScheduler,
-        psets: dict[str, ray.ObjectRef],
-        result_uuid: str,
-        daft_execution_config: PyDaftExecutionConfig,
-    ) -> None:
-        # Put execution config into cluster once to share it amongst all tasks
-        daft_execution_config_objref = ray.put(daft_execution_config)
-
-        # Get executable tasks from plan scheduler.
-        results_buffer_size = self.results_buffer_size_by_df[result_uuid]
-
-        inflight_tasks: dict[str, PartitionTask[ray.ObjectRef]] = dict()
-        inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
-        pbar = ProgressBar(use_ray_tqdm=self.use_ray_tqdm)
-        num_cpus_provider = _ray_num_cpus_provider()
-
-        start = datetime.now()
-        profile_filename = (
-            f"profile_RayRunner.run()_{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
-        )
-
-        with profiler(profile_filename), ray_tracing.ray_tracer(result_uuid, daft_execution_config) as runner_tracer:
-            try:
-                raw_tasks = plan_scheduler.to_partition_tasks(
-                    psets,
-                    self,
-                    # Attempt to subtract 1 from results_buffer_size because the return Queue size is already 1
-                    # If results_buffer_size=1 though, we can't do much and the total buffer size actually has to be >= 2
-                    # because we have two buffers (the Queue and the buffer inside the `materialize` generator)
-                    None if results_buffer_size is None else max(results_buffer_size - 1, 1),
-                )
-                tasks = ray_tracing.MaterializedPhysicalPlanWrapper(raw_tasks, runner_tracer)
-                ###
-                # Scheduling Loop:
-                #
-                #    DispatchBatching ─► Dispatch
-                #    ▲                        │      ───────►  Await
-                #    └────────────────────────┘                  │
-                #                ▲                               │
-                #                └───────────────────────────────┘
-                ###
-                wave_count = 0
-                while self._is_active(result_uuid):
-                    ###
-                    # Dispatch Loop:
-                    #
-                    #    DispatchBatching ─► Dispatch
-                    #    ▲                        │
-                    #    └────────────────────────┘
-                    ###
-                    wave_count += 1
-                    with runner_tracer.dispatch_wave(wave_count):
-                        while self._is_active(result_uuid):
-                            # Update available cluster resources
-                            # TODO: improve control loop code to be more understandable and dynamically adjust backlog
-                            cores: int = max(
-                                next(num_cpus_provider) - self.reserved_cores, 1
-                            )  # assume at least 1 CPU core for bootstrapping clusters that scale from zero
-                            max_inflight_tasks = cores + self.max_task_backlog
-                            dispatches_allowed = max_inflight_tasks - len(inflight_tasks)
-                            dispatches_allowed = min(cores, dispatches_allowed)
-
-                            # Dispatch Batching
-                            tasks_to_dispatch, has_next = self._construct_dispatch_batch(
-                                result_uuid,
-                                tasks,
-                                dispatches_allowed,
-                                runner_tracer,
-                            )
-
-                            logger.debug(
-                                "%ss: RayRunner dispatching %s tasks",
-                                (datetime.now() - start).total_seconds(),
-                                len(tasks_to_dispatch),
-                            )
-
-                            if not self._is_active(result_uuid):
-                                break
-
-                            # Dispatch
-                            for task, result_obj_refs in self._dispatch_tasks(
-                                result_uuid,
-                                tasks_to_dispatch,
-                                daft_execution_config_objref,
-                                runner_tracer,
-                            ):
-                                inflight_tasks[task.id()] = task
-                                for result in result_obj_refs:
-                                    inflight_ref_to_task[result] = task.id()
-
-                                pbar.make_bar_or_update_total(task.stage_id, task.name())
-
-                            # Break the dispatch batching/dispatch loop if no more dispatches allowed, or physical plan
-                            # needs work for forward progress
-                            if dispatches_allowed == 0 or not has_next:
-                                break
-
-                        ###
-                        # Await:
-                        # Wait for some work to be completed from the current wave's dispatch
-                        # Then we perform the necessary record-keeping on tasks that were retrieved as ready.
-                        ###
-                        readies = self._await_tasks(
-                            inflight_ref_to_task,
-                            inflight_tasks,
-                            runner_tracer,
-                        )
-                        for ready in readies:
-                            if ready in inflight_ref_to_task:
-                                task_id = inflight_ref_to_task[ready]
-
-                                # Mark the entire task associated with the result as done.
-                                task = inflight_tasks[task_id]
-                                task.set_done()
-
-                                if isinstance(task, SingleOutputPartitionTask):
-                                    del inflight_ref_to_task[ready]
-                                elif isinstance(task, MultiOutputPartitionTask):
-                                    for partition in task.partitions():
-                                        del inflight_ref_to_task[partition]
-
-                                pbar.update_bar(task.stage_id)
-                                del inflight_tasks[task_id]
-
-            except StopIteration as e:
-                self._place_in_queue(result_uuid, e)
-
-            # Ensure that all Exceptions are correctly propagated to the consumer before reraising to kill thread
-            except Exception as e:
-                self._place_in_queue(result_uuid, e)
-                pbar.close()
-                raise
-
-        pbar.close()
 
     @contextlib.contextmanager
     def actor_pool_context(
@@ -1243,7 +1074,7 @@ class RayRunner(Runner[ray.ObjectRef]):
 
         if self.ray_client_mode:
             # Run scheduler remotely if the cluster is connected remotely.
-            self.scheduler_actor = SchedulerActor.options(  # type: ignore
+            self.scheduler_actor = SchedulerActor.options(
                 name=SCHEDULER_ACTOR_NAME,
                 namespace=SCHEDULER_ACTOR_NAMESPACE,
                 get_if_exists=True,
@@ -1266,34 +1097,6 @@ class RayRunner(Runner[ray.ObjectRef]):
             return ray.get(self.scheduler_actor.active_plans.remote())
         else:
             return self.scheduler.active_plans()
-
-    def _start_plan(
-        self,
-        plan_scheduler: PhysicalPlanScheduler,
-        daft_execution_config: PyDaftExecutionConfig,
-        results_buffer_size: int | None = None,
-    ) -> str:
-        psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
-        result_uuid = str(uuid.uuid4())
-        if self.ray_client_mode:
-            ray.get(
-                self.scheduler_actor.start_plan.remote(
-                    daft_execution_config=daft_execution_config,
-                    plan_scheduler=plan_scheduler,
-                    psets=psets,
-                    result_uuid=result_uuid,
-                    results_buffer_size=results_buffer_size,
-                )
-            )
-        else:
-            self.scheduler.start_plan(
-                daft_execution_config=daft_execution_config,
-                plan_scheduler=plan_scheduler,
-                psets=psets,  # type: ignore[arg-type]
-                result_uuid=result_uuid,
-                results_buffer_size=results_buffer_size,
-            )
-        return result_uuid
 
     def _stream_plan(self, result_uuid: str) -> Iterator[RayMaterializedResult]:
         try:

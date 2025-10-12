@@ -15,7 +15,6 @@ daft-io = {path = "../daft-io", default-features = false}
 daft-local-plan = {path = "../daft-local-plan", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
-daft-physical-plan = {path = "../daft-physical-plan", default-features = false}
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 daft-schema = {path = "../daft-schema", default-features = false}
 futures = {workspace = true}
