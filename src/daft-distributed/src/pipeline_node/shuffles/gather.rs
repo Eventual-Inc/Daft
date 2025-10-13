@@ -77,6 +77,7 @@ impl GatherNode {
         let task = make_in_memory_task_from_materialized_outputs(
             TaskContext::from((&self_clone.context, task_id_counter.next())),
             materialized,
+            self_clone.config.schema.clone(),
             &(self_clone as Arc<dyn PipelineNodeImpl>),
             None,
         )?;

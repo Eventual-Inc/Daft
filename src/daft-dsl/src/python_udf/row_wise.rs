@@ -8,51 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     Expr, ExprRef,
     functions::{python::RuntimePyObject, scalar::ScalarFn},
+    python_udf::PyScalarFn,
 };
-
-#[derive(derive_more::Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[display("{_0}")]
-pub enum PyScalarFn {
-    RowWise(RowWisePyFn),
-}
-
-impl PyScalarFn {
-    pub fn name(&self) -> &str {
-        match self {
-            Self::RowWise(RowWisePyFn { function_name, .. }) => function_name,
-        }
-    }
-    pub fn call(&self, args: &[Series]) -> DaftResult<Series> {
-        match self {
-            Self::RowWise(func) => func.call(args),
-        }
-    }
-
-    pub fn args(&self) -> Vec<ExprRef> {
-        match self {
-            Self::RowWise(RowWisePyFn { args, .. }) => args.clone(),
-        }
-    }
-
-    pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
-        match self {
-            Self::RowWise(RowWisePyFn {
-                function_name: name,
-                args,
-                return_dtype,
-                ..
-            }) => {
-                let field_name = if let Some(first_child) = args.first() {
-                    first_child.get_name(schema)?
-                } else {
-                    name.to_string()
-                };
-
-                Ok(Field::new(field_name, return_dtype.clone()))
-            }
-        }
-    }
-}
 
 #[allow(clippy::too_many_arguments)]
 pub fn row_wise_udf(

@@ -20,7 +20,7 @@ import Logo from "./logo";
 import { ConnectionStatus } from "./connection-status";
 import { useActiveQueries } from "@/hooks/use-queries";
 import { BookOpenTextIcon } from "../ui/BookOpenTextIcon";
-import AnimatedFish from "../animated-fish";
+import { AnimatedFish } from "../icons";
 
 export function AppSidebar() {
   const pathName = usePathname();
