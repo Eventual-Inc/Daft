@@ -5,6 +5,8 @@ import warnings
 from types import GenericAlias
 from typing import TYPE_CHECKING, Any, Callable, Union
 
+from packaging.version import parse
+
 from daft.daft import ImageMode, PyDataType, PyTimeUnit, sql_datatype
 from daft.dependencies import np, pa
 from daft.runners import get_or_create_runner
@@ -206,7 +208,6 @@ class DataType:
                 return cls.struct(field_dtypes)
         elif check_type("pydantic.BaseModel"):
             import pydantic
-            from packaging.version import parse
 
             if not (parse("2.0.0") <= parse(pydantic.__version__) < parse("3.0.0")):
                 raise ValueError(

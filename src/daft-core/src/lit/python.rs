@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, TimeZone};
 use common_arrow_ffi as ffi;
@@ -509,27 +509,18 @@ fn pylist_to_list_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResult<L
 
 fn pydict_to_struct_lit(dict: &Bound<PyDict>, dtype: Option<&DataType>) -> PyResult<Literal> {
     let physical = dtype.map(DataType::to_physical);
-    let field_mapping: IndexMap<_, _> = if let Some(DataType::Struct(fields)) = &physical {
-        fields
-            .iter()
-            .map(|f| {
-                let value_lit = if let Some(value) = dict.get_item(&f.name)? {
-                    Literal::from_pyobj(&value, Some(&f.dtype))?
-                } else {
-                    Literal::Null
-                };
-
-                Ok((f.name.clone(), value_lit))
-            })
-            .collect::<PyResult<_>>()
+    let field_dtypes = if let Some(DataType::Struct(fields)) = &physical {
+        fields.iter().map(|f| (&f.name, &f.dtype)).collect()
     } else {
-        dict.iter().map(|(k, v)| {
-            let field_name = k.extract::<String>().map_err(|_| DaftError::TypeError(format!("Expected all dict keys when converting into Daft struct to be string, found: {k}")))?;
-            let field_value = Literal::from_pyobj(&v, None)?;
+        HashMap::new()
+    };
+    let field_mapping = dict.iter().map(|(k, v)| {
+        let field_name = k.extract::<String>().map_err(|_| DaftError::TypeError(format!("Expected all dict keys when converting into Daft struct to be string, found: {k}")))?;
+        let field_dtype = field_dtypes.get(&field_name).copied();
+        let field_value = Literal::from_pyobj(&v, field_dtype)?;
 
-            Ok((field_name, field_value))
-        }).collect::<PyResult<_>>()
-    }?;
+        Ok((field_name, field_value))
+    }).collect::<PyResult<IndexMap<_, _>>>()?;
 
     if field_mapping.is_empty() {
         Ok(Literal::Struct(indexmap! {String::new() => Literal::Null}))
