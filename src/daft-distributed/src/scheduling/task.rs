@@ -15,7 +15,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub(crate) struct TaskResourceRequest {
-    resource_request: ResourceRequest,
+    pub resource_request: ResourceRequest,
 }
 
 impl TaskResourceRequest {
