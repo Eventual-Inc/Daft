@@ -15,7 +15,7 @@ use crate::scheduling::{
     worker::{Worker, WorkerId, WorkerManager},
 };
 
-const REFRESH_INTERVAL_SECS: u64 = 5;
+const REFRESH_INTERVAL_SECS: Duration = Duration::from_secs(5);
 
 struct RayWorkerManagerState {
     ray_workers: HashMap<WorkerId, RaySwordfishWorker>,
@@ -27,7 +27,7 @@ impl RayWorkerManagerState {
     fn refresh_workers(&mut self) -> DaftResult<()> {
         let should_refresh = match self.last_refresh {
             None => true,
-            Some(last_time) => last_time.elapsed() > Duration::from_secs(REFRESH_INTERVAL_SECS),
+            Some(last_time) => last_time.elapsed() > REFRESH_INTERVAL_SECS,
         };
 
         if !should_refresh {
