@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use axum::{
     Json, Router,
@@ -133,7 +133,7 @@ async fn exec_start(
                         OperatorInfo {
                             status: OperatorStatus::Pending,
                             node_info,
-                            stats: StatSnapshotRecv::default(),
+                            stats: HashMap::new(),
                         },
                     )
                 })
@@ -191,7 +191,7 @@ async fn exec_emit_stats(
     };
 
     for (operator_id, stats) in args {
-        exec_info.operators.get_mut(&operator_id).unwrap().stats = stats;
+        exec_info.operators.get_mut(&operator_id).unwrap().stats = stats.0.into_iter().collect();
     }
     StatusCode::OK
 }

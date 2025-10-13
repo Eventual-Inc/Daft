@@ -102,7 +102,7 @@ macro_rules! snapshot {
 /// This should match the format of the sendable snapshot, but is a different
 /// type for deserialization
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
-pub struct StatSnapshotRecv(Vec<(String, Stat)>);
+pub struct StatSnapshotRecv(pub Vec<(String, Stat)>);
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
