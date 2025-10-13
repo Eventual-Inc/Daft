@@ -124,7 +124,7 @@ def test_url_upload_with_template():
             daft.sql(
                 f"""
             SELECT
-                url_upload(data, '{tmp_dir}', filename_template=>'{{}}.png') as uploaded_custom
+                url_upload(data, '{tmp_dir}/{{}}.png') as uploaded_custom
             FROM df
             """
             )
@@ -143,7 +143,7 @@ def test_url_upload_with_template():
 
         expected_custom = (
             df.select(
-                col("data").url.upload(tmp_dir, filename_template="{}.png").alias("uploaded_custom"),
+                col("data").url.upload(f"{tmp_dir}/{{}}.png").alias("uploaded_custom"),
             )
             .collect()
             .to_pydict()

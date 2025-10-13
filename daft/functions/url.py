@@ -98,7 +98,6 @@ def upload(
     location: str | Expression,
     max_connections: int = 32,
     on_error: Literal["raise", "null"] = "raise",
-    filename_template: str = "{}",
     io_config: IOConfig | None = None,
 ) -> Expression:
     """Uploads a column of binary data to the provided location(s) (also supports S3, local etc).
@@ -108,12 +107,12 @@ def upload(
 
     Args:
         expr: The expression to upload.
-        location: a folder location or column of folder locations to upload data into
+        location: a folder location or column of folder locations to upload data into. If the location
+            contains "{}", it will be used as a filename template where "{}" is replaced with a UUID.
+            Examples: "s3://my-bucket/my-folder", "s3://my-bucket/my-folder/{}.png", col("paths")
         max_connections: The maximum number of connections to use per thread to use for uploading data. Defaults to 32.
         on_error: Behavior when a URL upload error is encountered - "raise" to raise the error immediately or "null" to log
             the error but fallback to a Null value. Defaults to "raise".
-        filename_template: Template string for generating filenames. Must contain "{}" which will be replaced with a UUID.
-            Defaults to "{}". Examples: "{}", "{}.png", "image_{}.jpg"
         io_config: IOConfig to use when uploading data
 
     Returns:
@@ -124,9 +123,9 @@ def upload(
         >>>
         >>> upload(df["data"], "s3://my-bucket/my-folder")  # doctest: +SKIP
 
-        Upload with custom filename template
+        Upload with custom filename template in location
 
-        >>> upload(df["data"], "s3://my-bucket/my-folder", filename_template="{}.png")  # doctest: +SKIP
+        >>> upload(df["data"], "s3://my-bucket/my-folder/{}.png")  # doctest: +SKIP
 
         Upload to row-specific URLs
 
@@ -143,7 +142,6 @@ def upload(
         max_connections=max_connections,
         on_error=on_error,
         multi_thread=multi_thread,
-        filename_template=filename_template,
         io_config=io_config,
     )
 
