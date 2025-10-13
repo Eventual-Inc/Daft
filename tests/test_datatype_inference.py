@@ -122,7 +122,8 @@ class EmptyPydanticModel(BaseModel):
             NestedPydanticModel,
             dt.struct({"user": dt.struct({"name": dt.string(), "age": dt.int64()}), "active": dt.bool()}),
         ),
-        (PydanticWithAlias, dt.struct({"fullName": dt.string(), "age": dt.int64()})),
+        # TODO: Uncomment this when we update to pydantic>=2.11 which supports `serialize_by_alias`
+        # (PydanticWithAlias, dt.struct({"fullName": dt.string(), "age": dt.int64()})),
         (PydanticWithAliasNoSerializeByAlias, dt.struct({"full_name": dt.string(), "user_age": dt.int64()})),
         (
             PydanticWithComputedField,
@@ -301,7 +302,8 @@ def test_infer_from_jaxtyping(dtype_class, expected_dtype, shape_spec, expected_
             NestedPydanticModel(user=SimplePydanticModel(name="Bob", age=25), active=True),
             dt.struct({"user": dt.struct({"name": dt.string(), "age": dt.int64()}), "active": dt.bool()}),
         ),
-        (PydanticWithAlias(name="Jane Doe", age=28), dt.struct({"fullName": dt.string(), "age": dt.int64()})),
+        # TODO: Uncomment this when we update to pydantic>=2.11 which supports `serialize_by_alias`
+        # (PydanticWithAlias(name="Jane Doe", age=28), dt.struct({"fullName": dt.string(), "age": dt.int64()})),
         (
             PydanticWithAliasNoSerializeByAlias(name="Jane Doe", age=28),
             dt.struct({"full_name": dt.string(), "user_age": dt.int64()}),
