@@ -597,8 +597,6 @@ fn pydantic_model_to_struct_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> 
             .dtype
     };
 
-    println!("dtype: {:?}", dtype);
-
     let dict = ob.call_method0(intern!(py, "model_dump"))?;
     let dict = dict.downcast::<PyDict>()?;
 
