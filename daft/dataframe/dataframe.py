@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypeVar, Uni
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, WriteMode
+from daft.daft import DistributedPhysicalPlan, FileFormat, IOConfig, JoinStrategy, JoinType, WriteMode
 from daft.dataframe.display import MermaidOptions
 from daft.dataframe.preview import Preview, PreviewAlign, PreviewColumn, PreviewFormat, PreviewFormatter
 from daft.datatype import DataType
@@ -331,10 +331,18 @@ class DataFrame:
             >>> df2.num_partitions()
             10
         """
+        if get_or_create_runner().name == "native":
+            warnings.warn(
+                "DataFrame.num_partitions not supported on the Native Runner, as it runs on a single machine has no notion of partitions. Please use the Ray Runner if you need to inspect the number of partitions."
+            )
+            return 1
+
         # We need to run the optimizer since that could change the number of partitions
-        return (
-            self.__builder.optimize().to_physical_plan_scheduler(get_context().daft_execution_config).num_partitions()
+        builder = self.__builder.optimize()
+        physical_plan = DistributedPhysicalPlan.from_logical_plan_builder(
+            builder._builder, get_context().daft_execution_config
         )
+        return physical_plan.num_partitions()
 
     @DataframePublicAPI
     def schema(self) -> Schema:
