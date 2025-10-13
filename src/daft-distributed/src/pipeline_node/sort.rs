@@ -19,7 +19,7 @@ use crate::{
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
-        scheduler::{SchedulerHandle, SubmittableTask},
+        scheduler::{SchedulerHandle, SubmittableTask, SubmittedTask},
         task::{SwordfishTask, TaskContext},
     },
     utils::{
@@ -27,6 +27,228 @@ use crate::{
         transpose::transpose_materialized_outputs_from_vec,
     },
 };
+
+/// Computes partition boundaries for range partitioning by sampling and analyzing the data.
+/// This function samples the input data, collects all samples, and computes boundaries
+/// that divide the data into approximately equal-sized partitions.
+#[cfg(feature = "python")]
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn get_partition_boundaries(
+    materialized_outputs: Vec<MaterializedOutput>,
+    partition_by: Vec<BoundExpr>,
+    descending: Vec<bool>,
+    nulls_first: Vec<bool>,
+    num_partitions: usize,
+    pipeline_node: &Arc<dyn PipelineNodeImpl>,
+    task_id_counter: &TaskIDCounter,
+    scheduler_handle: &SchedulerHandle<SwordfishTask>,
+) -> DaftResult<RecordBatch> {
+    use daft_io::IOStatsContext;
+    use pyo3::{Python, prelude::*};
+
+    // Sample the data
+    let sample_tasks = create_sample_tasks(
+        materialized_outputs,
+        partition_by.clone(),
+        pipeline_node,
+        task_id_counter,
+        scheduler_handle,
+    )?;
+
+    let sampled_outputs = try_join_all(sample_tasks)
+        .await?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+
+    // Extract partition refs from samples
+    let ray_partition_refs = sampled_outputs
+        .into_iter()
+        .flat_map(|mo| mo.into_inner().0)
+        .map(|pr| {
+            let ray_partition_ref = pr
+                .as_any()
+                .downcast_ref::<crate::python::ray::RayPartitionRef>()
+                .ok_or(common_error::DaftError::InternalError(
+                    "Failed to downcast partition ref".to_string(),
+                ))?;
+            Ok(ray_partition_ref.clone())
+        })
+        .collect::<DaftResult<Vec<_>>>()?;
+
+    let (task_locals, py_object_refs, py_sort_by, descending, nulls_first) =
+        Python::with_gil(|py| {
+            let task_locals = crate::utils::runtime::PYO3_ASYNC_RUNTIME_LOCALS
+                .get()
+                .expect("Python task locals not initialized")
+                .clone_ref(py);
+
+            let py_object_refs = ray_partition_refs
+                .into_iter()
+                .map(|pr| pr.get_object_ref(py))
+                .collect::<Vec<_>>();
+
+            let py_sort_by = partition_by
+                .iter()
+                .map(|e| daft_dsl::python::PyExpr {
+                    expr: e.inner().clone(),
+                })
+                .collect::<Vec<_>>();
+
+            (
+                task_locals,
+                py_object_refs,
+                py_sort_by,
+                descending,
+                nulls_first,
+            )
+        });
+
+    let boundaries_fut = async move {
+        let result = Python::with_gil(|py| {
+            let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+
+            let coroutine = flotilla_module.call_method1(
+                pyo3::intern!(py, "get_boundaries"),
+                (
+                    py_object_refs,
+                    py_sort_by,
+                    descending,
+                    nulls_first,
+                    num_partitions,
+                ),
+            )?;
+            pyo3_async_runtimes::tokio::into_future(coroutine)
+        })?
+        .await?;
+        common_error::DaftResult::Ok(result)
+    };
+
+    let boundaries = pyo3_async_runtimes::tokio::scope(task_locals, boundaries_fut).await?;
+    let boundaries = Python::with_gil(|py| {
+        boundaries.extract::<daft_micropartition::python::PyMicroPartition>(py)
+    })?;
+
+    let boundaries = boundaries
+        .inner
+        .concat_or_get(IOStatsContext::new(
+            "daft-distributed::sort::get_boundaries".to_string(),
+        ))?
+        .ok_or_else(|| {
+            common_error::DaftError::InternalError(
+                "No boundaries found for daft-distributed::sort::get_boundaries".to_string(),
+            )
+        })?;
+    Ok(boundaries)
+}
+
+#[cfg(not(feature = "python"))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn get_partition_boundaries(
+    _materialized_outputs: Vec<MaterializedOutput>,
+    _partition_by: Vec<BoundExpr>,
+    _descending: Vec<bool>,
+    _nulls_first: Vec<bool>,
+    _num_partitions: usize,
+    _pipeline_node: &Arc<dyn PipelineNodeImpl>,
+    _task_id_counter: &TaskIDCounter,
+    _scheduler_handle: &SchedulerHandle<SwordfishTask>,
+) -> DaftResult<RecordBatch> {
+    unimplemented!("Distributed range partitioning requires Python feature to be enabled")
+}
+
+/// Creates sample tasks from materialized outputs, projecting the specified columns.
+/// This is used to sample data before computing partition boundaries for range partitioning.
+pub(crate) fn create_sample_tasks(
+    materialized_outputs: Vec<MaterializedOutput>,
+    sample_by: Vec<BoundExpr>,
+    pipeline_node: &Arc<dyn PipelineNodeImpl>,
+    task_id_counter: &TaskIDCounter,
+    scheduler_handle: &SchedulerHandle<SwordfishTask>,
+) -> DaftResult<Vec<SubmittedTask>> {
+    let sample_size = pipeline_node.config().execution_config.sample_size_for_sort;
+    let output_schema = pipeline_node.config().schema.clone();
+    let context = pipeline_node.context();
+
+    materialized_outputs
+        .into_iter()
+        .map(|mo| {
+            let sample_by = sample_by.clone();
+            let output_schema = output_schema.clone();
+            let task = make_new_task_from_materialized_outputs(
+                TaskContext::from((context, task_id_counter.next())),
+                vec![mo],
+                pipeline_node,
+                move |input| {
+                    let sample = LocalPhysicalPlan::sample(
+                        input,
+                        SamplingMethod::Size(sample_size),
+                        false,
+                        None,
+                        StatsState::NotMaterialized,
+                    );
+                    LocalPhysicalPlan::project(
+                        sample,
+                        sample_by,
+                        output_schema,
+                        StatsState::NotMaterialized,
+                    )
+                },
+                None,
+            )?;
+            let submitted_task = task.submit(scheduler_handle)?;
+            Ok(submitted_task)
+        })
+        .collect::<DaftResult<Vec<_>>>()
+}
+
+/// Creates range repartition tasks from materialized outputs using the provided boundaries.
+/// This is used to repartition data after computing partition boundaries from samples.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn create_range_repartition_tasks(
+    materialized_outputs: Vec<MaterializedOutput>,
+    partition_by: Vec<BoundExpr>,
+    descending: Vec<bool>,
+    boundaries: RecordBatch,
+    num_partitions: usize,
+    pipeline_node: &Arc<dyn PipelineNodeImpl>,
+    task_id_counter: &TaskIDCounter,
+    scheduler_handle: &SchedulerHandle<SwordfishTask>,
+) -> DaftResult<Vec<SubmittedTask>> {
+    let output_schema = pipeline_node.config().schema.clone();
+    let context = pipeline_node.context();
+    materialized_outputs
+        .into_iter()
+        .map(|mo| {
+            let partition_by = partition_by.clone();
+            let descending = descending.clone();
+            let boundaries = boundaries.clone();
+            let output_schema = output_schema.clone();
+            let task = make_new_task_from_materialized_outputs(
+                TaskContext::from((context, task_id_counter.next())),
+                vec![mo],
+                pipeline_node,
+                move |input| {
+                    LocalPhysicalPlan::repartition(
+                        input,
+                        RepartitionSpec::Range(RangeRepartitionConfig::new(
+                            Some(num_partitions),
+                            boundaries,
+                            partition_by,
+                            descending,
+                        )),
+                        num_partitions,
+                        output_schema,
+                        StatsState::NotMaterialized,
+                    )
+                },
+                None,
+            )?;
+            let submitted_task = task.submit(scheduler_handle)?;
+            Ok(submitted_task)
+        })
+        .collect::<DaftResult<Vec<_>>>()
+}
 
 pub(crate) struct SortNode {
     config: PipelineNodeConfig,
@@ -80,32 +302,6 @@ impl SortNode {
         DistributedPipelineNode::new(Arc::new(self))
     }
 
-    #[cfg(feature = "python")]
-    async fn get_partition_boundaries(
-        &self,
-        input: Vec<MaterializedOutput>,
-        num_partitions: usize,
-    ) -> DaftResult<RecordBatch> {
-        super::get_partition_boundaries_from_samples(
-            input,
-            &self.sort_by,
-            self.descending.clone(),
-            self.nulls_first.clone(),
-            num_partitions,
-            "daft-distributed::sort::get_boundaries".to_string(),
-        )
-        .await
-    }
-
-    #[cfg(not(feature = "python"))]
-    async fn get_partition_boundaries(
-        &self,
-        input: Vec<MaterializedOutput>,
-        num_partitions: usize,
-    ) -> DaftResult<RecordBatch> {
-        unimplemented!("Distributed sort requires Python feature to be enabled")
-    }
-
     async fn execution_loop(
         self: Arc<Self>,
         input_node: SubmittableTaskStream,
@@ -144,78 +340,29 @@ impl SortNode {
             return Ok(());
         }
 
-        let submitted_sample_tasks = materialized_outputs
-            .clone()
-            .into_iter()
-            .map(|mo| {
-                let self_clone = self.clone();
-                let task = make_new_task_from_materialized_outputs(
-                    TaskContext::from((&self.context, task_id_counter.next())),
-                    vec![mo],
-                    &(self.clone() as Arc<dyn PipelineNodeImpl>),
-                    move |input| {
-                        let sample = LocalPhysicalPlan::sample(
-                            input,
-                            SamplingMethod::Size(
-                                self_clone.config.execution_config.sample_size_for_sort,
-                            ),
-                            false,
-                            None,
-                            StatsState::NotMaterialized,
-                        );
-                        LocalPhysicalPlan::project(
-                            sample,
-                            self_clone.sort_by.clone(),
-                            self_clone.config.schema.clone(),
-                            StatsState::NotMaterialized,
-                        )
-                    },
-                    None,
-                )?;
-                let submitted_task = task.submit(&scheduler_handle)?;
-                Ok(submitted_task)
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
-        let sampled_outputs = try_join_all(submitted_sample_tasks)
-            .await?
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
-
         let num_partitions = self.child.config().clustering_spec.num_partitions();
-        let boundaries = self
-            .get_partition_boundaries(sampled_outputs, num_partitions)
-            .await?;
+        let boundaries = get_partition_boundaries(
+            materialized_outputs.clone(),
+            self.sort_by.clone(),
+            self.descending.clone(),
+            self.nulls_first.clone(),
+            num_partitions,
+            &(self.clone() as Arc<dyn PipelineNodeImpl>),
+            &task_id_counter,
+            &scheduler_handle,
+        )
+        .await?;
 
-        let partition_tasks = materialized_outputs
-            .into_iter()
-            .map(|mo| {
-                let self_clone = self.clone();
-                let boundaries = boundaries.clone();
-                let task = make_new_task_from_materialized_outputs(
-                    TaskContext::from((&self.context, task_id_counter.next())),
-                    vec![mo],
-                    &(self.clone() as Arc<dyn PipelineNodeImpl>),
-                    move |input| {
-                        LocalPhysicalPlan::repartition(
-                            input,
-                            RepartitionSpec::Range(RangeRepartitionConfig::new(
-                                Some(num_partitions),
-                                boundaries,
-                                self_clone.sort_by.clone(),
-                                self_clone.descending.clone(),
-                            )),
-                            num_partitions,
-                            self_clone.config.schema.clone(),
-                            StatsState::NotMaterialized,
-                        )
-                    },
-                    None,
-                )?;
-                let submitted_task = task.submit(&scheduler_handle)?;
-                Ok(submitted_task)
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
+        let partition_tasks = create_range_repartition_tasks(
+            materialized_outputs,
+            self.sort_by.clone(),
+            self.descending.clone(),
+            boundaries,
+            num_partitions,
+            &(self.clone() as Arc<dyn PipelineNodeImpl>),
+            &task_id_counter,
+            &scheduler_handle,
+        )?;
 
         let partitioned_outputs = try_join_all(partition_tasks)
             .await?
