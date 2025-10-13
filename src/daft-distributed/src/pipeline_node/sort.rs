@@ -8,7 +8,7 @@ use daft_logical_plan::{
     stats::StatsState,
 };
 use daft_recordbatch::RecordBatch;
-use daft_schema::schema::SchemaRef;
+use daft_schema::schema::{Schema, SchemaRef};
 use futures::{TryStreamExt, future::try_join_all};
 
 use super::{PipelineNodeImpl, SubmittableTaskStream, make_new_task_from_materialized_outputs};
@@ -28,41 +28,22 @@ use crate::{
     },
 };
 
-/// Computes partition boundaries for range partitioning by sampling and analyzing the data.
-/// This function samples the input data, collects all samples, and computes boundaries
-/// that divide the data into approximately equal-sized partitions.
+/// Computes partition boundaries from sampled data for range partitioning.
+/// Takes already-sampled materialized outputs and computes boundaries that divide the data
+/// into approximately equal-sized partitions.
 #[cfg(feature = "python")]
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn get_partition_boundaries(
-    materialized_outputs: Vec<MaterializedOutput>,
-    partition_by: Vec<BoundExpr>,
+pub(crate) async fn get_partition_boundaries_from_samples(
+    samples: Vec<MaterializedOutput>,
+    partition_by: &[BoundExpr],
     descending: Vec<bool>,
     nulls_first: Vec<bool>,
     num_partitions: usize,
-    pipeline_node: &Arc<dyn PipelineNodeImpl>,
-    task_id_counter: &TaskIDCounter,
-    scheduler_handle: &SchedulerHandle<SwordfishTask>,
 ) -> DaftResult<RecordBatch> {
     use daft_io::IOStatsContext;
     use pyo3::{Python, prelude::*};
 
-    // Sample the data
-    let sample_tasks = create_sample_tasks(
-        materialized_outputs,
-        partition_by.clone(),
-        pipeline_node,
-        task_id_counter,
-        scheduler_handle,
-    )?;
-
-    let sampled_outputs = try_join_all(sample_tasks)
-        .await?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-
     // Extract partition refs from samples
-    let ray_partition_refs = sampled_outputs
+    let ray_partition_refs = samples
         .into_iter()
         .flat_map(|mo| mo.into_inner().0)
         .map(|pr| {
@@ -143,16 +124,12 @@ pub(crate) async fn get_partition_boundaries(
 }
 
 #[cfg(not(feature = "python"))]
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn get_partition_boundaries(
-    _materialized_outputs: Vec<MaterializedOutput>,
-    _partition_by: Vec<BoundExpr>,
+pub(crate) async fn get_partition_boundaries_from_samples(
+    _samples: Vec<MaterializedOutput>,
+    _partition_by: &[BoundExpr],
     _descending: Vec<bool>,
     _nulls_first: Vec<bool>,
     _num_partitions: usize,
-    _pipeline_node: &Arc<dyn PipelineNodeImpl>,
-    _task_id_counter: &TaskIDCounter,
-    _scheduler_handle: &SchedulerHandle<SwordfishTask>,
 ) -> DaftResult<RecordBatch> {
     unimplemented!("Distributed range partitioning requires Python feature to be enabled")
 }
@@ -161,23 +138,30 @@ pub(crate) async fn get_partition_boundaries(
 /// This is used to sample data before computing partition boundaries for range partitioning.
 pub(crate) fn create_sample_tasks(
     materialized_outputs: Vec<MaterializedOutput>,
+    input_schema: SchemaRef,
     sample_by: Vec<BoundExpr>,
     pipeline_node: &Arc<dyn PipelineNodeImpl>,
     task_id_counter: &TaskIDCounter,
     scheduler_handle: &SchedulerHandle<SwordfishTask>,
 ) -> DaftResult<Vec<SubmittedTask>> {
     let sample_size = pipeline_node.config().execution_config.sample_size_for_sort;
-    let output_schema = pipeline_node.config().schema.clone();
     let context = pipeline_node.context();
+    let sample_schema = Arc::new(Schema::new(sample_by.iter().map(|e| {
+        e.inner()
+            .to_field(&input_schema)
+            .expect("Sample by column not found in input schema")
+    })));
 
     materialized_outputs
         .into_iter()
         .map(|mo| {
             let sample_by = sample_by.clone();
-            let output_schema = output_schema.clone();
+            let input_schema = input_schema.clone();
+            let sample_schema = sample_schema.clone();
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((context, task_id_counter.next())),
                 vec![mo],
+                input_schema,
                 pipeline_node,
                 move |input| {
                     let sample = LocalPhysicalPlan::sample(
@@ -190,7 +174,7 @@ pub(crate) fn create_sample_tasks(
                     LocalPhysicalPlan::project(
                         sample,
                         sample_by,
-                        output_schema,
+                        sample_schema,
                         StatsState::NotMaterialized,
                     )
                 },
@@ -207,6 +191,7 @@ pub(crate) fn create_sample_tasks(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn create_range_repartition_tasks(
     materialized_outputs: Vec<MaterializedOutput>,
+    input_schema: SchemaRef,
     partition_by: Vec<BoundExpr>,
     descending: Vec<bool>,
     boundaries: RecordBatch,
@@ -215,18 +200,18 @@ pub(crate) fn create_range_repartition_tasks(
     task_id_counter: &TaskIDCounter,
     scheduler_handle: &SchedulerHandle<SwordfishTask>,
 ) -> DaftResult<Vec<SubmittedTask>> {
-    let output_schema = pipeline_node.config().schema.clone();
     let context = pipeline_node.context();
     materialized_outputs
         .into_iter()
         .map(|mo| {
             let partition_by = partition_by.clone();
+            let input_schema = input_schema.clone();
             let descending = descending.clone();
             let boundaries = boundaries.clone();
-            let output_schema = output_schema.clone();
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((context, task_id_counter.next())),
                 vec![mo],
+                input_schema.clone(),
                 pipeline_node,
                 move |input| {
                     LocalPhysicalPlan::repartition(
@@ -238,7 +223,7 @@ pub(crate) fn create_range_repartition_tasks(
                             descending,
                         )),
                         num_partitions,
-                        output_schema,
+                        input_schema,
                         StatsState::NotMaterialized,
                     )
                 },
@@ -324,6 +309,7 @@ impl SortNode {
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((&self_clone.context, task_id_counter.next())),
                 materialized_outputs,
+                self.config.schema.clone(),
                 &(self_clone.clone() as Arc<dyn PipelineNodeImpl>),
                 move |input| {
                     LocalPhysicalPlan::sort(
@@ -341,20 +327,36 @@ impl SortNode {
         }
 
         let num_partitions = self.child.config().clustering_spec.num_partitions();
-        let boundaries = get_partition_boundaries(
+
+        // Sample the data
+        let sample_tasks = create_sample_tasks(
             materialized_outputs.clone(),
+            self.config.schema.clone(),
             self.sort_by.clone(),
-            self.descending.clone(),
-            self.nulls_first.clone(),
-            num_partitions,
             &(self.clone() as Arc<dyn PipelineNodeImpl>),
             &task_id_counter,
             &scheduler_handle,
+        )?;
+
+        let sampled_outputs = try_join_all(sample_tasks)
+            .await?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+
+        // Compute partition boundaries from samples
+        let boundaries = get_partition_boundaries_from_samples(
+            sampled_outputs,
+            &self.sort_by,
+            self.descending.clone(),
+            self.nulls_first.clone(),
+            num_partitions,
         )
         .await?;
 
         let partition_tasks = create_range_repartition_tasks(
             materialized_outputs,
+            self.config.schema.clone(),
             self.sort_by.clone(),
             self.descending.clone(),
             boundaries,
@@ -379,6 +381,7 @@ impl SortNode {
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((&self_clone.context, task_id_counter.next())),
                 partition_group,
+                self.config.schema.clone(),
                 &(self_clone.clone() as Arc<dyn PipelineNodeImpl>),
                 move |input| {
                     LocalPhysicalPlan::sort(

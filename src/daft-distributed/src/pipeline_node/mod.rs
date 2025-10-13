@@ -357,6 +357,7 @@ pub(crate) fn make_in_memory_scan_from_materialized_outputs(
 fn make_new_task_from_materialized_outputs<F>(
     task_context: TaskContext,
     materialized_outputs: Vec<MaterializedOutput>,
+    input_schema: SchemaRef,
     node: &Arc<dyn PipelineNodeImpl>,
     plan_builder: F,
     scheduling_strategy: Option<SchedulingStrategy>,
@@ -366,7 +367,7 @@ where
 {
     let in_memory_source_plan = make_in_memory_scan_from_materialized_outputs(
         &materialized_outputs,
-        node.config().schema.clone(),
+        input_schema,
         node.node_id().to_string(),
     )?;
     let partition_refs = materialized_outputs
@@ -390,12 +391,14 @@ where
 fn make_in_memory_task_from_materialized_outputs(
     task_context: TaskContext,
     materialized_outputs: Vec<MaterializedOutput>,
+    input_schema: SchemaRef,
     node: &Arc<dyn PipelineNodeImpl>,
     scheduling_strategy: Option<SchedulingStrategy>,
 ) -> DaftResult<SubmittableTask<SwordfishTask>> {
     make_new_task_from_materialized_outputs(
         task_context,
         materialized_outputs,
+        input_schema,
         node,
         |input| input,
         scheduling_strategy,

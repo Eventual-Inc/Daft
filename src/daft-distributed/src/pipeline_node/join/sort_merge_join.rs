@@ -12,7 +12,10 @@ use crate::{
         DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
         PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream,
         make_in_memory_scan_from_materialized_outputs,
-        sort::{create_range_repartition_tasks, get_partition_boundaries},
+        sort::{
+            create_range_repartition_tasks, create_sample_tasks,
+            get_partition_boundaries_from_samples,
+        },
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -175,30 +178,56 @@ impl SortMergeJoinNode {
         result_tx: &Sender<SubmittableTask<SwordfishTask>>,
         scheduler_handle: &SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
-        // Combine left and right materialized outputs for sampling
-        let mut all_materialized = left_materialized.clone();
-        all_materialized.extend(right_materialized.clone());
-
         let num_partitions = self.num_partitions;
         let descending = vec![false; self.left_on.len()];
         let nulls_first = vec![false; self.left_on.len()];
 
-        // Get partition boundaries by sampling both left and right sides
-        let boundaries = get_partition_boundaries(
-            all_materialized,
+        // Sample left side
+        let left_sample_tasks = create_sample_tasks(
+            left_materialized.clone(),
+            self.left.config().schema.clone(),
             self.left_on.clone(),
-            descending.clone(),
-            nulls_first,
-            self.num_partitions,
             &(self.clone() as Arc<dyn PipelineNodeImpl>),
             task_id_counter,
             scheduler_handle,
+        )?;
+
+        // Sample right side
+        let right_sample_tasks = create_sample_tasks(
+            right_materialized.clone(),
+            self.right.config().schema.clone(),
+            self.right_on.clone(),
+            &(self.clone() as Arc<dyn PipelineNodeImpl>),
+            task_id_counter,
+            scheduler_handle,
+        )?;
+
+        // Collect all samples
+        let sampled_outputs = try_join_all(
+            left_sample_tasks
+                .into_iter()
+                .chain(right_sample_tasks.into_iter()),
+        )
+        .await?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+
+        // Compute partition boundaries from combined samples
+        let boundaries = get_partition_boundaries_from_samples(
+            sampled_outputs,
+            &self.left_on,
+            descending.clone(),
+            nulls_first,
+            num_partitions,
         )
         .await?;
 
         // Range repartition left side
+        let left_schema = self.left.config().schema.clone();
         let left_partition_tasks = create_range_repartition_tasks(
             left_materialized,
+            left_schema,
             self.left_on.clone(),
             descending.clone(),
             boundaries.clone(),
@@ -209,8 +238,10 @@ impl SortMergeJoinNode {
         )?;
 
         // Range repartition right side
+        let right_schema = self.right.config().schema.clone();
         let right_partition_tasks = create_range_repartition_tasks(
             right_materialized,
+            right_schema,
             self.right_on.clone(),
             descending,
             boundaries,
