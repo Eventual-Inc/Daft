@@ -9,7 +9,8 @@ from transformers import AutoConfig
 
 from daft import DataType
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
-from daft.ai.typing import EmbeddingDimensions, Options
+from daft.ai.typing import EmbeddingDimensions, Options, UDFOptions
+from daft.ai.utils import get_gpu_udf_options
 
 if TYPE_CHECKING:
     from daft.ai.typing import Embedding
@@ -32,6 +33,9 @@ class SentenceTransformersTextEmbedderDescriptor(TextEmbedderDescriptor):
     def get_dimensions(self) -> EmbeddingDimensions:
         dimensions = AutoConfig.from_pretrained(self.model, trust_remote_code=True).hidden_size
         return EmbeddingDimensions(size=dimensions, dtype=DataType.float32())
+
+    def get_udf_options(self) -> UDFOptions:
+        return get_gpu_udf_options()
 
     def instantiate(self) -> TextEmbedder:
         return SentenceTransformersTextEmbedder(self.model, **self.options)

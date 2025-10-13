@@ -1,10 +1,53 @@
 use std::sync::Arc;
 
 use common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
+use daft_core::python::PySchema;
 use daft_micropartition::python::PyMicroPartition;
 use pyo3::prelude::*;
 
-use crate::{DaftContext, subscribers};
+use crate::{DaftContext, subscribers, subscribers::QueryMetadata};
+
+#[pyclass(frozen)]
+#[derive(Clone)]
+pub struct PyQueryMetadata(pub(crate) Arc<QueryMetadata>);
+
+#[pymethods]
+impl PyQueryMetadata {
+    #[new]
+    #[pyo3(signature = (output_schema, unoptimized_plan))]
+    fn __new__(output_schema: PySchema, unoptimized_plan: &str) -> Self {
+        Self(Arc::new(QueryMetadata {
+            output_schema: output_schema.into(),
+            unoptimized_plan: unoptimized_plan.into(),
+        }))
+    }
+    #[getter]
+    pub fn output_schema(&self) -> PySchema {
+        self.0.output_schema.clone().into()
+    }
+    #[getter]
+    pub fn unoptimized_plan(&self) -> String {
+        self.0.unoptimized_plan.to_string()
+    }
+}
+
+impl From<Arc<QueryMetadata>> for PyQueryMetadata {
+    fn from(metadata: Arc<QueryMetadata>) -> Self {
+        Self(metadata)
+    }
+}
+
+impl From<PyQueryMetadata> for Arc<QueryMetadata> {
+    fn from(metadata: PyQueryMetadata) -> Self {
+        metadata.0
+    }
+}
+
+impl<'a> From<&'a PyQueryMetadata> for &'a Arc<QueryMetadata> {
+    fn from(ctx: &'a PyQueryMetadata) -> Self {
+        &ctx.0
+    }
+}
 
 #[pyclass(frozen)]
 pub struct PyDaftContext {
@@ -67,12 +110,12 @@ impl PyDaftContext {
     pub fn notify_query_start(
         &self,
         py: Python,
-        query_id: &str,
-        unoptimized_plan: &str,
+        query_id: String,
+        metadata: PyQueryMetadata,
     ) -> PyResult<()> {
         py.allow_threads(|| {
             self.inner
-                .notify_query_start(query_id.into(), unoptimized_plan.into())
+                .notify_query_start(query_id.into(), metadata.into())
         })?;
         Ok(())
     }

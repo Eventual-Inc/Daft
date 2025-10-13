@@ -6,7 +6,7 @@ use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotSend, ops::NodeInfo
 use daft_micropartition::MicroPartitionRef;
 use dashmap::DashMap;
 
-use crate::subscribers::Subscriber;
+use crate::subscribers::{QueryMetadata, Subscriber};
 
 #[derive(Debug)]
 pub struct DebugSubscriber {
@@ -23,10 +23,11 @@ impl DebugSubscriber {
 
 #[async_trait]
 impl Subscriber for DebugSubscriber {
-    fn on_query_start(&self, query_id: &QueryID, unoptimized_plan: QueryPlan) -> DaftResult<()> {
+    fn on_query_start(&self, query_id: &QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()> {
         eprintln!(
             "Started query `{}` with unoptimized plan:\n{}",
-            query_id, unoptimized_plan
+            query_id,
+            metadata.unoptimized_plan.as_ref()
         );
         self.rows_out.insert(query_id.clone(), 0);
         Ok(())

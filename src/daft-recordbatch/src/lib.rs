@@ -549,7 +549,7 @@ impl RecordBatch {
         &self.columns
     }
 
-    pub fn append_column(&self, series: Series) -> DaftResult<Self> {
+    pub fn append_column(&self, new_schema: SchemaRef, series: Series) -> DaftResult<Self> {
         if self.num_rows != series.len() {
             return Err(DaftError::ValueError(format!(
                 "Cannot append column to RecordBatch of length {} with column of length {}",
@@ -557,9 +557,6 @@ impl RecordBatch {
                 series.len()
             )));
         }
-
-        let mut new_schema = self.schema.as_ref().clone();
-        new_schema.append(Field::new(series.name(), series.data_type().clone()));
 
         let mut new_columns = self.columns.as_ref().clone();
         new_columns.push(series);
@@ -668,7 +665,7 @@ impl RecordBatch {
         }
     }
 
-    fn eval_expression(&self, expr: &BoundExpr) -> DaftResult<Series> {
+    pub fn eval_expression(&self, expr: &BoundExpr) -> DaftResult<Series> {
         let expected_field = expr.inner().to_field(self.schema.as_ref())?;
         let series = match expr.as_ref() {
             Expr::Alias(child, name) => Ok(self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?.rename(name)),
@@ -779,7 +776,7 @@ impl RecordBatch {
             },
             Expr::ScalarFn(ScalarFn::Python(python_udf)) => {
                 let args = python_udf.args().iter().map(|expr| self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))).collect::<DaftResult<Vec<_>>>()?;
-                python_udf.call(args.as_slice()).map(|(s,_)| s)
+                python_udf.call(args.as_slice())
             }
             Expr::Subquery(_subquery) => Err(DaftError::ComputeError(
                 "Subquery should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
@@ -1088,7 +1085,7 @@ impl RecordBatch {
 
     pub fn from_ipc_stream(buffer: &[u8]) -> DaftResult<Self> {
         let mut cursor = Cursor::new(buffer);
-        let stream_metadata = arrow2::io::ipc::read::read_stream_metadata(&mut cursor).unwrap();
+        let stream_metadata = arrow2::io::ipc::read::read_stream_metadata(&mut cursor)?;
         let schema = Arc::new(Schema::from(stream_metadata.schema.clone()));
         let reader = arrow2::io::ipc::read::StreamReader::new(cursor, stream_metadata, None);
 

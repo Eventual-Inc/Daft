@@ -1,42 +1,41 @@
 import { clsx, ClassValue } from "clsx";
-import { Geist } from "next/font/google";
+import { Geist_Mono } from "next/font/google";
 import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]) {
-    return twMerge(clsx(inputs));
+  return twMerge(clsx(inputs));
 }
 
-export const main = Geist({
-    subsets: ["latin"],
+export const main = Geist_Mono({
+  subsets: ["latin"],
 });
 
-export function toDate(serialized_time: string): Date {
-    return new Date(Date.parse(serialized_time));
-};
-
-export function toHumanReadableDate(serialized_time: string): string {
-    return toDate(serialized_time).toLocaleTimeString();
+export function toDate(epoch_time_secs: number): Date {
+  return new Date(epoch_time_secs * 1000);
 }
 
-export function delta(start: string, end: string): string {
-    const startDate = toDate(start);
-    const endDate = toDate(end);
+export function toHumanReadableDate(epoch_time_secs: number): string {
+  return toDate(epoch_time_secs).toLocaleTimeString();
+}
 
-    const startTime = startDate.getTime();
-    const endTime = endDate.getTime();
+export function toHumanReadableDuration(duration_sec: number): string {
+  let working_sec = duration_sec;
 
-    /// Ideally, this case should never arise.
-    if (startTime > endTime) return "n/a";
+  const days = Math.floor(working_sec / 86400);
+  working_sec = working_sec - days * 86400;
+  const hours = Math.floor(working_sec / 3600);
+  working_sec = working_sec - hours * 3600;
+  const minutes = Math.floor(working_sec / 60);
+  working_sec = working_sec - minutes * 60;
+  const seconds = working_sec;
 
-    let deltaMilliseconds = endTime - startTime;
-
-    const hours = Math.floor(deltaMilliseconds / (3600 * 1000));
-    deltaMilliseconds = deltaMilliseconds - (hours * (3600 * 1000));
-
-    const minutes = Math.floor(deltaMilliseconds / (60 * 1000));
-    deltaMilliseconds = deltaMilliseconds - (minutes * (60 * 1000));
-
-    const seconds = deltaMilliseconds / 1000;
-
+  if (duration_sec < 60) {
+    return `${seconds}s`;
+  } else if (duration_sec < 3600) {
+    return `${minutes}m ${seconds}s`;
+  } else if (duration_sec < 86400) {
     return `${hours}h ${minutes}m ${seconds}s`;
+  } else {
+    return `${days}d ${hours}h ${minutes}m ${seconds}s`;
+  }
 }

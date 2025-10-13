@@ -513,7 +513,7 @@ Now that you have a basic sense of Daft's functionality and features, here are s
 
 !!! tip "Try this on Kubernetes"
 
-    Want to run this example on Kubernetes? Check out our [Kubernetes quickstart](kubernetes.md).
+    Want to run this example on Kubernetes? Check out our [Kubernetes quickstart](distributed/kubernetes.md).
 
 **Work with your favorite table and catalog formats**:
 

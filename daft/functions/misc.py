@@ -18,7 +18,7 @@ def monotonically_increasing_id() -> Expression:
     in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and 2^36 ≈ 68 billion rows per partition.
 
     Returns:
-        Expression: An expression that generates monotonically increasing IDs
+        Expression (UInt64 Expression): An expression that generates monotonically increasing IDs
 
     Examples:
         >>> import daft
@@ -58,7 +58,7 @@ def eq_null_safe(left: Expression, right: Expression) -> Expression:
     - Behaves like regular equality for non-NULL values
 
     Returns:
-        Expression: A boolean expression indicating if the values are equal
+        Expression (Boolean Expression): A boolean expression indicating if the values are equal
     """
     left = Expression._to_expression(left)
     right = Expression._to_expression(right)
@@ -68,39 +68,12 @@ def eq_null_safe(left: Expression, right: Expression) -> Expression:
 def cast(expr: Expression, dtype: DataTypeLike) -> Expression:
     """Casts an expression to the given datatype if possible.
 
-    The following combinations of datatype casting is valid:
-
-    | Target →           | Null | Boolean | Integers | Floats | Decimal128 | String | Binary | Fixed-size Binary | Image | Fixed-shape Image | Embedding | Tensor | Fixed-shape Tensor | Python | List | Fixed-size List | Struct | Map | Timestamp | Date | Time | Duration |
-    | ------------------ | ---- | ------- | -------- | ------ | ---------- | ------ | ------ | ----------------- | ----- | ----------------- | --------- | ------ | ------------------ | ------ | ---- | --------------- | ------ | --- | --------- | ---- | ---- | -------- |
-    | **Source ↓**       |
-    | Null               | Y    | Y       | Y        | Y      | Y          | Y      | Y      | Y                 | N     | N                 | Y         | N      | N                  | Y      | Y    | Y               | Y      | Y   | Y         | Y    | Y    | Y        |
-    | Boolean            | Y    | Y       | Y        | Y      | N          | Y      | Y      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | N         | N    | N    | N        |
-    | Integers           | Y    | Y       | Y        | Y      | Y          | Y      | Y      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | Y         | Y    | Y    | Y        |
-    | Floats             | Y    | Y       | Y        | Y      | Y          | Y      | Y      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | M               | N      | N   | Y         | Y    | Y    | Y        |
-    | Decimal128         | Y    | N       | Y        | Y      | Y          | N      | N      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | N         | N    | N    | N        |
-    | String             | Y    | N       | Y        | Y      | N          | Y      | Y      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | Y         | Y    | N    | N        |
-    | Binary             | Y    | N       | Y        | Y      | N          | Y      | Y      | Y                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | N         | N    | N    | N        |
-    | Fixed-size Binary  | Y    | N       | N        | N      | N          | N      | Y      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | N         | N    | N    | N        |
-    | Image              | N    | N       | N        | N      | N          | N      | N      | N                 | Y     | Y                 | N         | Y      | Y                  | Y      | N    | N               | Y      | N   | N         | N    | N    | N        |
-    | Fixed-size Image   | N    | N       | N        | N      | N          | N      | N      | N                 | Y     | Y                 | N         | Y      | Y                  | Y      | Y    | Y               | N      | N   | N         | N    | N    | N        |
-    | Embedding          | Y    | N       | N        | N      | N          | N      | N      | N                 | N     | Y                 | N         | Y      | Y                  | Y      | Y    | Y               | N      | N   | N         | N    | N    | N        |
-    | Tensor             | Y    | N       | N        | N      | N          | N      | N      | N                 | Y     | Y                 | N         | Y      | Y                  | Y      | N    | N               | Y      | N   | N         | N    | N    | N        |
-    | Fixed-shape Tensor | N    | N       | N        | N      | N          | N      | N      | N                 | N     | Y                 | N         | Y      | Y                  | Y      | Y    | Y               | N      | N   | N         | N    | N    | N        |
-    | Python             | Y    | Y       | Y        | Y      | N          | Y      | Y      | Y                 | Y     | Y                 | Y         | Y      | Y                  | Y      | Y    | Y               | Y      | N   | N         | N    | N    | N        |
-    | List               | N    | N       | N        | N      | N          | N      | N      | N                 | N     | N                 | Y         | N      | N                  | N      | Y    | Y               | N      | Y   | N         | N    | N    | N        |
-    | Fixed-size List    | N    | N       | N        | N      | N          | N      | N      | N                 | N     | Y                 | N         | N      | Y                  | N      | Y    | Y               | N      | N   | N         | N    | N    | N        |
-    | Struct             | N    | N       | N        | N      | N          | N      | N      | N                 | Y     | N                 | N         | Y      | N                  | N      | N    | N               | Y      | N   | N         | N    | N    | N        |
-    | Map                | N    | N       | N        | N      | N          | N      | N      | N                 | N     | N                 | Y         | N      | N                  | N      | Y    | Y               | N      | Y   | N         | N    | N    | N        |
-    | Timestamp          | Y    | N       | Y        | Y      | N          | Y      | N      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | Y         | Y    | Y    | N        |
-    | Date               | Y    | N       | Y        | Y      | N          | Y      | N      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | Y         | Y    | N    | N        |
-    | Time               | Y    | N       | Y        | Y      | N          | Y      | N      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | N         | N    | Y    | N        |
-    | Duration           | Y    | N       | Y        | Y      | N          | N      | N      | N                 | N     | N                 | N         | N      | N                  | Y      | N    | N               | N      | N   | N         | N    | N    | N        |
+    See the [casting matrix](https://docs.daft.ai/en/stable/api/datatypes/casting/) for supported casts.
 
     Returns:
         Expression: Expression with the specified new datatype
 
     Note:
-        - Overflowing values will be wrapped, e.g. 256 will be cast to 0 for an unsigned 8-bit integer.
         - If a string is provided, it will use the sql engine to parse the string into a data type. See the [SQL Reference](https://docs.daft.ai/en/stable/sql/datatypes/) for supported datatypes.
         - a python `type` can also be provided, in which case the corresponding Daft data type will be used.
 
@@ -160,7 +133,7 @@ def is_null(expr: Expression) -> Expression:
     """Checks if values in the Expression are Null (a special value indicating missing data).
 
     Returns:
-        Expression: Boolean Expression indicating whether values are missing
+        Expression (Boolean Expression): expression indicating whether values are missing
 
     Examples:
         >>> import daft
@@ -192,7 +165,7 @@ def not_null(expr: Expression) -> Expression:
     """Checks if values in the Expression are not Null (a special value indicating missing data).
 
     Returns:
-        Expression: Boolean Expression indicating whether values are not missing
+        Expression (Boolean Expression): expression indicating whether values are not missing
 
     Examples:
         >>> import daft
@@ -257,7 +230,7 @@ def is_in(expr: Expression, other: Any) -> Expression:
     """Checks if values in the Expression are in the provided list.
 
     Returns:
-        Expression: Boolean Expression indicating whether values are in the provided list
+        Expression (Boolean Expression): expression indicating whether values are in the provided list
 
     Examples:
         >>> import daft
@@ -307,6 +280,9 @@ def hash(
         seed (optional): Seed used for generating the hash. Defaults to 0.
         hash_function (optional): Hash function to use. One of "xxhash", "murmurhash3", or "sha1". Defaults to "xxhash".
 
+    Returns:
+        Expression (UInt64 Expression): The hashed expression.
+
     Note:
         Null values will produce a hash value instead of being propagated as null.
 
@@ -321,7 +297,7 @@ def hash(
 
 
 def minhash(
-    expr: Expression,
+    text: Expression,
     *,
     num_hashes: int,
     ngram_size: int,
@@ -338,20 +314,27 @@ def minhash(
     to normalize the strings yourself.
 
     Args:
-        expr: The expression to hash.
-        num_hashes: The number of hash permutations to compute.
-        ngram_size: The number of tokens in each shingle/ngram.
-        seed (optional): Seed used for generating permutations and the initial string hashes. Defaults to 1.
-        hash_function (optional): Hash function to use for initial string hashing. One of "murmurhash3", "xxhash", or "sha1". Defaults to "murmurhash3".
+        text (String Expression): expression to hash.
+        num_hashes (int): The number of hash permutations to compute.
+        ngram_size (int): The number of tokens in each shingle/ngram.
+        seed (int, default=1): Seed used for generating permutations and the initial string hashes. Defaults to 1.
+        hash_function (str, default="murmurhash3"): Hash function to use for initial string hashing. One of "murmurhash3", "xxhash", or "sha1". Defaults to "murmurhash3".
+
+    Returns:
+        Expression (FixedSizedList[UInt32, num_hashes] Expression):
+            expression representing the MinHash values.
 
     """
     return Expression._call_builtin_scalar_fn(
-        "minhash", expr, num_hashes=num_hashes, ngram_size=ngram_size, seed=seed, hash_function=hash_function
+        "minhash", text, num_hashes=num_hashes, ngram_size=ngram_size, seed=seed, hash_function=hash_function
     )
 
 
 def length(expr: Expression) -> Expression:
     """Retrieves the length of the given expression.
+
+    Args:
+        expr (List or Binary or String Expression): expression to compute the length of.
 
     The behavior depends on the input type:
     - For strings, returns the number of characters.
@@ -359,7 +342,7 @@ def length(expr: Expression) -> Expression:
     - For lists, returns the number of elements.
 
     Returns:
-        Expression: an UInt64 expression with the length
+        Expression (UInt64 Expression): an expression with the length
 
     Examples:
         String length:
@@ -424,6 +407,10 @@ def length(expr: Expression) -> Expression:
 
 def concat(left: Expression | str | bytes, right: Expression | str | bytes) -> Expression:
     r"""Concatenates two string or binary values.
+
+    Args:
+        left ((String or Binary Expression) | str | bytes): the left value to concatenate
+        right ((String or Binary Expression) | str | bytes): the right value to concatenate
 
     Returns:
         Expression: an expression with the same type as the inputs
@@ -514,7 +501,7 @@ def get(expr: Expression, key: int | str | Expression, default: Any = None) -> E
     """Get an index from a list expression or a field from a struct expression.
 
     Args:
-        expr: list or struct expression to get value from
+        expr (List or Struct Expression): to get value from
         key: integer index for list or string field for struct. List index can be negative to index from the end of the list.
         default: default value if out of bounds. Only supported for list get
 

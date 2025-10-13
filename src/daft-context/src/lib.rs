@@ -15,6 +15,7 @@ use daft_micropartition::MicroPartitionRef;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
+use crate::subscribers::QueryMetadata;
 pub use crate::subscribers::Subscriber;
 
 #[derive(Debug, Default)]
@@ -122,11 +123,11 @@ impl DaftContext {
     pub fn notify_query_start(
         &self,
         query_id: QueryID,
-        unoptimized_plan: QueryPlan,
+        metadata: Arc<QueryMetadata>,
     ) -> DaftResult<()> {
         self.with_state(|state| {
             for subscriber in state.subscribers.values() {
-                subscriber.on_query_start(&query_id, unoptimized_plan.clone())?;
+                subscriber.on_query_start(&query_id, metadata.clone())?;
             }
             Ok::<(), DaftError>(())
         })
@@ -211,5 +212,6 @@ pub fn get_context() -> DaftContext {
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::get_context, parent)?)?;
     parent.add_class::<python::PyDaftContext>()?;
+    parent.add_class::<python::PyQueryMetadata>()?;
     Ok(())
 }

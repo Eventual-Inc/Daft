@@ -95,6 +95,12 @@ dev = [
   "tiktoken==0.9.0",
   "duckdb==1.1.2",
   "datasets==4.0.0",
+  "torch>=2.5.1",
+  "torchvision>=0.20.1",
+  "tensorflow>=2.18.1",
+  "tf-keras>=2.18.0",
+  "jax>=0.4.30",
+  "jaxtyping>=0.2.36",
   # Pyarrow
   "pyarrow==20.0.0",
   "pyarrow-stubs==19.4",
@@ -140,6 +146,8 @@ dev = [
   # AI
   "vllm; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
   "openai==1.100",
+  # AV
+  "av==15.0.0",
   # Clickhouse
   "clickhouse-connect",
   # mcap

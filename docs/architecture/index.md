@@ -74,7 +74,7 @@ The Flotilla scheduler runs on the head node and distributes tasks across worker
 
 !!! tip "Controlling partitioning"
 
-    See our [Partitioning Guide](../optimization/partitioning.md) to learn how to control the number and distribution of partitions in your DataFrame
+    See our [Partitioning and Batching guide](../optimization/partitioning.md) to learn how to control the number and distribution of partitions in your DataFrame
 
 
 Each worker receives tasks and executes them using the Swordfish streaming engine with full access to the machine's resources. Outputs of the tasks are written to Ray's object store, and can be moved between workers for global operations like groupbys and joins.

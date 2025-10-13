@@ -73,6 +73,10 @@ impl PushDownShard {
                             SourceInfo::InMemory(_) => Err(DaftError::ValueError(
                                 "Sharding is not supported for in-memory sources".to_string(),
                             )),
+                            // Shard pushdown is not supported for glob scan sources.
+                            SourceInfo::GlobScan(_) => Err(DaftError::ValueError(
+                                "Sharding is not supported for glob scan sources".to_string(),
+                            )),
                             // If there are multiple shards, throw an error.
                             SourceInfo::Physical(external_info)
                                 if external_info.pushdowns.sharder.is_some() =>

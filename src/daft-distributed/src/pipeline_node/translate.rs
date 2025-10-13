@@ -7,11 +7,11 @@ use common_scan_info::ScanState;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
-    resolved_col,
+    is_partition_compatible, resolved_col,
 };
 use daft_logical_plan::{
     LogicalPlan, LogicalPlanRef, SourceInfo,
-    partitioning::{HashRepartitionConfig, RepartitionSpec},
+    partitioning::{ClusteringSpec, HashRepartitionConfig, RepartitionSpec},
 };
 use daft_physical_plan::extract_agg_expr;
 use daft_schema::schema::Schema;
@@ -19,8 +19,9 @@ use daft_schema::schema::Schema;
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, concat::ConcatNode, distinct::DistinctNode,
-        explode::ExplodeNode, filter::FilterNode, in_memory_source::InMemorySourceNode,
-        into_batches::IntoBatchesNode, into_partitions::IntoPartitionsNode, limit::LimitNode,
+        explode::ExplodeNode, filter::FilterNode, glob_scan_source::GlobScanSourceNode,
+        in_memory_source::InMemorySourceNode, into_batches::IntoBatchesNode,
+        into_partitions::IntoPartitionsNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, pivot::PivotNode,
         project::ProjectNode, sample::SampleNode, scan_source::ScanSourceNode, sink::SinkNode,
         sort::SortNode, top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode, window::WindowNode,
@@ -99,6 +100,16 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         )
                         .into_node()
                     }
+                    SourceInfo::GlobScan(info) => GlobScanSourceNode::new(
+                        self.get_next_pipeline_node_id(),
+                        &self.plan_config,
+                        info.glob_paths.clone(),
+                        info.pushdowns.clone(),
+                        source.output_schema.clone(),
+                        logical_node_id,
+                        info.io_config.clone().map(|c| *c),
+                    )
+                    .into_node(),
                     SourceInfo::PlaceHolder(_) => unreachable!(
                         "PlaceHolder should not be present in the logical plan for pipeline node translation"
                     ),
@@ -110,7 +121,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     let projection = udf
                         .passthrough_columns
                         .iter()
-                        .chain(std::iter::once(&udf.project.clone()))
+                        .chain(std::iter::once(&udf.expr))
                         .cloned()
                         .collect::<Vec<_>>();
                     let projection =
@@ -132,7 +143,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 }
             }
             LogicalPlan::UDFProject(udf) => {
-                let project = BoundExpr::try_new(udf.project.clone(), &udf.input.schema())?;
+                let expr = BoundExpr::try_new(udf.expr.clone(), &udf.input.schema())?;
                 let passthrough_columns =
                     BoundExpr::bind_all(&udf.passthrough_columns, &udf.input.schema())?;
 
@@ -140,9 +151,9 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     self.get_next_pipeline_node_id(),
                     logical_node_id,
                     &self.plan_config,
-                    project,
-                    passthrough_columns,
+                    expr,
                     udf.udf_properties.clone(),
+                    passthrough_columns,
                     node.schema(),
                     self.curr_node.pop().unwrap(),
                 )
@@ -318,39 +329,71 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         .collect::<Vec<_>>()
                 });
                 let columns = BoundExpr::bind_all(&columns, &distinct.input.schema())?;
+                let input_node = self.curr_node.pop().unwrap();
 
-                // First stage: Initial local distinct to reduce the dataset
-                let initial_distinct = DistinctNode::new(
-                    self.get_next_pipeline_node_id(),
-                    logical_node_id,
-                    &self.plan_config,
-                    columns.clone(),
-                    distinct.input.schema(),
-                    self.curr_node.pop().unwrap(),
-                )
-                .into_node();
+                // Check if we can elide the repartition
+                let input_clustering_spec = &input_node.config().clustering_spec;
+                // If there is only one partition, or the input is already partitioned by the distinct columns,
+                // then we can just do a single stage distinct and skip the shuffle.
+                let is_hash_partitioned_by_columns =
+                    matches!(input_clustering_spec.as_ref(), ClusteringSpec::Hash(_))
+                        && !columns.is_empty()
+                        && is_partition_compatible(
+                            BoundExpr::bind_all(
+                                &input_clustering_spec.partition_by(),
+                                &input_node.config().schema,
+                            )?
+                            .iter()
+                            .map(|e| e.inner()),
+                            columns.iter().map(|e| e.inner()),
+                        );
 
-                // Second stage: Repartition to distribute the dataset
-                let repartition = self.gen_shuffle_node(
-                    logical_node_id,
-                    RepartitionSpec::Hash(HashRepartitionConfig::new(
-                        None,
-                        columns.clone().into_iter().map(|e| e.into()).collect(),
-                    )),
-                    distinct.input.schema(),
-                    initial_distinct,
-                )?;
+                if input_clustering_spec.num_partitions() == 1 || is_hash_partitioned_by_columns {
+                    // Single partition or already properly partitioned - skip shuffle
+                    DistinctNode::new(
+                        self.get_next_pipeline_node_id(),
+                        logical_node_id,
+                        &self.plan_config,
+                        columns,
+                        distinct.input.schema(),
+                        input_node,
+                    )
+                    .into_node()
+                } else {
+                    // Need full 2-stage distinct with shuffle
+                    // First stage: Initial local distinct to reduce the dataset
+                    let initial_distinct = DistinctNode::new(
+                        self.get_next_pipeline_node_id(),
+                        logical_node_id,
+                        &self.plan_config,
+                        columns.clone(),
+                        distinct.input.schema(),
+                        input_node,
+                    )
+                    .into_node();
 
-                // Last stage: Redo the distinct to get the final result
-                DistinctNode::new(
-                    self.get_next_pipeline_node_id(),
-                    logical_node_id,
-                    &self.plan_config,
-                    columns,
-                    distinct.input.schema(),
-                    repartition,
-                )
-                .into_node()
+                    // Second stage: Repartition to distribute the dataset
+                    let repartition = self.gen_shuffle_node(
+                        logical_node_id,
+                        RepartitionSpec::Hash(HashRepartitionConfig::new(
+                            None,
+                            columns.clone().into_iter().map(|e| e.into()).collect(),
+                        )),
+                        distinct.input.schema(),
+                        initial_distinct,
+                    )?;
+
+                    // Last stage: Redo the distinct to get the final result
+                    DistinctNode::new(
+                        self.get_next_pipeline_node_id(),
+                        logical_node_id,
+                        &self.plan_config,
+                        columns,
+                        distinct.input.schema(),
+                        repartition,
+                    )
+                    .into_node()
+                }
             }
             LogicalPlan::Window(window) => {
                 let partition_by =

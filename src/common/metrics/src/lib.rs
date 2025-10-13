@@ -23,6 +23,7 @@ pub type QueryPlan = Arc<str>;
 pub type NodeID = usize;
 
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "value")]
 pub enum Stat {
     // Integer Representations
     Count(u64),

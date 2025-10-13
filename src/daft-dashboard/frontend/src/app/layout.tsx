@@ -1,68 +1,40 @@
 "use client";
 
-import { AppSidebar } from "@/components/app-sidebar";
-import {
-    Breadcrumb,
-    BreadcrumbItem,
-    BreadcrumbList,
-    BreadcrumbPage,
-    BreadcrumbSeparator,
-    BreadcrumbLink,
-} from "@/components/ui/breadcrumb";
-import { Separator } from "@/components/ui/separator";
-import {
-    SidebarInset,
-    SidebarProvider,
-    SidebarTrigger,
-} from "@/components/ui/sidebar";
+import { AppSidebar } from "@/components/sidebar/app-sidebar";
 import "./globals.css";
-import { usePathname } from "next/navigation";
+import { ServerProvider } from "@/components/server-provider";
 import { main } from "@/lib/utils";
 import React from "react";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-    const pathSegments = usePathname().split("/").filter(segment => segment);
-
-    return (
-        <html lang="en">
-            <body className={`${main.className} font-light antialiased`}>
-                <SidebarProvider>
-                    <AppSidebar />
-                    <SidebarInset>
-                        <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
-                            <SidebarTrigger className="-ml-1" />
-                            <Separator orientation="vertical" className="mr-2 h-4" />
-                            <Breadcrumb>
-                                <BreadcrumbList>
-                                    {
-                                        pathSegments.map((pathSegment, index) => (
-                                            index === (pathSegments.length - 1) ?
-                                                <BreadcrumbItem key={index}>
-                                                    <BreadcrumbPage className="capitalize">{pathSegment}</BreadcrumbPage>
-                                                </BreadcrumbItem>
-                                                :
-                                                <div key={index} className="flex flex-row items-center gap-3">
-                                                    <BreadcrumbItem>
-                                                        <BreadcrumbLink
-                                                            className="capitalize text-gray-500"
-                                                            href={`/${pathSegments.slice(0, index - 1).join("/")}`}
-                                                        >
-                                                            {pathSegment}
-                                                        </BreadcrumbLink>
-                                                    </BreadcrumbItem>
-                                                    <BreadcrumbSeparator className="hidden md:block" />
-                                                </div>
-                                        ))
-                                    }
-                                </BreadcrumbList>
-                            </Breadcrumb>
-                        </header>
-                        <div className="p-[20px]">
-                            {children}
-                        </div>
-                    </SidebarInset>
-                </SidebarProvider>
-            </body>
-        </html>
-    );
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en">
+      <body
+        className={`${main.className} font-light antialiased w-screen h-screen`}
+      >
+        <ServerProvider>
+          <ResizablePanelGroup direction="horizontal">
+            <ResizablePanel defaultSize={15} minSize={10} maxSize={40}>
+              <AppSidebar />
+            </ResizablePanel>
+            <ResizableHandle withHandle className="bg-zinc-700" />
+            <ResizablePanel defaultSize={85} minSize={50} maxSize={90}>
+              <main className="w-full h-full overflow-auto">
+                <div className="p-[20px]">{children}</div>
+              </main>
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </ServerProvider>
+      </body>
+    </html>
+  );
 }

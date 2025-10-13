@@ -1,5 +1,6 @@
 use common_error::{DaftResult, ensure};
 use daft_core::{
+    datatypes::try_sum_supertype,
     prelude::{Field, Schema},
     series::Series,
 };
@@ -32,8 +33,9 @@ impl ScalarUDF for ListSum {
     ) -> DaftResult<Field> {
         ensure!(inputs.len() == 1, SchemaMismatch: "Expected 1 input arg, got {}", inputs.len());
         let input = inputs.required((0, "input"))?;
-        let field = input.to_field(schema)?.to_exploded_field()?;
+        let mut field = input.to_field(schema)?.to_exploded_field()?;
         ensure!(field.dtype.is_numeric(), TypeError: "Expected input to be numeric, got {}", field.dtype);
+        field.dtype = try_sum_supertype(&field.dtype)?;
         Ok(field)
     }
 }
