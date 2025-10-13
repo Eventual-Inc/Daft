@@ -135,7 +135,7 @@ pub fn udf(
 
 /// Generates a ResourceRequest by inspecting an iterator of expressions.
 /// Looks for ResourceRequests on UDFs in each expression presented, and merges ResourceRequests across all expressions.
-// TODO: Remove with the old Ray Runner
+// TODO: Double-check if this is still needed with projects in Flotilla
 pub fn get_resource_request<'a, E: Into<&'a ExprRef>>(
     exprs: impl IntoIterator<Item = E>,
 ) -> Option<ResourceRequest> {
@@ -174,31 +174,6 @@ pub fn get_resource_request<'a, E: Into<&'a ExprRef>>(
             merged_resource_requests.as_slice(),
         ))
     }
-}
-
-/// Get the names of all UDFs in expression
-// TODO: Remove with the old Ray Runner
-pub fn try_get_udf_name(expr: &ExprRef) -> Option<String> {
-    let mut udf_name = None;
-
-    expr.apply(|e| {
-        if let Expr::Function {
-            func: FunctionExpr::Python(LegacyPythonUDF { name, .. }),
-            ..
-        } = e.as_ref()
-        {
-            udf_name = Some(name.as_ref().clone());
-            return Ok(TreeNodeRecursion::Stop);
-        } else if let Expr::ScalarFn(ScalarFn::Python(py)) = e.as_ref() {
-            udf_name = Some(py.name().to_string());
-            return Ok(TreeNodeRecursion::Stop);
-        }
-
-        Ok(TreeNodeRecursion::Continue)
-    })
-    .unwrap();
-
-    udf_name
 }
 
 #[cfg(feature = "python")]

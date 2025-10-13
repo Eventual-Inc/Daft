@@ -275,14 +275,6 @@ pub fn initialize_udfs(expr: PyExpr) -> PyResult<PyExpr> {
     Ok(initialize_udfs(expr.expr)?.into())
 }
 
-/// Get the names of all UDFs in expression
-// TODO: Remove with the old Ray Runner
-#[pyfunction]
-pub fn try_get_udf_name(expr: PyExpr) -> Option<String> {
-    use crate::functions::python::try_get_udf_name;
-    try_get_udf_name(&expr.expr)
-}
-
 #[pyclass(module = "daft.daft")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyExpr {

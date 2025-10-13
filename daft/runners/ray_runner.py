@@ -12,7 +12,7 @@ import pyarrow as pa  # noqa: TID253
 import ray.experimental  # noqa: TID253
 
 from daft.arrow_utils import ensure_array
-from daft.context import execution_config_ctx, get_context
+from daft.context import get_context
 from daft.daft import DistributedPhysicalPlan
 from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
@@ -44,10 +44,8 @@ from daft.daft import (
     FileFormatConfig,
     FileInfos,
     IOConfig,
-    PyDaftExecutionConfig,
 )
 from daft.datatype import DataType
-from daft.expressions import ExpressionsProjection
 from daft.filesystem import glob_path_with_stats
 from daft.recordbatch import MicroPartition
 from daft.runners import runner_io
@@ -471,45 +469,6 @@ def _ray_num_cpus_provider(ttl_seconds: int = 1) -> Generator[int, None, None]:
             last_checked_time = currtime
             last_num_cpus_queried = int(ray.cluster_resources().get("CPU", 0))
             yield last_num_cpus_queried
-
-
-SCHEDULER_ACTOR_NAME = "scheduler"
-SCHEDULER_ACTOR_NAMESPACE = "daft"
-
-
-@ray.remote
-class DaftRayActor:
-    def __init__(
-        self, daft_execution_config: PyDaftExecutionConfig, uninitialized_projection: ExpressionsProjection
-    ) -> None:
-        from daft.daft import try_get_udf_name
-
-        self.daft_execution_config = daft_execution_config
-
-        logger.info(
-            "Initializing stateful UDFs: %s",
-            ", ".join(name for expr in uninitialized_projection if (name := try_get_udf_name(expr._expr)) is not None),
-        )
-        self.initialized_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
-
-    @ray.method(num_returns=2)  # type: ignore[misc]
-    def run(
-        self,
-        partial_metadatas: list[PartitionMetadata],
-        *inputs: MicroPartition,
-    ) -> list[list[PartitionMetadata] | MicroPartition]:
-        with execution_config_ctx(config=self.daft_execution_config):
-            assert len(inputs) == 1, "DaftRayActor can only process single partitions"
-            assert len(partial_metadatas) == 1, "DaftRayActor can only process single partitions (and single metadata)"
-            part = inputs[0]
-            partial = partial_metadatas[0]
-
-            new_part = part.eval_expression_list(self.initialized_projection)
-
-            return [
-                [PartitionMetadata.from_table(new_part).merge_with_partial(partial)],
-                new_part,
-            ]
 
 
 class RayRunner(Runner[ray.ObjectRef]):
