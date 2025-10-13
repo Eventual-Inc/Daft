@@ -30,7 +30,7 @@ pub enum NodeType {
     // Consumes all input MicroPartitions before producing 1-N outputs
     Aggregate,
     CommitWrite,
-    CrossJoinCollect,
+    JoinCollect,
     Dedup,
     GroupByAgg,
     HashJoinBuild,
@@ -53,6 +53,7 @@ pub enum NodeType {
     Limit,
     MonotonicallyIncreasingId,
     OuterHashJoinProbe,
+    SortMergeJoinProbe,
 }
 
 impl Display for NodeType {
