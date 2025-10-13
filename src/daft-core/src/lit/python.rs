@@ -8,7 +8,7 @@ use common_ndarray::NumpyArray;
 use daft_schema::{
     dtype::DataType,
     prelude::{ImageMode, TimeUnit},
-    python::PyTimeUnit,
+    python::{PyDataType, PyTimeUnit},
 };
 use indexmap::{IndexMap, indexmap};
 use pyo3::{
@@ -497,7 +497,7 @@ fn pydelta_to_duration_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
 
 fn pylist_to_list_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResult<Literal> {
     let list = ob.downcast::<PyList>()?;
-    let child_dtype = dtype.and_then(|t| match t.to_physical() {
+    let child_dtype = dtype.and_then(|t| match t {
         DataType::List(child) | DataType::FixedSizeList(child, _) => {
             Some(child.as_ref().clone().into())
         }
@@ -508,8 +508,7 @@ fn pylist_to_list_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResult<L
 }
 
 fn pydict_to_struct_lit(dict: &Bound<PyDict>, dtype: Option<&DataType>) -> PyResult<Literal> {
-    let physical = dtype.map(DataType::to_physical);
-    let field_dtypes = if let Some(DataType::Struct(fields)) = &physical {
+    let field_dtypes = if let Some(DataType::Struct(fields)) = dtype {
         fields.iter().map(|f| (&f.name, &f.dtype)).collect()
     } else {
         HashMap::new()
@@ -581,10 +580,29 @@ fn pytuple_to_struct_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResul
 }
 
 fn pydantic_model_to_struct_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResult<Literal> {
-    let dict = ob.call_method0(intern!(ob.py(), "model_dump"))?;
+    let py = ob.py();
+
+    // get richer dtype info from object type if dtype not specified
+    let dtype = if let Some(dtype) = dtype {
+        dtype.clone()
+    } else {
+        let datatype_cls = py
+            .import(intern!(py, "daft.datatype"))?
+            .getattr(intern!(py, "DataType"))?;
+        let py_dtype =
+            datatype_cls.call_method1(intern!(py, "infer_from_type"), (ob.get_type(),))?;
+        py_dtype
+            .getattr(intern!(py, "_dtype"))?
+            .extract::<PyDataType>()?
+            .dtype
+    };
+
+    println!("dtype: {:?}", dtype);
+
+    let dict = ob.call_method0(intern!(py, "model_dump"))?;
     let dict = dict.downcast::<PyDict>()?;
 
-    pydict_to_struct_lit(dict, dtype)
+    pydict_to_struct_lit(dict, Some(&dtype))
 }
 
 fn pydecimal_to_decimal_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {

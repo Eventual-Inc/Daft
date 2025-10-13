@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import decimal
+from typing import NamedTuple
 
 import jax
 import jaxtyping
@@ -61,6 +62,15 @@ class PydanticWithMixedTypes(BaseModel):
 
 class EmptyPydanticModel(BaseModel):
     pass
+
+
+class SimpleNamedTuple(NamedTuple):
+    foo: str
+    bar: int
+
+
+class PydanticWithNamedTuple(BaseModel):
+    values: SimpleNamedTuple
 
 
 @pytest.mark.parametrize(
@@ -139,6 +149,9 @@ class EmptyPydanticModel(BaseModel):
             ),
         ),
         (EmptyPydanticModel, dt.struct({})),
+        # TODO: uncomment once we support named tuples
+        # (SimpleNamedTuple, dt.struct({"foo": dt.string(), "bar": dt.int64()})),
+        # (PydanticWithNamedTuple, dt.struct({"values": dt.struct({"foo": dt.string(), "bar": dt.int64()})})),
     ],
 )
 def test_infer_from_type(user_provided_type, expected_datatype):
@@ -317,7 +330,7 @@ def test_infer_from_jaxtyping(dtype_class, expected_dtype, shape_spec, expected_
             dt.struct(
                 {
                     "numbers": dt.list(dt.int64()),
-                    "metadata": dt.struct({"key": dt.string()}),
+                    "metadata": dt.map(dt.string(), dt.string()),
                 }
             ),
         ),
@@ -326,11 +339,14 @@ def test_infer_from_jaxtyping(dtype_class, expected_dtype, shape_spec, expected_
             dt.struct(
                 {
                     "numbers": dt.list(dt.int64()),
-                    "metadata": dt.struct({"key": dt.string()}),
+                    "metadata": dt.map(dt.string(), dt.string()),
                 }
             ),
         ),
         (EmptyPydanticModel(), dt.struct({"": dt.null()})),
+        # TODO: uncomment once we support named tuples
+        # (SimpleNamedTuple(foo="1", bar=2), dt.struct({"foo": dt.string(), "bar": dt.int64()})),
+        # (PydanticWithNamedTuple(values=SimpleNamedTuple(foo="1", bar=2)), dt.struct({"values": dt.struct({"foo": dt.string(), "bar": dt.int64()})})),
     ],
 )
 def test_infer_from_object(user_provided_object, expected_datatype):
