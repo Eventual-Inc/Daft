@@ -269,7 +269,7 @@ def is_in(expr: Expression, other: Any) -> Expression:
 def hash(
     expr: Expression,
     seed: Any | None = None,
-    hash_function: Literal["xxhash", "xxhash32", "xxhash64", "xxhash3", "murmurhash3", "sha1"] | None = "xxhash",
+    hash_function: Literal["xxhash", "xxhash32", "xxhash64", "xxhash3_64", "murmurhash3", "sha1"] | None = "xxhash",
 ) -> Expression:
     """Hashes the values in the Expression.
 
@@ -278,7 +278,7 @@ def hash(
     Args:
         expr: The expression to hash.
         seed (optional): Seed used for generating the hash. Defaults to 0.
-        hash_function (optional): Hash function to use. One of "xxhash", "xxhash32", "xxhash64", "xxhash3", "murmurhash3", or "sha1". Defaults to "xxhash" (alias for "xxhash3").
+        hash_function (optional): Hash function to use. One of "xxhash" (alias for "xxhash3_64"), "xxhash32", "xxhash64", "xxhash3_64", "murmurhash3", or "sha1". Defaults to "xxhash" (alias for "xxhash3_64").
 
     Returns:
         Expression (UInt64 Expression): The hashed expression.

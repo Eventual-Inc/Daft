@@ -2713,7 +2713,6 @@ dependencies = [
  "serde",
  "snafu",
  "typetag",
- "xxhash-rust",
 ]
 
 [[package]]
