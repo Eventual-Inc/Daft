@@ -9,13 +9,13 @@ use axum::{
 };
 use common_metrics::QueryID;
 use futures::future::ok;
-use tokio::sync::broadcast;
+use tokio::sync::watch;
 use tokio_stream::{
     Stream, StreamExt as _,
     wrappers::{BroadcastStream, errors::BroadcastStreamRecvError},
 };
 
-use crate::state::{DashboardState, QueryInfo, QuerySummary, QueryUpdate};
+use crate::state::{DashboardState, QueryInfo, QuerySummary};
 
 /// Get the summaries of all queries
 /// Note, this is used for internal testing, not by the frontend
@@ -89,35 +89,61 @@ async fn subscribe_query_updates(
     let Some(query_info) = state.queries.get(&query_id) else {
         return Err(StatusCode::NOT_FOUND);
     };
-    let query_info = query_info.value();
+    let query_info = query_info.value().clone();
+    let operator_infos = HashMap::new();
 
-    let tx = state
-        .query_clients
-        .entry(query_id)
-        .or_insert_with(|| broadcast::Sender::new(512));
-    let rx = tx.subscribe();
-
-    let stream = BroadcastStream::new(rx).filter_map(|event| match event {
-        Ok((id, operator_info)) => {
-            let event_type = match operator_info {
-                QueryUpdate::OperatorInfo(_) => "operator_info",
-                QueryUpdate::QueryInfo(_) => "query_info",
-            };
-
-            let event = Event::default()
-                .id(id.to_string())
-                .event(event_type)
-                .data(serde_json::to_string(&operator_info).unwrap());
-            Some(Ok(event))
-        }
-        Err(BroadcastStreamRecvError::Lagged(_)) => None,
+    let tx = state.query_clients.entry(query_id).or_insert_with(|| {
+        (
+            watch::Sender::new(query_info.clone()),
+            watch::Sender::new(operator_infos),
+        )
     });
 
-    // Initial event with the current state
-    let stream = futures::stream::once(ok(Event::default()
-        .event("initial_state")
-        .data(serde_json::to_string(query_info).unwrap())))
-    .chain(stream);
+    let mut query_rx = tx.0.subscribe();
+    let mut operator_rx = tx.1.subscribe();
+    drop(tx);
+
+    let stream = async_stream::stream! {
+        yield Ok(Event::default()
+            .id("0")
+            .event("initial_state")
+            .data(serde_json::to_string(&query_info).unwrap()));
+
+        let mut counter = 1;
+        loop {
+            tokio::select! {
+                query_status = query_rx.changed() => {
+                    match query_status {
+                        Ok(()) => {
+                            let query_info = query_rx.borrow_and_update().clone();
+                            yield Ok(Event::default()
+                                .id(counter.to_string())
+                                .event("query_info")
+                                .data(serde_json::to_string(&query_info).unwrap()));
+                        }
+                        Err(_) => {
+                            break;
+                        }
+                    }
+                }
+                operator_status = operator_rx.changed() => {
+                    match operator_status {
+                        Ok(()) => {
+                            let operator_infos = operator_rx.borrow_and_update().clone();
+                            yield Ok(Event::default()
+                                .id(counter.to_string())
+                                .event("operator_info")
+                                .data(serde_json::to_string(&operator_infos).unwrap()));
+                        }
+                        Err(_) => {
+                            break;
+                        }
+                    }
+                }
+            }
+            counter += 1;
+        }
+    };
 
     Ok(Sse::new(stream).keep_alive(
         axum::response::sse::KeepAlive::new()

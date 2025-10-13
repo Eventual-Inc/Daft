@@ -56,7 +56,7 @@ function QueryPageInner() {
           "exec_info" in prev.state ? prev.state.exec_info : undefined;
         const data: Record<number, OperatorInfo> = JSON.parse(
           event.data
-        ).update;
+        );
 
         if (
           plan_info &&
@@ -174,17 +174,10 @@ function QueryPageInner() {
       {/* Scrollable Content Section */}
       <div className="flex-1">
         <Tabs
-          defaultValue="unoptimized-plan"
+          defaultValue="progress-table"
           className="w-full h-full flex flex-col"
         >
           <TabsList className="grid w-full grid-cols-4 flex-shrink-0">
-            <TabsTrigger value="unoptimized-plan">Unoptimized Plan</TabsTrigger>
-            <TabsTrigger
-              value="optimized-plan"
-              disabled={!("plan_info" in query.state)}
-            >
-              Optimized Plan
-            </TabsTrigger>
             <TabsTrigger
               value="progress-table"
               disabled={
@@ -195,18 +188,30 @@ function QueryPageInner() {
             >
               Progress Table
             </TabsTrigger>
+            <TabsTrigger
+              value="optimized-plan"
+              disabled={!("plan_info" in query.state)}
+            >
+              Optimized Plan
+            </TabsTrigger>
+            <TabsTrigger value="unoptimized-plan">Unoptimized Plan</TabsTrigger>
           </TabsList>
 
           <TabsContent
-            value="unoptimized-plan"
+            value="progress-table"
             className="mt-4 flex-1 overflow-auto"
           >
-            <div className="bg-zinc-900 p-4">
-              <pre
-                className={`${main.className} text-sm font-mono text-zinc-300 whitespace-pre-wrap`}
-              >
-                {query.unoptimized_plan}
-              </pre>
+            <div className="bg-zinc-900 h-full">
+              {query.state.status === "Pending" ||
+              query.state.status === "Optimizing" ? (
+                <div className="p-8 text-center">
+                  <p className={`${main.className} text-zinc-400`}>
+                    Execution not yet started
+                  </p>
+                </div>
+              ) : (
+                <ProgressTable exec_state={query.state as ExecutingState} />
+              )}
             </div>
           </TabsContent>
 
@@ -232,20 +237,15 @@ function QueryPageInner() {
           </TabsContent>
 
           <TabsContent
-            value="progress-table"
+            value="unoptimized-plan"
             className="mt-4 flex-1 overflow-auto"
           >
-            <div className="bg-zinc-900 h-full">
-              {query.state.status === "Pending" ||
-              query.state.status === "Optimizing" ? (
-                <div className="p-8 text-center">
-                  <p className={`${main.className} text-zinc-400`}>
-                    Execution not yet started
-                  </p>
-                </div>
-              ) : (
-                <ProgressTable exec_state={query.state as ExecutingState} />
-              )}
+            <div className="bg-zinc-900 p-4">
+              <pre
+                className={`${main.className} text-sm font-mono text-zinc-300 whitespace-pre-wrap`}
+              >
+                {query.unoptimized_plan}
+              </pre>
             </div>
           </TabsContent>
         </Tabs>

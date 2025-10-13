@@ -2595,6 +2595,7 @@ dependencies = [
 name = "daft-dashboard"
 version = "0.3.0-dev0"
 dependencies = [
+ "async-stream",
  "axum 0.8.4",
  "common-metrics",
  "daft-recordbatch",

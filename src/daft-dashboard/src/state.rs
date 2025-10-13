@@ -1,13 +1,16 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, LazyLock, atomic::AtomicUsize},
+    sync::{
+        Arc, LazyLock,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 use common_metrics::{NodeID, QueryID, QueryPlan, Stat, ops::NodeInfo};
 use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;
 use serde::Serialize;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -24,6 +27,8 @@ pub(crate) struct OperatorInfo {
     pub stats: HashMap<String, Stat>,
 }
 
+pub(crate) type OperatorInfos = HashMap<NodeID, OperatorInfo>;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct PlanInfo {
     pub plan_start_sec: u64,
@@ -34,7 +39,7 @@ pub(crate) struct PlanInfo {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ExecInfo {
     pub exec_start_sec: u64,
-    pub operators: HashMap<NodeID, OperatorInfo>,
+    pub operators: OperatorInfos,
     // TODO: Logs
 }
 
@@ -81,7 +86,7 @@ pub(crate) enum QueryState {
         exec_end_sec: u64,
         end_sec: u64,
         #[serde(skip_serializing)]
-        results: RecordBatch,
+        results: Option<RecordBatch>,
     },
 }
 
@@ -124,20 +129,13 @@ impl QueryInfo {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", content = "update")]
-pub(crate) enum QueryUpdate {
-    OperatorInfo(HashMap<NodeID, OperatorInfo>),
-    QueryInfo(QueryInfo),
-}
-
 #[derive(Debug)]
 pub(crate) struct DashboardState {
     // Mapping from query id to query info
     pub queries: DashMap<QueryID, QueryInfo>,
     pub dataframe_previews: DashMap<String, RecordBatch>,
     pub clients: broadcast::Sender<(usize, QuerySummary)>,
-    pub query_clients: DashMap<QueryID, broadcast::Sender<(usize, QueryUpdate)>>,
+    pub query_clients: DashMap<QueryID, (watch::Sender<QueryInfo>, watch::Sender<OperatorInfos>)>,
     pub event_counter: AtomicUsize,
 }
 
@@ -165,35 +163,26 @@ impl DashboardState {
 
     // -------------------- Updating Queries -------------------- //
 
-    pub fn ping_query(&self, query_id: QueryID) {
-        let id = self
-            .event_counter
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    pub fn ping_clients_on_query(&self, query_info: &QueryInfo) {
+        let id = self.event_counter.fetch_add(1, Ordering::SeqCst);
 
-        let info = self.queries.get(&query_id).expect("Query not found");
-        let info = info.value();
-
-        if let Some(query_client) = self.query_clients.get(&query_id) {
-            let _ = query_client.send((id, QueryUpdate::QueryInfo(info.clone())));
+        if let Some(query_client) = self.query_clients.get(&query_info.id) {
+            tracing::error!("Pinging clients on query");
+            let _ = query_client.0.send(query_info.clone());
         }
 
-        let _ = self.clients.send((id, info.summarize()));
+        let _ = self.clients.send((id, query_info.summarize()));
     }
 
-    pub fn ping_operator(&self, query_id: QueryID) {
-        let id = self
-            .event_counter
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-        if let Some(query_client) = self.query_clients.get(&query_id) {
-            let QueryState::Executing { exec_info, .. } =
-                &self.queries.get(&query_id).expect("Query not found").state
-            else {
+    pub fn ping_clients_on_operator(&self, query_info: &QueryInfo) {
+        let query_id = &query_info.id;
+        if let Some(query_client) = self.query_clients.get(query_id) {
+            let QueryState::Executing { exec_info, .. } = &query_info.state else {
                 panic!("Query is not executing");
             };
 
-            let operator_info = exec_info.operators.clone();
-            let _ = query_client.send((id, QueryUpdate::OperatorInfo(operator_info)));
+            let operator_infos = exec_info.operators.clone();
+            let _ = query_client.1.send(operator_infos);
         }
     }
 }

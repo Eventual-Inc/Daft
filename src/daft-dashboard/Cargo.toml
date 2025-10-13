@@ -1,4 +1,5 @@
 [dependencies]
+async-stream = "0.3"
 axum = "0.8"
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 common-metrics = {path = "../common/metrics", default-features = false}

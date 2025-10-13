@@ -148,6 +148,13 @@ impl Subscriber for DashboardSubscriber {
         let result = results
             .concat_or_get(io_stats)?
             .unwrap_or_else(|| RecordBatch::empty(Some(results.schema())));
+        let results_ipc = result.to_ipc_stream()?;
+        let results_ipc = if results_ipc.len() > 1024 * 1024 * 2 {
+            // 2MB, our dashboard cap
+            None
+        } else {
+            Some(results_ipc)
+        };
 
         self.runtime.block_on_current_thread(async {
             Self::handle_request(
@@ -155,7 +162,7 @@ impl Subscriber for DashboardSubscriber {
                     .post(format!("{}/engine/query/{}/end", self.url, query_id))
                     .json(&daft_dashboard::engine::FinalizeArgs {
                         end_sec,
-                        results: result.to_ipc_stream()?,
+                        results: results_ipc,
                     }),
             )
             .await?;
