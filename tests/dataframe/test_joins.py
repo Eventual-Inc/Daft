@@ -83,7 +83,6 @@ def test_joins(join_strategy, join_type, make_df, n_partitions, with_morsel_size
         repartition_columns=["A"],
     )
 
-    print(f"join_strategy: {join_strategy}, join_type: {join_type}")
     joined = df.join(df, on="A", strategy=join_strategy, how=join_type)
     # We shouldn't need to sort the joined output if using a sort-merge join.
     if join_strategy != "sort_merge":
