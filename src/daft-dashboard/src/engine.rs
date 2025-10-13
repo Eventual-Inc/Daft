@@ -35,10 +35,15 @@ async fn query_start(
         unoptimized_plan: args.unoptimized_plan,
         state: QueryState::Pending,
     };
-    let summary = query_info.summarize();
 
-    state.queries.insert(query_id, query_info);
-    state.ping_clients(summary);
+    state.queries.insert(query_id.clone(), query_info);
+
+    // Ping clients
+    let Some(query_info) = state.queries.get(&query_id) else {
+        tracing::error!("Query `{}` not found", query_id);
+        return StatusCode::BAD_REQUEST;
+    };
+    state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK
 }
 
@@ -54,18 +59,19 @@ async fn plan_start(
 ) -> StatusCode {
     let query_info = state.queries.get_mut(&query_id);
     let Some(mut query_info) = query_info else {
+        tracing::error!("Query `{}` not found", query_id);
         return StatusCode::BAD_REQUEST;
     };
     if !matches!(query_info.state, QueryState::Pending) {
+        tracing::error!("Query `{}` is not pending", query_id);
         return StatusCode::BAD_REQUEST;
     }
 
     query_info.state = QueryState::Optimizing {
         plan_start_sec: args.plan_start_sec,
     };
-    let summary = query_info.summarize();
-    state.ping_clients(summary);
 
+    state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK
 }
 
@@ -95,9 +101,8 @@ async fn plan_end(
             optimized_plan: args.optimized_plan,
         },
     };
-    let summary = query_info.summarize();
-    state.ping_clients(summary);
 
+    state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK
 }
 
@@ -140,8 +145,8 @@ async fn exec_start(
                 .collect(),
         },
     };
-    let summary = query_info.summarize();
-    state.ping_clients(summary);
+
+    state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK
 }
 
@@ -158,6 +163,8 @@ async fn exec_op_start(
     };
 
     exec_info.operators.get_mut(&op_id).unwrap().status = OperatorStatus::Executing;
+
+    state.ping_clients_on_operator_update(query_info.value());
     StatusCode::OK
 }
 
@@ -174,6 +181,8 @@ async fn exec_op_end(
     };
 
     exec_info.operators.get_mut(&op_id).unwrap().status = OperatorStatus::Finished;
+
+    state.ping_clients_on_operator_update(query_info.value());
     StatusCode::OK
 }
 
@@ -203,6 +212,8 @@ async fn exec_emit_stats(
     for (operator_id, stats) in args.stats {
         exec_info.operators.get_mut(&operator_id).unwrap().stats = stats;
     }
+
+    state.ping_clients_on_operator_update(query_info.value());
     StatusCode::OK
 }
 
@@ -233,8 +244,8 @@ async fn exec_end(
         exec_info: exec_info.clone(),
         exec_end_sec: args.exec_end_sec,
     };
-    let summary = query_info.summarize();
-    state.ping_clients(summary);
+
+    state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK
 }
 
@@ -242,7 +253,7 @@ async fn exec_end(
 pub struct FinalizeArgs {
     pub end_sec: u64,
     // IPC-serialized RecordBatch
-    pub results: Vec<u8>,
+    pub results: Option<Vec<u8>>,
 }
 
 async fn query_end(
@@ -265,17 +276,22 @@ async fn query_end(
         return StatusCode::BAD_REQUEST;
     };
 
-    let results = match RecordBatch::from_ipc_stream(&args.results) {
-        Ok(results) => results,
-        Err(e) => {
-            tracing::error!(
-                "Failed to deserialize results for query `{}`: {}",
-                query_id,
-                e
-            );
-            return StatusCode::BAD_REQUEST;
+    let results = if let Some(results) = &args.results {
+        match RecordBatch::from_ipc_stream(results) {
+            Ok(results) => Some(results),
+            Err(e) => {
+                tracing::error!(
+                    "Failed to deserialize results for query `{}`: {}",
+                    query_id,
+                    e
+                );
+                return StatusCode::BAD_REQUEST;
+            }
         }
+    } else {
+        None
     };
+
     query_info.state = QueryState::Finished {
         plan_info: plan_info.clone(),
         exec_info: exec_info.clone(),
@@ -284,7 +300,7 @@ async fn query_end(
         results,
     };
 
-    state.ping_clients(query_info.summarize());
+    state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK
 }
 

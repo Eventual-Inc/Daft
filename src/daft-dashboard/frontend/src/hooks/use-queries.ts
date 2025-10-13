@@ -36,6 +36,14 @@ export type QueryStatus =
   | FinalizingStatus
   | FinishedStatus;
 
+export type QueryStatusName =
+  | "Pending"
+  | "Optimizing"
+  | "Setup"
+  | "Executing"
+  | "Finalizing"
+  | "Finished";
+
 export type QuerySummary = {
   id: string;
   start_sec: number;

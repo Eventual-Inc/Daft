@@ -1,13 +1,16 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, LazyLock, atomic::AtomicUsize},
+    sync::{
+        Arc, LazyLock,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 use common_metrics::{NodeID, QueryID, QueryPlan, Stat, ops::NodeInfo};
 use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;
 use serde::Serialize;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -24,6 +27,8 @@ pub(crate) struct OperatorInfo {
     pub stats: HashMap<String, Stat>,
 }
 
+pub(crate) type OperatorInfos = HashMap<NodeID, OperatorInfo>;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct PlanInfo {
     pub plan_start_sec: u64,
@@ -34,7 +39,7 @@ pub(crate) struct PlanInfo {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ExecInfo {
     pub exec_start_sec: u64,
-    pub operators: HashMap<NodeID, OperatorInfo>,
+    pub operators: OperatorInfos,
     // TODO: Logs
 }
 
@@ -80,7 +85,8 @@ pub(crate) enum QueryState {
         exec_info: ExecInfo,
         exec_end_sec: u64,
         end_sec: u64,
-        results: RecordBatch,
+        #[serde(skip_serializing)]
+        results: Option<RecordBatch>,
     },
 }
 
@@ -129,6 +135,7 @@ pub(crate) struct DashboardState {
     pub queries: DashMap<QueryID, QueryInfo>,
     pub dataframe_previews: DashMap<String, RecordBatch>,
     pub clients: broadcast::Sender<(usize, QuerySummary)>,
+    pub query_clients: DashMap<QueryID, (watch::Sender<QueryInfo>, watch::Sender<OperatorInfos>)>,
     pub event_counter: AtomicUsize,
 }
 
@@ -139,6 +146,7 @@ impl DashboardState {
             dataframe_previews: Default::default(),
             // TODO: Ideally this should never drop events, we need an unbounded broadcast channel
             clients: broadcast::Sender::new(256),
+            query_clients: Default::default(),
             event_counter: AtomicUsize::new(0),
         }
     }
@@ -155,13 +163,27 @@ impl DashboardState {
 
     // -------------------- Updating Queries -------------------- //
 
-    pub fn ping_clients(&self, summary: QuerySummary) {
-        let id = self
-            .event_counter
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    pub fn ping_clients_on_query_update(&self, query_info: &QueryInfo) {
+        let id = self.event_counter.fetch_add(1, Ordering::SeqCst);
 
-        // Returns error if there are no receivers, it's ok to ignore
-        let _ = self.clients.send((id, summary));
+        if let Some(query_client) = self.query_clients.get(&query_info.id) {
+            let _ = query_client.0.send(query_info.clone());
+        }
+
+        let _ = self.clients.send((id, query_info.summarize()));
+    }
+
+    pub fn ping_clients_on_operator_update(&self, query_info: &QueryInfo) {
+        let query_id = &query_info.id;
+        if let Some(query_client) = self.query_clients.get(query_id) {
+            let QueryState::Executing { exec_info, .. } = &query_info.state else {
+                tracing::error!("Query `{}` is not executing", query_id);
+                panic!("Query `{}` is not executing", query_id);
+            };
+
+            let operator_infos = exec_info.operators.clone();
+            let _ = query_client.1.send(operator_infos);
+        }
     }
 }
 
