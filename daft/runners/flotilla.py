@@ -6,12 +6,12 @@ import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from daft.context import DaftContext
 from daft.daft import (
     DistributedPhysicalPlan,
     DistributedPhysicalPlanRunner,
     LocalPhysicalPlan,
     NativeExecutor,
+    PyContextState,
     PyDaftExecutionConfig,
     PyMicroPartition,
     RayPartitionRef,
@@ -230,14 +230,15 @@ class RemoteFlotillaRunner:
         self,
         plan: DistributedPhysicalPlan,
         partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
-        ctx: DaftContext,
+        state_bytes: bytes,
     ) -> None:
+        state = PyContextState._from_serialized(state_bytes)
         psets = {
             k: [RayPartitionRef(v.partition(), v.metadata().num_rows, v.metadata().size_bytes or 0) for v in v.values()]
             for k, v in partition_sets.items()
         }
         self.curr_plans[plan.id()] = plan
-        self.curr_result_gens[plan.id()] = self.plan_runner.run_plan(plan, psets, ctx)
+        self.curr_result_gens[plan.id()] = self.plan_runner.run_plan(plan, psets, state)
 
     async def get_next_partition(self, query_idx: str) -> RayMaterializedResult | None:
         from daft.runners.ray_runner import (
@@ -303,10 +304,11 @@ class FlotillaRunner:
         self,
         plan: DistributedPhysicalPlan,
         partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
-        ctx: DaftContext,
+        state: PyContextState,
     ) -> Iterator[RayMaterializedResult]:
         query_idx = plan.query_idx()
-        ray.get(self.runner.run_plan.remote(plan, partition_sets, ctx))
+        state_bytes = state.__reduce__()[1][0]
+        ray.get(self.runner.run_plan.remote(plan, partition_sets, state_bytes))
         while True:
             materialized_result = ray.get(self.runner.get_next_partition.remote(query_idx))
             if materialized_result is None:

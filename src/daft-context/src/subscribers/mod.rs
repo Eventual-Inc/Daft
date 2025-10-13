@@ -12,13 +12,16 @@ use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartitionRef;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Serialize, Deserialize)]
 pub struct QueryMetadata {
     pub output_schema: SchemaRef,
     pub unoptimized_plan: QueryPlan,
 }
 
 #[async_trait]
-pub trait Subscriber: Send + Sync + std::fmt::Debug + Serialize + Deserialize<'static> + 'static {
+pub trait Subscriber:
+    Send + Sync + std::fmt::Debug + Serialize + Deserialize<'static> + 'static
+{
     fn on_query_start(&self, query_id: QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()>;
     fn on_query_end(&self, query_id: QueryID) -> DaftResult<()>;
     fn on_result_out(&self, query_id: QueryID, result: MicroPartitionRef) -> DaftResult<()>;
@@ -47,81 +50,95 @@ pub enum Subscribers {
 impl Subscriber for Subscribers {
     fn on_query_start(&self, query_id: QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()> {
         match self {
-            Subscribers::Dashboard(s) => s.on_query_start(query_id, metadata),
-            Subscribers::Debug(s) => s.on_query_start(query_id, metadata),
-            Subscribers::Python(s) => s.on_query_start(query_id, metadata),
+            Self::Dashboard(s) => s.on_query_start(query_id, metadata),
+            Self::Debug(s) => s.on_query_start(query_id, metadata),
+            #[cfg(feature = "python")]
+            Self::Python(s) => s.on_query_start(query_id, metadata),
         }
     }
 
     fn on_query_end(&self, query_id: QueryID) -> DaftResult<()> {
         match self {
-            Subscribers::Dashboard(s) => s.on_query_end(query_id),
-            Subscribers::Debug(s) => s.on_query_end(query_id),
-            Subscribers::Python(s) => s.on_query_end(query_id),
+            Self::Dashboard(s) => s.on_query_end(query_id),
+            Self::Debug(s) => s.on_query_end(query_id),
+            #[cfg(feature = "python")]
+            Self::Python(s) => s.on_query_end(query_id),
         }
     }
 
     fn on_result_out(&self, query_id: QueryID, result: MicroPartitionRef) -> DaftResult<()> {
         match self {
-            Subscribers::Dashboard(s) => s.on_result_out(query_id, result),
-            Subscribers::Debug(s) => s.on_result_out(query_id, result),
-            Subscribers::Python(s) => s.on_result_out(query_id, result),
+            Self::Dashboard(s) => s.on_result_out(query_id, result),
+            Self::Debug(s) => s.on_result_out(query_id, result),
+            #[cfg(feature = "python")]
+            Self::Python(s) => s.on_result_out(query_id, result),
         }
     }
 
     fn on_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
         match self {
-            Subscribers::Dashboard(s) => s.on_optimization_start(query_id),
-            Subscribers::Debug(s) => s.on_optimization_start(query_id),
-            Subscribers::Python(s) => s.on_optimization_start(query_id),
+            Self::Dashboard(s) => s.on_optimization_start(query_id),
+            Self::Debug(s) => s.on_optimization_start(query_id),
+            #[cfg(feature = "python")]
+            Self::Python(s) => s.on_optimization_start(query_id),
         }
     }
 
     fn on_optimization_end(&self, query_id: QueryID, optimized_plan: QueryPlan) -> DaftResult<()> {
         match self {
-            Subscribers::Dashboard(s) => s.on_optimization_end(query_id, optimized_plan),
-            Subscribers::Debug(s) => s.on_optimization_end(query_id, optimized_plan),
-            Subscribers::Python(s) => s.on_optimization_end(query_id, optimized_plan),
+            Self::Dashboard(s) => s.on_optimization_end(query_id, optimized_plan),
+            Self::Debug(s) => s.on_optimization_end(query_id, optimized_plan),
+            #[cfg(feature = "python")]
+            Self::Python(s) => s.on_optimization_end(query_id, optimized_plan),
         }
     }
 
     fn on_exec_start(&self, query_id: QueryID, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()> {
         match self {
-            Subscribers::Dashboard(s) => s.on_exec_start(query_id, node_infos),
-            Subscribers::Debug(s) => s.on_exec_start(query_id, node_infos),
-            Subscribers::Python(s) => s.on_exec_start(query_id, node_infos),
+            Self::Dashboard(s) => s.on_exec_start(query_id, node_infos),
+            Self::Debug(s) => s.on_exec_start(query_id, node_infos),
+            #[cfg(feature = "python")]
+            Self::Python(s) => s.on_exec_start(query_id, node_infos),
         }
     }
 
     async fn on_exec_operator_start(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
         match self {
-            Subscribers::Dashboard(s) => s.on_exec_operator_start(query_id, node_id).await,
-            Subscribers::Debug(s) => s.on_exec_operator_start(query_id, node_id).await,
-            Subscribers::Python(s) => s.on_exec_operator_start(query_id, node_id).await,
+            Self::Dashboard(s) => s.on_exec_operator_start(query_id, node_id).await,
+            Self::Debug(s) => s.on_exec_operator_start(query_id, node_id).await,
+            #[cfg(feature = "python")]
+            Self::Python(s) => s.on_exec_operator_start(query_id, node_id).await,
         }
     }
 
-    async fn on_exec_emit_stats(&self, query_id: QueryID, stats: &[(NodeID, StatSnapshotView)]) -> DaftResult<()> {
+    async fn on_exec_emit_stats(
+        &self,
+        query_id: QueryID,
+        stats: &[(NodeID, StatSnapshotView)],
+    ) -> DaftResult<()> {
         match self {
-            Subscribers::Dashboard(s) => s.on_exec_emit_stats(query_id, stats).await,
-            Subscribers::Debug(s) => s.on_exec_emit_stats(query_id, stats).await,
-            Subscribers::Python(s) => s.on_exec_emit_stats(query_id, stats).await,
+            Self::Dashboard(s) => s.on_exec_emit_stats(query_id, stats).await,
+            Self::Debug(s) => s.on_exec_emit_stats(query_id, stats).await,
+            #[cfg(feature = "python")]
+            Self::Python(s) => s.on_exec_emit_stats(query_id, stats).await,
         }
     }
 
     async fn on_exec_operator_end(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
         match self {
-            Subscribers::Dashboard(s) => s.on_exec_operator_end(query_id, node_id).await,
-            Subscribers::Debug(s) => s.on_exec_operator_end(query_id, node_id).await,
-            Subscribers::Python(s) => s.on_exec_operator_end(query_id, node_id).await,
+            Self::Dashboard(s) => s.on_exec_operator_end(query_id, node_id).await,
+            Self::Debug(s) => s.on_exec_operator_end(query_id, node_id).await,
+            #[cfg(feature = "python")]
+            Self::Python(s) => s.on_exec_operator_end(query_id, node_id).await,
         }
     }
 
     async fn on_exec_end(&self, query_id: QueryID) -> DaftResult<()> {
         match self {
-            Subscribers::Dashboard(s) => s.on_exec_end(query_id).await,
-            Subscribers::Debug(s) => s.on_exec_end(query_id).await,
-            Subscribers::Python(s) => s.on_exec_end(query_id).await,
+            Self::Dashboard(s) => s.on_exec_end(query_id).await,
+            Self::Debug(s) => s.on_exec_end(query_id).await,
+            #[cfg(feature = "python")]
+            Self::Python(s) => s.on_exec_end(query_id).await,
         }
     }
 }
@@ -132,7 +149,10 @@ pub fn default_subscribers() -> HashMap<String, Arc<Subscribers>> {
     // Dashboard subscriber
     match dashboard::DashboardSubscriber::try_new() {
         Ok(Some(s)) => {
-            subscribers.insert("_dashboard".to_string(), Arc::new(Subscribers::Dashboard(s)));
+            subscribers.insert(
+                "_dashboard".to_string(),
+                Arc::new(Subscribers::Dashboard(s)),
+            );
         }
         Err(e) => {
             log::error!("Failed to connect to the daft dashboard: {}", e);
@@ -146,7 +166,10 @@ pub fn default_subscribers() -> HashMap<String, Arc<Subscribers>> {
         match s.as_ref() {
             "1" | "true" => {
                 use debug::DebugSubscriber;
-                subscribers.insert("_debug".to_string(), Arc::new(Subscribers::Debug(DebugSubscriber::new())));
+                subscribers.insert(
+                    "_debug".to_string(),
+                    Arc::new(Subscribers::Debug(DebugSubscriber::new())),
+                );
             }
             _ => {}
         }

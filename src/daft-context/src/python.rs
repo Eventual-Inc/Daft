@@ -1,18 +1,19 @@
 use std::sync::Arc;
 
 use common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
-use daft_core::python::PySchema;
 use common_py_serde::impl_bincode_py_state_serialization;
+use daft_core::python::PySchema;
 use daft_micropartition::python::PyMicroPartition;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
-
-use crate::{DaftContext, subscribers, subscribers::QueryMetadata};
 use subscribers::python::PySubscriberWrapper;
 
+use crate::{ContextState, DaftContext, subscribers, subscribers::QueryMetadata};
+
 #[pyclass(frozen)]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PyQueryMetadata(pub(crate) Arc<QueryMetadata>);
+impl_bincode_py_state_serialization!(PyQueryMetadata);
 
 #[pymethods]
 impl PyQueryMetadata {
@@ -54,6 +55,23 @@ impl<'a> From<&'a PyQueryMetadata> for &'a Arc<QueryMetadata> {
 
 #[pyclass(frozen)]
 #[derive(Serialize, Deserialize)]
+pub struct PyContextState(ContextState);
+
+impl_bincode_py_state_serialization!(PyContextState);
+
+impl From<ContextState> for PyContextState {
+    fn from(state: ContextState) -> Self {
+        Self(state)
+    }
+}
+
+impl From<PyContextState> for ContextState {
+    fn from(state: PyContextState) -> Self {
+        state.0
+    }
+}
+
+#[pyclass(frozen)]
 pub struct PyDaftContext {
     inner: DaftContext,
 }
@@ -97,12 +115,16 @@ impl PyDaftContext {
         py.allow_threads(|| self.inner.set_planning_config(config.config));
     }
 
+    #[getter]
+    pub fn state(&self, py: Python) -> PyResult<PyContextState> {
+        let state = py.allow_threads(|| self.inner.state());
+        Ok(PyContextState(state))
+    }
+
     pub fn attach_subscriber(&self, py: Python, alias: String, subscriber: PyObject) {
         py.allow_threads(|| {
-            self.inner.attach_subscriber(
-                alias,
-                PySubscriberWrapper::new(subscriber)
-            );
+            self.inner
+                .attach_subscriber(alias, PySubscriberWrapper::new(subscriber));
         });
     }
 
@@ -175,8 +197,6 @@ impl<'a> From<&'a PyDaftContext> for &'a DaftContext {
         &ctx.inner
     }
 }
-
-impl_bincode_py_state_serialization!(PyDaftContext);
 
 #[pyfunction]
 pub fn get_context() -> PyDaftContext {

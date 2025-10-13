@@ -3,7 +3,7 @@ use std::{sync::Arc, time::SystemTime};
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo};
-use common_runtime::{get_io_runtime};
+use common_runtime::get_io_runtime;
 use daft_io::IOStatsContext;
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use daft_recordbatch::RecordBatch;
@@ -63,12 +63,11 @@ impl<'de> Deserialize<'de> for DashboardSubscriber {
         }
 
         let helper = DashboardSubscriberHelper::deserialize(deserializer)?;
-        
-        // Create the client using the URL from the deserialized data
-        let client = create_client(&helper.url)
-            .map_err(serde::de::Error::custom)?;
 
-        Ok(DashboardSubscriber {
+        // Create the client using the URL from the deserialized data
+        let client = create_client(&helper.url).map_err(serde::de::Error::custom)?;
+
+        Ok(Self {
             url: helper.url,
             client,
             preview_rows: helper.preview_rows,

@@ -5,7 +5,7 @@ use common_error::DaftResult;
 use common_metrics::{QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo, python::PyNodeInfo};
 use common_py_serde::PyObjectWrapper;
 use daft_micropartition::{MicroPartitionRef, python::PyMicroPartition};
-use pyo3::{intern, IntoPyObject, PyObject, Python};
+use pyo3::{IntoPyObject, PyObject, Python, intern};
 use serde::{Deserialize, Serialize};
 
 use crate::{

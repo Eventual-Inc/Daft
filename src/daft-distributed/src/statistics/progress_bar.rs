@@ -1,10 +1,7 @@
 use common_error::DaftResult;
 use pyo3::{PyObject, PyResult, Python, types::PyAnyMethods};
 
-use crate::{
-    scheduling::task::TaskContext,
-    statistics::{TaskEvent},
-};
+use crate::{scheduling::task::TaskContext, statistics::TaskEvent};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct BarId(i64);
@@ -59,7 +56,7 @@ impl ProgressBar {
         });
     }
 
-    pub fn handle_event(&mut self, event: &TaskEvent) -> DaftResult<()> {
+    pub fn handle_event(&self, event: &TaskEvent) -> DaftResult<()> {
         match event {
             TaskEvent::TaskSubmitted { context, name } => {
                 self.make_bar_or_update_total(BarId::from(context), name)?;

@@ -1,18 +1,16 @@
+#[cfg(feature = "python")]
 pub mod progress_bar;
 
 use std::sync::{Arc, Mutex};
 
-use common_metrics::QueryID;
 use common_error::DaftResult;
-use daft_context::{Subscribers, Subscriber as _};
+use common_metrics::QueryID;
+use daft_context::{Subscriber as _, Subscribers};
 use futures::future;
-
-use crate::{
-    scheduling::task::{TaskContext, TaskName, TaskStatus},
-};
-
+#[cfg(feature = "python")]
 pub use progress_bar::ProgressBar;
 
+use crate::scheduling::task::{TaskContext, TaskName, TaskStatus};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -73,20 +71,25 @@ pub type StatisticsManagerRef = Arc<StatisticsManager>;
 #[derive(Default)]
 pub struct StatisticsManager {
     /// Ray progress bar
+    #[cfg(feature = "python")]
     pbar: Mutex<Option<ProgressBar>>,
     /// Global subscribers
     subscribers: Vec<Arc<Subscribers>>,
 }
 
 impl StatisticsManager {
-    pub fn new(pbar: Option<ProgressBar>, subscribers: Vec<Arc<Subscribers>>) -> StatisticsManagerRef {
-
+    #[cfg(feature = "python")]
+    pub fn new(
+        pbar: Option<ProgressBar>,
+        subscribers: Vec<Arc<Subscribers>>,
+    ) -> StatisticsManagerRef {
         Arc::new(Self {
             pbar: Mutex::new(pbar),
             subscribers,
         })
     }
 
+    #[cfg(feature = "python")]
     pub fn handle_event(&self, event: TaskEvent) -> DaftResult<()> {
         let mut pbar = self.pbar.lock().unwrap();
         if let Some(pbar) = pbar.as_mut() {
@@ -95,15 +98,25 @@ impl StatisticsManager {
         Ok(())
     }
 
+    #[cfg(not(feature = "python"))]
+    pub fn handle_event(&self, event: TaskEvent) -> DaftResult<()> {
+        Ok(())
+    }
+
     pub fn handle_start(&self, query_id: QueryID) -> DaftResult<()> {
-        for subscriber in self.subscribers.iter() {
+        for subscriber in &self.subscribers {
             subscriber.on_exec_start(query_id.clone(), &[])?;
         }
         Ok(())
     }
 
     pub async fn handle_finish(&self, query_id: QueryID) -> DaftResult<()> {
-        future::try_join_all(self.subscribers.iter().map(|subscriber| subscriber.on_exec_end(query_id.clone()))).await?;
+        future::try_join_all(
+            self.subscribers
+                .iter()
+                .map(|subscriber| subscriber.on_exec_end(query_id.clone())),
+        )
+        .await?;
         Ok(())
     }
 }

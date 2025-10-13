@@ -5,17 +5,10 @@ from collections import defaultdict
 from collections.abc import Mapping
 from typing import Any
 
-import pytest
-
 import daft
 from daft.daft import PyMicroPartition, PyNodeInfo, PyQueryMetadata
 from daft.recordbatch import MicroPartition
 from daft.subscribers import StatType, Subscriber
-from tests.conftest import get_tests_daft_runner_name
-
-pytestmark = pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="Only Native Runner supports subscribers right now"
-)
 
 
 class MockSubscriber(Subscriber):

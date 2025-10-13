@@ -20,7 +20,7 @@ import ray.experimental  # noqa: TID253
 
 from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
-from daft.daft import DistributedPhysicalPlan
+from daft.daft import DistributedPhysicalPlan, PyQueryMetadata
 from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
 from daft.recordbatch import RecordBatch
@@ -1326,7 +1326,8 @@ class RayRunner(Runner[ray.ObjectRef]):
         ctx = get_context()
         daft_execution_config = ctx.daft_execution_config
         query_id = str(uuid.uuid4())
-        ctx._notify_query_start(query_id, repr(builder))
+        output_schema = builder.schema()
+        ctx._notify_query_start(query_id, PyQueryMetadata(output_schema._schema, repr(builder)))
 
         # Optimize the logical plan.
         ctx._notify_optimization_start(query_id)
@@ -1392,7 +1393,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 self.flotilla_plan_runner = FlotillaRunner()
 
             yield from self.flotilla_plan_runner.stream_plan(
-                distributed_plan, self._part_set_cache.get_all_partition_sets(), ctx
+                distributed_plan, self._part_set_cache.get_all_partition_sets(), ctx._ctx.state
             )
             ctx._notify_query_end(query_id)
 

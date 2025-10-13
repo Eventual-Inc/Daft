@@ -8,20 +8,20 @@ use std::{
     sync::{Arc, OnceLock, RwLock},
 };
 
-use serde::{Deserialize, Serialize};
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};
 use common_error::{DaftError, DaftResult};
 use common_metrics::{QueryID, QueryPlan};
 use daft_micropartition::MicroPartitionRef;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+use serde::{Deserialize, Serialize};
 
+use crate::subscribers::QueryMetadata;
 #[cfg(feature = "python")]
-use crate::subscribers::{python::PySubscriberWrapper};
-use crate::subscribers::{QueryMetadata};
-pub use crate::subscribers::{Subscribers, Subscriber};
+use crate::subscribers::python::PySubscriberWrapper;
+pub use crate::subscribers::{Subscriber, Subscribers};
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub execution: Arc<DaftExecutionConfig>,
     pub planning: Arc<DaftPlanningConfig>,
@@ -36,8 +36,8 @@ impl Config {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct ContextState {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextState {
     /// Shared configuration for the context
     config: Config,
     subscribers: HashMap<String, Arc<Subscribers>>,
@@ -95,6 +95,10 @@ impl DaftContext {
         self.with_state_mut(|state| state.config.planning = config);
     }
 
+    pub fn state(&self) -> ContextState {
+        self.with_state(|state| state.clone())
+    }
+
     pub fn io_config(&self) -> IOConfig {
         self.with_state(|state| state.config.planning.default_io_config.clone())
     }
@@ -104,9 +108,12 @@ impl DaftContext {
     }
 
     /// Attaches a subscriber to this context.
+    #[cfg(feature = "python")]
     pub fn attach_subscriber(&self, alias: String, subscriber: PySubscriberWrapper) {
         self.with_state_mut(|state| {
-            state.subscribers.insert(alias, Arc::new(Subscribers::Python(subscriber)));
+            state
+                .subscribers
+                .insert(alias, Arc::new(Subscribers::Python(subscriber)));
         });
     }
 
@@ -216,6 +223,7 @@ pub fn get_context() -> DaftContext {
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::get_context, parent)?)?;
+    parent.add_class::<python::PyContextState>()?;
     parent.add_class::<python::PyDaftContext>()?;
     parent.add_class::<python::PyQueryMetadata>()?;
     Ok(())

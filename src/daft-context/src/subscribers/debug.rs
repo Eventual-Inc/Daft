@@ -9,16 +9,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::subscribers::{QueryMetadata, Subscriber};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Serialize, Deserialize)]
 pub struct DebugSubscriber {
     rows_out: DashMap<QueryID, usize>,
 }
 
 impl DebugSubscriber {
     pub fn new() -> Self {
-        Self {
-            rows_out: DashMap::new(),
-        }
+        Self::default()
     }
 }
 
