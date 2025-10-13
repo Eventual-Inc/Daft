@@ -252,14 +252,17 @@ impl SortMergeJoinNode {
         )?;
 
         // Wait for both sides to be partitioned
-        let left_partitioned_outputs = try_join_all(left_partition_tasks)
-            .await?
+        let (left_partitioned_outputs, right_partitioned_outputs) = futures::try_join!(
+            try_join_all(left_partition_tasks),
+            try_join_all(right_partition_tasks)
+        )?;
+
+        let left_partitioned_outputs = left_partitioned_outputs
             .into_iter()
             .flatten()
             .collect::<Vec<_>>();
 
-        let right_partitioned_outputs = try_join_all(right_partition_tasks)
-            .await?
+        let right_partitioned_outputs = right_partitioned_outputs
             .into_iter()
             .flatten()
             .collect::<Vec<_>>();
