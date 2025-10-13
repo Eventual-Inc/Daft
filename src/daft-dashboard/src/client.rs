@@ -77,6 +77,7 @@ async fn get_query(
     if let Some(query) = query {
         Ok(Json(query.value().clone()))
     } else {
+        tracing::error!("Query `{}` not found", query_id);
         Err(StatusCode::NOT_FOUND)
     }
 }
@@ -87,21 +88,25 @@ async fn subscribe_query_updates(
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, StatusCode> {
     // Initial event with the current query state
     let Some(query_info) = state.queries.get(&query_id) else {
+        tracing::error!("Query `{}` not found", query_id);
         return Err(StatusCode::NOT_FOUND);
     };
+
     let query_info = query_info.value().clone();
     let operator_infos = HashMap::new();
 
-    let tx = state.query_clients.entry(query_id).or_insert_with(|| {
-        (
-            watch::Sender::new(query_info.clone()),
-            watch::Sender::new(operator_infos),
-        )
-    });
+    let (mut query_rx, mut operator_rx) = {
+        let tx = state.query_clients.entry(query_id).or_insert_with(|| {
+            (
+                watch::Sender::new(query_info.clone()),
+                watch::Sender::new(operator_infos),
+            )
+        });
 
-    let mut query_rx = tx.0.subscribe();
-    let mut operator_rx = tx.1.subscribe();
-    drop(tx);
+        let query_rx = tx.0.subscribe();
+        let operator_rx = tx.1.subscribe();
+        (query_rx, operator_rx)
+    };
 
     let stream = async_stream::stream! {
         yield Ok(Event::default()

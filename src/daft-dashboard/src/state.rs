@@ -163,22 +163,22 @@ impl DashboardState {
 
     // -------------------- Updating Queries -------------------- //
 
-    pub fn ping_clients_on_query(&self, query_info: &QueryInfo) {
+    pub fn ping_clients_on_query_update(&self, query_info: &QueryInfo) {
         let id = self.event_counter.fetch_add(1, Ordering::SeqCst);
 
         if let Some(query_client) = self.query_clients.get(&query_info.id) {
-            tracing::error!("Pinging clients on query");
             let _ = query_client.0.send(query_info.clone());
         }
 
         let _ = self.clients.send((id, query_info.summarize()));
     }
 
-    pub fn ping_clients_on_operator(&self, query_info: &QueryInfo) {
+    pub fn ping_clients_on_operator_update(&self, query_info: &QueryInfo) {
         let query_id = &query_info.id;
         if let Some(query_client) = self.query_clients.get(query_id) {
             let QueryState::Executing { exec_info, .. } = &query_info.state else {
-                panic!("Query is not executing");
+                tracing::error!("Query `{}` is not executing", query_id);
+                panic!("Query `{}` is not executing", query_id);
             };
 
             let operator_infos = exec_info.operators.clone();

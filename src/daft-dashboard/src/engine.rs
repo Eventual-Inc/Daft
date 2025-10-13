@@ -43,7 +43,7 @@ async fn query_start(
         tracing::error!("Query `{}` not found", query_id);
         return StatusCode::BAD_REQUEST;
     };
-    state.ping_clients_on_query(query_info.value());
+    state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK
 }
 
@@ -71,7 +71,7 @@ async fn plan_start(
         plan_start_sec: args.plan_start_sec,
     };
 
-    state.ping_clients_on_query(query_info.value());
+    state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK
 }
 
@@ -102,7 +102,7 @@ async fn plan_end(
         },
     };
 
-    state.ping_clients_on_query(query_info.value());
+    state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK
 }
 
@@ -146,7 +146,7 @@ async fn exec_start(
         },
     };
 
-    state.ping_clients_on_query(query_info.value());
+    state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK
 }
 
@@ -164,7 +164,7 @@ async fn exec_op_start(
 
     exec_info.operators.get_mut(&op_id).unwrap().status = OperatorStatus::Executing;
 
-    state.ping_clients_on_operator(query_info.value());
+    state.ping_clients_on_operator_update(query_info.value());
     StatusCode::OK
 }
 
@@ -182,7 +182,7 @@ async fn exec_op_end(
 
     exec_info.operators.get_mut(&op_id).unwrap().status = OperatorStatus::Finished;
 
-    state.ping_clients_on_operator(query_info.value());
+    state.ping_clients_on_operator_update(query_info.value());
     StatusCode::OK
 }
 
@@ -213,7 +213,7 @@ async fn exec_emit_stats(
         exec_info.operators.get_mut(&operator_id).unwrap().stats = stats;
     }
 
-    state.ping_clients_on_operator(query_info.value());
+    state.ping_clients_on_operator_update(query_info.value());
     StatusCode::OK
 }
 
@@ -245,7 +245,7 @@ async fn exec_end(
         exec_end_sec: args.exec_end_sec,
     };
 
-    state.ping_clients_on_query(query_info.value());
+    state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK
 }
 
@@ -300,7 +300,7 @@ async fn query_end(
         results,
     };
 
-    state.ping_clients_on_query(query_info.value());
+    state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK
 }
 
