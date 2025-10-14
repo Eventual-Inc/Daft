@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pyarrow as pa
 import pytest
 
@@ -181,18 +183,13 @@ def test_lancedb_write_with_create_append_mode(lance_dataset_path):
 
 def test_create_mode_early_fails_when_nonempty_directory_exists(lance_dataset_path):
     """When mode="create" and the target path exists and is non-empty, write_lance should fail fast."""
-    import os
-
-    target_dir = os.path.join(lance_dataset_path, "existing_nonempty_table")
-    os.makedirs(target_dir)
-    # Place a dummy marker file; could also create a subdirectory
-    marker = os.path.join(target_dir, "marker")
+    marker = os.path.join(lance_dataset_path, "marker")
     with open(marker, "w") as f:
         f.write("x")
 
     df = daft.from_pydict({"a": [1, 2]})
     with pytest.raises(FileExistsError, match="Target dataset"):
-        df.write_lance(target_dir, mode="create")
+        df.write_lance(lance_dataset_path, mode="create")
 
 
 def test_append_mode_fails_when_dataset_does_not_exist(lance_dataset_path):
