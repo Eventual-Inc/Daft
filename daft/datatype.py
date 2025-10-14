@@ -5,6 +5,8 @@ import warnings
 from types import GenericAlias
 from typing import TYPE_CHECKING, Any, Callable, Union
 
+from packaging.version import parse
+
 from daft.daft import ImageMode, PyDataType, PyTimeUnit, sql_datatype
 from daft.dependencies import np, pa
 from daft.runners import get_or_create_runner
@@ -204,6 +206,42 @@ class DataType:
                 # tuple[type0, type1, ...] -> Struct[_0: type0, _1: type1, ...]
                 field_dtypes = {f"_{i}": cls.infer_from_type(arg) for i, arg in enumerate(args)}
                 return cls.struct(field_dtypes)
+        elif check_type("pydantic.BaseModel"):
+            import pydantic
+
+            if not (parse("2.0.0") <= parse(pydantic.__version__) < parse("3.0.0")):
+                raise ValueError(
+                    f"Daft only supports DataType inference for Pydantic V2, found Pydantic V{pydantic.__version__}"
+                )
+
+            model: pydantic.BaseModel = origin
+
+            serialize_by_alias = model.model_config.get("serialize_by_alias", False)
+
+            field_dtypes = {}
+            for attr_name, field_info in model.model_fields.items():
+                if serialize_by_alias:
+                    if field_info.serialization_alias is not None:
+                        serialized_name = field_info.serialization_alias
+                    elif field_info.alias is not None:
+                        serialized_name = field_info.alias
+                    else:
+                        serialized_name = attr_name
+                else:
+                    serialized_name = attr_name
+                field_dtypes[serialized_name] = cls.infer_from_type(field_info.annotation)
+
+            for attr_name, field_info in model.model_computed_fields.items():
+                if serialize_by_alias:
+                    if field_info.alias is not None:
+                        serialized_name = field_info.alias
+                    else:
+                        serialized_name = attr_name
+                else:
+                    serialized_name = attr_name
+                field_dtypes[serialized_name] = cls.infer_from_type(field_info.return_type)
+
+            return cls.struct(field_dtypes)
         elif check_type(decimal.Decimal):
             warnings.warn(
                 "Cannot derive precision and scale from decimal.Decimal type, defaulting to DataType.python()"
