@@ -8,7 +8,8 @@ import lance
 
 from daft.context import get_context
 from daft.datatype import DataType
-from daft.dependencies import pa
+from daft.dependencies import pa, pafs
+from daft.filesystem import _resolve_paths_and_filesystem
 from daft.io import DataSink
 from daft.io.sink import WriteResult
 from daft.recordbatch import MicroPartition
@@ -64,6 +65,32 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
 
         self._storage_options = io_config_to_storage_options(self._io_config, self._table_uri)
 
+        # Pre-existence check semantics for create-mode:
+        if self._mode == "create":
+            [resolved_path], fs = _resolve_paths_and_filesystem(self._table_uri, io_config=self._io_config)
+            try:
+                info = fs.get_file_info(resolved_path)
+            except FileNotFoundError:
+                info = None
+
+            # If target is missing, proceed.
+            if info is None or getattr(info, "type", None) == pafs.FileType.NotFound:
+                pass
+            # If target is a file, fail fast.
+            elif getattr(info, "type", None) == pafs.FileType.File:
+                raise FileExistsError("Target path points to a file, cannot create a dataset here.")
+            # If target is a directory, allow only if it is empty.
+            elif getattr(info, "type", None) == pafs.FileType.Directory:
+                selector = pafs.FileSelector(base_dir=resolved_path, recursive=False)
+                entries = fs.get_file_info(selector)
+                if len(entries) > 0:
+                    raise FileExistsError(
+                        "Target dataset already exists (non-empty directory). Use 'append' or 'overwrite' mode."
+                    )
+            # For unknown types, conservatively fail.
+            else:
+                raise FileExistsError("Target dataset already exists. Use 'append' or 'overwrite' mode.")
+
         if isinstance(schema, Schema):
             self._pyarrow_schema = schema.to_pyarrow_schema()
         elif isinstance(schema, pa.Schema):
@@ -88,6 +115,9 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
                     "Schema of data does not match table schema\n"
                     f"Data schema:\n{self._pyarrow_schema}\nTable Schema:\n{self._table_schema}"
                 )
+        else:
+            if self._mode == "append":
+                raise ValueError("Cannot append to non-existent Lance dataset.")
 
         self._schema = Schema._from_field_name_and_types(
             [
