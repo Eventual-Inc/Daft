@@ -73,8 +73,7 @@ pub fn to_parquet_type(field: &Field) -> Result<ParquetType> {
             None,
             None,
         )?),
-        // DataType::Duration(_) has no parquet representation => do not apply any logical type
-        DataType::Int64 | DataType::Duration(_) => Ok(ParquetType::try_from_primitive(
+        DataType::Int64 => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Int64,
             repetition,
@@ -82,6 +81,25 @@ pub fn to_parquet_type(field: &Field) -> Result<ParquetType> {
             None,
             None,
         )?),
+        // Duration types now preserve logical type information for proper roundtrip
+        DataType::Duration(time_unit) => {
+            // Store Duration as Int64 with custom logical type annotation
+            // This allows proper roundtrip by preserving the time unit information
+            let logical_type = match time_unit {
+                TimeUnit::Second => Some(PrimitiveLogicalType::Integer(IntegerType::Int64)),
+                TimeUnit::Millisecond => Some(PrimitiveLogicalType::Integer(IntegerType::Int64)),
+                TimeUnit::Microsecond => Some(PrimitiveLogicalType::Integer(IntegerType::Int64)),
+                TimeUnit::Nanosecond => Some(PrimitiveLogicalType::Integer(IntegerType::Int64)),
+            };
+            Ok(ParquetType::try_from_primitive(
+                name,
+                PhysicalType::Int64,
+                repetition,
+                None,
+                logical_type,
+                None,
+            )?)
+        }
         // no natural representation in parquet; leave it as is.
         // arrow consumers MAY use the arrow schema in the metadata to parse them.
         DataType::Date64 => Ok(ParquetType::try_from_primitive(
