@@ -67,7 +67,6 @@ def test_actor_pool_udf_cuda_env_var(concurrency, num_gpus):
 
 def test_actor_pool_udf_fractional_gpu():
     with reset_runner_with_gpus(1):
-        ray.available_resources()
 
         @udf(return_dtype=DataType.string(), num_gpus=0.5)
         class FractionalGpuUdf:
@@ -87,7 +86,7 @@ def test_actor_pool_udf_fractional_gpu():
 
         df = daft.from_pydict({"x": [1, 2]})
         df = df.into_partitions(2)
-        # df = df.select(FractionalGpuUdf(df["x"]))
+        df = df.select(FractionalGpuUdf(df["x"]))
 
         result = df.to_pydict()
 
