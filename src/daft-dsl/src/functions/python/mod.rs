@@ -1,7 +1,7 @@
 mod runtime_py_object;
 mod udf;
 
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
@@ -15,6 +15,39 @@ use pyo3::{
 };
 pub use runtime_py_object::RuntimePyObject;
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum OnError {
+    Raise,
+    Log,
+    Ignore,
+}
+
+impl OnError {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Raise => "raise",
+            Self::Log => "log",
+            Self::Ignore => "ignore",
+        }
+    }
+}
+
+impl FromStr for OnError {
+    type Err = DaftError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "raise" => Ok(Self::Raise),
+            "log" => Ok(Self::Log),
+            "ignore" => Ok(Self::Ignore),
+            _ => Err(DaftError::ValueError(format!(
+                "Invalid on_error value: {}",
+                s
+            ))),
+        }
+    }
+}
 
 use super::FunctionExpr;
 #[cfg(feature = "python")]
@@ -82,6 +115,8 @@ pub struct LegacyPythonUDF {
     pub batch_size: Option<usize>,
     pub concurrency: Option<usize>,
     pub use_process: Option<bool>,
+    pub max_retries: Option<usize>,
+    pub on_error: Option<OnError>,
 }
 
 impl LegacyPythonUDF {
@@ -100,6 +135,8 @@ impl LegacyPythonUDF {
             batch_size: None,
             concurrency: Some(4),
             use_process: None,
+            max_retries: None,
+            on_error: None,
         }
     }
 }
@@ -116,6 +153,8 @@ pub fn udf(
     batch_size: Option<usize>,
     concurrency: Option<usize>,
     use_process: Option<bool>,
+    max_retries: Option<usize>,
+    on_error: Option<OnError>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(LegacyPythonUDF {
@@ -128,6 +167,8 @@ pub fn udf(
             batch_size,
             concurrency,
             use_process,
+            max_retries,
+            on_error,
         }),
         inputs: expressions.into(),
     })
@@ -256,6 +297,8 @@ pub struct UDFProperties {
     pub batch_size: Option<usize>,
     pub concurrency: Option<usize>,
     pub use_process: Option<bool>,
+    pub max_retries: Option<usize>,
+    pub on_error: Option<OnError>,
 }
 
 impl UDFProperties {
@@ -273,6 +316,8 @@ impl UDFProperties {
                             batch_size,
                             concurrency,
                             use_process,
+                            max_retries,
+                            on_error,
                             ..
                         }),
                     ..
@@ -284,6 +329,8 @@ impl UDFProperties {
                         batch_size: *batch_size,
                         concurrency: *concurrency,
                         use_process: *use_process,
+                        max_retries: *max_retries,
+                        on_error: on_error.clone(),
                     });
                 }
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
@@ -304,6 +351,8 @@ impl UDFProperties {
                         batch_size: None,
                         concurrency: *max_concurrency,
                         use_process: *use_process,
+                        max_retries: None,
+                        on_error: None,
                     });
                 }
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
@@ -325,6 +374,8 @@ impl UDFProperties {
                         batch_size: *batch_size,
                         concurrency: *max_concurrency,
                         use_process: *use_process,
+                        max_retries: None,
+                        on_error: None,
                     });
                 }
                 _ => {}

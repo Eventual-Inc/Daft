@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use super::ProtoResult;
 use crate::{
     non_null, not_implemented_err,
@@ -436,6 +438,11 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             }
         };
 
+        let max_retries = message.max_retries.map(|r| r as usize);
+        let on_error = message
+            .on_error
+            .and_then(|s| ir::functions::python::OnError::from_str(&s).ok());
+
         Ok(Self {
             name: name.into(),
             func,
@@ -446,6 +453,8 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             batch_size,
             concurrency,
             use_process,
+            max_retries,
+            on_error,
         })
     }
 
@@ -487,6 +496,9 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             None => (None, None, None),
         };
 
+        let max_retries: Option<u64> = self.max_retries.map(|s| s as u64);
+        let on_error: Option<String> = self.on_error.as_ref().map(|e| e.as_str().to_string());
+
         Ok(Self::Message {
             name,
             arity,
@@ -500,6 +512,8 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             num_gpus,
             max_memory_bytes,
             use_process: self.use_process,
+            max_retries,
+            on_error,
         })
     }
 }

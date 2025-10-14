@@ -62,6 +62,8 @@ def embed_text(
     *,
     provider: str | Provider | None = None,
     model: str | None = None,
+    max_retries: int = 3,
+    on_error: str = "raise",
     **options: str,
 ) -> Expression:
     """Returns an expression that embeds text using the specified embedding model and provider.
@@ -73,6 +75,13 @@ def embed_text(
             The provider to use for the embedding model. If None, the default provider is used.
         model (str | None):
             The embedding model to use. Can be a model instance or a model name. If None, the default model is used.
+        max_retries (int):
+            Maximum number of retry attempts for each text item. Default is 3.
+        on_error (str):
+            Error handling mode. Options are:
+            - "raise" (default): Raise exception after exhausting retries
+            - "log": Log error message with RecordBatch, return None for failed items
+            - "ignore": Silently return None for failed items
         **options: Any additional options to pass for the model.
 
     Note:
@@ -84,15 +93,22 @@ def embed_text(
     from daft.ai._expressions import _TextEmbedderExpression
     from daft.ai.protocols import TextEmbedder
 
+    # Validate on_error parameter
+    if on_error not in ["raise", "log", "ignore"]:
+        raise ValueError(f"on_error must be one of 'raise', 'log', or 'ignore', got: {on_error}")
+
     # load a TextEmbedderDescriptor from the resolved provider
     text_embedder = _resolve_provider(provider, "sentence_transformers").get_text_embedder(model, **options)
 
     # implemented as a class-based udf for now
     udf_options = text_embedder.get_udf_options()
+
     expr_callable = udf(
         return_dtype=text_embedder.get_dimensions().as_dtype(),
         concurrency=udf_options.concurrency,
         num_gpus=udf_options.num_gpus,
+        max_retries=max_retries,
+        on_error=on_error,
     )
 
     expr = expr_callable(_TextEmbedderExpression)
@@ -105,6 +121,8 @@ def embed_image(
     *,
     provider: str | Provider | None = None,
     model: str | None = None,
+    max_retries: int = 3,
+    on_error: str = "raise",
     **options: str,
 ) -> Expression:
     """Returns an expression that embeds images using the specified image model and provider.
@@ -113,6 +131,13 @@ def embed_image(
         image (Image Expression): The input image column expression.
         provider (str | Provider | None): The provider to use for the image model. If None, the default provider is used.
         model (str | None): The image model to use. Can be a model instance or a model name. If None, the default model is used.
+        max_retries (int):
+            Maximum number of retry attempts for each image item. Default is 3.
+        on_error (str):
+            Error handling mode. Options are:
+            - "raise" (default): Raise exception after exhausting retries
+            - "log": Log error message with RecordBatch, return None for failed items
+            - "ignore": Silently return None for failed items
         **options: Any additional options to pass for the model.
 
     Note:
@@ -124,14 +149,21 @@ def embed_image(
     from daft.ai._expressions import _ImageEmbedderExpression
     from daft.ai.protocols import ImageEmbedder
 
+    # Validate on_error parameter
+    if on_error not in ["raise", "log", "ignore"]:
+        raise ValueError(f"on_error must be one of 'raise', 'log', or 'ignore', got: {on_error}")
+
     image_embedder = _resolve_provider(provider, "transformers").get_image_embedder(model, **options)
 
     # implemented as a class-based udf for now
     udf_options = image_embedder.get_udf_options()
+
     expr_udf = udf(
         return_dtype=image_embedder.get_dimensions().as_dtype(),
         concurrency=udf_options.concurrency,
         num_gpus=udf_options.num_gpus,
+        max_retries=max_retries,
+        on_error=on_error,
     )
 
     expr = expr_udf(_ImageEmbedderExpression)
@@ -150,6 +182,8 @@ def classify_text(
     *,
     provider: str | Provider | None = None,
     model: str | None = None,
+    max_retries: int = 3,
+    on_error: str = "raise",
     **options: str,
 ) -> Expression:
     """Returns an expression that classifies text using the specified model and provider.
@@ -159,6 +193,13 @@ def classify_text(
         labels (str | list[str]): Label(s) for classification.
         provider (str | Provider | None): The provider to use for the embedding model. If None, the default provider is used.
         model (str | None): The embedding model to use. Can be a model instance or a model name. If None, the default model is used.
+        max_retries (int):
+            Maximum number of retry attempts for each text item. Default is 3.
+        on_error (str):
+            Error handling mode. Options are:
+            - "raise" (default): Raise exception after exhausting retries
+            - "log": Log error message with RecordBatch, return None for failed items
+            - "ignore": Silently return None for failed items
         **options: Any additional options to pass for the model.
 
     Note:
@@ -170,6 +211,10 @@ def classify_text(
     from daft.ai._expressions import _TextClassificationExpression
     from daft.ai.protocols import TextClassifier
 
+    # Validate on_error parameter
+    if on_error not in ["raise", "log", "ignore"]:
+        raise ValueError(f"on_error must be one of 'raise', 'log', or 'ignore', got: {on_error}")
+
     text_classifier = _resolve_provider(provider, "transformers").get_text_classifier(model, **options)
 
     # TODO(rchowell): classification with structured outputs will be more interesting
@@ -177,10 +222,13 @@ def classify_text(
 
     # implemented as a class-based udf for now
     udf_options = text_classifier.get_udf_options()
+
     expr_callable = udf(
         return_dtype=DataType.string(),
         concurrency=udf_options.concurrency,
         num_gpus=udf_options.num_gpus,
+        max_retries=max_retries,
+        on_error=on_error,
     )
 
     expr = expr_callable(_TextClassificationExpression)
