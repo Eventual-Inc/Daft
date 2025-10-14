@@ -771,3 +771,46 @@ impl From<&PyExpr> for crate::ExprRef {
         item.expr.clone()
     }
 }
+
+// KV Store ScalarUDF convenience functions with store name support
+#[pyfunction(signature = (keys, name, columns=None))]
+pub fn kv_get_with_name(keys: PyExpr, name: PyExpr, columns: Option<PyExpr>) -> PyResult<PyExpr> {
+    Ok(crate::functions::kv::kv_functions::kv_get_with_name(
+        keys.into(),
+        name.into(),
+        columns.map(|c| c.into()),
+    )
+    .into())
+}
+
+#[pyfunction]
+pub fn kv_batch_get_with_name(keys: PyExpr, name: PyExpr, batch_size: PyExpr) -> PyResult<PyExpr> {
+    // First get the KV store from session using the name
+    // Then extract the config from the KV store
+    // Finally call the actual kv_batch_get_with_name function
+    Ok(crate::functions::kv::kv_functions::kv_batch_get_with_name(
+        keys.into(),
+        name.into(),
+        batch_size.into(),
+    )
+    .into())
+}
+
+#[pyfunction]
+pub fn kv_exists_with_name(keys: PyExpr, name: PyExpr) -> PyResult<PyExpr> {
+    // First get the KV store from session using the name
+    // Then extract the config from the KV store
+    // Finally call the actual kv_exists_with_name function
+    Ok(crate::functions::kv::kv_functions::kv_exists_with_name(keys.into(), name.into()).into())
+}
+
+#[pyfunction]
+pub fn kv_put_with_name(key: PyExpr, value: PyExpr, name: PyExpr) -> PyResult<PyExpr> {
+    // First get the KV store from session using the name
+    // Then extract the config from the KV store
+    // Finally call the actual kv_put_with_name function
+    Ok(
+        crate::functions::kv::kv_functions::kv_put_with_name(key.into(), value.into(), name.into())
+            .into(),
+    )
+}
