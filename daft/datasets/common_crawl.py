@@ -106,7 +106,7 @@ def common_crawl(
 
     Examples:
         >>> # Create a dataframe from raw WARC data from a specific crawl
-        >>> daft.datasets.common_crawl("CC-MAIN-2025-33")  # doctest: +SKIP
+        >>> daft.datasets.common_crawl("CC-MAIN-2025-33", in_aws=True)  # doctest: +SKIP
         ╭────────────────┬─────────────────┬───────────┬────────────────────┬────────────┬────────────────────┬──────────────┬──────────────╮
         │ WARC-Record-ID ┆ WARC-Target-URI ┆ WARC-Type ┆ WARC-Date          ┆      …     ┆ WARC-Identified-Pa ┆ warc_content ┆ warc_headers │
         │ ---            ┆ ---             ┆ ---       ┆ ---                ┆            ┆ yload-Type         ┆ ---          ┆ ---          │
@@ -118,7 +118,7 @@ def common_crawl(
         (No data to display: Dataframe not materialized)
 
         >>> # Show a sample of extracted text content
-        >>> daft.datasets.common_crawl("CC-MAIN-2025-33", content="text").limit(2).show()  # doctest: +SKIP
+        >>> daft.datasets.common_crawl("CC-MAIN-2025-33", content="text", in_aws=True).limit(2).show()  # doctest: +SKIP
         ╭─────────────────┬─────────────────┬────────────┬─────────────────┬────────────┬─────────────────┬────────────────┬────────────────╮
         │ WARC-Record-ID  ┆ WARC-Target-URI ┆ WARC-Type  ┆ WARC-Date       ┆      …     ┆ WARC-Identified ┆ warc_content   ┆ warc_headers   │
         │ ---             ┆ ---             ┆ ---        ┆ ---             ┆            ┆ -Payload-Type   ┆ ---            ┆ ---            │
@@ -139,7 +139,9 @@ def common_crawl(
 
         >>> # Sample a single file from a specific segment in a crawl for testing
         >>> (
-        ...     daft.datasets.common_crawl("CC-MAIN-2025-33", segment="1754151579063.98", num_files=1).limit(2).show()
+        ...     daft.datasets.common_crawl("CC-MAIN-2025-33", segment="1754151579063.98", num_files=1, in_aws=True)
+        ...     .limit(2)
+        ...     .show()
         ... )  # doctest: +SKIP
         ╭─────────────────┬─────────────────┬───────────┬─────────────────┬────────────┬─────────────────┬─────────────────┬────────────────╮
         │ WARC-Record-ID  ┆ WARC-Target-URI ┆ WARC-Type ┆ WARC-Date       ┆      …     ┆ WARC-Identified ┆ warc_content    ┆ warc_headers   │
