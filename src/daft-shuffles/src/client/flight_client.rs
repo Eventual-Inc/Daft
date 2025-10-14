@@ -12,23 +12,22 @@ use daft_schema::field::FieldRef;
 use futures::{FutureExt, Stream, StreamExt};
 use tonic::transport::Endpoint;
 
+#[allow(clippy::large_enum_variant)]
 enum ClientState {
     // The address of the flight server
     Uninitialized(String),
     // The address of the flight server and the flight client
-    Initialized(String, Box<FlightClient>),
+    Initialized(String, FlightClient),
 }
 
 pub struct ShuffleFlightClient {
     inner: ClientState,
-    schema: SchemaRef,
 }
 
 impl ShuffleFlightClient {
-    pub fn new(address: String, schema: SchemaRef) -> Self {
+    pub fn new(address: String) -> Self {
         Self {
             inner: ClientState::Uninitialized(address),
-            schema,
         }
     }
 
@@ -44,7 +43,7 @@ impl ShuffleFlightClient {
             let inner = client.into_inner().max_decoding_message_size(usize::MAX);
             self.inner = ClientState::Initialized(
                 std::mem::take(address),
-                Box::new(FlightClient::new_from_inner(inner)),
+                FlightClient::new_from_inner(inner),
             );
         }
         match &mut self.inner {
@@ -55,36 +54,9 @@ impl ShuffleFlightClient {
 
     pub async fn get_partition(
         &mut self,
-        partition_idx: usize,
-    ) -> DaftResult<FlightRecordBatchStreamToDaftRecordBatchStream> {
-        let ticket = Ticket::new(partition_idx.to_string());
-        let (address, client) = self.connect().await?;
-        let stream = client.do_get(ticket).await.map_err(|e| {
-            DaftError::External(
-                format!(
-                    "Error fetching partition: {} from {}. {}",
-                    partition_idx, address, e
-                )
-                .into(),
-            )
-        })?;
-        Ok(FlightRecordBatchStreamToDaftRecordBatchStream {
-            stream,
-            done: false,
-            schema: self.schema.clone(),
-            fields: self
-                .schema
-                .fields()
-                .iter()
-                .map(|f| Arc::new(f.clone()))
-                .collect(),
-        })
-    }
-
-    pub async fn get_partition_with_shuffle_id(
-        &mut self,
         shuffle_id: u64,
         partition_idx: usize,
+        schema: SchemaRef,
     ) -> DaftResult<FlightRecordBatchStreamToDaftRecordBatchStream> {
         let ticket = Ticket::new(format!("{}:{}", shuffle_id, partition_idx));
         let (address, client) = self.connect().await?;
@@ -100,9 +72,8 @@ impl ShuffleFlightClient {
         Ok(FlightRecordBatchStreamToDaftRecordBatchStream {
             stream,
             done: false,
-            schema: self.schema.clone(),
-            fields: self
-                .schema
+            schema: schema.clone(),
+            fields: schema
                 .fields()
                 .iter()
                 .map(|f| Arc::new(f.clone()))

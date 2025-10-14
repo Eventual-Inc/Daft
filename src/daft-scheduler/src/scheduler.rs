@@ -637,53 +637,6 @@ fn physical_plan_to_partition_tasks(
                         .call1((mapped,))?;
                     Ok(reduced.into())
                 }
-                ShuffleExchangeStrategy::FlightShuffle {
-                    target_spec,
-                    shuffle_dirs,
-                } => {
-                    let shuffled = match target_spec.as_ref() {
-                        daft_logical_plan::ClusteringSpec::Hash(hash_clustering_config) => {
-                            let partition_by_pyexprs: Vec<PyExpr> = hash_clustering_config
-                                .by
-                                .iter()
-                                .map(|expr| PyExpr::from(expr.clone()))
-                                .collect();
-                            py.import(pyo3::intern!(
-                                py,
-                                "daft.execution.shuffles.flight_shuffle.flight_shuffle"
-                            ))?
-                            .getattr(pyo3::intern!(py, "flight_shuffle"))?
-                            .call1((
-                                upstream_iter,
-                                hash_clustering_config.num_partitions,
-                                shuffle_dirs,
-                                Some(partition_by_pyexprs),
-                            ))?
-                        }
-                        daft_logical_plan::ClusteringSpec::Random(random_clustering_config) => py
-                            .import(pyo3::intern!(
-                                py,
-                                "daft.execution.shuffles.flight_shuffle.flight_shuffle"
-                            ))?
-                            .getattr(pyo3::intern!(py, "flight_shuffle"))?
-                            .call1((
-                                upstream_iter,
-                                random_clustering_config.num_partitions(),
-                                shuffle_dirs,
-                            ))?,
-                        daft_logical_plan::ClusteringSpec::Range(_) => {
-                            unimplemented!(
-                                "FanoutByRange not implemented, since only use case (sorting) doesn't need it yet."
-                            );
-                        }
-                        daft_logical_plan::ClusteringSpec::Unknown(_) => {
-                            unreachable!(
-                                "Cannot use NaiveFullyMaterializingMapReduce ShuffleExchange to map to an Unknown ClusteringSpec"
-                            );
-                        }
-                    };
-                    Ok(shuffled.into())
-                }
                 ShuffleExchangeStrategy::SplitOrCoalesceToTargetNum {
                     target_num_partitions,
                 } => {

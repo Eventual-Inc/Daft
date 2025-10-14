@@ -3,15 +3,16 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
+use common_runtime::combine_stream;
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
 use daft_micropartition::MicroPartition;
 use daft_shuffles::client::FlightClientManager;
-use futures::stream::BoxStream;
+use futures::{FutureExt, StreamExt};
 use tracing::instrument;
 
 use super::source::{Source, SourceStream};
-use crate::pipeline::NodeName;
+use crate::{channel::create_channel, pipeline::NodeName};
 
 pub struct FlightShuffleReadSource {
     shuffle_id: u64,
@@ -72,29 +73,29 @@ impl Source for FlightShuffleReadSource {
         // Get the global flight client manager
         let schema = self.schema.clone();
         let io_runtime = common_runtime::get_io_runtime(true);
-        let server_addresses_clone = server_addresses.clone();
-        let schema_clone = schema.clone();
-        let micropartition = io_runtime
+        let (tx, rx) = create_channel(0);
+        let task = io_runtime
             .spawn(async move {
-                let client_manager = FlightClientManager::get_or_create_global(
-                    server_addresses_clone.clone(),
-                    4, // num_parallel_fetches
-                    schema_clone,
-                )
-                .await;
-
-                client_manager.add_addresses(server_addresses_clone).await?;
+                let client_manager = FlightClientManager::new(server_addresses);
 
                 // Fetch the partition data from the flight server
-                let micropartition = client_manager
-                    .fetch_partition_with_shuffle_id(shuffle_id, partition_idx)
+                let mut stream = client_manager
+                    .fetch_partition(shuffle_id, partition_idx, schema.clone())
                     .await?;
-                DaftResult::Ok(micropartition)
+                while let Some(batch) = stream.next().await {
+                    let mp = MicroPartition::new_loaded(schema.clone(), vec![batch?].into(), None);
+                    if tx.send(Arc::new(mp)).await.is_err() {
+                        break;
+                    }
+                }
+                DaftResult::Ok(())
             })
-            .await??;
-        let stream: BoxStream<DaftResult<Arc<MicroPartition>>> =
-            Box::pin(futures::stream::once(async move { Ok(micropartition) }));
+            .map(|result| match result {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(e)) => Err(e.into()),
+                Err(e) => Err(e.into()),
+            });
 
-        Ok(stream)
+        Ok(combine_stream(rx.into_stream().map(Ok).boxed(), task).boxed())
     }
 }
