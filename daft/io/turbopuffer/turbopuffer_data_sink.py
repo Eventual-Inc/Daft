@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from daft.expressions import Expression
 
 
-class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
+class TurbopufferDataSink(DataSink[dict[str, Any]]):
     """WriteSink for writing data to a Turbopuffer namespace."""
 
     _namespace: str | ExpressionsProjection
@@ -155,7 +155,7 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
 
     def _write_with_error_handling(
         self, namespace: turbopuffer.Namespace, arrow_table: pa.Table
-    ) -> WriteResult[turbopuffer.types.NamespaceWriteResponse]:
+    ) -> WriteResult[dict[str, Any]]:
         try:
             write_response = namespace.write(
                 upsert_rows=arrow_table.to_pylist(),
@@ -193,9 +193,7 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
                 rows_written=0,
             )
 
-    def write(
-        self, micropartitions: Iterator[MicroPartition]
-    ) -> Iterator[WriteResult[turbopuffer.types.NamespaceWriteResponse]]:
+    def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[dict[str, Any]]]:
         """Writes micropartitions to Turbopuffer namespace(s)."""
         turbopuffer = TurbopufferDataSink._import_turbopuffer()
         tpuf = turbopuffer.Turbopuffer(**self._client_kwargs)
@@ -221,7 +219,7 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
                     namespace = tpuf.namespace(namespace_name)
                     yield self._write_with_error_handling(namespace, arrow_table)
 
-    def finalize(self, write_results: list[WriteResult[turbopuffer.types.NamespaceWriteResponse]]) -> MicroPartition:
+    def finalize(self, write_results: list[WriteResult[dict[str, Any]]]) -> MicroPartition:
         """Finalizes the write process and returns summary statistics."""
         if len(write_results) == 0:
             return MicroPartition.empty(self._result_schema)

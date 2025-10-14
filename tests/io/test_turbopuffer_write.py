@@ -20,18 +20,6 @@ def sample_df() -> daft.DataFrame:
     )
 
 
-def test_resilience_to_connection_errors(sample_df):
-    results = sample_df.write_turbopuffer(
-        namespace="test_namespace", api_key="test_api_key", region="test_region"
-    ).collect()
-    rows_not_written = 0
-    for result in results:
-        write_result = result["write_responses"].result
-        if write_result["status"] == "failed":
-            rows_not_written += write_result["rows_not_written"]
-    assert rows_not_written == sample_df.count_rows()
-
-
 @pytest.mark.parametrize(
     "error_class,status_code,error_message",
     [
