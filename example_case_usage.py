@@ -4,6 +4,7 @@
 This demonstrates both simple case and searched case expressions,
 showing the improved programmatic construction capabilities.
 """
+
 from __future__ import annotations
 
 import daft
