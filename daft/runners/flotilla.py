@@ -181,7 +181,7 @@ class RaySwordfishActorHandle:
 
 
 def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
-    handles = []
+    actors_info = []
     for node in ray.nodes():
         if (
             "Resources" in node
@@ -200,18 +200,24 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
                 num_cpus=int(node["Resources"]["CPU"]),
                 num_gpus=int(node["Resources"].get("GPU", 0)),
             )
-            ip_address = ray.get(actor.get_address.remote())
-            actor_handle = RaySwordfishActorHandle(actor)
-            handles.append(
-                RaySwordfishWorker(
-                    node["NodeID"],
-                    actor_handle,
-                    int(node["Resources"]["CPU"]),
-                    int(node["Resources"].get("GPU", 0)),
-                    int(node["Resources"]["memory"]),
-                    ip_address,
-                )
+            actors_info.append((node, actor))
+
+    # Batch all IP address retrievals into a single ray.get call
+    ip_addresses = ray.get([actor.get_address.remote() for _, actor in actors_info])
+
+    handles = []
+    for (node, actor), ip_address in zip(actors_info, ip_addresses):
+        actor_handle = RaySwordfishActorHandle(actor)
+        handles.append(
+            RaySwordfishWorker(
+                node["NodeID"],
+                actor_handle,
+                int(node["Resources"]["CPU"]),
+                int(node["Resources"].get("GPU", 0)),
+                int(node["Resources"]["memory"]),
+                ip_address,
             )
+        )
 
     return handles
 
@@ -296,7 +302,6 @@ class FlotillaRunner:
             name=FLOTILLA_RUNNER_NAME,
             namespace=FLOTILLA_RUNNER_NAMESPACE,
             get_if_exists=True,
-            lifetime="detached",
             scheduling_strategy=(
                 ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=head_node_id,

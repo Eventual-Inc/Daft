@@ -284,14 +284,6 @@ impl LogicalPlanToPipelineNodeTranslator {
             todo!("FLOTILLA_MS?: Implement non-equality joins")
         }
 
-        // Normalize join keys
-        let (left_on, right_on) = daft_dsl::join::normalize_join_keys(
-            left_on,
-            right_on,
-            left_node.config().schema.clone(),
-            right_node.config().schema.clone(),
-        )?;
-
         // Get stats from the join logical plan's left and right children
         let left_stats = join.left.materialized_stats().approx_stats.clone();
         let right_stats = join.right.materialized_stats().approx_stats.clone();
@@ -305,6 +297,14 @@ impl LogicalPlanToPipelineNodeTranslator {
             &left_stats,
             &right_stats,
         );
+
+        // Normalize join keys
+        let (left_on, right_on) = daft_dsl::join::normalize_join_keys(
+            left_on,
+            right_on,
+            left_node.config().schema.clone(),
+            right_node.config().schema.clone(),
+        )?;
 
         // Bind join keys to schemas
         let left_on = BoundExpr::bind_all(&left_on, &left_node.config().schema)?;
