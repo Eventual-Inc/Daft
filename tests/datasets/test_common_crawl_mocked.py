@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 import daft
+from daft.datasets.common_crawl import _get_http_manifest_path, _get_s3_manifest_path
 
 WARC_PATHS = [
     "crawl-data/CC-MAIN-2025-33/segments/1234567890.1/warc/CC-MAIN-20250801120000-20250801150000-00001.warc.gz",
@@ -219,3 +220,13 @@ def test_io_config_passed_through(mock_read_warc, mock_manifest_path, in_aws):
 
     mock_read_warc.assert_called_once()
     assert mock_read_warc.call_args[1]["io_config"] == mock_io_config
+
+
+def test_get_http_manifest_path():
+    url = _get_http_manifest_path("CC-MAIN-2025-33", "warc")
+    assert url == "https://data.commoncrawl.org/crawl-data/CC-MAIN-2025-33/warc.paths.gz"
+
+
+def test_get_s3_manifest_path():
+    url = _get_s3_manifest_path("CC-MAIN-2025-33", "warc")
+    assert url == "s3://commoncrawl/crawl-data/CC-MAIN-2025-33/warc.paths.gz"

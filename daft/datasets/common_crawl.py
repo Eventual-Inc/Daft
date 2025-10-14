@@ -21,7 +21,6 @@ def _get_s3_manifest_path(crawl: str, file_type: Literal["warc", "wet", "wat"]) 
 
 
 def _get_http_manifest_path(crawl: str, file_type: Literal["warc", "wet", "wat"]) -> str:
-    # https://data.commoncrawl.org/crawl-data/CC-MAIN-2025-33/index.html
     return f"https://data.commoncrawl.org/crawl-data/{crawl}/{file_type}.paths.gz"
 
 
