@@ -68,8 +68,8 @@ impl LogicalPlanToPipelineNodeTranslator {
         logical_node_id: Option<NodeID>,
         left: DistributedPipelineNode,
         right: DistributedPipelineNode,
-        left_on: Vec<BoundExpr>,
-        right_on: Vec<BoundExpr>,
+        left_on: Vec<ExprRef>,
+        right_on: Vec<ExprRef>,
         null_equals_nulls: Vec<bool>,
         join_type: JoinType,
         output_schema: SchemaRef,
@@ -78,15 +78,9 @@ impl LogicalPlanToPipelineNodeTranslator {
         let right_spec = right.config().clustering_spec.as_ref();
 
         let is_left_hash_partitioned = matches!(left_spec, ClusteringSpec::Hash(..))
-            && is_partition_compatible(
-                &left_spec.partition_by(),
-                left_on.iter().map(|e| e.inner()),
-            );
+            && is_partition_compatible(&left_spec.partition_by(), &left_on);
         let is_right_hash_partitioned = matches!(right_spec, ClusteringSpec::Hash(..))
-            && is_partition_compatible(
-                &right_spec.partition_by(),
-                right_on.iter().map(|e| e.inner()),
-            );
+            && is_partition_compatible(&right_spec.partition_by(), &right_on);
         let num_left_partitions = left_spec.num_partitions();
         let num_right_partitions = right_spec.num_partitions();
 
@@ -145,6 +139,18 @@ impl LogicalPlanToPipelineNodeTranslator {
             right
         };
 
+        // Normalize join keys
+        let (left_on, right_on) = daft_dsl::join::normalize_join_keys(
+            left_on,
+            right_on,
+            left.config().schema.clone(),
+            right.config().schema.clone(),
+        )?;
+
+        // Bind join keys to schemas
+        let left_on = BoundExpr::bind_all(&left_on, &left.config().schema)?;
+        let right_on = BoundExpr::bind_all(&right_on, &right.config().schema)?;
+
         Ok(HashJoinNode::new(
             self.get_next_pipeline_node_id(),
             logical_node_id,
@@ -165,12 +171,12 @@ impl LogicalPlanToPipelineNodeTranslator {
     pub(crate) fn gen_broadcast_join_node(
         &mut self,
         logical_node_id: Option<NodeID>,
-        left_on: Vec<BoundExpr>,
-        right_on: Vec<BoundExpr>,
+        left_on: Vec<ExprRef>,
+        right_on: Vec<ExprRef>,
         null_equals_nulls: Vec<bool>,
         join_type: JoinType,
-        left_node: DistributedPipelineNode,
-        right_node: DistributedPipelineNode,
+        left: DistributedPipelineNode,
+        right: DistributedPipelineNode,
         left_stats: &ApproxStats,
         right_stats: &ApproxStats,
         output_schema: SchemaRef,
@@ -192,10 +198,22 @@ impl LogicalPlanToPipelineNodeTranslator {
             (JoinType::Semi, _) => true,
         };
 
+        // Normalize join keys
+        let (left_on, right_on) = daft_dsl::join::normalize_join_keys(
+            left_on,
+            right_on,
+            left.config().schema.clone(),
+            right.config().schema.clone(),
+        )?;
+
+        // Bind join keys to schemas
+        let left_on = BoundExpr::bind_all(&left_on, &left.config().schema)?;
+        let right_on = BoundExpr::bind_all(&right_on, &right.config().schema)?;
+
         let (broadcaster, receiver) = if is_swapped {
-            (right_node, left_node)
+            (right, left)
         } else {
-            (left_node, right_node)
+            (left, right)
         };
 
         // Create broadcast join node
@@ -221,8 +239,8 @@ impl LogicalPlanToPipelineNodeTranslator {
         logical_node_id: Option<NodeID>,
         left: DistributedPipelineNode,
         right: DistributedPipelineNode,
-        left_on: Vec<BoundExpr>,
-        right_on: Vec<BoundExpr>,
+        left_on: Vec<ExprRef>,
+        right_on: Vec<ExprRef>,
         join_type: JoinType,
         output_schema: SchemaRef,
     ) -> DaftResult<DistributedPipelineNode> {
@@ -231,6 +249,17 @@ impl LogicalPlanToPipelineNodeTranslator {
             let right_num_partitions = right.config().clustering_spec.num_partitions();
             max(left_num_partitions, right_num_partitions)
         };
+        // Normalize join keys
+        let (left_on, right_on) = daft_dsl::join::normalize_join_keys(
+            left_on,
+            right_on,
+            left.config().schema.clone(),
+            right.config().schema.clone(),
+        )?;
+
+        // Bind join keys to schemas
+        let left_on = BoundExpr::bind_all(&left_on, &left.config().schema)?;
+        let right_on = BoundExpr::bind_all(&right_on, &right.config().schema)?;
 
         Ok(SortMergeJoinNode::new(
             self.get_next_pipeline_node_id(),
@@ -297,18 +326,6 @@ impl LogicalPlanToPipelineNodeTranslator {
             &left_stats,
             &right_stats,
         );
-
-        // Normalize join keys
-        let (left_on, right_on) = daft_dsl::join::normalize_join_keys(
-            left_on,
-            right_on,
-            left_node.config().schema.clone(),
-            right_node.config().schema.clone(),
-        )?;
-
-        // Bind join keys to schemas
-        let left_on = BoundExpr::bind_all(&left_on, &left_node.config().schema)?;
-        let right_on = BoundExpr::bind_all(&right_on, &right_node.config().schema)?;
 
         match join_strategy {
             JoinStrategy::Hash => self.gen_hash_join_nodes(
