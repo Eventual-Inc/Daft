@@ -153,6 +153,46 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
 
         return arrow_table.filter(~pc.field("id").is_null())
 
+    def _write_with_error_handling(
+        self, namespace: turbopuffer.Namespace, arrow_table: pa.Table
+    ) -> WriteResult[turbopuffer.types.NamespaceWriteResponse]:
+        try:
+            write_response = namespace.write(
+                upsert_rows=arrow_table.to_pylist(),
+                **self._write_kwargs,
+            )
+            result = {
+                "status": "success",
+                "response": write_response,
+            }
+            return WriteResult(
+                result=result,
+                bytes_written=arrow_table.nbytes,
+                rows_written=arrow_table.num_rows,
+            )
+        except (
+            turbopuffer.APIConnectionError,
+            turbopuffer.InternalServerError,
+            turbopuffer.RateLimitError,
+            turbopuffer.ConflictError,
+            turbopuffer.APITimeoutError,
+        ) as e:
+            # Turbopuffer client already retries transient errors. If, after the client library
+            # has already retried but we still get transient errors, then we gracefully handle it
+            # and allow writes to continue.
+            #
+            # For non-transient errors, we return an error result and allow the script to fail fast.
+            result = {
+                "status": "failed",
+                "error": str(e),
+                "rows_not_written": arrow_table.num_rows,
+            }
+            return WriteResult(
+                result=result,
+                bytes_written=0,
+                rows_written=0,
+            )
+
     def write(
         self, micropartitions: Iterator[MicroPartition]
     ) -> Iterator[WriteResult[turbopuffer.types.NamespaceWriteResponse]]:
@@ -168,16 +208,7 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
                     continue
 
                 namespace = tpuf.namespace(self._namespace)
-                write_response = namespace.write(
-                    upsert_rows=arrow_table.to_pylist(),
-                    **self._write_kwargs,
-                )
-
-                yield WriteResult(
-                    result=write_response,
-                    bytes_written=arrow_table.nbytes,
-                    rows_written=arrow_table.num_rows,
-                )
+                yield self._write_with_error_handling(namespace, arrow_table)
             else:
                 # Namespace is an expression. Partition the data by namespace then write to each namespace.
                 (partitioned_data, partition_keys) = micropartition.partition_by_value(self._namespace)
@@ -188,17 +219,7 @@ class TurbopufferDataSink(DataSink[turbopuffer.types.NamespaceWriteResponse]):
 
                     TurbopufferDataSink._check_namespace_name(namespace_name)
                     namespace = tpuf.namespace(namespace_name)
-                    write_response = namespace.write(
-                        upsert_rows=arrow_table.to_pylist(),
-                        distance_metric=self._distance_metric,
-                        schema=self._schema,
-                    )
-
-                    yield WriteResult(
-                        result=write_response,
-                        bytes_written=arrow_table.nbytes,
-                        rows_written=arrow_table.num_rows,
-                    )
+                    yield self._write_with_error_handling(namespace, arrow_table)
 
     def finalize(self, write_results: list[WriteResult[turbopuffer.types.NamespaceWriteResponse]]) -> MicroPartition:
         """Finalizes the write process and returns summary statistics."""
