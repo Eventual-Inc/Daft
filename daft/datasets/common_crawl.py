@@ -13,6 +13,9 @@ if TYPE_CHECKING:
     from daft.io import IOConfig
 
 
+__all__: tuple[str, ...] = ("common_crawl",)
+
+
 def _get_manifest_path(crawl: str, file_type: Literal["warc", "wet", "wat"]) -> str:
     return f"s3://commoncrawl/crawl-data/{crawl}/{file_type}.paths.gz"
 
@@ -53,6 +56,7 @@ def common_crawl(
     content: Literal["raw", "text", "metadata", "warc", "wet", "wat"] = "raw",
     num_files: int | None = None,
     io_config: IOConfig | None = None,
+    *in_aws: bool,
 ) -> DataFrame:
     r"""Load Common Crawl data as a DataFrame.
 
@@ -68,6 +72,13 @@ def common_crawl(
             - "metadata" or "wat": Metadata about crawled pages
         num_files: Limit the number of files to process. If not provided, processes all matching files.
         io_config: IO configuration for accessing S3.
+        in_aws: Where to fetch the common crawl data from. If running in AWS, this must be set to True. If outside of AWS,
+                then this must be set to False. Setting this flag correctly is required for **optimal download performance**.
+                If running in AWS, then make sure you're in the "us-east-1" region so you don't incur S3 egress fees!
+                See [the Common Crawl docs](https://commoncrawl.org/get-started) for more specific instructions.
+
+
+
 
     Returns:
         A DataFrame containing the requested Common Crawl data.
