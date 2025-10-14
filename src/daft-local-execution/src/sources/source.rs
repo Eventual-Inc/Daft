@@ -10,7 +10,11 @@ use async_trait::async_trait;
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use common_metrics::{Stat, StatSnapshotSend, snapshot};
+use common_metrics::{
+    Stat, StatSnapshotSend,
+    ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot,
+};
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
 use daft_logical_plan::stats::StatsState;
@@ -20,7 +24,6 @@ use futures::{StreamExt, stream::BoxStream};
 use crate::{
     ExecutionRuntimeContext,
     channel::{Receiver, create_channel},
-    ops::{NodeCategory, NodeInfo, NodeType},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     runtime_stats::{CPU_US_KEY, CountingSender, ROWS_OUT_KEY, RuntimeStats},
 };
@@ -72,7 +75,7 @@ pub trait Source: Send + Sync {
         &self,
         maintain_order: bool,
         io_stats: IOStatsRef,
-        chunk_size: Option<usize>,
+        chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>>;
     fn schema(&self) -> &SchemaRef;
 }
@@ -171,8 +174,8 @@ impl PipelineNode for SourceNode {
         let (destination_sender, destination_receiver) = create_channel(0);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
         let chunk_size = match self.morsel_size_requirement {
-            MorselSizeRequirement::Strict(size) => Some(size),
-            MorselSizeRequirement::Flexible(_, upper) => Some(upper),
+            MorselSizeRequirement::Strict(size) => size,
+            MorselSizeRequirement::Flexible(_, upper) => upper,
         };
 
         runtime_handle.spawn_local(

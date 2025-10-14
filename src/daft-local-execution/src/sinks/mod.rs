@@ -1,12 +1,12 @@
 pub mod aggregate;
 pub mod blocking_sink;
 pub mod commit_write;
-pub mod cross_join_collect;
 pub mod dedup;
 pub mod flight_shuffle_write;
 pub mod grouped_aggregate;
 pub mod hash_join_build;
 pub mod into_partitions;
+pub mod join_collect;
 pub mod pivot;
 pub mod repartition;
 pub mod sort;

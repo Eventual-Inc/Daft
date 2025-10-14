@@ -4,7 +4,7 @@
 
 Daft currently supports:
 
-1. **Parallel + Distributed Reads:** Daft parallelizes Hudi table reads over all cores of your machine, if using the default multithreading runner, or all cores + machines of your Ray cluster, if using the [distributed Ray runner](../distributed.md).
+1. **Parallel + Distributed Reads:** Daft parallelizes Hudi table reads over all cores of your machine, if using the default multithreading runner, or all cores + machines of your Ray cluster, if using the [distributed Ray runner](../distributed/index.md).
 
 2. **Skipping Filtered Data:** Daft ensures that only data that matches your [`df.where()`][daft.DataFrame.where] filter will be read, often skipping entire files/partitions.
 

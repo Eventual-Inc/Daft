@@ -272,7 +272,8 @@ impl DataType {
             | Self::Tensor(..)
             | Self::FixedShapeTensor(..)
             | Self::SparseTensor(..)
-            | Self::FixedShapeSparseTensor(..) => {
+            | Self::FixedShapeSparseTensor(..)
+            | Self::File => {
                 let physical = Box::new(self.to_physical());
                 let logical_extension = Self::Extension(
                     DAFT_SUPER_EXTENSION_NAME.into(),
@@ -292,9 +293,6 @@ impl DataType {
                 logical_extension.to_arrow()
             }
             Self::Unknown => Err(DaftError::TypeError(format!(
-                "Can not convert {self:?} into arrow type"
-            ))),
-            Self::File => Err(DaftError::TypeError(format!(
                 "Can not convert {self:?} into arrow type"
             ))),
         }
@@ -365,8 +363,7 @@ impl DataType {
                 Field::new("discriminant", UInt8),
                 Field::new("data", Binary),
                 Field::new("url", Utf8),
-                #[cfg(feature = "python")]
-                Field::new("io_config", Python),
+                Field::new("io_config", Binary),
             ]),
             _ => {
                 assert!(self.is_physical());
@@ -375,7 +372,10 @@ impl DataType {
         }
     }
 
+    /// Check if this datatype can be converted into an Arrow datatype.
+    /// This includes checking if the associated arrays can be converted into Arrow arrays.
     #[inline]
+    /// Is this DataType convertible to Arrow?
     pub fn is_arrow(&self) -> bool {
         self.to_arrow().is_ok()
     }

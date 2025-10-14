@@ -67,16 +67,19 @@ def embed_text(
     """Returns an expression that embeds text using the specified embedding model and provider.
 
     Args:
-        text (Expression): The input text column expression.
-        provider (str | Provider | None): The provider to use for the embedding model. If None, the default provider is used.
-        model (str | None): The embedding model to use. Can be a model instance or a model name. If None, the default model is used.
+        text (String Expression):
+            The input text column expression.
+        provider (str | Provider | None):
+            The provider to use for the embedding model. If None, the default provider is used.
+        model (str | None):
+            The embedding model to use. Can be a model instance or a model name. If None, the default model is used.
         **options: Any additional options to pass for the model.
 
     Note:
         Make sure the required provider packages are installed (e.g. vllm, transformers, openai).
 
     Returns:
-        Expression: An expression representing the embedded text vectors.
+        Expression (Embedding Expression): An expression representing the embedded text vectors.
     """
     from daft.ai._expressions import _TextEmbedderExpression
     from daft.ai.protocols import TextEmbedder
@@ -85,10 +88,11 @@ def embed_text(
     text_embedder = _resolve_provider(provider, "sentence_transformers").get_text_embedder(model, **options)
 
     # implemented as a class-based udf for now
+    udf_options = text_embedder.get_udf_options()
     expr_callable = udf(
         return_dtype=text_embedder.get_dimensions().as_dtype(),
-        concurrency=1,
-        use_process=False,
+        concurrency=udf_options.concurrency,
+        num_gpus=udf_options.num_gpus,
     )
 
     expr = expr_callable(_TextEmbedderExpression)
@@ -106,7 +110,7 @@ def embed_image(
     """Returns an expression that embeds images using the specified image model and provider.
 
     Args:
-        image (Expression): The input image column expression.
+        image (Image Expression): The input image column expression.
         provider (str | Provider | None): The provider to use for the image model. If None, the default provider is used.
         model (str | None): The image model to use. Can be a model instance or a model name. If None, the default model is used.
         **options: Any additional options to pass for the model.
@@ -115,7 +119,7 @@ def embed_image(
         Make sure the required provider packages are installed (e.g. vllm, transformers, openai).
 
     Returns:
-        Expression: An expression representing the embedded image vectors.
+        Expression (Embedding Expression): An expression representing the embedded image vectors.
     """
     from daft.ai._expressions import _ImageEmbedderExpression
     from daft.ai.protocols import ImageEmbedder
@@ -123,10 +127,11 @@ def embed_image(
     image_embedder = _resolve_provider(provider, "transformers").get_image_embedder(model, **options)
 
     # implemented as a class-based udf for now
+    udf_options = image_embedder.get_udf_options()
     expr_udf = udf(
         return_dtype=image_embedder.get_dimensions().as_dtype(),
-        concurrency=1,
-        use_process=False,
+        concurrency=udf_options.concurrency,
+        num_gpus=udf_options.num_gpus,
     )
 
     expr = expr_udf(_ImageEmbedderExpression)
@@ -150,7 +155,7 @@ def classify_text(
     """Returns an expression that classifies text using the specified model and provider.
 
     Args:
-        text (Expression): The input text column expression.
+        text (String Expression): The input text column expression.
         labels (str | list[str]): Label(s) for classification.
         provider (str | Provider | None): The provider to use for the embedding model. If None, the default provider is used.
         model (str | None): The embedding model to use. Can be a model instance or a model name. If None, the default model is used.
@@ -160,7 +165,7 @@ def classify_text(
         Make sure the required provider packages are installed (e.g. vllm, transformers, openai).
 
     Returns:
-        Expression: An expression representing the most-probable label string.
+        Expression (String Expression): An expression representing the most-probable label string.
     """
     from daft.ai._expressions import _TextClassificationExpression
     from daft.ai.protocols import TextClassifier
@@ -171,10 +176,11 @@ def classify_text(
     label_list = [labels] if isinstance(labels, str) else labels
 
     # implemented as a class-based udf for now
+    udf_options = text_classifier.get_udf_options()
     expr_callable = udf(
         return_dtype=DataType.string(),
-        concurrency=1,
-        use_process=False,
+        concurrency=udf_options.concurrency,
+        num_gpus=udf_options.num_gpus,
     )
 
     expr = expr_callable(_TextClassificationExpression)

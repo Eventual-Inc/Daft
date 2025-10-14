@@ -38,6 +38,7 @@ mod concat;
 mod distinct;
 mod explode;
 mod filter;
+mod glob_scan_source;
 mod in_memory_source;
 mod into_batches;
 mod into_partitions;
@@ -87,7 +88,6 @@ impl MaterializedOutput {
         &self.partition
     }
 
-    #[allow(dead_code)]
     pub fn worker_id(&self) -> &WorkerId {
         &self.worker_id
     }
@@ -194,16 +194,15 @@ impl PipelineNodeContext {
     }
 }
 
-pub(crate) trait DistributedPipelineNode: Send + Sync + TreeDisplay {
+pub(crate) trait PipelineNodeImpl: Send + Sync {
     fn context(&self) -> &PipelineNodeContext;
     fn config(&self) -> &PipelineNodeConfig;
-    #[allow(dead_code)]
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>>;
+
+    fn children(&self) -> Vec<DistributedPipelineNode>;
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream;
-    fn as_tree_display(&self) -> &dyn TreeDisplay;
     fn name(&self) -> NodeName {
         self.context().node_name
     }
@@ -214,11 +213,65 @@ pub(crate) trait DistributedPipelineNode: Send + Sync + TreeDisplay {
     fn node_id(&self) -> NodeID {
         self.context().node_id
     }
+    fn multiline_display(&self, verbose: bool) -> Vec<String>;
+}
+
+#[derive(Clone)]
+pub(crate) struct DistributedPipelineNode {
+    op: Arc<dyn PipelineNodeImpl>,
+    children: Vec<DistributedPipelineNode>,
+}
+
+impl DistributedPipelineNode {
+    pub fn new(op: Arc<dyn PipelineNodeImpl>) -> Self {
+        let children = op.children();
+        Self { op, children }
+    }
+
+    fn context(&self) -> &PipelineNodeContext {
+        self.op.context()
+    }
+    fn config(&self) -> &PipelineNodeConfig {
+        self.op.config()
+    }
+    pub fn node_id(&self) -> NodeID {
+        self.op.node_id()
+    }
+    pub fn name(&self) -> NodeName {
+        self.op.name()
+    }
+    pub fn produce_tasks(self, plan_context: &mut PlanExecutionContext) -> SubmittableTaskStream {
+        self.op.produce_tasks(plan_context)
+    }
+    fn as_tree_display(&self) -> &dyn TreeDisplay {
+        self
+    }
+}
+
+impl TreeDisplay for DistributedPipelineNode {
+    fn display_as(&self, level: DisplayLevel) -> String {
+        match level {
+            DisplayLevel::Compact => self.get_name(),
+            DisplayLevel::Default => self.op.multiline_display(false).join("\n"),
+            DisplayLevel::Verbose => self.op.multiline_display(true).join("\n"),
+        }
+    }
+
+    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
+        self.children
+            .iter()
+            .map(|child| child.as_tree_display())
+            .collect()
+    }
+
+    fn get_name(&self) -> String {
+        self.context().node_name.to_string()
+    }
 }
 
 /// Visualize a distributed pipeline as Mermaid markdown
 pub fn viz_distributed_pipeline_mermaid(
-    root: &dyn DistributedPipelineNode,
+    root: &DistributedPipelineNode,
     display_type: DisplayLevel,
     bottom_up: bool,
     subgraph_options: Option<SubgraphOptions>,
@@ -226,19 +279,19 @@ pub fn viz_distributed_pipeline_mermaid(
     let mut output = String::new();
     let mut visitor =
         MermaidDisplayVisitor::new(&mut output, display_type, bottom_up, subgraph_options);
-    visitor.fmt(root.as_tree_display()).unwrap();
+    visitor.fmt(root).unwrap();
     output
 }
 
 /// Visualize a distributed pipeline as ASCII text
-pub fn viz_distributed_pipeline_ascii(root: &dyn DistributedPipelineNode, simple: bool) -> String {
+pub fn viz_distributed_pipeline_ascii(root: &DistributedPipelineNode, simple: bool) -> String {
     let mut s = String::new();
     let level = if simple {
         DisplayLevel::Compact
     } else {
         DisplayLevel::Default
     };
-    fmt_tree_gitstyle(root.as_tree_display(), 0, &mut s, level).unwrap();
+    fmt_tree_gitstyle(root, 0, &mut s, level).unwrap();
     s
 }
 
@@ -265,11 +318,7 @@ impl SubmittableTaskStream {
         materialize_all_pipeline_outputs(self.task_stream, scheduler_handle, None)
     }
 
-    pub fn pipeline_instruction<F>(
-        self,
-        node: Arc<dyn DistributedPipelineNode>,
-        plan_builder: F,
-    ) -> Self
+    pub fn pipeline_instruction<F>(self, node: Arc<dyn PipelineNodeImpl>, plan_builder: F) -> Self
     where
         F: Fn(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef + Send + Sync + 'static,
     {
@@ -289,10 +338,10 @@ impl Stream for SubmittableTaskStream {
     }
 }
 
-fn make_in_memory_scan_from_materialized_outputs(
+pub(crate) fn make_in_memory_scan_from_materialized_outputs(
     materialized_outputs: &[MaterializedOutput],
     schema: SchemaRef,
-    node_id: NodeID,
+    cache_key: String,
 ) -> DaftResult<LocalPhysicalPlanRef> {
     let num_partitions = materialized_outputs.len();
     let mut total_size_bytes = 0;
@@ -305,7 +354,7 @@ fn make_in_memory_scan_from_materialized_outputs(
 
     let info = InMemoryInfo::new(
         schema,
-        node_id.to_string(),
+        cache_key,
         None,
         num_partitions,
         total_size_bytes,
@@ -321,7 +370,8 @@ fn make_in_memory_scan_from_materialized_outputs(
 fn make_new_task_from_materialized_outputs<F>(
     task_context: TaskContext,
     materialized_outputs: Vec<MaterializedOutput>,
-    node: &Arc<dyn DistributedPipelineNode>,
+    input_schema: SchemaRef,
+    node: &Arc<dyn PipelineNodeImpl>,
     plan_builder: F,
     scheduling_strategy: Option<SchedulingStrategy>,
 ) -> DaftResult<SubmittableTask<SwordfishTask>>
@@ -330,8 +380,8 @@ where
 {
     let in_memory_source_plan = make_in_memory_scan_from_materialized_outputs(
         &materialized_outputs,
-        node.config().schema.clone(),
-        node.node_id(),
+        input_schema,
+        node.node_id().to_string(),
     )?;
     let partition_refs = materialized_outputs
         .into_iter()
@@ -354,12 +404,14 @@ where
 fn make_in_memory_task_from_materialized_outputs(
     task_context: TaskContext,
     materialized_outputs: Vec<MaterializedOutput>,
-    node: &Arc<dyn DistributedPipelineNode>,
+    input_schema: SchemaRef,
+    node: &Arc<dyn PipelineNodeImpl>,
     scheduling_strategy: Option<SchedulingStrategy>,
 ) -> DaftResult<SubmittableTask<SwordfishTask>> {
     make_new_task_from_materialized_outputs(
         task_context,
         materialized_outputs,
+        input_schema,
         node,
         |input| input,
         scheduling_strategy,
@@ -368,7 +420,7 @@ fn make_in_memory_task_from_materialized_outputs(
 
 fn append_plan_to_existing_task<F>(
     submittable_task: SubmittableTask<SwordfishTask>,
-    node: &Arc<dyn DistributedPipelineNode>,
+    node: &Arc<dyn PipelineNodeImpl>,
     plan_builder: &F,
 ) -> SubmittableTask<SwordfishTask>
 where

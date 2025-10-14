@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
 use daft_micropartition::MicroPartition;
@@ -10,7 +11,7 @@ use futures::stream::BoxStream;
 use tracing::instrument;
 
 use super::source::{Source, SourceStream};
-use crate::{ops::NodeType, pipeline::NodeName};
+use crate::pipeline::NodeName;
 
 pub struct FlightShuffleReadSource {
     shuffle_id: u64,
@@ -62,7 +63,7 @@ impl Source for FlightShuffleReadSource {
         &self,
         _maintain_order: bool,
         _io_stats: IOStatsRef,
-        _chunk_size: Option<usize>,
+        _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         let shuffle_id = self.shuffle_id;
         let partition_idx = self.partition_idx;

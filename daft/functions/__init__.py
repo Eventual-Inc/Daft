@@ -115,6 +115,7 @@ from .misc import (
     get,
     map_get,
     slice,
+    when,
 )
 from .numeric import (
     abs,
@@ -418,5 +419,6 @@ __all__ = [
     "upper",
     "value_counts",
     "week_of_year",
+    "when",
     "year",
 ]

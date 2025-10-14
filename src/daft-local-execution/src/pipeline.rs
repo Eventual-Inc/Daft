@@ -9,14 +9,15 @@ use common_display::{
 };
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
+use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
-    CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
-    InMemoryScan, IntoBatches, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite,
-    Pivot, Project, Sample, SamplingMethod, Sort, TopN, UDFProject, UnGroupedAggregate, Unpivot,
-    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
-    WindowPartitionOnly,
+    CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, GlobScan, HashAggregate,
+    HashJoin, InMemoryScan, IntoBatches, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId,
+    PhysicalWrite, Pivot, Project, Sample, SamplingMethod, Sort, SortMergeJoin, TopN, UDFProject,
+    UnGroupedAggregate, Unpivot, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
+    WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{
@@ -39,18 +40,17 @@ use crate::{
         into_batches::IntoBatchesOperator, project::ProjectOperator, sample::SampleOperator,
         udf::UdfOperator, unpivot::UnpivotOperator,
     },
-    ops::{NodeCategory, NodeInfo, NodeType},
     runtime_stats::RuntimeStats,
     sinks::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
         commit_write::CommitWriteSink,
-        cross_join_collect::CrossJoinCollectSink,
         dedup::DedupSink,
         flight_shuffle_write::FlightShuffleWriteSink,
         grouped_aggregate::GroupedAggregateSink,
         hash_join_build::HashJoinBuildSink,
         into_partitions::IntoPartitionsSink,
+        join_collect::JoinCollectSink,
         pivot::PivotSink,
         repartition::RepartitionSink,
         sort::SortSink,
@@ -69,7 +69,7 @@ use crate::{
     streaming_sink::{
         anti_semi_hash_join_probe::AntiSemiProbeSink, base::StreamingSinkNode, concat::ConcatSink,
         limit::LimitSink, monotonically_increasing_id::MonotonicallyIncreasingIdSink,
-        outer_hash_join_probe::OuterHashJoinProbeSink,
+        outer_hash_join_probe::OuterHashJoinProbeSink, sort_merge_join_probe::SortMergeJoinProbe,
     },
 };
 
@@ -509,16 +509,22 @@ fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::UDFProject(UDFProject {
             input,
-            project,
+            expr,
+            udf_properties,
             passthrough_columns,
             stats_state,
             schema,
         }) => {
-            let proj_op =
-                UdfOperator::try_new(project.clone(), passthrough_columns.clone(), schema)
-                    .with_context(|_| PipelineCreationSnafu {
-                        plan_name: physical_plan.name(),
-                    })?;
+            let proj_op = UdfOperator::try_new(
+                expr.clone(),
+                udf_properties.clone(),
+                passthrough_columns.clone(),
+                schema,
+                input.schema(),
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(proj_op),
@@ -1061,7 +1067,7 @@ fn physical_plan_to_pipeline(
 
             let state_bridge = BroadcastStateBridge::new();
             let collect_node = BlockingSinkNode::new(
-                Arc::new(CrossJoinCollectSink::new(state_bridge.clone())),
+                Arc::new(JoinCollectSink::new(state_bridge.clone())),
                 collect_child_node,
                 collect_child.get_stats_state().clone(),
                 ctx,
@@ -1075,6 +1081,42 @@ fn physical_plan_to_pipeline(
                     state_bridge,
                 )),
                 vec![collect_node, stream_child_node],
+                stats_state.clone(),
+                ctx,
+            )
+            .boxed()
+        }
+        LocalPhysicalPlan::SortMergeJoin(SortMergeJoin {
+            left,
+            right,
+            left_on,
+            right_on,
+            join_type,
+            stats_state,
+            ..
+        }) => {
+            let left_schema = left.schema().clone();
+            let left_node = physical_plan_to_pipeline(left, psets, cfg, ctx)?;
+            let right_node = physical_plan_to_pipeline(right, psets, cfg, ctx)?;
+
+            let state_bridge = BroadcastStateBridge::new();
+            let collect_node = BlockingSinkNode::new(
+                Arc::new(JoinCollectSink::new(state_bridge.clone())),
+                left_node,
+                left.get_stats_state().clone(),
+                ctx,
+            )
+            .boxed();
+
+            StreamingSinkNode::new(
+                Arc::new(SortMergeJoinProbe::new(
+                    left_on.clone(),
+                    right_on.clone(),
+                    left_schema,
+                    *join_type,
+                    state_bridge,
+                )),
+                vec![collect_node, right_node],
                 stats_state.clone(),
                 ctx,
             )
@@ -1281,6 +1323,22 @@ fn physical_plan_to_pipeline(
                 schema.clone(),
             );
             SourceNode::new(Arc::new(source), stats_state.clone(), ctx).boxed()
+        }
+        LocalPhysicalPlan::GlobScan(GlobScan {
+            glob_paths,
+            pushdowns,
+            schema,
+            stats_state,
+            io_config,
+        }) => {
+            use crate::sources::glob_scan::GlobScanSource;
+            let source = GlobScanSource::new(
+                glob_paths.clone(),
+                pushdowns.clone(),
+                schema.clone(),
+                io_config.clone(),
+            );
+            SourceNode::new(source.arced(), stats_state.clone(), ctx).boxed()
         }
     };
 

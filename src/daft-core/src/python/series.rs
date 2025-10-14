@@ -5,7 +5,6 @@ use std::{
 };
 
 use common_arrow_ffi as ffi;
-use common_file::FileReference;
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
 use daft_schema::python::PyDataType;
 use pyo3::{
@@ -18,11 +17,14 @@ use pyo3::{
 use crate::{
     array::ops::DaftLogical,
     count_mode::CountMode,
-    datatypes::{DataType, Field, FileArray},
+    datatypes::{DataType, Field},
     lit::Literal,
     prelude::PythonArray,
-    series::{self, IntoSeries, Series},
-    utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
+    series::{self, IntoSeries, Series, from_lit::combine_lit_types},
+    utils::{
+        arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
+        supertype::try_get_collection_supertype,
+    },
 };
 
 #[pyclass]
@@ -73,32 +75,51 @@ impl PySeries {
         Ok(series.into())
     }
 
-    // This ingests a Python list[object] directly into a Rust PythonArray.
     #[staticmethod]
-    pub fn from_pylist(name: &str, pylist: Bound<PyAny>, dtype: PyDataType) -> PyResult<Self> {
-        let vec_pyobj: Vec<Bound<PyAny>> = pylist.extract()?;
-
-        Self::from_pylist_impl(name, vec_pyobj, dtype.dtype)
-    }
-    #[staticmethod]
-    pub fn from_pylist_of_files(name: &str, pylist: Vec<PyObject>, py: Python) -> PyResult<Self> {
-        let files = pylist
+    #[pyo3(signature = (list, name=None, dtype=None))]
+    pub fn from_pylist(
+        list: &Bound<PyList>,
+        name: Option<&str>,
+        dtype: Option<PyDataType>,
+    ) -> PyResult<Self> {
+        let dtype = dtype.map(|t| t.dtype);
+        let literals = list
             .iter()
-            .map(|item| {
-                let inner = item.getattr(py, "_inner")?;
-                let item = inner.getattr(py, "_get_file")?;
-                let item = item.call0(py)?;
+            .map(|elem| Literal::from_pyobj(&elem, dtype.as_ref()))
+            .collect::<PyResult<Vec<_>>>()?;
 
-                let daft_file: FileReference = item.extract(py)?;
+        let (literals, dtype) = if let Some(dtype) = dtype {
+            (literals, dtype)
+        } else {
+            let supertype = try_get_collection_supertype(literals.iter().map(Literal::get_type))
+                .unwrap_or(DataType::Python);
 
-                PyResult::Ok(daft_file)
-            })
-            .collect::<PyResult<Vec<FileReference>>>()?;
-        let file_array = FileArray::new_from_daft_files(name, files);
-        let s = file_array.into_series();
-        Ok(s.into())
+            let literals_with_supertype = literals
+                .into_iter()
+                .zip(list)
+                .map(|(daft_lit, py_lit)| {
+                    if combine_lit_types(&daft_lit.get_type(), &supertype).as_ref()
+                        == Some(&supertype)
+                    {
+                        Ok(daft_lit)
+                    } else {
+                        // if literal doesn't match supertype, redo conversion so that for the python data type
+                        // as well as nested types with python type, we avoid any lossy conversions and just keep
+                        // stuff as Python objects
+                        Literal::from_pyobj(&py_lit, Some(&supertype))
+                    }
+                })
+                .collect::<PyResult<Vec<_>>>()?;
+
+            (literals_with_supertype, supertype)
+        };
+
+        let mut series = Series::from_literals(literals)?.cast(&dtype)?;
+        if let Some(name) = name {
+            series = series.rename(name);
+        }
+        Ok(series.into())
     }
-
     pub fn to_pylist<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyList>> {
         PyList::new(py, self.series.to_literals())
     }

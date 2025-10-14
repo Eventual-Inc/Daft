@@ -8,7 +8,8 @@ dependencies = [
   "pyarrow >= 8.0.0",
   "fsspec",
   "tqdm",
-  "typing-extensions >= 4.0.0"
+  "typing-extensions >= 4.0.0",
+  "packaging"
 ]
 description = "Distributed Dataframes for Multimodal Data"
 dynamic = ["version"]
@@ -33,14 +34,14 @@ all = ["daft[aws, azure, clickhouse, deltalake, gcp, hudi, huggingface, iceberg,
 aws = ["boto3"]
 azure = []
 clickhouse = ["clickhouse_connect"]
-deltalake = ["deltalake", "packaging"]
+deltalake = ["deltalake"]
 gcp = []
 hudi = ["pyarrow >= 8.0.0"]
 huggingface = ["huggingface-hub"]
 # TODO: pyiceberg 0.9.1 has a bug https://github.com/apache/iceberg-python/issues/1979. It was not
 # triggered because we specify pyiceberg == 0.7.0 in requrements-dev.txt which hide this problem.
 # See https://github.com/Eventual-Inc/Daft/issues/4868.
-iceberg = ["pyiceberg >= 0.7.0, < 0.9.1", "packaging"]
+iceberg = ["pyiceberg >= 0.7.0, < 0.9.1"]
 lance = ["pylance"]
 numpy = ["numpy"]
 openai = ["openai"]
@@ -49,9 +50,7 @@ ray = [
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
   # TODO: we temporarily limit ray<2.48.0 because https://github.com/Eventual-Inc/Daft/issues/5027
   'ray[data, client]>=2.0.0, <2.48.0 ; platform_system != "Windows"',
-  'ray[data, client]>=2.10.0, <2.48.0 ; platform_system == "Windows"',  # ray 2.10 has the pyarrow upper pin removed
-  # Explicitly install packaging. See issue: https://github.com/ray-project/ray/issues/34806
-  "packaging"
+  'ray[data, client]>=2.10.0, <2.48.0 ; platform_system == "Windows"'  # ray 2.10 has the pyarrow upper pin removed
 ]
 sentence-transformers = ["sentence-transformers"]
 transformers = ["transformers", "torch", "torchvision"]
@@ -95,6 +94,12 @@ dev = [
   "tiktoken==0.9.0",
   "duckdb==1.1.2",
   "datasets==4.0.0",
+  "torch>=2.5.1",
+  "torchvision>=0.20.1",
+  "tensorflow>=2.18.1",
+  "tf-keras>=2.18.0",
+  "jax>=0.4.30",
+  "jaxtyping>=0.2.36",
   # Pyarrow
   "pyarrow==20.0.0",
   "pyarrow-stubs==19.4",
@@ -140,6 +145,8 @@ dev = [
   # AI
   "vllm; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
   "openai==1.100",
+  # AV
+  "av==15.0.0",
   # Clickhouse
   "clickhouse-connect",
   # mcap

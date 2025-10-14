@@ -69,6 +69,26 @@ impl PushDownLimit {
                         match source_info.as_ref() {
                             // Limit pushdown is not supported for in-memory sources.
                             SourceInfo::InMemory(_) => Ok(Transformed::no(plan)),
+                            SourceInfo::GlobScan(glob_info)
+                                if let Some(existing_limit) = glob_info.pushdowns.limit
+                                    && existing_limit <= pushdown_limit =>
+                            {
+                                Ok(Transformed::no(plan))
+                            }
+                            SourceInfo::GlobScan(glob_info) => {
+                                // Create a new GlobScanSource node with the new limit
+                                let new_pushdowns =
+                                    glob_info.pushdowns.with_limit(Some(pushdown_limit));
+                                let new_glob_info = glob_info.with_pushdowns(new_pushdowns);
+                                let new_source = LogicalPlan::Source(LogicalSource::new(
+                                    output_schema.clone(),
+                                    SourceInfo::GlobScan(new_glob_info).into(),
+                                ))
+                                .into();
+                                // Set the GlobScanSource node as the child of the Limit node
+                                let limit_plan = plan.with_new_children(&[new_source]).into();
+                                Ok(Transformed::yes(limit_plan))
+                            }
                             // Do not pushdown if Source node is already more limited than `limit`
                             SourceInfo::Physical(external_info)
                                 if let Some(existing_limit) = external_info.pushdowns.limit

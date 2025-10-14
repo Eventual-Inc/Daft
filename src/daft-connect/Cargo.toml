@@ -27,7 +27,7 @@ daft-session = {path = "../daft-session", optional = true, features = [
   "python"
 ]}
 daft-sql = {workspace = true, optional = true, features = ["python"]}
-dashmap = "6.1.0"
+dashmap = {workspace = true}
 futures = "0.3.31"
 itertools = {workspace = true}
 pyo3 = {workspace = true, optional = true}

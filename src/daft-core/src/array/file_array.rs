@@ -1,13 +1,8 @@
-#[cfg(feature = "python")]
 use common_file::DaftFileType;
-use common_file::FileReference;
 use common_io_config::IOConfig;
-#[cfg(feature = "python")]
 use daft_schema::{dtype::DataType, field::Field};
 
-#[cfg(feature = "python")]
-use crate::series::IntoSeries;
-use crate::{array::prelude::*, datatypes::FileType};
+use crate::{array::prelude::*, datatypes::FileType, series::IntoSeries};
 
 /// FileArray is a logical array that represents a collection of files.
 ///
@@ -27,14 +22,11 @@ use crate::{array::prelude::*, datatypes::FileType};
 pub type FileArray = LogicalArray<FileType>;
 
 impl FileArray {
-    #[cfg(feature = "python")]
     pub fn new_from_reference_array(
         name: &str,
         urls: &Utf8Array,
         io_config: Option<IOConfig>,
     ) -> Self {
-        use crate::series::IntoSeries;
-
         let discriminant = UInt8Array::from_values(
             "discriminant",
             std::iter::repeat_n(DaftFileType::Reference as u8, urls.len()),
@@ -42,26 +34,12 @@ impl FileArray {
         .into_series();
 
         let sa_field = Field::new("literal", DataType::File.to_physical());
-
-        let io_conf = io_config.map(|c| {
-            let io_conf = common_io_config::python::IOConfig::from(c);
-
-            use std::sync::Arc;
-
-            use pyo3::{IntoPyObjectExt, Python};
-
-            Arc::new(Python::with_gil(|py| {
-                io_conf
-                    .into_py_any(py)
-                    .expect("Failed to convert ioconfig to PyObject")
-            }))
-        });
-
-        let io_configs =
-            PythonArray::from_iter("io_config", std::iter::repeat_n(io_conf, urls.len()));
+        let io_conf: Option<Vec<u8>> =
+            io_config.map(|c| bincode::serialize(&c).expect("Failed to serialize IOConfig"));
+        let io_conf = BinaryArray::from_iter("io_config", std::iter::repeat_n(io_conf, urls.len()));
 
         let data = BinaryArray::full_null("data", &DataType::Binary, urls.len()).into_series();
-        let io_configs = io_configs
+        let io_conf = io_conf
             .with_validity(urls.validity().cloned())
             .expect("Failed to set validity");
 
@@ -71,23 +49,13 @@ impl FileArray {
                 discriminant,
                 data,
                 urls.clone().into_series().rename("url"),
-                io_configs.into_series(),
+                io_conf.into_series(),
             ],
             urls.validity().cloned(),
         );
         FileArray::new(Field::new(name, DataType::File), sa)
     }
 
-    #[cfg(not(feature = "python"))]
-    pub fn new_from_reference_array(
-        name: &str,
-        urls: &Utf8Array,
-        io_config: Option<IOConfig>,
-    ) -> Self {
-        unimplemented!()
-    }
-
-    #[cfg(feature = "python")]
     pub fn new_from_data_array(name: &str, values: &BinaryArray) -> Self {
         let discriminant = UInt8Array::from_values(
             "discriminant",
@@ -98,7 +66,7 @@ impl FileArray {
         let fld = Field::new("literal", DataType::File.to_physical());
         let urls = Utf8Array::full_null("url", &DataType::Utf8, values.len()).into_series();
         let io_configs =
-            PythonArray::full_null("io_config", &DataType::Python, values.len()).into_series();
+            BinaryArray::full_null("io_config", &DataType::Binary, values.len()).into_series();
         let sa = StructArray::new(
             fld,
             vec![
@@ -111,65 +79,57 @@ impl FileArray {
         );
         FileArray::new(Field::new(name, DataType::File), sa)
     }
+}
 
-    #[cfg(not(feature = "python"))]
-    pub fn new_from_data_array(name: &str, values: &BinaryArray) -> Self {
-        unimplemented!()
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common_file::FileReference;
+    use common_io_config::IOConfig;
+
+    use crate::{
+        datatypes::FileArray,
+        lit::Literal,
+        prelude::{BinaryArray, FromArrow},
+        series::Series,
+    };
+
+    #[test]
+    fn test_arrow_roundtrip_data_variant() {
+        let data = vec![1, 2, 3];
+        let bin_arr = BinaryArray::from_iter("data", std::iter::once(Some(data.clone())));
+
+        let arr = FileArray::new_from_data_array("data", &bin_arr);
+        let arrow_data = arr.to_arrow();
+
+        let new_arr = FileArray::from_arrow(arr.field.clone(), arrow_data)
+            .expect("Failed to create FileArray from arrow data");
+        let new_arr = new_arr.data_array();
+
+        let new_data = new_arr.get(0).expect("Failed to get data");
+        assert_eq!(new_data, &data);
     }
-    #[cfg(feature = "python")]
-    pub fn new_from_daft_files(name: &str, files: Vec<FileReference>) -> Self {
-        if files.is_empty() {
-            return Self::empty(name, &DataType::File);
-        }
-        let discriminant =
-            UInt8Array::from_values("discriminant", files.iter().map(|f| f.get_type() as u8))
-                .into_series();
 
-        let (files_and_configs, data): (Vec<_>, Vec<Option<Vec<u8>>>) =
-            pyo3::Python::with_gil(|py| {
-                use std::sync::Arc;
+    #[test]
+    fn test_arrow_roundtrip_url_variant() {
+        let io_conf = Some(IOConfig::default());
+        let url = "file://example.com";
 
-                use pyo3::IntoPyObjectExt;
-                files
-                    .into_iter()
-                    .map(|f| match f {
-                        FileReference::Reference(file, ioconfig) => {
-                            let io_conf = ioconfig.as_ref().map(|conf| {
-                                common_io_config::python::IOConfig::from(conf.as_ref().clone())
-                            });
-                            let io_config = io_conf.map(|io_conf| {
-                                Arc::new(
-                                    io_conf
-                                        .into_py_any(py)
-                                        .expect("Failed to convert ioconfig to PyObject"),
-                                )
-                            });
-                            ((Some(file), io_config), None)
-                        }
-                        FileReference::Data(items) => ((None, None), Some(items.as_ref().clone())),
-                    })
-                    .unzip()
-            });
-        let (files, io_confs): (Vec<Option<String>>, Vec<_>) =
-            files_and_configs.into_iter().unzip();
-        let sa_field = Field::new("literal", DataType::File.to_physical());
-        let io_configs = PythonArray::from_iter("io_config", io_confs.into_iter());
-        let urls = Utf8Array::from_iter("url", files.into_iter());
-        let data = BinaryArray::from_iter("data", data.into_iter());
-        let sa = StructArray::new(
-            sa_field,
-            vec![
-                discriminant,
-                data.into_series(),
-                urls.into_series(),
-                io_configs.into_series(),
-            ],
-            None,
-        );
-        FileArray::new(Field::new(name, DataType::File), sa)
-    }
-    #[cfg(not(feature = "python"))]
-    pub fn new_from_daft_files(name: &str, files: Vec<FileReference>) -> Self {
-        unimplemented!()
+        let urls: Series = Literal::Utf8(url.to_string()).into();
+        let urls = urls.utf8().unwrap();
+
+        let arr = FileArray::new_from_reference_array("urls", urls, io_conf.clone());
+        let arrow_data = arr.to_arrow();
+
+        let new_arr = FileArray::from_arrow(arr.field.clone(), arrow_data)
+            .expect("Failed to create FileArray from arrow data");
+        let FileReference::Reference(url, io_config) = new_arr.get(0).expect("Failed to get data")
+        else {
+            unreachable!("Expected FileReference::Reference")
+        };
+
+        assert_eq!(url, "file://example.com");
+        assert_eq!(io_config, io_conf.map(Arc::new));
     }
 }

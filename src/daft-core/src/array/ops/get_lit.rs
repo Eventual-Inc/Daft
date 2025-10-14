@@ -39,8 +39,10 @@ impl StructArray {
             Literal::Struct(
                 self.children
                     .iter()
-                    .filter(|child| !child.name().is_empty() && !child.data_type().is_null())
-                    .map(|child| (child.field().clone(), child.get_lit(idx)))
+                    // Below line is commented out because it significantly complicates Series <-> Literal conversion to do this.
+                    // Instead, we'll filter these empty fields out at the Literal to Python object boundary.
+                    // .filter(|child| !child.name().is_empty() && !child.data_type().is_null())
+                    .map(|child| (child.name().to_string(), child.get_lit(idx)))
                     .collect(),
             )
         } else {
@@ -177,12 +179,7 @@ macro_rules! impl_array_get_lit {
     ($type:ty, $variant:ident) => {
         impl $type {
             pub fn get_lit(&self, idx: usize) -> Literal {
-                assert!(
-                    idx < self.len(),
-                    "Out of bounds: {} vs len: {}",
-                    idx,
-                    self.len()
-                );
+                // don't need to do assertions here because it also happens in `self.get`
                 map_or_null(self.get(idx), Literal::$variant)
             }
         }

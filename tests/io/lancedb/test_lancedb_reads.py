@@ -142,6 +142,20 @@ def test_lancedb_with_version(lance_dataset_path):
             ), f"Physical plan contains {filter_count} Filter nodes and {scan_source_count} ScanTaskSource nodes, which is not expected"
 
 
+def test_lancedb_read_parallelism_fragment_merging(large_lance_dataset_path):
+    """Test parallelism parameter reduces scan tasks by merging fragments."""
+    df_no_fragment_group = daft.read_lance(large_lance_dataset_path)
+    assert len(lance.dataset(large_lance_dataset_path).get_fragments()) == df_no_fragment_group.num_partitions()
+
+    df = daft.read_lance(large_lance_dataset_path, fragment_group_size=3)
+    df.explain(show_all=True)
+    assert df.num_partitions() == 4  # 10 fragments, group size 3 -> 4 scan tasks
+
+    result = df.to_pydict()
+    assert len(result["vector"]) == 10000
+    assert len(result["big_int"]) == 10000
+
+
 class TestLanceDBCountPushdown:
     tmp_data = {
         "a": ["a", "b", "c", "d", "e", None],

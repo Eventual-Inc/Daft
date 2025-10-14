@@ -1,6 +1,5 @@
 use std::{cmp::Ordering, collections::VecDeque, sync::Arc};
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
@@ -8,7 +7,7 @@ use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
 use super::{
-    DistributedPipelineNode, MaterializedOutput, SubmittableTaskStream,
+    DistributedPipelineNode, MaterializedOutput, PipelineNodeImpl, SubmittableTaskStream,
     make_new_task_from_materialized_outputs,
 };
 use crate::{
@@ -74,7 +73,7 @@ pub(crate) struct LimitNode {
     context: PipelineNodeContext,
     limit: usize,
     offset: Option<usize>,
-    child: Arc<dyn DistributedPipelineNode>,
+    child: DistributedPipelineNode,
 }
 
 impl LimitNode {
@@ -87,7 +86,7 @@ impl LimitNode {
         limit: usize,
         offset: Option<usize>,
         schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -109,6 +108,10 @@ impl LimitNode {
             offset,
             child,
         }
+    }
+
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     fn process_materialized_output(
@@ -138,7 +141,8 @@ impl LimitNode {
                     make_new_task_from_materialized_outputs(
                         TaskContext::from((&self.context, task_id_counter.next())),
                         vec![next_input],
-                        &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                        self.config.schema.clone(),
+                        &(self.clone() as Arc<dyn PipelineNodeImpl>),
                         move |input| {
                             if skip_num_rows > 0 {
                                 LocalPhysicalPlan::limit(
@@ -159,7 +163,8 @@ impl LimitNode {
                     let task = make_new_task_from_materialized_outputs(
                         TaskContext::from((&self.context, task_id_counter.next())),
                         vec![next_input],
-                        &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                        self.config.schema.clone(),
+                        &(self.clone() as Arc<dyn PipelineNodeImpl>),
                         move |input| {
                             LocalPhysicalPlan::limit(
                                 input,
@@ -203,7 +208,7 @@ impl LimitNode {
                 if let Some(task) = input.next().await {
                     let task_with_limit = append_plan_to_existing_task(
                         task,
-                        &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                        &(self.clone() as Arc<dyn PipelineNodeImpl>),
                         &move |input| {
                             LocalPhysicalPlan::limit(
                                 input,
@@ -255,41 +260,9 @@ impl LimitNode {
 
         Ok(())
     }
-
-    pub fn multiline_display(&self) -> Vec<String> {
-        match &self.offset {
-            Some(o) => vec![format!("Limit: Num Rows = {}, Offset = {}", self.limit, o)],
-            None => vec![format!("Limit: {}", self.limit)],
-        }
-    }
 }
 
-impl TreeDisplay for LimitNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.context.node_name).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.context.node_name.to_string()
-    }
-}
-
-impl DistributedPipelineNode for LimitNode {
+impl PipelineNodeImpl for LimitNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -298,8 +271,15 @@ impl DistributedPipelineNode for LimitNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        match &self.offset {
+            Some(o) => vec![format!("Limit: Num Rows = {}, Offset = {}", self.limit, o)],
+            None => vec![format!("Limit: {}", self.limit)],
+        }
     }
 
     fn produce_tasks(
@@ -317,9 +297,5 @@ impl DistributedPipelineNode for LimitNode {
         ));
 
         SubmittableTaskStream::from(result_rx)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
     }
 }

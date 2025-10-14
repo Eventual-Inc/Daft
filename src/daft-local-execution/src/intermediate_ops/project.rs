@@ -1,6 +1,7 @@
 use std::{cmp::max, sync::Arc};
 
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use common_runtime::get_compute_pool_num_threads;
 use daft_dsl::{
     Expr,
@@ -18,7 +19,6 @@ use super::intermediate_op::{
 };
 use crate::{
     ExecutionTaskSpawner,
-    ops::NodeType,
     pipeline::{MorselSizeRequirement, NodeName},
 };
 fn num_parallel_exprs(projection: &[BoundExpr]) -> usize {
@@ -44,7 +44,6 @@ const CONNECTION_BATCH_FACTOR: usize = 4;
 const DEFAULT_URL_MAX_CONNECTIONS: usize = 32;
 
 /// Gets the batch size from the first UDF encountered in a given slice of expressions
-/// Errors if no UDF is found
 pub fn try_get_batch_size(exprs: &[BoundExpr]) -> Option<usize> {
     let mut projection_batch_size = None;
     for expr in exprs {

@@ -1,7 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_daft_config::DaftExecutionConfig;
-use common_display::{DisplayAs, DisplayLevel, tree::TreeDisplay};
+use common_display::{DisplayAs, DisplayLevel};
 use common_error::DaftResult;
 use common_file_formats::FileFormatConfig;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
@@ -10,11 +9,10 @@ use daft_logical_plan::{ClusteringSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
 use super::{
-    DistributedPipelineNode, NodeName, PipelineNodeConfig, PipelineNodeContext,
-    SubmittableTaskStream,
+    NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream,
 };
 use crate::{
-    pipeline_node::NodeID,
+    pipeline_node::{DistributedPipelineNode, NodeID},
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SubmittableTask,
@@ -28,7 +26,6 @@ pub(crate) struct ScanSourceNode {
     context: PipelineNodeContext,
     pushdowns: Pushdowns,
     scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
-    buckets: Vec<Vec<ScanTaskLikeRef>>,
 }
 
 impl ScanSourceNode {
@@ -50,14 +47,6 @@ impl ScanSourceNode {
             vec![],
             logical_node_id,
         );
-
-        let buckets = Self::create_buckets(&scan_tasks, &plan_config.config);
-        let _num_buckets = if scan_tasks.is_empty() {
-            1
-        } else {
-            buckets.len()
-        };
-
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
@@ -70,62 +59,11 @@ impl ScanSourceNode {
             context,
             pushdowns,
             scan_tasks,
-            buckets,
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
-    }
-
-    fn create_buckets(
-        scan_tasks: &[ScanTaskLikeRef],
-        execution_config: &DaftExecutionConfig,
-    ) -> Vec<Vec<ScanTaskLikeRef>> {
-        if scan_tasks.is_empty() {
-            return vec![];
-        }
-
-        let lower_threshold = execution_config.scan_tasks_min_size_bytes;
-        let upper_threshold = execution_config.scan_tasks_max_size_bytes;
-        let max_sources_per_task = execution_config.max_sources_per_scan_task;
-
-        let mut buckets = Vec::new();
-        let mut current_bucket = Vec::new();
-        let mut bucket_size = 0usize;
-
-        for scan_task in scan_tasks {
-            let task_size = scan_task
-                .estimate_in_memory_size_bytes(Some(execution_config))
-                .unwrap_or(lower_threshold);
-
-            let should_finalize_bucket = !current_bucket.is_empty()
-                && (bucket_size + task_size > upper_threshold
-                    || current_bucket.len() >= max_sources_per_task);
-
-            if should_finalize_bucket {
-                buckets.push(current_bucket.clone());
-                current_bucket.clear();
-                bucket_size = 0;
-            }
-
-            current_bucket.push(scan_task.clone());
-            bucket_size += task_size;
-
-            // Finalize bucket if it reaches the lower threshold
-            if bucket_size >= lower_threshold {
-                buckets.push(current_bucket.clone());
-                current_bucket.clear();
-                bucket_size = 0;
-            }
-        }
-
-        // Add any remaining tasks
-        if !current_bucket.is_empty() {
-            buckets.push(current_bucket);
-        }
-
-        buckets
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn execution_loop(
@@ -140,36 +78,17 @@ impl ScanSourceNode {
             return Ok(());
         }
 
-        for bucket in &self.buckets {
-            if self
-                .send_bucket_task(bucket, &result_tx, &task_id_counter)
-                .await
-                .is_err()
-            {
+        for scan_task in self.scan_tasks.iter() {
+            let task = self.make_source_tasks(
+                vec![scan_task.clone()].into(),
+                TaskContext::from((&self.context, task_id_counter.next())),
+            )?;
+            if result_tx.send(SubmittableTask::new(task)).await.is_err() {
                 break;
             }
         }
 
         Ok(())
-    }
-
-    async fn send_bucket_task(
-        &self,
-        bucket: &[ScanTaskLikeRef],
-        result_tx: &Sender<SubmittableTask<SwordfishTask>>,
-        task_id_counter: &TaskIDCounter,
-    ) -> Result<(), ()> {
-        let task = self
-            .make_source_tasks(
-                Arc::new(bucket.to_vec()),
-                TaskContext::from((&self.context, task_id_counter.next())),
-            )
-            .map_err(|_| ())?;
-
-        result_tx
-            .send(SubmittableTask::new(task))
-            .await
-            .map_err(|_| ())
     }
 
     fn make_source_tasks(
@@ -210,7 +129,7 @@ impl ScanSourceNode {
     }
 }
 
-impl DistributedPipelineNode for ScanSourceNode {
+impl PipelineNodeImpl for ScanSourceNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -219,8 +138,71 @@ impl DistributedPipelineNode for ScanSourceNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![]
+    }
+
+    fn multiline_display(&self, verbose: bool) -> Vec<String> {
+        fn base_display(scan: &ScanSourceNode) -> Vec<String> {
+            let num_scan_tasks = scan.scan_tasks.len();
+            let total_bytes: usize = scan
+                .scan_tasks
+                .iter()
+                .map(|st| st.size_bytes_on_disk().unwrap_or(0))
+                .sum();
+
+            #[allow(unused_mut)]
+            let mut s = vec![
+                "ScanTaskSource:".to_string(),
+                format!("Num Scan Tasks = {num_scan_tasks}"),
+                format!("Estimated Scan Bytes = {total_bytes}"),
+            ];
+            #[cfg(feature = "python")]
+            if let FileFormatConfig::Database(config) =
+                scan.scan_tasks[0].file_format_config().as_ref()
+            {
+                if num_scan_tasks == 1 {
+                    s.push(format!("SQL Query = {}", &config.sql));
+                } else {
+                    s.push(format!("SQL Queries = [{},..]", &config.sql));
+                }
+            }
+            s
+        }
+
+        let mut s = base_display(self);
+        if !verbose {
+            // We're only going to display the pushdowns and schema for the first scan task.
+            let pushdown = self.scan_tasks[0].pushdowns();
+            if !pushdown.is_empty() {
+                s.push(pushdown.display_as(DisplayLevel::Compact));
+            }
+
+            let schema = self.scan_tasks[0].schema();
+            s.push(format!(
+                "Schema: {{{}}}",
+                schema.display_as(DisplayLevel::Compact)
+            ));
+
+            let tasks = self.scan_tasks.iter();
+
+            s.push("Scan Tasks: [".to_string());
+            for (i, st) in tasks.enumerate() {
+                if i < 3 || i >= self.scan_tasks.len() - 3 {
+                    s.push(st.as_ref().display_as(DisplayLevel::Compact));
+                } else if i == 3 {
+                    s.push("...".to_string());
+                }
+            }
+        } else {
+            s.push("Scan Tasks: [".to_string());
+
+            for st in self.scan_tasks.iter() {
+                s.push(st.as_ref().display_as(DisplayLevel::Verbose));
+            }
+        }
+        s.push("]".to_string());
+        s
     }
 
     fn produce_tasks(
@@ -232,93 +214,5 @@ impl DistributedPipelineNode for ScanSourceNode {
         plan_context.spawn(execution_loop);
 
         SubmittableTaskStream::from(result_rx)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
-    }
-}
-
-impl TreeDisplay for ScanSourceNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        fn base_display(scan: &ScanSourceNode) -> String {
-            let num_scan_tasks = scan.scan_tasks.len();
-            let total_bytes: usize = scan
-                .scan_tasks
-                .iter()
-                .map(|st| st.size_bytes_on_disk().unwrap_or(0))
-                .sum();
-
-            #[allow(unused_mut)]
-            let mut s = format!(
-                "ScanTaskSource:
-Num Scan Tasks = {num_scan_tasks}
-Estimated Scan Bytes = {total_bytes}
-"
-            );
-            #[cfg(feature = "python")]
-            if let FileFormatConfig::Database(config) =
-                scan.scan_tasks[0].file_format_config().as_ref()
-            {
-                if num_scan_tasks == 1 {
-                    writeln!(s, "SQL Query = {}", &config.sql).unwrap();
-                } else {
-                    writeln!(s, "SQL Queries = [{},..]", &config.sql).unwrap();
-                }
-            }
-            s
-        }
-        match level {
-            DisplayLevel::Compact => self.get_name(),
-            DisplayLevel::Default => {
-                let mut s = base_display(self);
-                // We're only going to display the pushdowns and schema for the first scan task.
-                let pushdown = self.scan_tasks[0].pushdowns();
-                if !pushdown.is_empty() {
-                    s.push_str(&pushdown.display_as(DisplayLevel::Compact));
-                    s.push('\n');
-                }
-
-                let schema = self.scan_tasks[0].schema();
-                writeln!(
-                    s,
-                    "Schema: {{{}}}",
-                    schema.display_as(DisplayLevel::Compact)
-                )
-                .unwrap();
-
-                let tasks = self.scan_tasks.iter();
-
-                writeln!(s, "Scan Tasks: [").unwrap();
-                for (i, st) in tasks.enumerate() {
-                    if i < 3 || i >= self.scan_tasks.len() - 3 {
-                        writeln!(s, "{}", st.as_ref().display_as(DisplayLevel::Compact)).unwrap();
-                    } else if i == 3 {
-                        writeln!(s, "...").unwrap();
-                    }
-                }
-                writeln!(s, "]").unwrap();
-
-                s
-            }
-            DisplayLevel::Verbose => {
-                let mut s = base_display(self);
-                writeln!(s, "Scan Tasks: [").unwrap();
-
-                for st in self.scan_tasks.iter() {
-                    writeln!(s, "{}", st.as_ref().display_as(DisplayLevel::Verbose)).unwrap();
-                }
-                s
-            }
-        }
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![]
-    }
-
-    fn get_name(&self) -> String {
-        self.name().to_string()
     }
 }

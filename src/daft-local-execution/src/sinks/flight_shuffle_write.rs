@@ -4,6 +4,7 @@ use std::sync::{
 };
 
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use daft_core::{
     prelude::{Int32Array, Schema},
     series::IntoSeries,
@@ -20,7 +21,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 

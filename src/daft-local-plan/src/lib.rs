@@ -13,11 +13,11 @@ pub use plan::DistributedActorPoolProject;
 pub use plan::LanceWrite;
 pub use plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, FlightShuffleRead,
-    FlightShuffleWrite, HashAggregate, HashJoin, InMemoryScan, IntoBatches, IntoPartitions, Limit,
-    LocalPhysicalPlan, LocalPhysicalPlanRef, MonotonicallyIncreasingId, PhysicalScan,
-    PhysicalWrite, Pivot, Project, Repartition, Sample, SamplingMethod, Sort, TopN, UDFProject,
-    UnGroupedAggregate, Unpivot, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
-    WindowPartitionAndOrderBy, WindowPartitionOnly,
+    FlightShuffleWrite, GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches,
+    IntoPartitions, Limit, LocalPhysicalPlan, LocalPhysicalPlanRef, MonotonicallyIncreasingId,
+    PhysicalScan, PhysicalWrite, Pivot, Project, Repartition, Sample, SamplingMethod, Sort,
+    SortMergeJoin, TopN, UDFProject, UnGroupedAggregate, Unpivot, WindowOrderByOnly,
+    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 #[cfg(feature = "python")]
 pub use python::{PyLocalPhysicalPlan, register_modules};

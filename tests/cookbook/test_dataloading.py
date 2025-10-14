@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 import daft
+from daft.context import get_context
 from tests.conftest import assert_df_equals
 from tests.cookbook.assets import COOKBOOK_DATA_CSV
 
@@ -187,7 +188,25 @@ def test_glob_files_from_multiple_path(tmpdir):
     assert_df_equals(daft_df.to_pandas(), pd_df, sort_key="path")
 
     with pytest.raises(FileNotFoundError):
-        daft.from_glob_path(str(pathlib.Path(tmpdir)))
+        daft.from_glob_path(str(pathlib.Path(tmpdir))).collect()
 
     with pytest.raises(FileNotFoundError):
-        daft.from_glob_path("/not_exists")
+        daft.from_glob_path("/not_exists").collect()
+
+
+@pytest.mark.skipif(
+    get_context().daft_execution_config.use_legacy_ray_runner is True,
+    reason="Limit pushdown on glob files is not supported on the legacy ray runner",
+)
+@pytest.mark.parametrize("batch_size", list(range(1, 10)))
+def test_glob_files_with_limit(batch_size, tmpdir):
+    folder = pathlib.Path(tmpdir) / "glob_files_with_limit"
+    folder.mkdir()
+    filepaths = []
+    for i in range(10):
+        filepath = folder / f"file_{i}.foo"
+        filepath.write_text("a" * i)
+        filepaths.append(str(filepath))
+
+    daft_df = daft.from_glob_path(filepaths).limit(5).into_batches(batch_size).collect()
+    assert len(daft_df) == 5

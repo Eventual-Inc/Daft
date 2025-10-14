@@ -12,6 +12,10 @@ use crate::{
 #[rustfmt::skip]
 mod ir {
     pub use crate::*;
+    pub use common_io_config::{
+        AzureConfig, GCSConfig, HTTPConfig, HuggingFaceConfig, IOConfig, S3Config, UnityConfig,
+    };
+    pub use common_scan_info::Pushdowns;
 }
 
 /// Export daft_proto types under a `proto` namespace because prost is heinous.
@@ -510,7 +514,7 @@ impl ToFromProto for UDFProject {
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
         let input = self.input.to_proto()?.into();
-        let project = self.project.to_proto()?;
+        let project = self.expr.to_proto()?;
         let passthrough_columns = to_protos(&self.passthrough_columns)?;
         Ok(proto::RelUdfProject {
             input: Some(input),
@@ -542,6 +546,10 @@ impl ToFromProto for ir::rel::SourceInfo {
                 let info = ir::rel::PhysicalScanInfo::from_proto(*info)?;
                 Self::Physical(info)
             }
+            proto::SourceInfoVariant::GlobInfo(info) => {
+                let info = ir::rel::GlobScanInfo::from_proto(*info)?;
+                Self::GlobScan(info)
+            }
         };
         Ok(info)
     }
@@ -561,6 +569,10 @@ impl ToFromProto for ir::rel::SourceInfo {
                 not_optimized_err!(
                     "source_info placeholder should have been removed by optimizer."
                 );
+            }
+            Self::GlobScan(info) => {
+                let info = info.to_proto()?.into();
+                proto::SourceInfoVariant::GlobInfo(info)
             }
         };
         Ok(proto::SourceInfo {
@@ -669,6 +681,46 @@ impl ToFromProto for ir::rel::PhysicalScanInfo {
     }
 }
 
+impl ToFromProto for ir::rel::GlobScanInfo {
+    type Message = proto::source_info::GlobInfo;
+
+    fn from_proto(message: Self::Message) -> ProtoResult<Self>
+    where
+        Self: Sized,
+    {
+        let schema = ir::Schema::from_proto(non_null!(message.schema))?;
+        let pushdowns = message
+            .pushdowns
+            .map(|p| ir::Pushdowns::from_proto(*p))
+            .transpose()?
+            .unwrap_or_default();
+        let io_config = message
+            .io_config
+            .map(ir::IOConfig::from_proto)
+            .transpose()?;
+
+        Ok(Self {
+            glob_paths: Arc::new(message.glob_paths),
+            schema: schema.into(),
+            pushdowns,
+            io_config: io_config.map(Box::new),
+        })
+    }
+
+    fn to_proto(&self) -> ProtoResult<Self::Message> {
+        let schema = self.schema.to_proto()?;
+        let pushdowns = self.pushdowns.to_proto()?.into();
+        let io_config = self.io_config.as_ref().map(|c| c.to_proto()).transpose()?;
+
+        Ok(proto::source_info::GlobInfo {
+            glob_paths: self.glob_paths.as_ref().clone(),
+            schema: Some(schema),
+            pushdowns: Some(pushdowns),
+            io_config,
+        })
+    }
+}
+
 impl ToFromProto for ir::PartitionField {
     type Message = proto::PartitionField;
 
@@ -763,6 +815,321 @@ impl ToFromProto for ir::ScanTaskLikeRef {
     fn to_proto(&self) -> ProtoResult<Self::Message> {
         Ok(Self::Message {
             task: bincode::serialize(self)?,
+        })
+    }
+}
+
+impl ToFromProto for ir::IOConfig {
+    type Message = proto::IoConfig;
+
+    fn from_proto(message: Self::Message) -> ProtoResult<Self>
+    where
+        Self: Sized,
+    {
+        let s3 = ir::S3Config::from_proto(non_null!(message.s3))?;
+        let azure = ir::AzureConfig::from_proto(non_null!(message.azure))?;
+        let gcs = ir::GCSConfig::from_proto(non_null!(message.gcs))?;
+        let http = ir::HTTPConfig::from_proto(non_null!(message.http))?;
+        let unity = ir::UnityConfig::from_proto(non_null!(message.unity))?;
+        let hf = ir::HuggingFaceConfig::from_proto(non_null!(message.hf))?;
+
+        Ok(Self {
+            s3,
+            azure,
+            gcs,
+            http,
+            unity,
+            hf,
+        })
+    }
+
+    fn to_proto(&self) -> ProtoResult<Self::Message> {
+        let s3 = self.s3.to_proto()?;
+        let azure = self.azure.to_proto()?;
+        let gcs = self.gcs.to_proto()?;
+        let http = self.http.to_proto()?;
+        let unity = self.unity.to_proto()?;
+        let hf = self.hf.to_proto()?;
+
+        Ok(proto::IoConfig {
+            s3: Some(s3),
+            azure: Some(azure),
+            gcs: Some(gcs),
+            http: Some(http),
+            unity: Some(unity),
+            hf: Some(hf),
+        })
+    }
+}
+
+impl ToFromProto for ir::S3Config {
+    type Message = proto::S3Config;
+
+    fn from_proto(message: Self::Message) -> ProtoResult<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self {
+            region_name: message.region_name,
+            endpoint_url: message.endpoint_url,
+            key_id: message.key_id,
+            session_token: message.session_token.map(|s| s.into()),
+            access_key: message.access_key.map(|s| s.into()),
+            credentials_provider: None, // credentials_provider is not serialized in proto
+            buffer_time: message.buffer_time,
+            max_connections_per_io_thread: message.max_connections_per_io_thread,
+            retry_initial_backoff_ms: message.retry_initial_backoff_ms,
+            connect_timeout_ms: message.connect_timeout_ms,
+            read_timeout_ms: message.read_timeout_ms,
+            num_tries: message.num_tries,
+            retry_mode: message.retry_mode,
+            anonymous: message.anonymous,
+            use_ssl: message.use_ssl,
+            verify_ssl: message.verify_ssl,
+            check_hostname_ssl: message.check_hostname_ssl,
+            requester_pays: message.requester_pays,
+            force_virtual_addressing: message.force_virtual_addressing,
+            profile_name: message.profile_name,
+            multipart_size: message.multipart_size,
+            multipart_max_concurrency: message.multipart_max_concurrency,
+        })
+    }
+
+    fn to_proto(&self) -> ProtoResult<Self::Message> {
+        Ok(proto::S3Config {
+            region_name: self.region_name.clone(),
+            endpoint_url: self.endpoint_url.clone(),
+            key_id: self.key_id.clone(),
+            session_token: self.session_token.as_ref().map(|s| s.as_string().clone()),
+            access_key: self.access_key.as_ref().map(|s| s.as_string().clone()),
+            credentials_provider: None, // credentials_provider is not serialized in proto
+            buffer_time: self.buffer_time,
+            max_connections_per_io_thread: self.max_connections_per_io_thread,
+            retry_initial_backoff_ms: self.retry_initial_backoff_ms,
+            connect_timeout_ms: self.connect_timeout_ms,
+            read_timeout_ms: self.read_timeout_ms,
+            num_tries: self.num_tries,
+            retry_mode: self.retry_mode.clone(),
+            anonymous: self.anonymous,
+            use_ssl: self.use_ssl,
+            verify_ssl: self.verify_ssl,
+            check_hostname_ssl: self.check_hostname_ssl,
+            requester_pays: self.requester_pays,
+            force_virtual_addressing: self.force_virtual_addressing,
+            profile_name: self.profile_name.clone(),
+            multipart_size: self.multipart_size,
+            multipart_max_concurrency: self.multipart_max_concurrency,
+        })
+    }
+}
+
+impl ToFromProto for ir::AzureConfig {
+    type Message = proto::AzureConfig;
+
+    fn from_proto(message: Self::Message) -> ProtoResult<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self {
+            storage_account: message.storage_account,
+            access_key: message.access_key.map(|s| s.into()),
+            sas_token: message.sas_token,
+            bearer_token: message.bearer_token,
+            tenant_id: message.tenant_id,
+            client_id: message.client_id,
+            client_secret: message.client_secret.map(|s| s.into()),
+            use_fabric_endpoint: message.use_fabric_endpoint,
+            anonymous: message.anonymous,
+            endpoint_url: message.endpoint_url,
+            use_ssl: message.use_ssl,
+        })
+    }
+
+    fn to_proto(&self) -> ProtoResult<Self::Message> {
+        Ok(proto::AzureConfig {
+            storage_account: self.storage_account.clone(),
+            access_key: self.access_key.as_ref().map(|s| s.as_string().clone()),
+            sas_token: self.sas_token.clone(),
+            bearer_token: self.bearer_token.clone(),
+            tenant_id: self.tenant_id.clone(),
+            client_id: self.client_id.clone(),
+            client_secret: self.client_secret.as_ref().map(|s| s.as_string().clone()),
+            use_fabric_endpoint: self.use_fabric_endpoint,
+            anonymous: self.anonymous,
+            endpoint_url: self.endpoint_url.clone(),
+            use_ssl: self.use_ssl,
+        })
+    }
+}
+
+impl ToFromProto for ir::GCSConfig {
+    type Message = proto::GcsConfig;
+
+    fn from_proto(message: Self::Message) -> ProtoResult<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self {
+            project_id: message.project_id,
+            credentials: message.credentials.map(|s| s.into()),
+            token: message.token,
+            anonymous: message.anonymous,
+            max_connections_per_io_thread: message.max_connections_per_io_thread,
+            retry_initial_backoff_ms: message.retry_initial_backoff_ms,
+            connect_timeout_ms: message.connect_timeout_ms,
+            read_timeout_ms: message.read_timeout_ms,
+            num_tries: message.num_tries,
+        })
+    }
+
+    fn to_proto(&self) -> ProtoResult<Self::Message> {
+        Ok(proto::GcsConfig {
+            project_id: self.project_id.clone(),
+            credentials: self.credentials.as_ref().map(|s| s.as_string().clone()),
+            token: self.token.clone(),
+            anonymous: self.anonymous,
+            max_connections_per_io_thread: self.max_connections_per_io_thread,
+            retry_initial_backoff_ms: self.retry_initial_backoff_ms,
+            connect_timeout_ms: self.connect_timeout_ms,
+            read_timeout_ms: self.read_timeout_ms,
+            num_tries: self.num_tries,
+        })
+    }
+}
+
+impl ToFromProto for ir::HTTPConfig {
+    type Message = proto::HttpConfig;
+
+    fn from_proto(message: Self::Message) -> ProtoResult<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self {
+            user_agent: message.user_agent,
+            bearer_token: message.bearer_token.map(|s| s.into()),
+            retry_initial_backoff_ms: message.retry_initial_backoff_ms,
+            connect_timeout_ms: message.connect_timeout_ms,
+            read_timeout_ms: message.read_timeout_ms,
+            num_tries: message.num_tries,
+        })
+    }
+
+    fn to_proto(&self) -> ProtoResult<Self::Message> {
+        Ok(proto::HttpConfig {
+            user_agent: self.user_agent.clone(),
+            bearer_token: self.bearer_token.as_ref().map(|s| s.as_string().clone()),
+            retry_initial_backoff_ms: self.retry_initial_backoff_ms,
+            connect_timeout_ms: self.connect_timeout_ms,
+            read_timeout_ms: self.read_timeout_ms,
+            num_tries: self.num_tries,
+        })
+    }
+}
+
+impl ToFromProto for ir::UnityConfig {
+    type Message = proto::UnityConfig;
+
+    fn from_proto(message: Self::Message) -> ProtoResult<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self {
+            endpoint: message.endpoint,
+            token: message.token.map(|s| s.into()),
+        })
+    }
+
+    fn to_proto(&self) -> ProtoResult<Self::Message> {
+        Ok(proto::UnityConfig {
+            endpoint: self.endpoint.clone(),
+            token: self.token.as_ref().map(|s| s.as_string().clone()),
+        })
+    }
+}
+
+impl ToFromProto for ir::HuggingFaceConfig {
+    type Message = proto::HuggingFaceConfig;
+
+    fn from_proto(message: Self::Message) -> ProtoResult<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self {
+            token: message.token.map(|s| s.into()),
+            anonymous: message.anonymous,
+            use_content_defined_chunking: message.use_content_defined_chunking,
+            row_group_size: message.row_group_size.map(|s| s as usize),
+            target_filesize: message.target_filesize as usize,
+            max_operations_per_commit: message.max_operations_per_commit as usize,
+        })
+    }
+
+    fn to_proto(&self) -> ProtoResult<Self::Message> {
+        Ok(proto::HuggingFaceConfig {
+            token: self.token.as_ref().map(|s| s.as_string().clone()),
+            anonymous: self.anonymous,
+            use_content_defined_chunking: self.use_content_defined_chunking,
+            row_group_size: self.row_group_size.map(|s| s as u64),
+            target_filesize: self.target_filesize as u64,
+            max_operations_per_commit: self.max_operations_per_commit as u64,
+        })
+    }
+}
+
+impl ToFromProto for ir::Pushdowns {
+    type Message = proto::Pushdowns;
+
+    fn from_proto(message: Self::Message) -> ProtoResult<Self>
+    where
+        Self: Sized,
+    {
+        let filter = message
+            .filter
+            .map(|f| ir::Expr::from_proto(*f))
+            .transpose()?
+            .map(Arc::new);
+        let partition_filter = message
+            .partition_filter
+            .map(|f| ir::Expr::from_proto(*f))
+            .transpose()?
+            .map(Arc::new);
+        let columns = message.columns.map(|c| Arc::new(c.columns));
+        let limit = message.limit;
+
+        Ok(Self {
+            filters: filter,
+            partition_filters: partition_filter,
+            columns,
+            limit: limit.map(|l| l as usize),
+            sharder: None,        // sharder is not serialized in proto
+            pushed_filters: None, // pushed_filters is not serialized in proto
+            aggregation: None,    // aggregation is not serialized in proto
+        })
+    }
+
+    fn to_proto(&self) -> ProtoResult<Self::Message> {
+        let filter = self
+            .filters
+            .as_ref()
+            .map(|f| f.to_proto())
+            .transpose()?
+            .map(Box::new);
+        let partition_filter = self
+            .partition_filters
+            .as_ref()
+            .map(|f| f.to_proto())
+            .transpose()?
+            .map(Box::new);
+        let columns = self.columns.as_ref().map(|c| proto::pushdowns::Columns {
+            columns: c.as_ref().clone(),
+        });
+        let limit = self.limit.map(|l| l as u64);
+
+        Ok(proto::Pushdowns {
+            filter,
+            partition_filter,
+            columns,
+            limit,
         })
     }
 }

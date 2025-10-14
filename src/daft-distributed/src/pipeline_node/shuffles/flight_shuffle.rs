@@ -1,6 +1,5 @@
 use std::{collections::HashSet, sync::Arc};
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
@@ -10,7 +9,7 @@ use futures::TryStreamExt;
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        SubmittableTaskStream,
+        PipelineNodeImpl, SubmittableTaskStream,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -32,7 +31,7 @@ pub(crate) struct FlightShuffleNode {
     num_partitions: usize,
     shuffle_dirs: Vec<String>,
     compression: Option<String>,
-    child: Arc<dyn DistributedPipelineNode>,
+    child: DistributedPipelineNode,
 }
 
 impl FlightShuffleNode {
@@ -48,7 +47,7 @@ impl FlightShuffleNode {
         num_partitions: usize,
         shuffle_dirs: Vec<String>,
         compression: Option<String>,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -79,17 +78,8 @@ impl FlightShuffleNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
-    }
-
-    fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec![format!(
-            "FlightShuffle: {}",
-            self.repartition_spec.var_name()
-        )];
-        res.extend(self.repartition_spec.multiline_display());
-        res
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     // Async execution to handle flight shuffle write and read operations
@@ -144,32 +134,7 @@ impl FlightShuffleNode {
     }
 }
 
-impl TreeDisplay for FlightShuffleNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.context.node_name).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.context.node_name.to_string()
-    }
-}
-
-impl DistributedPipelineNode for FlightShuffleNode {
+impl PipelineNodeImpl for FlightShuffleNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -178,7 +143,7 @@ impl DistributedPipelineNode for FlightShuffleNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
     }
 
@@ -233,7 +198,12 @@ impl DistributedPipelineNode for FlightShuffleNode {
         SubmittableTaskStream::from(result_rx)
     }
 
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        let mut res = vec![format!(
+            "FlightShuffle: {}",
+            self.repartition_spec.var_name()
+        )];
+        res.extend(self.repartition_spec.multiline_display());
+        res
     }
 }

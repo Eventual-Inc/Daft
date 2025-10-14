@@ -1,17 +1,17 @@
 use std::sync::Arc;
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
-use super::{DistributedPipelineNode, SubmittableTaskStream};
+use super::{PipelineNodeImpl, SubmittableTaskStream};
 use crate::{
     pipeline_node::{
-        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, append_plan_to_existing_task,
-        make_in_memory_task_from_materialized_outputs, make_new_task_from_materialized_outputs,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        append_plan_to_existing_task, make_in_memory_task_from_materialized_outputs,
+        make_new_task_from_materialized_outputs,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -29,7 +29,7 @@ pub(crate) struct IntoPartitionsNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     num_partitions: usize,
-    child: Arc<dyn DistributedPipelineNode>,
+    child: DistributedPipelineNode,
 }
 
 impl IntoPartitionsNode {
@@ -41,7 +41,7 @@ impl IntoPartitionsNode {
         plan_config: &PlanConfig,
         num_partitions: usize,
         schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.plan_id,
@@ -65,15 +65,8 @@ impl IntoPartitionsNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
-    }
-
-    fn multiline_display(&self) -> Vec<String> {
-        vec![
-            "IntoPartitions".to_string(),
-            format!("Num partitions = {}", self.num_partitions),
-        ]
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn coalesce_tasks(
@@ -136,7 +129,8 @@ impl IntoPartitionsNode {
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((&self.context, task_id_counter.next())),
                 materialized_outputs,
-                &(self_arc as Arc<dyn DistributedPipelineNode>),
+                self_arc.config.schema.clone(),
+                &(self_arc as Arc<dyn PipelineNodeImpl>),
                 move |input| {
                     LocalPhysicalPlan::into_partitions(input, 1, StatsState::NotMaterialized)
                 },
@@ -182,7 +176,7 @@ impl IntoPartitionsNode {
             }
             let into_partitions_task = append_plan_to_existing_task(
                 task,
-                &(self.clone() as Arc<dyn DistributedPipelineNode>),
+                &(self.clone() as Arc<dyn PipelineNodeImpl>),
                 &move |plan| {
                     LocalPhysicalPlan::into_partitions(
                         plan,
@@ -209,7 +203,8 @@ impl IntoPartitionsNode {
                     let task = make_in_memory_task_from_materialized_outputs(
                         TaskContext::from((&self.context, task_id_counter.next())),
                         vec![output],
-                        &(self_arc as Arc<dyn DistributedPipelineNode>),
+                        self_arc.config.schema.clone(),
+                        &(self_arc as Arc<dyn PipelineNodeImpl>),
                         None,
                     )?;
                     if result_tx.send(task).await.is_err() {
@@ -255,32 +250,7 @@ impl IntoPartitionsNode {
     }
 }
 
-impl TreeDisplay for IntoPartitionsNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.context.node_name).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.context.node_name.to_string()
-    }
-}
-
-impl DistributedPipelineNode for IntoPartitionsNode {
+impl PipelineNodeImpl for IntoPartitionsNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -289,8 +259,15 @@ impl DistributedPipelineNode for IntoPartitionsNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        vec![
+            "IntoPartitions".to_string(),
+            format!("Num partitions = {}", self.num_partitions),
+        ]
     }
 
     fn produce_tasks(
@@ -308,9 +285,5 @@ impl DistributedPipelineNode for IntoPartitionsNode {
         ));
 
         SubmittableTaskStream::from(result_rx)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
     }
 }

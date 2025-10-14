@@ -19,7 +19,11 @@ use serde::{Deserialize, Serialize};
 use super::FunctionExpr;
 #[cfg(feature = "python")]
 use crate::python::PyExpr;
-use crate::{Expr, ExprRef, functions::scalar::ScalarFn};
+use crate::{
+    Expr, ExprRef,
+    functions::scalar::ScalarFn,
+    python_udf::{BatchPyFn, PyScalarFn, RowWisePyFn},
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum MaybeInitializedUDF {
@@ -131,6 +135,7 @@ pub fn udf(
 
 /// Generates a ResourceRequest by inspecting an iterator of expressions.
 /// Looks for ResourceRequests on UDFs in each expression presented, and merges ResourceRequests across all expressions.
+// TODO: Remove with the old Ray Runner
 pub fn get_resource_request<'a, E: Into<&'a ExprRef>>(
     exprs: impl IntoIterator<Item = E>,
 ) -> Option<ResourceRequest> {
@@ -171,99 +176,29 @@ pub fn get_resource_request<'a, E: Into<&'a ExprRef>>(
     }
 }
 
-/// Gets the concurrency from the first UDF encountered in a given slice of expressions
-///
-/// NOTE: This function panics if no UDF is found or if the first UDF has no concurrency
-pub fn get_concurrency<'a, E: Into<&'a ExprRef>>(exprs: impl IntoIterator<Item = E>) -> usize {
-    let mut projection_concurrency = None;
-    for expr in exprs {
-        let mut found_actor_pool_udf = false;
-        expr.into()
-            .apply(|e| match e.as_ref() {
-                Expr::Function {
-                    func: FunctionExpr::Python(LegacyPythonUDF { concurrency, .. }),
-                    ..
-                } => {
-                    found_actor_pool_udf = true;
-                    projection_concurrency =
-                        Some(concurrency.expect("Should have concurrency specified"));
-                    Ok(common_treenode::TreeNodeRecursion::Stop)
-                }
-                _ => Ok(common_treenode::TreeNodeRecursion::Continue),
-            })
-            .unwrap();
-        if found_actor_pool_udf {
-            break;
-        }
-    }
-    projection_concurrency.expect("get_concurrency expects one UDF with concurrency set")
-}
+/// Get the names of all UDFs in expression
+// TODO: Remove with the old Ray Runner
+pub fn try_get_udf_name(expr: &ExprRef) -> Option<String> {
+    let mut udf_name = None;
 
-pub fn try_get_concurrency(expr: &ExprRef) -> Option<usize> {
-    let mut projection_concurrency = None;
-    expr.apply(|e| match e.as_ref() {
-        Expr::Function {
-            func: FunctionExpr::Python(LegacyPythonUDF { concurrency, .. }),
+    expr.apply(|e| {
+        if let Expr::Function {
+            func: FunctionExpr::Python(LegacyPythonUDF { name, .. }),
             ..
-        } => {
-            projection_concurrency = *concurrency;
-            Ok(common_treenode::TreeNodeRecursion::Stop)
+        } = e.as_ref()
+        {
+            udf_name = Some(name.as_ref().clone());
+            return Ok(TreeNodeRecursion::Stop);
+        } else if let Expr::ScalarFn(ScalarFn::Python(py)) = e.as_ref() {
+            udf_name = Some(py.name().to_string());
+            return Ok(TreeNodeRecursion::Stop);
         }
-        _ => Ok(common_treenode::TreeNodeRecursion::Continue),
+
+        Ok(TreeNodeRecursion::Continue)
     })
     .unwrap();
 
-    projection_concurrency
-}
-
-/// Gets the batch size from the first UDF encountered in a given slice of expressions
-/// Errors if no UDF is found
-pub fn try_get_batch_size_from_udf(expr: &ExprRef) -> DaftResult<Option<usize>> {
-    let mut projection_batch_size = None;
-    expr.apply(|e| match e.as_ref() {
-        Expr::Function {
-            func: FunctionExpr::Python(LegacyPythonUDF { batch_size, .. }),
-            ..
-        } => {
-            projection_batch_size = Some(*batch_size);
-            Ok(common_treenode::TreeNodeRecursion::Stop)
-        }
-        _ => Ok(common_treenode::TreeNodeRecursion::Continue),
-    })
-    .unwrap();
-
-    if let Some(batch_size) = projection_batch_size {
-        Ok(batch_size)
-    } else {
-        Err(DaftError::ValueError(format!(
-            "No UDF with batch size found in expression: {:?}",
-            expr
-        )))
-    }
-}
-
-pub fn get_use_process(expr: &ExprRef) -> DaftResult<Option<bool>> {
-    let mut finder = None;
-    expr.apply(|e| match e.as_ref() {
-        Expr::Function {
-            func: FunctionExpr::Python(LegacyPythonUDF { use_process, .. }),
-            ..
-        } => {
-            finder = Some(*use_process);
-            Ok(common_treenode::TreeNodeRecursion::Stop)
-        }
-        _ => Ok(common_treenode::TreeNodeRecursion::Continue),
-    })
-    .unwrap();
-
-    if let Some(finder) = finder {
-        Ok(finder)
-    } else {
-        Err(DaftError::ValueError(format!(
-            "No UDF with use_process found in expression: {:?}",
-            expr
-        )))
-    }
+    udf_name
 }
 
 #[cfg(feature = "python")]
@@ -314,28 +249,6 @@ pub fn initialize_udfs(expr: ExprRef) -> DaftResult<ExprRef> {
     .map(|transformed| transformed.data)
 }
 
-/// Get the names of all UDFs in expression
-pub fn try_get_udf_name(expr: &ExprRef) -> Option<String> {
-    let mut udf_name = None;
-
-    expr.apply(|e| {
-        if let Expr::Function {
-            func: FunctionExpr::Python(LegacyPythonUDF { name, .. }),
-            ..
-        } = e.as_ref()
-        {
-            udf_name = Some(name.as_ref().clone());
-            return Ok(TreeNodeRecursion::Stop);
-        }
-
-        Ok(TreeNodeRecursion::Continue)
-    })
-    .unwrap();
-
-    udf_name
-}
-
-/// UDF name and settings
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct UDFProperties {
     pub name: String,
@@ -346,47 +259,91 @@ pub struct UDFProperties {
 }
 
 impl UDFProperties {
+    pub fn from_expr(expr: &ExprRef) -> DaftResult<Self> {
+        let mut udf_properties = None;
+        let mut num_udfs = 0;
+
+        expr.apply(|e| {
+            match e.as_ref() {
+                Expr::Function {
+                    func:
+                        FunctionExpr::Python(LegacyPythonUDF {
+                            name,
+                            resource_request,
+                            batch_size,
+                            concurrency,
+                            use_process,
+                            ..
+                        }),
+                    ..
+                } => {
+                    num_udfs += 1;
+                    udf_properties = Some(Self {
+                        name: name.as_ref().clone(),
+                        resource_request: resource_request.clone(),
+                        batch_size: *batch_size,
+                        concurrency: *concurrency,
+                        use_process: *use_process,
+                    });
+                }
+                Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
+                    function_name,
+                    gpus,
+                    max_concurrency,
+                    use_process,
+                    ..
+                }))) => {
+                    num_udfs += 1;
+                    udf_properties = Some(Self {
+                        name: function_name.to_string(),
+                        resource_request: Some(ResourceRequest::try_new_internal(
+                            None,
+                            Some(*gpus as f64),
+                            None,
+                        )?),
+                        batch_size: None,
+                        concurrency: *max_concurrency,
+                        use_process: *use_process,
+                    });
+                }
+                Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
+                    function_name,
+                    gpus,
+                    max_concurrency,
+                    use_process,
+                    batch_size,
+                    ..
+                }))) => {
+                    num_udfs += 1;
+                    udf_properties = Some(Self {
+                        name: function_name.to_string(),
+                        resource_request: Some(ResourceRequest::try_new_internal(
+                            None,
+                            Some(*gpus as f64),
+                            None,
+                        )?),
+                        batch_size: *batch_size,
+                        concurrency: *max_concurrency,
+                        use_process: *use_process,
+                    });
+                }
+                _ => {}
+            }
+            Ok(TreeNodeRecursion::Continue)
+        })
+        .unwrap();
+
+        if num_udfs != 1 {
+            Err(DaftError::ValueError(format!(
+                "Expected exactly one UDF in expression, got {} UDFs",
+                num_udfs
+            )))
+        } else {
+            Ok(udf_properties.expect("Expect a UDF to be found"))
+        }
+    }
+
     pub fn is_actor_pool_udf(&self) -> bool {
         self.concurrency.is_some()
     }
-}
-
-pub fn get_udf_properties(expr: &ExprRef) -> UDFProperties {
-    let mut udf_properties = None;
-
-    expr.apply(|e| {
-        if let Expr::Function {
-            func:
-                FunctionExpr::Python(LegacyPythonUDF {
-                    name,
-                    resource_request,
-                    batch_size,
-                    concurrency,
-                    use_process,
-                    ..
-                }),
-            ..
-        } = e.as_ref()
-        {
-            udf_properties = Some(UDFProperties {
-                name: name.as_ref().clone(),
-                resource_request: resource_request.clone(),
-                batch_size: *batch_size,
-                concurrency: *concurrency,
-                use_process: *use_process,
-            });
-        } else if let Expr::ScalarFn(ScalarFn::Python(py)) = e.as_ref() {
-            udf_properties = Some(UDFProperties {
-                name: py.name().to_string(),
-                resource_request: None,
-                batch_size: Some(512),
-                concurrency: None,
-                use_process: None,
-            });
-        }
-        Ok(TreeNodeRecursion::Continue)
-    })
-    .unwrap();
-
-    udf_properties.expect("get_udf_properties expects exactly one UDF in expression")
 }
