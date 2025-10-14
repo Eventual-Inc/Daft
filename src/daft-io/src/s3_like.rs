@@ -59,7 +59,7 @@ use crate::{
 };
 
 const S3_DELIMITER: &str = "/";
-const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
+const DEFAULT_GLOB_FANOUT_LIMIT: usize = 256;
 
 #[derive(Debug)]
 pub struct S3LikeSource {
@@ -1253,48 +1253,102 @@ impl ObjectSource for S3LikeSource {
             } else {
                 format!("{}{S3_DELIMITER}", key.trim_end_matches(S3_DELIMITER))
             };
-            let lsr = {
-                let permit = self
-                    .connection_pool_sema
-                    .acquire()
-                    .await
-                    .context(UnableToGrabSemaphoreSnafu)?;
-
-                self.list_impl(
-                    permit,
-                    scheme.as_str(),
-                    bucket.as_str(),
-                    &key,
-                    Some(S3_DELIMITER.into()),
-                    continuation_token.map(String::from),
-                    &self.default_region,
-                    page_size,
-                )
-                .await?
-            };
+            let backoff = ExponentialBackoff { max_waittime_ms: Some(45_000), ..Default::default() };
+            let lsr = backoff
+                .retry(|| {
+                    let permit_fut = self.connection_pool_sema.acquire();
+                    let scheme = scheme.clone();
+                    let bucket = bucket.clone();
+                    let key = key.clone();
+                    let cont = continuation_token.map(String::from);
+                    let page_size = page_size;
+                    async move {
+                        let permit = match permit_fut.await {
+                            Ok(p) => p,
+                            Err(e) => {
+                                let err: super::Error = UnableToGrabSemaphoreSnafu.into_error(e).into();
+                                return Err(RetryError::Transient(err));
+                            }
+                        };
+                        match self
+                            .list_impl(
+                                permit,
+                                scheme.as_str(),
+                                bucket.as_str(),
+                                &key,
+                                Some(S3_DELIMITER.into()),
+                                cont.clone(),
+                                &self.default_region,
+                                page_size,
+                            )
+                            .await
+                        {
+                            Ok(res) => Ok(res),
+                            Err(e) if matches!(e,
+                                super::Error::ConnectTimeout { .. }
+                                | super::Error::ReadTimeout { .. }
+                                | super::Error::SocketError { .. }
+                                | super::Error::Throttled { .. }
+                                | super::Error::MiscTransient { .. }
+                            ) => {
+                                log::warn!("Transient error on LIST {}://{}/{}. Retrying. {:?}", scheme, bucket, key, e);
+                                Err(RetryError::Transient(e))
+                            }
+                            Err(e) => Err(RetryError::Permanent(e)),
+                        }
+                    }
+                })
+                .await?;
             if let Some(is) = io_stats.as_ref() {
                 is.mark_list_requests(1);
             }
 
             if lsr.files.is_empty() && key.contains(S3_DELIMITER) {
-                let permit = self
-                    .connection_pool_sema
-                    .acquire()
-                    .await
-                    .context(UnableToGrabSemaphoreSnafu)?;
-                // Might be a File
-                let key = key.trim_end_matches(S3_DELIMITER);
-                let mut lsr = self
-                    .list_impl(
-                        permit,
-                        scheme.as_str(),
-                        bucket.as_str(),
-                        key,
-                        Some(S3_DELIMITER.into()),
-                        continuation_token.map(String::from),
-                        &self.default_region,
-                        page_size,
-                    )
+                let backoff = ExponentialBackoff { max_waittime_ms: Some(45_000), ..Default::default() };
+                let mut lsr = backoff
+                    .retry(|| {
+                        let permit_fut = self.connection_pool_sema.acquire();
+                        let scheme = scheme.clone();
+                        let bucket = bucket.clone();
+                        let key = key.to_string();
+                        let cont = continuation_token.map(String::from);
+                        let page_size = page_size;
+                        async move {
+                            let permit = match permit_fut.await {
+                                Ok(p) => p,
+                                Err(e) => {
+                                    let err: super::Error = UnableToGrabSemaphoreSnafu.into_error(e).into();
+                                    return Err(RetryError::Transient(err));
+                                }
+                            };
+                            match self
+                                .list_impl(
+                                    permit,
+                                    scheme.as_str(),
+                                    bucket.as_str(),
+                                    key.as_str(),
+                                    Some(S3_DELIMITER.into()),
+                                    cont.clone(),
+                                    &self.default_region,
+                                    page_size,
+                                )
+                                .await
+                            {
+                                Ok(res) => Ok(res),
+                                Err(e) if matches!(e,
+                                    super::Error::ConnectTimeout { .. }
+                                    | super::Error::ReadTimeout { .. }
+                                    | super::Error::SocketError { .. }
+                                    | super::Error::Throttled { .. }
+                                    | super::Error::MiscTransient { .. }
+                                ) => {
+                                    log::warn!("Transient error on LIST {}://{}/{}. Retrying. {:?}", scheme, bucket, key, e);
+                                    Err(RetryError::Transient(e))
+                                }
+                                Err(e) => Err(RetryError::Permanent(e)),
+                            }
+                        }
+                    })
                     .await?;
                 if let Some(is) = io_stats.as_ref() {
                     is.mark_list_requests(1);
@@ -1312,25 +1366,52 @@ impl ObjectSource for S3LikeSource {
             }
         } else {
             // Perform a prefix-based list of all entries with this prefix
-            let lsr = {
-                let permit = self
-                    .connection_pool_sema
-                    .acquire()
-                    .await
-                    .context(UnableToGrabSemaphoreSnafu)?;
-
-                self.list_impl(
-                    permit,
-                    scheme.as_str(),
-                    bucket.as_str(),
-                    key.as_str(),
-                    None, // triggers prefix-based list
-                    continuation_token.map(String::from),
-                    &self.default_region,
-                    page_size,
-                )
-                .await?
-            };
+            let backoff = ExponentialBackoff { max_waittime_ms: Some(45_000), ..Default::default() };
+            let lsr = backoff
+                .retry(|| {
+                    let permit_fut = self.connection_pool_sema.acquire();
+                    let scheme = scheme.clone();
+                    let bucket = bucket.clone();
+                    let key = key.clone();
+                    let cont = continuation_token.map(String::from);
+                    let page_size = page_size;
+                    async move {
+                        let permit = match permit_fut.await {
+                            Ok(p) => p,
+                            Err(e) => {
+                                let err: super::Error = UnableToGrabSemaphoreSnafu.into_error(e).into();
+                                return Err(RetryError::Transient(err));
+                            }
+                        };
+                        match self
+                            .list_impl(
+                                permit,
+                                scheme.as_str(),
+                                bucket.as_str(),
+                                key.as_str(),
+                                None, // triggers prefix-based list
+                                cont.clone(),
+                                &self.default_region,
+                                page_size,
+                            )
+                            .await
+                        {
+                            Ok(res) => Ok(res),
+                            Err(e) if matches!(e,
+                                super::Error::ConnectTimeout { .. }
+                                | super::Error::ReadTimeout { .. }
+                                | super::Error::SocketError { .. }
+                                | super::Error::Throttled { .. }
+                                | super::Error::MiscTransient { .. }
+                            ) => {
+                                log::warn!("Transient error on LIST {}://{}/{}. Retrying. {:?}", scheme, bucket, key, e);
+                                Err(RetryError::Transient(e))
+                            }
+                            Err(e) => Err(RetryError::Permanent(e)),
+                        }
+                    }
+                })
+                .await?;
             if let Some(is) = io_stats.as_ref() {
                 is.mark_list_requests(1);
             }

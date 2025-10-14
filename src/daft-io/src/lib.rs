@@ -47,6 +47,7 @@ use url::ParseError;
 
 use self::{http::HttpSource, local::LocalSource, object_io::ObjectSource};
 pub use crate::range::GetRange;
+use crate::retry::{ExponentialBackoff, RetryError};
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -290,8 +291,25 @@ impl IOClient {
         let (_, path) = parse_url(&input)?;
         let source = self.get_source(&input).await?;
 
-        let get_result = source
-            .get(path.as_ref(), range.clone(), io_stats.clone())
+        let backoff = ExponentialBackoff { max_waittime_ms: Some(45_000), ..Default::default() };
+        let get_result = backoff
+            .retry(|| async {
+                match source
+                    .get(path.as_ref(), range.clone(), io_stats.clone())
+                    .await
+                {
+                    Ok(res) => Ok(res),
+                    Err(e) if matches!(e, Error::ConnectTimeout { .. }
+                        | Error::ReadTimeout { .. }
+                        | Error::SocketError { .. }
+                        | Error::Throttled { .. }
+                        | Error::MiscTransient { .. }) => {
+                        log::warn!("Transient error on GET {}. Retrying. {:?}", input, e);
+                        Err(RetryError::Transient(e))
+                    }
+                    Err(e) => Err(RetryError::Permanent(e)),
+                }
+            })
             .await?;
         Ok(get_result.with_retry(StreamingRetryParams::new(source, input, range, io_stats)))
     }
@@ -314,7 +332,23 @@ impl IOClient {
     ) -> Result<usize> {
         let (_, path) = parse_url(&input)?;
         let source = self.get_source(&input).await?;
-        source.get_size(path.as_ref(), io_stats).await
+        let backoff = ExponentialBackoff { max_waittime_ms: Some(45_000), ..Default::default() };
+        backoff
+            .retry(|| async {
+                match source.get_size(path.as_ref(), io_stats.clone()).await {
+                    Ok(sz) => Ok(sz),
+                    Err(e) if matches!(e, Error::ConnectTimeout { .. }
+                        | Error::ReadTimeout { .. }
+                        | Error::SocketError { .. }
+                        | Error::Throttled { .. }
+                        | Error::MiscTransient { .. }) => {
+                        log::warn!("Transient error on HEAD {}. Retrying. {:?}", input, e);
+                        Err(RetryError::Transient(e))
+                    }
+                    Err(e) => Err(RetryError::Permanent(e)),
+                }
+            })
+            .await
     }
 
     pub async fn single_url_download(

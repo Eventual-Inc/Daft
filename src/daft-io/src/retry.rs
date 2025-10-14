@@ -36,7 +36,7 @@ impl Default for ExponentialBackoff {
 }
 
 impl ExponentialBackoff {
-    pub async fn retry<T, E, Fut>(&self, f: impl Fn() -> Fut) -> Result<T, E>
+    pub async fn retry<T, E, Fut>(&self, mut f: impl FnMut() -> Fut) -> Result<T, E>
     where
         Fut: Future<Output = Result<T, RetryError<E>>>,
     {
@@ -65,5 +65,50 @@ impl ExponentialBackoff {
 
             tokio::time::sleep(Duration::from_millis(jitter)).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, atomic::{AtomicU32, Ordering}};
+
+    #[tokio::test]
+    async fn test_exponential_backoff_transient_eventually_succeeds() {
+        let backoff = ExponentialBackoff { max_tries: 5, jitter_ms: 1, max_backoff_ms: 5, max_waittime_ms: Some(1000) };
+        let attempts = Arc::new(AtomicU32::new(0));
+        let res = backoff
+            .retry(|| {
+                let attempts_clone = attempts.clone();
+                async move {
+                    let now = attempts_clone.fetch_add(1, Ordering::Relaxed) + 1;
+                    if now < 3 {
+                        Err(RetryError::Transient("oops"))
+                    } else {
+                        Ok("ok")
+                    }
+                }
+            })
+            .await;
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), "ok");
+        assert!(attempts.load(Ordering::Relaxed) >= 3);
+    }
+
+    #[tokio::test]
+    async fn test_exponential_backoff_permanent_does_not_retry() {
+        let backoff = ExponentialBackoff { max_tries: 5, jitter_ms: 1, max_backoff_ms: 5, max_waittime_ms: Some(1000) };
+        let attempts = Arc::new(AtomicU32::new(0));
+        let res: Result<&str, &str> = backoff
+            .retry(|| {
+                let attempts_clone = attempts.clone();
+                async move {
+                    attempts_clone.fetch_add(1, Ordering::Relaxed);
+                    Err(RetryError::Permanent("nope"))
+                }
+            })
+            .await;
+        assert!(res.is_err());
+        assert_eq!(attempts.load(Ordering::Relaxed), 1);
     }
 }
