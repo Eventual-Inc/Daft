@@ -230,7 +230,7 @@ pub async fn register_shuffle_cache(
 }
 
 #[allow(clippy::result_large_err)]
-pub fn start_flight_server(ip: &str) -> Result<FlightServerConnectionHandle, Status> {
+pub fn start_flight_server(ip: &str) -> FlightServerConnectionHandle {
     let io_runtime = common_runtime::get_io_runtime(true);
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
     let (port_tx, port_rx) = tokio::sync::oneshot::channel();
@@ -265,9 +265,9 @@ pub fn start_flight_server(ip: &str) -> Result<FlightServerConnectionHandle, Sta
 
     let port = port_rx.blocking_recv().expect("Failed to receive port");
 
-    Ok(FlightServerConnectionHandle {
+    FlightServerConnectionHandle {
         port,
         shutdown_signal: Some(shutdown_tx),
         server_task: Some(server_task),
-    })
+    }
 }
