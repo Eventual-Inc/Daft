@@ -8,7 +8,6 @@ import ray
 
 import daft
 from daft import udf
-from daft.context import get_context
 from daft.daft import SystemInfo
 from daft.expressions import col
 from daft.internal.gpu import cuda_visible_devices
@@ -141,11 +140,7 @@ RAY_VERSION_LT_2 = int(ray.__version__.split(".")[0]) < 2
 @pytest.mark.skipif(
     RAY_VERSION_LT_2, reason="The ray.get_runtime_context().get_assigned_resources() was only added in Ray >= 2.0"
 )
-@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires RayRunner to be in use")
-@pytest.mark.skipif(
-    get_context().daft_execution_config.use_legacy_ray_runner is False,
-    reason="resource requests are not fully supported in Flotilla",
-)
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
 def test_with_column_rayrunner():
     df = daft.from_pydict(DATA).repartition(2)
 
@@ -163,20 +158,15 @@ def test_with_column_rayrunner():
 @pytest.mark.skipif(
     RAY_VERSION_LT_2, reason="The ray.get_runtime_context().get_assigned_resources() was only added in Ray >= 2.0"
 )
-@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires RayRunner to be in use")
-@pytest.mark.skipif(
-    get_context().daft_execution_config.use_legacy_ray_runner is False,
-    reason="resource requests are not fully supported in Flotilla",
-)
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
 def test_with_column_folded_rayrunner():
     df = daft.from_pydict(DATA).repartition(2)
 
-    # Because of Projection Folding optimizations, the expected resource request is the max of the three .with_column requests
-    expected = dict(num_cpus=1, num_gpus=None, memory=5_000_000)
-    df = df.with_column(
-        "no_requests",
-        assert_resources(col("id"), **expected),
-    )
+    # Non-concurrency UDFs do not use Ray on Flotilla
+    # df = df.with_column(
+    #     "no_requests",
+    #     assert_resources(col("id"), **expected),
+    # )
 
     assert_resources_1 = assert_resources.override_options(
         num_cpus=1, memory_bytes=5_000_000, num_gpus=None
@@ -186,11 +176,11 @@ def test_with_column_folded_rayrunner():
     ).with_concurrency(1)
     df = df.with_column(
         "more_memory_request",
-        assert_resources_1(col("id"), **expected),
+        assert_resources_1(col("id"), num_cpus=1, num_gpus=None, memory=5_000_000),
     )
     df = df.with_column(
         "more_cpu_request",
-        assert_resources_2(col("id"), **expected),
+        assert_resources_2(col("id"), num_cpus=1, num_gpus=None, memory=None),
     )
     df.collect()
 
@@ -198,11 +188,7 @@ def test_with_column_folded_rayrunner():
 @pytest.mark.skipif(
     RAY_VERSION_LT_2, reason="The ray.get_runtime_context().get_assigned_resources() was only added in Ray >= 2.0"
 )
-@pytest.mark.skipif(get_tests_daft_runner_name() not in {"ray"}, reason="requires RayRunner to be in use")
-@pytest.mark.skipif(
-    get_context().daft_execution_config.use_legacy_ray_runner is False,
-    reason="resource requests are not fully supported in Flotilla",
-)
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
 def test_with_column_rayrunner_class():
     assert_resources = AssertResourcesStateful.with_concurrency(1)
 
@@ -223,19 +209,16 @@ def test_with_column_rayrunner_class():
     RAY_VERSION_LT_2, reason="The ray.get_runtime_context().get_assigned_resources() was only added in Ray >= 2.0"
 )
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires RayRunner to be in use")
-@pytest.mark.skipif(
-    get_context().daft_execution_config.use_legacy_ray_runner is False,
-    reason="resource requests are not fully supported in Flotilla",
-)
 def test_with_column_folded_rayrunner_class():
     assert_resources = AssertResourcesStateful.with_concurrency(1)
 
     df = daft.from_pydict(DATA).repartition(2)
 
-    df = df.with_column(
-        "no_requests",
-        assert_resources(col("id"), num_cpus=1),  # UDFs have 1 CPU by default
-    )
+    # Non-concurrency UDFs do not use Ray on Flotilla
+    # df = df.with_column(
+    #     "no_requests",
+    #     assert_resources(col("id"), num_cpus=1),  # UDFs have 1 CPU by default
+    # )
 
     assert_resources_1 = assert_resources.override_options(num_cpus=1, memory_bytes=5_000_000)
     df = df.with_column(
@@ -265,7 +248,7 @@ def assert_num_cuda_visible_devices(c, num_gpus: int = 0):
     return c
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() not in {"ray"}, reason="requires RayRunner to be in use")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
 @pytest.mark.skipif(no_gpu_available(), reason="requires GPUs to be available")
 @pytest.mark.parametrize("num_gpus", [None, 1])
 def test_with_column_rayrunner_gpu(num_gpus):
@@ -280,7 +263,7 @@ def test_with_column_rayrunner_gpu(num_gpus):
     df.collect()
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() not in {"ray"}, reason="requires RayRunner to be in use")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
 @pytest.mark.skipif(no_gpu_available(), reason="requires GPUs to be available")
 def test_with_column_max_resources_rayrunner_gpu():
     df = daft.from_pydict(DATA).repartition(2)
