@@ -47,6 +47,7 @@ use crate::{
 static GLOBAL_RUNTIME: OnceLock<Handle> = OnceLock::new();
 
 /// Get or initialize the global tokio runtime
+#[cfg(feature = "python")]
 fn get_global_runtime() -> &'static Handle {
     GLOBAL_RUNTIME.get_or_init(|| {
         let mut builder = tokio::runtime::Builder::new_current_thread();
@@ -57,6 +58,11 @@ fn get_global_runtime() -> &'static Handle {
         });
         pyo3_async_runtimes::tokio::get_runtime().handle().clone()
     })
+}
+
+#[cfg(not(feature = "python"))]
+fn get_global_runtime() -> &'static Handle {
+    unimplemented!("get_global_runtime is not implemented without python feature");
 }
 
 #[cfg(feature = "python")]
