@@ -717,137 +717,92 @@ def case(
     branches: list[tuple[Expression | Any, Expression | Any]] | None = None,
     else_: Expression | Any | None = None,
 ) -> Expression:
-    """Create a SQL-style CASE expression with multiple branches.
+    """Build a SQL-style CASE expression that's easy to construct programmatically.
 
-    This function supports both simple case (with a value to match against) and searched case
-    (with boolean conditions). It provides a more programmatic way to construct case expressions
-    compared to chaining `when` calls.
+    Think of this as a more flexible alternative to chaining multiple `when()` calls.
+    You can either match against specific values (simple case) or evaluate boolean
+    conditions (searched case), and you can build the branches dynamically from lists
+    or dictionaries.
 
     Args:
-        expr: Optional expression to match against (for simple case). If None, creates a searched case.
-        branches: List of (condition/value, then_value) tuples. For simple case, the first element
-                 is the value to match. For searched case, the first element is a boolean condition.
-        else_: Optional default value when no branches match. Defaults to None.
+        expr: The expression to match against for simple case. Leave as None for searched case.
+        branches: List of (condition/value, result) pairs. Each tuple represents one branch
+                 of your case statement.
+        else_: What to return when none of the branches match. Defaults to None if not specified.
 
     Returns:
-        Expression: The resulting case expression
+        Expression: A case expression that evaluates the branches in order
 
     Examples:
-        Simple case (matching against a value):
+        Convert letter grades to GPA points:
         >>> import daft
         >>> from daft.functions import case
         >>>
         >>> df = daft.from_pydict({"grade": ["A", "B", "C", "D", "F"]})
-        >>> df = df.select(
+        >>> result = df.select(
         ...     case(
-        ...         df["grade"],
+        ...         df["grade"],  # Match against this column
         ...         [
-        ...             ("A", 4.0),
-        ...             ("B", 3.0),
+        ...             ("A", 4.0),  # When grade is "A", return 4.0
+        ...             ("B", 3.0),  # When grade is "B", return 3.0
         ...             ("C", 2.0),
         ...             ("D", 1.0),
         ...         ],
-        ...         else_=0.0
+        ...         else_=0.0,  # Default for anything else (like "F")
         ...     ).alias("gpa")
         ... )
-        >>> df.show()
-        ╭─────────╮
-        │ gpa     │
-        │ ---     │
-        │ Float64 │
-        ╞═════════╡
-        │ 4       │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ 3       │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ 2       │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ 1       │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ 0       │
-        ╰─────────╯
-        <BLANKLINE>
-        (Showing first 5 of 5 rows)
+        >>> result.to_pydict()["gpa"]
+        [4.0, 3.0, 2.0, 1.0, 0.0]
 
-        Searched case (with boolean conditions):
+        Assign grades based on numeric scores:
         >>> df = daft.from_pydict({"score": [85, 92, 78, 65, 88]})
-        >>> df = df.select(
+        >>> result = df.select(
         ...     case(
-        ...         branches=[
-        ...             (df["score"] >= 90, "A"),
+        ...         branches=[  # No expr means we're doing searched case
+        ...             (df["score"] >= 90, "A"),  # Check conditions
         ...             (df["score"] >= 80, "B"),
         ...             (df["score"] >= 70, "C"),
         ...             (df["score"] >= 60, "D"),
         ...         ],
-        ...         else_="F"
+        ...         else_="F",
         ...     ).alias("grade")
         ... )
-        >>> df.show()
-        ╭───────╮
-        │ grade │
-        │ ---   │
-        │ Utf8  │
-        ╞═══════╡
-        │ B     │
-        ├╌╌╌╌╌╌╌┤
-        │ A     │
-        ├╌╌╌╌╌╌╌┤
-        │ C     │
-        ├╌╌╌╌╌╌╌┤
-        │ D     │
-        ├╌╌╌╌╌╌╌┤
-        │ B     │
-        ╰───────╯
-        <BLANKLINE>
-        (Showing first 5 of 5 rows)
+        >>> result.to_pydict()["grade"]
+        ['B', 'A', 'C', 'D', 'B']
 
-        Programmatic construction with variables:
-        >>> conditions = [
-        ...     (df["score"] >= 90, "Excellent"),
-        ...     (df["score"] >= 70, "Good"),
-        ...     (df["score"] >= 50, "Fair"),
-        ... ]
-        >>> df = df.select(case(branches=conditions, else_="Poor").alias("performance"))
-        >>> df.show()
-        ╭─────────────╮
-        │ performance │
-        │ ---         │
-        │ Utf8        │
-        ╞═════════════╡
-        │ Good        │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ Excellent   │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ Good        │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ Good        │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ Good        │
-        ╰─────────────╯
-        <BLANKLINE>
-        (Showing first 5 of 5 rows)
+        Build branches programmatically from a dictionary:
+        >>> grade_thresholds = {90: "Excellent", 70: "Good", 50: "Fair"}
+        >>> conditions = [(df["score"] >= threshold, label) for threshold, label in grade_thresholds.items()]
+        >>> result = df.select(case(branches=conditions, else_="Poor").alias("performance"))
+        >>> result.to_pydict()["performance"]
+        ['Good', 'Excellent', 'Good', 'Fair', 'Good']
     """
+    # Handle the case where someone passes None for branches
     if branches is None:
         branches = []
 
+    # We need at least one branch to make sense
     if not branches:
         raise ValueError("At least one branch must be provided")
 
-    # Convert branches to WhenExpr format
+    # Build up the internal representation that Daft expects
     when_cases = []
     for condition_or_value, then_value in branches:
         if expr is not None:
-            # Simple case: compare expr == condition_or_value
+            # Simple case: we're matching expr against specific values
             condition = expr == condition_or_value
         else:
-            # Searched case: use condition_or_value as boolean condition
+            # Searched case: condition_or_value should already be a boolean expression
             condition = Expression._to_expression(condition_or_value)
-        
+
+        # Make sure the result value is also an expression
         then_expr = Expression._to_expression(then_value)
         when_cases.append((condition._expr, then_expr._expr))
 
-    # Create the final expression
+    # Handle the else clause (what happens when nothing matches)
     else_expr = Expression._to_expression(else_) if else_ is not None else Expression._to_expression(None)
+
+    # Use the existing WhenExpr machinery to build the final expression
     return Expression._from_pyexpr(WhenExpr._construct_pyexpr(when_cases, else_expr._expr))
 
 
