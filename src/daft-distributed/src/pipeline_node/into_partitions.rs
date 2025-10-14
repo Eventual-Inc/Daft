@@ -129,6 +129,7 @@ impl IntoPartitionsNode {
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((&self.context, task_id_counter.next())),
                 materialized_outputs,
+                self_arc.config.schema.clone(),
                 &(self_arc as Arc<dyn PipelineNodeImpl>),
                 move |input| {
                     LocalPhysicalPlan::into_partitions(input, 1, StatsState::NotMaterialized)
@@ -202,6 +203,7 @@ impl IntoPartitionsNode {
                     let task = make_in_memory_task_from_materialized_outputs(
                         TaskContext::from((&self.context, task_id_counter.next())),
                         vec![output],
+                        self_arc.config.schema.clone(),
                         &(self_arc as Arc<dyn PipelineNodeImpl>),
                         None,
                     )?;

@@ -12,27 +12,27 @@ use super::blocking_sink::{
 };
 use crate::{ExecutionTaskSpawner, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef};
 
-pub(crate) struct CrossJoinCollectState(Option<Vec<RecordBatch>>);
+pub(crate) struct JoinCollectState(Option<Vec<RecordBatch>>);
 
-pub struct CrossJoinCollectSink {
+pub struct JoinCollectSink {
     state_bridge: BroadcastStateBridgeRef<Vec<RecordBatch>>,
 }
 
-impl CrossJoinCollectSink {
+impl JoinCollectSink {
     pub(crate) fn new(state_bridge: BroadcastStateBridgeRef<Vec<RecordBatch>>) -> Self {
         Self { state_bridge }
     }
 }
 
-impl BlockingSink for CrossJoinCollectSink {
-    type State = CrossJoinCollectState;
+impl BlockingSink for JoinCollectSink {
+    type State = JoinCollectState;
 
     fn name(&self) -> NodeName {
-        "CrossJoinCollect".into()
+        "JoinCollect".into()
     }
 
     fn op_type(&self) -> NodeType {
-        NodeType::CrossJoinCollect
+        NodeType::JoinCollect
     }
 
     fn sink(
@@ -56,12 +56,12 @@ impl BlockingSink for CrossJoinCollectSink {
 
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
                 },
-                info_span!("CrossJoinCollectSink::sink"),
+                info_span!("JoinCollectSink::sink"),
             )
             .into()
     }
 
-    #[instrument(skip_all, name = "CrossJoinCollectSink::finalize")]
+    #[instrument(skip_all, name = "JoinCollectSink::finalize")]
     fn finalize(
         &self,
         states: Vec<Self::State>,
@@ -79,11 +79,11 @@ impl BlockingSink for CrossJoinCollectSink {
     }
 
     fn make_state(&self) -> DaftResult<Self::State> {
-        Ok(CrossJoinCollectState(Some(Vec::new())))
+        Ok(JoinCollectState(Some(Vec::new())))
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        vec!["CrossJoinCollect".to_string()]
+        vec!["JoinCollect".to_string()]
     }
 
     fn max_concurrency(&self) -> usize {

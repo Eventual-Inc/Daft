@@ -9,9 +9,7 @@ import {
   ExecutingStatus,
   FinishedStatus,
 } from "@/hooks/use-queries";
-import Image from "next/image";
-import FishCake from "@/public/fish-cake-filled.svg";
-import AnimatedFish from "@/components/animated-fish";
+import { AnimatedFish, Naruto } from "@/components/icons";
 
 interface StatusBadgeProps {
   state: QueryStatus;
@@ -110,15 +108,6 @@ const Finalizing = () => (
   />
 );
 
-const Naruto = () => (
-  <Image
-    src={FishCake}
-    alt="Fish Cake"
-    className="animate-[spin_5s_linear_none]"
-    height={20}
-    width={20}
-  />
-);
 const Finished = ({ state }: { state: FinishedStatus }) => (
   <StatusBadgeInner
     icon={<Naruto />}

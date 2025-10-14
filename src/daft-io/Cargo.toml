@@ -1,6 +1,6 @@
 [dependencies]
 async-recursion = "1.0.4"
-async-stream = "0.3.6"
+async-stream = {workspace = true}
 async-trait = {workspace = true}
 aws-config = "1.8.1"
 aws-credential-types = {version = "1.2.6", features = ["hardcoded-credentials"]}

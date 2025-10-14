@@ -15,7 +15,7 @@ use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, GlobScan, HashAggregate,
     HashJoin, InMemoryScan, IntoBatches, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId,
-    PhysicalWrite, Pivot, Project, Sample, SamplingMethod, Sort, TopN, UDFProject,
+    PhysicalWrite, Pivot, Project, Sample, SamplingMethod, Sort, SortMergeJoin, TopN, UDFProject,
     UnGroupedAggregate, Unpivot, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
     WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
@@ -45,11 +45,11 @@ use crate::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
         commit_write::CommitWriteSink,
-        cross_join_collect::CrossJoinCollectSink,
         dedup::DedupSink,
         grouped_aggregate::GroupedAggregateSink,
         hash_join_build::HashJoinBuildSink,
         into_partitions::IntoPartitionsSink,
+        join_collect::JoinCollectSink,
         pivot::PivotSink,
         repartition::RepartitionSink,
         sort::SortSink,
@@ -65,7 +65,7 @@ use crate::{
     streaming_sink::{
         anti_semi_hash_join_probe::AntiSemiProbeSink, base::StreamingSinkNode, concat::ConcatSink,
         limit::LimitSink, monotonically_increasing_id::MonotonicallyIncreasingIdSink,
-        outer_hash_join_probe::OuterHashJoinProbeSink,
+        outer_hash_join_probe::OuterHashJoinProbeSink, sort_merge_join_probe::SortMergeJoinProbe,
     },
 };
 
@@ -1063,7 +1063,7 @@ fn physical_plan_to_pipeline(
 
             let state_bridge = BroadcastStateBridge::new();
             let collect_node = BlockingSinkNode::new(
-                Arc::new(CrossJoinCollectSink::new(state_bridge.clone())),
+                Arc::new(JoinCollectSink::new(state_bridge.clone())),
                 collect_child_node,
                 collect_child.get_stats_state().clone(),
                 ctx,
@@ -1077,6 +1077,42 @@ fn physical_plan_to_pipeline(
                     state_bridge,
                 )),
                 vec![collect_node, stream_child_node],
+                stats_state.clone(),
+                ctx,
+            )
+            .boxed()
+        }
+        LocalPhysicalPlan::SortMergeJoin(SortMergeJoin {
+            left,
+            right,
+            left_on,
+            right_on,
+            join_type,
+            stats_state,
+            ..
+        }) => {
+            let left_schema = left.schema().clone();
+            let left_node = physical_plan_to_pipeline(left, psets, cfg, ctx)?;
+            let right_node = physical_plan_to_pipeline(right, psets, cfg, ctx)?;
+
+            let state_bridge = BroadcastStateBridge::new();
+            let collect_node = BlockingSinkNode::new(
+                Arc::new(JoinCollectSink::new(state_bridge.clone())),
+                left_node,
+                left.get_stats_state().clone(),
+                ctx,
+            )
+            .boxed();
+
+            StreamingSinkNode::new(
+                Arc::new(SortMergeJoinProbe::new(
+                    left_on.clone(),
+                    right_on.clone(),
+                    left_schema,
+                    *join_type,
+                    state_bridge,
+                )),
+                vec![collect_node, right_node],
                 stats_state.clone(),
                 ctx,
             )

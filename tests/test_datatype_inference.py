@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import decimal
+from typing import NamedTuple
 
 import jax
 import jaxtyping
@@ -12,6 +13,7 @@ import PIL.Image
 import pytest
 import tensorflow
 import torch
+from pydantic import BaseModel, Field, computed_field
 from typing_extensions import TypedDict
 
 from daft import DataType as dt
@@ -19,6 +21,56 @@ from daft import Series
 from daft.daft import ImageMode
 from daft.datatype import TimeUnit
 from daft.file import File
+
+
+# Pydantic test models
+class SimplePydanticModel(BaseModel):
+    name: str
+    age: int
+
+
+class NestedPydanticModel(BaseModel):
+    user: SimplePydanticModel
+    active: bool
+
+
+class PydanticWithAlias(BaseModel):
+    model_config = {"serialize_by_alias": True}
+    full_name: str = Field(alias="name", serialization_alias="fullName")
+    user_age: int = Field(alias="age")
+
+
+class PydanticWithAliasNoSerializeByAlias(BaseModel):
+    full_name: str = Field(alias="name", serialization_alias="fullName")
+    user_age: int = Field(alias="age")
+
+
+class PydanticWithComputedField(BaseModel):
+    first_name: str
+    last_name: str
+
+    @computed_field
+    @property
+    def full_name(self) -> str:
+        return f"{self.first_name} {self.last_name}"
+
+
+class PydanticWithMixedTypes(BaseModel):
+    numbers: list[int]
+    metadata: dict[str, str]
+
+
+class EmptyPydanticModel(BaseModel):
+    pass
+
+
+class SimpleNamedTuple(NamedTuple):
+    foo: str
+    bar: int
+
+
+class PydanticWithNamedTuple(BaseModel):
+    values: SimpleNamedTuple
 
 
 @pytest.mark.parametrize(
@@ -74,6 +126,32 @@ from daft.file import File
         (Series, dt.list(dt.python())),
         (File, dt.file()),
         (object, dt.python()),
+        # Pydantic models
+        (SimplePydanticModel, dt.struct({"name": dt.string(), "age": dt.int64()})),
+        (
+            NestedPydanticModel,
+            dt.struct({"user": dt.struct({"name": dt.string(), "age": dt.int64()}), "active": dt.bool()}),
+        ),
+        # TODO: Uncomment this when we update to pydantic>=2.11 which supports `serialize_by_alias`
+        # (PydanticWithAlias, dt.struct({"fullName": dt.string(), "age": dt.int64()})),
+        (PydanticWithAliasNoSerializeByAlias, dt.struct({"full_name": dt.string(), "user_age": dt.int64()})),
+        (
+            PydanticWithComputedField,
+            dt.struct({"first_name": dt.string(), "last_name": dt.string(), "full_name": dt.string()}),
+        ),
+        (
+            PydanticWithMixedTypes,
+            dt.struct(
+                {
+                    "numbers": dt.list(dt.int64()),
+                    "metadata": dt.map(dt.string(), dt.string()),
+                }
+            ),
+        ),
+        (EmptyPydanticModel, dt.struct({})),
+        # TODO: uncomment once we support named tuples
+        # (SimpleNamedTuple, dt.struct({"foo": dt.string(), "bar": dt.int64()})),
+        # (PydanticWithNamedTuple, dt.struct({"values": dt.struct({"foo": dt.string(), "bar": dt.int64()})})),
     ],
 )
 def test_infer_from_type(user_provided_type, expected_datatype):
@@ -196,16 +274,6 @@ def test_infer_from_jaxtyping(dtype_class, expected_dtype, shape_spec, expected_
         (Series.from_pylist([1, 2, 3]), dt.list(dt.int64())),
         (File(b"1234"), dt.file()),
         (object(), dt.python()),
-    ],
-)
-def test_infer_from_object(user_provided_object, expected_datatype):
-    actual = dt.infer_from_object(user_provided_object)
-    assert actual == expected_datatype
-
-
-@pytest.mark.parametrize(
-    "user_provided_object, expected_datatype",
-    [
         # Nested lists
         ([[1, 2], [3, 4]], dt.list(dt.list(dt.int64()))),
         ([["a", "b"], ["c", "d"]], dt.list(dt.list(dt.string()))),
@@ -241,9 +309,47 @@ def test_infer_from_object(user_provided_object, expected_datatype):
         # Empty nested structures
         ([[], []], dt.list(dt.list(dt.null()))),
         ([{}, {}], dt.list(dt.struct({"": dt.null()}))),
+        # Pydantic model instances
+        (SimplePydanticModel(name="Alice", age=30), dt.struct({"name": dt.string(), "age": dt.int64()})),
+        (
+            NestedPydanticModel(user=SimplePydanticModel(name="Bob", age=25), active=True),
+            dt.struct({"user": dt.struct({"name": dt.string(), "age": dt.int64()}), "active": dt.bool()}),
+        ),
+        # TODO: Uncomment this when we update to pydantic>=2.11 which supports `serialize_by_alias`
+        # (PydanticWithAlias(name="Jane Doe", age=28), dt.struct({"fullName": dt.string(), "age": dt.int64()})),
+        (
+            PydanticWithAliasNoSerializeByAlias(name="Jane Doe", age=28),
+            dt.struct({"full_name": dt.string(), "user_age": dt.int64()}),
+        ),
+        (
+            PydanticWithComputedField(first_name="John", last_name="Smith"),
+            dt.struct({"first_name": dt.string(), "last_name": dt.string(), "full_name": dt.string()}),
+        ),
+        (
+            PydanticWithMixedTypes(numbers=[1, 2, 3], metadata={"key": "value"}),
+            dt.struct(
+                {
+                    "numbers": dt.list(dt.int64()),
+                    "metadata": dt.map(dt.string(), dt.string()),
+                }
+            ),
+        ),
+        (
+            PydanticWithMixedTypes(numbers=[1, 2, 3], metadata={"key": "value"}),
+            dt.struct(
+                {
+                    "numbers": dt.list(dt.int64()),
+                    "metadata": dt.map(dt.string(), dt.string()),
+                }
+            ),
+        ),
+        (EmptyPydanticModel(), dt.struct({"": dt.null()})),
+        # TODO: uncomment once we support named tuples
+        # (SimpleNamedTuple(foo="1", bar=2), dt.struct({"foo": dt.string(), "bar": dt.int64()})),
+        # (PydanticWithNamedTuple(values=SimpleNamedTuple(foo="1", bar=2)), dt.struct({"values": dt.struct({"foo": dt.string(), "bar": dt.int64()})})),
     ],
 )
-def test_infer_from_nested_object(user_provided_object, expected_datatype):
+def test_infer_from_object(user_provided_object, expected_datatype):
     actual = dt.infer_from_object(user_provided_object)
     assert actual == expected_datatype
 

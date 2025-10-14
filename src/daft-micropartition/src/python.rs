@@ -390,6 +390,7 @@ impl PyMicroPartition {
                     &right.inner,
                     left_exprs.as_slice(),
                     right_exprs.as_slice(),
+                    JoinType::Inner, // TODO: Expose other join types
                     is_sorted,
                 )?
                 .into())

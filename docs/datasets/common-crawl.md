@@ -4,11 +4,15 @@
 
 Daft provides a simple, performant, and responsible way to access Common Crawl data.
 
-## Prerequisites
+## Prerequisites for access within the AWS Cloud
 
-Common Crawl data is hosted by [Amazon Web Services' Open Data Sets Sponsorships program](https://aws.amazon.com/opendata/) which may be accessed for free. It requires AWS authentication.
+Common Crawl data is hosted by [Amazon Web Services' Open Data Sets Sponsorships program](https://aws.amazon.com/opendata/) which makes it freely accessible. However, access does require AWS authentication.
 
-### Option 1: AWS SSO Login
+All Common Crawl data is stored in the `us-east-1` region. It's recommended to access the data from that same region. From the [Common Crawl website](https://commoncrawl.org/get-started):
+
+> The connection to S3 should be faster and you avoid the minimal fees for inter-region data transfer (you have to send requests which are charged as outgoing traffic).
+
+### Authentication option 1: AWS SSO Login
 
 ```bash
 aws sso login
@@ -16,7 +20,7 @@ aws sso login
 
 If your environment has AWS credentials configured, Daft will automatically detect and use them.
 
-### Option 2: Configure IOConfig
+### Authentication option 2: Configure IOConfig
 
 ```python
 import daft
@@ -27,7 +31,7 @@ io_config = IOConfig(
         key_id="your_access_key",
         access_key="your_secret_key",
         session_token="your_session_token",
-        region_name="us-east-1",
+        region_name="us-east-1",  # Access Common Crawl data where it's located.
     )
 )
 
