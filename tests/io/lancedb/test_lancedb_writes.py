@@ -203,6 +203,18 @@ def test_create_mode_succeeds_on_missing_path(lance_dataset_path):
     assert df_loaded.to_pydict() == df.to_pydict()
 
 
+def test_create_mode_succeeds_on_empty_directory(lance_dataset_path):
+    """Create should succeed when the target is an empty directory."""
+    target_dir = os.path.join(lance_dataset_path, "empty_dir")
+    os.makedirs(target_dir)
+    assert os.path.exists(target_dir) and len(os.listdir(target_dir)) == 0
+
+    df = daft.from_pydict({"a": [1, 2], "b": ["x", "y"]})
+    df.write_lance(target_dir, mode="create")
+    df_loaded = daft.read_lance(target_dir)
+    assert df_loaded.to_pydict() == df.to_pydict()
+
+
 def test_append_mode_fails_when_dataset_does_not_exist(lance_dataset_path):
     """When mode="append" and the target dataset does not exist, write_lance should fail with appropriate error."""
     df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
