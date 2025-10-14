@@ -1,0 +1,81 @@
+I've created a comprehensive architecture report for the Daft repository at ARCHITECTURE.md.
+
+  Report Contents
+
+  The report includes:
+
+  📋 Executive Summary
+  - High-level overview of Daft's architecture
+  - Code organization (~55 Rust crates, ~53 Python modules)
+  - Key architectural characteristics
+
+  🏗️ Architecture Overview
+  - Layered architecture diagram showing the full stack
+  - Data flow from Python API → Rust execution
+
+  🐍 Python API Layer (Detailed coverage of 9 major APIs)
+  1. DataFrame API - Main user interface (~4,836 lines)
+  2. Expression API - DSL for operations (~3,812 lines)
+  3. Series API - Single column operations (~1,105 lines)
+  4. Schema & DataType - Type system with multimodal support
+  5. I/O API - File reading (Parquet, CSV, JSON, Iceberg, Delta, etc.)
+  6. UDF System - User-defined functions (@func, @cls, @method)
+  7. Runner Abstraction - Native vs. Ray execution
+  8. Context & Configuration - Global settings
+  9. Additional APIs - Catalog, SQL, Window functions
+
+  ⚙️ Rust Implementation Layer (16 major crate groups)
+  1. daft-schema - Type system foundation
+  2. daft-core - Series and array implementations
+  3. daft-dsl - Expression DSL (20+ expression types)
+  4. daft-recordbatch - Expression evaluation engine
+  5. daft-micropartition - Execution quantum with lazy loading
+  6. daft-logical-plan - Query planning (25+ operators)
+  7. daft-physical-plan - Physical execution planning
+  8. daft-local-execution - Streaming execution engine
+  9. daft-io - Unified I/O for S3, Azure, GCS, HTTP
+  10. daft-scan - Scan planning and partition pruning
+  11. daft-parquet/csv/json - File format readers
+  12. daft-functions - 9 function modules (numeric, string, list, etc.)
+  13. Supporting crates - 15+ common utilities
+  14. Higher-level features - SQL, catalog, dashboard, Spark Connect
+
+  🔗 PyO3 Bindings
+  - How Python-Rust interface works
+  - Type mapping and memory management
+  - Registration pattern for exposing Rust types
+
+  🔄 Data Flow & Query Execution
+  - Complete end-to-end query trace
+  - Step-by-step from Python API to execution
+  - MicroPartition flow and parallelism
+
+  🎯 Key Abstractions
+  - MicroPartition, RecordBatch, Series, Expression, LogicalPlan
+  - Why each abstraction exists and where it's used
+
+  👨‍💻 Developer Guide (Practical how-tos)
+  - Adding new functions
+  - Adding new logical plan operators
+  - Adding new file formats
+  - Optimizing query plans
+  - Testing guidelines and common pitfalls
+
+  Key Insights
+
+  The report reveals that Daft has:
+  - Clean separation between Python API and Rust engine
+  - Lazy evaluation with query optimization
+  - MicroPartition-based execution enabling efficient parallelism and lazy loading
+  - Modular crate structure (~55 crates) for maintainability
+  - Sophisticated type system with first-class multimodal support (images, tensors, embeddings)
+
+  For Developers
+
+  The report is specifically tailored for developers working on Daft, including:
+  - File paths and line numbers for all major components
+  - Practical examples of common development tasks
+  - Clear guidance on where to add new functionality
+  - Code snippets showing implementation patterns
+
+  The report is now available at: /Users/malcolmgreaves/dev/oss/Eventual-Inc/Daft/ARCHITECTURE.md

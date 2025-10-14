@@ -1,0 +1,14 @@
+> [ultrathink] @./ Analyze this repository (`daft`). Produce a report that details the internal code architecture. I want to know how the major API elements are implemented. Note that the API for `daft` is _in Python_: users `pip install daft` and `import daft` in their Python code. The Rust code serves as an
+implementation for most of the `daft` library.
+
+Make sure to include:
+- for each major Python API, describe its behavior and purpose
+- for each major Python API, what are the major internal Rust API concepts that implement it?
+- for each major internal Rust API, describe its behavior and purpose
+- for each major internal Rust API, describe how it is implemented
+
+Along with all of the requested detail, make sure to include a summary at the beginning of the report that provides a concise high-level overview of the library.
+
+Note that your audience reading this report is a developer working on `daft`. This report should both be educational as well as provide practical tips and advice on where and how to make changes to existing functionality and where new functionality and extensions can go today.
+
+Generate a markdown (.md) formatted report.
