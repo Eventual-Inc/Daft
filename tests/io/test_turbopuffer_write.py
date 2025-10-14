@@ -6,6 +6,7 @@ import pytest
 import turbopuffer
 
 import daft
+from tests.conftest import get_tests_daft_runner_name
 
 
 @pytest.fixture
@@ -20,6 +21,10 @@ def sample_df() -> daft.DataFrame:
     )
 
 
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() == "ray",
+    reason="Mocking the data sink's dependencies doesn't work in Ray execution environment",
+)
 @pytest.mark.parametrize(
     "error_class,status_code,error_message",
     [
@@ -82,6 +87,10 @@ def test_resilience_to_transient_errors(sample_df, error_class, status_code, err
         assert rows_not_written == sample_df.count_rows()
 
 
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() == "ray",
+    reason="Mocking the data sink's dependencies doesn't work in Ray execution environment",
+)
 @pytest.mark.parametrize(
     "error_class,status_code,error_message",
     [
