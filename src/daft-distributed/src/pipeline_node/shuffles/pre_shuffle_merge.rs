@@ -142,6 +142,7 @@ impl PreShuffleMergeNode {
                     let task = make_in_memory_task_from_materialized_outputs(
                         TaskContext::from((self.context(), task_id_counter.next())),
                         materialized_outputs,
+                        self_clone.config.schema.clone(),
                         &(self_clone as Arc<dyn PipelineNodeImpl>),
                         Some(SchedulingStrategy::WorkerAffinity {
                             worker_id,
@@ -164,6 +165,7 @@ impl PreShuffleMergeNode {
                 let task = make_in_memory_task_from_materialized_outputs(
                     TaskContext::from((self.context(), task_id_counter.next())),
                     materialized_outputs,
+                    self_clone.config.schema.clone(),
                     &(self_clone as Arc<dyn PipelineNodeImpl>),
                     Some(SchedulingStrategy::WorkerAffinity {
                         worker_id,

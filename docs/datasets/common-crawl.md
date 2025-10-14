@@ -4,11 +4,18 @@
 
 Daft provides a simple, performant, and responsible way to access Common Crawl data.
 
-## Prerequisites
+## Prerequisites for access within the AWS Cloud
 
-Common Crawl data is hosted by [Amazon Web Services' Open Data Sets Sponsorships program](https://aws.amazon.com/opendata/) which may be accessed for free. It requires AWS authentication.
+Common Crawl data is hosted by [Amazon Web Services' Open Data Sets Sponsorships program](https://aws.amazon.com/opendata/) which makes it freely accessible.
+However, access does require AWS authentication when downloading Common Crawl data from S3 directly. (_Outside of AWS, you can access Common Crawl without an AWS account_).
 
-### Option 1: AWS SSO Login
+**NOTE**: When using `daft.datasets.common_crawl`, you _must_ provide `in_aws=True` when accessing data within the AWS Cloud!
+
+All Common Crawl data is stored in the `us-east-1` region. It's recommended to access the data from that same region. From the [Common Crawl website](https://commoncrawl.org/get-started):
+
+> The connection to S3 should be faster and you avoid the minimal fees for inter-region data transfer (you have to send requests which are charged as outgoing traffic).
+
+### Authentication option 1: AWS SSO Login
 
 ```bash
 aws sso login
@@ -16,7 +23,7 @@ aws sso login
 
 If your environment has AWS credentials configured, Daft will automatically detect and use them.
 
-### Option 2: Configure IOConfig
+### Authentication option 2: Configure IOConfig
 
 ```python
 import daft
@@ -27,12 +34,30 @@ io_config = IOConfig(
         key_id="your_access_key",
         access_key="your_secret_key",
         session_token="your_session_token",
-        region_name="us-east-1",
+        region_name="us-east-1",  # Access Common Crawl data where it's located.
     )
 )
 
 # Use io_config when reading from the Common Crawl dataset
-daft.datasets.common_crawl("CC-MAIN-2025-33", io_config=io_config)
+daft.datasets.common_crawl("CC-MAIN-2025-33", io_config=io_config, in_aws=True)
+# NOTE: When using `daft.datasets.common_crawl`, you _must_ provide `in_aws=True` when accessing data within the AWS Cloud!
+```
+
+## Prerequisites for access outside the AWS Cloud
+
+If you are running _outside_ of AWS, then the most optimal way to download Common Crawl data is to use their HTTPS links.
+From the [Common Crawl website](https://commoncrawl.org/get-started):
+
+> If you want to download the data to your local machine or local cluster, you can use any HTTP download agent, such as cURL or wget.
+
+**NOTE**: When using `daft.datasets.common_crawl`, you _must_ provide `in_aws=False` when accessing data outside the AWS Cloud!
+
+Here's an example of how to use Common Crawl with Daft when outside of AWS:
+
+```python
+import daft
+
+daft.datasets.common_crawl("CC-MAIN-2025-33", in_aws=False)
 ```
 
 ## Quickstart
@@ -42,8 +67,14 @@ The simplest way to get started with Common Crawl is to load a small sample of d
 ```python
 import daft
 
+# If you are running this code locally, set `in_aws = True`. This will use S3.
+# Otherwise, set `in_aws = False`. This will use HTTPS URLs for the files.
+# You must **explicitly** set the `in_aws` parameter.
+in_aws: bool = ...
+
+
 # Load a sample of raw WARC data from the CC-MAIN-2025-33 crawl
-daft.datasets.common_crawl("CC-MAIN-2025-33", num_files=1).show()
+daft.datasets.common_crawl("CC-MAIN-2025-33", num_files=1, in_aws=in_aws).show()
 ```
 
 ```{title="Output"}
@@ -78,31 +109,31 @@ daft.datasets.common_crawl("CC-MAIN-2025-33", num_files=1).show()
 
 Common Crawl provides three types of content:
 
-**Raw [Web ARChive (WARC)](https://en.wikipedia.org/wiki/WARC_(file_format)) files (default)** - Full HTTP responses with headers and content:
+**Raw [Web ARChive (WARC)](<https://en.wikipedia.org/wiki/WARC_(file_format)>) files (default)** - Full HTTP responses with headers and content:
 
 ```python
 # Raw WARC data (default)
-daft.datasets.common_crawl("CC-MAIN-2025-33", content="raw")
+daft.datasets.common_crawl("CC-MAIN-2025-33", content="raw", in_aws=in_aws)
 # or equivalently
-daft.datasets.common_crawl("CC-MAIN-2025-33", content="warc")
+daft.datasets.common_crawl("CC-MAIN-2025-33", content="warc", in_aws=in_aws)
 ```
 
 **Extracted text, aka WET files** - Plain text content extracted from web pages:
 
 ```python
 # Extracted text content
-daft.datasets.common_crawl("CC-MAIN-2025-33", content="text")
+daft.datasets.common_crawl("CC-MAIN-2025-33", content="text", in_aws=in_aws)
 # or equivalently
-daft.datasets.common_crawl("CC-MAIN-2025-33", content="wet")
+daft.datasets.common_crawl("CC-MAIN-2025-33", content="wet", in_aws=in_aws)
 ```
 
 **Metadata, aka WAT files** - Information about crawled pages without content:
 
 ```python
 # Metadata only
-daft.datasets.common_crawl("CC-MAIN-2025-33", content="metadata")
+daft.datasets.common_crawl("CC-MAIN-2025-33", content="metadata", in_aws=in_aws)
 # or equivalently
-daft.datasets.common_crawl("CC-MAIN-2025-33", content="wat")
+daft.datasets.common_crawl("CC-MAIN-2025-33", content="wat", in_aws=in_aws)
 ```
 
 ### Loading a subset of data
@@ -111,7 +142,7 @@ For quick testing and development, it's helpful to limit the number of crawl fil
 
 ```python
 # Process only 1 crawl file for testing
-daft.datasets.common_crawl("CC-MAIN-2025-33", num_files=1)
+daft.datasets.common_crawl("CC-MAIN-2025-33", num_files=1, in_aws=in_aws)
 ```
 
 ### Working with specific segments
@@ -122,6 +153,7 @@ Each crawl is split into 100 segments. You can target a specific segment:
 daft.datasets.common_crawl(
     "CC-MAIN-2025-33",
     segment="1754151279521.11",
+    in_aws=in_aws,
 )
 ```
 
@@ -129,15 +161,15 @@ daft.datasets.common_crawl(
 
 Daft's Common Crawl dataset includes these key columns:
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `WARC-Record-ID` | String | Unique identifier for each WARC record |
-| `WARC-Target-URI` | String | The URL that was crawled |
-| `WARC-Type` | String | Type of record (response, request, warcinfo, etc.) |
-| `WARC-Date` | Timestamp | When the page was crawled |
-| `WARC-Identified-Payload-Type` | String | MIME type of the content |
-| `warc_content` | Binary | The actual content (HTML, text, etc.) |
-| `warc_headers` | String | All WARC record headers as JSON |
+| Column                         | Type      | Description                                        |
+| ------------------------------ | --------- | -------------------------------------------------- |
+| `WARC-Record-ID`               | String    | Unique identifier for each WARC record             |
+| `WARC-Target-URI`              | String    | The URL that was crawled                           |
+| `WARC-Type`                    | String    | Type of record (response, request, warcinfo, etc.) |
+| `WARC-Date`                    | Timestamp | When the page was crawled                          |
+| `WARC-Identified-Payload-Type` | String    | MIME type of the content                           |
+| `warc_content`                 | Binary    | The actual content (HTML, text, etc.)              |
+| `warc_headers`                 | String    | All WARC record headers as JSON                    |
 
 For more details on the WARC file format, check out the [WARC specification](https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.0/).
 
@@ -149,7 +181,7 @@ Find the most common MIME types in a crawl:
 
 ```python
 (
-    daft.datasets.common_crawl("CC-MAIN-2025-33", num_files=1)
+    daft.datasets.common_crawl("CC-MAIN-2025-33", num_files=1, in_aws=in_aws)
     .select(daft.col("WARC-Identified-Payload-Type"))
     .groupby("WARC-Identified-Payload-Type")
     .agg(daft.col("WARC-Identified-Payload-Type").count().alias("count"))
@@ -190,7 +222,7 @@ Content in Common Crawl WARC files are UTF-8 encoded. Use Daft's [try_decode][da
 from daft.functions import try_decode
 
 (
-    daft.datasets.common_crawl("CC-MAIN-2025-33", content="text", num_files=1)
+    daft.datasets.common_crawl("CC-MAIN-2025-33", content="text", num_files=1, in_aws=in_aws)
     .with_column("text_content", try_decode(daft.col("warc_content"), charset="utf-8"))
     .where(daft.col("text_content").not_null())
     .select("WARC-Target-URI", "text_content")
@@ -218,5 +250,5 @@ from daft.functions import try_decode
 ## Next steps
 
 - When using datasets like Common Crawl for pre-training, content deduplication is essential for model performance.
-Check out our [MinHash deduplication example](../examples/minhash-dedupe.md) to see how this can be done in Daft.
+  Check out our [MinHash deduplication example](../examples/minhash-dedupe.md) to see how this can be done in Daft.
 - See the [Common Crawl Dataset API reference](../api/datasets.md#common-crawl) for complete parameter documentation

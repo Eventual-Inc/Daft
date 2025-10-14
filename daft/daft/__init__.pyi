@@ -1357,6 +1357,18 @@ def row_wise_udf(
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
 ) -> PyExpr: ...
+def batch_udf(
+    name: str,
+    cls: ClsBase[Any],
+    method: Callable[Concatenate[Any, ...], Any],
+    return_dtype: PyDataType,
+    gpus: int,
+    use_process: bool | None,
+    max_concurrency: int | None,
+    batch_size: int | None,
+    original_args: tuple[tuple[Any, ...], dict[str, Any]],
+    expr_args: list[PyExpr],
+) -> PyExpr: ...
 def initialize_udfs(expression: PyExpr) -> PyExpr: ...
 def resolve_expr(expr: PyExpr, schema: PySchema) -> tuple[PyExpr, PyField]: ...
 def row_number() -> PyExpr: ...

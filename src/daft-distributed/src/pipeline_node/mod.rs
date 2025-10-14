@@ -331,7 +331,7 @@ impl Stream for SubmittableTaskStream {
 pub(crate) fn make_in_memory_scan_from_materialized_outputs(
     materialized_outputs: &[MaterializedOutput],
     schema: SchemaRef,
-    node_id: NodeID,
+    cache_key: String,
 ) -> DaftResult<LocalPhysicalPlanRef> {
     let num_partitions = materialized_outputs.len();
     let mut total_size_bytes = 0;
@@ -344,7 +344,7 @@ pub(crate) fn make_in_memory_scan_from_materialized_outputs(
 
     let info = InMemoryInfo::new(
         schema,
-        node_id.to_string(),
+        cache_key,
         None,
         num_partitions,
         total_size_bytes,
@@ -357,98 +357,10 @@ pub(crate) fn make_in_memory_scan_from_materialized_outputs(
     Ok(in_memory_source_plan)
 }
 
-#[cfg(feature = "python")]
-pub(crate) async fn get_partition_boundaries_from_samples(
-    samples: Vec<MaterializedOutput>,
-    sort_by: &[daft_dsl::expr::bound_expr::BoundExpr],
-    descending: Vec<bool>,
-    nulls_first: Vec<bool>,
-    num_partitions: usize,
-    context_name: String,
-) -> common_error::DaftResult<daft_recordbatch::RecordBatch> {
-    use daft_io::IOStatsContext;
-    use pyo3::{Python, prelude::*};
-
-    let ray_partition_refs = samples
-        .into_iter()
-        .flat_map(|mo| mo.into_inner().0)
-        .map(|pr| {
-            let ray_partition_ref = pr
-                .as_any()
-                .downcast_ref::<crate::python::ray::RayPartitionRef>()
-                .ok_or(common_error::DaftError::InternalError(
-                    "Failed to downcast partition ref".to_string(),
-                ))?;
-            Ok(ray_partition_ref.clone())
-        })
-        .collect::<common_error::DaftResult<Vec<_>>>()?;
-
-    let (task_locals, py_object_refs, py_sort_by, descending, nulls_first) =
-        Python::with_gil(|py| {
-            let task_locals = crate::utils::runtime::PYO3_ASYNC_RUNTIME_LOCALS
-                .get()
-                .expect("Python task locals not initialized")
-                .clone_ref(py);
-
-            let py_object_refs = ray_partition_refs
-                .into_iter()
-                .map(|pr| pr.get_object_ref(py))
-                .collect::<Vec<_>>();
-
-            let py_sort_by = sort_by
-                .iter()
-                .map(|e| daft_dsl::python::PyExpr {
-                    expr: e.inner().clone(),
-                })
-                .collect::<Vec<_>>();
-
-            (
-                task_locals,
-                py_object_refs,
-                py_sort_by,
-                descending,
-                nulls_first,
-            )
-        });
-
-    let await_coroutine = async move {
-        let result = Python::with_gil(|py| {
-            let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
-
-            let coroutine = flotilla_module.call_method1(
-                pyo3::intern!(py, "get_boundaries"),
-                (
-                    py_object_refs,
-                    py_sort_by,
-                    descending,
-                    nulls_first,
-                    num_partitions,
-                ),
-            )?;
-            pyo3_async_runtimes::tokio::into_future(coroutine)
-        })?
-        .await?;
-        common_error::DaftResult::Ok(result)
-    };
-
-    let boundaries = pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine).await?;
-    let boundaries = Python::with_gil(|py| {
-        boundaries.extract::<daft_micropartition::python::PyMicroPartition>(py)
-    })?;
-
-    let boundaries = boundaries
-        .inner
-        .concat_or_get(IOStatsContext::new(context_name.clone()))?
-        .ok_or(common_error::DaftError::InternalError(format!(
-            "No boundaries found for {}",
-            context_name
-        )))?;
-    Ok(boundaries)
-}
-
 fn make_new_task_from_materialized_outputs<F>(
     task_context: TaskContext,
     materialized_outputs: Vec<MaterializedOutput>,
+    input_schema: SchemaRef,
     node: &Arc<dyn PipelineNodeImpl>,
     plan_builder: F,
     scheduling_strategy: Option<SchedulingStrategy>,
@@ -458,8 +370,8 @@ where
 {
     let in_memory_source_plan = make_in_memory_scan_from_materialized_outputs(
         &materialized_outputs,
-        node.config().schema.clone(),
-        node.node_id(),
+        input_schema,
+        node.node_id().to_string(),
     )?;
     let partition_refs = materialized_outputs
         .into_iter()
@@ -482,12 +394,14 @@ where
 fn make_in_memory_task_from_materialized_outputs(
     task_context: TaskContext,
     materialized_outputs: Vec<MaterializedOutput>,
+    input_schema: SchemaRef,
     node: &Arc<dyn PipelineNodeImpl>,
     scheduling_strategy: Option<SchedulingStrategy>,
 ) -> DaftResult<SubmittableTask<SwordfishTask>> {
     make_new_task_from_materialized_outputs(
         task_context,
         materialized_outputs,
+        input_schema,
         node,
         |input| input,
         scheduling_strategy,

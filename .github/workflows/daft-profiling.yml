@@ -1,8 +1,10 @@
 name: Run Profiling on the TPCH Benchmark
 
 on:
-  push:
-    branches: [main]
+  # disabling because it is failing and we don't seem to use the results anyway
+  # can still be run manually with the workflow_dispatch trigger
+  # push:
+  #   branches: [main]
   workflow_dispatch:
 
 env:

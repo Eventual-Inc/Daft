@@ -223,7 +223,6 @@ impl LogicalPlanToPipelineNodeTranslator {
         right: DistributedPipelineNode,
         left_on: Vec<BoundExpr>,
         right_on: Vec<BoundExpr>,
-        null_equals_nulls: Vec<bool>,
         join_type: JoinType,
         output_schema: SchemaRef,
     ) -> DaftResult<DistributedPipelineNode> {
@@ -239,7 +238,6 @@ impl LogicalPlanToPipelineNodeTranslator {
             &self.plan_config,
             left_on,
             right_on,
-            Some(null_equals_nulls),
             join_type,
             num_partitions,
             left,
@@ -329,7 +327,6 @@ impl LogicalPlanToPipelineNodeTranslator {
                 right_node,
                 left_on,
                 right_on,
-                null_equals_nulls,
                 join.join_type,
                 join.output_schema.clone(),
             ),

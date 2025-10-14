@@ -12,7 +12,7 @@ from daft.datatype import DataType
 from daft.internal.gpu import cuda_visible_devices
 from tests.conftest import get_tests_daft_runner_name
 
-pytestmark = pytest.mark.skipif(get_tests_daft_runner_name() == "native", reason="Tests Flotilla-specific behavior")
+pytestmark = pytest.mark.skipif(get_tests_daft_runner_name() == "native", reason="Tests Ray-specific behavior")
 
 
 @contextmanager
