@@ -1,7 +1,9 @@
 mod error;
+mod kv;
 mod options;
 mod session;
 
+pub use kv::*;
 pub use session::*;
 
 #[cfg(feature = "python")]
