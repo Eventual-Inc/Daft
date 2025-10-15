@@ -11,7 +11,11 @@ use arrow2::{
 use common_error::{DaftError, DaftResult};
 use common_image::CowImage;
 
-use crate::{array::ops::image::image_array_from_img_buffers, datatypes::FileArray, prelude::*};
+use crate::{
+    array::ops::image::{image_array_from_img_buffers, image_array_from_img_buffers_iter},
+    datatypes::FileArray,
+    prelude::*,
+};
 
 /// Combine literal types that are likely the same but do not equal due to lossy literal casting.
 ///
@@ -79,6 +83,9 @@ impl Series {
         on_err: OnError,
     ) -> DaftResult<Self> {
         let values_len = values.len();
+        if values_len == 0 {
+            return Ok(Self::empty("literal", &DataType::Null));
+        }
         let mut n_nulls = 0;
         let mut errs = MutableUtf8Array::<i64>::with_capacity(values_len);
 
@@ -428,9 +435,7 @@ impl Series {
 
             #[cfg(feature = "python")]
             DataType::Python => {
-                let iter = values
-                    .into_iter()
-                    .map(|lit| unwrap_inner!(lit, Python).map(|pyobj| pyobj.0));
+                let iter = values.map(|lit| unwrap_inner!(lit, Python).map(|pyobj| pyobj.0));
 
                 PythonArray::from_iter("literal", iter).into_series()
             }
@@ -489,16 +494,14 @@ impl Series {
                 FileArray::new(Field::new("literal", DataType::File), sa).into_series()
             }
             DataType::Tensor(_) => {
-                let values = values.collect::<Vec<_>>();
-
-                let (data, shapes) = values.iter()
+                let (data, shapes) = values
                     .map(|v| {
-                        unwrap_inner!(v, Literal::Tensor { data, shape } => (data, shape.as_slice())).unzip()
+                        unwrap_inner!(v, Literal::Tensor { data, shape } => (data, shape)).unzip()
                     })
                     .collect::<(Vec<_>, Vec<_>)>();
 
                 let data_array = ListArray::try_from(("data", data.as_slice()))?.into_series();
-                let shape_array = ListArray::from(("shape", shapes.as_slice())).into_series();
+                let shape_array = ListArray::from(("shape", shapes)).into_series();
 
                 let validity = data_array.validity().cloned();
                 let physical =
@@ -507,13 +510,11 @@ impl Series {
                 TensorArray::new(field, physical).into_series()
             }
             DataType::SparseTensor(..) => {
-                let values = values.collect::<Vec<_>>();
-
                 let (values, indices, shapes) = values
-                    .iter()
+
                     .map(|v| {
                         match unwrap_inner!(v, Literal::SparseTensor { values, indices, shape, .. } => (values, indices, shape)) {
-                            Some((v, i, s)) => (Some(v), Some(i), Some(s.as_slice())),
+                            Some((v, i, s)) => (Some(v), Some(i), Some(s)),
                             None => (None, None, None)
                         }
                     })
@@ -523,7 +524,7 @@ impl Series {
                     ListArray::try_from(("values", values.as_slice()))?.into_series();
                 let indices_array =
                     ListArray::try_from(("indices", indices.as_slice()))?.into_series();
-                let shape_array = ListArray::from(("shape", shapes.as_slice())).into_series();
+                let shape_array = ListArray::from(("shape", shapes)).into_series();
 
                 let validity = values_array.validity().cloned();
                 let physical = StructArray::new(
@@ -560,7 +561,6 @@ impl Series {
                 value: ref value_dtype,
             } => {
                 let data = values
-                    .into_iter()
                     .map(|v| {
                         unwrap_inner!(v, Literal::Map { keys, values } => (keys, values))
                             .map(|(k, v)| {
@@ -586,11 +586,34 @@ impl Series {
                 MapArray::new(field, physical).into_series()
             }
             DataType::Image(image_mode) => {
-                let data = values
-                    .map(|v| unwrap_inner!(v, Image).map(|img| CowImage::from(img.0)))
-                    .collect::<Vec<_>>();
+                let data = values.map(|v| unwrap_inner!(v, Image).map(|img| CowImage::from(img.0)));
+                struct ExactSizeWrapper<I> {
+                    iter: I,
+                    len: usize,
+                }
+                impl<I: Iterator> Iterator for ExactSizeWrapper<I> {
+                    type Item = I::Item;
 
-                image_array_from_img_buffers("literal", &data, image_mode)?.into_series()
+                    fn next(&mut self) -> Option<Self::Item> {
+                        let item = self.iter.next();
+                        if item.is_some() {
+                            self.len -= 1;
+                        }
+                        item
+                    }
+
+                    fn size_hint(&self) -> (usize, Option<usize>) {
+                        (self.len, Some(self.len))
+                    }
+                }
+
+                impl<I: Iterator> ExactSizeIterator for ExactSizeWrapper<I> {}
+                let iter = ExactSizeWrapper {
+                    iter: data,
+                    len: values_len,
+                };
+
+                image_array_from_img_buffers_iter("literal", iter, image_mode)?.into_series()
             }
 
             DataType::FixedSizeBinary(..)
