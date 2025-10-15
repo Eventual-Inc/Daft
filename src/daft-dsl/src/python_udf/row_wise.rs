@@ -156,7 +156,6 @@ impl RowWisePyFn {
 
     #[cfg(feature = "python")]
     fn call_serial(&self, args: &[Series], num_rows: usize) -> DaftResult<Series> {
-        use daft_core::python::PySeries;
         use pyo3::prelude::*;
 
         let cls_ref = self.cls.as_ref();
@@ -164,7 +163,7 @@ impl RowWisePyFn {
         let args_ref = self.original_args.as_ref();
         let name = args[0].name();
 
-        Python::with_gil(|py| {
+        let outputs = Python::with_gil(|py| {
             let func = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
                 .getattr(pyo3::intern!(py, "call_func"))?;
@@ -181,12 +180,17 @@ impl RowWisePyFn {
                     }
 
                     let result = func.call1((cls_ref, method_ref, args_ref, &py_args))?;
+                    let result = Literal::from_pyobj(&result, None)?;
+
                     py_args.clear();
                     DaftResult::Ok(result)
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
+            DaftResult::Ok(outputs)
+        })?;
 
-            Ok(PySeries::from_pylist_impl(name, outputs, self.return_dtype.clone())?.series)
-        })
+        Ok(Series::from_literals(outputs)?
+            .cast(&self.return_dtype)?
+            .rename(name))
     }
 }
