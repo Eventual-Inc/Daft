@@ -1944,9 +1944,6 @@ class PyDaftExecutionConfig:
     def from_env() -> PyDaftExecutionConfig: ...
     def with_config_values(
         self,
-        scan_tasks_min_size_bytes: int | None = None,
-        scan_tasks_max_size_bytes: int | None = None,
-        max_sources_per_scan_task: int | None = None,
         broadcast_join_size_bytes_threshold: int | None = None,
         parquet_split_row_groups_max_files: int | None = None,
         hash_join_partition_size_leniency: float | None = None,
@@ -1972,12 +1969,6 @@ class PyDaftExecutionConfig:
         min_cpu_per_task: float | None = None,
         actor_udf_ready_timeout: int | None = None,
     ) -> PyDaftExecutionConfig: ...
-    @property
-    def scan_tasks_min_size_bytes(self) -> int: ...
-    @property
-    def scan_tasks_max_size_bytes(self) -> int: ...
-    @property
-    def max_sources_per_scan_task(self) -> int: ...
     @property
     def broadcast_join_size_bytes_threshold(self) -> int: ...
     @property

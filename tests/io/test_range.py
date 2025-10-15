@@ -52,8 +52,7 @@ def test_range_called_multiple_times():
 
 
 def test_range_partitioning_even():
-    df = daft.range(0, 10, 1, 2)
-    assert df.num_partitions() == 2
+    df = daft.range(0, 10, 1)
 
     partitions = list(df.iter_partitions())
     partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
@@ -64,8 +63,7 @@ def test_range_partitioning_even():
 
 
 def test_range_partitioning_uneven():
-    df = daft.range(0, 10, 1, 3)
-    assert df.num_partitions() == 3
+    df = daft.range(0, 10, 1)
 
     partitions = list(df.iter_partitions())
     partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
@@ -77,8 +75,7 @@ def test_range_partitioning_uneven():
 
 
 def test_range_partitioning_with_step_even():
-    df = daft.range(0, 24, 2, 4)
-    assert df.num_partitions() == 4
+    df = daft.range(0, 24, 2)
 
     partitions = list(df.iter_partitions())
     partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
@@ -91,8 +88,7 @@ def test_range_partitioning_with_step_even():
 
 
 def test_range_partitioning_with_step_uneven():
-    df = daft.range(0, 15, 2, 3)
-    assert df.num_partitions() == 3
+    df = daft.range(0, 15, 2)
 
     partitions = list(df.iter_partitions())
     partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
@@ -104,8 +100,7 @@ def test_range_partitioning_with_step_uneven():
 
 
 def test_range_partitioning_with_negative_step_even():
-    df = daft.range(10, -2, -2, 2)
-    assert df.num_partitions() == 2
+    df = daft.range(10, -2, -2)
 
     partitions = list(df.iter_partitions())
     partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
@@ -116,8 +111,7 @@ def test_range_partitioning_with_negative_step_even():
 
 
 def test_range_partitioning_with_negative_step_uneven():
-    df = daft.range(15, 0, -2, 3)
-    assert df.num_partitions() == 3
+    df = daft.range(15, 0, -2)
 
     partitions = list(df.iter_partitions())
     partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions

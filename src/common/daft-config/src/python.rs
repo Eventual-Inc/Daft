@@ -89,9 +89,6 @@ impl PyDaftExecutionConfig {
 
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
-        scan_tasks_min_size_bytes=None,
-        scan_tasks_max_size_bytes=None,
-        max_sources_per_scan_task=None,
         broadcast_join_size_bytes_threshold=None,
         parquet_split_row_groups_max_files=None,
         hash_join_partition_size_leniency=None,
@@ -119,9 +116,6 @@ impl PyDaftExecutionConfig {
     ))]
     fn with_config_values(
         &self,
-        scan_tasks_min_size_bytes: Option<usize>,
-        scan_tasks_max_size_bytes: Option<usize>,
-        max_sources_per_scan_task: Option<usize>,
         broadcast_join_size_bytes_threshold: Option<usize>,
         parquet_split_row_groups_max_files: Option<usize>,
         hash_join_partition_size_leniency: Option<f64>,
@@ -149,15 +143,6 @@ impl PyDaftExecutionConfig {
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
-        if let Some(scan_tasks_max_size_bytes) = scan_tasks_max_size_bytes {
-            config.scan_tasks_max_size_bytes = scan_tasks_max_size_bytes;
-        }
-        if let Some(scan_tasks_min_size_bytes) = scan_tasks_min_size_bytes {
-            config.scan_tasks_min_size_bytes = scan_tasks_min_size_bytes;
-        }
-        if let Some(max_sources_per_scan_task) = max_sources_per_scan_task {
-            config.max_sources_per_scan_task = max_sources_per_scan_task;
-        }
         if let Some(broadcast_join_size_bytes_threshold) = broadcast_join_size_bytes_threshold {
             config.broadcast_join_size_bytes_threshold = broadcast_join_size_bytes_threshold;
         }
@@ -256,21 +241,6 @@ impl PyDaftExecutionConfig {
         Ok(Self {
             config: Arc::new(config),
         })
-    }
-
-    #[getter]
-    fn get_scan_tasks_min_size_bytes(&self) -> PyResult<usize> {
-        Ok(self.config.scan_tasks_min_size_bytes)
-    }
-
-    #[getter]
-    fn get_scan_tasks_max_size_bytes(&self) -> PyResult<usize> {
-        Ok(self.config.scan_tasks_max_size_bytes)
-    }
-
-    #[getter]
-    fn get_max_sources_per_scan_task(&self) -> PyResult<usize> {
-        Ok(self.config.max_sources_per_scan_task)
     }
 
     #[getter]

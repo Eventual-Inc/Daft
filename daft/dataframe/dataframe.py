@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypeVar, Uni
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import DistributedPhysicalPlan, FileFormat, IOConfig, JoinStrategy, JoinType, WriteMode
+from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, WriteMode
 from daft.dataframe.display import MermaidOptions
 from daft.dataframe.preview import Preview, PreviewAlign, PreviewColumn, PreviewFormat, PreviewFormatter
 from daft.datatype import DataType
@@ -305,44 +305,6 @@ class DataFrame:
                 "\n \nSet `show_all=True` to also see the Optimized and Physical plans. This will run the query optimizer.",
             )
         return None
-
-    def num_partitions(self) -> int:
-        """Returns the number of partitions that will be used to execute this DataFrame.
-
-        The query optimizer may change the partitioning strategy. This method runs the optimizer
-        and then inspects the resulting physical plan scheduler to determine how many partitions
-        the execution will use.
-
-        Returns:
-            int: The number of partitions in the optimized physical execution plan.
-
-        Examples:
-            >>> import daft
-            >>>
-            >>> # Create a DataFrame with 1000 rows
-            >>> df = daft.from_pydict({"x": list(range(1000))})
-            >>>
-            >>> # Partition count may depend on default config or optimizer decisions
-            >>> df.num_partitions()
-            1
-            >>>
-            >>> # You can repartition manually (if supported), and then inspect again:
-            >>> df2 = df.repartition(10)
-            >>> df2.num_partitions()
-            10
-        """
-        if get_or_create_runner().name == "native":
-            warnings.warn(
-                "DataFrame.num_partitions not supported on the Native Runner, as it runs on a single machine has no notion of partitions. Please use the Ray Runner if you need to inspect the number of partitions."
-            )
-            return 1
-
-        # We need to run the optimizer since that could change the number of partitions
-        builder = self.__builder.optimize()
-        physical_plan = DistributedPhysicalPlan.from_logical_plan_builder(
-            builder._builder, get_context().daft_execution_config
-        )
-        return physical_plan.num_partitions()
 
     @DataframePublicAPI
     def schema(self) -> Schema:
@@ -2603,13 +2565,6 @@ class DataFrame:
 
         Returns:
             DataFrame: Dataframe with `num` partitions.
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
-            >>> df_with_5_partitions = df.into_partitions(5)
-            >>> df_with_5_partitions.num_partitions()
-            5
         """
         if get_or_create_runner().name == "native":
             warnings.warn(

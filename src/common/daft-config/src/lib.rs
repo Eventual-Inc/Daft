@@ -43,9 +43,6 @@ impl DaftPlanningConfig {
 /// 5. Task local execution
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DaftExecutionConfig {
-    pub scan_tasks_min_size_bytes: usize,
-    pub scan_tasks_max_size_bytes: usize,
-    pub max_sources_per_scan_task: usize,
     pub broadcast_join_size_bytes_threshold: usize,
     pub hash_join_partition_size_leniency: f64,
     pub sample_size_for_sort: usize,
@@ -77,9 +74,6 @@ pub struct DaftExecutionConfig {
 impl Default for DaftExecutionConfig {
     fn default() -> Self {
         Self {
-            scan_tasks_min_size_bytes: 96 * 1024 * 1024,  // 96MB
-            scan_tasks_max_size_bytes: 384 * 1024 * 1024, // 384MB
-            max_sources_per_scan_task: 10,
             broadcast_join_size_bytes_threshold: 10 * 1024 * 1024, // 10 MiB
             hash_join_partition_size_leniency: 0.5,
             sample_size_for_sort: 20,

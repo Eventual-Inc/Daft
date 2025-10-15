@@ -232,9 +232,6 @@ def execution_config_ctx(**kwargs: Any) -> Generator[None, None, None]:
 
 def set_execution_config(
     config: PyDaftExecutionConfig | None = None,
-    scan_tasks_min_size_bytes: int | None = None,
-    scan_tasks_max_size_bytes: int | None = None,
-    max_sources_per_scan_task: int | None = None,
     broadcast_join_size_bytes_threshold: int | None = None,
     parquet_split_row_groups_max_files: int | None = None,
     hash_join_partition_size_leniency: float | None = None,
@@ -268,13 +265,6 @@ def set_execution_config(
     Args:
         config: A PyDaftExecutionConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
             that the old (current) config should be used.
-        scan_tasks_min_size_bytes: Minimum size in bytes when merging ScanTasks when reading files from storage.
-            Increasing this value will make Daft perform more merging of files into a single partition before yielding,
-            which leads to bigger but fewer partitions. (Defaults to 96 MiB)
-        scan_tasks_max_size_bytes: Maximum size in bytes when merging ScanTasks when reading files from storage.
-            Increasing this value will increase the upper bound of the size of merged ScanTasks, which leads to bigger but
-            fewer partitions. (Defaults to 384 MiB)
-        max_sources_per_scan_task: Maximum number of sources in a single ScanTask. (Defaults to 10)
         broadcast_join_size_bytes_threshold: If one side of a join is smaller than this threshold, a broadcast join will be used.
             Default is 10 MiB.
         parquet_split_row_groups_max_files: Maximum number of files to read in which the row group splitting should happen. (Defaults to 10)
@@ -311,9 +301,6 @@ def set_execution_config(
         old_daft_execution_config = ctx._ctx._daft_execution_config if config is None else config
 
         new_daft_execution_config = old_daft_execution_config.with_config_values(
-            scan_tasks_min_size_bytes=scan_tasks_min_size_bytes,
-            scan_tasks_max_size_bytes=scan_tasks_max_size_bytes,
-            max_sources_per_scan_task=max_sources_per_scan_task,
             broadcast_join_size_bytes_threshold=broadcast_join_size_bytes_threshold,
             parquet_split_row_groups_max_files=parquet_split_row_groups_max_files,
             hash_join_partition_size_leniency=hash_join_partition_size_leniency,
