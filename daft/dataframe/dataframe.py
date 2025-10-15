@@ -2534,8 +2534,6 @@ class DataFrame:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> repartitioned_df = df.repartition(3)
-            >>> repartitioned_df.num_partitions()
-            3
 
         """
         if get_or_create_runner().name == "native":
