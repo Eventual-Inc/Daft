@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import pytest
-
 import daft
 from daft import DataType, Series, col
-from daft.context import get_context
 
 
 def test_batch_udf():
@@ -77,10 +74,6 @@ def test_batch_udf_unnest():
     assert result == expected
 
 
-@pytest.mark.skipif(
-    get_context().daft_execution_config.use_legacy_ray_runner,
-    reason="batch size is not supported in legacy ray runner",
-)
 def test_batch_udf_with_batch_size():
     # Test that batch_size parameter is accepted
     @daft.func.batch(return_dtype=DataType.int64(), batch_size=3)
