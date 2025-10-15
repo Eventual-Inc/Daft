@@ -323,6 +323,8 @@ impl SeriesListExtension for Series {
     }
 
     fn list_append(&self, other: &Self) -> DaftResult<Self> {
+        dbg!(&self);
+        dbg!(&other);
         let input = if let DataType::FixedSizeList(inner_type, _) = self.data_type() {
             self.cast(&DataType::List(inner_type.clone()))?
         } else {
@@ -331,6 +333,8 @@ impl SeriesListExtension for Series {
         let input = input.list()?;
 
         let other = other.cast(input.child_data_type())?;
+        dbg!(&input);
+        dbg!(&other);
         let mut growable = make_growable(
             self.name(),
             input.child_data_type(),

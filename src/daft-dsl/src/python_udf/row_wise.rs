@@ -156,13 +156,13 @@ impl RowWisePyFn {
 
     #[cfg(feature = "python")]
     fn call_serial(&self, args: &[Series], num_rows: usize) -> DaftResult<Series> {
+        use daft_core::series::from_lit::series_from_literals_iter;
         use pyo3::prelude::*;
 
         let cls_ref = self.cls.as_ref();
         let method_ref = self.method.as_ref();
         let args_ref = self.original_args.as_ref();
         let name = args[0].name();
-
         Python::with_gil(|py| {
             let func = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
@@ -170,7 +170,7 @@ impl RowWisePyFn {
 
             // pre-allocating py_args vector so we're not creating a new vector for each iteration
             let mut py_args = Vec::with_capacity(args.len());
-            let outputs = (0..num_rows).map(move |i| {
+            let outputs = (0..num_rows).map(|i| {
                 for s in args {
                     let idx = if s.len() == 1 { 0 } else { i };
                     let lit = s.get_lit(idx);
@@ -184,12 +184,16 @@ impl RowWisePyFn {
                 py_args.clear();
                 DaftResult::Ok(result)
             });
+            let outputs = outputs.collect::<Vec<_>>();
+            dbg!(&outputs);
 
-            DaftResult::Ok(
-                Series::from_literals_iter(outputs, daft_core::series::from_lit::OnError::Raise)?
-                    .cast(&self.return_dtype)?
-                    .rename(name),
-            )
+            let (s, errs) = series_from_literals_iter(outputs.into_iter())?;
+            // if let Some(_errs) = errs {
+            // todo(cory): process errors
+            DaftResult::Ok(s.cast(&self.return_dtype)?.rename(name))
+            // } else {
+            // DaftResult::Ok(s.cast(&self.return_dtype)?.rename(name))
+            // }
         })
     }
 }

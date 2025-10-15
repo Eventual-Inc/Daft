@@ -21,7 +21,10 @@ use crate::{
     datatypes::{DataType, Field},
     lit::Literal,
     prelude::PythonArray,
-    series::{self, IntoSeries, Series, from_lit::combine_lit_types},
+    series::{
+        self, IntoSeries, Series,
+        from_lit::{combine_lit_types, series_from_literals_iter},
+    },
     utils::{
         arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
         supertype::try_get_collection_supertype,
@@ -90,7 +93,7 @@ impl PySeries {
                     .and_then(|elem| Literal::from_pyobj(&elem, Some(&dtype)))
                     .map_err(DaftError::from)
             });
-            Series::from_literals_iter(literals, series::from_lit::OnError::Raise)?
+            series_from_literals_iter(literals)?.0
         } else {
             let literals = list
                 .iter()
@@ -113,7 +116,7 @@ impl PySeries {
                     Literal::from_pyobj(&py_lit, Some(&supertype)).map_err(DaftError::from)
                 }
             });
-            Series::from_literals_iter(literals_with_supertype, series::from_lit::OnError::Raise)?
+            series_from_literals_iter(literals_with_supertype)?.0
         };
 
         if let Some(name) = name {
