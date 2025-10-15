@@ -571,13 +571,19 @@ impl Series {
             | DataType::FixedShapeSparseTensor(..)
             | DataType::Unknown => unreachable!("Literal should never have data type: {dtype}"),
         };
-        if errs.is_empty() {
-            Ok(s)
-        } else {
-            Err(DaftError::ComputeError(format!(
-                "Errors occurred while creating series: {:?}",
-                errs
-            )))
+
+        match on_err {
+            OnError::Raise => {
+                if errs.is_empty() {
+                    Ok(s)
+                } else {
+                    Err(DaftError::ComputeError(format!(
+                        "Errors occurred while creating series: {:?}",
+                        errs
+                    )))
+                }
+            }
+            OnError::Ignore => Ok(s),
         }
     }
 
