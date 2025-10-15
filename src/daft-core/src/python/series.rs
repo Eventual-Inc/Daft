@@ -84,14 +84,19 @@ impl PySeries {
         dtype: Option<PyDataType>,
     ) -> PyResult<Self> {
         let dtype = dtype.map(|t| t.dtype);
-        let literals = list
-            .iter()
-            .map(|elem| Literal::from_pyobj(&elem, dtype.as_ref()))
-            .collect::<PyResult<Vec<_>>>()?;
-
         let mut series = if let Some(dtype) = dtype {
-            Series::from_literals(literals)?.cast(&dtype)?
+            let literals = (0..list.len()).map(|i| {
+                list.get_item(i)
+                    .and_then(|elem| Literal::from_pyobj(&elem, Some(&dtype)))
+                    .map_err(DaftError::from)
+            });
+            Series::from_literals_iter(literals, series::from_lit::OnError::Raise)?
         } else {
+            let literals = list
+                .iter()
+                .map(|elem| Literal::from_pyobj(&elem, None))
+                .collect::<PyResult<Vec<_>>>()?;
+
             let supertype = try_get_collection_supertype(literals.iter().map(Literal::get_type))
                 .unwrap_or(DataType::Python);
 
@@ -100,7 +105,7 @@ impl PySeries {
                 {
                     Ok(daft_lit)
                 } else {
-                    let py_lit = list.get_item(i).unwrap();
+                    let py_lit = list.get_item(i)?;
 
                     // if literal doesn't match supertype, redo conversion so that for the python data type
                     // as well as nested types with python type, we avoid any lossy conversions and just keep
@@ -110,6 +115,7 @@ impl PySeries {
             });
             Series::from_literals_iter(literals_with_supertype, series::from_lit::OnError::Raise)?
         };
+
         if let Some(name) = name {
             series = series.rename(name);
         }

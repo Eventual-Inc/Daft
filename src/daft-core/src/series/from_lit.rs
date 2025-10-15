@@ -71,8 +71,9 @@ impl Series {
     /// Creates a series from an iterator of `Result<Literal>`.
     /// The `on_err` indicates how to handle the result.
     ///
-    /// Unlike `from_literals`, `from_literal_iter` does not do any dtype inference.
+    ///
     /// If the datatype of `Literal` != dtype, then it will either result in a null value, or an error depending on the `on_err` setting.
+    // TODO(cory): combine this and `from_literals`
     pub fn from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>> + TrustedLen>(
         mut values: I,
         on_err: OnError,
@@ -104,7 +105,10 @@ impl Series {
         let first = first_value.expect("Iterator is empty");
 
         let dtype = first.get_type();
-        let values = std::iter::once(Ok(first)).chain(values);
+        let values = std::iter::repeat_n(Literal::Null, n_nulls)
+            .chain(std::iter::once(first))
+            .map(DaftResult::Ok)
+            .chain(values);
 
         let field = Field::new("literal", dtype.clone());
 
@@ -200,17 +204,12 @@ impl Series {
         fn from_mutable_primitive<T: NativeType, I: Iterator<Item = DaftResult<Literal>>>(
             values: I,
             values_len: usize,
-            n_nulls: usize,
             errs: &mut MutableUtf8Array<i64>,
             field: Field,
             on_err: &OnError,
             f: impl Fn(&Literal) -> Option<T>,
         ) -> DaftResult<Series> {
             let mut arr = MutablePrimitiveArray::<T>::with_capacity(values_len);
-
-            for _ in 0..n_nulls {
-                arr.push_null();
-            }
 
             for value in values {
                 let value = unwrap_or_err(value, errs, on_err, &f);
@@ -224,42 +223,35 @@ impl Series {
             DataType::Null => NullArray::full_null("literal", &dtype, values_len).into_series(),
             DataType::Boolean => {
                 let mut arr = MutableBooleanArray::with_capacity(values_len);
-                for _ in 0..n_nulls {
-                    arr.push_null();
-                }
+
                 for value in values {
                     let value = unwrap_inner!(value, Boolean);
                     arr.push(value);
                 }
-                Series::from_arrow(Arc::new(field), arr.as_box())?
+                Self::from_arrow(Arc::new(field), arr.as_box())?
             }
             DataType::Utf8 => {
                 let mut arr = MutableUtf8Array::<i64>::with_capacity(values_len);
-                for _ in 0..n_nulls {
-                    arr.push_null();
-                }
+
                 for value in values {
                     let value = unwrap_inner!(value, Utf8);
 
                     arr.push(value);
                 }
-                Series::from_arrow(Arc::new(field), arr.as_box())?
+                Self::from_arrow(Arc::new(field), arr.as_box())?
             }
             DataType::Binary => {
                 let mut arr = MutableBinaryArray::<i64>::with_capacity(values_len);
-                for _ in 0..n_nulls {
-                    arr.push_null();
-                }
+
                 for value in values {
                     let value = unwrap_inner!(value, Binary);
                     arr.push(value);
                 }
-                Series::from_arrow(Arc::new(field), arr.as_box())?
+                Self::from_arrow(Arc::new(field), arr.as_box())?
             }
             DataType::Int8 => from_mutable_primitive(
                 values,
                 values_len,
-                n_nulls,
                 &mut errs,
                 field,
                 &on_err,
@@ -268,7 +260,6 @@ impl Series {
             DataType::UInt8 => from_mutable_primitive(
                 values,
                 values_len,
-                n_nulls,
                 &mut errs,
                 field,
                 &on_err,
@@ -277,7 +268,6 @@ impl Series {
             DataType::Int16 => from_mutable_primitive(
                 values,
                 values_len,
-                n_nulls,
                 &mut errs,
                 field,
                 &on_err,
@@ -286,7 +276,6 @@ impl Series {
             DataType::UInt16 => from_mutable_primitive(
                 values,
                 values_len,
-                n_nulls,
                 &mut errs,
                 field,
                 &on_err,
@@ -295,7 +284,6 @@ impl Series {
             DataType::Int32 => from_mutable_primitive(
                 values,
                 values_len,
-                n_nulls,
                 &mut errs,
                 field,
                 &on_err,
@@ -304,7 +292,6 @@ impl Series {
             DataType::UInt32 => from_mutable_primitive(
                 values,
                 values_len,
-                n_nulls,
                 &mut errs,
                 field,
                 &on_err,
@@ -313,7 +300,6 @@ impl Series {
             DataType::Int64 => from_mutable_primitive(
                 values,
                 values_len,
-                n_nulls,
                 &mut errs,
                 field,
                 &on_err,
@@ -322,7 +308,6 @@ impl Series {
             DataType::UInt64 => from_mutable_primitive(
                 values,
                 values_len,
-                n_nulls,
                 &mut errs,
                 field,
                 &on_err,
@@ -331,7 +316,6 @@ impl Series {
             DataType::Float32 => from_mutable_primitive(
                 values,
                 values_len,
-                n_nulls,
                 &mut errs,
                 field,
                 &on_err,
@@ -340,7 +324,6 @@ impl Series {
             DataType::Float64 => from_mutable_primitive(
                 values,
                 values_len,
-                n_nulls,
                 &mut errs,
                 field,
                 &on_err,
@@ -349,18 +332,12 @@ impl Series {
             DataType::Interval => {
                 let field = Field::new("literal", DataType::Interval);
 
-                from_mutable_primitive(
-                    values,
-                    values_len,
-                    n_nulls,
-                    &mut errs,
-                    field,
-                    &on_err,
-                    |lit| match lit {
+                from_mutable_primitive(values, values_len, &mut errs, field, &on_err, |lit| {
+                    match lit {
                         Literal::Interval(d) => Some(months_days_ns::from(d.clone())),
                         _ => None,
-                    },
-                )?
+                    }
+                })?
             }
 
             DataType::Decimal128 { .. } => Decimal128Array::from_iter(
@@ -372,6 +349,7 @@ impl Series {
             .into_series(),
             DataType::Timestamp(_, _) => {
                 let mut arr = MutablePrimitiveArray::<i64>::with_capacity(values_len);
+
                 for value in values {
                     let value = unwrap_inner!(value, Literal::Timestamp(ts, ..) => ts);
                     arr.push(value);
@@ -384,6 +362,7 @@ impl Series {
             }
             DataType::Date => {
                 let mut arr = MutablePrimitiveArray::<i32>::with_capacity(values_len);
+
                 for value in values {
                     let value = unwrap_inner!(value, Date);
                     arr.push(value);
@@ -396,9 +375,7 @@ impl Series {
                 DateArray::new(field, physical).into_series()
             }
             DataType::Time(_) => {
-                let data = values
-                    .into_iter()
-                    .map(|lit| unwrap_inner!(lit, Literal::Time(t, ..) => t));
+                let data = values.map(|lit| unwrap_inner!(lit, Literal::Time(t, ..) => t));
                 let physical = Int64Array::from_iter(Field::new("literal", DataType::Int64), data);
 
                 TimeArray::new(field, physical).into_series()
@@ -633,6 +610,7 @@ impl Series {
             )))
         }
     }
+
     /// Converts a vec of literals into a Series.
     ///
     /// Literals must all be the same type or null, this function does not do any casting or coercion.
