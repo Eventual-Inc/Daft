@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use super::field::PyField;
 use crate::{dtype::DataType, field::Field, image_mode::ImageMode, time_unit::TimeUnit};
 
-#[pyclass]
+#[pyclass(frozen)]
 #[derive(Clone)]
 pub struct PyTimeUnit {
     pub timeunit: TimeUnit,
@@ -79,7 +79,7 @@ impl PyTimeUnit {
     }
 }
 
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", frozen)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyDataType {
     pub dtype: DataType,

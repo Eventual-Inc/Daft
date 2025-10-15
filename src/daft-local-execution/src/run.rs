@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     fs::File,
     io::Write,
-    sync::Arc,
+    sync::{Arc, Mutex as StdMutex},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -26,9 +26,7 @@ use {
     daft_context::python::PyDaftContext,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    pyo3::{
-        Bound, IntoPyObject, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python, pyclass, pymethods,
-    },
+    pyo3::{Bound, IntoPyObject, PyAny, PyObject, PyRef, PyResult, Python, pyclass, pymethods},
 };
 
 use crate::{
@@ -43,9 +41,9 @@ use crate::{
 };
 
 #[cfg(feature = "python")]
-#[pyclass]
+#[pyclass(frozen)]
 struct LocalPartitionIterator {
-    iter: Box<dyn Iterator<Item = DaftResult<PyObject>> + Send + Sync>,
+    iter: StdMutex<Box<dyn Iterator<Item = DaftResult<PyObject>> + Send + Sync>>,
 }
 
 #[cfg(feature = "python")]
@@ -54,9 +52,14 @@ impl LocalPartitionIterator {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
-    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python) -> PyResult<Option<PyObject>> {
-        let iter = &mut slf.iter;
-        Ok(py.allow_threads(|| iter.next().transpose())?)
+    fn __next__(slf: PyRef<'_, Self>, py: Python) -> PyResult<Option<PyObject>> {
+        let iter = &slf.iter;
+        Ok(py.allow_threads(|| {
+            iter.lock()
+                .expect("Failed to acquire lock for LocalPartitionIterator")
+                .next()
+                .transpose()
+        })?)
     }
 }
 
@@ -154,7 +157,9 @@ impl PyNativeExecutor {
                     .into_any())
             })
         }));
-        let part_iter = LocalPartitionIterator { iter };
+        let part_iter = LocalPartitionIterator {
+            iter: StdMutex::new(iter),
+        };
         Ok(part_iter.into_pyobject(py)?.into_any())
     }
 
