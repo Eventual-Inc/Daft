@@ -110,11 +110,11 @@ impl FlightService for ShuffleFlightServer {
         let ticket_str = String::from_utf8(ticket.to_vec())
             .map_err(|e| Status::invalid_argument(e.to_string()))?;
 
-        // Ticket format: "shuffle_id:partition_idx"
-        let parts: Vec<&str> = ticket_str.splitn(2, ':').collect();
-        if parts.len() != 2 {
+        // Ticket format: "shuffle_id:partition_idx:cache_ids" where cache_ids is comma-separated list of u32s
+        let parts: Vec<&str> = ticket_str.splitn(3, ':').collect();
+        if parts.len() < 2 {
             return Err(Status::invalid_argument(
-                "Invalid ticket format. Expected 'shuffle_id:partition_idx'",
+                "Invalid ticket format. Expected 'shuffle_id:partition_idx' or 'shuffle_id:partition_idx:cache_ids'",
             ));
         }
 
@@ -125,11 +125,41 @@ impl FlightService for ShuffleFlightServer {
             .parse::<usize>()
             .map_err(|e| Status::invalid_argument(format!("Invalid partition index: {}", e)))?;
 
+        // Parse cache_ids if provided (third part of ticket)
+        let cache_ids: Option<Vec<u32>> = if parts.len() == 3 && !parts[2].is_empty() {
+            let ids = parts[2]
+                .split(',')
+                .map(|id| id.parse::<u32>())
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| Status::invalid_argument(format!("Invalid cache id: {}", e)))?;
+            Some(ids)
+        } else {
+            None
+        };
+
         let shuffle_caches = self.get_shuffle_caches(shuffle_id).await.ok_or_else(|| {
             Status::not_found(format!("Shuffle cache not found for id: {}", shuffle_id))
         })?;
 
-        let file_paths = shuffle_caches
+        // Filter caches by cache_ids if provided
+        let filtered_caches: Vec<_> = if let Some(ref ids) = cache_ids {
+            shuffle_caches
+                .iter()
+                .filter(|cache| {
+                    // Parse cache_id from cache and check if it's in the requested ids
+                    cache
+                        .cache_id()
+                        .parse::<u32>()
+                        .map(|cache_id| ids.contains(&cache_id))
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .collect()
+        } else {
+            shuffle_caches
+        };
+
+        let file_paths = filtered_caches
             .iter()
             .flat_map(|cache| cache.file_paths_for_partition(partition_idx))
             .collect::<Vec<_>>();
@@ -149,7 +179,7 @@ impl FlightService for ShuffleFlightServer {
             })
             .try_flatten();
 
-        let schema = shuffle_caches
+        let schema = filtered_caches
             .first()
             .unwrap()
             .schema()
