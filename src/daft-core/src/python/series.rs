@@ -5,6 +5,7 @@ use std::{
 };
 
 use common_arrow_ffi as ffi;
+use common_error::DaftError;
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
 use daft_schema::python::PyDataType;
 use pyo3::{
@@ -88,33 +89,27 @@ impl PySeries {
             .map(|elem| Literal::from_pyobj(&elem, dtype.as_ref()))
             .collect::<PyResult<Vec<_>>>()?;
 
-        let (literals, dtype) = if let Some(dtype) = dtype {
-            (literals, dtype)
+        let mut series = if let Some(dtype) = dtype {
+            Series::from_literals(literals)?.cast(&dtype)?
         } else {
             let supertype = try_get_collection_supertype(literals.iter().map(Literal::get_type))
                 .unwrap_or(DataType::Python);
 
-            let literals_with_supertype = literals
-                .into_iter()
-                .zip(list)
-                .map(|(daft_lit, py_lit)| {
-                    if combine_lit_types(&daft_lit.get_type(), &supertype).as_ref()
-                        == Some(&supertype)
-                    {
-                        Ok(daft_lit)
-                    } else {
-                        // if literal doesn't match supertype, redo conversion so that for the python data type
-                        // as well as nested types with python type, we avoid any lossy conversions and just keep
-                        // stuff as Python objects
-                        Literal::from_pyobj(&py_lit, Some(&supertype))
-                    }
-                })
-                .collect::<PyResult<Vec<_>>>()?;
+            let literals_with_supertype = literals.into_iter().enumerate().map(|(i, daft_lit)| {
+                if combine_lit_types(&daft_lit.get_type(), &supertype).as_ref() == Some(&supertype)
+                {
+                    Ok(daft_lit)
+                } else {
+                    let py_lit = list.get_item(i).unwrap();
 
-            (literals_with_supertype, supertype)
+                    // if literal doesn't match supertype, redo conversion so that for the python data type
+                    // as well as nested types with python type, we avoid any lossy conversions and just keep
+                    // stuff as Python objects
+                    Literal::from_pyobj(&py_lit, Some(&supertype)).map_err(DaftError::from)
+                }
+            });
+            Series::from_literals_iter(literals_with_supertype, series::from_lit::OnError::Raise)?
         };
-
-        let mut series = Series::from_literals(literals)?.cast(&dtype)?;
         if let Some(name) = name {
             series = series.rename(name);
         }

@@ -1,3 +1,13 @@
+use std::sync::Arc;
+
+use arrow2::{
+    array::{
+        MutableArray, MutableBinaryArray, MutableBooleanArray, MutablePrimitiveArray,
+        MutableUtf8Array,
+    },
+    trusted_len::TrustedLen,
+    types::{NativeType, months_days_ns},
+};
 use common_error::{DaftError, DaftResult};
 use common_image::CowImage;
 
@@ -53,7 +63,514 @@ pub(crate) fn combine_lit_types(left: &DataType, right: &DataType) -> Option<Dat
     }
 }
 
+pub enum OnError {
+    Raise,
+    Ignore,
+}
 impl Series {
+    /// Creates a series from an iterator of `Result<Literal>`.
+    /// The `on_err` indicates how to handle the result.
+    ///
+    /// Unlike `from_literals`, `from_literal_iter` does not do any dtype inference.
+    /// If the datatype of `Literal` != dtype, then it will either result in a null value, or an error depending on the `on_err` setting.
+    pub fn from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>> + TrustedLen>(
+        mut values: I,
+        on_err: OnError,
+    ) -> DaftResult<Self> {
+        let len = values.len();
+        let mut n_nulls = 0;
+        let mut errs = MutableUtf8Array::<i64>::with_capacity(len);
+
+        let mut first_value = None;
+        loop {
+            match values.next() {
+                Some(Ok(Literal::Null)) => {
+                    n_nulls += 1;
+                }
+                Some(Ok(lit)) => {
+                    first_value = Some(lit);
+                }
+                Some(Err(e)) => match on_err {
+                    OnError::Raise => errs.push(Some(e.to_string())),
+                    OnError::Ignore => {
+                        n_nulls += 1;
+                    }
+                },
+                None => break,
+            }
+        }
+
+        let first = first_value.expect("Iterator is empty");
+
+        let dtype = first.get_type();
+        let field = Field::new("literal", dtype.clone());
+
+        macro_rules! unwrap_inner {
+            ($expr:expr, $variant:ident) => {
+                match $expr {
+                    Ok(Literal::$variant(val)) => Some(val),
+                    Ok(Literal::Null) => None,
+                    Err(e) => match on_err {
+                        OnError::Ignore => None,
+                        OnError::Raise => {
+                            errs.push(Some(e.to_string()));
+                            None
+                        }
+                    },
+                    Ok(other) => {
+                        let ty = other.get_type();
+                        if &ty != &dtype {
+                            match on_err {
+                                OnError::Ignore => None,
+                                OnError::Raise => {
+                                    errs.push(Some(format!(
+                                        "All literals must have the same data type or null. Found: {ty} vs {dtype}"
+                                    )));
+                                    None
+                                }
+                            }
+                        } else {
+                            errs.push(Some(format!(
+                                "All literals must have the same data type or null. Found: {ty} vs {dtype}"
+                            )));
+                            None
+
+                        }
+                    }
+                }
+            };
+
+            ($expr:expr, $literal:pat => $value:expr) => {
+                match $expr {
+                    Ok($literal) => Some($value),
+                    Ok(Literal::Null) => None,
+                    Err(e) => match on_err {
+                        OnError::Ignore => None,
+                        OnError::Raise => {
+                            errs.push(Some(e.to_string()));
+                            None
+                        }
+                    },
+                    Ok(other) => {
+                        let ty = other.get_type();
+                        if &ty != &dtype {
+                            match on_err {
+                                OnError::Ignore => None,
+                                OnError::Raise => {
+                                    errs.push(Some(format!(
+                                        "All literals must have the same data type or null. Found: {ty} vs {dtype}"
+                                    )));
+                                    None
+                                }
+                            }
+                        } else {
+                            errs.push(Some(format!(
+                                "All literals must have the same data type or null. Found: {ty} vs {dtype}"
+                            )));
+                            None
+                        }
+                    }
+                }
+            };
+        }
+
+        #[inline(always)]
+        fn unwrap_or_err<T>(
+            lit: DaftResult<Literal>,
+            errs: &mut MutableUtf8Array<i64>,
+            on_err: &OnError,
+            f: impl Fn(&Literal) -> Option<T>,
+        ) -> Option<T> {
+            match lit {
+                Ok(lit) => f(&lit),
+                Err(e) => match on_err {
+                    OnError::Ignore => None,
+                    OnError::Raise => {
+                        errs.push(Some(e.to_string()));
+                        None
+                    }
+                },
+            }
+        }
+
+        #[inline(always)]
+        fn from_mutable_primitive<
+            T: NativeType,
+            I: ExactSizeIterator<Item = DaftResult<Literal>> + TrustedLen,
+        >(
+            values: I,
+            n_nulls: usize,
+            errs: &mut MutableUtf8Array<i64>,
+            field: Field,
+            on_err: &OnError,
+            f: impl Fn(&Literal) -> Option<T>,
+        ) -> DaftResult<Series> {
+            let mut arr = MutablePrimitiveArray::<T>::with_capacity(values.len());
+
+            for _ in 0..n_nulls {
+                arr.push_null();
+            }
+
+            for value in values {
+                let value = unwrap_or_err(value, errs, on_err, &f);
+                arr.push(value);
+            }
+
+            Series::from_arrow(Arc::new(field), arr.as_box())
+        }
+
+        let s = match dtype {
+            DataType::Null => NullArray::full_null("literal", &dtype, values.len()).into_series(),
+            DataType::Boolean => {
+                let mut arr = MutableBooleanArray::with_capacity(values.len());
+                for _ in 0..n_nulls {
+                    arr.push_null();
+                }
+                for value in values {
+                    let value = unwrap_inner!(value, Boolean);
+                    arr.push(value);
+                }
+                Series::from_arrow(Arc::new(field), arr.as_box())?
+            }
+            DataType::Utf8 => {
+                let mut arr = MutableUtf8Array::<i64>::with_capacity(values.len());
+                for _ in 0..n_nulls {
+                    arr.push_null();
+                }
+                for value in values {
+                    let value = unwrap_inner!(value, Utf8);
+
+                    arr.push(value);
+                }
+                Series::from_arrow(Arc::new(field), arr.as_box())?
+            }
+            DataType::Binary => {
+                let mut arr = MutableBinaryArray::<i64>::with_capacity(values.len());
+                for _ in 0..n_nulls {
+                    arr.push_null();
+                }
+                for value in values {
+                    let value = unwrap_inner!(value, Binary);
+                    arr.push(value);
+                }
+                Series::from_arrow(Arc::new(field), arr.as_box())?
+            }
+            DataType::Int8 => {
+                from_mutable_primitive(values, n_nulls, &mut errs, field, &on_err, Literal::as_i8)?
+            }
+            DataType::UInt8 => {
+                from_mutable_primitive(values, n_nulls, &mut errs, field, &on_err, Literal::as_u8)?
+            }
+            DataType::Int16 => {
+                from_mutable_primitive(values, n_nulls, &mut errs, field, &on_err, Literal::as_i16)?
+            }
+            DataType::UInt16 => {
+                from_mutable_primitive(values, n_nulls, &mut errs, field, &on_err, Literal::as_u16)?
+            }
+            DataType::Int32 => {
+                from_mutable_primitive(values, n_nulls, &mut errs, field, &on_err, Literal::as_i32)?
+            }
+            DataType::UInt32 => {
+                from_mutable_primitive(values, n_nulls, &mut errs, field, &on_err, Literal::as_u32)?
+            }
+            DataType::Int64 => {
+                from_mutable_primitive(values, n_nulls, &mut errs, field, &on_err, Literal::as_i64)?
+            }
+            DataType::UInt64 => {
+                from_mutable_primitive(values, n_nulls, &mut errs, field, &on_err, Literal::as_u64)?
+            }
+            DataType::Float32 => {
+                from_mutable_primitive(values, n_nulls, &mut errs, field, &on_err, Literal::as_f32)?
+            }
+            DataType::Float64 => {
+                from_mutable_primitive(values, n_nulls, &mut errs, field, &on_err, Literal::as_f64)?
+            }
+            DataType::Interval => {
+                let field = Field::new("literal", DataType::Interval);
+
+                from_mutable_primitive(
+                    values,
+                    n_nulls,
+                    &mut errs,
+                    field,
+                    &on_err,
+                    |lit| match lit {
+                        Literal::Interval(d) => Some(months_days_ns::from(d.clone())),
+                        _ => None,
+                    },
+                )?
+            }
+
+            DataType::Decimal128 { .. } => Decimal128Array::from_iter(
+                field,
+                values
+                    .into_iter()
+                    .map(|lit| unwrap_inner!(lit, Literal::Decimal(v, ..) => v)),
+            )
+            .into_series(),
+            DataType::Timestamp(_, _) => {
+                let mut arr = MutablePrimitiveArray::<i64>::with_capacity(values.len());
+                for value in values {
+                    let value = unwrap_inner!(value, Literal::Timestamp(ts, ..) => ts);
+                    arr.push(value);
+                }
+                let physical = Int64Array::from_arrow(
+                    Arc::new(Field::new("literal", DataType::Int64)),
+                    arr.as_box(),
+                )?;
+                TimestampArray::new(field, physical).into_series()
+            }
+            DataType::Date => {
+                let mut arr = MutablePrimitiveArray::<i32>::with_capacity(values.len());
+                for value in values {
+                    let value = unwrap_inner!(value, Date);
+                    arr.push(value);
+                }
+                let physical = Int32Array::from_arrow(
+                    Arc::new(Field::new("literal", DataType::Int32)),
+                    arr.as_box(),
+                )?;
+
+                DateArray::new(field, physical).into_series()
+            }
+            DataType::Time(_) => {
+                let data = values
+                    .into_iter()
+                    .map(|lit| unwrap_inner!(lit, Literal::Time(t, ..) => t));
+                let physical = Int64Array::from_iter(Field::new("literal", DataType::Int64), data);
+
+                TimeArray::new(field, physical).into_series()
+            }
+            DataType::Duration(_) => {
+                let data = values
+                    .into_iter()
+                    .map(|lit| unwrap_inner!(lit, Literal::Duration(v, ..) => v));
+                let physical = Int64Array::from_iter(Field::new("literal", DataType::Int64), data);
+
+                DurationArray::new(field, physical).into_series()
+            }
+            DataType::List(ref child_dtype) => {
+                let data = values
+                    .map(|v| {
+                        unwrap_inner!(v, List)
+                            .map(|s| s.cast(child_dtype))
+                            .transpose()
+                    })
+                    .collect::<DaftResult<Vec<_>>>()?;
+                ListArray::try_from(("literal", data.as_slice()))?.into_series()
+            }
+            DataType::Struct(ref fields) => {
+                let values = values.collect::<Vec<_>>();
+
+                let children = fields
+                    .iter()
+                    .enumerate()
+                    .map(|(i, f)| {
+                        let child_values = values
+                            .iter()
+                            .map(|v| match unwrap_inner!(v, Struct) {
+                                Some(v) => v[i].clone(),
+                                None => Literal::Null,
+                            })
+                            .collect::<Vec<_>>();
+
+                        Ok(Self::from_literals(child_values)?.rename(&f.name))
+                    })
+                    .collect::<DaftResult<_>>()?;
+
+                let validity = arrow2::bitmap::Bitmap::from_trusted_len_iter(
+                    values
+                        .iter()
+                        .map(|v| v.as_ref().is_ok_and(|v| v != &Literal::Null)),
+                );
+
+                StructArray::new(field, children, Some(validity)).into_series()
+            }
+
+            #[cfg(feature = "python")]
+            DataType::Python => {
+                let iter = values
+                    .into_iter()
+                    .map(|lit| unwrap_inner!(lit, Python).map(|pyobj| pyobj.0));
+
+                PythonArray::from_iter("literal", iter).into_series()
+            }
+            DataType::File => {
+                let values = values.collect::<Vec<_>>();
+
+                use common_file::FileReference;
+
+                let discriminant = UInt8Array::from_iter(
+                    Field::new("discriminant", DataType::UInt8),
+                    values
+                        .iter()
+                        .map(|lit| unwrap_inner!(lit, File).map(|f| f.get_type() as u8)),
+                )
+                .into_series();
+                let validity = discriminant.validity().cloned();
+
+                let (files_and_configs, data): (Vec<_>, Vec<Option<Vec<u8>>>) = values
+                    .into_iter()
+                    .map(|lit| {
+                        let Some(f) = unwrap_inner!(lit, File) else {
+                            return ((None, None), None);
+                        };
+
+                        match f {
+                            FileReference::Reference(file, ioconfig) => {
+                                let io_conf = ioconfig.map(|c| {
+                                    bincode::serialize(&c)
+                                        .expect("Failed to serialize IO configuration")
+                                });
+
+                                ((Some(file), io_conf), None)
+                            }
+                            FileReference::Data(items) => {
+                                ((None, None), Some(items.as_ref().clone()))
+                            }
+                        }
+                    })
+                    .unzip();
+                let (files, io_confs): (Vec<Option<String>>, Vec<_>) =
+                    files_and_configs.into_iter().unzip();
+                let sa_field = Field::new("literal", DataType::File.to_physical());
+                let io_configs = BinaryArray::from_iter("io_config", io_confs.into_iter());
+                let urls = Utf8Array::from_iter("url", files.into_iter());
+                let data = BinaryArray::from_iter("data", data.into_iter());
+                let sa = StructArray::new(
+                    sa_field,
+                    vec![
+                        discriminant,
+                        data.into_series(),
+                        urls.into_series(),
+                        io_configs.into_series(),
+                    ],
+                    validity,
+                );
+                FileArray::new(Field::new("literal", DataType::File), sa).into_series()
+            }
+            DataType::Tensor(_) => {
+                let values = values.collect::<Vec<_>>();
+
+                let (data, shapes) = values.iter()
+                    .map(|v| {
+                        unwrap_inner!(v, Literal::Tensor { data, shape } => (data, shape.as_slice())).unzip()
+                    })
+                    .collect::<(Vec<_>, Vec<_>)>();
+
+                let data_array = ListArray::try_from(("data", data.as_slice()))?.into_series();
+                let shape_array = ListArray::from(("shape", shapes.as_slice())).into_series();
+
+                let validity = data_array.validity().cloned();
+                let physical =
+                    StructArray::new(field.to_physical(), vec![data_array, shape_array], validity);
+
+                TensorArray::new(field, physical).into_series()
+            }
+            DataType::SparseTensor(..) => {
+                let values = values.collect::<Vec<_>>();
+
+                let (values, indices, shapes) = values
+                    .iter()
+                    .map(|v| {
+                        match unwrap_inner!(v, Literal::SparseTensor { values, indices, shape, .. } => (values, indices, shape)) {
+                            Some((v, i, s)) => (Some(v), Some(i), Some(s.as_slice())),
+                            None => (None, None, None)
+                        }
+                    })
+                    .collect::<(Vec<_>, Vec<_>, Vec<_>)>();
+
+                let values_array =
+                    ListArray::try_from(("values", values.as_slice()))?.into_series();
+                let indices_array =
+                    ListArray::try_from(("indices", indices.as_slice()))?.into_series();
+                let shape_array = ListArray::from(("shape", shapes.as_slice())).into_series();
+
+                let validity = values_array.validity().cloned();
+                let physical = StructArray::new(
+                    field.to_physical(),
+                    vec![values_array, indices_array, shape_array],
+                    validity,
+                );
+
+                SparseTensorArray::new(field, physical).into_series()
+            }
+            DataType::Embedding(ref inner_dtype, ref size) => {
+                let (validity, data): (Vec<_>, Vec<_>) = values
+                    .into_iter()
+                    .map(|v| {
+                        (
+                            v.as_ref().is_ok_and(|v| v != &Literal::Null),
+                            unwrap_inner!(v, Embedding)
+                                .unwrap_or_else(|| Self::full_null("literal", inner_dtype, *size)),
+                        )
+                    })
+                    .unzip();
+
+                let validity = arrow2::bitmap::Bitmap::from(validity);
+
+                let flat_child = Self::concat(&data.iter().collect::<Vec<_>>())?;
+
+                let physical =
+                    FixedSizeListArray::new(field.to_physical(), flat_child, Some(validity));
+
+                EmbeddingArray::new(field, physical).into_series()
+            }
+            DataType::Map {
+                key: ref key_dtype,
+                value: ref value_dtype,
+            } => {
+                let data = values
+                    .into_iter()
+                    .map(|v| {
+                        unwrap_inner!(v, Literal::Map { keys, values } => (keys, values))
+                            .map(|(k, v)| {
+                                Ok(StructArray::new(
+                                    field
+                                        .to_physical()
+                                        .to_exploded_field()
+                                        .expect("Expected physical type of map to be list"),
+                                    vec![
+                                        k.cast(key_dtype)?.rename("key"),
+                                        v.cast(value_dtype)?.rename("value"),
+                                    ],
+                                    None,
+                                )
+                                .into_series())
+                            })
+                            .transpose()
+                    })
+                    .collect::<DaftResult<Vec<_>>>()?;
+
+                let physical = ListArray::try_from(("literal", data.as_slice()))?;
+
+                MapArray::new(field, physical).into_series()
+            }
+            DataType::Image(image_mode) => {
+                let data = values
+                    .map(|v| unwrap_inner!(v, Image).map(|img| CowImage::from(img.0)))
+                    .collect::<Vec<_>>();
+
+                image_array_from_img_buffers("literal", &data, image_mode)?.into_series()
+            }
+
+            DataType::FixedSizeBinary(..)
+            | DataType::FixedSizeList(..)
+            | DataType::Extension(..)
+            | DataType::FixedShapeImage(..)
+            | DataType::FixedShapeTensor(..)
+            | DataType::FixedShapeSparseTensor(..)
+            | DataType::Unknown => unreachable!("Literal should never have data type: {dtype}"),
+        };
+        if errs.is_empty() {
+            Ok(s)
+        } else {
+            Err(DaftError::ComputeError(format!(
+                "Errors occurred while creating series: {:?}",
+                errs
+            )))
+        }
+    }
     /// Converts a vec of literals into a Series.
     ///
     /// Literals must all be the same type or null, this function does not do any casting or coercion.
