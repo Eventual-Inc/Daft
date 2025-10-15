@@ -82,12 +82,12 @@ impl Series {
         mut values: I,
         on_err: OnError,
     ) -> DaftResult<Self> {
-        let values_len = values.len();
-        if values_len == 0 {
+        let len = values.len();
+        if len == 0 {
             return Ok(Self::empty("literal", &DataType::Null));
         }
         let mut n_nulls = 0;
-        let mut errs = MutableUtf8Array::<i64>::with_capacity(values_len);
+        let mut errs = MutableUtf8Array::<i64>::with_capacity(len);
 
         let mut first_value = None;
         loop {
@@ -109,7 +109,9 @@ impl Series {
             }
         }
 
-        let first = first_value.expect("Iterator is empty");
+        let Some(first) = first_value else {
+            return Ok(Self::full_null("literal", &DataType::Null, len));
+        };
 
         let dtype = first.get_type();
         let values = std::iter::repeat_n(Literal::Null, n_nulls)
@@ -227,9 +229,9 @@ impl Series {
         }
 
         let s = match dtype {
-            DataType::Null => NullArray::full_null("literal", &dtype, values_len).into_series(),
+            DataType::Null => NullArray::full_null("literal", &dtype, len).into_series(),
             DataType::Boolean => {
-                let mut arr = MutableBooleanArray::with_capacity(values_len);
+                let mut arr = MutableBooleanArray::with_capacity(len);
 
                 for value in values {
                     let value = unwrap_inner!(value, Boolean);
@@ -238,7 +240,7 @@ impl Series {
                 Self::from_arrow(Arc::new(field), arr.as_box())?
             }
             DataType::Utf8 => {
-                let mut arr = MutableUtf8Array::<i64>::with_capacity(values_len);
+                let mut arr = MutableUtf8Array::<i64>::with_capacity(len);
 
                 for value in values {
                     let value = unwrap_inner!(value, Utf8);
@@ -248,7 +250,7 @@ impl Series {
                 Self::from_arrow(Arc::new(field), arr.as_box())?
             }
             DataType::Binary => {
-                let mut arr = MutableBinaryArray::<i64>::with_capacity(values_len);
+                let mut arr = MutableBinaryArray::<i64>::with_capacity(len);
 
                 for value in values {
                     let value = unwrap_inner!(value, Binary);
@@ -256,94 +258,42 @@ impl Series {
                 }
                 Self::from_arrow(Arc::new(field), arr.as_box())?
             }
-            DataType::Int8 => from_mutable_primitive(
-                values,
-                values_len,
-                &mut errs,
-                field,
-                &on_err,
-                Literal::as_i8,
-            )?,
-            DataType::UInt8 => from_mutable_primitive(
-                values,
-                values_len,
-                &mut errs,
-                field,
-                &on_err,
-                Literal::as_u8,
-            )?,
-            DataType::Int16 => from_mutable_primitive(
-                values,
-                values_len,
-                &mut errs,
-                field,
-                &on_err,
-                Literal::as_i16,
-            )?,
-            DataType::UInt16 => from_mutable_primitive(
-                values,
-                values_len,
-                &mut errs,
-                field,
-                &on_err,
-                Literal::as_u16,
-            )?,
-            DataType::Int32 => from_mutable_primitive(
-                values,
-                values_len,
-                &mut errs,
-                field,
-                &on_err,
-                Literal::as_i32,
-            )?,
-            DataType::UInt32 => from_mutable_primitive(
-                values,
-                values_len,
-                &mut errs,
-                field,
-                &on_err,
-                Literal::as_u32,
-            )?,
-            DataType::Int64 => from_mutable_primitive(
-                values,
-                values_len,
-                &mut errs,
-                field,
-                &on_err,
-                Literal::as_i64,
-            )?,
-            DataType::UInt64 => from_mutable_primitive(
-                values,
-                values_len,
-                &mut errs,
-                field,
-                &on_err,
-                Literal::as_u64,
-            )?,
-            DataType::Float32 => from_mutable_primitive(
-                values,
-                values_len,
-                &mut errs,
-                field,
-                &on_err,
-                Literal::as_f32,
-            )?,
-            DataType::Float64 => from_mutable_primitive(
-                values,
-                values_len,
-                &mut errs,
-                field,
-                &on_err,
-                Literal::as_f64,
-            )?,
+            DataType::Int8 => {
+                from_mutable_primitive(values, len, &mut errs, field, &on_err, Literal::as_i8)?
+            }
+            DataType::UInt8 => {
+                from_mutable_primitive(values, len, &mut errs, field, &on_err, Literal::as_u8)?
+            }
+            DataType::Int16 => {
+                from_mutable_primitive(values, len, &mut errs, field, &on_err, Literal::as_i16)?
+            }
+            DataType::UInt16 => {
+                from_mutable_primitive(values, len, &mut errs, field, &on_err, Literal::as_u16)?
+            }
+            DataType::Int32 => {
+                from_mutable_primitive(values, len, &mut errs, field, &on_err, Literal::as_i32)?
+            }
+            DataType::UInt32 => {
+                from_mutable_primitive(values, len, &mut errs, field, &on_err, Literal::as_u32)?
+            }
+            DataType::Int64 => {
+                from_mutable_primitive(values, len, &mut errs, field, &on_err, Literal::as_i64)?
+            }
+            DataType::UInt64 => {
+                from_mutable_primitive(values, len, &mut errs, field, &on_err, Literal::as_u64)?
+            }
+            DataType::Float32 => {
+                from_mutable_primitive(values, len, &mut errs, field, &on_err, Literal::as_f32)?
+            }
+            DataType::Float64 => {
+                from_mutable_primitive(values, len, &mut errs, field, &on_err, Literal::as_f64)?
+            }
             DataType::Interval => {
                 let field = Field::new("literal", DataType::Interval);
 
-                from_mutable_primitive(values, values_len, &mut errs, field, &on_err, |lit| {
-                    match lit {
-                        Literal::Interval(d) => Some(months_days_ns::from(d.clone())),
-                        _ => None,
-                    }
+                from_mutable_primitive(values, len, &mut errs, field, &on_err, |lit| match lit {
+                    Literal::Interval(d) => Some(months_days_ns::from(d.clone())),
+                    _ => None,
                 })?
             }
 
@@ -355,7 +305,7 @@ impl Series {
             )
             .into_series(),
             DataType::Timestamp(_, _) => {
-                let mut arr = MutablePrimitiveArray::<i64>::with_capacity(values_len);
+                let mut arr = MutablePrimitiveArray::<i64>::with_capacity(len);
 
                 for value in values {
                     let value = unwrap_inner!(value, Literal::Timestamp(ts, ..) => ts);
@@ -368,7 +318,7 @@ impl Series {
                 TimestampArray::new(field, physical).into_series()
             }
             DataType::Date => {
-                let mut arr = MutablePrimitiveArray::<i32>::with_capacity(values_len);
+                let mut arr = MutablePrimitiveArray::<i32>::with_capacity(len);
 
                 for value in values {
                     let value = unwrap_inner!(value, Date);
@@ -608,10 +558,7 @@ impl Series {
                 }
 
                 impl<I: Iterator> ExactSizeIterator for ExactSizeWrapper<I> {}
-                let iter = ExactSizeWrapper {
-                    iter: data,
-                    len: values_len,
-                };
+                let iter = ExactSizeWrapper { iter: data, len };
 
                 image_array_from_img_buffers_iter("literal", iter, image_mode)?.into_series()
             }
