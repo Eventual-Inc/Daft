@@ -181,15 +181,50 @@ def test_lancedb_write_with_create_append_mode(lance_dataset_path):
     assert ds.schema == schema
 
 
-def test_create_mode_early_fails_when_nonempty_directory_exists(lance_dataset_path):
-    """When mode="create" and the target path exists and is non-empty, write_lance should fail fast."""
+def test_create_mode_fails_when_target_is_file(lance_dataset_path):
+    """When mode="create" and the target path points to a file, write_lance should fail fast."""
+    # Create a file at the target path
+    file_path = os.path.join(lance_dataset_path, "existing_file.txt")
+    with open(file_path, "w") as f:
+        f.write("test content")
+
+    df = daft.from_pydict(data1)
+    with pytest.raises(FileExistsError, match="Target path points to a file, cannot create a dataset here"):
+        df.write_lance(file_path, mode="create")
+
+
+def test_create_mode_fails_when_dataset_is_exists(lance_dataset_path):
+    """When mode="create" and the target dataset already exists, write_lance should fail."""
+    df = daft.from_pydict(data1)
+    df.write_lance(lance_dataset_path, mode="create")
+
+    with pytest.raises(ValueError, match="Cannot create a Lance dataset at a location where one already exists."):
+        df.write_lance(lance_dataset_path, mode="create")
+
+
+def test_create_mode_succeeds_when_directory_contains_file(lance_dataset_path):
+    """When mode="create" and the target path exists and is non-empty, write_lance should succeed."""
     marker = os.path.join(lance_dataset_path, "marker")
     with open(marker, "w") as f:
         f.write("x")
 
-    df = daft.from_pydict({"a": [1, 2]})
-    with pytest.raises(FileExistsError, match="Target dataset"):
-        df.write_lance(lance_dataset_path, mode="create")
+    df = daft.from_pydict(data1)
+    df.write_lance(lance_dataset_path, mode="create")
+
+    df_loaded = daft.read_lance(lance_dataset_path)
+    assert df_loaded.to_pydict() == data1
+
+
+def test_create_mode_succeeds_when_directory_contains_subdirectory(lance_dataset_path):
+    """When mode="create" and the target directory contains a subdirectory, write_lance should succeed."""
+    subdir = os.path.join(lance_dataset_path, "subdir")
+    os.makedirs(subdir)
+
+    df = daft.from_pydict(data1)
+    df.write_lance(lance_dataset_path, mode="create")
+
+    df_loaded = daft.read_lance(lance_dataset_path)
+    assert df_loaded.to_pydict() == data1
 
 
 def test_create_mode_succeeds_on_missing_path(lance_dataset_path):
@@ -197,10 +232,11 @@ def test_create_mode_succeeds_on_missing_path(lance_dataset_path):
     target_dir = os.path.join(lance_dataset_path, "new_table_missing")
     assert not os.path.exists(target_dir)
 
-    df = daft.from_pydict({"a": [1, 2], "b": ["x", "y"]})
+    df = daft.from_pydict(data1)
     df.write_lance(target_dir, mode="create")
+
     df_loaded = daft.read_lance(target_dir)
-    assert df_loaded.to_pydict() == df.to_pydict()
+    assert df_loaded.to_pydict() == data1
 
 
 def test_create_mode_succeeds_on_empty_directory(lance_dataset_path):
@@ -209,32 +245,17 @@ def test_create_mode_succeeds_on_empty_directory(lance_dataset_path):
     os.makedirs(target_dir)
     assert os.path.exists(target_dir) and len(os.listdir(target_dir)) == 0
 
-    df = daft.from_pydict({"a": [1, 2], "b": ["x", "y"]})
+    df = daft.from_pydict(data1)
     df.write_lance(target_dir, mode="create")
+
     df_loaded = daft.read_lance(target_dir)
-    assert df_loaded.to_pydict() == df.to_pydict()
+    assert df_loaded.to_pydict() == data1
 
 
 def test_append_mode_fails_when_dataset_does_not_exist(lance_dataset_path):
     """When mode="append" and the target dataset does not exist, write_lance should fail with appropriate error."""
-    df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    df = daft.from_pydict(data1)
 
     # Attempt to append to non-existent dataset should raise ValueError
     with pytest.raises(ValueError, match="Cannot append to non-existent Lance dataset"):
         df.write_lance(lance_dataset_path, mode="append")
-
-
-def test_append_mode_succeeds_when_dataset_exists(lance_dataset_path):
-    """When mode="append" and the target dataset exists, write_lance should succeed."""
-    # First create a dataset
-    df1 = daft.from_pydict({"a": [1, 2], "b": ["x", "y"]})
-    df1.write_lance(lance_dataset_path, mode="create")
-
-    # Then append to the existing dataset
-    df2 = daft.from_pydict({"a": [3, 4], "b": ["z", "w"]})
-    df2.write_lance(lance_dataset_path, mode="append")
-
-    # Verify the data was appended correctly
-    df_loaded = daft.read_lance(lance_dataset_path)
-    expected_data = {"a": [1, 2, 3, 4], "b": ["x", "y", "z", "w"]}
-    assert df_loaded.to_pydict() == expected_data
