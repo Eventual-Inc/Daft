@@ -21,7 +21,11 @@ impl From<&FileFormatConfig> for FileFormat {
             #[cfg(feature = "python")]
             FileFormatConfig::Database(_) => Self::Database,
             #[cfg(feature = "python")]
-            FileFormatConfig::PythonFunction => Self::Python,
+            FileFormatConfig::PythonFunction {
+                source_type: _,
+                module_name: _,
+                function_name: _,
+            } => Self::Python,
         }
     }
 }
