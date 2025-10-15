@@ -1,8 +1,7 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
-use common_runtime::{RuntimeRef, RuntimeTask, get_compute_runtime};
-use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
+use common_runtime::{RuntimeTask, get_compute_runtime};
 use daft_io::{SourceType, parse_url};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -11,31 +10,10 @@ use daft_writers::{AsyncFileWriter, make_ipc_writer};
 use itertools::Itertools;
 use tokio::sync::Mutex;
 
-// Single threaded runtime used for shuffle cache tasks, e.g. partitioner and writer tasks
-static SHUFFLE_CACHE_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
-
-pub fn get_or_init_shuffle_cache_runtime() -> &'static RuntimeRef {
-    SHUFFLE_CACHE_RUNTIME.get_or_init(|| {
-        common_runtime::Runtime::new(
-            tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(1)
-                .enable_all()
-                .build()
-                .unwrap(),
-            common_runtime::PoolType::Custom("shuffle_cache".to_string()),
-        )
-    })
-}
-
-fn get_shuffle_dirs(shuffle_dirs: &[String], node_id: &str, shuffle_stage_id: u64) -> Vec<String> {
+fn get_shuffle_dirs(shuffle_dirs: &[String], cache_id: String, shuffle_id: u64) -> Vec<String> {
     shuffle_dirs
         .iter()
-        .map(|dir| {
-            format!(
-                "{}/daft_shuffle/node_{}/shuffle_stage_{}",
-                dir, node_id, shuffle_stage_id
-            )
-        })
+        .map(|dir| format!("{}/daft_shuffle/{}/{}", dir, shuffle_id, cache_id))
         .collect()
 }
 
@@ -55,32 +33,30 @@ struct WriterTaskResult {
 type WriterTask = RuntimeTask<DaftResult<WriterTaskResult>>;
 
 struct InProgressShuffleCacheState {
-    partitioner_sender: Option<async_channel::Sender<Arc<MicroPartition>>>,
-    partitioner_tasks: Vec<RuntimeTask<DaftResult<()>>>,
+    writer_senders: Option<Vec<async_channel::Sender<Arc<MicroPartition>>>>,
     writer_tasks: Vec<WriterTask>,
     error: Option<String>,
 }
 
 pub struct InProgressShuffleCache {
     state: Mutex<InProgressShuffleCacheState>,
+    writer_senders_weak: Vec<async_channel::WeakSender<Arc<MicroPartition>>>,
     shuffle_dirs: Vec<String>,
-    partitioner_sender_weak: async_channel::WeakSender<Arc<MicroPartition>>,
 }
 
 impl InProgressShuffleCache {
     pub fn try_new(
         num_partitions: usize,
         dirs: &[String],
-        node_id: String,
-        shuffle_stage_id: u64,
+        cache_id: String,
+        shuffle_id: u64,
         target_filesize: usize,
         compression: Option<&str>,
-        partition_by: Option<Vec<ExprRef>>,
     ) -> DaftResult<Self> {
         // Create the directories
         // TODO: Add checks here, as well as periodic checks to ensure that the dirs are not too full. If so, we switch to directories with more space.
         // And raise an error if we can't find any directories with space.
-        let shuffle_dirs = get_shuffle_dirs(dirs, &node_id, shuffle_stage_id);
+        let shuffle_dirs = get_shuffle_dirs(dirs, cache_id, shuffle_id);
         for dir in &shuffle_dirs {
             // Check that the dir is a file
             let (source_type, _) = parse_url(dir)?;
@@ -109,15 +85,13 @@ impl InProgressShuffleCache {
         }
 
         // Create the InProgressShuffleCache with the writers
-        Self::try_new_with_writers(writers, num_partitions, partition_by, shuffle_dirs)
+        Self::try_new_with_writers(writers, shuffle_dirs)
     }
 
     fn try_new_with_writers(
         writers: Vec<
             Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
         >,
-        num_partitions: usize,
-        partition_by: Option<Vec<ExprRef>>,
         shuffle_dirs: Vec<String>,
     ) -> DaftResult<Self> {
         let num_cpus = std::thread::available_parallelism().unwrap().get();
@@ -126,71 +100,65 @@ impl InProgressShuffleCache {
         let (writer_tasks, writer_senders): (Vec<_>, Vec<_>) = writers
             .into_iter()
             .map(|writer| {
+                // Use a bounded channel with capacity based on number of CPUs
+                // This allows multiple concurrent partitioners to send data without blocking
                 let (tx, rx) = async_channel::bounded(num_cpus * 2);
-                let task = get_or_init_shuffle_cache_runtime()
-                    .spawn(async move { writer_task(rx, writer).await });
+                let task =
+                    get_compute_runtime().spawn(async move { writer_task(rx, writer).await });
                 (task, tx)
             })
             .unzip();
 
-        // Spawn the partitioner tasks
-        let (partitioner_sender, partitioner_receiver) = async_channel::bounded(1);
-        let partitioner_tasks = (0..num_cpus)
-            .map(|_| {
-                let partitioner_receiver = partitioner_receiver.clone();
-                let writer_senders = writer_senders.clone();
-                let partition_by = partition_by.clone();
-                get_or_init_shuffle_cache_runtime().spawn(async move {
-                    partitioner_task(
-                        partitioner_receiver,
-                        writer_senders,
-                        partition_by,
-                        num_partitions,
-                    )
-                    .await
-                })
-            })
-            .collect::<Vec<_>>();
+        // Store weak senders so we can access them without locking
+        let weak_senders: Vec<_> = writer_senders.iter().map(|s| s.downgrade()).collect();
 
-        // Use a weak reference to the partitioner sender to avoid holding a strong reference to it.
-        // We store the strong reference in locked state so that we can drop it on close
-        let weak_partitioner_sender = partitioner_sender.downgrade();
         Ok(Self {
             state: Mutex::new(InProgressShuffleCacheState {
-                partitioner_sender: Some(partitioner_sender),
-                partitioner_tasks,
+                writer_senders: Some(writer_senders),
                 writer_tasks,
                 error: None,
             }),
-            partitioner_sender_weak: weak_partitioner_sender,
+            writer_senders_weak: weak_senders,
             shuffle_dirs,
         })
     }
 
-    pub async fn push_partitions(
+    /// Push already-partitioned data to the writers.
+    /// The input should be a Vec<Arc<MicroPartition>> where each element corresponds to a writer.
+    pub async fn push_partitioned_data(
         &self,
-        input_partitions: Vec<Arc<MicroPartition>>,
+        partitioned_data: Vec<Arc<MicroPartition>>,
     ) -> DaftResult<()> {
-        // Try to get the partitioner sender from the weak reference
-        match self.partitioner_sender_weak.upgrade() {
-            Some(partitioner_sender) => {
-                // Create futures for sending each partition
-                let send_futures = input_partitions
-                    .into_iter()
-                    .map(|partition| partitioner_sender.send(partition));
-
-                // If any send fails, the receiver is dropped, so we need to close the shuffle cache to get the error
-                if let Err(e) = futures::future::try_join_all(send_futures).await {
-                    self.close().await?;
-                    return Err(DaftError::InternalError(e.to_string()));
-                }
-            }
-            None => {
-                // If the partitioner sender is dropped, that means the shuffle cache is closed
-                // so we propagate the error from the close
-                self.close().await?;
-            }
+        // Verify we have the right number of partitions
+        if partitioned_data.len() != self.writer_senders_weak.len() {
+            return Err(DaftError::ValueError(format!(
+                "Expected {} partitions in shuffle cache, got {}",
+                self.writer_senders_weak.len(),
+                partitioned_data.len()
+            )));
         }
+
+        // Upgrade weak senders and send data
+        let send_futures = partitioned_data
+            .into_iter()
+            .zip(self.writer_senders_weak.iter())
+            .map(|(partition, weak_sender)| async move {
+                // Try to upgrade the weak sender
+                match weak_sender.upgrade() {
+                    Some(sender) => sender.send(partition).await.map_err(|e| e.to_string()),
+                    None => {
+                        // Sender has been dropped, meaning the cache is closed
+                        Err("Shuffle cache has been closed".to_string())
+                    }
+                }
+            });
+
+        // If any send fails, close the cache to get the error
+        if let Err(e) = futures::future::try_join_all(send_futures).await {
+            self.close().await?;
+            return Err(DaftError::InternalError(e));
+        }
+
         Ok(())
     }
 
@@ -200,13 +168,15 @@ impl InProgressShuffleCache {
         if let Some(error) = &state.error {
             return Err(DaftError::InternalError(error.clone()));
         }
-        let partitioner_sender = state.partitioner_sender.take().unwrap();
-        let partitioner_tasks = std::mem::take(&mut state.partitioner_tasks);
+
+        let writer_senders = state
+            .writer_senders
+            .take()
+            .expect("writer_senders should be present");
         let writer_tasks = std::mem::take(&mut state.writer_tasks);
 
-        // Close the partitioner tasks and writer tasks
-        let close_result =
-            Self::close_internal(partitioner_tasks, partitioner_sender, writer_tasks).await;
+        // Close the writer tasks
+        let close_result = Self::close_internal(writer_senders, writer_tasks).await;
         if let Err(err) = close_result {
             state.error = Some(err.to_string());
             return Err(err);
@@ -248,18 +218,11 @@ impl InProgressShuffleCache {
     }
 
     async fn close_internal(
-        partitioner_tasks: Vec<RuntimeTask<DaftResult<()>>>,
-        partitioner_sender: async_channel::Sender<Arc<MicroPartition>>,
+        writer_senders: Vec<async_channel::Sender<Arc<MicroPartition>>>,
         writer_tasks: Vec<WriterTask>,
     ) -> DaftResult<Vec<WriterTaskResult>> {
-        // Drop the partitioner sender so that the partitioner tasks can exit
-        drop(partitioner_sender);
-
-        // Wait for the partitioner tasks to exit
-        futures::future::try_join_all(partitioner_tasks)
-            .await?
-            .into_iter()
-            .collect::<DaftResult<()>>()?;
+        // Drop the writer senders so that the writer tasks can exit
+        drop(writer_senders);
 
         // Wait for the writer tasks to exit
         let results = futures::future::try_join_all(writer_tasks)
@@ -270,49 +233,11 @@ impl InProgressShuffleCache {
     }
 }
 
-// Partitioner task that takes partitions from the partitioner sender, partitions them, and sends them to the writer tasks
-async fn partitioner_task(
-    rx: async_channel::Receiver<Arc<MicroPartition>>,
-    writer_senders: Vec<async_channel::Sender<Arc<MicroPartition>>>,
-    partition_by: Option<Vec<ExprRef>>,
-    num_partitions: usize,
-) -> DaftResult<()> {
-    let compute_runtime = get_compute_runtime();
-    while let Ok(partition) = rx.recv().await {
-        let partition_by = partition_by.clone();
-        let partitions = compute_runtime
-            .spawn(async move {
-                let partitioned = match &partition_by {
-                    Some(partition_by) => {
-                        let partition_by = BoundExpr::bind_all(partition_by, &partition.schema())?;
-                        partition.partition_by_hash(&partition_by, num_partitions)?
-                    }
-                    None => partition.partition_by_random(num_partitions, 0)?,
-                };
-                DaftResult::Ok(partitioned)
-            })
-            .await??;
-        if futures::future::try_join_all(
-            partitions
-                .into_iter()
-                .zip(writer_senders.iter())
-                .map(|(partition, sender)| sender.send(partition.into())),
-        )
-        .await
-        .is_err()
-        {
-            break;
-        }
-    }
-    Ok(())
-}
-
-// Writer task that takes partitions from the partitioner sender, writes them to a file, and returns the schema and file paths
+// Writer task that takes partitions from a writer sender, writes them to a file, and returns the schema and file paths
 async fn writer_task(
     rx: async_channel::Receiver<Arc<MicroPartition>>,
     mut writer: Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
 ) -> DaftResult<WriterTaskResult> {
-    let compute_runtime = get_compute_runtime();
     let mut schema = None;
     let mut total_rows_written = 0;
     let mut total_bytes_written = 0;
@@ -322,12 +247,7 @@ async fn writer_task(
         }
         total_rows_written += partition.len();
         total_bytes_written += partition.size_bytes().expect("size_bytes should be Some");
-        writer = compute_runtime
-            .spawn(async move {
-                writer.write(partition).await?;
-                DaftResult::Ok(writer)
-            })
-            .await??;
+        writer.write(partition).await?;
     }
     let file_path_tables = writer.close().await?;
 
@@ -424,7 +344,6 @@ impl ShuffleCache {
 mod tests {
     use std::sync::Arc;
 
-    use daft_dsl::{Column, Expr, ResolvedColumn};
     use daft_writers::test::{
         DummyWriterFactory, FailingWriterFactory, make_dummy_mp,
         make_dummy_target_file_size_writer_factory,
@@ -445,18 +364,15 @@ mod tests {
         }
 
         // Create the cache with dummy writers
-        let cache = InProgressShuffleCache::try_new_with_writers(
-            writers,
-            num_partitions,
-            None, // No partition by expressions
-            vec![],
-        )?;
+        let cache = InProgressShuffleCache::try_new_with_writers(writers, vec![])?;
 
         // Create and push some partitions
+        // Since we have 1 partition, all data goes to partition 0
         let mp1 = make_dummy_mp(100);
         let mp2 = make_dummy_mp(200);
 
-        cache.push_partitions(vec![mp1, mp2]).await?;
+        cache.push_partitioned_data(vec![mp1]).await?;
+        cache.push_partitioned_data(vec![mp2]).await?;
 
         // Close the cache and verify results
         let shuffle_cache = cache.close().await?;
@@ -493,24 +409,16 @@ mod tests {
             writers.push(dummy_writer_factory.create_writer(partition_idx, None)?);
         }
 
-        // Create a simple hash partition expression
-        let partition_by = Some(vec![
-            Expr::Column(Column::Resolved(ResolvedColumn::Basic("ints".into()))).into(),
-        ]);
-
         // Create the cache with dummy writers
-        let cache = InProgressShuffleCache::try_new_with_writers(
-            writers,
-            num_partitions,
-            partition_by,
-            vec![],
-        )?;
+        let cache = InProgressShuffleCache::try_new_with_writers(writers, vec![])?;
 
         // Create and push some partitions
+        // For testing, we'll manually distribute data across partitions
         let mp = make_dummy_mp(150);
         let mp2 = make_dummy_mp(350);
 
-        cache.push_partitions(vec![mp, mp2]).await?;
+        // Distribute data across 2 partitions (simplified for testing)
+        cache.push_partitioned_data(vec![mp, mp2]).await?;
 
         // Close the cache and verify results
         let shuffle_cache = cache.close().await?;
@@ -531,25 +439,17 @@ mod tests {
             writers.push(dummy_writer_factory.create_writer(partition_idx, None)?);
         }
 
-        let partition_by = Some(vec![
-            Expr::Column(Column::Resolved(ResolvedColumn::Basic("ints".into()))).into(),
-        ]);
+        let cache = InProgressShuffleCache::try_new_with_writers(writers, vec![])?;
 
-        let cache = InProgressShuffleCache::try_new_with_writers(
-            writers,
-            num_partitions,
-            partition_by,
-            vec![],
-        )?;
-
-        // 1000 empty partitions
+        // 1000 empty partitions, distributed across 5 writers
         for _ in 0..1000 {
-            cache.push_partitions(vec![make_dummy_mp(0)]).await?;
+            let empty_partitions: Vec<_> = (0..num_partitions).map(|_| make_dummy_mp(0)).collect();
+            cache.push_partitioned_data(empty_partitions).await?;
         }
 
         let shuffle_cache = cache.close().await?;
 
-        // Even though we pushed empty partitions, we should still files.
+        // Even though we pushed empty partitions, we should still have the schema
         assert!(shuffle_cache.schema().names() == vec!["ints"]);
         assert_eq!(shuffle_cache.file_paths_per_partition.len(), num_partitions);
         assert!(
@@ -577,20 +477,15 @@ mod tests {
         writers.push(failing_writer_factory.create_writer(1, None)?);
 
         // Create the cache with writers
-        let cache = InProgressShuffleCache::try_new_with_writers(
-            writers,
-            num_partitions,
-            None, // No partition by expressions
-            vec![],
-        )?;
+        let cache = InProgressShuffleCache::try_new_with_writers(writers, vec![])?;
 
         let mut found_failure = false;
         // Technically, we can calculate the max number of iterations before failure, based on number of tasks and channel sizes,
         // but 100 should be good enough based on our testing environment.
         let num_iterations = 100;
         for _ in 0..num_iterations {
-            let mp = make_dummy_mp(100);
-            if let Err(err) = cache.push_partitions(vec![mp]).await {
+            let partitions = vec![make_dummy_mp(100), make_dummy_mp(100)];
+            if let Err(err) = cache.push_partitioned_data(partitions).await {
                 // Verify the error message
                 let error_message = err.to_string();
                 assert!(
@@ -611,8 +506,8 @@ mod tests {
         );
 
         // Assert that another push will fail
-        let mp = make_dummy_mp(100);
-        let result = cache.push_partitions(vec![mp]).await;
+        let partitions = vec![make_dummy_mp(100), make_dummy_mp(100)];
+        let result = cache.push_partitioned_data(partitions).await;
         assert!(result.is_err());
         let error_message = result.unwrap_err().to_string();
         assert!(
@@ -648,18 +543,13 @@ mod tests {
         writers.push(failing_writer_factory.create_writer(1, None)?);
 
         // Create the cache with writers
-        let cache = InProgressShuffleCache::try_new_with_writers(
-            writers,
-            num_partitions,
-            None, // No partition by expressions
-            vec![],
-        )?;
+        let cache = InProgressShuffleCache::try_new_with_writers(writers, vec![])?;
 
         // Create and push a partition
-        let mp = make_dummy_mp(100);
+        let partitions = vec![make_dummy_mp(100), make_dummy_mp(100)];
 
         // This should succeed since the failure happens on close
-        cache.push_partitions(vec![mp]).await?;
+        cache.push_partitioned_data(partitions).await?;
 
         // When we close, we should get an error
         let result = cache.close().await;
@@ -674,8 +564,8 @@ mod tests {
         );
 
         // Try that another push will fail
-        let mp = make_dummy_mp(100);
-        let result = cache.push_partitions(vec![mp]).await;
+        let partitions = vec![make_dummy_mp(100), make_dummy_mp(100)];
+        let result = cache.push_partitioned_data(partitions).await;
         assert!(result.is_err());
         let error_message = result.unwrap_err().to_string();
         assert!(

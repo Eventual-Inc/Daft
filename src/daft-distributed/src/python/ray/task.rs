@@ -9,7 +9,7 @@ use pyo3::{PyObject, PyResult, Python, pyclass, pymethods};
 use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
-        task::{SwordfishTask, TaskContext, TaskResultHandle, TaskStatus},
+        task::{SwordfishTask, Task, TaskContext, TaskResultHandle, TaskStatus},
         worker::WorkerId,
     },
 };
@@ -96,6 +96,7 @@ impl TaskResultHandle for RayTaskResultHandle {
         };
 
         let worker_id = self.worker_id.clone();
+        let task_id = self.task_context.task_id;
         async move {
             let ray_task_result = pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine)
                 .await
@@ -112,6 +113,7 @@ impl TaskResultHandle for RayTaskResultHandle {
                             .collect(),
                         worker_id.clone(),
                         ip_address.clone(),
+                        task_id,
                     );
 
                     TaskStatus::Success {
@@ -194,6 +196,10 @@ impl RaySwordfishTask {
 
 #[pymethods]
 impl RaySwordfishTask {
+    fn id(&self) -> u32 {
+        self.task.task_context().task_id
+    }
+
     fn context(&self) -> HashMap<String, String> {
         self.task.context().clone()
     }

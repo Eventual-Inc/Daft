@@ -1294,13 +1294,24 @@ fn physical_plan_to_pipeline(
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            let flight_shuffle_write_sink = FlightShuffleWriteSink::new(
+            // Get cache_id (task_id) from context
+            let cache_id = ctx
+                .context
+                .get("task_id")
+                .cloned()
+                .expect("task_id must be set in context");
+            let flight_shuffle_write_sink = FlightShuffleWriteSink::try_new(
                 *num_partitions,
                 partition_by.clone(),
                 *shuffle_id,
                 shuffle_dirs.clone(),
                 compression.clone(),
-            );
+                cache_id,
+            )
+            .map_err(|e| crate::Error::PipelineCreationError {
+                source: e,
+                plan_name: "FlightShuffleWrite".to_string(),
+            })?;
             BlockingSinkNode::new(
                 Arc::new(flight_shuffle_write_sink),
                 child_node,
@@ -1313,6 +1324,7 @@ fn physical_plan_to_pipeline(
             shuffle_id,
             partition_idx,
             server_addresses,
+            server_cache_mapping,
             schema,
             stats_state,
         }) => {
@@ -1320,6 +1332,7 @@ fn physical_plan_to_pipeline(
                 *shuffle_id,
                 *partition_idx,
                 server_addresses.clone(),
+                server_cache_mapping.clone(),
                 schema.clone(),
             );
             SourceNode::new(Arc::new(source), stats_state.clone(), ctx).boxed()

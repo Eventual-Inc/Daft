@@ -168,8 +168,10 @@ class RaySwordfishActorHandle:
 
     def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
         psets = {k: [v.object_ref for v in v] for k, v in task.psets().items()}
+        context = task.context()
+        context["task_id"] = str(task.id())
         result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
-            task.plan(), task.config(), psets, task.context()
+            task.plan(), task.config(), psets, context
         )
         return RaySwordfishTaskHandle(
             result_handle,

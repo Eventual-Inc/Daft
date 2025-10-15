@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_local_plan::LocalPhysicalPlan;
@@ -14,7 +14,7 @@ use crate::{
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
-        task::{SwordfishTask, TaskContext},
+        task::{SwordfishTask, TaskContext, TaskID},
     },
     utils::channel::{Sender, create_channel},
 };
@@ -96,35 +96,39 @@ impl FlightShuffleNode {
             .try_collect::<Vec<_>>()
             .await?;
 
-        let server_addresses = outputs
-            .iter()
-            .map(|output| output.ip_address().clone())
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
+        // Collect server addresses and their corresponding task_ids (cache_ids)
+        let mut server_cache_mapping: std::collections::HashMap<String, Vec<TaskID>> =
+            std::collections::HashMap::new();
+        for output in &outputs {
+            let server_address = output.ip_address().clone();
+            let task_id = output.task_id();
+            server_cache_mapping
+                .entry(server_address)
+                .or_default()
+                .push(task_id);
+        }
 
         // For each partition group, create tasks that read from flight servers
         for partition_idx in 0..self.num_partitions {
             // Create a flight shuffle read task for this partition
-            let self_clone = self.clone();
-            let flight_shuffle_read_plan = LocalPhysicalPlan::flight_shuffle_read(
-                self_clone.shuffle_id,
+            let flight_shuffle_read_plan = LocalPhysicalPlan::flight_shuffle_read_with_cache_ids(
+                self.shuffle_id,
                 partition_idx,
-                server_addresses.clone(),
-                self_clone.config.schema.clone(),
+                server_cache_mapping.clone(),
+                self.config.schema.clone(),
                 StatsState::NotMaterialized,
             );
 
             // For flight shuffle, we create a task directly with the flight shuffle read plan
             // instead of using make_in_memory_task_from_materialized_outputs
-            let task_context = TaskContext::from((&self_clone.context, task_id_counter.next()));
+            let task_context = TaskContext::from((&self.context, task_id_counter.next()));
             let task = SubmittableTask::new(SwordfishTask::new(
                 task_context,
                 flight_shuffle_read_plan,
-                self_clone.config.execution_config.clone(),
+                self.config.execution_config.clone(),
                 std::collections::HashMap::new(), // No input partition sets needed for flight shuffle read
                 crate::scheduling::task::SchedulingStrategy::Spread,
-                self_clone.context.to_hashmap(),
+                self.context.to_hashmap(),
             ));
 
             let _ = result_tx.send(task).await;

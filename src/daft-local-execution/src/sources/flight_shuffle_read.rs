@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use common_error::DaftResult;
@@ -18,6 +18,7 @@ pub struct FlightShuffleReadSource {
     shuffle_id: u64,
     partition_idx: usize,
     server_addresses: Vec<String>,
+    server_cache_mapping: HashMap<String, Vec<u32>>,
     schema: SchemaRef,
 }
 
@@ -26,12 +27,14 @@ impl FlightShuffleReadSource {
         shuffle_id: u64,
         partition_idx: usize,
         server_addresses: Vec<String>,
+        server_cache_mapping: HashMap<String, Vec<u32>>,
         schema: SchemaRef,
     ) -> Self {
         Self {
             shuffle_id,
             partition_idx,
             server_addresses,
+            server_cache_mapping,
             schema,
         }
     }
@@ -69,6 +72,7 @@ impl Source for FlightShuffleReadSource {
         let shuffle_id = self.shuffle_id;
         let partition_idx = self.partition_idx;
         let server_addresses = self.server_addresses.clone();
+        let server_cache_mapping = self.server_cache_mapping.clone();
 
         // Get the global flight client manager
         let schema = self.schema.clone();
@@ -78,9 +82,14 @@ impl Source for FlightShuffleReadSource {
             .spawn(async move {
                 let client_manager = FlightClientManager::new(server_addresses);
 
-                // Fetch the partition data from the flight server
+                // Fetch the partition data from the flight server with cache_ids
                 let mut stream = client_manager
-                    .fetch_partition(shuffle_id, partition_idx, schema.clone())
+                    .fetch_partition(
+                        shuffle_id,
+                        partition_idx,
+                        &server_cache_mapping,
+                        schema.clone(),
+                    )
                     .await?;
                 while let Some(batch) = stream.next().await {
                     let mp = MicroPartition::new_loaded(schema.clone(), vec![batch?].into(), None);

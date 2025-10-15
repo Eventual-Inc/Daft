@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::{DaftError, DaftResult, ensure};
 use common_io_config::IOConfig;
@@ -818,6 +818,26 @@ impl LocalPhysicalPlan {
             shuffle_id,
             partition_idx,
             server_addresses,
+            server_cache_mapping: HashMap::new(),
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
+    pub fn flight_shuffle_read_with_cache_ids(
+        shuffle_id: u64,
+        partition_idx: usize,
+        server_cache_mapping: HashMap<String, Vec<u32>>,
+        schema: SchemaRef,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        let server_addresses: Vec<String> = server_cache_mapping.keys().cloned().collect();
+        Self::FlightShuffleRead(FlightShuffleRead {
+            shuffle_id,
+            partition_idx,
+            server_addresses,
+            server_cache_mapping,
             schema,
             stats_state,
         })
@@ -1819,6 +1839,7 @@ pub struct FlightShuffleRead {
     pub shuffle_id: u64,
     pub partition_idx: usize,
     pub server_addresses: Vec<String>,
+    pub server_cache_mapping: HashMap<String, Vec<u32>>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }
