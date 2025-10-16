@@ -76,26 +76,14 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
             if p.is_file():
                 raise FileExistsError("Target path points to a file, cannot create a dataset here.")
 
-        try:
-            table = lance.dataset(self._table_uri, storage_options=self._storage_options)
-        except (ValueError, FileNotFoundError, OSError) as e:
-            # Check if this is specifically a "dataset not found" error
-            if "not found" in str(e).lower() or "does not exist" in str(e).lower():
-                if self._mode == "append":
-                    raise ValueError("Cannot append to non-existent Lance dataset.")
-                table = None
-            else:
-                # Re-raise other errors (permissions, network, etc.)
-                raise
+        table = self._load_existing_table(lance)
 
         self._version: int = 0
         self._table_schema: pa.Schema | None = None
-        if table is not None:
-            self._table_schema = table.schema
-            self._version = table.latest_version
-            if self._mode == "create":
-                raise ValueError("Cannot create a Lance dataset at a location where one already exists.")
 
+        self._check_dataset_exists(table)
+
+        if table is not None:
             if not pyarrow_schema_castable(self._pyarrow_schema, self._table_schema) and not (
                 self._mode == "overwrite"
             ):
@@ -112,6 +100,27 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
                 ("version", DataType.int64()),
             ]
         )
+
+    def _load_existing_table(self, lance_module: ModuleType) -> Any | None:
+        try:
+            return lance_module.dataset(self._table_uri, storage_options=self._storage_options)
+        except (ValueError, FileNotFoundError, OSError) as e:
+            # Check if this is specifically a "dataset not found" error
+            if "not found" in str(e).lower() or "does not exist" in str(e).lower():
+                if self._mode == "append":
+                    raise ValueError("Cannot append to non-existent Lance dataset.")
+                return None
+            else:
+                # Re-raise other errors (permissions, network, etc.)
+                raise
+
+    def _check_dataset_exists(self, table: Any) -> None:
+        """Check if dataset exists and validate against the current mode."""
+        if table is not None:
+            self._table_schema = table.schema
+            self._version = table.latest_version
+            if self._mode == "create":
+                raise ValueError("Cannot create a Lance dataset at a location where one already exists.")
 
     def name(self) -> str:
         """Optional custom sink name."""
