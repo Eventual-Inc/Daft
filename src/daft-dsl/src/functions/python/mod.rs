@@ -340,7 +340,7 @@ impl UDFProperties {
                         concurrency: *concurrency,
                         use_process: *use_process,
                         max_retries: *max_retries,
-                        on_error: on_error.clone(),
+                        on_error: *on_error,
                     });
                 }
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {

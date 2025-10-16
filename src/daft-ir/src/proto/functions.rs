@@ -52,8 +52,7 @@ pub fn from_proto_function(message: proto::ScalarFn) -> ProtoResult<ir::Expr> {
                     max_retries: row_wise_fn.max_retries.map(|c| c as usize),
                     on_error: row_wise_fn
                         .on_error
-                        .map(|s| OnError::from_str(&s).ok())
-                        .flatten()
+                        .and_then(|s| OnError::from_str(&s).ok())
                         .unwrap_or_default(),
                 };
                 ir::rex::from_py_rowwise_func(func)

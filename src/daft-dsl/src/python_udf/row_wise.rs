@@ -202,11 +202,11 @@ impl RowWisePyFn {
                         let err = DaftError::from(e);
                         errs.insert(i, err);
                     }
-                };
+                }
                 py_args.clear();
             }
             let max_retries = self.max_retries.unwrap_or(0);
-            let mut delay_ms: u64 = 1000; // Start with 1 second
+            let mut delay_ms: u64 = 100; // Start with 100 ms
             const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
 
             for attempt in 0..max_retries {
@@ -233,20 +233,20 @@ impl RowWisePyFn {
                         Err(e) => {
                             still_failed.insert(idx, DaftError::from(e));
                             // If this is not the last attempt, sleep before retrying
-                            if attempt < max_retries {
-                                use std::{thread, time::Duration};
-                                py.allow_threads(|| {
-                                    thread::sleep(Duration::from_millis(delay_ms));
-                                });
-                                // Exponential backoff: multiply by 2, cap at MAX_DELAY_MS
-                                delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
-                            }
                         }
                     }
                 }
 
                 // Update our failure map for next iteration
                 errs = still_failed;
+                if attempt < max_retries {
+                    use std::{thread, time::Duration};
+                    py.allow_threads(|| {
+                        thread::sleep(Duration::from_millis(delay_ms));
+                    });
+                    // Exponential backoff: multiply by 2, cap at MAX_DELAY_MS
+                    delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
+                }
             }
             // free up the gil while we're creating the series.
             py.allow_threads(|| {
@@ -262,10 +262,10 @@ impl RowWisePyFn {
                                 .into_iter()
                                 .map(|(i, e)| format!("\t{}: {}", i, e))
                                 .join("\n");
-                            return Err(DaftError::ComputeError(format!(
+                            Err(DaftError::ComputeError(format!(
                                 "Failed to execute Python UDF on some rows\n: {}",
                                 err_msg
-                            )));
+                            )))
                         }
                         crate::functions::python::OnError::Log => {
                             todo!()

@@ -270,8 +270,7 @@ pub fn row_wise_udf(
 ) -> PyExpr {
     let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
     let on_error = on_error
-        .map(|v| crate::functions::python::OnError::from_str(&v).ok())
-        .flatten()
+        .and_then(|v| crate::functions::python::OnError::from_str(&v).ok())
         .unwrap_or_default();
     PyExpr {
         expr: crate::python_udf::row_wise_udf(

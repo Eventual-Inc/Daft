@@ -189,95 +189,29 @@ impl UdfHandle {
 
     #[cfg(feature = "python")]
     fn eval_input(&mut self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
-        use std::{thread, time::Duration};
-
         let input_batches = input.get_tables()?;
         let mut output_batches = Vec::with_capacity(input_batches.len());
-
-        // Get retry configuration from UDF properties
-        let max_retries = self.params.udf_properties.max_retries.unwrap_or(0);
-        let on_error = self
-            .params
-            .udf_properties
-            .on_error
-            .clone()
-            .unwrap_or(daft_dsl::functions::python::OnError::Raise);
 
         for batch in input_batches.as_ref() {
             // Prepare inputs
             let func_input = batch.get_columns(self.params.required_cols.as_slice());
 
-            // Retry logic with exponential backoff
-            let mut last_error: Option<DaftError> = None;
-            let mut delay_ms: u64 = 1000; // Start with 1 second
-            const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
-
-            let mut result: Option<Series> = None;
-            for attempt in 0..=max_retries {
-                // Call the UDF
-                let result_attempt = if let Some(handle) = &self.handle {
-                    self.eval_input_with_handle(func_input.clone(), handle)
-                } else {
-                    self.eval_input_inline(func_input.clone())
-                };
-
-                match result_attempt {
-                    Ok(series) => {
-                        result = Some(series);
-                        break;
-                    }
-                    Err(e) => {
-                        last_error = Some(e);
-
-                        // If this is not the last attempt, sleep before retrying
-                        if attempt < max_retries {
-                            thread::sleep(Duration::from_millis(delay_ms));
-                            // Exponential backoff: multiply by 2, cap at MAX_DELAY_MS
-                            delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
-                        }
-                    }
-                }
-            }
-
-            // Handle result or error based on on_error mode
-            let mut final_result = if let Some(series) = result {
-                series
+            // Call the UDF
+            let mut result = if let Some(handle) = &self.handle {
+                self.eval_input_with_handle(func_input, handle)
             } else {
-                let error = last_error.unwrap();
-                let return_field = &self.params.output_schema.fields().last().unwrap();
-                let dtype = &return_field.dtype;
-                let name = &return_field.name;
-                match on_error {
-                    daft_dsl::functions::python::OnError::Log => {
-                        // Log the error and the entire record batch
-                        log::error!(
-                            "UDF '{}' failed after {} attempts. Error: {}. RecordBatch:\n{:?}",
-                            self.params.udf_properties.name,
-                            max_retries + 1,
-                            error,
-                            batch
-                        );
-                        // Create a null series of the appropriate type and length
-                        Series::full_null(name, dtype, batch.num_rows())
-                    }
-                    daft_dsl::functions::python::OnError::Ignore => {
-                        // Silently create a null series
-                        Series::full_null(name, dtype, batch.num_rows())
-                    }
-                    daft_dsl::functions::python::OnError::Raise => return Err(error),
-                }
-            };
-
+                self.eval_input_inline(func_input)
+            }?;
             // If result.len() == 1 (because it was a 0-column UDF), broadcast to right size
-            if final_result.len() == 1 {
-                final_result = final_result.broadcast(batch.num_rows())?;
+            if result.len() == 1 {
+                result = result.broadcast(batch.num_rows())?;
             }
 
             // Append result to passthrough
             let passthrough_input =
                 batch.eval_expression_list(self.params.passthrough_columns.as_slice())?;
             let output_batch =
-                passthrough_input.append_column(self.params.output_schema.clone(), final_result)?;
+                passthrough_input.append_column(self.params.output_schema.clone(), result)?;
             output_batches.push(output_batch);
         }
 
