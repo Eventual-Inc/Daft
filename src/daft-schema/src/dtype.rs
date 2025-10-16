@@ -156,7 +156,7 @@ impl Display for DataType {
             Self::Float32 => write!(f, "Float32"),
             Self::Float64 => write!(f, "Float64"),
             Self::Decimal128(precision, scale) => {
-                write!(f, "Decimal[precision={precision}, scale={scale}]")
+                write!(f, "Decimal[precision: {precision}, scale: {scale}]")
             }
             Self::Timestamp(unit, timezone) => {
                 if let Some(timezone) = timezone {

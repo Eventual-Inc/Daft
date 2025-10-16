@@ -1211,17 +1211,17 @@ class Expression:
             ...     else:
             ...         return 0
             >>> df.with_column("num_x", df["x"].apply(f, return_dtype=daft.DataType.int64())).collect()
-            ╭──────┬───────╮
-            │ x    ┆ num_x │
-            │ ---  ┆ ---   │
-            │ Utf8 ┆ Int64 │
-            ╞══════╪═══════╡
-            │ 1    ┆ 1     │
-            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 2    ┆ 2     │
-            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ tim  ┆ 0     │
-            ╰──────┴───────╯
+            ╭────────┬───────╮
+            │ x      ┆ num_x │
+            │ ---    ┆ ---   │
+            │ String ┆ Int64 │
+            ╞════════╪═══════╡
+            │ 1      ┆ 1     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2      ┆ 2     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ tim    ┆ 0     │
+            ╰────────┴───────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 

@@ -109,8 +109,8 @@ def common_crawl(
         ╭────────────────┬─────────────────┬───────────┬────────────────────┬────────────┬────────────────────┬──────────────┬──────────────╮
         │ WARC-Record-ID ┆ WARC-Target-URI ┆ WARC-Type ┆ WARC-Date          ┆      …     ┆ WARC-Identified-Pa ┆ warc_content ┆ warc_headers │
         │ ---            ┆ ---             ┆ ---       ┆ ---                ┆            ┆ yload-Type         ┆ ---          ┆ ---          │
-        │ Utf8           ┆ Utf8            ┆ Utf8      ┆ Timestamp(Nanoseco ┆ (1 hidden) ┆ ---                ┆ Binary       ┆ Utf8         │
-        │                ┆                 ┆           ┆ nds,               ┆            ┆ Utf8               ┆              ┆              │
+        │ String         ┆ String          ┆ String    ┆ Timestamp(Nanoseco ┆ (1 hidden) ┆ ---                ┆ Binary       ┆ String       │
+        │                ┆                 ┆           ┆ nds,               ┆            ┆ String             ┆              ┆              │
         │                ┆                 ┆           ┆ Some("Etc/UTC"))   ┆            ┆                    ┆              ┆              │
         ╰────────────────┴─────────────────┴───────────┴────────────────────┴────────────┴────────────────────┴──────────────┴──────────────╯
         <BLANKLINE>
@@ -121,8 +121,8 @@ def common_crawl(
         ╭─────────────────┬─────────────────┬────────────┬─────────────────┬────────────┬─────────────────┬────────────────┬────────────────╮
         │ WARC-Record-ID  ┆ WARC-Target-URI ┆ WARC-Type  ┆ WARC-Date       ┆      …     ┆ WARC-Identified ┆ warc_content   ┆ warc_headers   │
         │ ---             ┆ ---             ┆ ---        ┆ ---             ┆            ┆ -Payload-Type   ┆ ---            ┆ ---            │
-        │ Utf8            ┆ Utf8            ┆ Utf8       ┆ Timestamp(Nanos ┆ (1 hidden) ┆ ---             ┆ Binary         ┆ Utf8           │
-        │                 ┆                 ┆            ┆ econds, Some("E ┆            ┆ Utf8            ┆                ┆                │
+        │ String          ┆ String          ┆ String     ┆ Timestamp(Nanos ┆ (1 hidden) ┆ ---             ┆ Binary         ┆ String         │
+        │                 ┆                 ┆            ┆ econds, Some("E ┆            ┆ String          ┆                ┆                │
         │                 ┆                 ┆            ┆ tc/UTC"))       ┆            ┆                 ┆                ┆                │
         ╞═════════════════╪═════════════════╪════════════╪═════════════════╪════════════╪═════════════════╪════════════════╪════════════════╡
         │ 0cb039e8-d357-4 ┆ None            ┆ warcinfo   ┆ 2025-08-16      ┆ …          ┆ None            ┆ b"Software-Inf ┆ {"Content-Type │
@@ -145,8 +145,8 @@ def common_crawl(
         ╭─────────────────┬─────────────────┬───────────┬─────────────────┬────────────┬─────────────────┬─────────────────┬────────────────╮
         │ WARC-Record-ID  ┆ WARC-Target-URI ┆ WARC-Type ┆ WARC-Date       ┆      …     ┆ WARC-Identified ┆ warc_content    ┆ warc_headers   │
         │ ---             ┆ ---             ┆ ---       ┆ ---             ┆            ┆ -Payload-Type   ┆ ---             ┆ ---            │
-        │ Utf8            ┆ Utf8            ┆ Utf8      ┆ Timestamp(Nanos ┆ (1 hidden) ┆ ---             ┆ Binary          ┆ Utf8           │
-        │                 ┆                 ┆           ┆ econds, Some("E ┆            ┆ Utf8            ┆                 ┆                │
+        │ String          ┆ String          ┆ String    ┆ Timestamp(Nanos ┆ (1 hidden) ┆ ---             ┆ Binary          ┆ String         │
+        │                 ┆                 ┆           ┆ econds, Some("E ┆            ┆ String          ┆                 ┆                │
         │                 ┆                 ┆           ┆ tc/UTC"))       ┆            ┆                 ┆                 ┆                │
         ╞═════════════════╪═════════════════╪═══════════╪═════════════════╪════════════╪═════════════════╪═════════════════╪════════════════╡
         │ b6238b9c-8db0-4 ┆ None            ┆ warcinfo  ┆ 2025-08-15      ┆ …          ┆ None            ┆ b"isPartOf: CC- ┆ {"Content-Type │
