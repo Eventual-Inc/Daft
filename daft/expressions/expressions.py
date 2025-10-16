@@ -2681,6 +2681,76 @@ class WhenExpr(Expression):
         return Expression._from_pyexpr(self._construct_pyexpr(self._cases, value._expr))
 
 
+class MatchExpr(Expression):
+    """Helper class for building pattern-matching style conditional expressions.
+
+    Tip: See Also
+        [`daft.functions.match`](https://docs.daft.ai/en/stable/api/functions/match/)
+    """
+
+    def __init__(self, expr: Expression, cases: list[tuple[_PyExpr, _PyExpr]] | None = None):
+        """This constructor should not be called directly. Please use `daft.functions.match` instead."""
+        self._match_expr = Expression._to_expression(expr)
+        self._cases: list[tuple[_PyExpr, _PyExpr]] = cases if cases is not None else []
+        # Build expression with None as default (allows usage without .otherwise())
+        self._expr = self._build_expr(_lit(None))
+
+    def _build_expr(self, default: _PyExpr) -> _PyExpr:
+        """Build the final expression from cases and default value."""
+        expr = default
+        for condition, then in reversed(self._cases):
+            expr = condition.if_else(then, expr)
+        return expr
+
+    def case(self, value: Any | tuple[Any, ...], result: Expression | Any) -> MatchExpr:
+        """Adds a case to the match expression.
+
+        Args:
+            value: The value(s) to match against. Use a tuple to match against multiple values: (1, 2, 3).
+                   Single values are matched using equality.
+            result: The value to return if the match succeeds
+
+        Returns:
+            A new MatchExpr with the added case.
+
+        Tip: See Also
+            [`daft.functions.match`](https://docs.daft.ai/en/stable/api/functions/match/)
+        """
+        result_expr = Expression._to_expression(result)
+
+        # Create the condition based on whether value is a tuple
+        if isinstance(value, tuple):
+            # Use is_in for tuple of values (match any of them)
+            from daft.functions.misc import is_in
+
+            condition = is_in(self._match_expr, list(value))
+        else:
+            # Use equality check for single value (including list literals)
+            condition = self._match_expr == value
+
+        # Create a new MatchExpr with the updated cases list (immutable)
+        new_cases = self._cases + [(condition._expr, result_expr._expr)]
+        return MatchExpr(self._match_expr, new_cases)
+
+    def otherwise(self, default: Expression | Any) -> Expression:
+        """Adds a default value and returns a complete Expression.
+
+        Args:
+            default: The value to return if no cases match
+
+        Returns:
+            A complete Expression
+
+        Note:
+            This method is optional. If not called, non-matching values will be null.
+
+        Tip: See Also
+            [`daft.functions.match`](https://docs.daft.ai/en/stable/api/functions/match/)
+        """
+        default_expr = Expression._to_expression(default)
+        return Expression._from_pyexpr(self._build_expr(default_expr._expr))
+
+
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
 
 

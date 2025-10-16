@@ -116,6 +116,7 @@ from .misc import (
     map_get,
     slice,
     when,
+    match,
 )
 from .numeric import (
     abs,
@@ -333,6 +334,7 @@ __all__ = [
     "lpad",
     "lstrip",
     "map_get",
+    "match",
     "max",
     "mean",
     "microsecond",

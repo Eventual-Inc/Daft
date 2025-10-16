@@ -7,7 +7,7 @@ from typing import Any, Literal
 import daft.daft as native
 from daft.datatype import DataType, DataTypeLike
 from daft.expressions import Expression
-from daft.expressions.expressions import WhenExpr
+from daft.expressions.expressions import MatchExpr, WhenExpr
 from daft.series import item_to_series
 
 
@@ -848,3 +848,109 @@ def when(condition: Expression | bool, then: Expression | Any) -> WhenExpr:
         (Showing first 3 of 3 rows)
     """
     return WhenExpr([]).when(condition, then)
+
+
+def match(expr: Expression) -> MatchExpr:
+    """Start a pattern-matching style conditional expression.
+
+    Match an expression against a series of values and return corresponding results.
+    This is similar to a switch/match statement in other programming languages or SQL's CASE expression
+    with equality checks.
+
+    Args:
+        expr: The expression to match against
+
+    Returns:
+        A MatchExpr that can be chained with `.case()` calls and ended with `.otherwise()`
+
+    Examples:
+        Simple value matching:
+        >>> import daft
+        >>> from daft.functions import match
+        >>>
+        >>> df = daft.from_pydict({"foo": [1, 2, 3, 2, 1]})
+        >>> df = df.with_column("bar", match(df["foo"]).case(1, "a").case(2, "b").otherwise("c"))
+        >>> df.show()
+        ╭───────┬──────╮
+        │ foo   ┆ bar  │
+        │ ---   ┆ ---  │
+        │ Int64 ┆ Utf8 │
+        ╞═══════╪══════╡
+        │ 1     ┆ a    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2     ┆ b    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 3     ┆ c    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2     ┆ b    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 1     ┆ a    │
+        ╰───────┴──────╯
+        <BLANKLINE>
+        (Showing first 5 of 5 rows)
+
+        Matching multiple values at once using a tuple:
+        >>> df = daft.from_pydict({"value": [1, 2, 3, 4, 5, 6]})
+        >>> df = df.with_column(
+        ...     "category", match(df["value"]).case((1, 2, 3), "low").case((4, 5), "medium").otherwise("high")
+        ... )
+        >>> df.show()
+        ╭───────┬──────────╮
+        │ value ┆ category │
+        │ ---   ┆ ---      │
+        │ Int64 ┆ Utf8     │
+        ╞═══════╪══════════╡
+        │ 1     ┆ low      │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 2     ┆ low      │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 3     ┆ low      │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 4     ┆ medium   │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 5     ┆ medium   │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 6     ┆ high     │
+        ╰───────┴──────────╯
+        <BLANKLINE>
+        (Showing first 6 of 6 rows)
+
+        Matching with different data types:
+        >>> df = daft.from_pydict({"status": ["active", "inactive", "pending", "active"]})
+        >>> df = df.with_column("status_code", match(df["status"]).case("active", 1).case("inactive", 0).otherwise(-1))
+        >>> df.show()
+        ╭──────────┬─────────────╮
+        │ status   ┆ status_code │
+        │ ---      ┆ ---         │
+        │ Utf8     ┆ Int64       │
+        ╞══════════╪═════════════╡
+        │ active   ┆ 1           │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ inactive ┆ 0           │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ pending  ┆ -1          │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ active   ┆ 1           │
+        ╰──────────┴─────────────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
+
+        Using without .otherwise() (non-matching values become null):
+        >>> df = daft.from_pydict({"x": [1, 2, 3]})
+        >>> df = df.with_column("result", match(df["x"]).case(1, "one").case(2, "two"))
+        >>> df.show()
+        ╭───────┬────────╮
+        │ x     ┆ result │
+        │ ---   ┆ ---    │
+        │ Int64 ┆ Utf8   │
+        ╞═══════╪════════╡
+        │ 1     ┆ one    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2     ┆ two    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 3     ┆ None   │
+        ╰───────┴────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return MatchExpr(expr)
