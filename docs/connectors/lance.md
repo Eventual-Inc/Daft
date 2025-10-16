@@ -1,0 +1,164 @@
+# Reading from and Writing to Lance
+
+[Lance](https://lancedb.github.io/lance/) is a next-generation columnar storage format for multimodal datasets (images, video, audio, and general columnar data). It supports local POSIX filesystems and cloud object stores (e.g., S3/GCS). Lance is known for extremely fast random access, zero-copy reads, deep integration with PyArrow/DuckDB, and strong performance for vector retrieval workloads.
+
+Daft provides both read and write support for Lance datasets via LanceDB and is suited for the following typical use cases:
+
+- Random-access heavy analytics and feature engineering workloads (significantly faster random reads than Parquet)
+- Large media datasets (image/video frames/audio segments)
+- Managing and querying vector feature data (embedding storage and filtering)
+- Unified access to local and cloud datasets (S3/GCS/local paths)
+
+Daft currently supports:
+
+1. Parallel and distributed reads: Daft parallelizes reads on the default multithreading runner or on the [distributed Ray runner](../distributed/index.md)
+2. Skipping filtered data (Data Skipping): Daft uses [`df.where()`][daft.DataFrame.where] predicates and file/fragment statistics to skip non-matching data
+3. Multi-cloud and local access: Read from S3, GCS, Azure Blob Storage, and local filesystems with unified IO configuration
+4. Version/time-slice reads: Use `version` and `asof` parameters to read a specific version or the latest version as of a given timestamp
+5. Scan optimization: Configure `fragment_group_size` to group fragments and improve scan efficiency
+6. Cache tuning: Configure `index_cache_size` and `metadata_cache_size_bytes` to optimize index page caching and metadata retrieval for large datasets
+
+## Installing Daft with Lance Support
+
+Daft integrates LanceDB through an optional dependency:
+
+```bash
+pip install -U "daft[lance]"
+```
+
+!!! note "Python Version"
+
+    Writing to Lance requires Python 3.9 or above.
+
+## Reading a Table
+
+Use [`daft.read_lance`][daft.read_lance] to read a Lance dataset. You can pass either a local path or a cloud object store URI.
+
+=== "🐍 Python"
+
+    ```python
+    # Read a Lance dataset from local or object storage
+    import daft
+
+    # Local path example
+    df_local = daft.read_lance("/data/my_lance_dataset")
+
+    # Read a specific version or a time slice
+    df_v1 = daft.read_lance("/data/my_lance_dataset", version=1)
+    df_asof = daft.read_lance("/data/my_lance_dataset", asof="2025-01-01T00:00:00Z")
+    ```
+
+To access public S3/GCS buckets, configure IO options for authentication and endpoints:
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+    from daft.io import S3Config, GCSConfig
+
+    # Public S3 example (anonymous access)
+    s3_config = S3Config(region="us-west-2", anonymous=True)
+    df_s3 = daft.read_lance("s3://daft-public-data/lance/words-test-dataset", io_config=s3_config)
+
+    # GCS example (service account credentials)
+    gcs_config = GCSConfig(credentials="/path/to/gcp-service-account.json")
+    df_gcs = daft.read_lance("gs://my-bucket/lance/my-dataset", io_config=gcs_config)
+    ```
+
+For datasets with many fragments, group fragments to reduce scheduling and metadata overhead:
+
+=== "🐍 Python"
+
+    ```python
+    # Process multiple fragments in a single scan task
+    df_grouped = daft.read_lance("/data/my_lance_dataset", fragment_group_size=8)
+    ```
+
+## Data Skipping and Random Access Optimizations
+
+Lance’s indexing and columnar layout enable efficient skipping for filtering and random reads. Filters on partition/fragment columns can significantly reduce I/O; non-partition columns also benefit from fragment/file-level statistics.
+
+=== "🐍 Python"
+
+```python
+# Efficient data skipping based on filter predicates
+# Only read matching fragments/files, reducing I/O and decode cost
+filtered = df_local.where(df_local["score"] >= 0.8)
+filtered.show()
+```
+
+## Writing to Lance
+
+Use [`df.write_lance()`][daft.dataframe.DataFrame.write_lance] to write a DataFrame to a Lance dataset. Supported modes include `create`, `append`, and `overwrite`. Additional write parameters (e.g., maximum file size) are passed through to the underlying writer.
+
+=== "🐍 Python"
+
+```python
+import daft
+
+# Construct an example DataFrame
+df = daft.from_pydict({"a": [1, 2, 3, 4]})
+
+# Create a new dataset (default mode is create)
+meta = df.write_lance("/tmp/lance/my_table.lance")
+meta.show()  # Contains metadata such as num_fragments / num_deleted_rows / num_small_files / version
+
+# Overwrite write with extra parameters (passed to lance.write_fragments)
+meta2 = df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)
+meta2.show()
+
+# Append rows (must be compatible with the existing table schema)
+meta3 = df.write_lance("/tmp/lance/my_table.lance", mode="append")
+```
+
+!!! note "Write Schema Control"
+
+    - If `schema` is not provided, Daft uses the current DataFrame schema.
+    - If a `pyarrow.Schema` is provided, data will be aligned to that schema before writing (type/order/nullability).
+    - If the target dataset already exists and the write is not an overwrite, data is converted to the existing table schema for compatibility.
+
+## Advanced Usage: In-place Column Merge (merge_columns)
+
+If you need to add derived columns in-place to an existing Lance dataset (e.g., apply a UDF across batches and persist the result), use `daft.io.lance.merge_columns`:
+
+=== "🐍 Python"
+
+```python
+from daft.io.lance import merge_columns
+
+# Example: double the values in column c and write to a new column new_column
+import pyarrow.compute as pc
+
+def double_score(batch):
+    return batch.append_column("new_column", pc.multiply(batch["c"], 2))
+
+merge_columns(
+    "/tmp/lance/my_table.lance",
+    transform=double_score,
+    read_columns=["c"],
+)
+```
+
+!!! note "Object Store Atomic Commit"
+
+    In object stores that do not support atomic commits, configure a custom commit lock via the `commit_lock` parameter to ensure consistency.
+
+## Type System
+
+Lance uses an Arrow-compatible columnar type system that closely matches Daft’s. Common type mappings are:
+
+| Lance/Arrow Type | Daft |
+| --- | --- |
+| `BOOLEAN` | [`daft.DataType.bool()`][daft.datatype.DataType.bool] |
+| `INT` / `LONG` | [`daft.DataType.int32()`][daft.datatype.DataType.int32] / [`daft.DataType.int64()`][daft.datatype.DataType.int64] |
+| `FLOAT` / `DOUBLE` | [`daft.DataType.float32()`][daft.datatype.DataType.float32] / [`daft.DataType.float64()`][daft.datatype.DataType.float64] |
+| `DECIMAL(p, s)` | [`daft.DataType.decimal128(p, s)`][daft.datatype.DataType.decimal128] |
+| `DATE` / `TIMESTAMP` | [`daft.DataType.date()`][daft.datatype.DataType.date] / [`daft.DataType.timestamp(...)`][daft.datatype.DataType.timestamp] |
+| `STRING` / `BINARY` | [`daft.DataType.string()`][daft.datatype.DataType.string] / [`daft.DataType.binary()`][daft.datatype.DataType.binary] |
+| `STRUCT` / `LIST` / `MAP` | [`daft.DataType.struct(...)`][daft.datatype.DataType.struct] / [`daft.DataType.list(...)`][daft.datatype.DataType.list] / [`daft.DataType.map(...)`][daft.datatype.DataType.map] |
+
+## Reference
+
+- API: [`daft.read_lance`][daft.read_lance], [`df.write_lance`][daft.dataframe.DataFrame.write_lance]
+- IO configuration: [Configuration](../api/config.md) (S3/GCS/Azure settings)
+- LanceDB project homepage: https://lancedb.github.io/lance/
