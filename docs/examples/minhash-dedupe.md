@@ -108,7 +108,7 @@ df_warc.select("WARC-Identified-Payload-Type").distinct().show()
 
 ## Preprocessing
 
-Since we are primarily concerned with text, we will focus on `text/html` payloads, extracting text content from html body and normalizing the text itself. Common crawl also comes with text only .wet files that come preprocessed, but here we choose to handle each html block explicitly to ensure consistent comparisons across pages.
+Since we are primarily concerned with text, we will focus on `text/html` payloads, extracting text content from html body and normalizing the text itself. Common Crawl also comes with text only .wet files that come preprocessed, but here we choose to handle each html block explicitly to ensure consistent comparisons across pages.
 
 ```python
 from daft import col
