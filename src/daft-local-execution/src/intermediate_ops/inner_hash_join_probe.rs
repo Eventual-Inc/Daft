@@ -215,7 +215,7 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
         res
     }
 
-    async fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self) -> DaftResult<Self::State> {
         Ok(InnerHashJoinProbeState::Building(
             self.probe_state_bridge.clone(),
         ))

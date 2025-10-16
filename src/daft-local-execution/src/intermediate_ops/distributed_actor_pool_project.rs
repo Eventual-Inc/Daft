@@ -217,7 +217,7 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         res
     }
 
-    async fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self) -> DaftResult<Self::State> {
         // Check if we need to initialize the filtered actor handles
         #[cfg(feature = "python")]
         {

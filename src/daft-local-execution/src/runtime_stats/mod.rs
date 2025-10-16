@@ -24,7 +24,7 @@ use futures::future;
 use itertools::Itertools;
 use kanal::SendError;
 use tokio::{
-    runtime::{Handle, Runtime},
+    runtime::Handle,
     sync::{mpsc, oneshot},
     time::interval,
 };
@@ -230,15 +230,13 @@ impl RuntimeStatsManager {
         RuntimeStatsManagerHandle(self.node_tx.clone())
     }
 
-    pub fn finish(self, runtime: &Runtime) {
+    pub async fn finish(self) {
         self.finish_tx
             .send(())
             .expect("The finish_tx channel was closed");
-        runtime.block_on(async move {
-            self.stats_manager_task
-                .await
-                .expect("The finish_tx channel was closed");
-        });
+        self.stats_manager_task
+            .await
+            .expect("The finish_tx channel was closed");
     }
 }
 
