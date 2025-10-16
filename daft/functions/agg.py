@@ -92,7 +92,7 @@ def approx_percentiles(expr: Expression, percentiles: float | list[float]) -> Ex
         ╭─────────────────────┬────────────────────────────────╮
         │ approx_median_score ┆ approx_percentiles_scores      │
         │ ---                 ┆ ---                            │
-        │ Float64             ┆ FixedSizeList[Float64; 3]      │
+        │ Float64             ┆ List[Float64]                  │
         ╞═════════════════════╪════════════════════════════════╡
         │ 2.9742334234767167  ┆ [1.993661701417351, 2.9742334… │
         ╰─────────────────────┴────────────────────────────────╯

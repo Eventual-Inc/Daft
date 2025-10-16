@@ -333,7 +333,7 @@ def not_nan(expr: Expression) -> Expression:
         ╭───────╮
         │ x     │
         │ ---   │
-        │ Bool │
+        │ Bool  │
         ╞═══════╡
         │ true  │
         ├╌╌╌╌╌╌╌┤

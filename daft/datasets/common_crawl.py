@@ -109,7 +109,7 @@ def common_crawl(
         ╭────────────────┬─────────────────┬───────────┬────────────────────┬────────────┬────────────────────┬──────────────┬──────────────╮
         │ WARC-Record-ID ┆ WARC-Target-URI ┆ WARC-Type ┆ WARC-Date          ┆      …     ┆ WARC-Identified-Pa ┆ warc_content ┆ warc_headers │
         │ ---            ┆ ---             ┆ ---       ┆ ---                ┆            ┆ yload-Type         ┆ ---          ┆ ---          │
-        │ String         ┆ String          ┆ String    ┆ Timestamp(Nanoseco ┆ (1 hidden) ┆ ---                ┆ Binary       ┆ String       │
+        │ String         ┆ String          ┆ String    ┆ Timestamp[ns]      ┆ (1 hidden) ┆ ---                ┆ Binary       ┆ String       │
         │                ┆                 ┆           ┆ nds,               ┆            ┆ String             ┆              ┆              │
         │                ┆                 ┆           ┆ Some("Etc/UTC"))   ┆            ┆                    ┆              ┆              │
         ╰────────────────┴─────────────────┴───────────┴────────────────────┴────────────┴────────────────────┴──────────────┴──────────────╯
@@ -121,7 +121,7 @@ def common_crawl(
         ╭─────────────────┬─────────────────┬────────────┬─────────────────┬────────────┬─────────────────┬────────────────┬────────────────╮
         │ WARC-Record-ID  ┆ WARC-Target-URI ┆ WARC-Type  ┆ WARC-Date       ┆      …     ┆ WARC-Identified ┆ warc_content   ┆ warc_headers   │
         │ ---             ┆ ---             ┆ ---        ┆ ---             ┆            ┆ -Payload-Type   ┆ ---            ┆ ---            │
-        │ String          ┆ String          ┆ String     ┆ Timestamp(Nanos ┆ (1 hidden) ┆ ---             ┆ Binary         ┆ String         │
+        │ String          ┆ String          ┆ String     ┆ Timestamp[ns    ┆ (1 hidden) ┆ ---             ┆ Binary         ┆ String         │
         │                 ┆                 ┆            ┆ econds, Some("E ┆            ┆ String          ┆                ┆                │
         │                 ┆                 ┆            ┆ tc/UTC"))       ┆            ┆                 ┆                ┆                │
         ╞═════════════════╪═════════════════╪════════════╪═════════════════╪════════════╪═════════════════╪════════════════╪════════════════╡
