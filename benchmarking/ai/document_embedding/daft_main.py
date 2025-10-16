@@ -51,7 +51,7 @@ def extract_text_from_parsed_pdf(pdf_bytes: bytes):
 
 @daft.func(
     return_dtype=daft.DataType.struct(
-        {"text": daft.DataType.string(), "chunk_id": daft.DataType.int64()}
+        {"chunk": daft.DataType.string(), "chunk_id": daft.DataType.int64()}
     ),
     unnest=True,
 )
@@ -62,7 +62,7 @@ def chunk(text: str):
     chunk_iter = splitter.split_text(text)
     for chunk_index, text in enumerate(chunk_iter):
         yield {
-            "text": text,
+            "chunk": text,
             "chunk_id": chunk_index,
         }
 
@@ -75,15 +75,15 @@ df = df.select(
     "*",
     extract_text_from_parsed_pdf(df["pdf_bytes"]),
 )
-df = df.where(df["page_text"].not_null())
+df = df.where(df["text"].not_null())
 df = df.select(
     "*",
-    chunk(df["page_text"]),
+    chunk(df["text"]),
 )
-df = df.where(df["text"].not_null())
+df = df.where(df["chunk"].not_null())
 df = df.with_column(
     "embedding",
-    embed_text(df["text"], provider="sentence_transformers", model=EMBED_MODEL_ID),
+    embed_text(df["chunk"], provider="sentence_transformers", model=EMBED_MODEL_ID),
 )
 df = df.select("uploaded_pdf_path", "page_number", "chunk_id", "chunk", "embedding")
 df.write_parquet(OUTPUT_PATH)
