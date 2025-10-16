@@ -21,6 +21,7 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
     provider_options: OpenAIProviderOptions
     model_name: str
     model_options: Options
+    system_message: str | None = None
     return_format: BaseModel | None = None
 
     def get_provider(self) -> str:
@@ -39,6 +40,7 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
         return OpenAIPrompter(
             provider_options=self.provider_options,
             model=self.model_name,
+            system_message=self.system_message,
             return_format=self.return_format,
             generation_config=self.model_options,
         )
@@ -51,12 +53,13 @@ class OpenAIPrompter(Prompter):
         self,
         provider_options: OpenAIProviderOptions,
         model: str,
+        system_message: str | None = None,
         return_format: BaseModel | None = None,
         generation_config: dict[str, Any] = {},
     ) -> None:
         self.model = model
         self.return_format = return_format
-
+        self.system_message = system_message
         # Separate client params from generation params
         client_params_keys = ["base_url", "api_key", "timeout", "max_retries"]
         client_params = {**provider_options}
@@ -67,10 +70,16 @@ class OpenAIPrompter(Prompter):
         self.generation_config = {k: v for k, v in generation_config.items() if k not in client_params_keys}
         self.llm = AsyncOpenAI(**client_params)
 
-    async def prompt(self, message: str) -> Any:
+    async def prompt(self, user_message: str) -> Any:
         """Generate responses for a batch of message strings."""
         # Each message is a string prompt
-        messages_list = [{"role": "user", "content": message}]
+        if self.system_message is not None:
+            messages_list = [
+                {"role": "system", "content": self.system_message},
+                {"role": "user", "content": user_message},
+            ]
+        else:
+            messages_list = [{"role": "user", "content": user_message}]
 
         if self.return_format is not None:
             # Use structured outputs with Pydantic model

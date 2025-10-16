@@ -38,11 +38,13 @@ class OpenAIProvider(Provider):
 
         # Extract return_format from options if provided
         return_format = options.pop("return_format", None)
+        system_message = options.pop("system_message", None)
 
         return OpenAIPrompterDescriptor(
             provider_name=self._name,
             provider_options=self._options,
             model_name=(model or "gpt-4o-mini"),
             model_options=options,
+            system_message=system_message,
             return_format=return_format,
         )

@@ -201,6 +201,7 @@ def prompt(
     messages: Expression,
     return_format: BaseModel | None = None,
     *,
+    system_message: str | None = None,
     provider: str | Provider | None = None,
     model: str | None = None,
     **options: str,
@@ -211,6 +212,8 @@ def prompt(
     # Add return_format to options for the provider
     if return_format is not None:
         options = {**options, "return_format": return_format}
+    if system_message is not None:
+        options = {**options, "system_message": system_message}
 
     # Load a PrompterDescriptor from the resolved provider
     prompter_descriptor = _resolve_provider(provider, "openai").get_prompter(model, **options)
