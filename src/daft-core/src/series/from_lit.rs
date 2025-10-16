@@ -469,11 +469,12 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 type Item = I::Item;
 
                 fn next(&mut self) -> Option<Self::Item> {
-                    let item = self.iter.next();
-                    if item.is_some() {
-                        self.len -= 1;
+                    if self.len == 0 {
+                        return None;
                     }
-                    item
+                    self.len -= 1;
+                    self.iter.next()
+                }
                 }
 
                 fn size_hint(&self) -> (usize, Option<usize>) {
