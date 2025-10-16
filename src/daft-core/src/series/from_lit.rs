@@ -74,45 +74,14 @@ pub(crate) fn combine_lit_types(left: &DataType, right: &DataType) -> Option<Dat
 // TODO(cory): combine this and `from_literals`
 pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>> + TrustedLen>(
     values: I,
+    dtype: DataType,
 ) -> DaftResult<(Series, Option<IndexMap<usize, String>>)> {
     let len = values.len();
     if len == 0 {
-        return Ok((Series::empty("literal", &DataType::Null), None));
+        return Ok((Series::empty("literal", &dtype), None));
     }
-    let mut n_nulls = 0;
     let mut errs: IndexMap<usize, String> = IndexMap::new();
-    let mut values = values.enumerate();
-    let mut first_value = None;
-
-    loop {
-        match values.next() {
-            Some((_, Ok(Literal::Null))) => {
-                n_nulls += 1;
-            }
-            Some((_, Ok(lit))) => {
-                first_value = Some(lit);
-                break;
-            }
-            Some((idx, Err(e))) => {
-                errs.insert(idx, e.to_string());
-            }
-            None => break,
-        }
-    }
-
-    let Some(first) = first_value else {
-        return Ok((
-            Series::full_null("literal", &DataType::Null, len),
-            Some(errs),
-        ));
-    };
-
-    let dtype = first.get_type();
-    let values = std::iter::repeat_n(Literal::Null, n_nulls)
-        .chain(std::iter::once(first))
-        .map(DaftResult::Ok)
-        .enumerate()
-        .chain(values);
+    let values = values.enumerate();
 
     let field = Field::new("literal", dtype.clone());
 

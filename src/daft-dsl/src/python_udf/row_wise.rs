@@ -163,7 +163,8 @@ impl RowWisePyFn {
         let method_ref = self.method.as_ref();
         let args_ref = self.original_args.as_ref();
         let name = args[0].name();
-        Python::with_gil(|py| {
+        let return_dtype = self.return_dtype.clone();
+        let (s, errs) = Python::with_gil(|py| {
             let func = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
                 .getattr(pyo3::intern!(py, "call_func"))?;
@@ -179,21 +180,24 @@ impl RowWisePyFn {
                 }
 
                 let result = func.call1((cls_ref, method_ref, args_ref, &py_args))?;
-                let result = Literal::from_pyobj(&result, None)?;
+                let result = Literal::from_pyobj(&result, Some(&return_dtype))?;
 
                 py_args.clear();
                 DaftResult::Ok(result)
             });
-            let outputs = outputs.collect::<Vec<_>>();
-            dbg!(&outputs);
 
-            let (s, errs) = series_from_literals_iter(outputs.into_iter())?;
-            // if let Some(_errs) = errs {
-            // todo(cory): process errors
-            DaftResult::Ok(s.cast(&self.return_dtype)?.rename(name))
-            // } else {
-            // DaftResult::Ok(s.cast(&self.return_dtype)?.rename(name))
-            // }
-        })
+            series_from_literals_iter(outputs, self.return_dtype.clone())
+        })?;
+        if let Some(errs) = errs {
+            let errs = errs
+                .into_iter()
+                .map(|(k, v)| format!("{}: {}", k, v))
+                .join("\n");
+            Err(common_error::DaftError::ComputeError(format!(
+                "Error processing some rows:\n{errs}"
+            )))
+        } else {
+            Ok(s.cast(&self.return_dtype)?.rename(name))
+        }
     }
 }

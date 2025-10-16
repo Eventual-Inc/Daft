@@ -93,7 +93,7 @@ impl PySeries {
                     .and_then(|elem| Literal::from_pyobj(&elem, Some(&dtype)))
                     .map_err(DaftError::from)
             });
-            series_from_literals_iter(literals)?.0
+            series_from_literals_iter(literals, dtype.clone())?.0
         } else {
             let literals = list
                 .iter()
@@ -116,7 +116,7 @@ impl PySeries {
                     Literal::from_pyobj(&py_lit, Some(&supertype)).map_err(DaftError::from)
                 }
             });
-            series_from_literals_iter(literals_with_supertype)?.0
+            series_from_literals_iter(literals_with_supertype, supertype.clone())?.0
         };
 
         if let Some(name) = name {
