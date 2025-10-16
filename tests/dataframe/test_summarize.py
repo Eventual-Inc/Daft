@@ -26,7 +26,7 @@ def test_summarize_dataframe(make_df, valid_data: list[dict[str, float]]) -> Non
     )
     expected = {
         "column": ["a", "b"],
-        "type": ["Int64", "Utf8"],
+        "type": ["Int64", "String"],
         "min": ["1", "a"],
         "max": ["3", "c"],
         "count": [4, 3],
