@@ -1,6 +1,6 @@
 pub mod flight_client;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::OnceLock};
 
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
@@ -14,14 +14,29 @@ pub struct FlightClientManager {
     clients: Mutex<HashMap<String, ShuffleFlightClient>>,
 }
 
+static FLIGHT_CLIENT_MANAGER: OnceLock<FlightClientManager> = OnceLock::new();
+
 impl FlightClientManager {
-    pub fn new(addresses: Vec<String>) -> Self {
-        let mut clients = HashMap::new();
+    /// Get or create the global FlightClientManager instance
+    pub fn get_or_create(addresses: Vec<String>) -> &'static Self {
+        FLIGHT_CLIENT_MANAGER.get_or_init(|| {
+            let mut clients = HashMap::new();
+            for address in addresses {
+                clients.insert(address.clone(), ShuffleFlightClient::new(address));
+            }
+            Self {
+                clients: Mutex::new(clients),
+            }
+        })
+    }
+
+    /// Add new addresses to the client manager
+    pub async fn add_addresses(&self, addresses: Vec<String>) {
+        let mut clients = self.clients.lock().await;
         for address in addresses {
-            clients.insert(address.clone(), ShuffleFlightClient::new(address));
-        }
-        Self {
-            clients: Mutex::new(clients),
+            if !clients.contains_key(&address) {
+                clients.insert(address.clone(), ShuffleFlightClient::new(address));
+            }
         }
     }
 
