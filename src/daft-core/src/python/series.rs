@@ -93,6 +93,7 @@ impl PySeries {
                     .and_then(|elem| Literal::from_pyobj(&elem, Some(&dtype)))
                     .map_err(DaftError::from)
             });
+
             series_from_literals_iter(literals, dtype.clone())?.0
         } else {
             let literals = list

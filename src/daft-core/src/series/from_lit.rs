@@ -18,6 +18,31 @@ use crate::{
     prelude::*,
 };
 
+/// Downcasts a datatype to one that's compatible with literals.
+/// example:
+/// ```rust,no_run
+/// // Literal's dont support fixed size binary
+/// // so it gets downcast to `DataType::Binary`
+/// let dtype = DataType::FixedSizeBinary(10);
+/// let downcasted = dtype.downcast_to_lit_compatible();
+/// assert_eq!(downcasted, DataType::Binary);
+/// ```
+fn downcast_to_lit_compatible(dtype: DataType) -> DaftResult<DataType> {
+    Ok(match dtype {
+        DataType::FixedSizeBinary(..) => DataType::Binary,
+        DataType::FixedSizeList(dtype, _) => DataType::List(dtype),
+        DataType::FixedShapeImage(mode, _, _) => DataType::Image(Some(mode)),
+        DataType::FixedShapeTensor(dtype, _) => DataType::Tensor(dtype),
+        DataType::FixedShapeSparseTensor(dtype, _, b) => DataType::SparseTensor(dtype, b),
+        DataType::Unknown | DataType::Extension(..) => {
+            return Err(DaftError::TypeError(format!(
+                "DataType {dtype:?} does not have a `downcast_to_lit_compatible` property",
+            )));
+        }
+        other => other,
+    })
+}
+
 /// Combine literal types that are likely the same but do not equal due to lossy literal casting.
 ///
 /// For example, null literals are always null type, and image literals always have a mode.
@@ -76,6 +101,8 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
     values: I,
     dtype: DataType,
 ) -> DaftResult<(Series, Option<IndexMap<usize, String>>)> {
+    let downcasted = downcast_to_lit_compatible(dtype.clone())?;
+
     let len = values.len();
     if len == 0 {
         return Ok((Series::empty("literal", &dtype), None));
@@ -150,7 +177,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
         Series::from_arrow(Arc::new(field), arr.as_box())
     }
 
-    let s = match dtype {
+    let s = match downcasted.clone() {
         DataType::Null => NullArray::full_null("literal", &dtype, len).into_series(),
         DataType::Boolean => {
             let mut arr = MutableBooleanArray::with_capacity(len);
@@ -468,6 +495,13 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
         | DataType::FixedShapeSparseTensor(..)
         | DataType::Unknown => unreachable!("Literal should never have data type: {dtype}"),
     };
+
+    let s = if downcasted != dtype {
+        s.cast(&dtype)?
+    } else {
+        s
+    };
+
     if errs.is_empty() {
         Ok((s, None))
     } else {
