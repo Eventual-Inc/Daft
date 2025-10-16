@@ -475,7 +475,6 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                     self.len -= 1;
                     self.iter.next()
                 }
-                }
 
                 fn size_hint(&self) -> (usize, Option<usize>) {
                     (self.len, Some(self.len))
