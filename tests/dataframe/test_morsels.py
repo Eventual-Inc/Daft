@@ -140,7 +140,7 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |   Batch Size = Range(0, 10]
 |
 * InMemorySource:
-|   Schema = data#String
+|   Schema = data#Utf8
 |   Size bytes = 156
 |   Stats = {{ Approx num rows = 5, Approx size bytes = 156 B, Accumulated selectivity = 1.00 }}
 |   Batch Size = Range(0, 10]
