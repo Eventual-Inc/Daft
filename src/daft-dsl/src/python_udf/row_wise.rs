@@ -127,8 +127,7 @@ impl RowWisePyFn {
         let cls_ref = self.cls.as_ref();
         let method_ref = self.method.as_ref();
         let args_ref = self.original_args.as_ref();
-        let max_retries = self.max_retries;
-        let error_mode = self.on_error.as_str();
+
         Ok(pyo3::Python::with_gil(|py| {
             let f = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
@@ -154,8 +153,6 @@ impl RowWisePyFn {
                 py_return_type.clone(),
                 args_ref,
                 evaluated_args,
-                max_retries,
-                error_mode,
             ))?;
             let name = args[0].name();
 
@@ -208,7 +205,11 @@ impl RowWisePyFn {
                 };
                 py_args.clear();
             }
-            for _ in 0..self.max_retries.unwrap_or(0) {
+            let max_retries = self.max_retries.unwrap_or(0);
+            let mut delay_ms: u64 = 1000; // Start with 1 second
+            const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
+
+            for attempt in 0..max_retries {
                 if errs.is_empty() {
                     break;
                 }
@@ -231,6 +232,15 @@ impl RowWisePyFn {
                         }
                         Err(e) => {
                             still_failed.insert(idx, DaftError::from(e));
+                            // If this is not the last attempt, sleep before retrying
+                            if attempt < max_retries {
+                                use std::{thread, time::Duration};
+                                py.allow_threads(|| {
+                                    thread::sleep(Duration::from_millis(delay_ms));
+                                });
+                                // Exponential backoff: multiply by 2, cap at MAX_DELAY_MS
+                                delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
+                            }
                         }
                     }
                 }
