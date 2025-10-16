@@ -28,7 +28,7 @@ def test_table_eval_expressions() -> None:
         pytest.param([True, False, None], ~col("input"), [False, True, None], id="BooleanColumn"),
         pytest.param(
             ["apple", None, "banana"],
-            not (col("input") != "banana"),
+            ~(col("input") != "banana"),
             [False, None, True],
             id="BooleanExpr",
         ),
