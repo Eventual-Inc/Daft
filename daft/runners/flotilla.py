@@ -41,6 +41,47 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+@ray.remote  # type: ignore[misc]
+def _clear_flight_shuffle_dirs(shuffle_dirs: list[str]) -> None:
+    """Clear flight shuffle directories on a worker node.
+
+    Args:
+        shuffle_dirs: List of shuffle directories to clear (full paths)
+    """
+    import shutil
+
+    for shuffle_dir in shuffle_dirs:
+        if os.path.exists(shuffle_dir):
+            try:
+                shutil.rmtree(shuffle_dir)
+                logger.info("Cleared flight shuffle directory: %s", shuffle_dir)
+            except Exception as e:
+                logger.warning("Failed to clear flight shuffle directory %s: %s", shuffle_dir, e)
+
+
+async def clear_flight_shuffle_dirs_on_all_nodes(shuffle_dirs: list[str]) -> None:
+    """Clear flight shuffle directories on all Ray nodes with CPU resources.
+
+    Args:
+        shuffle_dirs: List of shuffle directories to clear (full paths)
+    """
+    if not shuffle_dirs:
+        return
+
+    await asyncio.gather(
+        *[
+            _clear_flight_shuffle_dirs.options(
+                scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                    node_id=node["NodeID"],
+                    soft=False,
+                )
+            ).remote(shuffle_dirs)
+            for node in ray.nodes()
+            if "Resources" in node and "CPU" in node["Resources"] and node["Resources"]["CPU"] > 0
+        ]
+    )
+
+
 @ray.remote
 class RaySwordfishActor:
     """RaySwordfishActor is a ray actor that runs local physical plans on swordfish.

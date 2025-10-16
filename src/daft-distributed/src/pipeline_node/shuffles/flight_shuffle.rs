@@ -158,6 +158,14 @@ impl PipelineNodeImpl for FlightShuffleNode {
         let input_node = self.child.clone().produce_tasks(plan_context);
         let self_arc = self.clone();
 
+        // Register shuffle directories for cleanup when the plan completes
+        let shuffle_dirs_to_register: Vec<String> = self
+            .shuffle_dirs
+            .iter()
+            .map(|base_dir| format!("{}/daft_shuffle/{}", base_dir, self.shuffle_id))
+            .collect();
+        plan_context.register_shuffle_dirs(shuffle_dirs_to_register);
+
         let partition_by = match &self.repartition_spec {
             RepartitionSpec::Hash(hash_spec) => Some(hash_spec.by.clone()),
             RepartitionSpec::Random(_) => None,
