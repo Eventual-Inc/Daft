@@ -156,16 +156,6 @@ impl RuntimeStatsManager {
             loop {
                 tokio::select! {
                     biased;
-                    _ = &mut finish_rx => {
-                        if !active_nodes.is_empty() {
-                            log::debug!(
-                                "RuntimeStatsManager finished with active nodes {{{}}}",
-                                active_nodes.iter().map(|id: &usize| id.to_string()).join(", ")
-                            );
-                        }
-                        break;
-                    }
-
                     Some((node_id, is_initialize)) = node_rx.recv() => {
                         if is_initialize && active_nodes.insert(node_id) {
                             for res in future::join_all(subscribers.iter().map(|subscriber| subscriber.initialize_node(node_id))).await {
@@ -187,6 +177,16 @@ impl RuntimeStatsManager {
                                 }
                             }
                         }
+                    }
+
+                    _ = &mut finish_rx => {
+                        if !active_nodes.is_empty() {
+                            log::error!(
+                                "RuntimeStatsManager finished with active nodes {{{}}}",
+                                active_nodes.iter().map(|id: &usize| id.to_string()).join(", ")
+                            );
+                        }
+                        break;
                     }
 
                     _ = interval.tick() => {
