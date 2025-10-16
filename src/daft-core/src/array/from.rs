@@ -340,3 +340,30 @@ where
         )
     }
 }
+
+impl<T: NumericNative> From<(&str, Vec<Option<Vec<T>>>)> for ListArray
+where
+    T::DAFTTYPE: DaftNumericType<Native = T>,
+    ArrayWrapper<DataArray<T::DAFTTYPE>>: SeriesLike,
+{
+    fn from(item: (&str, Vec<Option<Vec<T>>>)) -> Self {
+        let (name, data) = item;
+        let flat_child_vec = data.iter().flatten().flatten().copied().collect::<Vec<_>>();
+        let flat_child = DataArray::<T::DAFTTYPE>::from((name, flat_child_vec)).into_series();
+
+        let lengths = data.iter().map(|d| d.as_ref().map_or(0, |d| d.len()));
+        let offsets = arrow2::offset::Offsets::try_from_lengths(lengths)
+            .unwrap()
+            .into();
+
+        let validity =
+            arrow2::bitmap::Bitmap::from_trusted_len_iter(data.iter().map(Option::is_some));
+
+        Self::new(
+            flat_child.field().to_list_field().rename(name),
+            flat_child,
+            offsets,
+            Some(validity),
+        )
+    }
+}

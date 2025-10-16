@@ -263,11 +263,16 @@ pub fn row_wise_udf(
     gpus: usize,
     use_process: Option<bool>,
     max_concurrency: Option<usize>,
+    max_retries: Option<usize>,
+    on_error: Option<String>,
     original_args: PyObject,
     expr_args: Vec<PyExpr>,
 ) -> PyExpr {
     let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
-
+    let on_error = on_error
+        .map(|v| crate::functions::python::OnError::from_str(&v).ok())
+        .flatten()
+        .unwrap_or_default();
     PyExpr {
         expr: crate::python_udf::row_wise_udf(
             name,
@@ -278,6 +283,8 @@ pub fn row_wise_udf(
             gpus,
             use_process,
             max_concurrency,
+            max_retries,
+            on_error,
             original_args.into(),
             args,
         )

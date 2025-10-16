@@ -1,5 +1,7 @@
 use std::str::FromStr;
 
+use daft_dsl::functions::python::OnError;
+
 use super::ProtoResult;
 use crate::{
     non_null, not_implemented_err,
@@ -47,6 +49,12 @@ pub fn from_proto_function(message: proto::ScalarFn) -> ProtoResult<ir::Expr> {
                     gpus: row_wise_fn.gpus as usize,
                     use_process: row_wise_fn.use_process,
                     max_concurrency: row_wise_fn.max_concurrency.map(|c| c as usize),
+                    max_retries: row_wise_fn.max_retries.map(|c| c as usize),
+                    on_error: row_wise_fn
+                        .on_error
+                        .map(|s| OnError::from_str(&s).ok())
+                        .flatten()
+                        .unwrap_or_default(),
                 };
                 ir::rex::from_py_rowwise_func(func)
             }
@@ -127,6 +135,8 @@ pub fn scalar_fn_to_proto(sf: &ir::functions::scalar::ScalarFn) -> ProtoResult<p
                             gpus: row_wise_fn.gpus as u64,
                             use_process: row_wise_fn.use_process,
                             max_concurrency: row_wise_fn.max_concurrency.map(|c| c as u64),
+                            max_retries: row_wise_fn.max_retries.map(|c| c as u64),
+                            on_error: Some(row_wise_fn.on_error.to_string()),
                         },
                     )),
                 })),

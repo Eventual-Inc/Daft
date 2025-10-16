@@ -16,11 +16,21 @@ use pyo3::{
 pub use runtime_py_object::RuntimePyObject;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
 pub enum OnError {
+    #[default]
     Raise,
     Log,
     Ignore,
+}
+impl std::fmt::Display for OnError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Raise => write!(f, "raise"),
+            Self::Log => write!(f, "log"),
+            Self::Ignore => write!(f, "ignore"),
+        }
+    }
 }
 
 impl OnError {

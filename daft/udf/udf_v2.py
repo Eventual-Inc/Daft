@@ -59,6 +59,8 @@ class Func(Generic[P, T, C]):
     gpus: int
     use_process: bool | None
     max_concurrency: int | None
+    max_retries: int | None
+    on_error: str | None
     return_dtype: DataType
     name: str = field(init=False)
 
@@ -71,6 +73,8 @@ class Func(Generic[P, T, C]):
         use_process: bool | None,
         is_batch: bool,
         batch_size: int | None,
+        max_retries: int | None,
+        on_error: str | None,
     ) -> Func[P, T, None]:
         # create a class instance with no setup method
         class NoopCls(ClsBase[None]):
@@ -86,6 +90,9 @@ class Func(Generic[P, T, C]):
         is_generator = inspect.isgeneratorfunction(fn)
         is_async = inspect.iscoroutinefunction(fn)
 
+        if (is_async or is_batch) and max_retries is not None:
+            raise ValueError("retry is not yet supported for async or batch functions")
+
         return_dtype = cls._get_return_dtype(fn, return_dtype, is_generator, is_batch)
 
         return Func(
@@ -99,6 +106,8 @@ class Func(Generic[P, T, C]):
             0,
             use_process,
             None,
+            max_retries,
+            on_error,
             return_dtype,
         )
 
@@ -235,6 +244,8 @@ class Func(Generic[P, T, C]):
                     self.gpus,
                     self.use_process,
                     self.max_concurrency,
+                    self.max_retries,
+                    self.on_error,
                     (args, kwargs),
                     expr_args,
                 )
@@ -265,6 +276,8 @@ class Func(Generic[P, T, C]):
                     self.gpus,
                     self.use_process,
                     self.max_concurrency,
+                    self.max_retries,
+                    self.on_error,
                     (args, kwargs),
                     expr_args,
                 )

@@ -21,6 +21,8 @@ pub fn row_wise_udf(
     gpus: usize,
     use_process: Option<bool>,
     max_concurrency: Option<usize>,
+    max_retries: Option<usize>,
+    on_error: crate::functions::python::OnError,
     original_args: RuntimePyObject,
     args: Vec<ExprRef>,
 ) -> Expr {
@@ -31,6 +33,8 @@ pub fn row_wise_udf(
         is_async,
         return_dtype,
         original_args,
+        on_error,
+        max_retries,
         args,
         gpus,
         use_process,
@@ -50,6 +54,8 @@ pub struct RowWisePyFn {
     pub gpus: usize,
     pub use_process: Option<bool>,
     pub max_concurrency: Option<usize>,
+    pub max_retries: Option<usize>,
+    pub on_error: crate::functions::python::OnError,
 }
 
 impl Display for RowWisePyFn {
@@ -79,6 +85,8 @@ impl RowWisePyFn {
             gpus: self.gpus,
             use_process: self.use_process,
             max_concurrency: self.max_concurrency,
+            max_retries: self.max_retries,
+            on_error: self.on_error,
         }
     }
 
@@ -119,7 +127,8 @@ impl RowWisePyFn {
         let cls_ref = self.cls.as_ref();
         let method_ref = self.method.as_ref();
         let args_ref = self.original_args.as_ref();
-
+        let max_retries = self.max_retries;
+        let error_mode = self.on_error.as_str();
         Ok(pyo3::Python::with_gil(|py| {
             let f = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
@@ -145,6 +154,8 @@ impl RowWisePyFn {
                 py_return_type.clone(),
                 args_ref,
                 evaluated_args,
+                max_retries,
+                error_mode,
             ))?;
             let name = args[0].name();
 
@@ -156,37 +167,113 @@ impl RowWisePyFn {
 
     #[cfg(feature = "python")]
     fn call_serial(&self, args: &[Series], num_rows: usize) -> DaftResult<Series> {
-        use daft_core::python::PySeries;
+        use common_error::DaftError;
         use pyo3::prelude::*;
 
         let cls_ref = self.cls.as_ref();
         let method_ref = self.method.as_ref();
         let args_ref = self.original_args.as_ref();
+
         let name = args[0].name();
 
         Python::with_gil(|py| {
+            use indexmap::IndexMap;
+
             let func = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
                 .getattr(pyo3::intern!(py, "call_func"))?;
 
             // pre-allocating py_args vector so we're not creating a new vector for each iteration
             let mut py_args = Vec::with_capacity(args.len());
-            let outputs = (0..num_rows)
-                .map(|i| {
+            let mut outputs = IndexMap::new();
+            let mut errs = IndexMap::new();
+            for i in 0..num_rows {
+                for s in args {
+                    let idx = if s.len() == 1 { 0 } else { i };
+                    let lit = s.get_lit(idx);
+                    let pyarg = lit.into_pyobject(py)?;
+                    py_args.push(pyarg);
+                }
+
+                let result = func.call1((cls_ref, method_ref, args_ref, &py_args));
+                match result {
+                    Ok(res) => {
+                        let lit = Literal::from_pyobj(&res, None)?;
+                        outputs.insert(i, lit);
+                    }
+                    Err(e) => {
+                        let err = DaftError::from(e);
+                        errs.insert(i, err);
+                    }
+                };
+                py_args.clear();
+            }
+            for _ in 0..self.max_retries.unwrap_or(0) {
+                if errs.is_empty() {
+                    break;
+                }
+                let mut still_failed = IndexMap::new();
+
+                for (&idx, _) in &errs {
+                    let mut py_args = Vec::new();
                     for s in args {
-                        let idx = if s.len() == 1 { 0 } else { i };
-                        let lit = s.get_lit(idx);
+                        let arg_idx = if s.len() == 1 { 0 } else { idx };
+                        let lit = s.get_lit(arg_idx);
                         let pyarg = lit.into_pyobject(py)?;
                         py_args.push(pyarg);
                     }
 
-                    let result = func.call1((cls_ref, method_ref, args_ref, &py_args))?;
-                    py_args.clear();
-                    DaftResult::Ok(result)
-                })
-                .collect::<DaftResult<Vec<_>>>()?;
+                    match func.call1((cls_ref, method_ref, args_ref, &py_args)) {
+                        Ok(result) => {
+                            // Success. insert the value in the outputs indexmap
+                            let new_value = Literal::from_pyobj(&result, None)?;
+                            outputs.insert(idx, new_value);
+                        }
+                        Err(e) => {
+                            still_failed.insert(idx, DaftError::from(e));
+                        }
+                    }
+                }
 
-            Ok(PySeries::from_pylist_impl(name, outputs, self.return_dtype.clone())?.series)
+                // Update our failure map for next iteration
+                errs = still_failed;
+            }
+            // free up the gil while we're creating the series.
+            py.allow_threads(|| {
+                if errs.is_empty() {
+                    let s = Series::from_literals(outputs.into_values().collect())?;
+                    let s = s.cast(&self.return_dtype)?;
+                    let s = s.rename(name);
+                    Ok(s)
+                } else {
+                    match self.on_error {
+                        crate::functions::python::OnError::Raise => {
+                            let err_msg = errs
+                                .into_iter()
+                                .map(|(i, e)| format!("\t{}: {}", i, e))
+                                .join("\n");
+                            return Err(DaftError::ComputeError(format!(
+                                "Failed to execute Python UDF on some rows\n: {}",
+                                err_msg
+                            )));
+                        }
+                        crate::functions::python::OnError::Log => {
+                            todo!()
+                            // log::error!("Failed to execute Python UDF on some rows: {:?}", errs);
+                        }
+                        crate::functions::python::OnError::Ignore => {
+                            let mut result_literals = vec![Literal::Null; num_rows];
+                            for (idx, lit) in outputs {
+                                result_literals[idx] = lit;
+                            }
+                            let s = Series::from_literals(result_literals)?;
+                            let s = s.cast(&self.return_dtype)?;
+                            let s = s.rename(name);
+                            Ok(s)
+                        }
+                    }
+                }
+            })
         })
     }
 }

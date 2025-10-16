@@ -26,6 +26,8 @@ class _FuncDecorator:
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
         use_process: bool | None = None,
+        max_retries: int | None = None,
+        on_error: str | None = None,
     ) -> Callable[[Callable[P, T]], Func[P, T, None]]: ...
     @overload
     def __call__(
@@ -35,6 +37,8 @@ class _FuncDecorator:
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
         use_process: bool | None = None,
+        max_retries: int | None = None,
+        on_error: str | None = None,
     ) -> Func[P, T, None]: ...
 
     def __call__(
@@ -44,6 +48,8 @@ class _FuncDecorator:
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
         use_process: bool | None = None,
+        max_retries: int | None = None,
+        on_error: str | None = None,
     ) -> Callable[[Callable[P, T]], Func[P, T, None]] | Func[P, T, None]:
         """Decorator to convert a Python function into a Daft user-defined function.
 
@@ -195,7 +201,9 @@ class _FuncDecorator:
 
             >>> import daft
             >>> from daft import DataType
-            >>> @daft.func(return_dtype=DataType.struct({"int": DataType.int64(), "str": DataType.string()}), unnest=True)
+            >>> @daft.func(
+            ...     return_dtype=DataType.struct({"int": DataType.int64(), "str": DataType.string()}), unnest=True
+            ... )
             ... def my_multi_return(val: int):
             ...     return {"int": val * 2, "str": str(val) * 2}
             >>> df = daft.from_pydict({"x": [1, 2, 3]})
@@ -216,7 +224,9 @@ class _FuncDecorator:
         """
 
         def partial_func(fn: Callable[P, T]) -> Func[P, T, None]:
-            return Func._from_func(fn, return_dtype, unnest, use_process, False, None)
+            return Func._from_func(
+                fn, return_dtype, unnest, use_process, False, None, max_retries=max_retries, on_error=on_error
+            )
 
         return partial_func if fn is None else partial_func(fn)
 

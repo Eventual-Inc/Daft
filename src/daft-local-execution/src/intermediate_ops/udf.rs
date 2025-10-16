@@ -196,7 +196,7 @@ impl UdfHandle {
 
         // Get retry configuration from UDF properties
         let max_retries = self.params.udf_properties.max_retries.unwrap_or(0);
-        let on_error_mode = self
+        let on_error = self
             .params
             .udf_properties
             .on_error
@@ -247,7 +247,7 @@ impl UdfHandle {
                 let return_field = &self.params.output_schema.fields().last().unwrap();
                 let dtype = &return_field.dtype;
                 let name = &return_field.name;
-                match on_error_mode {
+                match on_error {
                     daft_dsl::functions::python::OnError::Log => {
                         // Log the error and the entire record batch
                         log::error!(
