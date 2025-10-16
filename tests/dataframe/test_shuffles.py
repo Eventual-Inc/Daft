@@ -11,7 +11,6 @@ import pyarrow as pa
 import pytest
 
 import daft
-from daft.context import get_context
 from daft.io._generator import read_generator
 from daft.recordbatch.recordbatch import RecordBatch
 from tests.conftest import get_tests_daft_runner_name
@@ -173,10 +172,8 @@ def test_pre_shuffle_merge_randomly_sized_partitions(pre_shuffle_merge_ctx, inpu
         assert len(df) == input_partitions * output_partitions
 
 
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() != "ray" or get_context().daft_execution_config.use_legacy_ray_runner is False,
-    reason="shuffle tests are meant for the ray runner and flight shuffle is not yet supported for flotilla",
-)
+# TODO: Re-enable this test once flight shuffle is supported in Flotilla
+@pytest.mark.skip
 @pytest.mark.parametrize(
     "input_partitions, output_partitions",
     [(100, 100), (100, 1), (100, 50), (100, 200)],

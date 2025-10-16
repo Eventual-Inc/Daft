@@ -1,15 +1,6 @@
 from __future__ import annotations
 
-import pytest
-
 import daft
-from daft.context import get_context
-from tests.conftest import get_tests_daft_runner_name
-
-pytestmark = pytest.mark.skipif(
-    get_tests_daft_runner_name() == "ray" and get_context().daft_execution_config.use_legacy_ray_runner is True,
-    reason="requires Native Runner or Flotilla to be in use",
-)
 
 
 def test_large_partition_into_batches(make_df):

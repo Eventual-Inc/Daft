@@ -13,8 +13,30 @@ if TYPE_CHECKING:
     from daft.io import IOConfig
 
 
-def _get_manifest_path(crawl: str, file_type: Literal["warc", "wet", "wat"]) -> str:
+__all__: tuple[str, ...] = ("common_crawl",)
+
+
+def _get_s3_manifest_path(crawl: str, file_type: Literal["warc", "wet", "wat"]) -> str:
     return f"s3://commoncrawl/crawl-data/{crawl}/{file_type}.paths.gz"
+
+
+def _get_http_manifest_path(crawl: str, file_type: Literal["warc", "wet", "wat"]) -> str:
+    return f"https://data.commoncrawl.org/crawl-data/{crawl}/{file_type}.paths.gz"
+
+
+def _unique_cc_file_paths(paths_url: str, io_config: IOConfig | None) -> DataFrame:
+    # The manifest file is a gzipped plaintext file with one path per line.
+    # Technically, this is equivalent to a CSV file with one column, "url", with no headers, and we could use read_csv.
+    # But from a preliminary microbenchmark on a local machine, this approach turns out to be 20-30% faster than read_csv.
+    paths = from_pydict({"url": [paths_url]}).select(
+        split(cast(decompress(download(col("url"), io_config=io_config), codec="gzip"), DataType.string()), "\n")
+    )
+
+    # now, paths is just the list of CC files -- no s3/http protocol nor other things
+    # *just* the unique parts of each file
+    paths = paths.explode("url")
+
+    return paths
 
 
 def _get_common_crawl_paths(
@@ -23,18 +45,21 @@ def _get_common_crawl_paths(
     file_type: Literal["warc", "wet", "wat"],
     num_files: int | None,
     io_config: IOConfig | None,
+    *,
+    in_aws: bool,
 ) -> list[str]:
     """Get the paths to the Common Crawl files for a given crawl, segment, file type. Limited by `num_files`."""
-    paths_url = _get_manifest_path(crawl, file_type)
+    if in_aws:
+        paths_url = _get_s3_manifest_path(crawl, file_type)
+    else:
+        paths_url = _get_http_manifest_path(crawl, file_type)
 
-    # The manifest file is a gzipped plaintext file with one path per line.
-    # Technically, this is equivalent to a CSV file with one column, "url", with no headers, and we could use read_csv.
-    # But from a preliminary microbenchmark on a local machine, this approach turns out to be 20-30% faster than read_csv.
-    paths = from_pydict({"url": [paths_url]}).select(
-        split(cast(decompress(download(col("url"), io_config=io_config), codec="gzip"), DataType.string()), "\n")
-    )
-    paths = paths.explode("url")
-    paths = paths.select(format("s3://commoncrawl/{}", col("url")).alias("url"))
+    paths = _unique_cc_file_paths(paths_url, io_config)
+
+    if in_aws:
+        paths = paths.select(format("s3://commoncrawl/{}", col("url")).alias("url"))
+    else:
+        paths = paths.select(format("https://data.commoncrawl.org/{}", col("url")).alias("url"))
 
     if segment is not None:
         paths = paths.where(contains(col("url"), segment))
@@ -53,6 +78,8 @@ def common_crawl(
     content: Literal["raw", "text", "metadata", "warc", "wet", "wat"] = "raw",
     num_files: int | None = None,
     io_config: IOConfig | None = None,
+    *,
+    in_aws: bool,
 ) -> DataFrame:
     r"""Load Common Crawl data as a DataFrame.
 
@@ -68,13 +95,17 @@ def common_crawl(
             - "metadata" or "wat": Metadata about crawled pages
         num_files: Limit the number of files to process. If not provided, processes all matching files.
         io_config: IO configuration for accessing S3.
+        in_aws: Where to fetch the common crawl data from. If running in AWS, this must be set to True. If outside of AWS,
+                then this must be set to False. Setting this flag correctly is required for **optimal download performance**.
+                If running in AWS, then make sure you're in the "us-east-1" region so you don't incur S3 egress fees!
+                See [the Common Crawl docs](https://commoncrawl.org/get-started) for more specific instructions.
 
     Returns:
         A DataFrame containing the requested Common Crawl data.
 
     Examples:
         >>> # Create a dataframe from raw WARC data from a specific crawl
-        >>> daft.datasets.common_crawl("CC-MAIN-2025-33")  # doctest: +SKIP
+        >>> daft.datasets.common_crawl("CC-MAIN-2025-33", in_aws=True)  # doctest: +SKIP
         ╭────────────────┬─────────────────┬───────────┬────────────────────┬────────────┬────────────────────┬──────────────┬──────────────╮
         │ WARC-Record-ID ┆ WARC-Target-URI ┆ WARC-Type ┆ WARC-Date          ┆      …     ┆ WARC-Identified-Pa ┆ warc_content ┆ warc_headers │
         │ ---            ┆ ---             ┆ ---       ┆ ---                ┆            ┆ yload-Type         ┆ ---          ┆ ---          │
@@ -86,7 +117,7 @@ def common_crawl(
         (No data to display: Dataframe not materialized)
 
         >>> # Show a sample of extracted text content
-        >>> daft.datasets.common_crawl("CC-MAIN-2025-33", content="text").limit(2).show()  # doctest: +SKIP
+        >>> daft.datasets.common_crawl("CC-MAIN-2025-33", content="text", in_aws=True).limit(2).show()  # doctest: +SKIP
         ╭─────────────────┬─────────────────┬────────────┬─────────────────┬────────────┬─────────────────┬────────────────┬────────────────╮
         │ WARC-Record-ID  ┆ WARC-Target-URI ┆ WARC-Type  ┆ WARC-Date       ┆      …     ┆ WARC-Identified ┆ warc_content   ┆ warc_headers   │
         │ ---             ┆ ---             ┆ ---        ┆ ---             ┆            ┆ -Payload-Type   ┆ ---            ┆ ---            │
@@ -107,7 +138,9 @@ def common_crawl(
 
         >>> # Sample a single file from a specific segment in a crawl for testing
         >>> (
-        ...     daft.datasets.common_crawl("CC-MAIN-2025-33", segment="1754151579063.98", num_files=1).limit(2).show()
+        ...     daft.datasets.common_crawl("CC-MAIN-2025-33", segment="1754151579063.98", num_files=1, in_aws=True)
+        ...     .limit(2)
+        ...     .show()
         ... )  # doctest: +SKIP
         ╭─────────────────┬─────────────────┬───────────┬─────────────────┬────────────┬─────────────────┬─────────────────┬────────────────╮
         │ WARC-Record-ID  ┆ WARC-Target-URI ┆ WARC-Type ┆ WARC-Date       ┆      …     ┆ WARC-Identified ┆ warc_content    ┆ warc_headers   │
@@ -148,6 +181,7 @@ def common_crawl(
         file_type=file_type,
         num_files=num_files,
         io_config=io_config,
+        in_aws=in_aws,
     )
 
     return read_warc(warc_paths, io_config=io_config)

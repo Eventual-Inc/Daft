@@ -1379,6 +1379,7 @@ name = "daft"
 source = { editable = "." }
 dependencies = [
     { name = "fsspec" },
+    { name = "packaging" },
     { name = "pyarrow" },
     { name = "tqdm" },
     { name = "typing-extensions" },
@@ -1399,7 +1400,6 @@ all = [
     { name = "huggingface-hub" },
     { name = "numpy" },
     { name = "openai" },
-    { name = "packaging" },
     { name = "pandas" },
     { name = "py4j" },
     { name = "pyarrow" },
@@ -1425,7 +1425,6 @@ clickhouse = [
 deltalake = [
     { name = "deltalake", version = "0.5.8", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
     { name = "deltalake", version = "1.0.2", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
-    { name = "packaging" },
 ]
 hudi = [
     { name = "pyarrow" },
@@ -1434,7 +1433,6 @@ huggingface = [
     { name = "huggingface-hub" },
 ]
 iceberg = [
-    { name = "packaging" },
     { name = "pyiceberg" },
 ]
 lance = [
@@ -1450,7 +1448,6 @@ pandas = [
     { name = "pandas" },
 ]
 ray = [
-    { name = "packaging" },
     { name = "ray", extra = ["client", "data"] },
 ]
 sentence-transformers = [
@@ -1597,9 +1594,7 @@ requires-dist = [
     { name = "numpy", marker = "extra == 'numpy'" },
     { name = "numpy", marker = "extra == 'spark'", specifier = ">=1.15" },
     { name = "openai", marker = "extra == 'openai'" },
-    { name = "packaging", marker = "extra == 'deltalake'" },
-    { name = "packaging", marker = "extra == 'iceberg'" },
-    { name = "packaging", marker = "extra == 'ray'" },
+    { name = "packaging" },
     { name = "pandas", marker = "extra == 'pandas'" },
     { name = "pandas", marker = "extra == 'spark'", specifier = ">=1.0.5" },
     { name = "py4j", marker = "extra == 'spark'", specifier = ">=0.10.9.7" },

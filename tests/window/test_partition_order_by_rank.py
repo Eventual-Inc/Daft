@@ -6,14 +6,8 @@ import pandas as pd
 import pytest
 
 from daft import Window, col
-from daft.context import get_context
 from daft.functions import dense_rank, rank, row_number
-from tests.conftest import assert_df_equals, get_tests_daft_runner_name
-
-pytestmark = pytest.mark.skipif(
-    get_tests_daft_runner_name() == "ray" and get_context().daft_execution_config.use_legacy_ray_runner is True,
-    reason="requires Native Runner or Flotilla to be in use",
-)
+from tests.conftest import assert_df_equals
 
 
 def test_row_number_function(make_df):
