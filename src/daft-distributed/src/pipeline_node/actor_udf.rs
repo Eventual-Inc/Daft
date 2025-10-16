@@ -56,10 +56,10 @@ impl UDFActors {
         let (gpu_request, cpu_request, memory_request) = match &udf_properties.resource_request {
             Some(resource_request) => (
                 resource_request.num_gpus().unwrap_or(0.0),
-                resource_request.num_cpus().unwrap_or(0.0),
+                resource_request.num_cpus().unwrap_or(1.0),
                 resource_request.memory_bytes().unwrap_or(0),
             ),
-            None => (0.0, 0.0, 0),
+            None => (0.0, 1.0, 0),
         };
 
         // Use async pattern similar to DistributedActorPoolProjectOperator
