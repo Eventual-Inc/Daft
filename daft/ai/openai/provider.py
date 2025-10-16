@@ -8,7 +8,7 @@ from daft.ai.provider import Provider
 
 if TYPE_CHECKING:
     from daft.ai.openai.typing import OpenAIProviderOptions
-    from daft.ai.protocols import TextEmbedderDescriptor
+    from daft.ai.protocols import PrompterDescriptor, TextEmbedderDescriptor
 
 
 class OpenAIProvider(Provider):
@@ -31,4 +31,18 @@ class OpenAIProvider(Provider):
             provider_options=self._options,
             model_name=(model or "text-embedding-3-small"),
             model_options=options,
+        )
+
+    def get_prompter(self, model: str | None = None, **options: Any) -> PrompterDescriptor:
+        from daft.ai.openai.protocols.prompter import OpenAIPrompterDescriptor
+
+        # Extract return_format from options if provided
+        return_format = options.pop("return_format", None)
+
+        return OpenAIPrompterDescriptor(
+            provider_name=self._name,
+            provider_options=self._options,
+            model_name=(model or "gpt-4o-mini"),
+            model_options=options,
+            return_format=return_format,
         )
