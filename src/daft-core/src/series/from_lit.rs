@@ -110,7 +110,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
     let mut errs: IndexMap<usize, String> = IndexMap::new();
     let values = values.enumerate();
 
-    let field = Field::new("literal", dtype.clone());
+    let field = Field::new("literal", downcasted.clone());
 
     macro_rules! unwrap_inner {
         ($expr:expr, $idx:expr, $variant:ident) => {

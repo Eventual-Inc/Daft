@@ -87,14 +87,13 @@ impl PySeries {
         dtype: Option<PyDataType>,
     ) -> PyResult<Self> {
         let dtype = dtype.map(|t| t.dtype);
-        let mut series = if let Some(dtype) = dtype {
+        let (mut series, errs) = if let Some(dtype) = dtype {
             let literals = (0..list.len()).map(|i| {
                 list.get_item(i)
                     .and_then(|elem| Literal::from_pyobj(&elem, Some(&dtype)))
                     .map_err(DaftError::from)
             });
-            // todo: handle errors
-            series_from_literals_iter(literals, dtype.clone())?.0
+            series_from_literals_iter(literals, dtype.clone())?
         } else {
             let literals = list
                 .iter()
@@ -117,15 +116,22 @@ impl PySeries {
                     Literal::from_pyobj(&py_lit, Some(&supertype)).map_err(DaftError::from)
                 }
             });
-            // todo: handle errors
-            series_from_literals_iter(literals_with_supertype, supertype.clone())?.0
+            series_from_literals_iter(literals_with_supertype, supertype.clone())?
         };
-
-        if let Some(name) = name {
-            series = series.rename(name);
+        if let Some(errors) = errs {
+            let error_message = format!(
+                "Errors occurred while creating series from literals: {:?}",
+                errors
+            );
+            Err(DaftError::ComputeError(error_message).into())
+        } else {
+            if let Some(name) = name {
+                series = series.rename(name);
+            }
+            Ok(series.into())
         }
-        Ok(series.into())
     }
+
     pub fn to_pylist<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyList>> {
         PyList::new(py, self.series.to_literals())
     }
