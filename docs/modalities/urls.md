@@ -91,7 +91,8 @@ The `File` datatype is preferable when dealing with large files that don't fit i
     @daft.func
     def detect_file_type(file: daft.File) -> str:
         # Read just the first 12 bytes to identify file type
-        header = file.read(12)
+        with file.open() as f:
+            header = f.read(12)
 
         # Common file signatures (magic numbers)
         if header.startswith(b"\xff\xd8\xff"):
