@@ -69,6 +69,11 @@ pub fn from_proto_function(message: proto::ScalarFn) -> ProtoResult<ir::Expr> {
                     batch_size: batch_fn.batch_size.map(|b| b as usize),
                     original_args: from_proto(batch_fn.original_args)?,
                     args: args.into_inner(),
+                    max_retries: batch_fn.max_retries.map(|c| c as usize),
+                    on_error: batch_fn
+                        .on_error
+                        .and_then(|s| OnError::from_str(&s).ok())
+                        .unwrap_or_default(),
                 };
                 ir::rex::from_py_batch_func(func)
             }
@@ -164,6 +169,8 @@ pub fn scalar_fn_to_proto(sf: &ir::functions::scalar::ScalarFn) -> ProtoResult<p
                             use_process: batch_fn.use_process,
                             max_concurrency: batch_fn.max_concurrency.map(|c| c as u64),
                             batch_size: batch_fn.batch_size.map(|b| b as u64),
+                            max_retries: batch_fn.max_retries.map(|c| c as u64),
+                            on_error: Some(batch_fn.on_error.to_string()),
                         },
                     )),
                 })),

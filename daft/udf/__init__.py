@@ -237,6 +237,8 @@ class _FuncDecorator:
         unnest: bool = False,
         use_process: bool | None = None,
         batch_size: int | None = None,
+        max_retries: int | None = None,
+        on_error: str | None = None,
     ) -> Callable[[Callable[P, T]], Func[P, T, None]]:
         """Decorator to convert a Python function into a Daft user-defined batch function.
 
@@ -309,7 +311,7 @@ class _FuncDecorator:
         """
 
         def partial_func(fn: Callable[P, T]) -> Func[P, T, None]:
-            return Func._from_func(fn, return_dtype, unnest, use_process, True, batch_size)
+            return Func._from_func(fn, return_dtype, unnest, use_process, True, batch_size, max_retries, on_error)
 
         return partial_func
 
@@ -331,6 +333,8 @@ def cls(
     gpus: int = 0,
     use_process: bool | None = None,
     max_concurrency: int | None = None,
+    max_retries: int | None = None,
+    on_error: str | None = None,
 ) -> type | Callable[[type], type]:
     """Decorator to convert a Python class into a Daft user-defined class.
 
@@ -408,7 +412,7 @@ def cls(
     """
 
     def partial_cls(c: type) -> type:
-        return wrap_cls(c, gpus, use_process, max_concurrency)
+        return wrap_cls(c, gpus, use_process, max_concurrency, max_retries, on_error)
 
     return partial_cls if class_ is None else partial_cls(class_)
 
@@ -426,6 +430,8 @@ class _MethodDecorator:
         *,
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
+        max_retries: int | None = None,
+        on_error: str | None = None,
     ) -> Callable[P, T] | Callable[[Callable[P, T]], Callable[P, T]]:
         """Decorator to convert a Python method into a Daft user-defined function. This should be used in a class that is decorated with `@daft.cls`.
 
@@ -443,7 +449,7 @@ class _MethodDecorator:
         """
 
         def partial_method(m: Callable[P, T]) -> Callable[P, T]:
-            return mark_cls_method(m, return_dtype, unnest, False, None)
+            return mark_cls_method(m, return_dtype, unnest, False, None, max_retries, on_error)
 
         return partial_method if method is None else partial_method(method)
 
@@ -453,6 +459,8 @@ class _MethodDecorator:
         return_dtype: DataTypeLike,
         unnest: bool = False,
         batch_size: int | None = None,
+        max_retries: int | None = None,
+        on_error: str | None = None,
     ) -> Callable[[Callable[P, T]], Callable[P, T]]:
         """Decorator to convert a Python method into a Daft user-defined batch function. This should be used in a class that is decorated with `@daft.cls`.
 
@@ -469,7 +477,7 @@ class _MethodDecorator:
         """
 
         def partial_method(m: Callable[P, T]) -> Callable[P, T]:
-            return mark_cls_method(m, return_dtype, unnest, True, batch_size)
+            return mark_cls_method(m, return_dtype, unnest, True, batch_size, max_retries, on_error)
 
         return partial_method
 

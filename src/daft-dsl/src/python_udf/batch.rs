@@ -23,6 +23,8 @@ pub fn batch_udf(
     batch_size: Option<usize>,
     original_args: RuntimePyObject,
     args: Vec<ExprRef>,
+    max_retries: Option<usize>,
+    on_error: crate::functions::python::OnError,
 ) -> Expr {
     Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
         function_name: Arc::from(name),
@@ -35,6 +37,8 @@ pub fn batch_udf(
         batch_size,
         original_args,
         args,
+        max_retries,
+        on_error,
     })))
 }
 
@@ -50,6 +54,8 @@ pub struct BatchPyFn {
     pub batch_size: Option<usize>,
     pub original_args: RuntimePyObject,
     pub args: Vec<ExprRef>,
+    pub max_retries: Option<usize>,
+    pub on_error: crate::functions::python::OnError,
 }
 
 impl Display for BatchPyFn {
@@ -79,6 +85,8 @@ impl BatchPyFn {
             batch_size: self.batch_size,
             original_args: self.original_args.clone(),
             args: children,
+            max_retries: self.max_retries,
+            on_error: self.on_error,
         }
     }
 

@@ -302,11 +302,15 @@ pub fn batch_udf(
     use_process: Option<bool>,
     max_concurrency: Option<usize>,
     batch_size: Option<usize>,
+    max_retries: Option<usize>,
+    on_error: Option<String>,
     original_args: PyObject,
     expr_args: Vec<PyExpr>,
 ) -> PyExpr {
     let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
-
+    let on_error = on_error
+        .and_then(|v| crate::functions::python::OnError::from_str(&v).ok())
+        .unwrap_or_default();
     PyExpr {
         expr: crate::python_udf::batch_udf(
             name,
@@ -319,6 +323,8 @@ pub fn batch_udf(
             batch_size,
             original_args.into(),
             args,
+            max_retries,
+            on_error,
         )
         .into(),
     }

@@ -32,6 +32,8 @@ UNNEST_ATTR = "_daft_unnest"
 USE_PROCESS_ATTR = "_daft_use_process"
 BATCH_ATTR = "_daft_batch_method"
 BATCH_SIZE_ATTR = "_daft_batch_size"
+MAX_RETRIES_ATTR = "_daft_max_retries"
+ON_ERROR_ATTR = "_daft_on_error"
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -90,9 +92,6 @@ class Func(Generic[P, T, C]):
         is_generator = inspect.isgeneratorfunction(fn)
         is_async = inspect.iscoroutinefunction(fn)
 
-        if (is_async or is_batch) and max_retries is not None:
-            raise ValueError("retry is not yet supported for async or batch functions")
-
         return_dtype = cls._get_return_dtype(fn, return_dtype, is_generator, is_batch)
 
         return Func(
@@ -119,6 +118,8 @@ class Func(Generic[P, T, C]):
         gpus: int,
         use_process: bool | None,
         max_concurrency: int | None,
+        max_retries: int | None,
+        on_error: str | None,
     ) -> Func[P, T, C]:
         is_generator = inspect.isgeneratorfunction(method)
         is_async = inspect.iscoroutinefunction(method)
@@ -128,7 +129,6 @@ class Func(Generic[P, T, C]):
         batch_size = getattr(method, BATCH_SIZE_ATTR, None)
         return_dtype = getattr(method, RETURN_DTYPE_ATTR, None)
         return_dtype = cls._get_return_dtype(method, return_dtype, is_generator, is_batch)
-
         return cls(
             cls_,
             method,
@@ -140,6 +140,8 @@ class Func(Generic[P, T, C]):
             gpus,
             use_process,
             max_concurrency,
+            max_retries,
+            on_error,
             return_dtype,
         )
 
@@ -261,6 +263,8 @@ class Func(Generic[P, T, C]):
                     self.use_process,
                     self.max_concurrency,
                     self.batch_size,
+                    self.max_retries,
+                    self.on_error,
                     (args, kwargs),
                     expr_args,
                 )
@@ -290,13 +294,21 @@ class Func(Generic[P, T, C]):
 
 
 def mark_cls_method(
-    method: Callable[P, T], return_dtype: DataTypeLike | None, unnest: bool, is_batch: bool, batch_size: int | None
+    method: Callable[P, T],
+    return_dtype: DataTypeLike | None,
+    unnest: bool,
+    is_batch: bool,
+    batch_size: int | None,
+    max_retries: int | None = None,
+    on_error: str | None = None,
 ) -> Callable[P, T]:
     """Mark a Daft class method as a Daft method, along with decorator arguments."""
     setattr(method, RETURN_DTYPE_ATTR, return_dtype)
     setattr(method, UNNEST_ATTR, unnest)
     setattr(method, BATCH_ATTR, is_batch)
     setattr(method, BATCH_SIZE_ATTR, batch_size)
+    setattr(method, MAX_RETRIES_ATTR, max_retries)
+    setattr(method, ON_ERROR_ATTR, on_error)
     return method
 
 
@@ -314,7 +326,14 @@ class ClsBase(ABC, Generic[C]):
         return bound_method
 
 
-def wrap_cls(cls: type, gpus: int, use_process: bool | None, max_concurrency: int | None) -> type:
+def wrap_cls(
+    cls: type,
+    gpus: int,
+    use_process: bool | None,
+    max_concurrency: int | None,
+    max_retries: int | None,
+    on_error: str | None,
+) -> type:
     class Cls(ClsBase[cls]):  # type: ignore[valid-type]
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             self._daft_setup_args = (args, kwargs)
@@ -337,7 +356,7 @@ def wrap_cls(cls: type, gpus: int, use_process: bool | None, max_concurrency: in
             if not inspect.isfunction(attr) or isinstance(attr, (classmethod, staticmethod)):
                 raise AttributeError("Can only access methods on a Daft class instance.")
 
-            return Func._from_method(self, attr, gpus, use_process, max_concurrency)
+            return Func._from_method(self, attr, gpus, use_process, max_concurrency, max_retries, on_error)
 
         def __call__(self, *args: Any, **kwargs: Any) -> Any:
             return self.__getattr__("__call__")(*args, **kwargs)
