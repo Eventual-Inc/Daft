@@ -20,7 +20,7 @@ impl RuntimePyObject {
 
         #[cfg(feature = "python")]
         {
-            let none_value = Arc::new(pyo3::Python::with_gil(|py| py.None()));
+            let none_value = Arc::new(pyo3::Python::attach(|py| py.None()));
             Self {
                 obj: PyObjectWrapper(none_value),
             }
@@ -32,29 +32,29 @@ impl RuntimePyObject {
     }
 
     #[cfg(feature = "python")]
-    pub fn new(value: Arc<pyo3::PyObject>) -> Self {
+    pub fn new(value: Arc<pyo3::Py<pyo3::PyAny>>) -> Self {
         Self {
             obj: PyObjectWrapper(value),
         }
     }
 
     #[cfg(feature = "python")]
-    pub fn unwrap(self) -> Arc<pyo3::PyObject> {
+    pub fn unwrap(self) -> Arc<pyo3::Py<pyo3::PyAny>> {
         self.obj.0
     }
 }
 
 #[cfg(feature = "python")]
-impl AsRef<pyo3::PyObject> for RuntimePyObject {
+impl AsRef<pyo3::Py<pyo3::PyAny>> for RuntimePyObject {
     /// Retrieves a reference to the underlying pyo3::PyObject object
-    fn as_ref(&self) -> &pyo3::PyObject {
+    fn as_ref(&self) -> &pyo3::Py<pyo3::PyAny> {
         &self.obj.0
     }
 }
 
 #[cfg(feature = "python")]
-impl From<pyo3::PyObject> for RuntimePyObject {
-    fn from(value: pyo3::PyObject) -> Self {
+impl From<pyo3::Py<pyo3::PyAny>> for RuntimePyObject {
+    fn from(value: pyo3::Py<pyo3::PyAny>) -> Self {
         Self::new(Arc::new(value))
     }
 }

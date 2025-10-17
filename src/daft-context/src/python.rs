@@ -71,30 +71,30 @@ impl PyDaftContext {
 
     #[getter(_daft_execution_config)]
     pub fn get_daft_execution_config(&self, py: Python) -> PyResult<PyDaftExecutionConfig> {
-        let config = py.allow_threads(|| self.inner.execution_config());
+        let config = py.detach(|| self.inner.execution_config());
         let config = PyDaftExecutionConfig { config };
         Ok(config)
     }
 
     #[getter(_daft_planning_config)]
     pub fn get_daft_planning_config(&self, py: Python) -> PyResult<PyDaftPlanningConfig> {
-        let config = py.allow_threads(|| self.inner.planning_config());
+        let config = py.detach(|| self.inner.planning_config());
         let config = PyDaftPlanningConfig { config };
         Ok(config)
     }
 
     #[setter(_daft_execution_config)]
     pub fn set_daft_execution_config(&self, py: Python, config: PyDaftExecutionConfig) {
-        py.allow_threads(|| self.inner.set_execution_config(config.config));
+        py.detach(|| self.inner.set_execution_config(config.config));
     }
 
     #[setter(_daft_planning_config)]
     pub fn set_daft_planning_config(&self, py: Python, config: PyDaftPlanningConfig) {
-        py.allow_threads(|| self.inner.set_planning_config(config.config));
+        py.detach(|| self.inner.set_planning_config(config.config));
     }
 
-    pub fn attach_subscriber(&self, py: Python, alias: String, subscriber: PyObject) {
-        py.allow_threads(|| {
+    pub fn attach_subscriber(&self, py: Python, alias: String, subscriber: Py<PyAny>) {
+        py.detach(|| {
             self.inner.attach_subscriber(
                 alias,
                 Arc::new(subscribers::python::PySubscriberWrapper(subscriber)),
@@ -103,7 +103,7 @@ impl PyDaftContext {
     }
 
     pub fn detach_subscriber(&self, py: Python, alias: &str) -> PyResult<()> {
-        py.allow_threads(|| self.inner.detach_subscriber(alias))?;
+        py.detach(|| self.inner.detach_subscriber(alias))?;
         Ok(())
     }
 
@@ -113,7 +113,7 @@ impl PyDaftContext {
         query_id: String,
         metadata: PyQueryMetadata,
     ) -> PyResult<()> {
-        py.allow_threads(|| {
+        py.detach(|| {
             self.inner
                 .notify_query_start(query_id.into(), metadata.into())
         })?;
@@ -121,7 +121,7 @@ impl PyDaftContext {
     }
 
     pub fn notify_query_end(&self, py: Python, query_id: String) -> PyResult<()> {
-        py.allow_threads(|| self.inner.notify_query_end(query_id.into()))?;
+        py.detach(|| self.inner.notify_query_end(query_id.into()))?;
         Ok(())
     }
 
@@ -131,12 +131,12 @@ impl PyDaftContext {
         query_id: String,
         result: PyMicroPartition,
     ) -> PyResult<()> {
-        py.allow_threads(|| self.inner.notify_result_out(query_id.into(), result.into()))?;
+        py.detach(|| self.inner.notify_result_out(query_id.into(), result.into()))?;
         Ok(())
     }
 
     pub fn notify_optimization_start(&self, py: Python, query_id: String) -> PyResult<()> {
-        py.allow_threads(|| self.inner.notify_optimization_start(query_id.into()))?;
+        py.detach(|| self.inner.notify_optimization_start(query_id.into()))?;
         Ok(())
     }
 
@@ -146,7 +146,7 @@ impl PyDaftContext {
         query_id: String,
         optimized_plan: String,
     ) -> PyResult<()> {
-        py.allow_threads(|| {
+        py.detach(|| {
             self.inner
                 .notify_optimization_end(query_id.into(), optimized_plan.into())
         })?;

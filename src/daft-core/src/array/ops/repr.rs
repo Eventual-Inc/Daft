@@ -152,7 +152,7 @@ impl PythonArray {
         let val = self.get(idx);
 
         if let Some(val) = val {
-            Ok(Python::with_gil(|py| {
+            Ok(Python::attach(|py| {
                 val.bind(py)
                     .call_method0(pyo3::intern!(py, "__str__"))?
                     .extract()
@@ -500,7 +500,7 @@ impl PythonArray {
 
         let val = self.get(idx);
 
-        let custom_viz_hook_result: Option<String> = Python::with_gil(|py| {
+        let custom_viz_hook_result: Option<String> = Python::attach(|py| {
             if let Some(val) = val {
                 // Find visualization hooks for this object's class
                 let pyany = val.bind(py);

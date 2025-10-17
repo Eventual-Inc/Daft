@@ -66,7 +66,7 @@ impl IntermediateOperator for ExplodeOperator {
         "Explode".into()
     }
 
-    async fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self) -> DaftResult<Self::State> {
         Ok(())
     }
 

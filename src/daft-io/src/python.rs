@@ -30,7 +30,7 @@ mod py {
         let io_stats = IOStatsContext::new(format!("io_glob for {input}"));
         let io_stats_handle = io_stats;
 
-        let lsr: DaftResult<Vec<_>> = py.allow_threads(|| {
+        let lsr: DaftResult<Vec<_>> = py.detach(|| {
             let io_client = get_io_client(
                 multithreaded_io,
                 io_config.unwrap_or_default().config.into(),
@@ -70,7 +70,7 @@ mod py {
     /// credentials, regions and more.
     #[pyfunction]
     fn s3_config_from_env(py: Python) -> PyResult<common_io_config::python::S3Config> {
-        let s3_config: DaftResult<common_io_config::S3Config> = py.allow_threads(|| {
+        let s3_config: DaftResult<common_io_config::S3Config> = py.detach(|| {
             let runtime = get_io_runtime(false);
             runtime.block_on_current_thread(async { Ok(s3_like::s3_config_from_env().await?) })
         });

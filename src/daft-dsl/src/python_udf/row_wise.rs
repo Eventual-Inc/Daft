@@ -120,7 +120,7 @@ impl RowWisePyFn {
         let method_ref = self.method.as_ref();
         let args_ref = self.original_args.as_ref();
 
-        Ok(pyo3::Python::with_gil(|py| {
+        Ok(pyo3::Python::attach(|py| {
             let f = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
                 .getattr(pyo3::intern!(py, "call_async_batch"))?;
@@ -164,7 +164,7 @@ impl RowWisePyFn {
         let args_ref = self.original_args.as_ref();
         let name = args[0].name();
         let return_dtype = self.return_dtype.clone();
-        let (s, errs) = Python::with_gil(|py| {
+        let (s, errs) = Python::attach(|py| {
             let func = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
                 .getattr(pyo3::intern!(py, "call_func"))?;

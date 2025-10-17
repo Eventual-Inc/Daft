@@ -6,7 +6,7 @@ use arrow2::{
 };
 use common_error::DaftResult;
 #[cfg(feature = "python")]
-use pyo3::PyObject;
+use pyo3::{Py, PyAny};
 
 use super::DataArray;
 use crate::{
@@ -200,7 +200,7 @@ impl PythonArray {
     /// Assumes that all Python objects are not None.
     pub fn from_iter(
         name: &str,
-        iter: impl arrow2::trusted_len::TrustedLen<Item = Option<Arc<PyObject>>>,
+        iter: impl arrow2::trusted_len::TrustedLen<Item = Option<Arc<Py<PyAny>>>>,
     ) -> Self {
         use arrow2::bitmap::MutableBitmap;
         use pyo3::Python;
@@ -211,11 +211,11 @@ impl PythonArray {
         let mut values = Vec::with_capacity(len);
         let mut validity = MutableBitmap::with_capacity(len);
 
-        let pynone = Arc::new(Python::with_gil(|py| py.None()));
+        let pynone = Arc::new(Python::attach(|py| py.None()));
         for v in iter {
             if let Some(obj) = &v {
                 debug_assert!(
-                    Python::with_gil(|py| !obj.is_none(py)),
+                    Python::attach(|py| !obj.is_none(py)),
                     "PythonArray::from_iter requires all Python objects to be not None"
                 );
             }
@@ -259,7 +259,7 @@ impl PythonArray {
         let mut values = Vec::with_capacity(len);
         let mut validity = MutableBitmap::with_capacity(len);
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             use pyo3::PyErr;
 
             let pynone = Arc::new(py.None());

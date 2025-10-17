@@ -43,7 +43,7 @@ impl PythonArray {
 
         let mut sample_size_allowed = MAX_SAMPLE_SIZE;
         let mut sampled_sizes = Vec::with_capacity(sample_candidates.len());
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             for c in sample_candidates {
                 // Just estimate to 0 if pickle_dumps fails.
                 let size = pickle_dumps(py, c).map(|v| v.len()).unwrap_or(0);
