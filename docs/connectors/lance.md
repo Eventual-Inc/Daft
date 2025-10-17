@@ -18,7 +18,7 @@ Daft currently supports:
 
 ## Installing Daft with Lance Support
 
-Daft integrates LanceDB through an optional dependency:
+Daft integrates Lance through an optional dependency:
 
 ```bash
 pip install -U "daft[lance]"
@@ -59,6 +59,27 @@ To access public S3/GCS buckets, configure IO options for authentication and end
     df_gcs = daft.read_lance("gs://my-bucket/lance/my-dataset", io_config=gcs_config)
     ```
 
+For S3-compatible services (e.g. Volcengine TOS), configure IO options for authentication and endpoints:
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+    from daft.io import IOConfig, S3Config
+
+    io_config = IOConfig(
+        s3=S3Config(
+            endpoint_url="https://tos-s3-{region}.ivolces.com",
+            region_name="{region}",
+            force_virtual_addressing=True,
+            verify_ssl=True,
+            key_id="your-access-key-id",
+            access_key="your-secret-access-key",
+        )
+    )
+    df = daft.read_lance("s3://bucket-name/lance-path", io_config=io_config)
+    ```
+
 For datasets with many fragments, group fragments to reduce scheduling and metadata overhead:
 
 === "🐍 Python"
@@ -68,7 +89,7 @@ For datasets with many fragments, group fragments to reduce scheduling and metad
     df_grouped = daft.read_lance("/data/my_lance_dataset", fragment_group_size=8)
     ```
 
-## Data Skipping and Random Access Optimizations
+### Data Skipping and Random Access Optimizations
 
 Lance’s indexing and columnar layout enable efficient skipping for filtering and random reads. Filters on partition/fragment columns can significantly reduce I/O; non-partition columns also benefit from fragment/file-level statistics.
 
@@ -111,7 +132,11 @@ meta3 = df.write_lance("/tmp/lance/my_table.lance", mode="append")
     - If a `pyarrow.Schema` is provided, data will be aligned to that schema before writing (type/order/nullability).
     - If the target dataset already exists and the write is not an overwrite, data is converted to the existing table schema for compatibility.
 
-## Advanced Usage: In-place Column Merge (merge_columns)
+## Advanced Usage
+
+
+
+### In-place Column Merge (merge_columns)
 
 If you need to add derived columns in-place to an existing Lance dataset (e.g., apply a UDF across batches and persist the result), use `daft.io.lance.merge_columns`:
 
