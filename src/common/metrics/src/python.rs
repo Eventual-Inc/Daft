@@ -4,7 +4,7 @@ use pyo3::{Bound, IntoPyObject, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::{Stat, ops::NodeInfo};
 
-#[pyclass(eq, eq_int)]
+#[pyclass(module = "daft.daft", eq, eq_int)]
 #[derive(PartialEq, Eq)]
 pub enum StatType {
     #[pyo3(name = "UPPERCASE")]
@@ -31,7 +31,7 @@ impl Stat {
     }
 }
 
-#[pyclass(frozen)]
+#[pyclass(module = "daft.daft", frozen)]
 pub struct PyNodeInfo {
     node_info: Arc<NodeInfo>,
 }

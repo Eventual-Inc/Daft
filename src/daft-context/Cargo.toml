@@ -6,6 +6,7 @@ common-daft-config = {path = "../common/daft-config", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-metrics = {path = "../common/metrics", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
+common-partitioning = {path = "../common/partitioning", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}

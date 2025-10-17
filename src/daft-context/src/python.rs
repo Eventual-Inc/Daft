@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
 use common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
+use common_partitioning::python::PyPartitionRef;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_core::python::PySchema;
-use daft_micropartition::python::PyMicroPartition;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use subscribers::python::PySubscriberWrapper;
 
 use crate::{ContextState, DaftContext, subscribers, subscribers::QueryMetadata};
 
-#[pyclass(frozen)]
+#[pyclass(module = "daft.daft", frozen)]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PyQueryMetadata(pub(crate) Arc<QueryMetadata>);
 impl_bincode_py_state_serialization!(PyQueryMetadata);
@@ -53,7 +53,7 @@ impl<'a> From<&'a PyQueryMetadata> for &'a Arc<QueryMetadata> {
     }
 }
 
-#[pyclass(frozen)]
+#[pyclass(module = "daft.daft", frozen)]
 #[derive(Serialize, Deserialize)]
 pub struct PyContextState(ContextState);
 
@@ -71,7 +71,13 @@ impl From<PyContextState> for ContextState {
     }
 }
 
-#[pyclass(frozen)]
+impl<'a> From<&'a PyContextState> for &'a ContextState {
+    fn from(state: &'a PyContextState) -> Self {
+        &state.0
+    }
+}
+
+#[pyclass(module = "daft.daft", frozen)]
 pub struct PyDaftContext {
     inner: DaftContext,
 }
@@ -155,7 +161,7 @@ impl PyDaftContext {
         &self,
         py: Python,
         query_id: String,
-        result: PyMicroPartition,
+        result: PyPartitionRef,
     ) -> PyResult<()> {
         py.allow_threads(|| self.inner.notify_result_out(query_id.into(), result.into()))?;
         Ok(())

@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use common_error::DaftResult;
 use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo};
 use daft_core::prelude::SchemaRef;
-use daft_micropartition::MicroPartitionRef;
+use daft_micropartition::partitioning::PartitionRef;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -24,7 +24,7 @@ pub trait Subscriber:
 {
     fn on_query_start(&self, query_id: QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()>;
     fn on_query_end(&self, query_id: QueryID) -> DaftResult<()>;
-    fn on_result_out(&self, query_id: QueryID, result: MicroPartitionRef) -> DaftResult<()>;
+    fn on_result_out(&self, query_id: QueryID, result: PartitionRef) -> DaftResult<()>;
     fn on_optimization_start(&self, query_id: QueryID) -> DaftResult<()>;
     fn on_optimization_end(&self, query_id: QueryID, optimized_plan: QueryPlan) -> DaftResult<()>;
     fn on_exec_start(&self, query_id: QueryID, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()>;
@@ -66,7 +66,7 @@ impl Subscriber for Subscribers {
         }
     }
 
-    fn on_result_out(&self, query_id: QueryID, result: MicroPartitionRef) -> DaftResult<()> {
+    fn on_result_out(&self, query_id: QueryID, result: PartitionRef) -> DaftResult<()> {
         match self {
             Self::Dashboard(s) => s.on_result_out(query_id, result),
             Self::Debug(s) => s.on_result_out(query_id, result),

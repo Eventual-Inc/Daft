@@ -1907,6 +1907,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-error",
  "common-py-serde",
+ "daft-recordbatch",
  "futures",
  "pyo3",
  "serde",
@@ -2507,6 +2508,7 @@ dependencies = [
  "common-daft-config",
  "common-error",
  "common-metrics",
+ "common-partitioning",
  "common-py-serde",
  "common-runtime",
  "daft-core",

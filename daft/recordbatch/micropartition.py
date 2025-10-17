@@ -13,6 +13,7 @@ from daft.daft import (
     JsonConvertOptions,
     JsonParseOptions,
     JsonReadOptions,
+    PartitionRef,
 )
 from daft.daft import PyMicroPartition as _PyMicroPartition
 from daft.daft import PyRecordBatch as _PyRecordBatch
@@ -67,6 +68,9 @@ class MicroPartition:
 
     def _repr_html_(self) -> str:
         return self._micropartition._repr_html_()
+
+    def as_partition_ref(self) -> PartitionRef:
+        return self._micropartition.as_partition_ref()
 
     ###
     # Creation methods

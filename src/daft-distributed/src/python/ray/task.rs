@@ -2,9 +2,13 @@ use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
 use common_error::DaftResult;
-use common_partitioning::{Partition, PartitionRef};
+use common_partitioning::{Partition, PartitionRef, python::PyPartitionRef};
+use common_py_serde::{PyObjectWrapper, impl_bincode_py_state_serialization};
 use daft_local_plan::PyLocalPhysicalPlan;
-use pyo3::{PyObject, PyResult, Python, pyclass, pymethods};
+use daft_micropartition::python::PyMicroPartition;
+use daft_recordbatch::RecordBatch;
+use pyo3::{PyObject, PyResult, Python, pyclass, pymethods, types::PyAnyMethods};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     pipeline_node::MaterializedOutput,
@@ -130,19 +134,21 @@ impl TaskResultHandle for RayTaskResultHandle {
 }
 
 #[pyclass(module = "daft.daft", name = "RayPartitionRef", frozen)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct RayPartitionRef {
-    pub object_ref: Arc<PyObject>,
+    pub object_ref: PyObjectWrapper,
     pub num_rows: usize,
     pub size_bytes: usize,
 }
+
+impl_bincode_py_state_serialization!(RayPartitionRef);
 
 #[pymethods]
 impl RayPartitionRef {
     #[new]
     pub fn new(object_ref: PyObject, num_rows: usize, size_bytes: usize) -> Self {
         Self {
-            object_ref: Arc::new(object_ref),
+            object_ref: PyObjectWrapper(Arc::new(object_ref)),
             num_rows,
             size_bytes,
         }
@@ -150,7 +156,7 @@ impl RayPartitionRef {
 
     #[getter]
     pub fn get_object_ref(&self, py: Python) -> PyObject {
-        self.object_ref.clone_ref(py)
+        self.object_ref.0.clone_ref(py)
     }
 
     #[getter]
@@ -162,21 +168,40 @@ impl RayPartitionRef {
     pub fn get_size_bytes(&self) -> usize {
         self.size_bytes
     }
+
+    pub fn as_partition_ref(&self) -> PyResult<PyPartitionRef> {
+        let partition_ref = Arc::new(self.clone()) as PartitionRef;
+        Ok(PyPartitionRef::from(partition_ref))
+    }
 }
 
 impl Partition for RayPartitionRef {
     fn as_any(&self) -> &dyn Any {
         self
     }
+
     fn size_bytes(&self) -> DaftResult<Option<usize>> {
         Ok(Some(self.size_bytes))
     }
+
     fn num_rows(&self) -> DaftResult<usize> {
         Ok(self.num_rows)
     }
+
+    fn to_record_batches(&self) -> DaftResult<Vec<RecordBatch>> {
+        Python::with_gil(|py| {
+            let module = py.import(pyo3::intern!(py, "ray"))?;
+            let func = module.getattr(pyo3::intern!(py, "get"))?;
+            let py_mp = func.call1((self.object_ref.0.clone_ref(py),))?;
+            let py_mp = py_mp
+                .getattr(pyo3::intern!(py, "_micropartition"))?
+                .extract::<PyMicroPartition>()?;
+            py_mp.inner.to_record_batches()
+        })
+    }
 }
 
-#[pyclass(module = "daft.daft", name = "RaySwordfishTask")]
+#[pyclass(module = "daft.daft", name = "RaySwordfishTask", frozen)]
 pub(crate) struct RaySwordfishTask {
     task: SwordfishTask,
 }

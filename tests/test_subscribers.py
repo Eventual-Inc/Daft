@@ -6,8 +6,8 @@ from collections.abc import Mapping
 from typing import Any
 
 import daft
-from daft.daft import PyMicroPartition, PyNodeInfo, PyQueryMetadata
-from daft.recordbatch import MicroPartition
+from daft.daft import PartitionRef, PyNodeInfo, PyQueryMetadata
+from daft.recordbatch import MicroPartition, RecordBatch
 from daft.subscribers import StatType, Subscriber
 
 
@@ -15,7 +15,7 @@ class MockSubscriber(Subscriber):
     query_metadata: dict[str, PyQueryMetadata]
     query_optimized_plan: dict[str, str]
     query_node_stats: defaultdict[str, defaultdict[int, dict[str, Any]]]
-    query_results: defaultdict[str, list[PyMicroPartition]]
+    query_results: defaultdict[str, list[PartitionRef]]
 
     def __init__(self):
         self.query_metadata = {}
@@ -29,7 +29,7 @@ class MockSubscriber(Subscriber):
     def on_query_end(self, query_id: str) -> None:
         pass
 
-    def on_result_out(self, query_id: str, result: PyMicroPartition) -> None:
+    def on_result_out(self, query_id: str, result: PartitionRef) -> None:
         self.query_results[query_id].append(result)
 
     def on_optimization_start(self, query_id: str) -> None:
@@ -77,8 +77,11 @@ def test_subscriber_template():
     assert subscriber.query_optimized_plan[query_id] not in unoptimized_plan
 
     # Test output
-    mps = [MicroPartition._from_pymicropartition(mp) for mp in subscriber.query_results[query_id]]
-    assert daft.DataFrame._from_micropartitions(*mps).to_pydict() == df.to_pydict()
+    rbs = []
+    for result in subscriber.query_results[query_id]:
+        rbs.extend(result.to_record_batches())
+    mp = MicroPartition._from_record_batches([RecordBatch._from_pyrecordbatch(rb) for rb in rbs])
+    assert daft.DataFrame._from_micropartitions(*[mp]).to_pydict() == df.to_pydict()
 
     # Test stats
     for _, stats in subscriber.query_node_stats[query_id].items():

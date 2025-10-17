@@ -1,13 +1,21 @@
 use std::{any::Any, sync::Arc};
 
 use common_error::DaftResult;
+use daft_recordbatch::RecordBatch;
 use futures::stream::BoxStream;
+#[cfg(feature = "python")]
+use pyo3::types::PyModule;
+#[cfg(feature = "python")]
+use pyo3::{Bound, PyResult};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
     common_py_serde::{deserialize_py_object, serialize_py_object},
     pyo3::PyObject,
 };
+
+#[cfg(feature = "python")]
+pub mod python;
 
 /// Common trait interface for dataset partitioning, defined in this shared crate to avoid circular dependencies.
 ///
@@ -16,6 +24,10 @@ pub trait Partition: std::fmt::Debug + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn size_bytes(&self) -> DaftResult<Option<usize>>;
     fn num_rows(&self) -> DaftResult<usize>;
+    fn is_empty(&self) -> bool {
+        self.num_rows().unwrap_or(0) == 0
+    }
+    fn to_record_batches(&self) -> DaftResult<Vec<RecordBatch>>;
 }
 
 impl<T> Partition for Arc<T>
@@ -25,12 +37,17 @@ where
     fn as_any(&self) -> &dyn Any {
         (**self).as_any()
     }
+
     fn size_bytes(&self) -> DaftResult<Option<usize>> {
         (**self).size_bytes()
     }
 
     fn num_rows(&self) -> DaftResult<usize> {
         (**self).num_rows()
+    }
+
+    fn to_record_batches(&self) -> DaftResult<Vec<RecordBatch>> {
+        (**self).to_record_batches()
     }
 }
 
@@ -191,4 +208,12 @@ impl PartitionCacheEntry {
             PartitionCacheEntry::Rust { key, .. } => key.clone(),
         }
     }
+}
+
+#[cfg(feature = "python")]
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+    use pyo3::types::PyModuleMethods;
+
+    parent.add_class::<python::PyPartitionRef>()?;
+    Ok(())
 }

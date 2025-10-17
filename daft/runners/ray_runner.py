@@ -20,7 +20,7 @@ import ray.experimental  # noqa: TID253
 
 from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
-from daft.daft import DistributedPhysicalPlan, PyQueryMetadata
+from daft.daft import DistributedPhysicalPlan, PyQueryMetadata, RayPartitionRef
 from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
 from daft.recordbatch import RecordBatch
@@ -1392,9 +1392,11 @@ class RayRunner(Runner[ray.ObjectRef]):
             if self.flotilla_plan_runner is None:
                 self.flotilla_plan_runner = FlotillaRunner()
 
-            yield from self.flotilla_plan_runner.stream_plan(
+            for partition in self.flotilla_plan_runner.stream_plan(
                 distributed_plan, self._part_set_cache.get_all_partition_sets(), ctx._ctx.state
-            )
+            ):
+                ctx._notify_result_out(query_id, partition.to_ray_partition_ref())
+                yield partition
             ctx._notify_query_end(query_id)
 
     def run_iter_tables(
@@ -1462,6 +1464,9 @@ class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
 
     def _noop(self, _: ray.ObjectRef) -> None:
         return None
+
+    def to_ray_partition_ref(self) -> RayPartitionRef:
+        return RayPartitionRef(self._partition, self.metadata().num_rows, self.metadata().size_bytes)
 
 
 class PartitionMetadataAccessor:

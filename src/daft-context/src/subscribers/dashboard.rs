@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo};
 use common_runtime::get_io_runtime;
-use daft_io::IOStatsContext;
-use daft_micropartition::{MicroPartition, MicroPartitionRef};
+use daft_core::prelude::SchemaRef;
+use daft_micropartition::partitioning::PartitionRef;
 use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;
 use reqwest::{Client, RequestBuilder};
@@ -48,7 +48,7 @@ pub struct DashboardSubscriber {
     url: String,
     #[serde(skip)]
     client: Client,
-    preview_rows: DashMap<QueryID, MicroPartitionRef>,
+    preview_rows: DashMap<QueryID, (usize, SchemaRef, Vec<RecordBatch>)>,
 }
 
 impl<'de> Deserialize<'de> for DashboardSubscriber {
@@ -59,7 +59,7 @@ impl<'de> Deserialize<'de> for DashboardSubscriber {
         #[derive(Deserialize)]
         struct DashboardSubscriberHelper {
             url: String,
-            preview_rows: DashMap<QueryID, MicroPartitionRef>,
+            preview_rows: DashMap<QueryID, (usize, SchemaRef, Vec<RecordBatch>)>,
         }
 
         let helper = DashboardSubscriberHelper::deserialize(deserializer)?;
@@ -132,14 +132,12 @@ impl Subscriber for DashboardSubscriber {
             Ok::<_, DaftError>(())
         })?;
 
-        self.preview_rows.insert(
-            query_id,
-            Arc::new(MicroPartition::empty(Some(metadata.output_schema.clone()))),
-        );
+        self.preview_rows
+            .insert(query_id, (0, metadata.output_schema.clone(), vec![]));
         Ok(())
     }
 
-    fn on_result_out(&self, query_id: QueryID, result: MicroPartitionRef) -> DaftResult<()> {
+    fn on_result_out(&self, query_id: QueryID, result: PartitionRef) -> DaftResult<()> {
         // Limit to TOTAL_ROWS rows
         // TODO: Limit by X MB and # of rows
         let Some(mut entry) = self.preview_rows.get_mut(&query_id) else {
@@ -149,21 +147,22 @@ impl Subscriber for DashboardSubscriber {
             )));
         };
 
-        let all_results = entry.value_mut();
-        let num_rows = all_results.len();
-        if num_rows < TOTAL_ROWS && !result.is_empty() {
-            let result = result.head(TOTAL_ROWS - num_rows)?;
-            *all_results = Arc::new(MicroPartition::concat(vec![
-                all_results.clone(),
-                Arc::new(result),
-            ])?);
+        let (num_rows, _, all_results) = entry.value_mut();
+        if *num_rows < TOTAL_ROWS && !result.is_empty() {
+            let result_rbs = result.to_record_batches()?;
+            for rb in result_rbs {
+                if *num_rows >= TOTAL_ROWS {
+                    break;
+                }
+                *num_rows += rb.len();
+                all_results.push(rb);
+            }
         }
         Ok(())
     }
 
     fn on_query_end(&self, query_id: QueryID) -> DaftResult<()> {
-        let io_stats = IOStatsContext::new("DashboardSubscriber::on_query_end");
-        let Some((_, results)) = self.preview_rows.remove(&query_id) else {
+        let Some((_, (_, schema, results))) = self.preview_rows.remove(&query_id) else {
             return Err(DaftError::ValueError(format!(
                 "Query `{}` not started or already ended in DashboardSubscriber",
                 query_id
@@ -172,9 +171,7 @@ impl Subscriber for DashboardSubscriber {
         debug_assert!(results.len() <= TOTAL_ROWS);
 
         let end_sec = secs_from_epoch();
-        let result = results
-            .concat_or_get(io_stats)?
-            .unwrap_or_else(|| RecordBatch::empty(Some(results.schema())));
+        let result = RecordBatch::concat_or_empty(&results, Some(schema))?;
 
         get_io_runtime(false).block_on_current_thread(async {
             Self::handle_request(

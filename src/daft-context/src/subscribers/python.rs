@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use common_error::DaftResult;
 use common_metrics::{QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo, python::PyNodeInfo};
 use common_py_serde::PyObjectWrapper;
-use daft_micropartition::{MicroPartitionRef, python::PyMicroPartition};
+use daft_micropartition::partitioning::{PartitionRef, python::PyPartitionRef};
 use pyo3::{IntoPyObject, PyObject, Python, intern};
 use serde::{Deserialize, Serialize};
 
@@ -48,12 +48,12 @@ impl Subscriber for PySubscriberWrapper {
         })
     }
 
-    fn on_result_out(&self, query_id: QueryID, result: MicroPartitionRef) -> DaftResult<()> {
+    fn on_result_out(&self, query_id: QueryID, result: PartitionRef) -> DaftResult<()> {
         Python::with_gil(|py| {
             self.inner().call_method1(
                 py,
                 intern!(py, "on_result_out"),
-                (query_id.to_string(), PyMicroPartition::from(result)),
+                (query_id.to_string(), PyPartitionRef::from(result)),
             )?;
             Ok(())
         })

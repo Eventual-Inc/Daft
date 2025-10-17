@@ -160,7 +160,7 @@ pub fn pyobj_to_table(obj: Bound<PyAny>) -> PyResult<TableRef> {
 }
 
 /// PyIdentifier maps identifier.py to identifier.rs
-#[pyclass(sequence)]
+#[pyclass(module = "daft.daft", sequence)]
 #[derive(Debug, Clone)]
 pub struct PyIdentifier(Identifier);
 

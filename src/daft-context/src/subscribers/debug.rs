@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use common_error::DaftResult;
 use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo};
-use daft_micropartition::MicroPartitionRef;
+use daft_micropartition::partitioning::PartitionRef;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 
@@ -44,12 +44,12 @@ impl Subscriber for DebugSubscriber {
         Ok(())
     }
 
-    fn on_result_out(&self, query_id: QueryID, result: MicroPartitionRef) -> DaftResult<()> {
+    fn on_result_out(&self, query_id: QueryID, result: PartitionRef) -> DaftResult<()> {
         *self
             .rows_out
             .get_mut(&query_id)
             .expect("Query not found")
-            .value_mut() += result.len();
+            .value_mut() += result.num_rows()?;
         Ok(())
     }
 

@@ -61,7 +61,7 @@ impl LocalPartitionIterator {
 }
 
 #[cfg(feature = "python")]
-#[pyclass(frozen)]
+#[pyclass(module = "daft.daft", frozen)]
 struct LocalPartitionStream {
     stream: Arc<Mutex<BoxStream<'static, DaftResult<PyObject>>>>,
 }

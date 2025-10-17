@@ -11,7 +11,7 @@ use std::{
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};
 use common_error::{DaftError, DaftResult};
 use common_metrics::{QueryID, QueryPlan};
-use daft_micropartition::MicroPartitionRef;
+use common_partitioning::PartitionRef;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -40,7 +40,7 @@ impl Config {
 pub struct ContextState {
     /// Shared configuration for the context
     config: Config,
-    subscribers: HashMap<String, Arc<Subscribers>>,
+    pub subscribers: HashMap<String, Arc<Subscribers>>,
 }
 
 /// Wrapper around the ContextState to provide a thread-safe interface.
@@ -154,11 +154,7 @@ impl DaftContext {
         })
     }
 
-    pub fn notify_result_out(
-        &self,
-        query_id: QueryID,
-        result: MicroPartitionRef,
-    ) -> DaftResult<()> {
+    pub fn notify_result_out(&self, query_id: QueryID, result: PartitionRef) -> DaftResult<()> {
         self.with_state(|state| {
             for subscriber in state.subscribers.values() {
                 subscriber.on_result_out(query_id.clone(), result.clone())?;
