@@ -448,9 +448,10 @@ class MicroPartition:
         return Series._from_pyseries(self._micropartition.argsort(pyexprs, descending, nulls_first))
 
     def __reduce__(self) -> tuple[Callable, tuple]:  # type: ignore[type-arg]
-        if len(self) == 0:
+        batches = self.get_record_batches()
+        if len(batches) == 0:
             return MicroPartition.empty, (self.schema(),)
-        return MicroPartition.from_ipc_stream, (self.to_ipc_stream(),)
+        return MicroPartition._from_record_batches, (batches,)
 
     @classmethod
     def read_parquet_statistics(
