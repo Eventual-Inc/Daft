@@ -54,9 +54,7 @@ function QueryPageInner() {
           "plan_info" in prev.state ? prev.state.plan_info : undefined;
         const old_exec_info =
           "exec_info" in prev.state ? prev.state.exec_info : undefined;
-        const data: Record<number, OperatorInfo> = JSON.parse(
-          event.data
-        );
+        const data: Record<number, OperatorInfo> = JSON.parse(event.data);
 
         if (
           plan_info &&

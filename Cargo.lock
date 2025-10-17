@@ -2446,6 +2446,7 @@ name = "daft-cli"
 version = "0.3.0-dev0"
 dependencies = [
  "clap",
+ "console 0.16.1",
  "daft-dashboard",
  "pyo3",
  "tokio",
