@@ -544,6 +544,14 @@ impl Literal {
         .map_err(|e| DaftError::ValueError(format!("Failed to convert literal to usize: {}", e)))
     }
 
+    /// If the literal is `Float32`, return it. Otherwise, return None.
+    pub fn as_f32(&self) -> Option<f32> {
+        match self {
+            Self::Float32(f) => Some(*f),
+            _ => None,
+        }
+    }
+
     /// If the literal is `Float64`, return it. Otherwise, return None.
     pub fn as_f64(&self) -> Option<f64> {
         match self {

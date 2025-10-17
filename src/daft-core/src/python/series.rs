@@ -5,6 +5,7 @@ use std::{
 };
 
 use common_arrow_ffi as ffi;
+use common_error::DaftError;
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
 use daft_schema::python::PyDataType;
 use pyo3::{
@@ -20,7 +21,10 @@ use crate::{
     datatypes::{DataType, Field},
     lit::Literal,
     prelude::PythonArray,
-    series::{self, IntoSeries, Series, from_lit::combine_lit_types},
+    series::{
+        self, IntoSeries, Series,
+        from_lit::{combine_lit_types, series_from_literals_iter},
+    },
     utils::{
         arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
         supertype::try_get_collection_supertype,
@@ -83,43 +87,51 @@ impl PySeries {
         dtype: Option<PyDataType>,
     ) -> PyResult<Self> {
         let dtype = dtype.map(|t| t.dtype);
-        let literals = list
-            .iter()
-            .map(|elem| Literal::from_pyobj(&elem, dtype.as_ref()))
-            .collect::<PyResult<Vec<_>>>()?;
-
-        let (literals, dtype) = if let Some(dtype) = dtype {
-            (literals, dtype)
+        let (mut series, errs) = if let Some(dtype) = dtype {
+            let literals = (0..list.len()).map(|i| {
+                list.get_item(i)
+                    .and_then(|elem| Literal::from_pyobj(&elem, Some(&dtype)))
+                    .map_err(DaftError::from)
+            });
+            series_from_literals_iter(literals, dtype.clone())?
         } else {
+            let literals = list
+                .iter()
+                .map(|elem| Literal::from_pyobj(&elem, None))
+                .collect::<PyResult<Vec<_>>>()?;
+
             let supertype = try_get_collection_supertype(literals.iter().map(Literal::get_type))
                 .unwrap_or(DataType::Python);
 
-            let literals_with_supertype = literals
-                .into_iter()
-                .zip(list)
-                .map(|(daft_lit, py_lit)| {
-                    if combine_lit_types(&daft_lit.get_type(), &supertype).as_ref()
-                        == Some(&supertype)
-                    {
-                        Ok(daft_lit)
-                    } else {
-                        // if literal doesn't match supertype, redo conversion so that for the python data type
-                        // as well as nested types with python type, we avoid any lossy conversions and just keep
-                        // stuff as Python objects
-                        Literal::from_pyobj(&py_lit, Some(&supertype))
-                    }
-                })
-                .collect::<PyResult<Vec<_>>>()?;
+            let literals_with_supertype = literals.into_iter().enumerate().map(|(i, daft_lit)| {
+                if combine_lit_types(&daft_lit.get_type(), &supertype).as_ref() == Some(&supertype)
+                {
+                    Ok(daft_lit)
+                } else {
+                    let py_lit = list.get_item(i)?;
 
-            (literals_with_supertype, supertype)
+                    // if literal doesn't match supertype, redo conversion so that for the python data type
+                    // as well as nested types with python type, we avoid any lossy conversions and just keep
+                    // stuff as Python objects
+                    Literal::from_pyobj(&py_lit, Some(&supertype)).map_err(DaftError::from)
+                }
+            });
+            series_from_literals_iter(literals_with_supertype, supertype.clone())?
         };
-
-        let mut series = Series::from_literals(literals)?.cast(&dtype)?;
-        if let Some(name) = name {
-            series = series.rename(name);
+        if let Some(errors) = errs {
+            let error_message = format!(
+                "Errors occurred while creating series from literals: {:?}",
+                errors
+            );
+            Err(DaftError::ComputeError(error_message).into())
+        } else {
+            if let Some(name) = name {
+                series = series.rename(name);
+            }
+            Ok(series.into())
         }
-        Ok(series.into())
     }
+
     pub fn to_pylist<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyList>> {
         PyList::new(py, self.series.to_literals())
     }
