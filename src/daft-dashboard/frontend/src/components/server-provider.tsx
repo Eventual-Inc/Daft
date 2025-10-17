@@ -7,6 +7,7 @@ import {
   QueriesContext,
   QuerySummary,
 } from "@/hooks/use-queries";
+import { useNotifications } from "./notifications-provider";
 
 // ---------------------- Utils ---------------------- //
 
@@ -41,6 +42,7 @@ export function fetcher(
 // ---------------------- Server Provider ---------------------- //
 
 export function ServerProvider({ children }: { children: React.ReactNode }) {
+  const { onQueryStart, onQueryEnd } = useNotifications();
   const [queries, setQueries] = useState<QuerySummaryMap | null>(null);
 
   // TODO: Play around with useSWRSubscription again
@@ -59,6 +61,14 @@ export function ServerProvider({ children }: { children: React.ReactNode }) {
     });
     es.addEventListener("status_update", event => {
       const queryUpdate: QuerySummary = JSON.parse(event.data);
+
+      if (onQueryStart && queryUpdate.status.status === "Pending") {
+        console.log("Query started", queryUpdate.id);
+      }
+      if (onQueryEnd && queryUpdate.status.status === "Finished") {
+        console.log("Query finished", queryUpdate.id);
+      }
+
       setQueries(prev => {
         return { ...prev, [queryUpdate.id]: queryUpdate };
       });
@@ -67,7 +77,7 @@ export function ServerProvider({ children }: { children: React.ReactNode }) {
     return () => {
       es.close();
     };
-  }, [setQueries]);
+  }, [setQueries, onQueryStart, onQueryEnd]);
 
   return (
     <SWRConfig

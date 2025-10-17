@@ -1,8 +1,10 @@
 "use client";
 
-import { AppNavbar } from "@/components/navbar/app-navbar";
 import "./globals.css";
+
+import { AppNavbar } from "@/components/navbar/app-navbar";
 import { ServerProvider } from "@/components/server-provider";
+import { NotificationsProvider } from "@/components/notifications-provider";
 import { main } from "@/lib/utils";
 import React from "react";
 
@@ -16,14 +18,16 @@ export default function RootLayout({
       <body
         className={`${main.className} font-light antialiased w-screen h-screen`}
       >
-        <ServerProvider>
-          <div className="flex flex-col h-full">
-            <AppNavbar />
-            <main className="flex-1 overflow-auto">
-              <div className="p-[20px]">{children}</div>
-            </main>
-          </div>
-        </ServerProvider>
+        <NotificationsProvider>
+          <ServerProvider>
+            <div className="flex flex-col h-full">
+              <AppNavbar />
+              <main className="flex-1 overflow-auto">
+                <div className="p-[20px]">{children}</div>
+              </main>
+            </div>
+          </ServerProvider>
+        </NotificationsProvider>
       </body>
     </html>
   );

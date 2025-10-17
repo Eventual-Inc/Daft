@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { Button } from "../ui/button";
 import {
   DropdownMenu,
@@ -11,10 +10,10 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { Bell } from "lucide-react";
+import { useNotifications } from "../notifications-provider";
 
 export function NotificationSettings() {
-  const [notifyOnQueryStart, setNotifyOnQueryStart] = useState(false);
-  const [notifyOnQueryEnd, setNotifyOnQueryEnd] = useState(false);
+  const { onQueryStart, onQueryEnd, setOnQueryStart, setOnQueryEnd } = useNotifications();
 
   return (
     <div>
@@ -31,17 +30,19 @@ export function NotificationSettings() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56 bg-zinc-800">
-          <DropdownMenuLabel>Notifications</DropdownMenuLabel>
+          <DropdownMenuLabel className="font-mono">Notifications</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuCheckboxItem
-            checked={notifyOnQueryStart}
-            onCheckedChange={setNotifyOnQueryStart}
+            className="font-mono hover:cursor-pointer hover:bg-zinc-700"
+            checked={onQueryStart}
+            onCheckedChange={setOnQueryStart}
           >
             On Query Start
           </DropdownMenuCheckboxItem>
           <DropdownMenuCheckboxItem
-            checked={notifyOnQueryEnd}
-            onCheckedChange={setNotifyOnQueryEnd}
+            className="font-mono hover:cursor-pointer hover:bg-zinc-700"
+            checked={onQueryEnd}
+            onCheckedChange={setOnQueryEnd}
           >
             On Query End
           </DropdownMenuCheckboxItem>
