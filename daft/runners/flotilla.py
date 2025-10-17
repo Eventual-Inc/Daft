@@ -189,7 +189,6 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
                     node_id=node["NodeID"],
                     soft=False,
                 ),
-                num_cpus=1,
             ).remote(
                 num_cpus=int(node["Resources"]["CPU"]),
                 num_gpus=int(node["Resources"].get("GPU", 0)),
