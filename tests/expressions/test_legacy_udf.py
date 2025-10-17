@@ -232,7 +232,7 @@ def test_udf_error():
         table.eval_expression_list([expr])
 
     assert str(exc_info.value).startswith("User-defined function")
-    assert str(exc_info.value).endswith("failed when executing on inputs:\n  - a (Utf8, length=3)")
+    assert str(exc_info.value).endswith("failed when executing on inputs:\n  - a (String, length=3)")
     assert isinstance(exc_info.value.__cause__, ValueError) and str(exc_info.value.__cause__) == "AN ERROR OCCURRED!"
 
 
@@ -511,7 +511,7 @@ def test_udf_with_error(use_actor_pool):
         r"User-defined function `<function test_udf_with_error\.<locals>\.fail_hard at 0x[0-9a-f]+>` "
         r"failed when executing on inputs:\s*"
         r"- a \(Int64, length=3\)\s*"
-        r"- b \(Utf8, length=3\)$"
+        r"- b \(String, length=3\)$"
     )
     assert re.search(pattern, str(exc_info.value)), f"String doesn't end with expected pattern: {exc_info.value!s}"
 
@@ -722,7 +722,7 @@ def test_udf_error_serialize_err():
         table.eval_expression_list([expr])
 
     assert str(exc_info.value).startswith("User-defined function")
-    assert str(exc_info.value).endswith("failed when executing on inputs:\n  - a (Utf8, length=3)")
+    assert str(exc_info.value).endswith("failed when executing on inputs:\n  - a (String, length=3)")
     assert isinstance(exc_info.value.__cause__, ValueError)
 
 

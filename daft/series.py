@@ -842,7 +842,7 @@ class SeriesStringNamespace(SeriesNamespace):
             regex: DEPRECATED. Use regexp_split() instead for regex patterns.
 
         Returns:
-            Series: A List[Utf8] series containing the string splits for each string.
+            Series: A List[String] series containing the string splits for each string.
         """
         if regex:
             import warnings
@@ -862,7 +862,7 @@ class SeriesStringNamespace(SeriesNamespace):
             pattern: The regex pattern on which each string should be split.
 
         Returns:
-            Series: A List[Utf8] series containing the string splits for each string.
+            Series: A List[String] series containing the string splits for each string.
         """
         return self._eval_expressions("regexp_split", pattern)
 
