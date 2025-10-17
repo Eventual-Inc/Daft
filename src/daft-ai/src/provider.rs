@@ -10,5 +10,5 @@ pub trait Provider: Sync + Send + std::fmt::Debug {
 
     /// Creates (or extracts) a Python object that subclasses the Provider ABC.
     #[cfg(feature = "python")]
-    fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject>;
+    fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>>;
 }

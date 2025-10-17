@@ -37,7 +37,7 @@ pub mod pylib {
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<PyRecordBatch> {
-        py.allow_threads(|| {
+        py.detach(|| {
             let io_stats = IOStatsContext::new(format!("read_parquet: for uri {uri}"));
 
             let io_client = get_io_client(
@@ -65,8 +65,8 @@ pub mod pylib {
             Ok(result)
         })
     }
-    type PyArrowChunks = Vec<Vec<pyo3::PyObject>>;
-    type PyArrowFields = Vec<pyo3::PyObject>;
+    type PyArrowChunks = Vec<Vec<pyo3::Py<pyo3::PyAny>>>;
+    type PyArrowFields = Vec<pyo3::Py<pyo3::PyAny>>;
     type PyArrowParquetType = (
         PyArrowFields,
         BTreeMap<String, String>,
@@ -123,7 +123,7 @@ pub mod pylib {
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
         file_timeout_ms: Option<i64>,
     ) -> PyResult<PyArrowParquetType> {
-        let (schema, all_arrays, num_rows) = py.allow_threads(|| {
+        let (schema, all_arrays, num_rows) = py.detach(|| {
             let io_client = get_io_client(
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
@@ -176,7 +176,7 @@ pub mod pylib {
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<Vec<PyRecordBatch>> {
-        py.allow_threads(|| {
+        py.detach(|| {
             let io_stats = IOStatsContext::new("read_parquet_bulk");
 
             let io_client = get_io_client(
@@ -233,7 +233,7 @@ pub mod pylib {
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<Vec<PyArrowParquetType>> {
-        let parquet_read_results = py.allow_threads(|| {
+        let parquet_read_results = py.detach(|| {
             let io_client = get_io_client(
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
@@ -277,7 +277,7 @@ pub mod pylib {
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<PySchema> {
-        py.allow_threads(|| {
+        py.detach(|| {
             let io_stats = IOStatsContext::new(format!("read_parquet_schema: for uri {uri}"));
 
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
@@ -314,7 +314,7 @@ pub mod pylib {
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
     ) -> PyResult<PyRecordBatch> {
-        py.allow_threads(|| {
+        py.detach(|| {
             let io_stats = IOStatsContext::new("read_parquet_statistics");
 
             let io_client = get_io_client(

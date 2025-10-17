@@ -2059,7 +2059,7 @@ fn singleton_plan() -> DaftResult<LogicalPlanBuilder> {
         prelude::*,
         types::{IntoPyDict, PyList},
     };
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         // df = DataFrame._from_pydict({"":[""]})
         let df = py
             .import(intern!(py, "daft.dataframe.dataframe"))?

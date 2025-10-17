@@ -435,7 +435,7 @@ impl PySeries {
         Ok(self.series.fill_null(&fill_value.series)?.into())
     }
 
-    pub fn _debug_bincode_serialize(&self, py: Python) -> PyResult<PyObject> {
+    pub fn _debug_bincode_serialize(&self, py: Python) -> PyResult<Py<PyAny>> {
         let values = bincode::serialize(&self.series).unwrap();
         Ok(PyBytes::new(py, &values).into())
     }

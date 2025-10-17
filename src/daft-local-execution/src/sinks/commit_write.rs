@@ -93,7 +93,7 @@ impl BlockingSink for CommitWriteSink {
                         {
                             use pyo3::{prelude::*, types::PyList};
 
-                            Python::with_gil(|py| {
+                            Python::attach(|py| {
                                 let fs = py.import(pyo3::intern!(py, "daft.filesystem"))?;
                                 let overwrite_files = fs.getattr("overwrite_files")?;
                                 let file_paths = written_file_path_record_batches

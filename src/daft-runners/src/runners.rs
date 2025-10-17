@@ -14,7 +14,7 @@ use pyo3::{
 
 #[derive(Debug)]
 pub struct RayRunner {
-    pub pyobj: Arc<PyObject>,
+    pub pyobj: Arc<pyo3::Py<pyo3::PyAny>>,
 }
 
 impl RayRunner {
@@ -25,7 +25,7 @@ impl RayRunner {
         max_task_backlog: Option<usize>,
         force_client_mode: Option<bool>,
     ) -> DaftResult<Self> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let ray_runner_module = py.import(intern!(py, "daft.runners.ray_runner"))?;
             let ray_runner = ray_runner_module.getattr(intern!(py, "RayRunner"))?;
             let kwargs = PyDict::new(py);
@@ -45,14 +45,14 @@ impl RayRunner {
 
 #[derive(Debug)]
 pub struct NativeRunner {
-    pub pyobj: Arc<PyObject>,
+    pub pyobj: Arc<pyo3::Py<pyo3::PyAny>>,
 }
 
 impl NativeRunner {
     pub const NAME: &'static str = "native";
 
     pub fn try_new(num_threads: Option<usize>) -> DaftResult<Self> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let native_runner_module = py.import(intern!(py, "daft.runners.native_runner"))?;
             let native_runner = native_runner_module.getattr(intern!(py, "NativeRunner"))?;
             let kwargs = PyDict::new(py);
@@ -75,8 +75,8 @@ pub enum Runner {
 }
 
 impl Runner {
-    pub fn from_pyobj(obj: PyObject) -> PyResult<Self> {
-        Python::with_gil(|py| {
+    pub fn from_pyobj(obj: pyo3::Py<pyo3::PyAny>) -> PyResult<Self> {
+        Python::attach(|py| {
             let name = obj.getattr(py, "name")?.extract::<String>(py)?;
             match name.as_ref() {
                 RayRunner::NAME => {
@@ -98,7 +98,7 @@ impl Runner {
         })
     }
 
-    fn get_runner_ref(&self) -> &PyObject {
+    fn get_runner_ref(&self) -> &pyo3::Py<pyo3::PyAny> {
         match self {
             Self::Ray(RayRunner { pyobj }) => pyobj.as_ref(),
             Self::Native(NativeRunner { pyobj }) => pyobj.as_ref(),
@@ -136,7 +136,7 @@ impl Runner {
         Ok(iter)
     }
 
-    pub fn to_pyobj(self: Arc<Self>, py: Python) -> PyObject {
+    pub fn to_pyobj(self: Arc<Self>, py: Python) -> pyo3::Py<pyo3::PyAny> {
         let runner = self.get_runner_ref();
         runner.clone_ref(py)
     }
@@ -176,7 +176,7 @@ impl RunnerConfig {
 
 /// Helper function to automatically detect whether to use the ray runner.
 pub fn detect_ray_state() -> (bool, bool) {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         py.import(pyo3::intern!(py, "daft.utils"))
             .and_then(|m| m.getattr(pyo3::intern!(py, "detect_ray_state")))
             .and_then(|m| m.call0())

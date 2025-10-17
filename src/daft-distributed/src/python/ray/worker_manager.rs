@@ -34,7 +34,7 @@ impl RayWorkerManagerState {
             return Ok(());
         }
 
-        let ray_workers = Python::with_gil(|py| {
+        let ray_workers = Python::attach(|py| {
             let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
 
             let existing_worker_ids = self
@@ -97,7 +97,7 @@ impl WorkerManager for RayWorkerManager {
         let mut task_result_handles =
             Vec::with_capacity(tasks_per_worker.values().map(|v| v.len()).sum());
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             for (worker_id, tasks) in tasks_per_worker {
                 let handles = state
                     .ray_workers
@@ -154,7 +154,7 @@ impl WorkerManager for RayWorkerManager {
             .state
             .lock()
             .expect("Failed to lock RayWorkerManagerState");
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             for worker in state.ray_workers.values() {
                 worker.shutdown(py);
             }
@@ -217,7 +217,7 @@ impl WorkerManager for RayWorkerManager {
                 })
                 .collect::<Vec<_>>();
 
-            Python::with_gil(|py| -> DaftResult<()> {
+            Python::attach(|py| -> DaftResult<()> {
                 let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
                 flotilla_module
                     .call_method1(pyo3::intern!(py, "try_autoscale"), (python_bundles,))?;

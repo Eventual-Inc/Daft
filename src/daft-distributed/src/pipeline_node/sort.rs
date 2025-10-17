@@ -57,36 +57,35 @@ pub(crate) async fn get_partition_boundaries_from_samples(
         })
         .collect::<DaftResult<Vec<_>>>()?;
 
-    let (task_locals, py_object_refs, py_sort_by, descending, nulls_first) =
-        Python::with_gil(|py| {
-            let task_locals = crate::utils::runtime::PYO3_ASYNC_RUNTIME_LOCALS
-                .get()
-                .expect("Python task locals not initialized")
-                .clone_ref(py);
+    let (task_locals, py_object_refs, py_sort_by, descending, nulls_first) = Python::attach(|py| {
+        let task_locals = crate::utils::runtime::PYO3_ASYNC_RUNTIME_LOCALS
+            .get()
+            .expect("Python task locals not initialized")
+            .clone_ref(py);
 
-            let py_object_refs = ray_partition_refs
-                .into_iter()
-                .map(|pr| pr.get_object_ref(py))
-                .collect::<Vec<_>>();
+        let py_object_refs = ray_partition_refs
+            .into_iter()
+            .map(|pr| pr.get_object_ref(py))
+            .collect::<Vec<_>>();
 
-            let py_sort_by = partition_by
-                .iter()
-                .map(|e| daft_dsl::python::PyExpr {
-                    expr: e.inner().clone(),
-                })
-                .collect::<Vec<_>>();
+        let py_sort_by = partition_by
+            .iter()
+            .map(|e| daft_dsl::python::PyExpr {
+                expr: e.inner().clone(),
+            })
+            .collect::<Vec<_>>();
 
-            (
-                task_locals,
-                py_object_refs,
-                py_sort_by,
-                descending,
-                nulls_first,
-            )
-        });
+        (
+            task_locals,
+            py_object_refs,
+            py_sort_by,
+            descending,
+            nulls_first,
+        )
+    });
 
     let boundaries_fut = async move {
-        let result = Python::with_gil(|py| {
+        let result = Python::attach(|py| {
             let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
 
             let coroutine = flotilla_module.call_method1(
@@ -106,7 +105,7 @@ pub(crate) async fn get_partition_boundaries_from_samples(
     };
 
     let boundaries = pyo3_async_runtimes::tokio::scope(task_locals, boundaries_fut).await?;
-    let boundaries = Python::with_gil(|py| {
+    let boundaries = Python::attach(|py| {
         boundaries.extract::<daft_micropartition::python::PyMicroPartition>(py)
     })?;
 
