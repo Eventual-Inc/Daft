@@ -396,7 +396,7 @@ impl IntermediateOperator for UdfOperator {
         res
     }
 
-    async fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self) -> DaftResult<Self::State> {
         let worker_count = self.worker_count.fetch_add(1, Ordering::SeqCst);
 
         // Check if any inputs or the output are Python-dtype columns

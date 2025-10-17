@@ -7,7 +7,12 @@ from typing_extensions import Unpack
 
 if TYPE_CHECKING:
     from daft.ai.openai.typing import OpenAIProviderOptions
-    from daft.ai.protocols import ImageEmbedderDescriptor, TextClassifierDescriptor, TextEmbedderDescriptor
+    from daft.ai.protocols import (
+        ImageEmbedderDescriptor,
+        PrompterDescriptor,
+        TextClassifierDescriptor,
+        TextEmbedderDescriptor,
+    )
 
 
 class ProviderImportError(ImportError):
@@ -96,3 +101,7 @@ class Provider(ABC):
     def get_text_classifier(self, model: str | None = None, **options: Any) -> TextClassifierDescriptor:
         """Returns a TextClassifierDescriptor for this provider."""
         raise not_implemented_err(self, method="classify_text")
+
+    def get_prompter(self, model: str | None = None, **options: Any) -> PrompterDescriptor:
+        """Returns a PrompterDescriptor for this provider."""
+        raise not_implemented_err(self, method="prompt")

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Any, Union
 
 from daft import (
     DataType,
     Expression,
+    Series,
     col,
     udf,
     current_session,
@@ -16,6 +17,8 @@ from daft.ai.provider import load_provider
 from daft.ai.provider import Provider
 
 if TYPE_CHECKING:
+    from pydantic import BaseModel
+
     from daft.ai.protocols import TextEmbedderDescriptor
     from daft.utils import ColumnInputType
     from daft.ai.typing import Label
@@ -24,6 +27,7 @@ __all__ = [
     "classify_text",
     "embed_image",
     "embed_text",
+    "prompt",
 ]
 
 
@@ -234,3 +238,58 @@ def classify_text(
     expr = expr_callable(_TextClassificationExpression)
     expr = expr.with_init_args(text_classifier, label_list)
     return expr(text)
+
+
+##
+# PROMPT FUNCTIONS
+##
+
+
+def prompt(
+    messages: Expression,
+    return_format: BaseModel | None = None,
+    *,
+    system_message: str | None = None,
+    provider: str | Provider | None = None,
+    model: str | None = None,
+    **options: str,
+) -> Expression:
+    from daft.udf import cls as daft_cls, method
+    from daft.ai._expressions import _PrompterExpression
+
+    # Add return_format to options for the provider
+    if return_format is not None:
+        options = {**options, "return_format": return_format}
+    if system_message is not None:
+        options = {**options, "system_message": system_message}
+
+    # Load a PrompterDescriptor from the resolved provider
+    prompter_descriptor = _resolve_provider(provider, "openai").get_prompter(model, **options)
+
+    # Determine return dtype
+    if return_format is not None:
+        try:
+            return_dtype = DataType.infer_from_type(return_format)
+        except Exception:
+            return_dtype = DataType.string()
+    else:
+        return_dtype = DataType.string()
+
+    # Get UDF options from the descriptor
+    udf_options = prompter_descriptor.get_udf_options()
+
+    # Decorate the __call__ method with @daft.method to specify return_dtype
+    _PrompterExpression.__call__ = method(method=_PrompterExpression.__call__, return_dtype=return_dtype)  # type: ignore[method-assign]
+
+    # Wrap the class with @daft.cls
+    wrapped_cls = daft_cls(
+        _PrompterExpression,
+        gpus=udf_options.num_gpus or 0,
+        max_concurrency=udf_options.concurrency,
+    )
+
+    # Instantiate the wrapped class with the prompter descriptor
+    instance = wrapped_cls(prompter_descriptor)
+
+    # Call the instance (which calls __call__ method) with the messages expression
+    return instance(messages)

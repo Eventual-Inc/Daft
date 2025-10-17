@@ -93,7 +93,7 @@ impl IntermediateOperator for UnpivotOperator {
         NodeType::Unpivot
     }
 
-    async fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self) -> DaftResult<Self::State> {
         Ok(())
     }
 }
