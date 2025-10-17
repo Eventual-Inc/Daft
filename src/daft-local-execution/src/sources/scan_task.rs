@@ -289,6 +289,14 @@ Num Parallel Scan Tasks = {num_parallel_tasks}
         }
     }
 
+    fn repr_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "id": self.id(),
+            "type": self.op_type().to_string(),
+            "name": self.name(),
+        })
+    }
+
     fn get_name(&self) -> String {
         "ScanTaskSource".to_string()
     }
