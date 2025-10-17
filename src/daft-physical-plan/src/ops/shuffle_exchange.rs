@@ -3,7 +3,6 @@ use std::sync::Arc;
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use daft_dsl::ExprRef;
-use daft_io::{SourceType, parse_url};
 use daft_logical_plan::partitioning::{
     ClusteringSpec, HashClusteringConfig, RandomClusteringConfig, RangeClusteringConfig,
     UnknownClusteringConfig,
@@ -33,7 +32,6 @@ impl ShuffleExchange {
             ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge { target_spec, .. } => {
                 target_spec.clone()
             }
-            ShuffleExchangeStrategy::FlightShuffle { target_spec, .. } => target_spec.clone(),
         }
     }
 }
@@ -49,11 +47,6 @@ pub enum ShuffleExchangeStrategy {
     MapReduceWithPreShuffleMerge {
         pre_shuffle_merge_threshold: usize,
         target_spec: Arc<ClusteringSpec>,
-    },
-
-    FlightShuffle {
-        target_spec: Arc<ClusteringSpec>,
-        shuffle_dirs: Vec<String>,
     },
 }
 
@@ -102,14 +95,6 @@ impl ShuffleExchange {
                     "Pre-Shuffle Merge Threshold: {}",
                     pre_shuffle_merge_threshold
                 ));
-            }
-            ShuffleExchangeStrategy::FlightShuffle {
-                target_spec,
-                shuffle_dirs,
-            } => {
-                res.push("Strategy: FlightShuffle".to_string());
-                res.push(format!("Target Spec: {:?}", target_spec));
-                res.push(format!("Shuffle Dirs: {}", shuffle_dirs.join(", ")));
             }
         }
         res
@@ -161,24 +146,9 @@ impl ShuffleExchangeFactory {
                 }
             }
             Some(cfg) if cfg.shuffle_algorithm == "flight_shuffle" => {
-                if cfg.flight_shuffle_dirs.is_empty() {
-                    return Err(DaftError::ValueError(
-                        "flight_shuffle_dirs must be non-empty to use flight shuffle".to_string(),
-                    ));
-                }
-                if cfg
-                    .flight_shuffle_dirs
-                    .iter()
-                    .any(|dir| !matches!(parse_url(dir).unwrap().0, SourceType::File))
-                {
-                    return Err(DaftError::ValueError(
-                        "Flight_shuffle_dirs must be valid file paths".to_string(),
-                    ));
-                }
-                ShuffleExchangeStrategy::FlightShuffle {
-                    target_spec: clustering_spec,
-                    shuffle_dirs: cfg.flight_shuffle_dirs.clone(),
-                }
+                return Err(DaftError::ValueError(
+                    "Flight_shuffle is not supported in the old ray runner".to_string(),
+                ));
             }
             Some(cfg) if cfg.shuffle_algorithm == "auto" => {
                 if self.should_use_pre_shuffle_merge(

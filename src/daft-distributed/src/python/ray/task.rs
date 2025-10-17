@@ -9,7 +9,7 @@ use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
-        task::{SwordfishTask, TaskContext, TaskResultHandle, TaskStatus},
+        task::{SwordfishTask, Task, TaskContext, TaskResultHandle, TaskStatus},
         worker::WorkerId,
     },
 };
@@ -51,6 +51,8 @@ pub(crate) struct RayTaskResultHandle {
     task_locals: Option<pyo3_async_runtimes::TaskLocals>,
     /// The worker id
     worker_id: WorkerId,
+    /// The ip address of the worker
+    ip_address: String,
 }
 
 impl RayTaskResultHandle {
@@ -61,6 +63,7 @@ impl RayTaskResultHandle {
         coroutine: Py<PyAny>,
         task_locals: pyo3_async_runtimes::TaskLocals,
         worker_id: WorkerId,
+        ip_address: String,
     ) -> Self {
         Self {
             task_context,
@@ -68,6 +71,7 @@ impl RayTaskResultHandle {
             coroutine: Some(coroutine),
             task_locals: Some(task_locals),
             worker_id,
+            ip_address,
         }
     }
 }
@@ -82,7 +86,7 @@ impl TaskResultHandle for RayTaskResultHandle {
         // Create a rust future that will await the coroutine
         let coroutine = self.coroutine.take().unwrap();
         let task_locals = self.task_locals.take().unwrap();
-
+        let ip_address = self.ip_address.clone();
         let await_coroutine = async move {
             let result = Python::attach(|py| {
                 pyo3_async_runtimes::tokio::into_future(coroutine.into_bound(py))
@@ -92,6 +96,7 @@ impl TaskResultHandle for RayTaskResultHandle {
         };
 
         let worker_id = self.worker_id.clone();
+        let task_id = self.task_context.task_id;
         async move {
             let ray_task_result = pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine)
                 .await
@@ -107,6 +112,8 @@ impl TaskResultHandle for RayTaskResultHandle {
                             .map(|ray_part_ref| Arc::new(ray_part_ref) as PartitionRef)
                             .collect(),
                         worker_id.clone(),
+                        ip_address.clone(),
+                        task_id,
                     );
 
                     TaskStatus::Success {
@@ -189,6 +196,10 @@ impl RaySwordfishTask {
 
 #[pymethods]
 impl RaySwordfishTask {
+    fn id(&self) -> u32 {
+        self.task.task_context().task_id
+    }
+
     fn context(&self) -> HashMap<String, String> {
         self.task.context().clone()
     }
