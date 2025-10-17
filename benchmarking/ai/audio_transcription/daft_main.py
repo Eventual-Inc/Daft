@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import io
+import time
 
 import numpy as np
+import ray
 import torch
 import torchaudio
 import torchaudio.transforms as T
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
-import time
-import ray
 
 import daft
 
@@ -20,13 +20,17 @@ OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/audio
 
 daft.context.set_runner_ray()
 
+
 # Wait for Ray cluster to be ready
 @ray.remote
 def warmup():
     pass
+
+
 ray.get([warmup.remote() for _ in range(64)])
 
 
+@daft.func(use_process=True, return_dtype=daft.DataType.list(daft.DataType.float32()))
 def resample(audio_bytes):
     waveform, sampling_rate = torchaudio.load(io.BytesIO(audio_bytes), format="flac")
     waveform = T.Resample(sampling_rate, NEW_SAMPLING_RATE)(waveform).squeeze()
@@ -36,7 +40,7 @@ def resample(audio_bytes):
 processor = AutoProcessor.from_pretrained(TRANSCRIPTION_MODEL)
 
 
-@daft.func.batch(return_dtype=daft.DataType.tensor(daft.DataType.float32()))
+@daft.func.batch(return_dtype=daft.DataType.tensor(daft.DataType.float32()), use_process=True)
 def whisper_preprocess(resampled):
     extracted_features = processor(
         resampled.to_arrow().to_numpy(zero_copy_only=False).tolist(),
@@ -72,7 +76,7 @@ class Transcriber:
         return token_ids.cpu().numpy()
 
 
-@daft.func.batch(return_dtype=daft.DataType.string())
+@daft.func.batch(return_dtype=daft.DataType.string(), use_process=True)
 def decoder(token_ids):
     transcription = processor.batch_decode(token_ids, skip_special_tokens=True)
     return transcription
@@ -81,10 +85,7 @@ def decoder(token_ids):
 start_time = time.time()
 
 df = daft.read_parquet(INPUT_PATH)
-df = df.with_column(
-    "resampled",
-    df["audio"]["bytes"].apply(resample, return_dtype=daft.DataType.list(daft.DataType.float32())),
-)
+df = df.with_column("resampled", resample(df["audio"]["bytes"]))
 df = df.with_column("extracted_features", whisper_preprocess(df["resampled"]))
 df = df.with_column("token_ids", Transcriber()(df["extracted_features"]))
 df = df.with_column("transcription", decoder(df["token_ids"]))
