@@ -53,6 +53,8 @@ class ResNetModel:
             predicted_labels = [self.weights.meta["categories"][i] for i in predicted_classes]
             return predicted_labels
 
+daft.set_planning_config(default_io_config=daft.io.IOConfig(s3=daft.io.S3Config.from_env()))
+
 start_time = time.time()
 
 df = daft.read_parquet(INPUT_PATH)
