@@ -4,7 +4,7 @@ use common_daft_config::PyDaftExecutionConfig;
 use common_error::DaftResult;
 use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::PyLocalPhysicalPlan;
-use pyo3::{PyObject, PyResult, Python, pyclass, pymethods};
+use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::{
     pipeline_node::MaterializedOutput,
@@ -44,9 +44,9 @@ impl RayTaskResult {
 pub(crate) struct RayTaskResultHandle {
     task_context: TaskContext,
     /// The handle to the RaySwordfishTaskHandle
-    handle: PyObject,
+    handle: Py<PyAny>,
     /// The coroutine to await the result of the task
-    coroutine: Option<PyObject>,
+    coroutine: Option<Py<PyAny>>,
     /// The task locals, i.e. the asyncio event loop
     task_locals: Option<pyo3_async_runtimes::TaskLocals>,
     /// The worker id
@@ -57,8 +57,8 @@ impl RayTaskResultHandle {
     /// Create a new TaskHandle from a Python RaySwordfishTaskHandle
     pub fn new(
         task_context: TaskContext,
-        handle: PyObject,
-        coroutine: PyObject,
+        handle: Py<PyAny>,
+        coroutine: Py<PyAny>,
         task_locals: pyo3_async_runtimes::TaskLocals,
         worker_id: WorkerId,
     ) -> Self {
@@ -84,7 +84,7 @@ impl TaskResultHandle for RayTaskResultHandle {
         let task_locals = self.task_locals.take().unwrap();
 
         let await_coroutine = async move {
-            let result = Python::with_gil(|py| {
+            let result = Python::attach(|py| {
                 pyo3_async_runtimes::tokio::into_future(coroutine.into_bound(py))
             })?
             .await?;
@@ -96,7 +96,7 @@ impl TaskResultHandle for RayTaskResultHandle {
             let ray_task_result = pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine)
                 .await
                 .and_then(|result| {
-                    Python::with_gil(|py| result.extract::<RayTaskResult>(py)).map_err(|e| e.into())
+                    Python::attach(|py| result.extract::<RayTaskResult>(py)).map_err(|e| e.into())
                 });
 
             match ray_task_result {
@@ -121,7 +121,7 @@ impl TaskResultHandle for RayTaskResultHandle {
     }
 
     fn cancel_callback(&mut self) {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             self.handle
                 .call_method0(py, "cancel")
                 .expect("Failed to cancel task");
@@ -132,7 +132,7 @@ impl TaskResultHandle for RayTaskResultHandle {
 #[pyclass(module = "daft.daft", name = "RayPartitionRef", frozen)]
 #[derive(Debug, Clone)]
 pub(crate) struct RayPartitionRef {
-    pub object_ref: Arc<PyObject>,
+    pub object_ref: Arc<Py<PyAny>>,
     pub num_rows: usize,
     pub size_bytes: usize,
 }
@@ -140,7 +140,7 @@ pub(crate) struct RayPartitionRef {
 #[pymethods]
 impl RayPartitionRef {
     #[new]
-    pub fn new(object_ref: PyObject, num_rows: usize, size_bytes: usize) -> Self {
+    pub fn new(object_ref: Py<PyAny>, num_rows: usize, size_bytes: usize) -> Self {
         Self {
             object_ref: Arc::new(object_ref),
             num_rows,
@@ -149,7 +149,7 @@ impl RayPartitionRef {
     }
 
     #[getter]
-    pub fn get_object_ref(&self, py: Python) -> PyObject {
+    pub fn get_object_ref(&self, py: Python) -> Py<PyAny> {
         self.object_ref.clone_ref(py)
     }
 

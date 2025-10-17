@@ -301,7 +301,7 @@ def _infer_filesystem(
             )
         else:
             fsspec_fs = fsspec_fs_cls()
-        resolved_filesystem = pafs.PyFileSystem(fsspec_fs)
+        resolved_filesystem = pafs.PyFileSystem(pafs.FSSpecHandler(fsspec_fs))
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
         return resolved_path, resolved_filesystem, None
 

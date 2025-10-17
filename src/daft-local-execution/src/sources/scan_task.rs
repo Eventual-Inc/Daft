@@ -602,7 +602,7 @@ async fn stream_scan_task(
                 .filters
                 .as_ref()
                 .map(|p| (*p.as_ref()).clone().into());
-            let table = Python::with_gil(|py| {
+            let table = Python::attach(|py| {
                 daft_micropartition::python::read_sql_into_py_table(
                     py,
                     sql,

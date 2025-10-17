@@ -40,9 +40,9 @@ impl PyFileReference {
 
     fn __exit__(
         &mut self,
-        _exc_type: Option<PyObject>,
-        _exc_value: Option<PyObject>,
-        _traceback: Option<PyObject>,
+        _exc_type: Option<Py<PyAny>>,
+        _exc_value: Option<Py<PyAny>>,
+        _traceback: Option<Py<PyAny>>,
     ) -> PyResult<()> {
         Ok(())
     }
@@ -198,9 +198,9 @@ impl PyDaftFile {
 
     fn __exit__(
         &mut self,
-        _exc_type: Option<PyObject>,
-        _exc_value: Option<PyObject>,
-        _traceback: Option<PyObject>,
+        _exc_type: Option<Py<PyAny>>,
+        _exc_value: Option<Py<PyAny>>,
+        _traceback: Option<Py<PyAny>>,
     ) -> PyResult<()> {
         self.inside_context.store(false, Ordering::SeqCst);
         self.close()

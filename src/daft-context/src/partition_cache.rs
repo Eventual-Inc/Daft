@@ -67,7 +67,7 @@ pub fn put_partition_set_into_cache(
     use pyo3::{Python, types::PyAnyMethods};
 
     let runner = daft_runners::get_or_create_runner()?;
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         // get runner as python object so we can add a partition to the cache
         let py_runner = runner.to_pyobj(py);
         let py_runner = py_runner.bind(py);

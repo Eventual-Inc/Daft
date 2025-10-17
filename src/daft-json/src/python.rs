@@ -28,7 +28,7 @@ pub mod pylib {
         multithreaded_io: Option<bool>,
         max_chunks_in_flight: Option<usize>,
     ) -> PyResult<PyRecordBatch> {
-        py.allow_threads(|| {
+        py.detach(|| {
             let io_stats = IOStatsContext::new(format!("read_json: for uri {uri}"));
 
             let io_client = get_io_client(
@@ -64,7 +64,7 @@ pub mod pylib {
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
     ) -> PyResult<PySchema> {
-        py.allow_threads(|| {
+        py.detach(|| {
             let io_stats = IOStatsContext::new(format!("read_json_schema: for uri {uri}"));
 
             let io_client = get_io_client(
