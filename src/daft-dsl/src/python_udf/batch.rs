@@ -105,7 +105,7 @@ impl BatchPyFn {
             .collect::<Vec<_>>();
 
         let try_call_batch = || {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let func = py
                     .import(pyo3::intern!(py, "daft.udf.execution"))?
                     .getattr(pyo3::intern!(py, "call_batch"))?;

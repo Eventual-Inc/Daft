@@ -120,7 +120,6 @@ impl RowWisePyFn {
     }
 
     #[cfg(feature = "python")]
-    #[cfg(feature = "python")]
     fn call_async(&self, args: &[Series], num_rows: usize) -> DaftResult<Series> {
         use common_error::DaftError;
         use daft_core::python::PySeries;
@@ -131,7 +130,7 @@ impl RowWisePyFn {
         let args_ref = self.original_args.as_ref();
         let max_retries = self.max_retries.unwrap_or(0);
 
-        pyo3::Python::with_gil(|py| {
+        pyo3::Python::attach(|py| {
             let f = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
                 .getattr(pyo3::intern!(py, "call_async_batch"))?;
@@ -194,7 +193,7 @@ impl RowWisePyFn {
                 // Update our failure map for next iteration
                 if attempt < max_retries {
                     use std::{thread, time::Duration};
-                    py.allow_threads(|| {
+                    py.detach(|| {
                         thread::sleep(Duration::from_millis(delay_ms));
                     });
                     // Exponential backoff: multiply by 2, cap at MAX_DELAY_MS
@@ -271,6 +270,7 @@ impl RowWisePyFn {
     #[cfg(feature = "python")]
     fn call_serial(&self, args: &[Series], num_rows: usize) -> DaftResult<Series> {
         use common_error::DaftError;
+        use indexmap::IndexMap;
         use pyo3::prelude::*;
 
         let cls_ref = self.cls.as_ref();
@@ -279,9 +279,7 @@ impl RowWisePyFn {
 
         let name = args[0].name();
 
-        Python::with_gil(|py| {
-            use indexmap::IndexMap;
-
+        Python::attach(|py| {
             let func = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
                 .getattr(pyo3::intern!(py, "call_func"))?;
@@ -347,7 +345,7 @@ impl RowWisePyFn {
                 errs = still_failed;
                 if attempt < max_retries {
                     use std::{thread, time::Duration};
-                    py.allow_threads(|| {
+                    py.detach(|| {
                         thread::sleep(Duration::from_millis(delay_ms));
                     });
                     // Exponential backoff: multiply by 2, cap at MAX_DELAY_MS
@@ -355,7 +353,7 @@ impl RowWisePyFn {
                 }
             }
             // free up the gil while we're creating the series.
-            py.allow_threads(|| {
+            py.detach(|| {
                 if errs.is_empty() {
                     let s = Series::from_literals(outputs.into_values().collect())?;
                     let s = s.cast(&self.return_dtype)?;
