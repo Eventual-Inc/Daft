@@ -519,7 +519,7 @@ class S3Config:
         >>> # For S3-compatible services (e.g. Volcengine TOS)
         >>> io_config = IOConfig(
         ...     s3=S3Config(
-        ...         endpoint_url=https://tos-s3-{region}.ivolces.com",
+        ...         endpoint_url="https://tos-s3-{region}.ivolces.com",
         ...         region_name="{region}",
         ...         force_virtual_addressing=True,
         ...         verify_ssl=True,
