@@ -131,7 +131,7 @@ impl RowWisePyFn {
         let args_ref = self.original_args.as_ref();
         let max_retries = self.max_retries.unwrap_or(0);
 
-        Ok(pyo3::Python::with_gil(|py| {
+        pyo3::Python::with_gil(|py| {
             let f = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
                 .getattr(pyo3::intern!(py, "call_async_batch"))?;
@@ -239,9 +239,33 @@ impl RowWisePyFn {
                         err_msg
                     )))
                 }
-                (false, crate::functions::python::OnError::Log) => todo!(),
+                (false, crate::functions::python::OnError::Log) => {
+                    let err_msg = errs
+                        .iter()
+                        .map(|(i, e)| format!("\t{}: {}", i, e))
+                        .join("\n");
+                    let err = DaftError::ComputeError(format!(
+                        "Failed to execute Python UDF on some rows\n: {}",
+                        err_msg
+                    ));
+                    log::warn!("{}", err);
+
+                    for (i, _) in errs {
+                        use pyo3::IntoPyObjectExt;
+
+                        results.insert(i, py.None().into_bound_py_any(py)?);
+                    }
+                    results.sort_keys();
+                    let result_series = PySeries::from_pylist_impl(
+                        name,
+                        results.into_values().collect(),
+                        self.return_dtype.clone(),
+                    )?;
+
+                    Ok(result_series.series)
+                }
             }
-        })?)
+        })
     }
 
     #[cfg(feature = "python")]
@@ -350,8 +374,23 @@ impl RowWisePyFn {
                             )))
                         }
                         crate::functions::python::OnError::Log => {
-                            todo!()
-                            // log::error!("Failed to execute Python UDF on some rows: {:?}", errs);
+                            let err_msg = errs
+                                .iter()
+                                .map(|(i, e)| format!("\t{}: {}", i, e))
+                                .join("\n");
+                            let err = DaftError::ComputeError(format!(
+                                "Failed to execute Python UDF on some rows\n: {}",
+                                err_msg
+                            ));
+                            log::warn!("{}", err);
+                            let mut result_literals = vec![Literal::Null; num_rows];
+                            for (idx, lit) in outputs {
+                                result_literals[idx] = lit;
+                            }
+                            let s = Series::from_literals(result_literals)?;
+                            let s = s.cast(&self.return_dtype)?;
+                            let s = s.rename(name);
+                            Ok(s)
                         }
                         crate::functions::python::OnError::Ignore => {
                             let mut result_literals = vec![Literal::Null; num_rows];

@@ -207,3 +207,16 @@ def test_batch_udf_literal_eval_returns_numpy():
     import numpy as np
 
     assert np.array_equal(result, np.array([5, 10, 15]))
+
+
+def test_batch_on_error_ignore():
+    @daft.func.batch(on_error="ignore", return_dtype=int)
+    def raise_err(x):
+        raise ValueError("batch failed")
+
+    df = daft.from_pydict({"value": [1, 2, 3]})
+
+    expected = {"value": [None, None, None]}
+
+    actual = df.select(raise_err(col("value"))).to_pydict()
+    assert actual == expected

@@ -153,3 +153,19 @@ def test_row_wise_udf_unnest_error_non_struct():
         @daft.func(return_dtype=daft.DataType.int64(), unnest=True)
         def invalid_unnest(a: int):
             return a
+
+
+def test_rowwise_on_err_ignore():
+    @daft.func(on_error="ignore")
+    def raise_err(x) -> int:
+        if x % 2:
+            raise ValueError("This is an error")
+        else:
+            return x
+
+    df = daft.from_pydict({"value": [1, 2, 3]})
+
+    expected = {"value": [None, 2, None]}
+
+    actual = df.select(raise_err(col("value"))).to_pydict()
+    assert actual == expected
