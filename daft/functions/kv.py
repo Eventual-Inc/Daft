@@ -19,25 +19,27 @@ Examples:
     >>> from daft.functions.kv import kv_put, kv_get, kv_get_with_name, kv_batch_get_with_name, kv_exists_with_name
     >>> # Memory KV basic flow
     >>> embeddings_kv = load_kv("memory", name="embeddings")  # doctest: +SKIP
-    >>> metadata_kv = load_kv("memory", name="metadata")      # doctest: +SKIP
+    >>> metadata_kv = load_kv("memory", name="metadata")  # doctest: +SKIP
     >>> daft.attach_kv(embeddings_kv, alias="mem_embeddings")  # doctest: +SKIP
-    >>> daft.attach_kv(metadata_kv, alias="mem_metadata")      # doctest: +SKIP
-    >>> daft.set_kv("mem_embeddings")                          # doctest: +SKIP
+    >>> daft.attach_kv(metadata_kv, alias="mem_metadata")  # doctest: +SKIP
+    >>> daft.set_kv("mem_embeddings")  # doctest: +SKIP
     >>>
     >>> # Build base DataFrame
-    >>> df = daft.from_pydict({
-    ...     "item_id": [0, 1, 2],
-    ...     "embedding": [[0.0, 0.1], [1.0, 1.1], [2.0, 2.2]],
-    ...     "metadata": ["m0", "m1", "m2"],
-    ... })
+    >>> df = daft.from_pydict(
+    ...     {
+    ...         "item_id": [0, 1, 2],
+    ...         "embedding": [[0.0, 0.1], [1.0, 1.1], [2.0, 2.2]],
+    ...         "metadata": ["m0", "m1", "m2"],
+    ...     }
+    ... )
     >>>
     >>> # Put key/value pairs into different stores (returns Struct)
     >>> _ = df.select(kv_put(embeddings_kv, col("item_id"), col("embedding")).alias("put")).collect()  # doctest: +SKIP
-    >>> _ = df.select(kv_put(metadata_kv, col("item_id"), col("metadata")).alias("put")).collect()     # doctest: +SKIP
+    >>> _ = df.select(kv_put(metadata_kv, col("item_id"), col("metadata")).alias("put")).collect()  # doctest: +SKIP
     >>>
     >>> # Get aligned by row: same order as df['item_id']
     >>> e1 = kv_get_with_name("item_id", "mem_embeddings", columns=["embedding"])  # doctest: +SKIP
-    >>> e2 = kv_get_with_name("item_id", "mem_metadata",  columns=["metadata"])    # doctest: +SKIP
+    >>> e2 = kv_get_with_name("item_id", "mem_metadata", columns=["metadata"])  # doctest: +SKIP
     >>> merge = daft.func(lambda a, b: {**(a or {}), **(b or {})}, return_dtype=daft.DataType.python())
     >>> df_out = df.with_column("data", merge(e1, e2))  # doctest: +SKIP
     >>>
@@ -46,13 +48,14 @@ Examples:
     >>>
     >>> # Join equivalence (explicit join matches merged dicts)
     >>> df_e = df.with_column("embedding_data", e1).select("item_id", "embedding_data")  # doctest: +SKIP
-    >>> df_m = df.with_column("metadata_data", e2).select("item_id", "metadata_data")    # doctest: +SKIP
+    >>> df_m = df.with_column("metadata_data", e2).select("item_id", "metadata_data")  # doctest: +SKIP
     >>> df_joined = df_e.join(df_m, on="item_id")  # doctest: +SKIP
     >>> # Robust merge for missing keys: (a or {}) / (b or {})
     >>> combined = df_joined.with_column(  # doctest: +SKIP
     ...     "data",
     ...     daft.func(lambda a, b: {**(a or {}), **(b or {})}, return_dtype=daft.DataType.python())(  # doctest: +SKIP
-    ...         daft.col("embedding_data"), daft.col("metadata_data")  # doctest: +SKIP
+    ...         daft.col("embedding_data"),
+    ...         daft.col("metadata_data"),  # doctest: +SKIP
     ...     ),  # doctest: +SKIP
     ... )  # doctest: +SKIP
     >>>
