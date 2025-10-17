@@ -2,7 +2,7 @@ use common_error::{DaftError, DaftResult};
 use common_file::FileReference;
 use common_io_config::IOConfig;
 #[cfg(feature = "python")]
-use pyo3::{PyClass, Python};
+use pyo3::{Py, PyAny, PyClass, Python};
 
 use super::{FromLiteral, Literal, deserializer::LiteralDeserializer};
 #[cfg(feature = "python")]
@@ -49,7 +49,7 @@ impl_literal!(FileReference, File);
 impl_literal!(&'_ str, Utf8, |s: &'_ str| s.to_owned());
 impl_literal!(&'_ [u8], Binary, |s: &'_ [u8]| s.to_vec());
 #[cfg(feature = "python")]
-impl_literal!(pyo3::PyObject, Python, |s: pyo3::PyObject| {
+impl_literal!(Py<PyAny>, Python, |s: Py<PyAny>| {
     common_py_serde::PyObjectWrapper(std::sync::Arc::new(s))
 });
 
@@ -169,7 +169,7 @@ where
     T: Clone + PyClass,
 {
     if let Literal::Python(py_value) = value {
-        Python::with_gil(|py| py_value.0.extract::<T>(py).ok())
+        Python::attach(|py| py_value.0.extract::<T>(py).ok())
     } else {
         None
     }

@@ -174,7 +174,7 @@ impl FullNull for StructArray {
 #[cfg(feature = "python")]
 impl FullNull for PythonArray {
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
-        let pynone = Arc::new(Python::with_gil(|py: Python| py.None()));
+        let pynone = Arc::new(Python::attach(|py: Python| py.None()));
         let values = vec![pynone; length];
 
         let validity = arrow2::bitmap::Bitmap::new_zeroed(length);

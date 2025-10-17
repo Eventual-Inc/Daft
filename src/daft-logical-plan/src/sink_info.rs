@@ -9,8 +9,6 @@ use daft_core::prelude::Schema;
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use educe::Educe;
 use itertools::Itertools;
-#[cfg(feature = "python")]
-use pyo3::PyObject;
 use serde::{Deserialize, Serialize};
 
 #[allow(clippy::large_enum_variant)]
@@ -62,14 +60,14 @@ pub struct IcebergCatalogInfo<E = ExprRef> {
     )]
     #[educe(PartialEq(ignore))]
     #[educe(Hash(ignore))]
-    pub iceberg_schema: Arc<PyObject>,
+    pub iceberg_schema: Arc<pyo3::Py<pyo3::PyAny>>,
     #[serde(
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
     )]
     #[educe(PartialEq(ignore))]
     #[educe(Hash(ignore))]
-    pub iceberg_properties: Arc<PyObject>,
+    pub iceberg_properties: Arc<pyo3::Py<pyo3::PyAny>>,
     pub io_config: Option<IOConfig>,
 }
 
@@ -136,7 +134,7 @@ pub struct LanceCatalogInfo {
     )]
     #[educe(PartialEq(ignore))]
     #[educe(Hash(ignore))]
-    pub kwargs: Arc<PyObject>,
+    pub kwargs: Arc<pyo3::Py<pyo3::PyAny>>,
 }
 
 #[cfg(feature = "python")]
@@ -164,7 +162,7 @@ pub struct DataSinkInfo {
     )]
     #[educe(PartialEq(ignore))]
     #[educe(Hash(ignore))]
-    pub sink: Arc<PyObject>,
+    pub sink: Arc<pyo3::Py<pyo3::PyAny>>,
 }
 
 #[cfg(feature = "python")]

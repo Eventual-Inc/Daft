@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use {
     common_py_serde::{deserialize_py_object, serialize_py_object},
     daft_schema::python::{datatype::PyTimeUnit, field::PyField},
-    pyo3::{PyObject, PyResult, Python, pyclass, pymethods, types::PyAnyMethods},
+    pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods, types::PyAnyMethods},
 };
 
 use crate::FileFormat;
@@ -341,14 +341,14 @@ pub struct DatabaseSourceConfig {
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
     )]
-    pub conn: Arc<PyObject>,
+    pub conn: Arc<Py<PyAny>>,
 }
 
 #[cfg(feature = "python")]
 impl PartialEq for DatabaseSourceConfig {
     fn eq(&self, other: &Self) -> bool {
         self.sql == other.sql
-            && Python::with_gil(|py| self.conn.bind(py).eq(other.conn.bind(py)).unwrap())
+            && Python::attach(|py| self.conn.bind(py).eq(other.conn.bind(py)).unwrap())
     }
 }
 
@@ -359,7 +359,7 @@ impl Eq for DatabaseSourceConfig {}
 impl Hash for DatabaseSourceConfig {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.sql.hash(state);
-        let py_obj_hash = Python::with_gil(|py| self.conn.bind(py).hash());
+        let py_obj_hash = Python::attach(|py| self.conn.bind(py).hash());
         match py_obj_hash {
             Ok(hash) => hash.hash(state),
             Err(_) => serde_json::to_vec(self).unwrap().hash(state),
@@ -370,7 +370,7 @@ impl Hash for DatabaseSourceConfig {
 #[cfg(feature = "python")]
 impl DatabaseSourceConfig {
     #[must_use]
-    pub fn new_internal(sql: String, conn: Arc<PyObject>) -> Self {
+    pub fn new_internal(sql: String, conn: Arc<Py<PyAny>>) -> Self {
         Self { sql, conn }
     }
 
@@ -387,7 +387,7 @@ impl DatabaseSourceConfig {
 impl DatabaseSourceConfig {
     /// Create a config for a Database data source.
     #[new]
-    fn new(sql: &str, conn: PyObject) -> Self {
+    fn new(sql: &str, conn: Py<PyAny>) -> Self {
         Self::new_internal(sql.to_string(), Arc::new(conn))
     }
 }

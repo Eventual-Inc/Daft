@@ -26,13 +26,13 @@ impl SQLModule for SQLModulePython {
 }
 
 #[cfg(feature = "python")]
-fn lit_to_py_any(py: Python, expr: &daft_dsl::Expr) -> PyResult<PyObject> {
+fn lit_to_py_any(py: Python, expr: &daft_dsl::Expr) -> PyResult<pyo3::Py<pyo3::PyAny>> {
     match expr {
         Expr::List(exprs) => {
             let literals = exprs
                 .iter()
                 .map(|e| lit_to_py_any(py, e))
-                .collect::<PyResult<Vec<PyObject>>>()?;
+                .collect::<PyResult<Vec<pyo3::Py<pyo3::PyAny>>>>()?;
             literals.into_py_any(py)
         }
         Expr::Literal(lit) => lit.clone().into_py_any(py),
@@ -50,7 +50,7 @@ impl SQLFunction for WrappedUDFClass {
     ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
         #[cfg(feature = "python")]
         {
-            let e: DaftResult<PyExpr> = pyo3::Python::with_gil(|py| {
+            let e: DaftResult<PyExpr> = pyo3::Python::attach(|py| {
                 let mut args = Vec::with_capacity(inputs.len());
                 let kwargs = PyDict::new(py);
 
