@@ -2,21 +2,19 @@
 
 [Lance](https://lancedb.github.io/lance/) is a next-generation columnar storage format for multimodal datasets (images, video, audio, and general columnar data). It supports local POSIX filesystems and cloud object stores (e.g., S3/GCS). Lance is known for extremely fast random access, zero-copy reads, deep integration with PyArrow/DuckDB, and strong performance for vector retrieval workloads.
 
-Daft provides both read and write support for Lance datasets via LanceDB and is suited for the following typical use cases:
-
-- Random-access heavy analytics and feature engineering workloads (significantly faster random reads than Parquet)
-- Large media datasets (image/video frames/audio segments)
-- Managing and querying vector feature data (embedding storage and filtering)
-- Unified access to local and cloud datasets (S3/GCS/local paths)
-
 Daft currently supports:
 
-1. Parallel and distributed reads: Daft parallelizes reads on the default multithreading runner or on the [distributed Ray runner](../distributed/index.md)
-2. Skipping filtered data (Data Skipping): Daft uses [`df.where()`][daft.DataFrame.where] predicates and file/fragment statistics to skip non-matching data
-3. Multi-cloud and local access: Read from S3, GCS, Azure Blob Storage, and local filesystems with unified IO configuration
-4. Version/time-slice reads: Use `version` and `asof` parameters to read a specific version or the latest version as of a given timestamp
-5. Scan optimization: Configure `fragment_group_size` to group fragments and improve scan efficiency
-6. Cache tuning: Configure `index_cache_size` and `metadata_cache_size_bytes` to optimize index page caching and metadata retrieval for large datasets
+1. **Parallel and distributed reads**: Daft parallelizes reads on the default multithreading runner or on the [distributed Ray runner](../distributed/index.md)
+
+2. **Skipping filtered data (Data Skipping)**: Daft uses [`df.where()`][daft.DataFrame.where] predicates and file/fragment statistics to skip non-matching data
+
+3. **Multi-cloud and local access**: Read from S3, GCS, Azure Blob Storage, and local filesystems with unified IO configuration
+
+4. **Version/time-slice reads**: Use `version` and `asof` parameters to read a specific version or the latest version as of a given timestamp
+
+5. **Scan optimization**: Configure `fragment_group_size` to group fragments and improve scan efficiency
+
+6. **Cache tuning**: Configure `index_cache_size` and `metadata_cache_size_bytes` to optimize index page caching and metadata retrieval for large datasets
 
 ## Installing Daft with Lance Support
 
@@ -25,10 +23,6 @@ Daft integrates LanceDB through an optional dependency:
 ```bash
 pip install -U "daft[lance]"
 ```
-
-!!! note "Python Version"
-
-    Writing to Lance requires Python 3.9 or above.
 
 ## Reading a Table
 
@@ -142,23 +136,3 @@ merge_columns(
 !!! note "Object Store Atomic Commit"
 
     In object stores that do not support atomic commits, configure a custom commit lock via the `commit_lock` parameter to ensure consistency.
-
-## Type System
-
-Lance uses an Arrow-compatible columnar type system that closely matches Daft’s. Common type mappings are:
-
-| Lance/Arrow Type | Daft |
-| --- | --- |
-| `BOOLEAN` | [`daft.DataType.bool()`][daft.datatype.DataType.bool] |
-| `INT` / `LONG` | [`daft.DataType.int32()`][daft.datatype.DataType.int32] / [`daft.DataType.int64()`][daft.datatype.DataType.int64] |
-| `FLOAT` / `DOUBLE` | [`daft.DataType.float32()`][daft.datatype.DataType.float32] / [`daft.DataType.float64()`][daft.datatype.DataType.float64] |
-| `DECIMAL(p, s)` | [`daft.DataType.decimal128(p, s)`][daft.datatype.DataType.decimal128] |
-| `DATE` / `TIMESTAMP` | [`daft.DataType.date()`][daft.datatype.DataType.date] / [`daft.DataType.timestamp(...)`][daft.datatype.DataType.timestamp] |
-| `STRING` / `BINARY` | [`daft.DataType.string()`][daft.datatype.DataType.string] / [`daft.DataType.binary()`][daft.datatype.DataType.binary] |
-| `STRUCT` / `LIST` / `MAP` | [`daft.DataType.struct(...)`][daft.datatype.DataType.struct] / [`daft.DataType.list(...)`][daft.datatype.DataType.list] / [`daft.DataType.map(...)`][daft.datatype.DataType.map] |
-
-## Reference
-
-- API: [`daft.read_lance`][daft.read_lance], [`df.write_lance`][daft.dataframe.DataFrame.write_lance]
-- IO configuration: [Configuration](../api/config.md) (S3/GCS/Azure settings)
-- LanceDB project homepage: https://lancedb.github.io/lance/
