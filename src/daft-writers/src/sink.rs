@@ -35,7 +35,7 @@ impl AsyncFileWriter for DataSinkWriter {
     async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {
         let rows_written = data.len();
         let mut bytes_written = 0;
-        let mp_result: PyRecordBatch = Python::with_gil(|py| -> pyo3::PyResult<_> {
+        let mp_result: PyRecordBatch = Python::attach(|py| -> pyo3::PyResult<_> {
             // Grab the current micropartition and pass it to the data sink.
             let py_micropartition = py
                 .import(pyo3::intern!(py, "daft.recordbatch"))?

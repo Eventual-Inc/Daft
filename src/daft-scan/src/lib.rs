@@ -740,7 +740,11 @@ impl ScanTask {
                         #[cfg(feature = "python")]
                         FileFormatConfig::Database(_) => 1.0,
                         #[cfg(feature = "python")]
-                        FileFormatConfig::PythonFunction => 1.0,
+                        FileFormatConfig::PythonFunction {
+                            source_type: _,
+                            module_name: _,
+                            function_name: _,
+                        } => 1.0,
                     };
                     let in_mem_size: f64 = (file_size as f64) * inflation_factor;
                     let read_row_size = if self.is_warc() {

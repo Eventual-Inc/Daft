@@ -863,6 +863,7 @@ class ScanTask:
         size_bytes: int | None,
         pushdowns: PyPushdowns | None,
         stats: PyRecordBatch | None,
+        source_type: str | None = None,
     ) -> ScanTask:
         """Create a Python factory function Scan Task."""
         ...
@@ -1454,7 +1455,7 @@ class PySeries:
         num_hashes: int,
         ngram_size: int,
         seed: int = 1,
-        hash_function: Literal["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
+        hash_function: Literal["murmurhash3", "xxhash", "xxhash3_64", "xxhash64", "xxhash32", "sha1"] = "murmurhash3",
     ) -> PySeries: ...
     def __invert__(self) -> PySeries: ...
     def count(self, mode: CountMode) -> PySeries: ...

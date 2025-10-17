@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from daft import Series
     from daft.ai.protocols import (
         ImageEmbedder,
         ImageEmbedderDescriptor,
+        Prompter,
+        PrompterDescriptor,
         TextClassifier,
         TextClassifierDescriptor,
         TextEmbedder,
@@ -54,3 +56,15 @@ class _TextClassificationExpression:
     def __call__(self, text_series: Series) -> list[Label]:
         text = text_series.to_pylist()
         return self.text_classifier.classify_text(text, labels=self.labels) if text else []
+
+
+class _PrompterExpression:
+    """Function expression implementation for a Prompter protocol."""
+
+    prompter: Prompter
+
+    def __init__(self, prompter: PrompterDescriptor):
+        self.prompter = prompter.instantiate()
+
+    async def __call__(self, message: str) -> Any:
+        return await self.prompter.prompt(message)

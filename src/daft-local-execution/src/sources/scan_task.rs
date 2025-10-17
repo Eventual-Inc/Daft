@@ -602,7 +602,7 @@ async fn stream_scan_task(
                 .filters
                 .as_ref()
                 .map(|p| (*p.as_ref()).clone().into());
-            let table = Python::with_gil(|py| {
+            let table = Python::attach(|py| {
                 daft_micropartition::python::read_sql_into_py_table(
                     py,
                     sql,
@@ -622,7 +622,7 @@ async fn stream_scan_task(
             Box::pin(futures::stream::once(async { Ok(table) }))
         }
         #[cfg(feature = "python")]
-        FileFormatConfig::PythonFunction => {
+        FileFormatConfig::PythonFunction { .. } => {
             let iter = daft_micropartition::python::read_pyfunc_into_table_iter(scan_task.clone())?;
             let stream = futures::stream::iter(iter.map(|r| r.map_err(|e| e.into())));
             Box::pin(stream)
