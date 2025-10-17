@@ -156,6 +156,12 @@ def test_lancedb_read_parallelism_fragment_merging(large_lance_dataset_path):
     assert len(result["big_int"]) == 10000
 
 
+def test_lancedb_limit_no_pushdown_with_filter(lance_dataset_path):
+    df = daft.read_lance(lance_dataset_path)
+    result = df.filter("big_int = 2").limit(1).to_pydict()
+    assert result == {"vector": [[0.2, 1.8]], "lat": [40.1], "long": [-74.1], "big_int": [2]}
+
+
 class TestLanceDBCountPushdown:
     tmp_data = {
         "a": ["a", "b", "c", "d", "e", None],

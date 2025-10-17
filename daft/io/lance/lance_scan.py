@@ -159,7 +159,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 source_type=self.name(),
             )
         # Check if there is a limit pushdown and no filters
-        elif pushdowns.limit is not None and self._pushed_filters is None:
+        elif pushdowns.limit is not None and self._pushed_filters is None and pushdowns.filters is None:
             yield from self._create_scan_tasks_with_limit_and_no_filters(pushdowns, required_columns)
         else:
             yield from self._create_regular_scan_tasks(pushdowns, required_columns)
@@ -217,10 +217,11 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 if fragment.count_rows(pushed_expr) == 0:
                     continue
 
+                limit = pushdowns.limit if pushdowns.filters is None else None
                 yield ScanTask.python_factory_func_scan_task(
                     module=_lancedb_table_factory_function.__module__,
                     func_name=_lancedb_table_factory_function.__name__,
-                    func_args=(self._ds, [fragment.fragment_id], required_columns, pushed_expr, pushdowns.limit),
+                    func_args=(self._ds, [fragment.fragment_id], required_columns, pushed_expr, limit),
                     schema=self.schema()._schema,
                     num_rows=num_rows,
                     size_bytes=size_bytes,
