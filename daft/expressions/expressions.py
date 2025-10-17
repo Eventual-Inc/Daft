@@ -1300,7 +1300,9 @@ class Expression:
         return between(self, lower, upper)
 
     def hash(
-        self, seed: Any | None = None, hash_function: Literal["xxhash", "murmurhash3", "sha1"] | None = "xxhash"
+        self,
+        seed: Any | None = None,
+        hash_function: Literal["xxhash", "xxhash32", "xxhash64", "xxhash3_64", "murmurhash3", "sha1"] | None = "xxhash",
     ) -> Expression:
         """Hashes the values in the Expression.
 
@@ -1317,7 +1319,7 @@ class Expression:
         num_hashes: int,
         ngram_size: int,
         seed: int = 1,
-        hash_function: Literal["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
+        hash_function: Literal["murmurhash3", "xxhash", "xxhash32", "xxhash64", "xxhash3_64", "sha1"] = "murmurhash3",
     ) -> Expression:
         """Runs the MinHash algorithm on the series.
 

@@ -2714,7 +2714,6 @@ dependencies = [
  "serde",
  "snafu",
  "typetag",
- "xxhash-rust",
 ]
 
 [[package]]
@@ -2847,6 +2846,7 @@ dependencies = [
  "mur3",
  "serde",
  "sha1 0.11.0-rc.0",
+ "xxhash-rust",
 ]
 
 [[package]]
