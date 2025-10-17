@@ -1186,6 +1186,7 @@ fn physical_plan_to_pipeline(
             left_on,
             right_on,
             join_type,
+            schema,
             stats_state,
             ..
         }) => {
@@ -1199,6 +1200,7 @@ fn physical_plan_to_pipeline(
                 left_node,
                 left.get_stats_state().clone(),
                 ctx,
+                left.schema().clone(),
             )
             .boxed();
 
@@ -1213,6 +1215,7 @@ fn physical_plan_to_pipeline(
                 vec![collect_node, right_node],
                 stats_state.clone(),
                 ctx,
+                schema.clone(),
             )
             .boxed()
         }
