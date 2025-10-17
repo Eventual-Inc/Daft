@@ -73,6 +73,15 @@ class File:
     def size(self) -> int:
         return PyDaftFile._from_file_reference(self._inner).size()
 
+    def mime_type(self) -> str:
+        """Attempts to determine the MIME type of the file.
+
+        If the MIME type is undetectable, returns 'application/octet-stream'.
+        """
+        with self.open() as f:
+            maybe_mime_type = f.guess_mime_type()
+            return maybe_mime_type if maybe_mime_type else "application/octet-stream"
+
     def to_tempfile(self) -> _TemporaryFileWrapper[bytes]:
         """Create a temporary file with the contents of this file.
 
