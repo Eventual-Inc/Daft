@@ -116,6 +116,7 @@ from .misc import (
     map_get,
     slice,
     when,
+    case,
 )
 from .numeric import (
     abs,
@@ -235,6 +236,7 @@ __all__ = [
     "bool_and",
     "bool_or",
     "capitalize",
+    "case",
     "cast",
     "cbrt",
     "ceil",

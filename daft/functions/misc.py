@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+import warnings
+from typing import Any, Literal, overload
 
 import daft.daft as native
 from daft.datatype import DataType, DataTypeLike
@@ -715,6 +716,10 @@ def slice(expr: Expression, start: int | Expression, end: int | Expression | Non
 def when(condition: Expression | bool, then: Expression | Any) -> WhenExpr:
     """Start a conditional expression, similar to SQL CASE WHEN.
 
+    .. deprecated:: 0.6.4
+        `when` is deprecated and will be removed in Daft version >= 0.7.0.
+        Please use `daft.functions.case` instead.
+
     If the condition is true, the `then` value will be returned. Otherwise, the next `when` condition will be evaluated.
     If no conditions are true, the value will be set to the value provided in the `otherwise` clause, or null if not provided.
 
@@ -847,4 +852,168 @@ def when(condition: Expression | bool, then: Expression | Any) -> WhenExpr:
         <BLANKLINE>
         (Showing first 3 of 3 rows)
     """
+    warnings.warn(
+        "`daft.functions.when` is deprecated since Daft version >= 0.6.4 and will be removed in >= 0.7.0. Please use `daft.functions.case` instead.",
+        category=DeprecationWarning,
+    )
     return WhenExpr([]).when(condition, then)
+
+
+@overload
+def case(
+    expr_or_conditions: Expression | Any,
+    matches: list[tuple[Expression | Any, Expression | Any]],
+    *,
+    otherwise: Expression | Any | None = None,
+) -> Expression: ...
+
+
+@overload
+def case(
+    expr_or_conditions: list[tuple[Expression | Any, Expression | Any]],
+    *,
+    otherwise: Expression | Any | None = None,
+) -> Expression: ...
+
+
+def case(
+    expr_or_conditions: Expression | Any | list[tuple[Expression | Any, Expression | Any]],
+    matches: list[tuple[Expression | Any, Expression | Any]] | None = None,
+    *,
+    otherwise: Expression | Any | None = None,
+) -> Expression:
+    """Implements SQL CASE expression with simple and searched forms.
+
+    This function supports two forms of CASE expressions, similar to SQL:
+
+    1. **Simple form**: Compares a value against a list of values
+    2. **Searched form**: Evaluates a list of boolean conditions
+
+    Args:
+        expr_or_conditions: Either a value to match against (simple form) or a list of
+            (condition, result) tuples (searched form)
+        matches: For simple form only - a list of (value, result) tuples to match against the expression
+        otherwise: Optional value to return when no conditions match. If not provided, returns NULL.
+
+    Returns:
+        Expression: An expression that evaluates to the result of the first matching condition,
+            or the otherwise value (or NULL) if no conditions match.
+
+    Examples:
+        Simple form - matches a column value against specific values:
+
+        >>> import daft
+        >>> from daft.functions import case
+        >>> df = daft.from_pydict({"value": [1, 2, 3, 4]})
+        >>> df = df.select(case(df["value"], [(1, "a"), (2, "b")], otherwise="c").alias("result"))
+        >>> df.show()
+        ╭────────╮
+        │ result │
+        │ ---    │
+        │ Utf8   │
+        ╞════════╡
+        │ a      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ b      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ c      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ c      │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
+
+        Simple form without otherwise clause (returns NULL for non-matches):
+
+        >>> df = daft.from_pydict({"value": [1, 2, 3]})
+        >>> df = df.select(case(df["value"], [(1, "a"), (2, "b")]).alias("result"))
+        >>> df.show()
+        ╭────────╮
+        │ result │
+        │ ---    │
+        │ Utf8   │
+        ╞════════╡
+        │ a      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ b      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ None   │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+        Searched form - evaluates boolean conditions:
+
+        >>> df = daft.from_pydict({"foo": [5, 10, 15], "bar": [20, 25, 30]})
+        >>> df = df.select(case([(df["foo"] == 10, "a"), (df["bar"] == 20, "b")], otherwise="c").alias("result"))
+        >>> df.show()
+        ╭────────╮
+        │ result │
+        │ ---    │
+        │ Utf8   │
+        ╞════════╡
+        │ b      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ a      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ c      │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+        Multiple conditions with complex logic:
+
+        >>> df = daft.from_pydict({"score": [85, 92, 78, 65, 88]})
+        >>> df = df.select(
+        ...     case(
+        ...         [
+        ...             (df["score"] >= 90, "A"),
+        ...             (df["score"] >= 80, "B"),
+        ...             (df["score"] >= 70, "C"),
+        ...         ],
+        ...         otherwise="F",
+        ...     ).alias("grade")
+        ... )
+        >>> df.show()
+        ╭───────╮
+        │ grade │
+        │ ---   │
+        │ Utf8  │
+        ╞═══════╡
+        │ B     │
+        ├╌╌╌╌╌╌╌┤
+        │ A     │
+        ├╌╌╌╌╌╌╌┤
+        │ C     │
+        ├╌╌╌╌╌╌╌┤
+        │ F     │
+        ├╌╌╌╌╌╌╌┤
+        │ B     │
+        ╰───────╯
+        <BLANKLINE>
+        (Showing first 5 of 5 rows)
+    """
+    if matches is None:
+        # searched form
+        if not isinstance(expr_or_conditions, list):
+            raise ValueError(
+                f"Inputs to `case` must be either a value and a list of tuples (simple form) or just a list of tuples (searched form). Found: {type(expr_or_conditions)}"
+            )
+
+        conditions = [
+            (Expression._to_expression(cond), Expression._to_expression(result)) for cond, result in expr_or_conditions
+        ]
+    else:
+        # simple form
+        expr = Expression._to_expression(expr_or_conditions)
+        conditions = [
+            (expr == Expression._to_expression(value), Expression._to_expression(result)) for value, result in matches
+        ]
+
+    result_expr = Expression._to_expression(otherwise)._expr
+
+    # Process conditions in reverse order to build nested structure
+    for condition, then_value in reversed(conditions):
+        result_expr = condition._expr.if_else(then_value._expr, result_expr)
+
+    return Expression._from_pyexpr(result_expr)
