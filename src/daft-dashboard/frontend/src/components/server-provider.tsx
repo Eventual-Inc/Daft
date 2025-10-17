@@ -64,7 +64,7 @@ export function ServerProvider({ children }: { children: React.ReactNode }) {
       const queryUpdate: QuerySummary = JSON.parse(event.data);
 
       if (onQueryStart && queryUpdate.status.status === "Pending") {
-        if (Notification.permission == 'granted') {
+        if (Notification.permission === "granted") {
           const notification = new Notification("Query Started", {
             body: `Query "${queryUpdate.id}" has started`,
             icon: "/favicon.ico",
@@ -82,7 +82,7 @@ export function ServerProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (onQueryEnd && queryUpdate.status.status === "Finished") {
-        if (Notification.permission == 'granted') {
+        if (Notification.permission === "granted") {
           const notification = new Notification("Query Finished", {
             body: `Query "${queryUpdate.id}" has finished in ${toHumanReadableDuration(queryUpdate.status.duration_sec)}`,
             icon: "/favicon.ico",

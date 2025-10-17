@@ -13,7 +13,8 @@ import { Bell } from "lucide-react";
 import { useNotifications } from "../notifications-provider";
 
 export function NotificationSettings() {
-  const { onQueryStart, onQueryEnd, setOnQueryStart, setOnQueryEnd } = useNotifications();
+  const { onQueryStart, onQueryEnd, setOnQueryStart, setOnQueryEnd } =
+    useNotifications();
 
   return (
     <div>
@@ -30,7 +31,9 @@ export function NotificationSettings() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56 bg-zinc-800">
-          <DropdownMenuLabel className="font-mono">Notifications</DropdownMenuLabel>
+          <DropdownMenuLabel className="font-mono">
+            Notifications
+          </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuCheckboxItem
             className="font-mono hover:cursor-pointer hover:bg-zinc-700"
