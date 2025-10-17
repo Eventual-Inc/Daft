@@ -243,6 +243,10 @@ impl PyDaftFile {
     fn py_size(&mut self) -> PyResult<usize> {
         Ok(self.size()?)
     }
+
+    fn guess_mime_type(&mut self) -> Option<String> {
+        self.cursor.as_mut().and_then(|c| c.mime_type())
+    }
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
