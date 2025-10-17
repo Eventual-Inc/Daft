@@ -8,7 +8,7 @@ use arrow2::{
 use common_error::{DaftError, DaftResult};
 use common_py_serde::pickle_dumps;
 use daft_schema::{dtype::DataType, field::Field};
-use pyo3::{PyObject, PyResult, Python};
+use pyo3::{Py, PyAny, PyResult, Python};
 
 use crate::{
     prelude::DaftArrayType,
@@ -18,7 +18,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct PythonArray {
     field: Arc<Field>,
-    values: Buffer<Arc<PyObject>>,
+    values: Buffer<Arc<Py<PyAny>>>,
     validity: Option<Bitmap>,
 }
 
@@ -34,7 +34,11 @@ impl PythonArray {
     /// Create a new PythonArray.
     ///
     /// Elements in `values` that are None must have validity set to false.
-    pub fn new(field: Arc<Field>, values: Buffer<Arc<PyObject>>, validity: Option<Bitmap>) -> Self {
+    pub fn new(
+        field: Arc<Field>,
+        values: Buffer<Arc<Py<PyAny>>>,
+        validity: Option<Bitmap>,
+    ) -> Self {
         assert_eq!(
             field.dtype,
             DataType::Python,
@@ -53,7 +57,7 @@ impl PythonArray {
 
         debug_assert!(
             values.iter().enumerate().all(|(i, v)| {
-                !(Python::with_gil(|py| v.is_none(py))
+                !(Python::attach(|py| v.is_none(py))
                     && validity.as_ref().is_none_or(|val| val.get_bit(i)))
             }),
             "None values must have validity set to false"
@@ -67,7 +71,7 @@ impl PythonArray {
     }
 
     pub fn to_pickled_arrow(&self) -> DaftResult<arrow2::array::BinaryArray<i64>> {
-        let pickled = Python::with_gil(|py| {
+        let pickled = Python::attach(|py| {
             self.iter()
                 .map(|v| v.map(|obj| pickle_dumps(py, obj)).transpose())
                 .collect::<PyResult<Vec<_>>>()
@@ -122,7 +126,7 @@ impl PythonArray {
         Ok(Self::new(self.field.clone(), new_values, new_validity))
     }
 
-    pub fn values(&self) -> &Buffer<Arc<PyObject>> {
+    pub fn values(&self) -> &Buffer<Arc<Py<PyAny>>> {
         &self.values
     }
 
@@ -162,7 +166,7 @@ impl PythonArray {
         self.slice(0, num)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = Option<&Arc<PyObject>>> {
+    pub fn iter(&self) -> impl Iterator<Item = Option<&Arc<Py<PyAny>>>> {
         ZipValidity::new_with_validity(self.values.iter(), self.validity())
     }
 }

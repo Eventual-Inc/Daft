@@ -123,7 +123,7 @@ impl ExtensionArray {
 #[cfg(feature = "python")]
 impl PythonArray {
     #[inline]
-    pub fn get(&self, idx: usize) -> Option<Arc<pyo3::PyObject>> {
+    pub fn get(&self, idx: usize) -> Option<Arc<pyo3::Py<pyo3::PyAny>>> {
         assert!(
             idx < self.len(),
             "Out of bounds: {} vs len: {}",

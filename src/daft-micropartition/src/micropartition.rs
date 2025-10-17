@@ -300,7 +300,7 @@ fn materialize_scan_task(
                 .filters
                 .as_ref()
                 .map(|p| (*p.as_ref()).clone().into());
-            pyo3::Python::with_gil(|py| {
+            pyo3::Python::attach(|py| {
                 let table = crate::python::read_sql_into_py_table(
                     py,
                     sql,
