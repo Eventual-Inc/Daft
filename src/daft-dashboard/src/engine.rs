@@ -6,7 +6,7 @@ use axum::{
     http::StatusCode,
     routing::post,
 };
-use common_metrics::{QueryID, QueryPlan, Stat, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotRecv, ops::NodeInfo};
 use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
 
@@ -186,20 +186,10 @@ async fn exec_op_end(
     StatusCode::OK
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct ExecEmitStatsArgsSend<'a> {
-    pub stats: Vec<(usize, HashMap<&'a str, Stat>)>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct ExecEmitStatsArgsRecv {
-    pub stats: Vec<(usize, HashMap<String, Stat>)>,
-}
-
 async fn exec_emit_stats(
     State(state): State<Arc<DashboardState>>,
     Path(query_id): Path<QueryID>,
-    Json(args): Json<ExecEmitStatsArgsRecv>,
+    Json(args): Json<Vec<(NodeID, StatSnapshotRecv)>>,
 ) -> StatusCode {
     let query_info = state.queries.get_mut(&query_id);
     let Some(mut query_info) = query_info else {
@@ -209,8 +199,8 @@ async fn exec_emit_stats(
         return StatusCode::BAD_REQUEST;
     };
 
-    for (operator_id, stats) in args.stats {
-        exec_info.operators.get_mut(&operator_id).unwrap().stats = stats;
+    for (operator_id, stats) in args {
+        exec_info.operators.get_mut(&operator_id).unwrap().stats = stats.0.into_iter().collect();
     }
 
     state.ping_clients_on_operator_update(query_info.value());
