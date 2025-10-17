@@ -10,7 +10,7 @@ use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
     },
-    plan::{PlanConfig, PlanExecutionContext},
+    plan::{QueryConfig, PlanExecutionContext},
 };
 
 pub(crate) struct UnpivotNode {
@@ -30,7 +30,7 @@ impl UnpivotNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        plan_config: &PlanConfig,
+        plan_config: &QueryConfig,
         ids: Vec<BoundExpr>,
         values: Vec<BoundExpr>,
         variable_name: String,
@@ -39,11 +39,9 @@ impl UnpivotNode {
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
             logical_node_id,
         );
         let config = PipelineNodeConfig::new(

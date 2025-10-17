@@ -7,6 +7,7 @@ use std::{
     task::{Context, Poll},
 };
 
+use serde::{Deserialize, Serialize};
 use common_error::{DaftError, DaftResult};
 #[cfg(feature = "python")]
 use common_file_formats::DatabaseSourceConfig;
@@ -32,8 +33,9 @@ use snafu::ResultExt;
 
 use crate::{DaftCSVSnafu, DaftCoreComputeSnafu};
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum TableState {
+    #[serde(skip)]
     Unloaded(Arc<ScanTask>),
     Loaded(Arc<Vec<RecordBatch>>),
 }
@@ -66,7 +68,7 @@ impl Display for TableState {
 }
 pub type MicroPartitionRef = Arc<MicroPartition>;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MicroPartition {
     /// Schema of the MicroPartition
     ///

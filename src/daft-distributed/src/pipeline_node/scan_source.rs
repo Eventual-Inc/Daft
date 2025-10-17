@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     pipeline_node::{DistributedPipelineNode, NodeID},
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{QueryConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SubmittableTask,
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
@@ -33,18 +33,16 @@ impl ScanSourceNode {
 
     pub fn new(
         node_id: NodeID,
-        plan_config: &PlanConfig,
+        plan_config: &QueryConfig,
         pushdowns: Pushdowns,
         scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
         schema: SchemaRef,
         logical_node_id: Option<NodeID>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
             node_id,
             Self::NODE_NAME,
-            vec![],
-            vec![],
             logical_node_id,
         );
         let config = PipelineNodeConfig::new(

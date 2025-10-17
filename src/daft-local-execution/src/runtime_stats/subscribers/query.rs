@@ -3,18 +3,18 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use common_error::DaftResult;
 use common_metrics::{NodeID, QueryID, ops::NodeInfo};
-use daft_context::Subscriber;
+use daft_context::{Subscribers, Subscriber as _};
 
 use crate::runtime_stats::RuntimeStatsSubscriber;
 
 #[derive(Debug)]
 pub(crate) struct SubscriberWrapper {
-    inner: Arc<dyn Subscriber>,
+    inner: Arc<Subscribers>,
     query_id: QueryID,
 }
 
 impl SubscriberWrapper {
-    pub fn try_new(inner: Arc<dyn Subscriber>, node_infos: &[Arc<NodeInfo>]) -> DaftResult<Self> {
+    pub fn try_new(inner: Arc<Subscribers>, node_infos: &[Arc<NodeInfo>]) -> DaftResult<Self> {
         let query_id: QueryID = node_infos[0].context["query_id"].clone().into();
         inner.on_exec_start(query_id.clone(), node_infos)?;
         Ok(Self { inner, query_id })

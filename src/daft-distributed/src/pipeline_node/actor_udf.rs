@@ -15,7 +15,7 @@ use super::{
 };
 use crate::{
     pipeline_node::{DistributedPipelineNode, append_plan_to_existing_task},
-    plan::{PlanConfig, PlanExecutionContext},
+    plan::{QueryConfig, PlanExecutionContext},
     scheduling::{scheduler::SubmittableTask, task::SwordfishTask},
     utils::{
         channel::{Sender, create_channel},
@@ -141,18 +141,16 @@ impl ActorUDF {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        plan_config: &PlanConfig,
+        plan_config: &QueryConfig,
         projection: Vec<BoundExpr>,
         udf_properties: UDFProperties,
         schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> DaftResult<Self> {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
             logical_node_id,
         );
         let config = PipelineNodeConfig::new(

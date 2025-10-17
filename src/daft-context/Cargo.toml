@@ -5,6 +5,7 @@ common-runtime = {path = "../common/runtime", default-features = false}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-metrics = {path = "../common/metrics", default-features = false}
+common-py-serde = {path = "../common/py-serde", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
@@ -14,8 +15,9 @@ daft-dashboard = {path = "../daft-dashboard", default-features = false}
 daft-runners = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 log = {workspace = true}
+serde = {workspace = true}
 # For debug subscriber
-dashmap = {workspace = true}
+dashmap = {workspace = true, features = ["serde"]}
 # Client for submitting to dashboard server
 reqwest = {workspace = true, default-features = false}
 

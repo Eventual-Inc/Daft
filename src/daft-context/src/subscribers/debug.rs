@@ -5,19 +5,18 @@ use common_error::DaftResult;
 use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo};
 use daft_micropartition::MicroPartitionRef;
 use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
 
 use crate::subscribers::{QueryMetadata, Subscriber};
 
-#[derive(Debug)]
+#[derive(Default, Debug, Serialize, Deserialize)]
 pub struct DebugSubscriber {
     rows_out: DashMap<QueryID, usize>,
 }
 
 impl DebugSubscriber {
     pub fn new() -> Self {
-        Self {
-            rows_out: DashMap::new(),
-        }
+        Self::default()
     }
 }
 

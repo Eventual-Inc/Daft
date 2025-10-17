@@ -10,7 +10,7 @@ use tokio_util::sync::CancellationToken;
 use super::worker::WorkerId;
 use crate::{
     pipeline_node::{MaterializedOutput, NodeID, PipelineNodeContext},
-    plan::PlanID,
+    plan::{QueryIdx},
 };
 
 #[derive(Debug, Clone)]
@@ -42,7 +42,7 @@ pub(crate) type TaskName = String;
 #[derive(Clone, PartialEq, Eq, Hash, Default)]
 #[allow(clippy::struct_field_names)]
 pub(crate) struct TaskContext {
-    pub plan_id: PlanID,
+    pub query_idx: QueryIdx,
     pub node_id: NodeID,
     pub task_id: TaskID,
     pub logical_node_ids: Vec<NodeID>,
@@ -50,13 +50,13 @@ pub(crate) struct TaskContext {
 
 impl TaskContext {
     pub fn new(
-        plan_id: PlanID,
+        query_idx: QueryIdx,
         node_id: NodeID,
         task_id: TaskID,
         logical_node_ids: Vec<NodeID>,
     ) -> Self {
         Self {
-            plan_id,
+            query_idx,
             node_id,
             task_id,
             logical_node_ids,
@@ -72,8 +72,8 @@ impl std::fmt::Debug for TaskContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "TaskContext(plan_id = {}, node_id = {}, task_id = {})",
-            self.plan_id, self.node_id, self.task_id
+            "TaskContext(query_idx = {}, node_id = {}, task_id = {})",
+            self.query_idx, self.node_id, self.task_id
         )
     }
 }
@@ -81,7 +81,7 @@ impl std::fmt::Debug for TaskContext {
 impl From<(&PipelineNodeContext, TaskID)> for TaskContext {
     fn from((node_context, task_id): (&PipelineNodeContext, TaskID)) -> Self {
         Self::new(
-            node_context.plan_id,
+            node_context.query_idx,
             node_context.node_id,
             task_id,
             node_context
@@ -104,8 +104,8 @@ pub(crate) trait Task: Send + Sync + Clone + Debug + 'static {
     }
 
     #[allow(dead_code)]
-    fn plan_id(&self) -> PlanID {
-        self.task_context().plan_id
+    fn query_idx(&self) -> QueryIdx {
+        self.task_context().query_idx
     }
 
     #[allow(dead_code)]
@@ -168,7 +168,7 @@ pub(crate) enum SchedulingStrategy {
 #[allow(clippy::struct_field_names)]
 #[derive(Debug, Clone, Copy)]
 struct SwordfishTaskPriority {
-    plan_id: PlanID,
+    query_idx: QueryIdx,
     node_id: NodeID,
     task_id: TaskID,
 }
@@ -176,7 +176,7 @@ struct SwordfishTaskPriority {
 impl PartialEq for SwordfishTaskPriority {
     fn eq(&self, other: &Self) -> bool {
         self.task_id == other.task_id
-            && self.plan_id == other.plan_id
+            && self.query_idx == other.query_idx
             && self.node_id == other.node_id
     }
 }
@@ -196,8 +196,8 @@ impl Ord for SwordfishTaskPriority {
         // 2. Node ID: Higher node_id, higher priority
         // 3. Task ID: Lower task_id, higher priority
         other
-            .plan_id
-            .cmp(&self.plan_id)
+            .query_idx
+            .cmp(&self.query_idx)
             .then_with(|| self.node_id.cmp(&other.node_id))
             .then_with(|| other.task_id.cmp(&self.task_id))
     }
@@ -283,7 +283,7 @@ impl Task for SwordfishTask {
 
     fn priority(&self) -> impl TaskPriority {
         SwordfishTaskPriority {
-            plan_id: self.task_context.plan_id,
+            query_idx: self.task_context.query_idx,
             node_id: self.task_context.node_id,
             task_id: self.task_context.task_id,
         }
@@ -580,12 +580,12 @@ pub(super) mod tests {
 
         // Test 1: Different plan_ids (lower plan_id should have higher priority)
         let task1 = SwordfishTaskPriority {
-            plan_id: 1,
+            query_idx: 1,
             node_id: 1,
             task_id: 1,
         };
         let task2 = SwordfishTaskPriority {
-            plan_id: 2,
+            query_idx: 2,
             node_id: 1,
             task_id: 1,
         };
@@ -593,12 +593,12 @@ pub(super) mod tests {
 
         // Test 2: Same plan_id, different task_ids (higher task_id should have higher priority)
         let task1 = SwordfishTaskPriority {
-            plan_id: 1,
+            query_idx: 1,
             node_id: 2,
             task_id: 1,
         };
         let task2 = SwordfishTaskPriority {
-            plan_id: 1,
+            query_idx: 1,
             node_id: 1,
             task_id: 1,
         };
@@ -606,12 +606,12 @@ pub(super) mod tests {
 
         // Test 3: Same plan_id and node_id, different task_ids (lower task_id should have higher priority)
         let task1 = SwordfishTaskPriority {
-            plan_id: 1,
+            query_idx: 1,
             node_id: 1,
             task_id: 1,
         };
         let task2 = SwordfishTaskPriority {
-            plan_id: 1,
+            query_idx: 1,
             node_id: 1,
             task_id: 2,
         };
@@ -619,12 +619,12 @@ pub(super) mod tests {
 
         // Test 4: Complex case with multiple differences
         let task1 = SwordfishTaskPriority {
-            plan_id: 1,
+            query_idx: 1,
             node_id: 2,
             task_id: 1,
         };
         let task2 = SwordfishTaskPriority {
-            plan_id: 2,
+            query_idx: 2,
             node_id: 1,
             task_id: 1,
         };
@@ -632,12 +632,12 @@ pub(super) mod tests {
 
         // Test 5: Equality
         let task1 = SwordfishTaskPriority {
-            plan_id: 1,
+            query_idx: 1,
             node_id: 1,
             task_id: 1,
         };
         let task2 = SwordfishTaskPriority {
-            plan_id: 1,
+            query_idx: 1,
             node_id: 1,
             task_id: 1,
         };
@@ -654,22 +654,22 @@ pub(super) mod tests {
 
         // Add tasks in random order - ensuring unique task_ids within each stage
         heap.push(SwordfishTaskPriority {
-            plan_id: 2,
+            query_idx: 2,
             node_id: 1,
             task_id: 1,
         });
         heap.push(SwordfishTaskPriority {
-            plan_id: 1,
+            query_idx: 1,
             node_id: 2,
             task_id: 3,
         });
         heap.push(SwordfishTaskPriority {
-            plan_id: 1,
+            query_idx: 1,
             node_id: 1,
             task_id: 2,
         });
         heap.push(SwordfishTaskPriority {
-            plan_id: 1,
+            query_idx: 1,
             node_id: 1,
             task_id: 1,
         });
@@ -684,7 +684,7 @@ pub(super) mod tests {
         assert_eq!(
             heap.pop().unwrap(),
             SwordfishTaskPriority {
-                plan_id: 1,
+                query_idx: 1,
                 node_id: 2,
                 task_id: 3
             }
@@ -692,7 +692,7 @@ pub(super) mod tests {
         assert_eq!(
             heap.pop().unwrap(),
             SwordfishTaskPriority {
-                plan_id: 1,
+                query_idx: 1,
                 node_id: 1,
                 task_id: 1
             }
@@ -700,7 +700,7 @@ pub(super) mod tests {
         assert_eq!(
             heap.pop().unwrap(),
             SwordfishTaskPriority {
-                plan_id: 1,
+                query_idx: 1,
                 node_id: 1,
                 task_id: 2
             }
@@ -708,7 +708,7 @@ pub(super) mod tests {
         assert_eq!(
             heap.pop().unwrap(),
             SwordfishTaskPriority {
-                plan_id: 2,
+                query_idx: 2,
                 node_id: 1,
                 task_id: 1
             }

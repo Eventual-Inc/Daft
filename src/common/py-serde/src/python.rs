@@ -122,7 +122,7 @@ macro_rules! impl_bincode_py_state_serialization {
 
             #[staticmethod]
             pub fn _from_serialized(serialized: &[u8]) -> Self {
-                $crate::bincode::deserialize(serialized).unwrap()
+                $crate::bincode::deserialize(serialized).expect("Failed to deserialize")
             }
         }
     };

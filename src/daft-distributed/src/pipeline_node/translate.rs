@@ -26,11 +26,11 @@ use crate::{
         project::ProjectNode, sample::SampleNode, scan_source::ScanSourceNode, sink::SinkNode,
         sort::SortNode, top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode, window::WindowNode,
     },
-    plan::PlanConfig,
+    plan::QueryConfig,
 };
 
 pub(crate) fn logical_plan_to_pipeline_node(
-    plan_config: PlanConfig,
+    plan_config: QueryConfig,
     plan: LogicalPlanRef,
     psets: Arc<HashMap<String, Vec<PartitionRef>>>,
 ) -> DaftResult<DistributedPipelineNode> {
@@ -40,14 +40,14 @@ pub(crate) fn logical_plan_to_pipeline_node(
 }
 
 pub(crate) struct LogicalPlanToPipelineNodeTranslator {
-    pub plan_config: PlanConfig,
+    pub plan_config: QueryConfig,
     pipeline_node_id_counter: NodeID,
     psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     curr_node: Vec<DistributedPipelineNode>,
 }
 
 impl LogicalPlanToPipelineNodeTranslator {
-    fn new(plan_config: PlanConfig, psets: Arc<HashMap<String, Vec<PartitionRef>>>) -> Self {
+    fn new(plan_config: QueryConfig, psets: Arc<HashMap<String, Vec<PartitionRef>>>) -> Self {
         Self {
             plan_config,
             pipeline_node_id_counter: 0,
