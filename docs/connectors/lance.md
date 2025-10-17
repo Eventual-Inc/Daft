@@ -89,15 +89,14 @@ For datasets with many fragments, group fragments to reduce scheduling and metad
     df_grouped = daft.read_lance("/data/my_lance_dataset", fragment_group_size=8)
     ```
 
-### Data Skipping and Random Access Optimizations
-
-Lance’s indexing and columnar layout enable efficient skipping for filtering and random reads. Filters on partition/fragment columns can significantly reduce I/O; non-partition columns also benefit from fragment/file-level statistics.
+Filter operations on the Daft `df` DataFrame object will be pushed down to the Lance data source for efficient data skipping.
 
 === "🐍 Python"
 
 ```python
-# Efficient data skipping based on filter predicates
-# Only read matching fragments/files, reducing I/O and decode cost
+# Enable strict filter pushdown for more efficient data skipping
+daft.context.set_planning_config(enable_strict_filter_pushdown=True)
+
 filtered = df_local.where(df_local["score"] >= 0.8)
 filtered.show()
 ```
@@ -111,10 +110,7 @@ Use [`df.write_lance()`][daft.dataframe.DataFrame.write_lance] to write a DataFr
 ```python
 import daft
 
-# Construct an example DataFrame
 df = daft.from_pydict({"a": [1, 2, 3, 4]})
-
-# Create a new dataset (default mode is create)
 meta = df.write_lance("/tmp/lance/my_table.lance")
 meta.show()  # Contains metadata such as num_fragments / num_deleted_rows / num_small_files / version
 
@@ -135,8 +131,7 @@ meta3 = df.write_lance("/tmp/lance/my_table.lance", mode="append")
 ## Advanced Usage
 
 
-
-### In-place Column Merge (merge_columns)
+### Data Evolution
 
 If you need to add derived columns in-place to an existing Lance dataset (e.g., apply a UDF across batches and persist the result), use `daft.io.lance.merge_columns`:
 
@@ -157,7 +152,3 @@ merge_columns(
     read_columns=["c"],
 )
 ```
-
-!!! note "Object Store Atomic Commit"
-
-    In object stores that do not support atomic commits, configure a custom commit lock via the `commit_lock` parameter to ensure consistency.
