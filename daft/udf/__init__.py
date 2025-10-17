@@ -201,9 +201,7 @@ class _FuncDecorator:
 
             >>> import daft
             >>> from daft import DataType
-            >>> @daft.func(
-            ...     return_dtype=DataType.struct({"int": DataType.int64(), "str": DataType.string()}), unnest=True
-            ... )
+            >>> @daft.func(return_dtype=DataType.struct({"int": DataType.int64(), "str": DataType.string()}), unnest=True)
             ... def my_multi_return(val: int):
             ...     return {"int": val * 2, "str": str(val) * 2}
             >>> df = daft.from_pydict({"x": [1, 2, 3]})
