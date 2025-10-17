@@ -158,12 +158,7 @@ def make_df(data_source, tmp_path) -> Generator[MakeDF, None, None]:
         else:
             raise NotImplementedError(f"make_df not implemented for: {variant}")
 
-    with daft.execution_config_ctx(
-        # Disables merging of ScanTasks of Parquet when reading small Parquet files
-        scan_tasks_min_size_bytes=0,
-        scan_tasks_max_size_bytes=0,
-    ):
-        yield _make_df
+    return _make_df
 
 
 def assert_df_equals(

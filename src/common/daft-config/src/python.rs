@@ -89,9 +89,6 @@ impl PyDaftExecutionConfig {
 
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
-        scan_tasks_min_size_bytes=None,
-        scan_tasks_max_size_bytes=None,
-        max_sources_per_scan_task=None,
         broadcast_join_size_bytes_threshold=None,
         parquet_split_row_groups_max_files=None,
         hash_join_partition_size_leniency=None,
@@ -106,7 +103,6 @@ impl PyDaftExecutionConfig {
         partial_aggregation_threshold=None,
         high_cardinality_aggregation_threshold=None,
         read_sql_partition_size_bytes=None,
-        enable_aqe=None,
         default_morsel_size=None,
         shuffle_algorithm=None,
         pre_shuffle_merge_threshold=None,
@@ -115,15 +111,11 @@ impl PyDaftExecutionConfig {
         scantask_splitting_level=None,
         scantask_max_parallel=None,
         native_parquet_writer=None,
-        use_legacy_ray_runner=None,
         min_cpu_per_task=None,
         actor_udf_ready_timeout=None,
     ))]
     fn with_config_values(
         &self,
-        scan_tasks_min_size_bytes: Option<usize>,
-        scan_tasks_max_size_bytes: Option<usize>,
-        max_sources_per_scan_task: Option<usize>,
         broadcast_join_size_bytes_threshold: Option<usize>,
         parquet_split_row_groups_max_files: Option<usize>,
         hash_join_partition_size_leniency: Option<f64>,
@@ -138,7 +130,6 @@ impl PyDaftExecutionConfig {
         partial_aggregation_threshold: Option<usize>,
         high_cardinality_aggregation_threshold: Option<f64>,
         read_sql_partition_size_bytes: Option<usize>,
-        enable_aqe: Option<bool>,
         default_morsel_size: Option<usize>,
         shuffle_algorithm: Option<&str>,
         pre_shuffle_merge_threshold: Option<usize>,
@@ -147,21 +138,11 @@ impl PyDaftExecutionConfig {
         scantask_splitting_level: Option<i32>,
         scantask_max_parallel: Option<usize>,
         native_parquet_writer: Option<bool>,
-        use_legacy_ray_runner: Option<bool>,
         min_cpu_per_task: Option<f64>,
         actor_udf_ready_timeout: Option<usize>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
-        if let Some(scan_tasks_max_size_bytes) = scan_tasks_max_size_bytes {
-            config.scan_tasks_max_size_bytes = scan_tasks_max_size_bytes;
-        }
-        if let Some(scan_tasks_min_size_bytes) = scan_tasks_min_size_bytes {
-            config.scan_tasks_min_size_bytes = scan_tasks_min_size_bytes;
-        }
-        if let Some(max_sources_per_scan_task) = max_sources_per_scan_task {
-            config.max_sources_per_scan_task = max_sources_per_scan_task;
-        }
         if let Some(broadcast_join_size_bytes_threshold) = broadcast_join_size_bytes_threshold {
             config.broadcast_join_size_bytes_threshold = broadcast_join_size_bytes_threshold;
         }
@@ -207,9 +188,6 @@ impl PyDaftExecutionConfig {
             config.read_sql_partition_size_bytes = read_sql_partition_size_bytes;
         }
 
-        if let Some(enable_aqe) = enable_aqe {
-            config.enable_aqe = enable_aqe;
-        }
         if let Some(default_morsel_size) = default_morsel_size {
             config.default_morsel_size = default_morsel_size;
         }
@@ -252,10 +230,6 @@ impl PyDaftExecutionConfig {
             config.native_parquet_writer = native_parquet_writer;
         }
 
-        if let Some(use_legacy_ray_runner) = use_legacy_ray_runner {
-            config.use_legacy_ray_runner = use_legacy_ray_runner;
-        }
-
         if let Some(min_cpu_per_task) = min_cpu_per_task {
             config.min_cpu_per_task = min_cpu_per_task;
         }
@@ -267,21 +241,6 @@ impl PyDaftExecutionConfig {
         Ok(Self {
             config: Arc::new(config),
         })
-    }
-
-    #[getter]
-    fn get_scan_tasks_min_size_bytes(&self) -> PyResult<usize> {
-        Ok(self.config.scan_tasks_min_size_bytes)
-    }
-
-    #[getter]
-    fn get_scan_tasks_max_size_bytes(&self) -> PyResult<usize> {
-        Ok(self.config.scan_tasks_max_size_bytes)
-    }
-
-    #[getter]
-    fn get_max_sources_per_scan_task(&self) -> PyResult<usize> {
-        Ok(self.config.max_sources_per_scan_task)
     }
 
     #[getter]
@@ -349,10 +308,6 @@ impl PyDaftExecutionConfig {
         Ok(self.config.read_sql_partition_size_bytes)
     }
     #[getter]
-    fn enable_aqe(&self) -> PyResult<bool> {
-        Ok(self.config.enable_aqe)
-    }
-    #[getter]
     fn default_morsel_size(&self) -> PyResult<usize> {
         Ok(self.config.default_morsel_size)
     }
@@ -378,11 +333,6 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn scantask_max_parallel(&self) -> PyResult<usize> {
         Ok(self.config.scantask_max_parallel)
-    }
-
-    #[getter]
-    fn use_legacy_ray_runner(&self) -> PyResult<bool> {
-        Ok(self.config.use_legacy_ray_runner)
     }
 
     #[getter]

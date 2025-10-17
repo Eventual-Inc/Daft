@@ -5,12 +5,9 @@ from typing import Optional, Union
 
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
-from daft.daft import IOConfig, get_or_create_runner
-from daft.daft import PyRecordBatch as _PyRecordBatch
+from daft.daft import IOConfig
 from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
-from daft.recordbatch.micropartition import MicroPartition
-from daft.runners.partitioning import LocalPartitionSet
 
 
 @PublicAPI
@@ -52,29 +49,8 @@ def from_glob_path(path: Union[str, list[str]], io_config: Optional[IOConfig] = 
     context = get_context()
     io_config = context.daft_planning_config.default_io_config if io_config is None else io_config
 
-    # TODO: Remove this once the legacy ray runner is removed
-    if context.daft_execution_config.use_legacy_ray_runner:
-        runner_io = get_or_create_runner().runner_io()
-        file_infos = runner_io.glob_paths_details(path, io_config=io_config)
-        file_infos_table = MicroPartition._from_pyrecordbatch(_PyRecordBatch.from_file_infos(file_infos))
-        partition = LocalPartitionSet()
-        partition.set_partition_from_table(0, file_infos_table)
-        cache_entry = get_or_create_runner().put_partition_set_into_cache(partition)
-        size_bytes = partition.size_bytes()
-        num_rows = len(partition)
-
-        assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
-        builder = LogicalPlanBuilder.from_in_memory_scan(
-            cache_entry,
-            schema=file_infos_table.schema(),
-            num_partitions=partition.num_partitions(),
-            size_bytes=size_bytes,
-            num_rows=num_rows,
-        )
-        return DataFrame(builder)
-    else:
-        builder = LogicalPlanBuilder.from_glob_scan(
-            glob_paths=path,
-            io_config=io_config,
-        )
-        return DataFrame(builder)
+    builder = LogicalPlanBuilder.from_glob_scan(
+        glob_paths=path,
+        io_config=io_config,
+    )
+    return DataFrame(builder)

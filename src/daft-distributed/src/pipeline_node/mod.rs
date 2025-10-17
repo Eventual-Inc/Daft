@@ -227,6 +227,9 @@ impl DistributedPipelineNode {
     pub fn name(&self) -> NodeName {
         self.op.name()
     }
+    pub fn num_partitions(&self) -> usize {
+        self.op.config().clustering_spec.num_partitions()
+    }
     pub fn produce_tasks(self, plan_context: &mut PlanExecutionContext) -> SubmittableTaskStream {
         self.op.produce_tasks(plan_context)
     }

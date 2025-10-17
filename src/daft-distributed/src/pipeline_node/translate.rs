@@ -6,14 +6,16 @@ use common_partitioning::PartitionRef;
 use common_scan_info::ScanState;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
-    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    expr::{
+        agg::extract_agg_expr,
+        bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    },
     is_partition_compatible, resolved_col,
 };
 use daft_logical_plan::{
     LogicalPlan, LogicalPlanRef, SourceInfo,
     partitioning::{ClusteringSpec, HashRepartitionConfig, RepartitionSpec},
 };
-use daft_physical_plan::extract_agg_expr;
 use daft_schema::schema::Schema;
 
 use crate::{

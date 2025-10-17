@@ -7,7 +7,6 @@ def test_large_partition_into_batches(make_df):
     """Test splitting a large partition (size 64) into batches of size 8."""
     # Create a dataframe with 64 rows in a single partition
     df = make_df({"id": list(range(64))}, repartition=1)
-    assert df.num_partitions() == 1
 
     # Split into batches of size 8
     df = df.into_batches(8)
@@ -31,7 +30,6 @@ def test_many_small_partitions_into_batches(make_df):
     """Test coalescing many small partitions (64 partitions of size 1) into batches of size 8."""
     # Create a dataframe with 64 rows split into 64 partitions (1 row each)
     df = make_df({"id": list(range(64))}, repartition=64)
-    assert df.num_partitions() == 64
 
     # Split into batches of size 8
     df = df.into_batches(8)
