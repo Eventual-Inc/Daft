@@ -30,6 +30,9 @@ import { QuerySummary, useQueries } from "@/hooks/use-queries";
 import { toHumanReadableDate } from "@/lib/utils";
 import Status from "./status";
 import Link from "next/link";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { ClipboardIcon, Database } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 const STATUS: string = "state";
 
@@ -72,6 +75,52 @@ const columns = [
   }),
 ];
 
+const Header = () => (
+  <Breadcrumb>
+    <BreadcrumbList>
+      <BreadcrumbItem>
+        <BreadcrumbLink
+          asChild
+          href="/queries"
+          className="text-lg font-mono font-bold"
+        >
+          <Link href="/queries">All Queries</Link>
+        </BreadcrumbLink>
+      </BreadcrumbItem>
+    </BreadcrumbList>
+  </Breadcrumb>
+);
+
+
+const EmptyState = () => (
+  <Empty>
+    <EmptyHeader>
+      <EmptyMedia variant="icon">
+        <Database />
+      </EmptyMedia>
+      <EmptyTitle>No Queries Run Yet!</EmptyTitle>
+      <EmptyDescription>
+        Please connect your Daft script to the Dashboard to get started.
+      </EmptyDescription>
+      <EmptyContent>
+        <div className="h-[5px]" />
+        <div className="border px-4 py-2 font-mono text-sm bg-zinc-800 w-[550px] flex justify-between items-center">
+          <span>
+            DAFT_DASHBOARD_URL=&quot;http://localhost:3238&quot; python ...
+          </span>
+          <Button
+            size="icon"
+            className="relative z-10 h-6 w-6 text-zinc-50 hover:bg-zinc-700 hover:text-zinc-50 [&_svg]:h-3 [&_svg]:w-3"
+          >
+            <span className="sr-only">Copy</span>
+            <ClipboardIcon />
+          </Button>
+        </div>
+      </EmptyContent>
+    </EmptyHeader>
+  </Empty>
+);
+
 /**
  *  Main Component to display the queries in a table
  */
@@ -105,21 +154,13 @@ export default function QueryList() {
     return <LoadingPage />;
   }
 
+  if (queries.length === 0) {
+    return <EmptyState />;
+  }
+
   return (
     <div className="space-y-4 max-w-6xl mx-auto">
-      <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbLink
-              asChild
-              href="/queries"
-              className="text-lg font-mono font-bold"
-            >
-              <Link href="/queries">All Queries</Link>
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
+      <Header />
 
       <div className="border">
         <Table>
