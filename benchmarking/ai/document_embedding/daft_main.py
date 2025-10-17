@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import pymupdf
-import torch
-import ray
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 import time
+
+import pymupdf
 import ray
+import torch
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 import daft
 from daft import col
@@ -22,13 +22,22 @@ EMBEDDING_BATCH_SIZE = 10
 
 daft.context.set_runner_ray()
 
+
 # Wait for Ray cluster to be ready
 @ray.remote
 def warmup():
     pass
+
+
 ray.get([warmup.remote() for _ in range(64)])
 
 
+@daft.func(
+    use_process=True,
+    return_dtype=daft.DataType.list(
+        daft.DataType.struct({"text": daft.DataType.string(), "page_number": daft.DataType.int64()})
+    ),
+)
 def extract_text_from_parsed_pdf(pdf_bytes):
     try:
         doc = pymupdf.Document(stream=pdf_bytes, filetype="pdf")
@@ -42,6 +51,12 @@ def extract_text_from_parsed_pdf(pdf_bytes):
         return None
 
 
+@daft.func(
+    use_process=True,
+    return_dtype=daft.DataType.list(
+        daft.DataType.struct({"text": daft.DataType.string(), "chunk_id": daft.DataType.int64()})
+    ),
+)
 def chunk(text):
     splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
     chunk_iter = splitter.split_text(text)
@@ -77,24 +92,21 @@ class Embedder:
         )
         return embeddings
 
+
 start_time = time.time()
 df = daft.read_parquet(INPUT_PATH)
 df = df.where(daft.col("file_name").str.endswith(".pdf"))
 df = df.with_column("pdf_bytes", df["uploaded_pdf_path"].url.download())
 df = df.with_column(
     "pages",
-    df["pdf_bytes"].apply(
-        extract_text_from_parsed_pdf,
-        return_dtype=daft.DataType.list(daft.DataType.struct({"text": daft.DataType.string(), "page_number": daft.DataType.int64()})),
-    ),
+    extract_text_from_parsed_pdf(df["pdf_bytes"]),
 )
 df = df.explode("pages")
 df = df.with_columns({"page_text": col("pages")["text"], "page_number": col("pages")["page_number"]})
 df = df.where(daft.col("page_text").not_null())
 df = df.with_column(
     "chunks",
-    df["page_text"].apply(chunk, return_dtype=daft.DataType.list(daft.DataType.struct({"text": daft.DataType.string(), "chunk_id": daft.DataType.int64()})),
-    ),
+    chunk(df["page_text"]),
 )
 df = df.explode("chunks")
 df = df.with_columns({"chunk": col("chunks")["text"], "chunk_id": col("chunks")["chunk_id"]})

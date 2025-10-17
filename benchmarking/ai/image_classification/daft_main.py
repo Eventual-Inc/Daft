@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import time
+
 import numpy as np
+import ray
 import torch
 from torchvision import transforms
 from torchvision.models import ResNet18_Weights, resnet18
-import time
-import ray
 
 import daft
 from daft import col
@@ -18,14 +19,25 @@ IMAGE_DIM = (3, 224, 224)
 
 daft.context.set_runner_ray()
 
+
 # Wait for Ray cluster to be ready
 @ray.remote
 def warmup():
     pass
+
+
 ray.get([warmup.remote() for _ in range(64)])
 
 weights = ResNet18_Weights.DEFAULT
 transform = transforms.Compose([transforms.ToTensor(), weights.transforms()])
+
+
+@daft.func(
+    use_process=True,
+    return_dtype=daft.DataType.tensor(dtype=daft.DataType.float32(), shape=IMAGE_DIM),
+)
+def transform_fn(input):
+    return transform(input)
 
 
 @daft.cls(
@@ -53,6 +65,7 @@ class ResNetModel:
             predicted_labels = [self.weights.meta["categories"][i] for i in predicted_classes]
             return predicted_labels
 
+
 start_time = time.time()
 
 df = daft.read_parquet(INPUT_PATH)
@@ -62,10 +75,7 @@ df = df.with_column(
 )
 df = df.with_column(
     "norm_image",
-    df["decoded_image"].apply(
-        func=lambda image: transform(image),
-        return_dtype=daft.DataType.tensor(dtype=daft.DataType.float32(), shape=IMAGE_DIM),
-    ),
+    transform_fn(df["decoded_image"]),
 )
 df = df.with_column("label", ResNetModel()(col("norm_image")))
 df = df.select("image_url", "label")
