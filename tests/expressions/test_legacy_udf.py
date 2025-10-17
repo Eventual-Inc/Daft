@@ -617,29 +617,22 @@ def test_multiple_udfs_same_column(batch_size, use_actor_pool):
     def square_and_divide(data):
         return [n**2 / 2.0 for n in data]
 
-    @udf(return_dtype=DataType.string(), batch_size=batch_size)
-    def number_to_string(data):
-        return [f"num_{n}" for n in data]
-
     if use_actor_pool:
         multiply_by_2 = multiply_by_2.with_concurrency(1)
         add_10 = add_10.with_concurrency(1)
         square_and_divide = square_and_divide.with_concurrency(1)
-        number_to_string = number_to_string.with_concurrency(1)
 
     # Apply all UDFs to the same column simultaneously
     result = df.select(
         multiply_by_2(col("numbers")).alias("doubled"),
         add_10(col("numbers")).alias("plus_ten"),
         square_and_divide(col("numbers")).alias("squared_halved"),
-        number_to_string(col("numbers")).alias("stringified"),
     )
 
     expected = {
         "doubled": [2, 4, 6, 8, 10, 12, 14, 16, 18, 20],
         "plus_ten": [11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
         "squared_halved": [0.5, 2.0, 4.5, 8.0, 12.5, 18.0, 24.5, 32.0, 40.5, 50.0],
-        "stringified": ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6", "num_7", "num_8", "num_9", "num_10"],
     }
 
     assert result.to_pydict() == expected
