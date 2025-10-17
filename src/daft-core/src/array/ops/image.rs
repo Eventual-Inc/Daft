@@ -104,6 +104,70 @@ impl AsImageObj for FixedShapeImageArray {
     }
 }
 
+pub fn image_array_from_img_buffers_iter<'a, I>(
+    name: &str,
+    inputs: I,
+    image_mode: Option<ImageMode>,
+) -> DaftResult<ImageArray>
+where
+    I: ExactSizeIterator<Item = Option<CowImage<'a>>>,
+{
+    use CowImage::{L, LA, RGB, RGBA};
+
+    let mut data = Vec::with_capacity(inputs.len());
+    let mut heights = Vec::with_capacity(inputs.len());
+    let mut channels = Vec::with_capacity(inputs.len());
+    let mut modes = Vec::with_capacity(inputs.len());
+    let mut widths = Vec::with_capacity(inputs.len());
+    let mut offsets = Vec::with_capacity(inputs.len() + 1);
+    offsets.push(0i64);
+    let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(inputs.len());
+
+    for ib in inputs {
+        validity.push(ib.is_some());
+        match ib {
+            Some(ib) => {
+                assert!(matches!(&ib, L(..) | LA(..) | RGB(..) | RGBA(..)));
+                let height = ib.height();
+                let width = ib.width();
+                let mode = ib.mode();
+                let buffer = ib.as_u8_slice();
+                heights.push(height);
+                widths.push(width);
+                modes.push(mode as u8);
+                channels.push(mode.num_channels());
+                data.extend_from_slice(buffer);
+                offsets.push(offsets.last().unwrap() + buffer.len() as i64);
+            }
+            None => {
+                heights.push(0u32);
+                widths.push(0u32);
+                modes.push(ImageMode::L as u8);
+                channels.push(ImageMode::L.num_channels());
+                data.extend_from_slice(&[] as &[u8]);
+                offsets.push(*offsets.last().unwrap());
+            }
+        }
+    }
+
+    let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
+        0 => None,
+        _ => Some(validity.into()),
+    };
+    ImageArray::from_vecs(
+        name,
+        DataType::Image(image_mode),
+        data,
+        offsets,
+        ImageArraySidecarData {
+            channels,
+            heights,
+            widths,
+            modes,
+            validity,
+        },
+    )
+}
 pub fn image_array_from_img_buffers(
     name: &str,
     inputs: &[Option<CowImage<'_>>],

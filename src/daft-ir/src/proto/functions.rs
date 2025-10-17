@@ -1,3 +1,7 @@
+use std::str::FromStr;
+
+use daft_dsl::functions::python::OnError;
+
 use super::ProtoResult;
 use crate::{
     non_null, not_implemented_err,
@@ -45,6 +49,11 @@ pub fn from_proto_function(message: proto::ScalarFn) -> ProtoResult<ir::Expr> {
                     gpus: row_wise_fn.gpus as usize,
                     use_process: row_wise_fn.use_process,
                     max_concurrency: row_wise_fn.max_concurrency.map(|c| c as usize),
+                    max_retries: row_wise_fn.max_retries.map(|c| c as usize),
+                    on_error: row_wise_fn
+                        .on_error
+                        .and_then(|s| OnError::from_str(&s).ok())
+                        .unwrap_or_default(),
                 };
                 ir::rex::from_py_rowwise_func(func)
             }
@@ -60,6 +69,11 @@ pub fn from_proto_function(message: proto::ScalarFn) -> ProtoResult<ir::Expr> {
                     batch_size: batch_fn.batch_size.map(|b| b as usize),
                     original_args: from_proto(batch_fn.original_args)?,
                     args: args.into_inner(),
+                    max_retries: batch_fn.max_retries.map(|c| c as usize),
+                    on_error: batch_fn
+                        .on_error
+                        .and_then(|s| OnError::from_str(&s).ok())
+                        .unwrap_or_default(),
                 };
                 ir::rex::from_py_batch_func(func)
             }
@@ -125,6 +139,8 @@ pub fn scalar_fn_to_proto(sf: &ir::functions::scalar::ScalarFn) -> ProtoResult<p
                             gpus: row_wise_fn.gpus as u64,
                             use_process: row_wise_fn.use_process,
                             max_concurrency: row_wise_fn.max_concurrency.map(|c| c as u64),
+                            max_retries: row_wise_fn.max_retries.map(|c| c as u64),
+                            on_error: Some(row_wise_fn.on_error.to_string()),
                         },
                     )),
                 })),
@@ -153,6 +169,8 @@ pub fn scalar_fn_to_proto(sf: &ir::functions::scalar::ScalarFn) -> ProtoResult<p
                             use_process: batch_fn.use_process,
                             max_concurrency: batch_fn.max_concurrency.map(|c| c as u64),
                             batch_size: batch_fn.batch_size.map(|b| b as u64),
+                            max_retries: batch_fn.max_retries.map(|c| c as u64),
+                            on_error: Some(batch_fn.on_error.to_string()),
                         },
                     )),
                 })),
@@ -436,6 +454,11 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             }
         };
 
+        let max_retries = message.max_retries.map(|r| r as usize);
+        let on_error = message
+            .on_error
+            .and_then(|s| ir::functions::python::OnError::from_str(&s).ok());
+
         Ok(Self {
             name: name.into(),
             func,
@@ -446,6 +469,8 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             batch_size,
             concurrency,
             use_process,
+            max_retries,
+            on_error,
         })
     }
 
@@ -487,6 +512,9 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             None => (None, None, None),
         };
 
+        let max_retries: Option<u64> = self.max_retries.map(|s| s as u64);
+        let on_error: Option<String> = self.on_error.as_ref().map(|e| e.as_str().to_string());
+
         Ok(Self::Message {
             name,
             arity,
@@ -500,6 +528,8 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             num_gpus,
             max_memory_bytes,
             use_process: self.use_process,
+            max_retries,
+            on_error,
         })
     }
 }

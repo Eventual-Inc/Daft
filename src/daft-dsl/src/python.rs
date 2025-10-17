@@ -2,6 +2,7 @@
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
+    str::FromStr,
     sync::Arc,
 };
 
@@ -191,7 +192,9 @@ pub fn list_(items: Vec<PyExpr>) -> PyExpr {
     resource_request=None,
     batch_size=None,
     concurrency=None,
-    use_process=None
+    use_process=None,
+    max_retries=None,
+    on_error=None
 ))]
 pub fn udf(
     name: &str,
@@ -204,6 +207,8 @@ pub fn udf(
     batch_size: Option<usize>,
     concurrency: Option<usize>,
     use_process: Option<bool>,
+    max_retries: Option<usize>,
+    on_error: Option<String>,
 ) -> PyResult<PyExpr> {
     use crate::functions::python::udf;
 
@@ -216,6 +221,18 @@ pub fn udf(
     }
 
     let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
+
+    // Convert string on_error to OnError enum
+    let on_error_enum = on_error
+        .as_ref()
+        .and_then(|s| crate::functions::python::OnError::from_str(s).ok());
+
+    if on_error.is_some() && on_error_enum.is_none() {
+        return Err(PyValueError::new_err(
+            "Invalid on_error value. Must be one of: 'raise', 'log', or 'ignore'",
+        ));
+    }
+
     Ok(PyExpr {
         expr: udf(
             name,
@@ -228,6 +245,8 @@ pub fn udf(
             batch_size,
             concurrency,
             use_process,
+            max_retries,
+            on_error_enum,
         )?
         .into(),
     })
@@ -244,11 +263,15 @@ pub fn row_wise_udf(
     gpus: usize,
     use_process: Option<bool>,
     max_concurrency: Option<usize>,
+    max_retries: Option<usize>,
+    on_error: Option<String>,
     original_args: Py<PyAny>,
     expr_args: Vec<PyExpr>,
 ) -> PyExpr {
     let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
-
+    let on_error = on_error
+        .and_then(|v| crate::functions::python::OnError::from_str(&v).ok())
+        .unwrap_or_default();
     PyExpr {
         expr: crate::python_udf::row_wise_udf(
             name,
@@ -259,6 +282,8 @@ pub fn row_wise_udf(
             gpus,
             use_process,
             max_concurrency,
+            max_retries,
+            on_error,
             original_args.into(),
             args,
         )
@@ -277,11 +302,15 @@ pub fn batch_udf(
     use_process: Option<bool>,
     max_concurrency: Option<usize>,
     batch_size: Option<usize>,
+    max_retries: Option<usize>,
+    on_error: Option<String>,
     original_args: Py<PyAny>,
     expr_args: Vec<PyExpr>,
 ) -> PyExpr {
     let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
-
+    let on_error = on_error
+        .and_then(|v| crate::functions::python::OnError::from_str(&v).ok())
+        .unwrap_or_default();
     PyExpr {
         expr: crate::python_udf::batch_udf(
             name,
@@ -294,6 +323,8 @@ pub fn batch_udf(
             batch_size,
             original_args.into(),
             args,
+            max_retries,
+            on_error,
         )
         .into(),
     }

@@ -264,6 +264,8 @@ class UDF:
     resource_request: ResourceRequest | None = None
     batch_size: int | None = None
     use_process: bool | None = None
+    max_retries: int | None = None
+    on_error: str | None = None
 
     def __post_init__(self) -> None:
         # Analogous to the @functools.wraps(self.inner) pattern
@@ -299,6 +301,8 @@ class UDF:
             batch_size=self.batch_size,
             concurrency=self.concurrency,
             use_process=self.use_process,
+            max_retries=self.max_retries,
+            on_error=self.on_error,
         )
 
     def override_options(
@@ -474,6 +478,8 @@ def udf(
     batch_size: int | None = None,
     concurrency: int | None = None,
     use_process: bool | None = None,
+    max_retries: int | None = None,
+    on_error: str | None = None,
 ) -> Callable[[UserDefinedPyFuncLike], UDF]:
     """`@udf` Decorator to convert a Python function/class into a `UDF`.
 
@@ -642,6 +648,8 @@ def udf(
             batch_size=batch_size,
             concurrency=concurrency,
             use_process=use_process,
+            max_retries=max_retries,
+            on_error=on_error,
         )
 
         daft.attach_function(udf)

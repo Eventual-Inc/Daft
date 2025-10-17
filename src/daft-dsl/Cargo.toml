@@ -10,6 +10,7 @@ daft-sketch = {path = "../daft-sketch", default-features = false}
 derive_more = {workspace = true}
 indexmap = {workspace = true}
 itertools = {workspace = true}
+log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 typetag = {workspace = true}

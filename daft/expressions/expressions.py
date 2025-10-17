@@ -273,6 +273,8 @@ class Expression:
         batch_size: int | None,
         concurrency: int | None,
         use_process: bool | None,
+        max_retries: int | None,
+        on_error: builtins.str | None,
     ) -> Expression:
         return Expression._from_pyexpr(
             _udf(
@@ -286,6 +288,8 @@ class Expression:
                 batch_size,
                 concurrency,
                 use_process,
+                max_retries,
+                on_error,
             )
         )
 

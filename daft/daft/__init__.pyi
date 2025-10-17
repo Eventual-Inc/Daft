@@ -1346,6 +1346,8 @@ def udf(
     batch_size: int | None,
     concurrency: int | None,
     use_process: bool | None,
+    max_retries: int | None,
+    on_error: str | None,
 ) -> PyExpr: ...
 def row_wise_udf(
     name: str,
@@ -1356,6 +1358,8 @@ def row_wise_udf(
     gpus: int,
     use_process: bool | None,
     max_concurrency: int | None,
+    max_retries: int | None,
+    on_error: str | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
 ) -> PyExpr: ...
@@ -1368,6 +1372,8 @@ def batch_udf(
     use_process: bool | None,
     max_concurrency: int | None,
     batch_size: int | None,
+    max_retries: int | None,
+    on_error: str | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
 ) -> PyExpr: ...
