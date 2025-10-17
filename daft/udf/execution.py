@@ -44,7 +44,7 @@ def call_async_batch(
     # Preallocate outputs with None
     outputs = {}
 
-    async def run_task(idx: int, args: tuple, kwargs: dict) -> tuple[int, Any, Exception | None]:
+    async def run_task(idx: int, args: tuple, kwargs: dict) -> tuple[int, Any, Exception | None]:  # type: ignore
         try:
             result = await bound_method(*args, **kwargs)
             return idx, result, None
