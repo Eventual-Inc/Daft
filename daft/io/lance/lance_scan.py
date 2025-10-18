@@ -55,6 +55,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
     def __init__(self, ds: "lance.LanceDataset", fragment_group_size: Optional[int] = None):
         self._ds = ds
         self._pushed_filters: Union[list[PyExpr], None] = None
+        self._remaining_filters: Union[list[PyExpr], None] = None
         self._fragment_group_size = fragment_group_size
 
     def name(self) -> str:
@@ -110,6 +111,8 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             self._pushed_filters = pushed
         else:
             self._pushed_filters = None
+
+        self._remaining_filters = remaining if remaining else None
 
         return pushed, remaining
 
@@ -217,11 +220,16 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 if fragment.count_rows(pushed_expr) == 0:
                     continue
 
-                limit = pushdowns.limit if pushdowns.filters is None else None
                 yield ScanTask.python_factory_func_scan_task(
                     module=_lancedb_table_factory_function.__module__,
                     func_name=_lancedb_table_factory_function.__name__,
-                    func_args=(self._ds, [fragment.fragment_id], required_columns, pushed_expr, limit),
+                    func_args=(
+                        self._ds,
+                        [fragment.fragment_id],
+                        required_columns,
+                        pushed_expr,
+                        self._compute_limit_pushdown_with_filter(pushdowns),
+                    ),
                     schema=self.schema()._schema,
                     num_rows=num_rows,
                     size_bytes=size_bytes,
@@ -256,7 +264,13 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 yield ScanTask.python_factory_func_scan_task(
                     module=_lancedb_table_factory_function.__module__,
                     func_name=_lancedb_table_factory_function.__name__,
-                    func_args=(self._ds, fragment_ids, required_columns, pushed_expr, pushdowns.limit),
+                    func_args=(
+                        self._ds,
+                        fragment_ids,
+                        required_columns,
+                        pushed_expr,
+                        self._compute_limit_pushdown_with_filter(pushdowns),
+                    ),
                     schema=self.schema()._schema,
                     num_rows=num_rows,
                     size_bytes=size_bytes,
@@ -272,3 +286,13 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 combined_filter = combined_filter & filter_expr
             return Expression._from_pyexpr(combined_filter).to_arrow_expr()
         return None
+
+    def _compute_limit_pushdown_with_filter(self, pushdowns: PyPushdowns) -> Union[int, None]:
+        """Decide whether to push down `limit` when filters are present."""
+        if self._pushed_filters is None and pushdowns.filters is not None:
+            return None
+
+        if self._pushed_filters is not None and self._remaining_filters is not None:
+            return None
+
+        return pushdowns.limit
