@@ -28,6 +28,7 @@
         * [Apache Iceberg](connectors/iceberg.md)
         * [Azure Blob Store](connectors/azure.md)
         * [Delta Lake](connectors/delta_lake.md)
+        * [Lance](connectors/lance.md)
         * [Hugging Face Datasets](connectors/huggingface.md)
         * [S3](connectors/aws.md)
         * [SQL Databases](connectors/sql.md)
