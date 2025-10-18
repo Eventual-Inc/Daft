@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import datetime
 import decimal
 
@@ -101,3 +102,29 @@ def test_write_and_read_empty_csv(tmp_path_factory):
     df.write_csv(empty_csv_files, write_mode="overwrite")
 
     assert daft.read_csv(empty_csv_files).to_pydict() == {"a": []}
+
+
+def test_read_csv_ignore_corrupt_files(tmp_path):
+    """Test reading CSV files with ignore_corrupt_files parameter.
+
+    When ignore_corrupt_files=True, only data from valid files should be loaded.
+    When ignore_corrupt_files=False, reading should raise an exception.
+    """
+    valid_path = tmp_path / "valid.csv"
+    with open(valid_path, "w") as f:
+        writer = csv.writer(f)
+        writer.writerow(["a", "b"])
+        writer.writerow([1, 2])
+        writer.writerow([3, 4])
+
+    bad_path = tmp_path / "bad.csv"
+    with open(bad_path, "wb") as f:
+        f.write(b"\xff\xfe\xff\xfe\n")
+
+    daft_schema = {"a": DataType.int64(), "b": DataType.int64()}
+    df = daft.read_csv(str(tmp_path), ignore_corrupt_files=True, infer_schema=False, schema=daft_schema)
+    res = df.collect().to_pydict()
+    assert res == {"a": [1, 3], "b": [2, 4]}
+
+    with pytest.raises(Exception):
+        daft.read_csv(str(tmp_path), ignore_corrupt_files=False).collect()

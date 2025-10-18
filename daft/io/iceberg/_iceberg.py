@@ -57,6 +57,7 @@ def read_iceberg(
     table: Union[str, "PyIcebergTable"],
     snapshot_id: Optional[int] = None,
     io_config: Optional[IOConfig] = None,
+    ignore_corrupt_files: bool = False,
 ) -> DataFrame:
     """Create a DataFrame from an Iceberg table.
 
@@ -100,7 +101,9 @@ def read_iceberg(
     multithreaded_io = runners.get_or_create_runner().name != "ray"
     storage_config = StorageConfig(multithreaded_io, io_config)
 
-    iceberg_operator = IcebergScanOperator(table, snapshot_id=snapshot_id, storage_config=storage_config)
+    iceberg_operator = IcebergScanOperator(
+        table, snapshot_id=snapshot_id, storage_config=storage_config, ignore_corrupt_files=ignore_corrupt_files
+    )
 
     handle = ScanOperatorHandle.from_python_scan_operator(iceberg_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)

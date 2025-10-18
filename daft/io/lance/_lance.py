@@ -40,6 +40,7 @@ def read_lance(
     metadata_cache_size_bytes: Optional[int] = None,
     fragment_group_size: Optional[int] = None,
     include_fragment_id: Optional[bool] = None,
+    ignore_corrupt_files: bool = False,
 ) -> DataFrame:
     """Create a DataFrame from a LanceDB table.
 
@@ -133,7 +134,10 @@ def read_lance(
     )
 
     lance_operator = LanceDBScanOperator(
-        ds, fragment_group_size=fragment_group_size, include_fragment_id=include_fragment_id
+        ds,
+        fragment_group_size=fragment_group_size,
+        include_fragment_id=include_fragment_id,
+        ignore_corrupt_files=ignore_corrupt_files,
     )
 
     handle = ScanOperatorHandle.from_python_scan_operator(lance_operator)
