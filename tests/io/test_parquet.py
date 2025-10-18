@@ -468,3 +468,25 @@ def test_write_and_read_empty_parquet(tmp_path_factory):
     df.write_parquet(empty_parquet_files, write_mode="overwrite")
 
     assert daft.read_parquet(empty_parquet_files).to_pydict() == {"a": []}
+
+
+def test_read_parquet_ignore_corrupt_files(tmp_path):
+    """Test reading parquet files with ignore_corrupt_files parameter."""
+    # Create valid parquet
+    valid_path = tmp_path / "valid.parquet"
+    table = pa.Table.from_pydict({"a": [1, 2, 3]})
+    papq.write_table(table, valid_path)
+
+    # Create invalid/corrupt parquet (wrong bytes but with .parquet suffix)
+    bad_path = tmp_path / "bad.parquet"
+    with open(bad_path, "wb") as f:
+        f.write(b"not a parquet file")
+
+    # When ignore_corrupt_files=True, only rows from valid file should be loaded
+    df = daft.read_parquet(str(tmp_path), ignore_corrupt_files=True)
+    res = df.collect().to_pydict()
+    assert res == {"a": [1, 2, 3]}
+
+    # When ignore_corrupt_files=False, reading should raise
+    with pytest.raises(Exception):
+        daft.read_parquet(str(tmp_path), ignore_corrupt_files=False).collect()

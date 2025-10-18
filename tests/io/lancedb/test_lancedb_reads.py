@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import lance
 import pyarrow as pa
 import pytest
@@ -312,3 +314,59 @@ def test_lancedb_limit_with_filter_and_fragment_grouping_single_task(large_lance
 
     result = df.to_pydict()
     assert result == {"big_int": [999]}
+
+
+# Fixtures and tests for ignore_corrupt_files functionality
+@pytest.fixture(scope="function")
+def lancedb_dataset_with_corrupt_fragment(tmp_path_factory):
+    """Create a LanceDB dataset with one valid fragment and one corrupt fragment."""
+    tmp_dir = tmp_path_factory.mktemp("lancedb_corrupt_fragment_test")
+
+    # First fragment - valid
+    table1 = pa.Table.from_pydict({"id": [1, 2], "value": ["a", "b"]})
+    lance.write_dataset(table1, str(tmp_dir), mode="create")
+
+    # Second fragment - valid initially
+    table2 = pa.Table.from_pydict({"id": [3, 4], "value": ["c", "d"]})
+    lance.write_dataset(table2, str(tmp_dir), mode="append")
+
+    fragment_files = []
+    for root, dirs, files in os.walk(tmp_dir):
+        for file in files:
+            if file.endswith(".lance") and "data" in root:
+                fragment_files.append(os.path.join(root, file))
+
+    # Corrupt one fragment file (keep track of which one)
+    corrupted_fragment_file = None
+    if fragment_files:
+        corrupted_fragment_file = fragment_files[0]
+        os.remove(corrupted_fragment_file)
+
+    yield str(tmp_dir)
+
+
+def test_lancedb_read_ignore_corrupt_files(lancedb_dataset_with_corrupt_fragment):
+    """Test reading LanceDB datasets with ignore_corrupt_files parameter."""
+    df = daft.read_lance(lancedb_dataset_with_corrupt_fragment, ignore_corrupt_files=True)
+    result = df.to_pydict()
+
+    assert len(result["id"]) > 0
+    assert len(result["value"]) > 0
+
+    with pytest.raises(Exception):
+        df = daft.read_lance(lancedb_dataset_with_corrupt_fragment, ignore_corrupt_files=False)
+        df.collect()
+
+
+def test_lancedb_read_ignore_corrupt_files_valid_only(tmp_path):
+    """Test reading only valid LanceDB datasets with ignore_corrupt_files parameter."""
+    valid_path = os.path.join(tmp_path, "valid_only")
+    lance.write_dataset(pa.Table.from_pydict(data), valid_path)
+
+    df_true = daft.read_lance(valid_path, ignore_corrupt_files=True)
+    result_true = df_true.to_pydict()
+
+    df_false = daft.read_lance(valid_path, ignore_corrupt_files=False)
+    result_false = df_false.to_pydict()
+
+    assert result_true == result_false == data
