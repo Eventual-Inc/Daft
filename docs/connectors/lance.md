@@ -48,15 +48,16 @@ To access public S3/GCS buckets, configure IO options for authentication and end
 
     ```python
     import daft
-    from daft.io import S3Config, GCSConfig
+    from daft.io import IOConfig, S3Config, GCSConfig
 
     # Public S3 example (anonymous access)
-    s3_config = S3Config(region="us-west-2", anonymous=True)
-    df_s3 = daft.read_lance("s3://daft-public-data/lance/words-test-dataset", io_config=s3_config)
+    s3_config = S3Config(region_name="us-west-2", anonymous=True)
+    gcs_config = GCSConfig(credentials="/path/to/gcp-service-account.json")
+    io_config = IOConfig(s3=s3_config, gcs=gcs_config)
+    df_s3 = daft.read_lance("s3://daft-public-data/lance/words-test-dataset", io_config=io_config)
 
     # GCS example (service account credentials)
-    gcs_config = GCSConfig(credentials="/path/to/gcp-service-account.json")
-    df_gcs = daft.read_lance("gs://my-bucket/lance/my-dataset", io_config=gcs_config)
+    df_gcs = daft.read_lance("gs://my-bucket/lance/my-dataset", io_config=io_config)
     ```
 
 For S3-compatible services (e.g. Volcengine TOS), configure IO options for authentication and endpoints:
