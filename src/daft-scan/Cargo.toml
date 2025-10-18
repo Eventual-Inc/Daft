@@ -24,6 +24,7 @@ daft-stats = {path = "../daft-stats", default-features = false}
 daft-compression = {path = "../daft-compression", default-features = false}
 futures = {workspace = true}
 indexmap = {workspace = true}
+log = {workspace = true}
 itertools = {workspace = true}
 parquet2 = {workspace = true}
 pyo3 = {workspace = true, optional = true}

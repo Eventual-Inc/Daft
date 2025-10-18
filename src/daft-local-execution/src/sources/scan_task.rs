@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayAs, DisplayLevel, tree::TreeDisplay};
 use common_error::{DaftError, DaftResult};
-use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
+use common_file_formats::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
 use common_metrics::ops::NodeType;
 use common_runtime::{combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use common_scan_info::{Pushdowns, ScanTaskLike};
@@ -419,8 +419,50 @@ async fn forward_scan_task_stream(
     chunk_size: usize,
     sender: Sender<Arc<MicroPartition>>,
 ) -> DaftResult<()> {
-    let mut stream =
-        stream_scan_task(scan_task, io_stats, delete_map, maintain_order, chunk_size).await?;
+    let stream_res = stream_scan_task(
+        scan_task.clone(),
+        io_stats,
+        delete_map,
+        maintain_order,
+        chunk_size,
+    )
+    .await;
+    let mut stream = match stream_res {
+        Ok(s) => s,
+        Err(e) => match scan_task.file_format_config.as_ref() {
+            FileFormatConfig::Parquet(ParquetSourceConfig {
+                ignore_corrupt_files: true,
+                ..
+            }) => {
+                log::warn!(
+                    "Skipping unreadable/corrupt parquet file {}: {}",
+                    scan_task
+                        .sources
+                        .first()
+                        .map(|s| s.get_path())
+                        .unwrap_or("UNKNOWN"),
+                    e
+                );
+                return Ok(());
+            }
+            FileFormatConfig::Csv(CsvSourceConfig {
+                ignore_corrupt_files: true,
+                ..
+            }) => {
+                log::warn!(
+                    "Skipping unreadable/corrupt csv file {}: {}",
+                    scan_task
+                        .sources
+                        .first()
+                        .map(|s| s.get_path())
+                        .unwrap_or("UNKNOWN"),
+                    e
+                );
+                return Ok(());
+            }
+            _ => return Err(e),
+        },
+    };
     while let Some(result) = stream.next().await {
         if sender.send(result?).await.is_err() {
             break;
@@ -479,11 +521,12 @@ async fn stream_scan_task(
             .unwrap_or_default(),
     );
     let io_client = daft_io::get_io_client(scan_task.storage_config.multithreaded_io, io_config)?;
-    let table_stream = match scan_task.file_format_config.as_ref() {
+    let mut table_stream = match scan_task.file_format_config.as_ref() {
         FileFormatConfig::Parquet(ParquetSourceConfig {
             coerce_int96_timestamp_unit,
             field_id_mapping,
             chunk_size: chunk_size_from_config,
+            ignore_corrupt_files: _,
             ..
         }) => {
             if let Some(aggregation) = &scan_task.pushdowns.aggregation
@@ -546,7 +589,7 @@ async fn stream_scan_task(
                 col_names
                     .as_ref()
                     .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
-                Some(schema_of_file),
+                Some(schema_of_file.clone()),
                 scan_task.pushdowns.filters.clone(),
             );
             let parse_options = CsvParseOptions::new_with_defaults(
@@ -560,6 +603,7 @@ async fn stream_scan_task(
             )?;
             let csv_chunk_size = cfg.chunk_size.or(Some(chunk_size));
             let read_options = CsvReadOptions::new_internal(cfg.buffer_size, csv_chunk_size);
+            // Do not enforce schema equality for CSV scans here; corrupt files are already handled upstream.
             daft_csv::stream_csv(
                 url.to_string(),
                 Some(convert_options),
@@ -648,6 +692,53 @@ async fn stream_scan_task(
             Box::pin(stream)
         }
     };
+
+    // Drop per-file read errors if ignore_bad_files is set
+    match scan_task.file_format_config.as_ref() {
+        FileFormatConfig::Parquet(ParquetSourceConfig {
+            ignore_corrupt_files: true,
+            ..
+        }) => {
+            use futures::StreamExt;
+            let url_str = url.to_string();
+            table_stream = Box::pin(table_stream.filter_map(move |res| {
+                let url_clone = url_str.clone();
+                async move {
+                    match res {
+                        Ok(tbl) => Some(Ok(tbl)),
+                        Err(e) => {
+                            log::warn!(
+                                "Skipping unreadable/corrupt parquet file {}: {}",
+                                url_clone,
+                                e
+                            );
+                            None
+                        }
+                    }
+                }
+            }));
+        }
+        FileFormatConfig::Csv(CsvSourceConfig {
+            ignore_corrupt_files: true,
+            ..
+        }) => {
+            use futures::StreamExt;
+            let url_str = url.to_string();
+            table_stream = Box::pin(table_stream.filter_map(move |res| {
+                let url_clone = url_str.clone();
+                async move {
+                    match res {
+                        Ok(tbl) => Some(Ok(tbl)),
+                        Err(e) => {
+                            log::warn!("Skipping unreadable/corrupt csv file {}: {}", url_clone, e);
+                            None
+                        }
+                    }
+                }
+            }));
+        }
+        _ => {}
+    }
 
     Ok(table_stream.map(move |table| {
         let table = table?;
