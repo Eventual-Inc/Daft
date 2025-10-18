@@ -39,7 +39,6 @@ Use [`daft.read_lance`][daft.read_lance] to read a Lance dataset. You can pass e
 
     # Read a specific version or a time slice
     df_v1 = daft.read_lance("/data/my_lance_dataset", version=1)
-    df_asof = daft.read_lance("/data/my_lance_dataset", asof="2025-01-01T00:00:00Z")
     ```
 
 To access public S3/GCS buckets, configure IO options for authentication and endpoints:
