@@ -2,15 +2,11 @@ from __future__ import annotations
 
 from unittest.mock import Mock, patch
 
-import pyarrow as pa
 import pytest
 import turbopuffer
 
 import daft
 from tests.conftest import get_tests_daft_runner_name
-
-# Skip tests for pyarrow 8.0.0
-PYARROW_8_0_0_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) == (8, 0, 0)
 
 
 @pytest.fixture
@@ -92,8 +88,8 @@ def test_resilience_to_transient_errors(sample_df, error_class, status_code, err
 
 
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() == "ray" or PYARROW_8_0_0_SKIP,
-    reason="Mocking the data sink's dependencies doesn't work in Ray execution environment or pyarrow 8.0.0",
+    get_tests_daft_runner_name() == "ray",
+    reason="Mocking the data sink's dependencies doesn't work in Ray execution environment",
 )
 @pytest.mark.parametrize(
     "error_class,status_code,error_message",
