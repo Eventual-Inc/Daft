@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Callable
 
-from typing_extensions import Unpack
+from typing_extensions import Literal, Unpack
 
 if TYPE_CHECKING:
     from daft.ai.openai.typing import OpenAIProviderOptions
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 class ProviderImportError(ImportError):
     def __init__(self, dependencies: list[str]):
         deps = ", ".join(f"'{d}'" for d in dependencies)
-        super().__init__(f"Missing required dependencies: {deps}. " f"Please install {deps} to use this provider.")
+        super().__init__(f"Missing required dependencies: {deps}. Please install {deps} to use this provider.")
 
 
 def load_lm_studio(name: str | None = None, **options: Any) -> Provider:
@@ -39,36 +39,27 @@ def load_openai(name: str | None = None, **options: Unpack[OpenAIProviderOptions
         raise ProviderImportError(["openai"]) from e
 
 
-def load_sentence_transformers(name: str | None = None, **options: Any) -> Provider:
-    try:
-        from daft.ai.sentence_transformers.provider import SentenceTransformersProvider
-
-        return SentenceTransformersProvider(name, **options)
-    except ImportError as e:
-        raise ProviderImportError(["sentence_transformers", "torch"]) from e
-
-
 def load_transformers(name: str | None = None, **options: Any) -> Provider:
     try:
         from daft.ai.transformers.provider import TransformersProvider
 
         return TransformersProvider(name, **options)
     except ImportError as e:
-        raise ProviderImportError(["torch", "torchvision", "transformers", "Pillow"]) from e
+        raise ProviderImportError(["torch", "torchvision", "transformers", "sentence-transformers", "Pillow"]) from e
 
 
-PROVIDERS: dict[str, Callable[..., Provider]] = {
+ProviderType = Literal["lm_studio", "openai", "transformers"]
+PROVIDERS: dict[ProviderType, Callable[..., Provider]] = {
     "lm_studio": load_lm_studio,
     "openai": load_openai,
-    "sentence_transformers": load_sentence_transformers,
     "transformers": load_transformers,
 }
 
 
-def load_provider(provider: str, name: str | None = None, **options: Any) -> Provider:
+def load_provider(provider: str, name: ProviderType | None = None, **options: Any) -> Provider:
     if provider not in PROVIDERS:
         raise ValueError(f"Provider '{provider}' is not yet supported.")
-    return PROVIDERS[provider](name, **options)
+    return PROVIDERS[provider](name, **options)  # type: ignore
 
 
 def not_implemented_err(provider: Provider, method: str) -> NotImplementedError:
@@ -77,6 +68,10 @@ def not_implemented_err(provider: Provider, method: str) -> NotImplementedError:
 
 class Provider(ABC):
     """Provider is the base class for resolving implementations for the various AI/ML protocols.
+
+    Handles integration with model providers such as OpenAI, LM Studio,
+    Hugging Face Transformers, etc. Provides a unified interface for model access
+    and execution regardless of the underlying implementation.
 
     Note:
         We will need to move instantiation from the TextEmbedderDesriptor to the Provider or other.
