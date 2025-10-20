@@ -5,6 +5,7 @@ import logging
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Optional, Union
 
+from daft.context import get_context
 from daft.daft import CountMode, PyExpr, PyPartitionField, PyPushdowns, PyRecordBatch, ScanTask
 from daft.dependencies import pa
 from daft.expressions import Expression
@@ -57,6 +58,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         self._pushed_filters: Union[list[PyExpr], None] = None
         self._remaining_filters: Union[list[PyExpr], None] = None
         self._fragment_group_size = fragment_group_size
+        self._enable_strict_filter_pushdown = get_context().daft_planning_config.enable_strict_filter_pushdown
 
     def name(self) -> str:
         return "LanceDBScanOperator"
@@ -289,10 +291,10 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
 
     def _compute_limit_pushdown_with_filter(self, pushdowns: PyPushdowns) -> Union[int, None]:
         """Decide whether to push down `limit` when filters are present."""
-        if self._pushed_filters is None and pushdowns.filters is not None:
+        if not self._enable_strict_filter_pushdown and pushdowns.filters is not None:
             return None
 
-        if self._pushed_filters is not None and self._remaining_filters is not None:
+        if self._enable_strict_filter_pushdown and self._remaining_filters is not None:
             return None
 
         return pushdowns.limit
