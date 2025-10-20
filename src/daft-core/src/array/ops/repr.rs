@@ -325,8 +325,10 @@ fn sparkline_from_floats(values: &[f32], num_bins: usize) -> String {
 impl EmbeddingArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         if self.physical.is_valid(idx) {
-            let value = self.get(idx).unwrap();
-            let value_casted = value.cast(&DataType::Float32).unwrap();
+            let value = self
+                .get(idx)
+                .expect("str_value should only be called in bounds");
+            let value_casted = value.cast(&DataType::Float32)?;
             let value_f32 = value_casted.f32()?;
             let slice = value_f32.as_slice();
             let sparkline = sparkline_from_floats(slice, 24);
