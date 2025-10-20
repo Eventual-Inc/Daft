@@ -168,29 +168,13 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
     fn from_mutable_primitive<T: NativeType, I: Iterator<Item = (usize, DaftResult<Literal>)>>(
         values: I,
         values_len: usize,
-        errs: &mut IndexMap<usize, String>,
         field: Field,
-        f: impl Fn(&Literal) -> Option<T>,
+        mut f: impl FnMut(DaftResult<Literal>, usize) -> Option<T>,
     ) -> DaftResult<Series> {
         let mut arr = MutablePrimitiveArray::<T>::with_capacity(values_len);
 
         for (i, value) in values {
-            let value = match value {
-                Ok(lit) => match f(&lit) {
-                    Some(lit) => Some(lit),
-                    None => {
-                        let ty = lit.get_type();
-                        errs.insert(i, format!(
-                                "All literals must have the same data type or null. Found: {ty} vs {}", field.dtype
-                            ));
-                        None
-                    }
-                },
-                Err(e) => {
-                    errs.insert(i, e.to_string());
-                    None
-                }
-            };
+            let value = f(value, i);
 
             arr.push(value);
         }
@@ -228,26 +212,43 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
             }
             Series::from_arrow(Arc::new(field), arr.as_box())?
         }
-        DataType::Int8 => from_mutable_primitive(values, len, &mut errs, field, Literal::as_i8)?,
-        DataType::UInt8 => from_mutable_primitive(values, len, &mut errs, field, Literal::as_u8)?,
-        DataType::Int16 => from_mutable_primitive(values, len, &mut errs, field, Literal::as_i16)?,
-        DataType::UInt16 => from_mutable_primitive(values, len, &mut errs, field, Literal::as_u16)?,
-        DataType::Int32 => from_mutable_primitive(values, len, &mut errs, field, Literal::as_i32)?,
-        DataType::UInt32 => from_mutable_primitive(values, len, &mut errs, field, Literal::as_u32)?,
-        DataType::Int64 => from_mutable_primitive(values, len, &mut errs, field, Literal::as_i64)?,
-        DataType::UInt64 => from_mutable_primitive(values, len, &mut errs, field, Literal::as_u64)?,
+        DataType::Int8 => {
+            from_mutable_primitive(values, len, field, |v, i| unwrap_inner!(v, i, Int8))?
+        }
+
+        DataType::UInt8 => {
+            from_mutable_primitive(values, len, field, |v, i| unwrap_inner!(v, i, UInt8))?
+        }
+        DataType::Int16 => {
+            from_mutable_primitive(values, len, field, |v, i| unwrap_inner!(v, i, Int16))?
+        }
+        DataType::UInt16 => {
+            from_mutable_primitive(values, len, field, |v, i| unwrap_inner!(v, i, UInt16))?
+        }
+        DataType::Int32 => {
+            from_mutable_primitive(values, len, field, |v, i| unwrap_inner!(v, i, Int32))?
+        }
+        DataType::UInt32 => {
+            from_mutable_primitive(values, len, field, |v, i| unwrap_inner!(v, i, UInt32))?
+        }
+        DataType::Int64 => {
+            from_mutable_primitive(values, len, field, |v, i| unwrap_inner!(v, i, Int64))?
+        }
+        DataType::UInt64 => {
+            from_mutable_primitive(values, len, field, |v, i| unwrap_inner!(v, i, UInt64))?
+        }
         DataType::Float32 => {
-            from_mutable_primitive(values, len, &mut errs, field, Literal::as_f32)?
+            from_mutable_primitive(values, len, field, |v, i| unwrap_inner!(v, i, Float32))?
         }
         DataType::Float64 => {
-            from_mutable_primitive(values, len, &mut errs, field, Literal::as_f64)?
+            from_mutable_primitive(values, len, field, |v, i| unwrap_inner!(v, i, Float64))?
         }
-        DataType::Interval => {
-            from_mutable_primitive(values, len, &mut errs, field, |lit| match lit {
-                Literal::Interval(d) => Some(months_days_ns::from(d.clone())),
-                _ => None,
-            })?
-        }
+        DataType::Interval => from_mutable_primitive(
+            values,
+            len,
+            field,
+            |v, i| unwrap_inner!(v, i, Literal::Interval(v) => months_days_ns::from(v)),
+        )?,
 
         DataType::Decimal128 { .. } => Decimal128Array::from_iter(
             field,
