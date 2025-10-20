@@ -284,37 +284,13 @@ impl TryFrom<(&str, &[Option<Series>])> for ListArray {
     }
 }
 
-impl<T: NumericNative> From<(&str, &[&[T]])> for ListArray
-where
-    T::DAFTTYPE: DaftNumericType<Native = T> + DaftArrowBackedType,
-    ArrayWrapper<DataArray<T::DAFTTYPE>>: SeriesLike,
-{
-    fn from(item: (&str, &[&[T]])) -> Self {
-        let (name, data) = item;
-        let flat_child_vec = data.iter().copied().flatten().copied().collect::<Vec<_>>();
-        let flat_child = DataArray::<T::DAFTTYPE>::from((name, flat_child_vec)).into_series();
-
-        let lengths = data.iter().map(|d| d.len());
-        let offsets = arrow2::offset::Offsets::try_from_lengths(lengths)
-            .unwrap()
-            .into();
-
-        Self::new(
-            flat_child.field().to_list_field().rename(name),
-            flat_child,
-            offsets,
-            None,
-        )
-    }
-}
-
-impl<T: NumericNative> From<(&str, &[Option<&[T]>])> for ListArray
-where
-    T::DAFTTYPE: DaftNumericType<Native = T>,
-    ArrayWrapper<DataArray<T::DAFTTYPE>>: SeriesLike,
-{
-    fn from(item: (&str, &[Option<&[T]>])) -> Self {
-        let (name, data) = item;
+impl ListArray {
+    pub fn from_slice<T>(name: &str, data: &[Option<&[T]>]) -> Self
+    where
+        T: NumericNative,
+        T::DAFTTYPE: DaftNumericType<Native = T>,
+        ArrayWrapper<DataArray<T::DAFTTYPE>>: SeriesLike,
+    {
         let flat_child_vec = data
             .iter()
             .copied()
@@ -339,15 +315,13 @@ where
             Some(validity),
         )
     }
-}
 
-impl<T: NumericNative> From<(&str, Vec<Option<Vec<T>>>)> for ListArray
-where
-    T::DAFTTYPE: DaftNumericType<Native = T>,
-    ArrayWrapper<DataArray<T::DAFTTYPE>>: SeriesLike,
-{
-    fn from(item: (&str, Vec<Option<Vec<T>>>)) -> Self {
-        let (name, data) = item;
+    pub fn from_vec<T>(name: &str, data: Vec<Option<Vec<T>>>) -> Self
+    where
+        T: NumericNative,
+        T::DAFTTYPE: DaftNumericType<Native = T>,
+        ArrayWrapper<DataArray<T::DAFTTYPE>>: SeriesLike,
+    {
         let flat_child_vec = data.iter().flatten().flatten().copied().collect::<Vec<_>>();
         let flat_child = DataArray::<T::DAFTTYPE>::from((name, flat_child_vec)).into_series();
 

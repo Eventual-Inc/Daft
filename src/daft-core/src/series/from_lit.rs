@@ -176,7 +176,16 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
 
         for (i, value) in values {
             let value = match value {
-                Ok(lit) => f(&lit),
+                Ok(lit) => match f(&lit) {
+                    Some(lit) => Some(lit),
+                    None => {
+                        let ty = lit.get_type();
+                        errs.insert(i, format!(
+                                "All literals must have the same data type or null. Found: {ty} vs {}", field.dtype
+                            ));
+                        None
+                    }
+                },
                 Err(e) => {
                     errs.insert(i, e.to_string());
                     None
@@ -234,8 +243,6 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
             from_mutable_primitive(values, len, &mut errs, field, Literal::as_f64)?
         }
         DataType::Interval => {
-            let field = Field::new("literal", DataType::Interval);
-
             from_mutable_primitive(values, len, &mut errs, field, |lit| match lit {
                 Literal::Interval(d) => Some(months_days_ns::from(d.clone())),
                 _ => None,
@@ -390,7 +397,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 .collect::<(Vec<_>, Vec<_>)>();
 
             let data_array = ListArray::try_from(("data", data.as_slice()))?.into_series();
-            let shape_array = ListArray::from(("shape", shapes)).into_series();
+            let shape_array = ListArray::from_vec("shape", shapes).into_series();
 
             let validity = data_array.validity().cloned();
             let physical =
@@ -411,7 +418,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
 
             let values_array = ListArray::try_from(("values", values.as_slice()))?.into_series();
             let indices_array = ListArray::try_from(("indices", indices.as_slice()))?.into_series();
-            let shape_array = ListArray::from(("shape", shapes)).into_series();
+            let shape_array = ListArray::from_vec("shape", shapes).into_series();
 
             let validity = values_array.validity().cloned();
             let physical = StructArray::new(
