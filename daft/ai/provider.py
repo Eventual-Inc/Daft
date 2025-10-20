@@ -56,7 +56,7 @@ PROVIDERS: dict[ProviderType, Callable[..., Provider]] = {
 }
 
 
-def load_provider(provider: str, name: ProviderType | None = None, **options: Any) -> Provider:
+def load_provider(provider: str, name: str | None = None, **options: Any) -> Provider:
     if provider not in PROVIDERS:
         raise ValueError(f"Provider '{provider}' is not yet supported.")
     return PROVIDERS[provider](name, **options)  # type: ignore

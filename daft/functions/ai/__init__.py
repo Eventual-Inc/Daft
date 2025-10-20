@@ -13,7 +13,7 @@ from daft import (
     current_session,
     current_provider,
 )
-from daft.ai.provider import Provider, ProviderType, load_provider
+from daft.ai.provider import Provider, ProviderType, load_provider, PROVIDERS
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
@@ -27,7 +27,7 @@ __all__ = [
 ]
 
 
-def _resolve_provider(provider: ProviderType | Provider | None, default: ProviderType) -> Provider:
+def _resolve_provider(provider: str | Provider | None, default: ProviderType) -> Provider:
     """Attempts to resolve a provider based upon the active session and environment variables.
 
     Note:
@@ -42,7 +42,6 @@ def _resolve_provider(provider: ProviderType | Provider | None, default: Provide
         # 1. Load the provider from the active session.
         return curr_sess.get_provider(provider)
     elif provider is not None:
-        # 2. Load a known provider.
         return load_provider(provider)
     elif curr_provider := current_provider():
         # 3. Use the session's current provider, if any.
@@ -60,7 +59,7 @@ def _resolve_provider(provider: ProviderType | Provider | None, default: Provide
 def embed_text(
     text: Expression,
     *,
-    provider: ProviderType | Provider | None = None,
+    provider: str | Provider | None = None,
     model: str | None = None,
     **options: str,
 ) -> Expression:
@@ -69,7 +68,7 @@ def embed_text(
     Args:
         text (String Expression):
             The input text column expression.
-        provider (ProviderType | Provider | None):
+        provider (str | Provider | None):
             The provider to use for the embedding model. If None, the default provider is used.
         model (str | None):
             The embedding model to use. Can be a model instance or a model name. If None, the default model is used.
@@ -103,7 +102,7 @@ def embed_text(
 def embed_image(
     image: Expression,
     *,
-    provider: ProviderType | Provider | None = None,
+    provider: str | Provider | None = None,
     model: str | None = None,
     **options: str,
 ) -> Expression:
@@ -111,7 +110,7 @@ def embed_image(
 
     Args:
         image (Image Expression): The input image column expression.
-        provider (ProviderType | Provider | None): The provider to use for the image model. If None, the default provider is used.
+        provider (str | Provider | None): The provider to use for the image model. If None, the default provider is used.
         model (str | None): The image model to use. Can be a model instance or a model name. If None, the default model is used.
         **options: Any additional options to pass for the model.
 
@@ -148,7 +147,7 @@ def classify_text(
     text: Expression,
     labels: Label | list[Label],
     *,
-    provider: ProviderType | Provider | None = None,
+    provider: str | Provider | None = None,
     model: str | None = None,
     **options: str,
 ) -> Expression:
@@ -159,7 +158,7 @@ def classify_text(
             The input text column expression.
         labels (str | list[str]):
             Label(s) for classification.
-        provider (ProviderType | Provider | None):
+        provider (str | Provider | None):
             The provider to use for the embedding model.
             By default this will use 'transformers' provider
         model (str | None):
@@ -205,7 +204,7 @@ def prompt(
     return_format: BaseModel | None = None,
     *,
     system_message: str | None = None,
-    provider: ProviderType | Provider | None = None,
+    provider: str | Provider | None = None,
     model: str | None = None,
     **options: str,
 ) -> Expression:
