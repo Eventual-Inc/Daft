@@ -12,11 +12,7 @@ use common_error::{DaftError, DaftResult};
 use common_image::CowImage;
 use indexmap::IndexMap;
 
-use crate::{
-    array::ops::image::{image_array_from_img_buffers, image_array_from_img_buffers_iter},
-    datatypes::FileArray,
-    prelude::*,
-};
+use crate::{array::ops::image::image_array_from_img_buffers, datatypes::FileArray, prelude::*};
 
 /// Downcasts a datatype to one that's compatible with literals.
 /// example:
@@ -95,12 +91,28 @@ pub(crate) fn combine_lit_types(left: &DataType, right: &DataType) -> Option<Dat
 
 /// Creates a series from an iterator of `Result<Literal>`.
 /// It also captures any errors occurred during iteration
-/// It returns a Series, along with an IndexMap of errors
-// TODO(cory): combine this and `from_literals`
+/// It returns a Series, along with an IndexMap<row_idx, error>
 pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>> + TrustedLen>(
     values: I,
-    dtype: DataType,
+    dtype: Option<DataType>,
 ) -> DaftResult<(Series, Option<IndexMap<usize, String>>)> {
+    let (dtype, values) = match dtype {
+        Some(dtype) => (dtype, values),
+        None => {
+            let values = values.collect::<DaftResult<Vec<_>>>()?;
+
+            let dtype = values.iter().try_fold(DataType::Null, |acc, v| {
+                let dtype = v.get_type();
+                combine_lit_types(&acc, &dtype).ok_or_else(|| {
+                    DaftError::ValueError(format!(
+                        "All literals must have the same data type or null. Found: {} vs {}",
+                        acc, dtype
+                    ))
+                })
+            })?;
+            return series_from_literals_iter(values.into_iter().map(DaftResult::Ok), Some(dtype));
+        }
+    };
     let downcasted = downcast_to_lit_compatible(dtype.clone())?;
 
     let len = values.len();
@@ -484,7 +496,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
             impl<I: Iterator> ExactSizeIterator for ExactSizeWrapper<I> {}
             let iter = ExactSizeWrapper { iter: data, len };
 
-            image_array_from_img_buffers_iter("literal", iter, image_mode)?.into_series()
+            image_array_from_img_buffers("literal", iter, image_mode)?.into_series()
         }
 
         DataType::FixedSizeBinary(..)
@@ -515,311 +527,7 @@ impl Series {
     /// Literals must all be the same type or null, this function does not do any casting or coercion.
     /// If that is desired, you should handle it for each literal before converting it into a series.
     pub fn from_literals(values: Vec<Literal>) -> DaftResult<Self> {
-        let dtype = values.iter().try_fold(DataType::Null, |acc, v| {
-            let dtype = v.get_type();
-            combine_lit_types(&acc, &dtype).ok_or_else(|| {
-                DaftError::ValueError(format!(
-                    "All literals must have the same data type or null. Found: {} vs {}",
-                    acc, dtype
-                ))
-            })
-        })?;
-
-        let field = Field::new("literal", dtype.clone());
-
-        macro_rules! unwrap_inner {
-            ($expr:expr, $variant:ident) => {
-                match $expr {
-                    Literal::$variant(val) => Some(val),
-                    Literal::Null => None,
-                    _ => unreachable!("datatype is already checked"),
-                }
-            };
-
-            ($expr:expr, $literal:pat => $value:expr) => {
-                match $expr {
-                    $literal => Some($value),
-                    Literal::Null => None,
-                    _ => unreachable!("datatype is already checked"),
-                }
-            };
-        }
-
-        macro_rules! from_iter_with_str {
-            ($arr_type:ty, $variant:ident) => {{
-                <$arr_type>::from_iter(
-                    "literal",
-                    values.into_iter().map(|lit| unwrap_inner!(lit, $variant)),
-                )
-                .into_series()
-            }};
-        }
-
-        macro_rules! from_iter_with_field {
-            ($arr_type:ty, $variant:ident) => {{
-                <$arr_type>::from_iter(
-                    field,
-                    values.into_iter().map(|lit| unwrap_inner!(lit, $variant)),
-                )
-                .into_series()
-            }};
-        }
-
-        Ok(match dtype {
-            DataType::Null => NullArray::full_null("literal", &dtype, values.len()).into_series(),
-            DataType::Boolean => from_iter_with_str!(BooleanArray, Boolean),
-            DataType::Utf8 => from_iter_with_str!(Utf8Array, Utf8),
-            DataType::Binary => from_iter_with_str!(BinaryArray, Binary),
-            DataType::Int8 => from_iter_with_field!(Int8Array, Int8),
-            DataType::UInt8 => from_iter_with_field!(UInt8Array, UInt8),
-            DataType::Int16 => from_iter_with_field!(Int16Array, Int16),
-            DataType::UInt16 => from_iter_with_field!(UInt16Array, UInt16),
-            DataType::Int32 => from_iter_with_field!(Int32Array, Int32),
-            DataType::UInt32 => from_iter_with_field!(UInt32Array, UInt32),
-            DataType::Int64 => from_iter_with_field!(Int64Array, Int64),
-            DataType::UInt64 => from_iter_with_field!(UInt64Array, UInt64),
-            DataType::Interval => from_iter_with_str!(IntervalArray, Interval),
-            DataType::Float32 => from_iter_with_field!(Float32Array, Float32),
-            DataType::Float64 => from_iter_with_field!(Float64Array, Float64),
-            DataType::Decimal128 { .. } => Decimal128Array::from_iter(
-                field,
-                values
-                    .into_iter()
-                    .map(|lit| unwrap_inner!(lit, Literal::Decimal(v, ..) => v)),
-            )
-            .into_series(),
-            DataType::Timestamp(_, _) => {
-                let data = values
-                    .into_iter()
-                    .map(|lit| unwrap_inner!(lit, Literal::Timestamp(ts, ..) => ts));
-                let physical = Int64Array::from_iter(Field::new("literal", DataType::Int64), data);
-                TimestampArray::new(field, physical).into_series()
-            }
-            DataType::Date => {
-                let data = values.into_iter().map(|lit| unwrap_inner!(lit, Date));
-                let physical = Int32Array::from_iter(Field::new("literal", DataType::Int32), data);
-                DateArray::new(field, physical).into_series()
-            }
-            DataType::Time(_) => {
-                let data = values
-                    .into_iter()
-                    .map(|lit| unwrap_inner!(lit, Literal::Time(t, ..) => t));
-                let physical = Int64Array::from_iter(Field::new("literal", DataType::Int64), data);
-
-                TimeArray::new(field, physical).into_series()
-            }
-            DataType::Duration(_) => {
-                let data = values
-                    .into_iter()
-                    .map(|lit| unwrap_inner!(lit, Literal::Duration(v, ..) => v));
-                let physical = Int64Array::from_iter(Field::new("literal", DataType::Int64), data);
-
-                DurationArray::new(field, physical).into_series()
-            }
-            DataType::List(child_dtype) => {
-                let data = values
-                    .iter()
-                    .map(|v| {
-                        unwrap_inner!(v, List)
-                            .map(|s| s.cast(&child_dtype))
-                            .transpose()
-                    })
-                    .collect::<DaftResult<Vec<_>>>()?;
-                ListArray::try_from(("literal", data.as_slice()))?.into_series()
-            }
-            DataType::Struct(fields) => {
-                let children = fields
-                    .iter()
-                    .enumerate()
-                    .map(|(i, f)| {
-                        let child_values = values
-                            .iter()
-                            .map(|v| match unwrap_inner!(v, Struct) {
-                                Some(v) => v[i].clone(),
-                                None => Literal::Null,
-                            })
-                            .collect::<Vec<_>>();
-
-                        Ok(Self::from_literals(child_values)?.rename(&f.name))
-                    })
-                    .collect::<DaftResult<_>>()?;
-
-                let validity = arrow2::bitmap::Bitmap::from_trusted_len_iter(
-                    values.iter().map(|v| *v != Literal::Null),
-                );
-
-                StructArray::new(field, children, Some(validity)).into_series()
-            }
-
-            #[cfg(feature = "python")]
-            DataType::Python => {
-                let iter = values
-                    .into_iter()
-                    .map(|lit| unwrap_inner!(lit, Python).map(|pyobj| pyobj.0));
-
-                PythonArray::from_iter("literal", iter).into_series()
-            }
-            DataType::File => {
-                use common_file::FileReference;
-
-                let discriminant = UInt8Array::from_iter(
-                    Field::new("discriminant", DataType::UInt8),
-                    values
-                        .iter()
-                        .map(|lit| unwrap_inner!(lit, File).map(|f| f.get_type() as u8)),
-                )
-                .into_series();
-                let validity = discriminant.validity().cloned();
-
-                let (files_and_configs, data): (Vec<_>, Vec<Option<Vec<u8>>>) = values
-                    .into_iter()
-                    .map(|lit| {
-                        let Some(f) = unwrap_inner!(lit, File) else {
-                            return ((None, None), None);
-                        };
-
-                        match f {
-                            FileReference::Reference(file, ioconfig) => {
-                                let io_conf = ioconfig.map(|c| {
-                                    bincode::serialize(&c)
-                                        .expect("Failed to serialize IO configuration")
-                                });
-
-                                ((Some(file), io_conf), None)
-                            }
-                            FileReference::Data(items) => {
-                                ((None, None), Some(items.as_ref().clone()))
-                            }
-                        }
-                    })
-                    .unzip();
-                let (files, io_confs): (Vec<Option<String>>, Vec<_>) =
-                    files_and_configs.into_iter().unzip();
-                let sa_field = Field::new("literal", DataType::File.to_physical());
-                let io_configs = BinaryArray::from_iter("io_config", io_confs.into_iter());
-                let urls = Utf8Array::from_iter("url", files.into_iter());
-                let data = BinaryArray::from_iter("data", data.into_iter());
-                let sa = StructArray::new(
-                    sa_field,
-                    vec![
-                        discriminant,
-                        data.into_series(),
-                        urls.into_series(),
-                        io_configs.into_series(),
-                    ],
-                    validity,
-                );
-                FileArray::new(Field::new("literal", DataType::File), sa).into_series()
-            }
-            DataType::Tensor(_) => {
-                let (data, shapes) = values
-                    .iter()
-                    .map(|v| {
-                        unwrap_inner!(v, Literal::Tensor { data, shape } => (data, shape.as_slice())).unzip()
-                    })
-                    .collect::<(Vec<_>, Vec<_>)>();
-
-                let data_array = ListArray::try_from(("data", data.as_slice()))?.into_series();
-                let shape_array = ListArray::from(("shape", shapes.as_slice())).into_series();
-
-                let validity = data_array.validity().cloned();
-                let physical =
-                    StructArray::new(field.to_physical(), vec![data_array, shape_array], validity);
-
-                TensorArray::new(field, physical).into_series()
-            }
-            DataType::SparseTensor(..) => {
-                let (values, indices, shapes) = values
-                    .iter()
-                    .map(|v| {
-                        match unwrap_inner!(v, Literal::SparseTensor { values, indices, shape, .. } => (values, indices, shape)) {
-                            Some((v, i, s)) => (Some(v), Some(i), Some(s.as_slice())),
-                            None => (None, None, None)
-                        }
-                    })
-                    .collect::<(Vec<_>, Vec<_>, Vec<_>)>();
-
-                let values_array =
-                    ListArray::try_from(("values", values.as_slice()))?.into_series();
-                let indices_array =
-                    ListArray::try_from(("indices", indices.as_slice()))?.into_series();
-                let shape_array = ListArray::from(("shape", shapes.as_slice())).into_series();
-
-                let validity = values_array.validity().cloned();
-                let physical = StructArray::new(
-                    field.to_physical(),
-                    vec![values_array, indices_array, shape_array],
-                    validity,
-                );
-
-                SparseTensorArray::new(field, physical).into_series()
-            }
-            DataType::Embedding(inner_dtype, size) => {
-                let validity = arrow2::bitmap::Bitmap::from_trusted_len_iter(
-                    values.iter().map(|v| *v != Literal::Null),
-                );
-
-                let data = values
-                    .into_iter()
-                    .map(|v| {
-                        unwrap_inner!(v, Embedding)
-                            .unwrap_or_else(|| Self::full_null("literal", &inner_dtype, size))
-                    })
-                    .collect::<Vec<_>>();
-                let flat_child = Self::concat(&data.iter().collect::<Vec<_>>())?;
-
-                let physical =
-                    FixedSizeListArray::new(field.to_physical(), flat_child, Some(validity));
-
-                EmbeddingArray::new(field, physical).into_series()
-            }
-            DataType::Map {
-                key: key_dtype,
-                value: value_dtype,
-            } => {
-                let data = values
-                    .into_iter()
-                    .map(|v| {
-                        unwrap_inner!(v, Literal::Map { keys, values } => (keys, values))
-                            .map(|(k, v)| {
-                                Ok(StructArray::new(
-                                    field
-                                        .to_physical()
-                                        .to_exploded_field()
-                                        .expect("Expected physical type of map to be list"),
-                                    vec![
-                                        k.cast(&key_dtype)?.rename("key"),
-                                        v.cast(&value_dtype)?.rename("value"),
-                                    ],
-                                    None,
-                                )
-                                .into_series())
-                            })
-                            .transpose()
-                    })
-                    .collect::<DaftResult<Vec<_>>>()?;
-
-                let physical = ListArray::try_from(("literal", data.as_slice()))?;
-
-                MapArray::new(field, physical).into_series()
-            }
-            DataType::Image(image_mode) => {
-                let data = values
-                    .iter()
-                    .map(|v| unwrap_inner!(v, Image).map(|img| CowImage::from(&img.0)))
-                    .collect::<Vec<_>>();
-
-                image_array_from_img_buffers("literal", &data, image_mode)?.into_series()
-            }
-
-            DataType::FixedSizeBinary(..)
-            | DataType::FixedSizeList(..)
-            | DataType::Extension(..)
-            | DataType::FixedShapeImage(..)
-            | DataType::FixedShapeTensor(..)
-            | DataType::FixedShapeSparseTensor(..)
-            | DataType::Unknown => unreachable!("Literal should never have data type: {dtype}"),
-        })
+        Ok(series_from_literals_iter(values.into_iter().map(DaftResult::Ok), None)?.0)
     }
 }
 

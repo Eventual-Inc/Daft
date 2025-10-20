@@ -186,7 +186,7 @@ impl RowWisePyFn {
                 DaftResult::Ok(result)
             });
 
-            series_from_literals_iter(outputs, self.return_dtype.clone())
+            series_from_literals_iter(outputs, Some(self.return_dtype.clone()))
         })?;
         if let Some(errs) = errs {
             let errs = errs

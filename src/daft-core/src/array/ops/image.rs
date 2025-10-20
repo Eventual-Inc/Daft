@@ -104,7 +104,7 @@ impl AsImageObj for FixedShapeImageArray {
     }
 }
 
-pub fn image_array_from_img_buffers_iter<'a, I>(
+pub fn image_array_from_img_buffers<'a, I>(
     name: &str,
     inputs: I,
     image_mode: Option<ImageMode>,
@@ -150,60 +150,6 @@ where
         }
     }
 
-    let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
-        0 => None,
-        _ => Some(validity.into()),
-    };
-    ImageArray::from_vecs(
-        name,
-        DataType::Image(image_mode),
-        data,
-        offsets,
-        ImageArraySidecarData {
-            channels,
-            heights,
-            widths,
-            modes,
-            validity,
-        },
-    )
-}
-pub fn image_array_from_img_buffers(
-    name: &str,
-    inputs: &[Option<CowImage<'_>>],
-    image_mode: Option<ImageMode>,
-) -> DaftResult<ImageArray> {
-    use CowImage::{L, LA, RGB, RGBA};
-    let is_all_u8 = inputs
-        .iter()
-        .filter_map(|b| b.as_ref())
-        .all(|b| matches!(b, L(..) | LA(..) | RGB(..) | RGBA(..)));
-    assert!(is_all_u8);
-
-    let mut data_ref = Vec::with_capacity(inputs.len());
-    let mut heights = Vec::with_capacity(inputs.len());
-    let mut channels = Vec::with_capacity(inputs.len());
-    let mut modes = Vec::with_capacity(inputs.len());
-    let mut widths = Vec::with_capacity(inputs.len());
-    let mut offsets = Vec::with_capacity(inputs.len() + 1);
-    offsets.push(0i64);
-    let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(inputs.len());
-
-    for ib in inputs {
-        validity.push(ib.is_some());
-        let (height, width, mode, buffer) = match ib {
-            Some(ib) => (ib.height(), ib.width(), ib.mode(), ib.as_u8_slice()),
-            None => (0u32, 0u32, ImageMode::L, &[] as &[u8]),
-        };
-        heights.push(height);
-        widths.push(width);
-        modes.push(mode as u8);
-        channels.push(mode.num_channels());
-        data_ref.push(buffer);
-        offsets.push(offsets.last().unwrap() + buffer.len() as i64);
-    }
-
-    let data = data_ref.concat();
     let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
         0 => None,
         _ => Some(validity.into()),
