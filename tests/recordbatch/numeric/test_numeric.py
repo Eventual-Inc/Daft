@@ -728,14 +728,14 @@ def test_table_shift_left_with_scalar() -> None:
 def test_table_shift_left_bad_input() -> None:
     table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
 
-    with pytest.raises(ValueError, match="Cannot operate shift left on types: Utf8, Utf8"):
+    with pytest.raises(ValueError, match="Cannot operate shift left on types: String, String"):
         table.eval_expression_list([col("a") << (col("a"))])
 
 
 def test_table_shift_left_bad_shift() -> None:
     table = MicroPartition.from_pydict({"a": [1, 2, 4], "b": [3, 2, 1]})
 
-    with pytest.raises(ValueError, match="Cannot operate shift left on types: Int64, Utf8"):
+    with pytest.raises(ValueError, match="Cannot operate shift left on types: Int64, String"):
         table.eval_expression_list([col("a") << (lit("a"))])
 
 
@@ -776,14 +776,14 @@ def test_table_shift_right_with_scalar() -> None:
 def test_table_shift_right_bad_input() -> None:
     table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
 
-    with pytest.raises(ValueError, match="Cannot operate shift right on types: Utf8, Utf8"):
+    with pytest.raises(ValueError, match="Cannot operate shift right on types: String, String"):
         table.eval_expression_list([col("a") >> (col("a"))])
 
 
 def test_table_shift_right_bad_shift() -> None:
     table = MicroPartition.from_pydict({"a": [8, 4, 2], "b": [3, 2, 1]})
 
-    with pytest.raises(ValueError, match="Cannot operate shift right on types: Int64, Utf8"):
+    with pytest.raises(ValueError, match="Cannot operate shift right on types: Int64, String"):
         table.eval_expression_list([col("a") >> (lit("a"))])
 
 

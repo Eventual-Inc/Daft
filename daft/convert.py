@@ -100,17 +100,17 @@ def from_arrow(
         >>> t = pa.table({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
         >>> df = daft.from_arrow(t)
         >>> df.show()
-        ╭───────┬──────╮
-        │ a     ┆ b    │
-        │ ---   ┆ ---  │
-        │ Int64 ┆ Utf8 │
-        ╞═══════╪══════╡
-        │ 1     ┆ foo  │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ 2     ┆ bar  │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ 3     ┆ baz  │
-        ╰───────┴──────╯
+        ╭───────┬────────╮
+        │ a     ┆ b      │
+        │ ---   ┆ ---    │
+        │ Int64 ┆ String │
+        ╞═══════╪════════╡
+        │ 1     ┆ foo    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2     ┆ bar    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 3     ┆ baz    │
+        ╰───────┴────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
     """
@@ -135,17 +135,17 @@ def from_pandas(data: Union["pd.DataFrame", list["pd.DataFrame"]]) -> "DataFrame
         >>> pd_df = pd.DataFrame({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
         >>> df = daft.from_pandas(pd_df)
         >>> df.show()
-        ╭───────┬──────╮
-        │ a     ┆ b    │
-        │ ---   ┆ ---  │
-        │ Int64 ┆ Utf8 │
-        ╞═══════╪══════╡
-        │ 1     ┆ foo  │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ 2     ┆ bar  │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ 3     ┆ baz  │
-        ╰───────┴──────╯
+        ╭───────┬────────╮
+        │ a     ┆ b      │
+        │ ---   ┆ ---    │
+        │ Int64 ┆ String │
+        ╞═══════╪════════╡
+        │ 1     ┆ foo    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2     ┆ bar    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 3     ┆ baz    │
+        ╰───────┴────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
     """
@@ -176,15 +176,15 @@ def from_ray_dataset(ds: "RayDataset") -> "DataFrame":
         >>> ds = ray.data.from_items([{"a": 1, "b": "foo"}, {"a": 2, "b": "bar"}])  # doctest: +SKIP
         >>> df = daft.from_ray_dataset(ds)  # doctest: +SKIP
         >>> df.show()  # doctest: +SKIP
-        ╭───────┬──────╮
-        │ a     ┆ b    │
-        │ ---   ┆ ---  │
-        │ Int64 ┆ Utf8 │
-        ╞═══════╪══════╡
-        │ 1     ┆ foo  │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ 2     ┆ bar  │
-        ╰───────┴──────╯
+        ╭───────┬────────╮
+        │ a     ┆ b      │
+        │ ---   ┆ ---    │
+        │ Int64 ┆ String │
+        ╞═══════╪════════╡
+        │ 1     ┆ foo    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2     ┆ bar    │
+        ╰───────┴────────╯
         <BLANKLINE>
         (Showing first 2 of 2 rows)
 
@@ -220,15 +220,15 @@ def from_dask_dataframe(ddf: "dask.DataFrame") -> "DataFrame":
         >>> ddf = dd.from_pandas(pd.DataFrame({"a": [1, 2], "b": ["foo", "bar"]}), npartitions=2)  # doctest: +SKIP
         >>> df = daft.from_dask_dataframe(ddf)  # doctest: +SKIP
         >>> df.show()  # doctest: +SKIP
-        ╭───────┬──────╮
-        │ a     ┆ b    │
-        │ ---   ┆ ---  │
-        │ Int64 ┆ Utf8 │
-        ╞═══════╪══════╡
-        │ 1     ┆ foo  │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ 2     ┆ bar  │
-        ╰───────┴──────╯
+        ╭───────┬────────╮
+        │ a     ┆ b      │
+        │ ---   ┆ ---    │
+        │ Int64 ┆ String │
+        ╞═══════╪════════╡
+        │ 1     ┆ foo    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2     ┆ bar    │
+        ╰───────┴────────╯
         <BLANKLINE>
         (Showing first 2 of 2 rows)
 

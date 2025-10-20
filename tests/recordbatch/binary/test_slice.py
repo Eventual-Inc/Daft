@@ -432,7 +432,7 @@ def test_binary_slice_type_errors() -> None:
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": ["1", "2"]})
     with pytest.raises(
         Exception,
-        match="`start` argument to `slice` must be an integer, received: Utf8",
+        match="`start` argument to `slice` must be an integer, received: String",
     ):
         table.eval_expression_list([col("col").binary.slice(col("start"), 2)])
 
@@ -448,7 +448,7 @@ def test_binary_slice_type_errors() -> None:
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [True, False]})
     with pytest.raises(
         Exception,
-        match="`start` argument to `slice` must be an integer, received: Boolean",
+        match="`start` argument to `slice` must be an integer, received: Bool",
     ):
         table.eval_expression_list([col("col").binary.slice(col("start"), 2)])
 

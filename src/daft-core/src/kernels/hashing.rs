@@ -11,8 +11,7 @@ use arrow2::{
 };
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
 use xxhash_rust::{
-    const_xxh3,
-    xxh3::{xxh3_64, xxh3_64_with_seed},
+    const_xxh3, const_xxh32, const_xxh64, xxh3::xxh3_64_with_seed, xxh32::xxh32, xxh64::xxh64,
 };
 
 fn hash_primitive<T: NativeType>(
@@ -20,29 +19,33 @@ fn hash_primitive<T: NativeType>(
     seed: Option<&PrimitiveArray<u64>>,
     hash_function: HashFunctionKind,
 ) -> PrimitiveArray<u64> {
+    fn xxhash<const NULL_HASH: u64, T: NativeType, F: Fn(&[u8], u64) -> u64>(
+        array: &PrimitiveArray<T>,
+        seed: Option<&PrimitiveArray<u64>>,
+        f: F,
+    ) -> PrimitiveArray<u64> {
+        let hashes = if let Some(seed) = seed {
+            array
+                .iter()
+                .zip(seed.values_iter())
+                .map(|(v, s)| match v {
+                    Some(v) => f(v.to_le_bytes().as_ref(), *s),
+                    None => NULL_HASH,
+                })
+                .collect::<Vec<_>>()
+        } else {
+            array
+                .iter()
+                .map(|v| match v {
+                    Some(v) => f(v.to_le_bytes().as_ref(), 0),
+                    None => NULL_HASH,
+                })
+                .collect::<Vec<_>>()
+        };
+        PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+    }
+
     match hash_function {
-        HashFunctionKind::XxHash => {
-            const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
-            let hashes = if let Some(seed) = seed {
-                array
-                    .iter()
-                    .zip(seed.values_iter())
-                    .map(|(v, s)| match v {
-                        Some(v) => xxh3_64_with_seed(v.to_le_bytes().as_ref(), *s),
-                        None => NULL_HASH,
-                    })
-                    .collect::<Vec<_>>()
-            } else {
-                array
-                    .iter()
-                    .map(|v| match v {
-                        Some(v) => xxh3_64(v.to_le_bytes().as_ref()),
-                        None => NULL_HASH,
-                    })
-                    .collect::<Vec<_>>()
-            };
-            PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
-        }
         HashFunctionKind::MurmurHash3 => {
             let hasher = MurBuildHasher::new(seed.and_then(|s| s.get(0)).unwrap_or(42) as u32);
             let hashes = array
@@ -81,6 +84,18 @@ fn hash_primitive<T: NativeType>(
                 })
                 .collect::<Vec<_>>();
             PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+        }
+        HashFunctionKind::XxHash32 => {
+            const NULL_HASH: u64 = const_xxh32::xxh32(b"", 0) as u64;
+            xxhash::<NULL_HASH, _, _>(array, seed, |v, s| xxh32(v, s as u32) as u64)
+        }
+        HashFunctionKind::XxHash64 => {
+            const NULL_HASH: u64 = const_xxh64::xxh64(b"", 0);
+            xxhash::<NULL_HASH, _, _>(array, seed, xxh64)
+        }
+        HashFunctionKind::XxHash3_64 => {
+            const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
+            xxhash::<NULL_HASH, _, _>(array, seed, xxh3_64_with_seed)
         }
     }
 }
@@ -90,34 +105,40 @@ fn hash_boolean(
     seed: Option<&PrimitiveArray<u64>>,
     hash_function: HashFunctionKind,
 ) -> PrimitiveArray<u64> {
-    match hash_function {
-        HashFunctionKind::XxHash => {
-            const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
-            const FALSE_HASH: u64 = const_xxh3::xxh3_64(b"0");
-            const TRUE_HASH: u64 = const_xxh3::xxh3_64(b"1");
+    fn xxhash<
+        const NULL_HASH: u64,
+        const TRUE_HASH: u64,
+        const FALSE_HASH: u64,
+        F: Fn(&[u8], u64) -> u64,
+    >(
+        array: &BooleanArray,
+        seed: Option<&PrimitiveArray<u64>>,
+        f: F,
+    ) -> PrimitiveArray<u64> {
+        let hashes = if let Some(seed) = seed {
+            array
+                .iter()
+                .zip(seed.values_iter())
+                .map(|(v, s)| match v {
+                    Some(true) => f(b"1", *s),
+                    Some(false) => f(b"0", *s),
+                    None => NULL_HASH,
+                })
+                .collect::<Vec<_>>()
+        } else {
+            array
+                .iter()
+                .map(|v| match v {
+                    Some(true) => TRUE_HASH,
+                    Some(false) => FALSE_HASH,
+                    None => NULL_HASH,
+                })
+                .collect::<Vec<_>>()
+        };
+        PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+    }
 
-            let hashes = if let Some(seed) = seed {
-                array
-                    .iter()
-                    .zip(seed.values_iter())
-                    .map(|(v, s)| match v {
-                        Some(true) => xxh3_64_with_seed(b"1", *s),
-                        Some(false) => xxh3_64_with_seed(b"0", *s),
-                        None => NULL_HASH,
-                    })
-                    .collect::<Vec<_>>()
-            } else {
-                array
-                    .iter()
-                    .map(|v| match v {
-                        Some(true) => TRUE_HASH,
-                        Some(false) => FALSE_HASH,
-                        None => NULL_HASH,
-                    })
-                    .collect::<Vec<_>>()
-            };
-            PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
-        }
+    match hash_function {
         HashFunctionKind::MurmurHash3 => {
             let hasher = MurBuildHasher::new(seed.and_then(|s| s.get(0)).unwrap_or(42) as u32);
             let hashes = array
@@ -164,6 +185,26 @@ fn hash_boolean(
                 })
                 .collect::<Vec<_>>();
             PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+        }
+        HashFunctionKind::XxHash32 => {
+            const NULL_HASH: u64 = const_xxh32::xxh32(b"", 0) as u64;
+            const FALSE_HASH: u64 = const_xxh32::xxh32(b"0", 0) as u64;
+            const TRUE_HASH: u64 = const_xxh32::xxh32(b"1", 0) as u64;
+            xxhash::<NULL_HASH, TRUE_HASH, FALSE_HASH, _>(array, seed, |v, s| {
+                xxh32(v, s as u32) as u64
+            })
+        }
+        HashFunctionKind::XxHash64 => {
+            const NULL_HASH: u64 = const_xxh64::xxh64(b"", 0);
+            const FALSE_HASH: u64 = const_xxh64::xxh64(b"0", 0);
+            const TRUE_HASH: u64 = const_xxh64::xxh64(b"1", 0);
+            xxhash::<NULL_HASH, TRUE_HASH, FALSE_HASH, _>(array, seed, xxh64)
+        }
+        HashFunctionKind::XxHash3_64 => {
+            const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
+            const FALSE_HASH: u64 = const_xxh3::xxh3_64(b"0");
+            const TRUE_HASH: u64 = const_xxh3::xxh3_64(b"1");
+            xxhash::<NULL_HASH, TRUE_HASH, FALSE_HASH, _>(array, seed, xxh3_64_with_seed)
         }
     }
 }
@@ -173,18 +214,20 @@ fn hash_null(
     seed: Option<&PrimitiveArray<u64>>,
     hash_function: HashFunctionKind,
 ) -> PrimitiveArray<u64> {
+    fn xxhash<const NULL_HASH: u64, F: Fn(&[u8], u64) -> u64>(
+        len: usize,
+        seed: Option<&PrimitiveArray<u64>>,
+        f: F,
+    ) -> PrimitiveArray<u64> {
+        let hashes = if let Some(seed) = seed {
+            seed.values_iter().map(|s| f(b"", *s)).collect::<Vec<_>>()
+        } else {
+            (0..len).map(|_| NULL_HASH).collect::<Vec<_>>()
+        };
+        PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+    }
+
     match hash_function {
-        HashFunctionKind::XxHash => {
-            const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
-            let hashes = if let Some(seed) = seed {
-                seed.values_iter()
-                    .map(|s| xxh3_64_with_seed(b"", *s))
-                    .collect::<Vec<_>>()
-            } else {
-                (0..array.len()).map(|_| NULL_HASH).collect::<Vec<_>>()
-            };
-            PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
-        }
         HashFunctionKind::MurmurHash3 => {
             let hasher = MurBuildHasher::new(seed.and_then(|s| s.get(0)).unwrap_or(42) as u32);
             let hashes = (0..array.len())
@@ -206,6 +249,18 @@ fn hash_null(
                 .collect::<Vec<_>>();
             PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
         }
+        HashFunctionKind::XxHash32 => {
+            const NULL_HASH: u64 = const_xxh32::xxh32(b"", 0) as u64;
+            xxhash::<NULL_HASH, _>(array.len(), seed, |v, s| xxh32(v, s as u32) as u64)
+        }
+        HashFunctionKind::XxHash64 => {
+            const NULL_HASH: u64 = const_xxh64::xxh64(b"", 0);
+            xxhash::<NULL_HASH, _>(array.len(), seed, xxh64)
+        }
+        HashFunctionKind::XxHash3_64 => {
+            const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
+            xxhash::<NULL_HASH, _>(array.len(), seed, xxh3_64_with_seed)
+        }
     }
 }
 
@@ -214,19 +269,27 @@ fn hash_binary<O: Offset>(
     seed: Option<&PrimitiveArray<u64>>,
     hash_function: HashFunctionKind,
 ) -> PrimitiveArray<u64> {
+    fn xxhash<O: Offset, F: Fn(&[u8], u64) -> u64>(
+        array: &BinaryArray<O>,
+        seed: Option<&PrimitiveArray<u64>>,
+        f: F,
+    ) -> PrimitiveArray<u64> {
+        let hashes = if let Some(seed) = seed {
+            array
+                .values_iter()
+                .zip(seed.values_iter())
+                .map(|(v, s)| f(v, *s))
+                .collect::<Vec<_>>()
+        } else {
+            array.values_iter().map(|v| f(v, 0)).collect::<Vec<_>>()
+        };
+        PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+    }
+
     match hash_function {
-        HashFunctionKind::XxHash => {
-            let hashes = if let Some(seed) = seed {
-                array
-                    .values_iter()
-                    .zip(seed.values_iter())
-                    .map(|(v, s)| xxh3_64_with_seed(v, *s))
-                    .collect::<Vec<_>>()
-            } else {
-                array.values_iter().map(xxh3_64).collect::<Vec<_>>()
-            };
-            PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
-        }
+        HashFunctionKind::XxHash32 => xxhash(array, seed, |v, s| xxh32(v, s as u32) as u64),
+        HashFunctionKind::XxHash64 => xxhash(array, seed, xxh64),
+        HashFunctionKind::XxHash3_64 => xxhash(array, seed, xxh3_64_with_seed),
         HashFunctionKind::MurmurHash3 => {
             let hasher = MurBuildHasher::new(seed.and_then(|s| s.get(0)).unwrap_or(42) as u32);
             let hashes = array
@@ -258,19 +321,27 @@ fn hash_fixed_size_binary(
     seed: Option<&PrimitiveArray<u64>>,
     hash_function: HashFunctionKind,
 ) -> PrimitiveArray<u64> {
+    fn xxhash<F: Fn(&[u8], u64) -> u64>(
+        array: &FixedSizeBinaryArray,
+        seed: Option<&PrimitiveArray<u64>>,
+        f: F,
+    ) -> PrimitiveArray<u64> {
+        let hashes = if let Some(seed) = seed {
+            array
+                .values_iter()
+                .zip(seed.values_iter())
+                .map(|(v, s)| f(v, *s))
+                .collect::<Vec<_>>()
+        } else {
+            array.values_iter().map(|v| f(v, 0)).collect::<Vec<_>>()
+        };
+        PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+    }
+
     match hash_function {
-        HashFunctionKind::XxHash => {
-            let hashes = if let Some(seed) = seed {
-                array
-                    .values_iter()
-                    .zip(seed.values_iter())
-                    .map(|(v, s)| xxh3_64_with_seed(v, *s))
-                    .collect::<Vec<_>>()
-            } else {
-                array.values_iter().map(xxh3_64).collect::<Vec<_>>()
-            };
-            PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
-        }
+        HashFunctionKind::XxHash32 => xxhash(array, seed, |v, s| xxh32(v, s as u32) as u64),
+        HashFunctionKind::XxHash64 => xxhash(array, seed, xxh64),
+        HashFunctionKind::XxHash3_64 => xxhash(array, seed, xxh3_64_with_seed),
         HashFunctionKind::MurmurHash3 => {
             let hasher = MurBuildHasher::new(seed.and_then(|s| s.get(0)).unwrap_or(42) as u32);
             let hashes = array
@@ -302,22 +373,30 @@ fn hash_utf8<O: Offset>(
     seed: Option<&PrimitiveArray<u64>>,
     hash_function: HashFunctionKind,
 ) -> PrimitiveArray<u64> {
+    fn xxhash<O: Offset, F: Fn(&[u8], u64) -> u64>(
+        array: &Utf8Array<O>,
+        seed: Option<&PrimitiveArray<u64>>,
+        f: F,
+    ) -> PrimitiveArray<u64> {
+        let hashes = if let Some(seed) = seed {
+            array
+                .values_iter()
+                .zip(seed.values_iter())
+                .map(|(v, s)| f(v.as_bytes(), *s))
+                .collect::<Vec<_>>()
+        } else {
+            array
+                .values_iter()
+                .map(|v| f(v.as_bytes(), 0))
+                .collect::<Vec<_>>()
+        };
+        PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+    }
+
     match hash_function {
-        HashFunctionKind::XxHash => {
-            let hashes = if let Some(seed) = seed {
-                array
-                    .values_iter()
-                    .zip(seed.values_iter())
-                    .map(|(v, s)| xxh3_64_with_seed(v.as_bytes(), *s))
-                    .collect::<Vec<_>>()
-            } else {
-                array
-                    .values_iter()
-                    .map(|v| xxh3_64(v.as_bytes()))
-                    .collect::<Vec<_>>()
-            };
-            PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
-        }
+        HashFunctionKind::XxHash32 => xxhash(array, seed, |v, s| xxh32(v, s as u32) as u64),
+        HashFunctionKind::XxHash64 => xxhash(array, seed, xxh64),
+        HashFunctionKind::XxHash3_64 => xxhash(array, seed, xxh3_64_with_seed),
         HashFunctionKind::MurmurHash3 => {
             let hasher = MurBuildHasher::new(seed.and_then(|s| s.get(0)).unwrap_or(42) as u32);
             let hashes = array
@@ -350,42 +429,59 @@ fn hash_timestamp_with_timezone(
     seed: Option<&PrimitiveArray<u64>>,
     hash_function: HashFunctionKind,
 ) -> PrimitiveArray<u64> {
+    fn xxhash<const NULL_HASH: u64, F: Fn(&[u8], u64) -> u64>(
+        array: &PrimitiveArray<i64>,
+        timezone: &str,
+        seed: Option<&PrimitiveArray<u64>>,
+        f: F,
+    ) -> PrimitiveArray<u64> {
+        let hashes = if let Some(seed) = seed {
+            array
+                .iter()
+                .zip(seed.values_iter())
+                .map(|(v, s)| match v {
+                    Some(v) => {
+                        // Combine timestamp and timezone for hashing
+                        let mut combined = Vec::new();
+                        combined.extend_from_slice(&v.to_le_bytes());
+                        combined.extend_from_slice(timezone.as_bytes());
+                        f(&combined, *s)
+                    }
+                    None => NULL_HASH,
+                })
+                .collect::<Vec<_>>()
+        } else {
+            array
+                .iter()
+                .map(|v| match v {
+                    Some(v) => {
+                        // Combine timestamp and timezone for hashing
+                        let mut combined = Vec::new();
+                        combined.extend_from_slice(&v.to_le_bytes());
+                        combined.extend_from_slice(timezone.as_bytes());
+                        f(&combined, 0)
+                    }
+                    None => NULL_HASH,
+                })
+                .collect::<Vec<_>>()
+        };
+        PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+    }
+
     // For timestamps with timezone, we combine the timestamp value with the timezone string
     // to ensure that the same instant in different timezones produces different hashes
     match hash_function {
-        HashFunctionKind::XxHash => {
+        HashFunctionKind::XxHash32 => {
+            const NULL_HASH: u64 = const_xxh32::xxh32(b"", 0) as u64;
+            xxhash::<NULL_HASH, _>(array, timezone, seed, |v, s| xxh32(v, s as u32) as u64)
+        }
+        HashFunctionKind::XxHash64 => {
+            const NULL_HASH: u64 = const_xxh64::xxh64(b"", 0);
+            xxhash::<NULL_HASH, _>(array, timezone, seed, xxh64)
+        }
+        HashFunctionKind::XxHash3_64 => {
             const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
-            let hashes = if let Some(seed) = seed {
-                array
-                    .iter()
-                    .zip(seed.values_iter())
-                    .map(|(v, s)| match v {
-                        Some(v) => {
-                            // Combine timestamp and timezone for hashing
-                            let mut combined = Vec::new();
-                            combined.extend_from_slice(&v.to_le_bytes());
-                            combined.extend_from_slice(timezone.as_bytes());
-                            xxh3_64_with_seed(&combined, *s)
-                        }
-                        None => NULL_HASH,
-                    })
-                    .collect::<Vec<_>>()
-            } else {
-                array
-                    .iter()
-                    .map(|v| match v {
-                        Some(v) => {
-                            // Combine timestamp and timezone for hashing
-                            let mut combined = Vec::new();
-                            combined.extend_from_slice(&v.to_le_bytes());
-                            combined.extend_from_slice(timezone.as_bytes());
-                            xxh3_64(&combined)
-                        }
-                        None => NULL_HASH,
-                    })
-                    .collect::<Vec<_>>()
-            };
-            PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+            xxhash::<NULL_HASH, _>(array, timezone, seed, xxh3_64_with_seed)
         }
         HashFunctionKind::MurmurHash3 => {
             let hasher = MurBuildHasher::new(seed.and_then(|s| s.get(0)).unwrap_or(42) as u32);
@@ -442,8 +538,7 @@ fn hash_decimal(
     // For decimal hashing, we preserve the exact representation including scale
     // Different scales should produce different hashes (123, 123.0, 123.00 are different)
     // We convert to string representation that preserves the scale information
-
-    let format_decimal = |value: i128, scale: usize| -> Vec<u8> {
+    fn format_decimal(value: i128, scale: usize) -> Vec<u8> {
         if value == 0 {
             // For zero, return "0.000..." with the appropriate number of decimal places
             let mut result = String::from("0");
@@ -489,36 +584,53 @@ fn hash_decimal(
         }
 
         result.into_bytes()
-    };
+    }
+
+    fn xxhash<const NULL_HASH: u64, F: Fn(&[u8], u64) -> u64>(
+        array: &PrimitiveArray<i128>,
+        seed: Option<&PrimitiveArray<u64>>,
+        f: F,
+        scale: usize,
+    ) -> PrimitiveArray<u64> {
+        let hashes = if let Some(seed) = seed {
+            array
+                .iter()
+                .zip(seed.values_iter())
+                .map(|(v, s)| match v {
+                    Some(v) => {
+                        let formatted = format_decimal(*v, scale);
+                        f(&formatted, *s)
+                    }
+                    None => NULL_HASH,
+                })
+                .collect::<Vec<_>>()
+        } else {
+            array
+                .iter()
+                .map(|v| match v {
+                    Some(v) => {
+                        let formatted = format_decimal(*v, scale);
+                        f(&formatted, 0)
+                    }
+                    None => NULL_HASH,
+                })
+                .collect::<Vec<_>>()
+        };
+        PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+    }
 
     match hash_function {
-        HashFunctionKind::XxHash => {
+        HashFunctionKind::XxHash32 => {
+            const NULL_HASH: u64 = const_xxh32::xxh32(b"", 0) as u64;
+            xxhash::<NULL_HASH, _>(array, seed, |v, s| xxh32(v, s as u32) as u64, scale)
+        }
+        HashFunctionKind::XxHash64 => {
+            const NULL_HASH: u64 = const_xxh64::xxh64(b"", 0);
+            xxhash::<NULL_HASH, _>(array, seed, xxh64, scale)
+        }
+        HashFunctionKind::XxHash3_64 => {
             const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
-            let hashes = if let Some(seed) = seed {
-                array
-                    .iter()
-                    .zip(seed.values_iter())
-                    .map(|(v, s)| match v {
-                        Some(v) => {
-                            let formatted = format_decimal(*v, scale);
-                            xxh3_64_with_seed(&formatted, *s)
-                        }
-                        None => NULL_HASH,
-                    })
-                    .collect::<Vec<_>>()
-            } else {
-                array
-                    .iter()
-                    .map(|v| match v {
-                        Some(v) => {
-                            let formatted = format_decimal(*v, scale);
-                            xxh3_64(&formatted)
-                        }
-                        None => NULL_HASH,
-                    })
-                    .collect::<Vec<_>>()
-            };
-            PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+            xxhash::<NULL_HASH, _>(array, seed, xxh3_64_with_seed, scale)
         }
         HashFunctionKind::MurmurHash3 => {
             let hasher = MurBuildHasher::new(seed.and_then(|s| s.get(0)).unwrap_or(42) as u32);
