@@ -8,14 +8,14 @@ pytest.importorskip("torch")
 import torch
 
 from daft.ai.protocols import TextEmbedderDescriptor
-from daft.ai.transformers.provider import SentenceTransformersProvider
+from daft.ai.transformers.provider import TransformersProvider
 from daft.ai.typing import EmbeddingDimensions
 from daft.datatype import DataType
 from tests.benchmarks.conftest import IS_CI
 
 
 def test_sentence_transformers_text_embedder_default():
-    provider = SentenceTransformersProvider()
+    provider = TransformersProvider()
     descriptor = provider.get_text_embedder()
     assert isinstance(descriptor, TextEmbedderDescriptor)
     assert descriptor.get_provider() == "transformers"
@@ -37,7 +37,7 @@ def test_sentence_transformers_text_embedder_default():
 def test_sentence_transformers_text_embedder_other(model_name, dimensions, run_model_in_ci):
     mock_options = {"arg1": "val1", "arg2": "val2"}
 
-    provider = SentenceTransformersProvider()
+    provider = TransformersProvider()
     descriptor = provider.get_text_embedder(model_name, **mock_options)
     assert isinstance(descriptor, TextEmbedderDescriptor)
     assert descriptor.get_provider() == "transformers"
@@ -60,7 +60,7 @@ def test_sentence_transformers_text_embedder_other(model_name, dimensions, run_m
 
 def test_sentence_transformers_device_selection():
     """Test that the embedder uses SentenceTransformer's automatic device selection."""
-    provider = SentenceTransformersProvider()
+    provider = TransformersProvider()
     descriptor = provider.get_text_embedder("sentence-transformers/all-MiniLM-L6-v2")
     embedder = descriptor.instantiate()
 
