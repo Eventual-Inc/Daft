@@ -11,7 +11,7 @@ from daft.ai.protocols import ImageClassifier, ImageClassifierDescriptor
 from daft.ai.utils import get_gpu_udf_options, get_torch_device
 
 if TYPE_CHECKING:
-    import numpy as np
+    from PIL import Image
 
     from daft.ai.typing import Label, Options, UDFOptions
 
@@ -62,7 +62,7 @@ class TransformersImageClassifier(ImageClassifier):
             task="zero-shot-image-classification", model=model_name_or_path, device=get_torch_device()
         )
 
-    def classify_image(self, images: list[np.ndarray], labels: Label | list[Label]) -> list[Label]:
+    def classify_image(self, images: list[Image.Image], labels: Label | list[Label]) -> list[Label]:
         batch_size = self._options.get("batch_size", None)
         results: list[list[TransformersImageClassifierResult]] = self._pipeline(
             images,
