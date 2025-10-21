@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import transformers
 from transformers import pipeline
@@ -48,12 +48,12 @@ class TransformersImageClassifierDescriptor(ImageClassifierDescriptor):
         return TransformersImageClassifier(self.model_name, **self.model_options)
 
 
-class TransformersImageClassifierPipeline(transformers.ZeroShotImageClassificationPipeline):
+class TransformersImageClassifierPipeline(transformers.ZeroShotImageClassificationPipeline):  # type: ignore
     """Modified version of the original implementation to only return the top label."""
 
     # this postprocess was copy/pasted from the original implementation,
     # but the output is slightly modified to only return the top label
-    def postprocess(self, model_outputs):
+    def postprocess(self, model_outputs: Any) -> str:
         candidate_labels = model_outputs.pop("candidate_labels")
         logits = model_outputs["logits"][0]
         if self.framework == "pt" and "siglip" in self.model.config.model_type:
