@@ -382,7 +382,7 @@ monitoring:
   # --------------------------------------------------------------------------
   prometheus:
     # -- Prometheus container image
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.7.1
 
     # -- Resource limits for Prometheus sidecar
     resources:
@@ -397,7 +397,7 @@ monitoring:
   # --------------------------------------------------------------------------
   grafana:
     # -- Grafana container image
-    image: grafana/grafana:latest
+    image: grafana/grafana:12.2.1
 
     # -- Resource limits for Grafana sidecar
     resources:
