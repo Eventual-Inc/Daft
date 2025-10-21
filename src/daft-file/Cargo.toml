@@ -4,10 +4,12 @@ common-file = {path = "../common/file", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
+mime_guess = "2.0.5"
 pyo3 = {workspace = true, optional = true}
 common-runtime.workspace = true
 serde.workspace = true
 typetag.workspace = true
+url.workspace = true
 
 [features]
 python = [
