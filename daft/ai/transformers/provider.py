@@ -20,7 +20,7 @@ class TransformersProvider(Provider):
     DEFAULT_IMAGE_EMBEDDER = "openai/clip-vit-base-patch32"
     DEFAULT_TEXT_EMBEDDER = "sentence-transformers/all-MiniLM-L6-v2"
     DEFAULT_TEXT_CLASSIFIER = "facebook/bart-large-mnli"
-    DEFAULT_IMAGE_CLASSIFIER = "openai/clip-vit-base-patch32"
+    DEFAULT_IMAGE_CLASSIFIER = "google/siglip-so400m-patch14-384"  # this is the default one used in hf docs
 
     def __init__(self, name: str | None = None, **options: Any):
         self._name = name if name else "transformers"
