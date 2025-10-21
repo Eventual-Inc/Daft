@@ -106,7 +106,7 @@ dev = [
   # Ray
   "ray[data, client]==2.34.0",
   # Lance
-  "pylance>=0.20.0",
+  "pylance>=0.37.0",
   # Iceberg
   "pyiceberg==0.7.0",
   "pydantic==2.10.6",
