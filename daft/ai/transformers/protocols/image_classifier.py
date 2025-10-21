@@ -17,11 +17,6 @@ if TYPE_CHECKING:
     from daft.ai.typing import Label, Options, UDFOptions
 
 
-class TransformersImageClassifierResult(TypedDict):
-    label: str  # labels sorted by likelihood
-    score: float  # probability of each label
-
-
 class TransformersImageClassifierOptions(TypedDict, total=False):
     batch_size: int | None
 
