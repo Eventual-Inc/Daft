@@ -93,7 +93,7 @@ def test_classify_image_with_mock(mock_provider):
     assert results == ["mock!"]
 
 
-# @pytest.mark.integration()
+@pytest.mark.integration()
 def test_instantiate():
     """Test to instantiate a TransformersImageClassifier, this instantiates a pipeline."""
     descriptor = TransformersImageClassifierDescriptor(
@@ -108,7 +108,7 @@ def test_instantiate():
     assert classifier._pipeline, "Current implementation should have a pipeline."
 
 
-# @pytest.mark.integration()
+@pytest.mark.integration()
 def test_classify_image_with_default():
     """Test image classification using the expression."""
     import daft
