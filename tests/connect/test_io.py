@@ -41,8 +41,19 @@ def test_write_csv_without_header(make_df, make_spark_df, spark_session, tmp_pat
 
 
 @pytest.mark.skip(reason="https://github.com/Eventual-Inc/Daft/issues/3786")
-def test_write_csv_with_delimiter(make_df, make_spark_df, spark_session, tmp_path):
-    pass
+def test_write_csv_with_delimiter(make_df, make_spark_df, spark_session, tmp_path, assert_spark_equals):
+    # Test writing CSV with custom delimiter
+    data = {"id": [1, 2, 3], "name": ["alice", "bob", "charlie"]}
+    df = make_df(data)
+
+    csv_dir = os.path.join(tmp_path, "csv_custom_delimiter")
+
+    df.write_csv(csv_dir, delimiter="|")
+
+    spark_df_read = spark_session.read.option("header", True).option("delimiter", "|").csv(csv_dir)
+    df_read = daft.read_csv(csv_dir, delimiter="|")
+
+    assert_spark_equals(df_read, spark_df_read)
 
 
 @pytest.mark.skip(reason="https://github.com/Eventual-Inc/Daft/issues/3787")
