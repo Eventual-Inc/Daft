@@ -55,7 +55,7 @@ def test_mock_image_classifier(mock_pipeline, mock_image_classifier):
 
 
 def test_image_classifier(mock_image_classifier):
-    """Test text classification using the model."""
+    """Test image classification using the model."""
     # Test the classify_image method directly
     images = [
         Image.fromarray(np.zeros((100, 100, 3), dtype=np.uint8)),
