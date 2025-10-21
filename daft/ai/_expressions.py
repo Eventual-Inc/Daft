@@ -61,7 +61,7 @@ class _TextClassificationExpression:
 
 
 class _ImageClassificationExpression:
-    """Function expression implementation for a TextClassifier protocol."""
+    """Function expression implementation for a ImageClassifier protocol."""
 
     image_classifier: ImageClassifier
     labels: list[Label]

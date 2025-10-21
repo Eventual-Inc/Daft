@@ -61,7 +61,7 @@ class ImageClassifier(Protocol):
     """Protocol for image classification implementations."""
 
     def classify_image(self, image: list[Image], labels: Label | list[Label]) -> list[Label]:
-        """Classifies a batch of image strings using the given label(s)."""
+        """Classifies a batch of images using the given label(s)."""
         ...
 
 
