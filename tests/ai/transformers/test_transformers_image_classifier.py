@@ -41,8 +41,8 @@ def mock_provider(mock_image_classifier):
     provider.get_image_classifier = MagicMock(return_value=mock_descriptor)
 
     # Mock the classify_image method to return expected results
-    def mock_classify_image(texts, labels):
-        return ["mock!"] * len(texts)
+    def mock_classify_image(images, labels):
+        return ["mock!"] * len(images)
 
     mock_image_classifier.classify_image = mock_classify_image
     yield provider
@@ -74,7 +74,7 @@ def test_image_classifier(mock_image_classifier):
 
 
 def test_classify_image_with_mock(mock_provider):
-    """Test text classification using the expression."""
+    """Test image classification using the expression."""
     # Test that the provider returns the expected descriptor
     descriptor = mock_provider.get_image_classifier()
     assert descriptor is not None
@@ -84,7 +84,12 @@ def test_classify_image_with_mock(mock_provider):
     assert classifier is not None
 
     # Test that the classifier returns the expected results
-    results = classifier.classify_image(["test"], ["statement", "question"])
+    results = classifier.classify_image(
+        [
+            Image.fromarray(np.zeros((100, 100, 3), dtype=np.uint8)),
+        ],
+        ["cat", "dog"],
+    )
     assert results == ["mock!"]
 
 
@@ -93,13 +98,13 @@ def test_instantiate():
     """Test to instantiate a TransformersImageClassifier, this instantiates a pipeline."""
     descriptor = TransformersImageClassifierDescriptor(
         provider_name="transformers",
-        model_name="facebook/bart-large-mnli",
+        model_name="openai/clip-vit-base-patch32",
         model_options={},
     )
 
     classifier = descriptor.instantiate()
     assert isinstance(classifier, TransformersImageClassifier)
-    assert classifier._model == "facebook/bart-large-mnli"
+    assert classifier._model == "openai/clip-vit-base-patch32"
     assert classifier._pipeline, "Current implementation should have a pipeline."
 
 
@@ -109,13 +114,17 @@ def test_classify_image_with_default():
     import daft
     from daft.functions import classify_image
 
-    df = daft.from_pydict(
-        {"comment": ["These snozzberries taste like snozzberries.", "Snozzberries? Who ever heard of a snozzberry?"]}
-    )
+    # Create a red image (255, 0, 0)
+    red_image = Image.fromarray(np.full((100, 100, 3), [255, 0, 0], dtype=np.uint8))
 
-    df = df.with_column("label", classify_image(df["comment"], labels=["statement", "question"]))
+    # Create a blue image (0, 0, 255)
+    blue_image = Image.fromarray(np.full((100, 100, 3), [0, 0, 255], dtype=np.uint8))
+
+    df = daft.from_pydict({"image": [red_image, blue_image]})
+
+    df = df.with_column("label", classify_image(df["image"], labels=["red", "blue"]))
 
     assert df.select("label").to_pylist() == [
-        {"label": "statement"},
-        {"label": "question"},
+        {"label": "red"},
+        {"label": "blue"},
     ]
