@@ -625,7 +625,7 @@ def write_empty_tabular(
                 # The PyArrow CSV writer only supports single-character delimiters, see documentation below for more details
                 # https://arrow.apache.org/docs/python/generated/pyarrow.csv.WriteOptions.html#pyarrow.csv.WriteOptions
                 # https://arrow.apache.org/docs/python/generated/pyarrow.csv.write_csv.html
-                raise ValueError("Delimiter must be a single character")
+                raise ValueError(f'Delimiter must be a single character: "{delimiter}" is invalid.')
             else:
                 pacsv.write_csv(table, output_file)
 
