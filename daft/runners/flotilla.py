@@ -18,6 +18,7 @@ from daft.daft import (
     RaySwordfishWorker,
     RayTaskResult,
     set_compute_runtime_num_worker_threads,
+    start_flight_server,
 )
 from daft.expressions import Expression, ExpressionsProjection
 from daft.recordbatch.micropartition import MicroPartition
@@ -40,6 +41,47 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+@ray.remote  # type: ignore[misc]
+def _clear_flight_shuffle_dirs(shuffle_dirs: list[str]) -> None:
+    """Clear flight shuffle directories on a worker node.
+
+    Args:
+        shuffle_dirs: List of shuffle directories to clear (full paths)
+    """
+    import shutil
+
+    for shuffle_dir in shuffle_dirs:
+        if os.path.exists(shuffle_dir):
+            try:
+                shutil.rmtree(shuffle_dir)
+                logger.info("Cleared flight shuffle directory: %s", shuffle_dir)
+            except Exception as e:
+                logger.warning("Failed to clear flight shuffle directory %s: %s", shuffle_dir, e)
+
+
+async def clear_flight_shuffle_dirs_on_all_nodes(shuffle_dirs: list[str]) -> None:
+    """Clear flight shuffle directories on all Ray nodes with CPU resources.
+
+    Args:
+        shuffle_dirs: List of shuffle directories to clear (full paths)
+    """
+    if not shuffle_dirs:
+        return
+
+    await asyncio.gather(
+        *[
+            _clear_flight_shuffle_dirs.options(
+                scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                    node_id=node["NodeID"],
+                    soft=False,
+                )
+            ).remote(shuffle_dirs)
+            for node in ray.nodes()
+            if "Resources" in node and "CPU" in node["Resources"] and node["Resources"]["CPU"] > 0
+        ]
+    )
+
+
 @ray.remote
 class RaySwordfishActor:
     """RaySwordfishActor is a ray actor that runs local physical plans on swordfish.
@@ -52,6 +94,12 @@ class RaySwordfishActor:
             os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(num_gpus))
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
         set_compute_runtime_num_worker_threads(num_cpus)
+        self.ip = ray.util.get_node_ip_address()
+        self.server = start_flight_server(self.ip)
+        self.port = self.server.port()
+
+    def get_address(self) -> str:
+        return f"grpc://{self.ip}:{self.port}"
 
     async def run_plan(
         self,
@@ -161,8 +209,10 @@ class RaySwordfishActorHandle:
 
     def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
         psets = {k: [v.object_ref for v in v] for k, v in task.psets().items()}
+        context = task.context()
+        context["task_id"] = str(task.id())
         result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
-            task.plan(), task.config(), psets, task.context()
+            task.plan(), task.config(), psets, context
         )
         return RaySwordfishTaskHandle(
             result_handle,
@@ -174,7 +224,7 @@ class RaySwordfishActorHandle:
 
 
 def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
-    handles = []
+    actors_info = []
     for node in ray.nodes():
         if (
             "Resources" in node
@@ -193,16 +243,24 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
                 num_cpus=int(node["Resources"]["CPU"]),
                 num_gpus=int(node["Resources"].get("GPU", 0)),
             )
-            actor_handle = RaySwordfishActorHandle(actor)
-            handles.append(
-                RaySwordfishWorker(
-                    node["NodeID"],
-                    actor_handle,
-                    int(node["Resources"]["CPU"]),
-                    int(node["Resources"].get("GPU", 0)),
-                    int(node["Resources"]["memory"]),
-                )
+            actors_info.append((node, actor))
+
+    # Batch all IP address retrievals into a single ray.get call
+    ip_addresses = ray.get([actor.get_address.remote() for _, actor in actors_info])
+
+    handles = []
+    for (node, actor), ip_address in zip(actors_info, ip_addresses):
+        actor_handle = RaySwordfishActorHandle(actor)
+        handles.append(
+            RaySwordfishWorker(
+                node["NodeID"],
+                actor_handle,
+                int(node["Resources"]["CPU"]),
+                int(node["Resources"].get("GPU", 0)),
+                int(node["Resources"]["memory"]),
+                ip_address,
             )
+        )
 
     return handles
 
@@ -287,7 +345,6 @@ class FlotillaRunner:
             name=FLOTILLA_RUNNER_NAME,
             namespace=FLOTILLA_RUNNER_NAMESPACE,
             get_if_exists=True,
-            lifetime="detached",
             scheduling_strategy=(
                 ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=head_node_id,

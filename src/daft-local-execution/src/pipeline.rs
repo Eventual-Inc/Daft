@@ -46,6 +46,7 @@ use crate::{
         blocking_sink::BlockingSinkNode,
         commit_write::CommitWriteSink,
         dedup::DedupSink,
+        flight_shuffle_write::FlightShuffleWriteSink,
         grouped_aggregate::GroupedAggregateSink,
         hash_join_build::HashJoinBuildSink,
         into_partitions::IntoPartitionsSink,
@@ -60,7 +61,10 @@ use crate::{
         window_partition_only::WindowPartitionOnlySink,
         write::{WriteFormat, WriteSink},
     },
-    sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource, source::SourceNode},
+    sources::{
+        empty_scan::EmptyScanSource, flight_shuffle_read::FlightShuffleReadSource,
+        in_memory::InMemorySource, source::SourceNode,
+    },
     state_bridge::BroadcastStateBridge,
     streaming_sink::{
         anti_semi_hash_join_probe::AntiSemiProbeSink, base::StreamingSinkNode, concat::ConcatSink,
@@ -1278,6 +1282,60 @@ fn physical_plan_to_pipeline(
                 ctx,
             )
             .boxed()
+        }
+        LocalPhysicalPlan::FlightShuffleWrite(daft_local_plan::FlightShuffleWrite {
+            input,
+            num_partitions,
+            partition_by,
+            shuffle_id,
+            shuffle_dirs,
+            compression,
+            stats_state,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
+            // Get cache_id (task_id) from context
+            let cache_id = ctx
+                .context
+                .get("task_id")
+                .cloned()
+                .expect("task_id must be set in context");
+            let flight_shuffle_write_sink = FlightShuffleWriteSink::try_new(
+                *num_partitions,
+                partition_by.clone(),
+                *shuffle_id,
+                shuffle_dirs.clone(),
+                compression.clone(),
+                cache_id,
+            )
+            .map_err(|e| crate::Error::PipelineCreationError {
+                source: e,
+                plan_name: "FlightShuffleWrite".to_string(),
+            })?;
+            BlockingSinkNode::new(
+                Arc::new(flight_shuffle_write_sink),
+                child_node,
+                stats_state.clone(),
+                ctx,
+            )
+            .boxed()
+        }
+        LocalPhysicalPlan::FlightShuffleRead(daft_local_plan::FlightShuffleRead {
+            shuffle_id,
+            partition_idx,
+            server_addresses,
+            server_cache_mapping,
+            schema,
+            stats_state,
+        }) => {
+            let source = FlightShuffleReadSource::new(
+                *shuffle_id,
+                *partition_idx,
+                server_addresses.clone(),
+                server_cache_mapping.clone(),
+                schema.clone(),
+            );
+            SourceNode::new(Arc::new(source), stats_state.clone(), ctx).boxed()
         }
         LocalPhysicalPlan::GlobScan(GlobScan {
             glob_paths,

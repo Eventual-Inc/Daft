@@ -3003,6 +3003,7 @@ dependencies = [
  "daft-physical-plan",
  "daft-recordbatch",
  "daft-scan",
+ "daft-shuffles",
  "daft-warc",
  "daft-writers",
  "futures",
