@@ -363,3 +363,46 @@ serviceAccount:
   # -- The name of the service account to use
   # If not set and create is true, a name is generated using the fullname template
   name: ""
+
+# ============================================================================
+# Monitoring Configuration (Distributed Mode Only)
+# ============================================================================
+# Deploys Prometheus and Grafana as sidecars to enable the Ray Dashboard "Metrics" tab
+# Only applies when distributed=true
+# Uses Ray's auto-generated configs for guaranteed version compatibility
+# The Ray Dashboard embeds Grafana panels via iframes to display time-series metrics
+
+monitoring:
+  # -- Enable Prometheus and Grafana sidecars for Ray Dashboard metrics
+  # Set to false to disable monitoring sidecars alongside the Ray head node
+  enabled: true
+
+  # --------------------------------------------------------------------------
+  # Prometheus Configuration
+  # --------------------------------------------------------------------------
+  prometheus:
+    # -- Prometheus container image
+    image: prom/prometheus:latest
+
+    # -- Resource limits for Prometheus sidecar
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "512Mi"
+      limits:
+        memory: "2Gi"
+
+  # --------------------------------------------------------------------------
+  # Grafana Configuration
+  # --------------------------------------------------------------------------
+  grafana:
+    # -- Grafana container image
+    image: grafana/grafana:latest
+
+    # -- Resource limits for Grafana sidecar
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "256Mi"
+      limits:
+        memory: "512Mi"
