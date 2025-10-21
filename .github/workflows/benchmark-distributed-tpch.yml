@@ -48,15 +48,7 @@ env:
   PYTHON_VERSION: "3.9"
 
 jobs:
-  build:
-    name: Build and publish wheels if necessary
-    if: ${{ inputs.daft_index_url == '' }}
-    uses: ./.github/workflows/publish-dev-s3.yml
-    secrets: inherit
-
   benchmark:
-    needs: build
-    if: ${{ !failure() && !cancelled() }}
     runs-on: [self-hosted, linux, x64, job-runner]
     permissions:
       id-token: write
