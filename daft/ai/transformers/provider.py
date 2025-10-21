@@ -44,6 +44,6 @@ class TransformersProvider(Provider):
         )
 
     def get_text_embedder(self, model: str | None = None, **options: Any) -> TextEmbedderDescriptor:
-        from daft.ai.transformers.protocols.text_embedder import SentenceTransformersTextEmbedderDescriptor
+        from daft.ai.transformers.protocols.text_embedder import TransformersTextEmbedderDescriptor
 
-        return SentenceTransformersTextEmbedderDescriptor(model or self.DEFAULT_TEXT_EMBEDDER, options)
+        return TransformersTextEmbedderDescriptor(model or self.DEFAULT_TEXT_EMBEDDER, options)
