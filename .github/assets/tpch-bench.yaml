@@ -34,15 +34,15 @@ available_node_types:
         Name: ray-autoscaler-v1
 
 setup_commands:
-# mount NVME to /tmp
-- sudo mkfs.ext4 /dev/nvme1n1
-- sudo mount -t ext4 /dev/nvme1n1 /tmp
+# mount NVME to /tmp (idempotent)
+- sudo blkid /dev/nvme1n1 || sudo mkfs.ext4 /dev/nvme1n1
+- mount | grep -q '/dev/nvme1n1.*on /tmp' || (sudo umount /tmp 2>/dev/null || true; sudo mount -t ext4 /dev/nvme1n1 /tmp)
 - sudo chmod 777 /tmp
 
-# install UV and dependencies
+# install UV and dependencies (idempotent)
 - curl -LsSf https://astral.sh/uv/install.sh | sh
-- uv venv --python 3.9
-- echo "source ~/.venv/bin/activate" >> ~/.bashrc
-- source .venv/bin/activate
+- test -d ~/.venv || uv venv --python 3.9
+- grep -qF 'source ~/.venv/bin/activate' ~/.bashrc || echo "source ~/.venv/bin/activate" >> ~/.bashrc
+- source ~/.venv/bin/activate
 - uv pip install pip ray[default] --no-progress
 - uv pip install daft --no-progress --pre --extra-index-url ${DAFT_INDEX_URL}
