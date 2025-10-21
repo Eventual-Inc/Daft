@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from daft.dependencies import pil_image
+
 if TYPE_CHECKING:
     from daft import Series
     from daft.ai.protocols import (
@@ -71,10 +73,11 @@ class _ImageClassificationExpression:
         self.labels = labels
 
     def __call__(self, image_series: Series) -> list[Label]:
-        from PIL import Image
+        if len(image_series) == 0:
+            return []
 
-        images = [Image.fromarray(image) for image in image_series]
-        return self.image_classifier.classify_image(images, labels=self.labels) if images else []
+        images = [pil_image.fromarray(image) for image in image_series]
+        return self.image_classifier.classify_image(images, labels=self.labels)
 
 
 class _PrompterExpression:
