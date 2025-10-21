@@ -595,6 +595,7 @@ def write_empty_tabular(
     schema: Schema,
     compression: str | None = None,
     io_config: IOConfig | None = None,
+    delimiter: str | None = None,
 ) -> str:
     table = pa.Table.from_pylist([], schema=schema.to_pyarrow_schema())
 
@@ -617,7 +618,17 @@ def write_empty_tabular(
             )
         elif file_format == FileFormat.Csv:
             output_file = fs.open_output_stream(file_path)
-            pacsv.write_csv(table, output_file)
+            if delimiter is not None and len(delimiter) == 1:
+                write_opts = pacsv.WriteOptions(delimiter=delimiter)
+                pacsv.write_csv(table, output_file, write_options=write_opts)
+            elif delimiter is not None and len(delimiter) > 1:
+                # The PyArrow CSV writer only supports single-character delimiters, see documentation below for more details
+                # https://arrow.apache.org/docs/python/generated/pyarrow.csv.WriteOptions.html#pyarrow.csv.WriteOptions
+                # https://arrow.apache.org/docs/python/generated/pyarrow.csv.write_csv.html
+                raise ValueError("Delimiter must be a single character")
+            else:
+                pacsv.write_csv(table, output_file)
+
         else:
             raise ValueError(f"Unsupported file format {file_format}")
 
