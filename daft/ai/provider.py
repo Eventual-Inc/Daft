@@ -96,7 +96,7 @@ class Provider(ABC):
 
     def get_image_classifier(self, model: str | None = None, **options: Any) -> ImageClassifierDescriptor:
         """Returns an ImageClassifierDescriptor for this provider."""
-        raise not_implemented_err(self, method="embed_image")
+        raise not_implemented_err(self, method="classify_image")
 
     def get_text_classifier(self, model: str | None = None, **options: Any) -> TextClassifierDescriptor:
         """Returns a TextClassifierDescriptor for this provider."""
