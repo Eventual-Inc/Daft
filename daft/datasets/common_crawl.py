@@ -46,17 +46,17 @@ def _get_common_crawl_paths(
     num_files: int | None,
     io_config: IOConfig | None,
     *,
-    in_aws: bool,
+    use_s3: bool,
 ) -> list[str]:
     """Get the paths to the Common Crawl files for a given crawl, segment, file type. Limited by `num_files`."""
-    if in_aws:
+    if use_s3:
         paths_url = _get_s3_manifest_path(crawl, file_type)
     else:
         paths_url = _get_http_manifest_path(crawl, file_type)
 
     paths = _unique_cc_file_paths(paths_url, io_config)
 
-    if in_aws:
+    if use_s3:
         paths = paths.select(format("s3://commoncrawl/{}", col("url")).alias("url"))
     else:
         paths = paths.select(format("https://data.commoncrawl.org/{}", col("url")).alias("url"))
@@ -79,7 +79,7 @@ def common_crawl(
     num_files: int | None = None,
     io_config: IOConfig | None = None,
     *,
-    in_aws: bool,
+    in_aws_region: str | None,
 ) -> DataFrame:
     r"""Load Common Crawl data as a DataFrame.
 
@@ -95,17 +95,18 @@ def common_crawl(
             - "metadata" or "wat": Metadata about crawled pages
         num_files: Limit the number of files to process. If not provided, processes all matching files.
         io_config: IO configuration for accessing S3.
-        in_aws: Where to fetch the common crawl data from. If running in AWS, this must be set to True. If outside of AWS,
-                then this must be set to False. Setting this flag correctly is required for **optimal download performance**.
-                If running in AWS, then make sure you're in the "us-east-1" region so you don't incur S3 egress fees!
-                See [the Common Crawl docs](https://commoncrawl.org/get-started) for more specific instructions.
+        in_aws_region: What AWS region this is being run from. If outside of AWS, you must provide `None`. This option
+                       changes where Daft retrieves the Common Crawl data from. It uses the provided AWS region to
+                       determine the highest throughput source to use when downloading.
+                       **NOTE**: If running in AWS, then make sure you're in the "us-east-1" region so you don't incur
+                       S3 egress fees! See [the Common Crawl docs](https://commoncrawl.org/get-started) for details.
 
     Returns:
         A DataFrame containing the requested Common Crawl data.
 
     Examples:
         >>> # Create a dataframe from raw WARC data from a specific crawl
-        >>> daft.datasets.common_crawl("CC-MAIN-2025-33", in_aws=True)  # doctest: +SKIP
+        >>> daft.datasets.common_crawl("CC-MAIN-2025-33", in_aws_region=None)  # doctest: +SKIP
         ╭────────────────┬─────────────────┬───────────┬────────────────────┬────────────┬────────────────────┬──────────────┬──────────────╮
         │ WARC-Record-ID ┆ WARC-Target-URI ┆ WARC-Type ┆ WARC-Date          ┆      …     ┆ WARC-Identified-Pa ┆ warc_content ┆ warc_headers │
         │ ---            ┆ ---             ┆ ---       ┆ ---                ┆            ┆ yload-Type         ┆ ---          ┆ ---          │
@@ -116,7 +117,7 @@ def common_crawl(
         (No data to display: Dataframe not materialized)
 
         >>> # Show a sample of extracted text content
-        >>> daft.datasets.common_crawl("CC-MAIN-2025-33", content="text", in_aws=True).limit(2).show()  # doctest: +SKIP
+        >>> daft.datasets.common_crawl("CC-MAIN-2025-33", content="text", in_aws_region=None).limit(2).show()  # doctest: +SKIP
         ╭─────────────────┬─────────────────┬────────────┬─────────────────┬────────────┬─────────────────┬────────────────┬────────────────╮
         │ WARC-Record-ID  ┆ WARC-Target-URI ┆ WARC-Type  ┆ WARC-Date       ┆      …     ┆ WARC-Identified ┆ warc_content   ┆ warc_headers   │
         │ ---             ┆ ---             ┆ ---        ┆ ---             ┆            ┆ -Payload-Type   ┆ ---            ┆ ---            │
@@ -136,7 +137,7 @@ def common_crawl(
 
         >>> # Sample a single file from a specific segment in a crawl for testing
         >>> (
-        ...     daft.datasets.common_crawl("CC-MAIN-2025-33", segment="1754151579063.98", num_files=1, in_aws=True)
+        ...     daft.datasets.common_crawl("CC-MAIN-2025-33", segment="1754151579063.98", num_files=1, in_aws_region=None)
         ...     .limit(2)
         ...     .show()
         ... )  # doctest: +SKIP
@@ -172,13 +173,15 @@ def common_crawl(
         raise ValueError(f"Invalid content type for daft.datasets.common_crawl: {content}")
     file_type = content_type_map[content]
 
+    use_s3: bool = in_aws_region.strip().lower() == "us-east-1" if in_aws_region is not None else False
+
     warc_paths = _get_common_crawl_paths(
         crawl=crawl,
         segment=segment,
         file_type=file_type,
         num_files=num_files,
         io_config=io_config,
-        in_aws=in_aws,
+        use_s3=use_s3,
     )
 
     return read_warc(warc_paths, io_config=io_config)

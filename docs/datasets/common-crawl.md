@@ -9,7 +9,7 @@ Daft provides a simple, performant, and responsible way to access Common Crawl d
 Common Crawl data is hosted by [Amazon Web Services' Open Data Sets Sponsorships program](https://aws.amazon.com/opendata/) which makes it freely accessible.
 However, access does require AWS authentication when downloading Common Crawl data from S3 directly. (_Outside of AWS, you can access Common Crawl without an AWS account_).
 
-**NOTE**: When using `daft.datasets.common_crawl`, you _must_ provide `in_aws=True` when accessing data within the AWS Cloud!
+**NOTE**: When using `daft.datasets.common_crawl`, you _must_ provide `in_aws_region="<AWS REGION NAME>"` when accessing data within the AWS Cloud!
 
 All Common Crawl data is stored in the `us-east-1` region. It's recommended to access the data from that same region. From the [Common Crawl website](https://commoncrawl.org/get-started):
 
