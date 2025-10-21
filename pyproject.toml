@@ -52,8 +52,7 @@ ray = [
   'ray[data, client]>=2.0.0, <2.48.0 ; platform_system != "Windows"',
   'ray[data, client]>=2.10.0, <2.48.0 ; platform_system == "Windows"'  # ray 2.10 has the pyarrow upper pin removed
 ]
-sentence-transformers = ["sentence-transformers"]
-transformers = ["transformers", "torch", "torchvision"]
+transformers = ["transformers", "sentence-transformers", "torch", "torchvision"]
 spark = ["googleapis-common-protos >= 1.56.4", "grpcio >= 1.48", "grpcio-status >= 1.48", "numpy >= 1.15", "pandas >= 1.0.5", "py4j >= 0.10.9.7", "pyspark == 3.5.5"]
 sql = ["connectorx", "sqlalchemy", "sqlglot"]
 turbopuffer = ["turbopuffer"]
@@ -106,7 +105,7 @@ dev = [
   # Ray
   "ray[data, client]==2.34.0",
   # Lance
-  "pylance>=0.20.0",
+  "pylance>=0.37.0",
   # Iceberg
   "pyiceberg==0.7.0",
   "pydantic==2.10.6",

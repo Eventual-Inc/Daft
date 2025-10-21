@@ -18,10 +18,6 @@ Daft has a Provider interface and model protocols for various inference APIs.
     options:
         heading_level: 3
 
-::: daft.ai.provider.load_sentence_transformers
-    options:
-        heading_level: 3
-
 ::: daft.ai.provider.load_transformers
     options:
         heading_level: 3
