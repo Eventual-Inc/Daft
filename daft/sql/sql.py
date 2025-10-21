@@ -106,17 +106,17 @@ def sql(
         >>> # Daft automatically detects `df1` and `df2` from your Python global namespace
         >>> result_df = daft.sql("SELECT * FROM df1 JOIN df2 ON df1.a = df2.a")
         >>> result_df.show()
-        ╭───────┬──────┬──────╮
-        │ a     ┆ b    ┆ c    │
-        │ ---   ┆ ---  ┆ ---  │
-        │ Int64 ┆ Utf8 ┆ Utf8 │
-        ╞═══════╪══════╪══════╡
-        │ 1     ┆ foo  ┆ daft │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ 2     ┆ bar  ┆ None │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ 3     ┆ baz  ┆ None │
-        ╰───────┴──────┴──────╯
+        ╭───────┬────────┬────────╮
+        │ a     ┆ b      ┆ c      │
+        │ ---   ┆ ---    ┆ ---    │
+        │ Int64 ┆ String ┆ String │
+        ╞═══════╪════════╪════════╡
+        │ 1     ┆ foo    ┆ daft   │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2     ┆ bar    ┆ None   │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 3     ┆ baz    ┆ None   │
+        ╰───────┴────────┴────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 

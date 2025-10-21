@@ -195,11 +195,11 @@ pub fn list_(items: Vec<PyExpr>) -> PyExpr {
 ))]
 pub fn udf(
     name: &str,
-    inner: PyObject,
-    bound_args: PyObject,
+    inner: Py<PyAny>,
+    bound_args: Py<PyAny>,
     expressions: Vec<PyExpr>,
     return_dtype: PyDataType,
-    init_args: PyObject,
+    init_args: Py<PyAny>,
     resource_request: Option<ResourceRequest>,
     batch_size: Option<usize>,
     concurrency: Option<usize>,
@@ -237,14 +237,14 @@ pub fn udf(
 #[allow(clippy::too_many_arguments)]
 pub fn row_wise_udf(
     name: &str,
-    cls: PyObject,
-    method: PyObject,
+    cls: Py<PyAny>,
+    method: Py<PyAny>,
     is_async: bool,
     return_dtype: PyDataType,
     gpus: usize,
     use_process: Option<bool>,
     max_concurrency: Option<usize>,
-    original_args: PyObject,
+    original_args: Py<PyAny>,
     expr_args: Vec<PyExpr>,
 ) -> PyExpr {
     let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
@@ -270,14 +270,14 @@ pub fn row_wise_udf(
 #[allow(clippy::too_many_arguments)]
 pub fn batch_udf(
     name: &str,
-    cls: PyObject,
-    method: PyObject,
+    cls: Py<PyAny>,
+    method: Py<PyAny>,
     return_dtype: PyDataType,
     gpus: usize,
     use_process: Option<bool>,
     max_concurrency: Option<usize>,
     batch_size: Option<usize>,
-    original_args: PyObject,
+    original_args: Py<PyAny>,
     expr_args: Vec<PyExpr>,
 ) -> PyExpr {
     let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
@@ -334,7 +334,7 @@ pub enum ApproxPercentileInput {
 impl PyExpr {
     /// converts the pyexpr into a `daft.Expression` python instance
     /// `daft.Expression._from_pyexpr(self)`
-    pub fn into_expr_cls(self, py: Python) -> PyResult<PyObject> {
+    pub fn into_expr_cls(self, py: Python) -> PyResult<Py<PyAny>> {
         let daft = py.import("daft")?;
         let expr_cls = daft.getattr("Expression")?;
         let expr = expr_cls.call_method1("_from_pyexpr", (self,))?;

@@ -7,7 +7,7 @@ use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
-use pyo3::{PyObject, Python, types::PyAnyMethods};
+use pyo3::{Py, PyAny, Python, types::PyAnyMethods};
 
 use super::{
     NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
@@ -37,7 +37,7 @@ impl UDFActors {
         udf_properties: &UDFProperties,
         actor_ready_timeout: usize,
     ) -> DaftResult<Vec<PyObjectWrapper>> {
-        let (task_locals, py_exprs) = Python::with_gil(|py| {
+        let (task_locals, py_exprs) = Python::attach(|py| {
             let task_locals = crate::utils::runtime::PYO3_ASYNC_RUNTIME_LOCALS
                 .get()
                 .expect("Python task locals not initialized")
@@ -56,15 +56,15 @@ impl UDFActors {
         let (gpu_request, cpu_request, memory_request) = match &udf_properties.resource_request {
             Some(resource_request) => (
                 resource_request.num_gpus().unwrap_or(0.0),
-                resource_request.num_cpus().unwrap_or(0.0),
+                resource_request.num_cpus().unwrap_or(1.0),
                 resource_request.memory_bytes().unwrap_or(0),
             ),
-            None => (0.0, 0.0, 0),
+            None => (0.0, 1.0, 0),
         };
 
         // Use async pattern similar to DistributedActorPoolProjectOperator
         let await_coroutine = async move {
-            let result = Python::with_gil(|py| {
+            let result = Python::attach(|py| {
                 let ray_actor_pool_udf_module =
                     py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
                 let coroutine = ray_actor_pool_udf_module.call_method1(
@@ -86,8 +86,8 @@ impl UDFActors {
 
         // Execute the coroutine with proper task locals
         let result = pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine).await?;
-        let actors = Python::with_gil(|py| {
-            result.extract::<Vec<PyObject>>(py).map(|py_objects| {
+        let actors = Python::attach(|py| {
+            result.extract::<Vec<Py<PyAny>>>(py).map(|py_objects| {
                 py_objects
                     .into_iter()
                     .map(|py_object| PyObjectWrapper(Arc::new(py_object)))
@@ -113,7 +113,7 @@ impl UDFActors {
     }
 
     fn teardown(&mut self) {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             if let Self::Initialized { actors, .. } = self {
                 for actor in actors {
                     if let Err(e) = actor.0.call_method1(py, pyo3::intern!(py, "teardown"), ()) {

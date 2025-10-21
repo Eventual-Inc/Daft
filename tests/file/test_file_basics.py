@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import random
+import struct
 from pathlib import Path
 
 import pytest
@@ -310,3 +311,82 @@ def test_filesize_expr_binary():
 
     res = df.select(file_size(file(df["file"]))).to_pydict()["file"][0]
     assert res == 2048
+
+
+@pytest.mark.parametrize(
+    "content, expected_mimetype",
+    [
+        (b"\x89PNG\r\n\x1a\n", "image/png"),
+        (b"\xff\xd8\xff", "image/jpeg"),
+        (b"GIF89a", "image/gif"),
+        (b"RIFF\x00\x00\x00\x00WEBP", "image/webp"),
+        (b"%PDF-1.5", "application/pdf"),
+        (b"PK\x03\x04", "application/zip"),
+        (b"ID3", "audio/mpeg"),
+        (b"\xff\xfb\x90", "audio/mpeg"),
+        (b"RIFF\x00\x00\x00\x00WAVE", "audio/wav"),
+        (b"OggS", "audio/ogg"),
+        (b"\x00\x00\x00\x18ftypmp42", "video/mp4"),
+        (b"\x00\x00\x01\xba\x21", "video/mpeg"),
+        (b"random bytes that won't match", "application/octet-stream"),
+    ],
+)
+def test_file_mimetype_from_bytes(content, expected_mimetype):
+    file = daft.File(content)
+    mimetype = file.mime_type()
+
+    assert mimetype == expected_mimetype
+
+
+@pytest.mark.parametrize(
+    "file_info",
+    [
+        # (extension, content_generator, expected_mimetype)
+        ("jpg", lambda: b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01", "image/jpeg"),
+        ("png", lambda: b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01", "image/png"),
+        (
+            "gif",
+            lambda: b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\xff\xff\xff\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3b",
+            "image/gif",
+        ),
+        ("pdf", lambda: b"%PDF-1.7\n1 0 obj\n<<>>\nendobj\n", "application/pdf"),
+        ("mp3", lambda: b"ID3\x03\x00\x00\x00\x00\x00\x00" + b"\xff\xfb\x90\x44" + b"\x00" * 32, "audio/mpeg"),
+        (
+            "wav",
+            lambda: b"RIFF"
+            + struct.pack("<I", 36)
+            + b"WAVE"
+            + b"fmt "
+            + struct.pack("<I", 16)
+            + struct.pack("<HHIIHH", 1, 1, 8000, 8000, 1, 8)
+            + b"data"
+            + struct.pack("<I", 0),
+            "audio/wav",
+        ),
+        (
+            "ogg",
+            lambda: b"OggS\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00",
+            "audio/ogg",
+        ),
+        (
+            "mp4",
+            lambda: b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom" + b"\x00\x00\x00\x08free\x00\x00\x00\x08mdat",
+            "video/mp4",
+        ),
+        (
+            "zip",
+            lambda: b"PK\x03\x04\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+            "application/zip",
+        ),
+        ("html", lambda: b"<!DOCTYPE html><html><head></head><body></body></html>", "text/html"),
+    ],
+)
+def test_file_mimetype_with_real_files(tmp_path, file_info):
+    extension, content_generator, expected_mimetype = file_info
+
+    temp_file = tmp_path / f"test_file.{extension}"
+    temp_file.write_bytes(content_generator())
+
+    file = daft.File(str(temp_file.absolute()))
+    mimetype = file.mime_type()
+    assert mimetype == expected_mimetype

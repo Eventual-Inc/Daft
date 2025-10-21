@@ -246,5 +246,5 @@ def test_fixed_size_binary_concat_errors() -> None:
     )
 
     # Test concat with wrong type
-    with pytest.raises(Exception, match="Cannot infer supertypes for addition on types: FixedSizeBinary\[3\], Int64"):
+    with pytest.raises(Exception, match="Cannot infer supertypes for addition on types: Binary\[3\], Int64"):
         table.eval_expression_list([col("a").binary.concat(col("b"))])

@@ -39,7 +39,7 @@ fn python_binary_op_with_utilfn(
         (a, b) => panic!("Cannot apply operation on arrays of different lengths: {a} vs {b}"),
     };
 
-    let result_series: Series = Python::with_gil(|py| -> PyResult<PySeries> {
+    let result_series: Series = Python::attach(|py| -> PyResult<PySeries> {
         let left_pylist = PySeries::from(lhs.clone()).to_pylist(py)?;
         let right_pylist = PySeries::from(rhs).to_pylist(py)?;
 
@@ -74,7 +74,7 @@ pub fn py_membership_op_utilfn(lhs: &Series, rhs: &Series) -> DaftResult<Series>
     let lhs_casted = lhs.cast(&DataType::Python)?;
     let rhs_casted = rhs.cast(&DataType::Python)?;
 
-    let result_series: Series = Python::with_gil(|py| -> PyResult<PySeries> {
+    let result_series: Series = Python::attach(|py| -> PyResult<PySeries> {
         let left_pylist = PySeries::from(lhs_casted.clone()).to_pylist(py)?;
         let right_pylist = PySeries::from(rhs_casted).to_pylist(py)?;
 
@@ -134,7 +134,7 @@ pub fn py_between_op_utilfn(value: &Series, lower: &Series, upper: &Series) -> D
             }
         };
 
-    let result_series: Series = Python::with_gil(|py| -> PyResult<PySeries> {
+    let result_series: Series = Python::attach(|py| -> PyResult<PySeries> {
         let value_pylist = PySeries::from(value_casted.clone()).to_pylist(py)?;
         let lower_pylist = PySeries::from(lower_casted).to_pylist(py)?;
         let upper_pylist = PySeries::from(upper_casted).to_pylist(py)?;

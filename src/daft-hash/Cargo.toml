@@ -3,6 +3,7 @@ common-error = {workspace = true}
 mur3 = {workspace = true}
 serde = {workspace = true, features = ["derive"]}
 sha1 = {workspace = true}
+xxhash-rust = {workspace = true}
 
 [lints]
 workspace = true

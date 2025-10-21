@@ -18,7 +18,7 @@ pub enum NumpyArray<'py> {
     U64(Bound<'py, PyArrayDyn<u64>>),
     F32(Bound<'py, PyArrayDyn<f32>>),
     F64(Bound<'py, PyArrayDyn<f64>>),
-    Py(Bound<'py, PyArrayDyn<PyObject>>),
+    Py(Bound<'py, PyArrayDyn<Py<PyAny>>>),
 }
 
 impl<'py> NumpyArray<'py> {

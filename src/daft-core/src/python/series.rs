@@ -1,11 +1,10 @@
 use std::{
-    hash::BuildHasherDefault,
     ops::{Add, Div, Mul, Rem, Sub},
     sync::Arc,
 };
 
 use common_arrow_ffi as ffi;
-use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
+use daft_hash::HashFunctionKind;
 use daft_schema::python::PyDataType;
 use pyo3::{
     exceptions::{PyIndexError, PyStopIteration, PyValueError},
@@ -275,25 +274,12 @@ impl PySeries {
             )));
         }
         let seed = seed as u32;
-
         let num_hashes = num_hashes as usize;
         let ngram_size = ngram_size as usize;
 
-        let result = match hash_function {
-            HashFunctionKind::MurmurHash3 => {
-                let hasher = MurBuildHasher::new(seed);
-                self.series.minhash(num_hashes, ngram_size, seed, &hasher)
-            }
-            HashFunctionKind::XxHash => {
-                let hasher = xxhash_rust::xxh64::Xxh64Builder::new(seed as u64);
-                self.series.minhash(num_hashes, ngram_size, seed, &hasher)
-            }
-            HashFunctionKind::Sha1 => {
-                let hasher = BuildHasherDefault::<Sha1Hasher>::default();
-                self.series.minhash(num_hashes, ngram_size, seed, &hasher)
-            }
-        }?;
-
+        let result = self
+            .series
+            .minhash(num_hashes, ngram_size, seed, hash_function)?;
         Ok(result.into())
     }
 
@@ -435,7 +421,7 @@ impl PySeries {
         Ok(self.series.fill_null(&fill_value.series)?.into())
     }
 
-    pub fn _debug_bincode_serialize(&self, py: Python) -> PyResult<PyObject> {
+    pub fn _debug_bincode_serialize(&self, py: Python) -> PyResult<Py<PyAny>> {
         let values = bincode::serialize(&self.series).unwrap();
         Ok(PyBytes::new(py, &values).into())
     }
