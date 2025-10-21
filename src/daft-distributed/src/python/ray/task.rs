@@ -12,7 +12,6 @@ use crate::{
         task::{SwordfishTask, TaskContext, TaskResultHandle, TaskStatus},
         worker::WorkerId,
     },
-    utils::runtime::execute_python_coroutine,
 };
 
 #[pyclass(module = "daft.daft", name = "RayTaskResult")]
@@ -85,8 +84,10 @@ impl TaskResultHandle for RayTaskResultHandle {
         let task_locals = self.task_locals.take().unwrap();
         let worker_id = self.worker_id.clone();
 
-        let fut =
-            execute_python_coroutine(move |py| Ok(coroutine.into_bound(py)), Some(task_locals));
+        let fut = common_runtime::python::execute_python_coroutine(
+            move |py| Ok(coroutine.into_bound(py)),
+            task_locals,
+        );
         async move {
             let ray_task_result = fut.await;
 

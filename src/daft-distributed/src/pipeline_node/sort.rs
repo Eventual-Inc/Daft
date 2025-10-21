@@ -58,11 +58,7 @@ pub(crate) async fn get_partition_boundaries_from_samples(
         .collect::<DaftResult<Vec<_>>>()?;
 
     let (task_locals, py_object_refs) = Python::attach(|py| {
-        let task_locals = crate::utils::runtime::PYO3_ASYNC_RUNTIME_LOCALS
-            .get()
-            .expect("Python task locals not initialized")
-            .clone_ref(py);
-
+        let task_locals = crate::utils::runtime::get_task_locals(py);
         let py_object_refs = ray_partition_refs
             .into_iter()
             .map(|pr| pr.get_object_ref(py))
@@ -78,7 +74,7 @@ pub(crate) async fn get_partition_boundaries_from_samples(
         .collect::<Vec<_>>();
 
     let boundaries: daft_micropartition::python::PyMicroPartition =
-        crate::utils::runtime::execute_python_coroutine(
+        common_runtime::python::execute_python_coroutine(
             move |py| {
                 let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
                 flotilla_module.call_method1(
@@ -92,7 +88,7 @@ pub(crate) async fn get_partition_boundaries_from_samples(
                     ),
                 )
             },
-            Some(task_locals),
+            task_locals,
         )
         .await?;
 

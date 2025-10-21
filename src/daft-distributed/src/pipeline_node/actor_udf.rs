@@ -37,6 +37,7 @@ impl UDFActors {
         udf_properties: &UDFProperties,
         actor_ready_timeout: usize,
     ) -> DaftResult<Vec<PyObjectWrapper>> {
+        let task_locals = Python::attach(crate::utils::runtime::get_task_locals);
         let py_exprs = projection
             .iter()
             .map(|e| PyExpr {
@@ -55,7 +56,7 @@ impl UDFActors {
             None => (0.0, 1.0, 0),
         };
 
-        let result: Vec<Py<PyAny>> = crate::utils::runtime::execute_python_coroutine(
+        let result: Vec<Py<PyAny>> = common_runtime::python::execute_python_coroutine(
             move |py| {
                 let ray_actor_pool_udf_module =
                     py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
@@ -71,7 +72,7 @@ impl UDFActors {
                     ),
                 )
             },
-            None,
+            task_locals,
         )
         .await?;
 
