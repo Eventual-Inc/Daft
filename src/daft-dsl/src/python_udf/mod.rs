@@ -29,6 +29,16 @@ impl PyScalarFn {
             Self::Batch(func) => func.call(args),
         }
     }
+    pub fn call_with_task_locals(
+        &self,
+        args: &[Series],
+        task_locals: pyo3_async_runtimes::TaskLocals,
+    ) -> DaftResult<Series> {
+        match self {
+            Self::RowWise(func) => func.call_with_task_locals(args, task_locals),
+            Self::Batch(func) => todo!(),
+        }
+    }
 
     pub fn args(&self) -> Vec<ExprRef> {
         match self {

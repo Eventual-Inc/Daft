@@ -309,6 +309,7 @@ impl NativeExecutor {
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
 
         let handle = get_global_runtime();
+        dbg!("got global runtime");
         let enable_explain_analyze = self.enable_explain_analyze;
 
         // Spawn execution on the global runtime - returns immediately

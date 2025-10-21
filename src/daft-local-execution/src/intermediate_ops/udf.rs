@@ -178,11 +178,27 @@ impl UdfHandle {
     }
 
     #[cfg(feature = "python")]
-    fn eval_input_inline(&mut self, func_input: RecordBatch) -> DaftResult<Series> {
-        use daft_dsl::functions::python::initialize_udfs;
+    fn eval_input_inline(
+        &mut self,
+        func_input: RecordBatch,
+        task_locals: pyo3_async_runtimes::TaskLocals,
+    ) -> DaftResult<Series> {
+        use daft_dsl::functions::{python::initialize_udfs, scalar::ScalarFn};
 
         // Only actually initialized the first time
-        self.udf_expr = BoundExpr::new_unchecked(initialize_udfs(self.udf_expr.inner().clone())?);
+        let udf_expr = initialize_udfs(self.udf_expr.inner().clone())?;
+        let output = match udf_expr.as_ref() {
+            Expr::ScalarFn(ScalarFn::Python(python_udf)) => {
+                let args = python_udf
+                    .args()
+                    .iter()
+                    .map(|expr| func_input.eval_expression(&BoundExpr::new_unchecked(expr.clone())))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                python_udf.call_with_task_locals(args.as_slice(), task_locals)
+            }
+            _ => unreachable!(),
+        };
+
         func_input.eval_expression(&self.udf_expr)
     }
 
@@ -192,11 +208,18 @@ impl UdfHandle {
     }
 
     #[cfg(feature = "python")]
-    fn eval_input(&mut self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
+    fn eval_input(
+        &mut self,
+        input: Arc<MicroPartition>,
+        task_locals: pyo3_async_runtimes::TaskLocals,
+    ) -> DaftResult<Arc<MicroPartition>> {
+        dbg!(&"eval_input");
         let input_batches = input.get_tables()?;
         let mut output_batches = Vec::with_capacity(input_batches.len());
 
         for batch in input_batches.as_ref() {
+            let task_locals = Python::attach(|py| task_locals.clone_ref(py));
+
             // Prepare inputs
             let func_input = batch.get_columns(self.params.required_cols.as_slice());
 
@@ -204,7 +227,7 @@ impl UdfHandle {
             let mut result = if let Some(handle) = &self.handle {
                 self.eval_input_with_handle(func_input, handle)
             } else {
-                self.eval_input_inline(func_input)
+                self.eval_input_inline(func_input, task_locals)
             }?;
             // If result.len() == 1 (because it was a 0-column UDF), broadcast to right size
             if result.len() == 1 {
@@ -271,6 +294,8 @@ pub(crate) struct UdfOperator {
     concurrency: usize,
     memory_request: u64,
     input_schema: SchemaRef,
+    #[cfg(feature = "python")]
+    task_locals: pyo3_async_runtimes::TaskLocals,
 }
 
 impl UdfOperator {
@@ -285,6 +310,8 @@ impl UdfOperator {
         let resource_request = udf_properties.resource_request.as_ref();
         let max_concurrency =
             Self::get_optimal_allocation(udf_properties.name.as_str(), resource_request)?;
+        let task_locals = Python::attach(pyo3_async_runtimes::tokio::get_current_locals)?;
+        dbg!(&task_locals);
         // If parallelism is already specified, use that
         let concurrency = udf_properties.concurrency.unwrap_or(max_concurrency);
 
@@ -307,6 +334,7 @@ impl UdfOperator {
             concurrency,
             memory_request,
             input_schema: input_schema.clone(),
+            task_locals,
         })
     }
 
@@ -348,13 +376,15 @@ impl IntermediateOperator for UdfOperator {
         mut state: Self::State,
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self> {
+        let task_locals = Python::attach(|py| self.task_locals.clone_ref(py));
+
         let memory_request = self.memory_request;
         let fut = task_spawner.spawn_with_memory_request(
             memory_request,
             async move {
                 let res = state
                     .udf_handle
-                    .eval_input(input)
+                    .eval_input(input, task_locals)
                     .map(|result| IntermediateOperatorResult::NeedMoreInput(Some(result)))?;
                 Ok((state, res))
             },

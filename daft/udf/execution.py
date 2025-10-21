@@ -62,6 +62,19 @@ def call_async_batch(
 
     return Series.from_pylist(outputs, dtype=dtype)._series
 
+async def async_call_func(
+    cls: ClsBase[C],
+    method: Callable[Concatenate[C, ...], Any],
+    original_args: tuple[tuple[Any, ...], dict[str, Any]],
+    evaluated_args: list[Any],
+) -> list[Any]:
+    """Called from Rust to evaluate a Python scalar UDF. Returns a list of Python objects."""
+    args, kwargs = replace_expressions_with_evaluated_args(original_args, evaluated_args)
+
+    bound_method = cls._daft_bind_method(method)
+
+    output = await bound_method(*args, **kwargs)
+    return output
 
 def call_func(
     cls: ClsBase[C],

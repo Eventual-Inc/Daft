@@ -105,53 +105,96 @@ impl RowWisePyFn {
         }
 
         if self.is_async {
-            self.call_async(args, num_rows)
+            todo!()
         } else {
             self.call_serial(args, num_rows)
         }
     }
 
     #[cfg(feature = "python")]
-    fn call_async(&self, args: &[Series], num_rows: usize) -> DaftResult<Series> {
-        use daft_core::python::PySeries;
+    pub fn call_with_task_locals(
+        &self,
+        args: &[Series],
+        task_locals: pyo3_async_runtimes::TaskLocals,
+    ) -> DaftResult<Series> {
+        let num_rows = args
+            .iter()
+            .map(Series::len)
+            .max()
+            .expect("RowWisePyFn should have at least one argument");
+
+        for a in args {
+            assert!(
+                a.len() == num_rows || a.len() == 1,
+                "arg lengths differ: {} vs {}",
+                num_rows,
+                a.len()
+            );
+        }
+
+        if self.is_async {
+            self.call_async(args, num_rows, task_locals)
+        } else {
+            todo!()
+        }
+    }
+
+    #[cfg(feature = "python")]
+    fn call_async(
+        &self,
+        args: &[Series],
+        num_rows: usize,
+        task_locals: pyo3_async_runtimes::TaskLocals,
+    ) -> DaftResult<Series> {
         use pyo3::prelude::*;
-        let py_return_type = daft_core::python::PyDataType::from(self.return_dtype.clone());
+
         let cls_ref = self.cls.as_ref();
         let method_ref = self.method.as_ref();
         let args_ref = self.original_args.as_ref();
+        let name = args[0].name();
+        dbg!(&task_locals);
 
-        Ok(pyo3::Python::attach(|py| {
-            let f = py
+        Python::attach(|py| {
+            let func = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
-                .getattr(pyo3::intern!(py, "call_async_batch"))?;
+                .getattr(pyo3::intern!(py, "async_call_func"))?;
 
-            let mut evaluated_args = Vec::with_capacity(num_rows);
-            for i in 0..num_rows {
-                let py_args_for_row = args
-                    .iter()
-                    .map(|s| {
+            // pre-allocating py_args vector so we're not creating a new vector for each iteration
+            let mut py_args = Vec::with_capacity(args.len());
+            let outputs = (0..num_rows)
+                .map(|i| {
+                    use futures::TryFutureExt;
+
+                    for s in args {
                         let idx = if s.len() == 1 { 0 } else { i };
                         let lit = s.get_lit(idx);
-                        lit.into_pyobject(py).map_err(|e| e.into())
-                    })
-                    .collect::<DaftResult<Vec<_>>>()?;
+                        let pyarg = lit.into_pyobject(py)?;
+                        py_args.push(pyarg);
+                    }
 
-                evaluated_args.push(py_args_for_row);
-            }
+                    let result = func.call1((cls_ref, method_ref, args_ref, &py_args))?;
+                    dbg!(&result);
+                    py_args.clear();
 
-            let res = f.call1((
-                cls_ref,
-                method_ref,
-                py_return_type.clone(),
-                args_ref,
-                evaluated_args,
-            ))?;
-            let name = args[0].name();
+                    let future = pyo3_async_runtimes::tokio::into_future(result)?;
 
-            let result_series = res.extract::<PySeries>()?.series;
+                    DaftResult::Ok(future)
+                })
+                .collect::<DaftResult<Vec<_>>>()?;
 
-            Ok::<_, PyErr>(result_series.rename(name))
-        })?)
+            let results = pyo3_async_runtimes::tokio::future_into_py(py, async move {
+                use futures::future::try_join_all;
+
+                try_join_all(outputs).await
+            })
+            .expect("Failed to join all futures");
+            dbg!(&results);
+            todo!()
+
+            let arr = PythonArray::from_iter(name, results.into_iter());
+            // let series = arr.cast(&self.return_dtype)?;
+            // Ok(series)
+        })
     }
 
     #[cfg(feature = "python")]
