@@ -12,6 +12,7 @@ use crate::{
         task::{SwordfishTask, TaskContext, TaskResultHandle, TaskStatus},
         worker::WorkerId,
     },
+    utils::runtime::execute_python_coroutine,
 };
 
 #[pyclass(module = "daft.daft", name = "RayTaskResult")]
@@ -82,22 +83,12 @@ impl TaskResultHandle for RayTaskResultHandle {
         // Create a rust future that will await the coroutine
         let coroutine = self.coroutine.take().unwrap();
         let task_locals = self.task_locals.take().unwrap();
-
-        let await_coroutine = async move {
-            let result = Python::attach(|py| {
-                pyo3_async_runtimes::tokio::into_future(coroutine.into_bound(py))
-            })?
-            .await?;
-            DaftResult::Ok(result)
-        };
-
         let worker_id = self.worker_id.clone();
+
+        let fut =
+            execute_python_coroutine(move |py| Ok(coroutine.into_bound(py)), Some(task_locals));
         async move {
-            let ray_task_result = pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine)
-                .await
-                .and_then(|result| {
-                    Python::attach(|py| result.extract::<RayTaskResult>(py)).map_err(|e| e.into())
-                });
+            let ray_task_result = fut.await;
 
             match ray_task_result {
                 Ok(RayTaskResult::Success(ray_part_refs)) => {

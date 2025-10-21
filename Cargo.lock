@@ -1940,6 +1940,8 @@ dependencies = [
  "futures",
  "log",
  "oneshot",
+ "pyo3",
+ "pyo3-async-runtimes",
  "tokio",
 ]
 

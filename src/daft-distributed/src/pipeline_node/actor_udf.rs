@@ -37,19 +37,12 @@ impl UDFActors {
         udf_properties: &UDFProperties,
         actor_ready_timeout: usize,
     ) -> DaftResult<Vec<PyObjectWrapper>> {
-        let (task_locals, py_exprs) = Python::attach(|py| {
-            let task_locals = crate::utils::runtime::PYO3_ASYNC_RUNTIME_LOCALS
-                .get()
-                .expect("Python task locals not initialized")
-                .clone_ref(py);
-            let py_exprs = projection
-                .iter()
-                .map(|e| PyExpr {
-                    expr: e.inner().clone(),
-                })
-                .collect::<Vec<_>>();
-            (task_locals, py_exprs)
-        });
+        let py_exprs = projection
+            .iter()
+            .map(|e| PyExpr {
+                expr: e.inner().clone(),
+            })
+            .collect::<Vec<_>>();
         let num_actors = udf_properties
             .concurrency
             .expect("ActorUDF should have concurrency specified");
@@ -62,12 +55,11 @@ impl UDFActors {
             None => (0.0, 1.0, 0),
         };
 
-        // Use async pattern similar to DistributedActorPoolProjectOperator
-        let await_coroutine = async move {
-            let result = Python::attach(|py| {
+        let result: Vec<Py<PyAny>> = crate::utils::runtime::execute_python_coroutine(
+            move |py| {
                 let ray_actor_pool_udf_module =
                     py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
-                let coroutine = ray_actor_pool_udf_module.call_method1(
+                ray_actor_pool_udf_module.call_method1(
                     pyo3::intern!(py, "start_udf_actors"),
                     (
                         py_exprs,
@@ -77,23 +69,16 @@ impl UDFActors {
                         memory_request,
                         actor_ready_timeout,
                     ),
-                )?;
-                pyo3_async_runtimes::tokio::into_future(coroutine)
-            })?
-            .await?;
-            DaftResult::Ok(result)
-        };
+                )
+            },
+            None,
+        )
+        .await?;
 
-        // Execute the coroutine with proper task locals
-        let result = pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine).await?;
-        let actors = Python::attach(|py| {
-            result.extract::<Vec<Py<PyAny>>>(py).map(|py_objects| {
-                py_objects
-                    .into_iter()
-                    .map(|py_object| PyObjectWrapper(Arc::new(py_object)))
-                    .collect::<Vec<_>>()
-            })
-        })?;
+        let actors = result
+            .into_iter()
+            .map(|py_object| PyObjectWrapper(Arc::new(py_object)))
+            .collect::<Vec<_>>();
         Ok(actors)
     }
 
