@@ -46,13 +46,34 @@ impl<T: Task> DefaultScheduler<T> {
     // Spread scheduling: Schedule tasks to the worker with the most available slots, to
     // TODO: Change the approach to instead spread based on tasks of the same 'type', i.e. from the same pipeline node.
     fn try_schedule_spread_task(&self, task: &T) -> Option<WorkerId> {
-        self.worker_snapshots
+        // Prefer the worker with the fewest in-flight tasks (busy/idle aware), subject to capacity
+        let candidates: Vec<(WorkerId, usize, f64)> = self
+            .worker_snapshots
             .iter()
             .filter(|(_, worker)| worker.can_schedule_task(task))
-            .max_by_key(|(_, worker)| {
-                (worker.available_num_cpus() + worker.available_num_gpus()) as usize
+            .map(|(id, worker)| {
+                (
+                    id.clone(),
+                    worker.active_task_details.len(),
+                    worker.available_num_cpus(),
+                )
             })
-            .map(|(id, _)| id.clone())
+            .collect();
+        candidates
+            .iter()
+            .min_by(|a, b| {
+                let ai = a.1;
+                let bi = b.1;
+                if ai != bi {
+                    ai.cmp(&bi)
+                } else {
+                    // Tie-break: prefer higher available CPU to concentrate workload
+                    let ac = a.2;
+                    let bc = b.2;
+                    bc.partial_cmp(&ac).unwrap_or(std::cmp::Ordering::Equal)
+                }
+            })
+            .map(|(id, _, _)| id.clone())
     }
 
     // Soft worker affinity scheduling: Schedule task to the worker if it has capacity
@@ -157,6 +178,13 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
                 .map(|task| task.task.resource_request().clone())
                 .collect()
         })
+    }
+
+    fn get_backlog_resource_requests(&self) -> Vec<TaskResourceRequest> {
+        self.pending_tasks
+            .iter()
+            .map(|task| task.task.resource_request().clone())
+            .collect()
     }
 }
 
@@ -682,5 +710,32 @@ mod tests {
 
         // Should not request autoscaling
         assert!(scheduler.get_autoscaling_request().is_none());
+    }
+
+    #[test]
+    fn test_default_scheduler_spread_tie_break_least_inflight_then_max_cpu() {
+        use std::sync::Arc;
+
+        use crate::scheduling::{
+            scheduler::test_utils::{create_spread_task, setup_scheduler, setup_workers},
+            tests::{MockTask, MockTaskBuilder},
+            worker::WorkerId,
+        };
+
+        let w1: WorkerId = Arc::from("w1");
+        let w2: WorkerId = Arc::from("w2");
+        // w1 has more CPU than w2; both will have equal inflight counts after we pre-populate one active task on each
+        let mut workers = setup_workers(&[(w1.clone(), 2), (w2.clone(), 1)]);
+        // Pre-populate active tasks to make inflight tie
+        let preload_task = MockTaskBuilder::default().with_task_id(999).build();
+        workers.get(&w1).unwrap().add_active_task(&preload_task);
+        workers.get(&w2).unwrap().add_active_task(&preload_task);
+
+        let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
+        // Enqueue one spread task; tie-break should pick w1 due to higher available CPU
+        scheduler.enqueue_tasks(vec![create_spread_task(Some(1))]);
+        let scheduled = scheduler.schedule_tasks();
+        assert_eq!(scheduled.len(), 1);
+        assert_eq!(scheduled[0].worker_id, w1);
     }
 }

@@ -45,6 +45,15 @@ pub(crate) trait WorkerManager: Send + Sync {
     fn try_autoscale(&self, resource_requests: Vec<TaskResourceRequest>) -> DaftResult<()>;
     #[allow(dead_code)]
     fn shutdown(&self) -> DaftResult<()>;
+    #[allow(dead_code)]
+    fn retire_idle_workers(&self, max_to_retire: usize) -> DaftResult<usize>;
+    /// Release idle RaySwordfishActors to drive downscale. When `force_all_when_cluster_idle` is true,
+    /// try releasing all idle actors; otherwise release up to `max_to_release` by longest idle first.
+    fn release_idle_actors(
+        &self,
+        max_to_release: usize,
+        force_all_when_cluster_idle: bool,
+    ) -> DaftResult<usize>;
 }
 
 #[cfg(test)]
@@ -58,13 +67,29 @@ pub(super) mod tests {
     #[derive(Clone)]
     pub struct MockWorkerManager {
         workers: Arc<Mutex<HashMap<WorkerId, MockWorker>>>,
+        /// Test-only: count of try_autoscale calls
+        try_autoscale_calls: Arc<Mutex<usize>>,
+        /// Test-only: last autoscale bundles length
+        last_try_autoscale_bundles_len: Arc<Mutex<Option<usize>>>,
     }
 
     impl MockWorkerManager {
         pub fn new(workers: HashMap<WorkerId, MockWorker>) -> Self {
             Self {
                 workers: Arc::new(Mutex::new(workers)),
+                try_autoscale_calls: Arc::new(Mutex::new(0)),
+                last_try_autoscale_bundles_len: Arc::new(Mutex::new(None)),
             }
+        }
+
+        /// Test-only accessor: number of try_autoscale calls
+        pub fn try_autoscale_call_count(&self) -> usize {
+            *self.try_autoscale_calls.lock().expect("lock")
+        }
+
+        /// Test-only accessor: last bundles len passed to try_autoscale
+        pub fn last_try_autoscale_bundles_len(&self) -> Option<usize> {
+            *self.last_try_autoscale_bundles_len.lock().expect("lock")
         }
     }
 
@@ -122,11 +147,20 @@ pub(super) mod tests {
         }
 
         fn try_autoscale(&self, resource_requests: Vec<TaskResourceRequest>) -> DaftResult<()> {
-            // add 1 worker for each num_cpus
-            let num_workers = resource_requests.len();
+            // Record test-only counters
+            {
+                let mut calls = self.try_autoscale_calls.lock().expect("lock");
+                *calls += 1;
+            }
+            {
+                let mut last_len = self.last_try_autoscale_bundles_len.lock().expect("lock");
+                *last_len = Some(resource_requests.len());
+            }
+            // add 1 worker for each bundle requested to simulate expansion
+            let num_new_workers = resource_requests.len();
             let mut workers = self.workers.lock().expect("Failed to lock workers");
             let num_existing_workers = workers.len();
-            for i in 0..num_workers {
+            for i in 0..num_new_workers {
                 let new_worker_id: WorkerId =
                     Arc::from(format!("worker{}", num_existing_workers + i + 1));
                 workers.insert(
@@ -144,6 +178,42 @@ pub(super) mod tests {
                 .values()
                 .for_each(|w| w.shutdown());
             Ok(())
+        }
+
+        fn retire_idle_workers(&self, max_to_retire: usize) -> DaftResult<usize> {
+            let mut workers = self.workers.lock().expect("Failed to lock workers");
+            if max_to_retire == 0 || workers.is_empty() {
+                return Ok(0);
+            }
+            // Retire up to max_to_retire workers with no active tasks
+            let mut retired = 0usize;
+            let candidate_ids: Vec<WorkerId> = workers
+                .iter()
+                .filter_map(|(wid, w)| {
+                    let active = w.active_task_details.lock().expect("Failed to lock");
+                    if active.is_empty() {
+                        Some(wid.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            for wid in candidate_ids.into_iter() {
+                if retired >= max_to_retire {
+                    break;
+                }
+                workers.remove(&wid);
+                retired += 1;
+            }
+            Ok(retired)
+        }
+
+        fn release_idle_actors(
+            &self,
+            max_to_release: usize,
+            _force_all_when_cluster_idle: bool,
+        ) -> DaftResult<usize> {
+            self.retire_idle_workers(max_to_release)
         }
     }
 
