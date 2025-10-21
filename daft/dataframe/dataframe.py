@@ -1656,6 +1656,34 @@ class DataFrame:
         )
         return self.write_sink(sink)
 
+    def write_bigtable(
+        self,
+        project_id: str,
+        instance_id: str,
+        table_id: str,
+        row_key_column: str,
+        column_family_mappings: dict[str, str],
+        client_kwargs: Optional[dict[str, Any]] = None,
+        write_kwargs: Optional[dict[str, Any]] = None,
+    ) -> "DataFrame":
+        """Write a DataFrame into a Google Cloud BigTable table.
+
+        Args:
+            project_id: The Google Cloud project ID.
+            instance_id: The BigTable instance ID.
+            table_id: The table to write to.
+            row_key_column: Column name for the row key.
+            column_family_mappings: Mapping of column names to column families.
+            client_kwargs: Optional dictionary of arguments to pass to the BigTable Client constructor.
+            write_kwargs: Optional dictionary of arguments to pass to the BigTable MutationsBatcher.
+        """
+        from daft.io.bigtable.bigtable_data_sink import BigTableDataSink
+
+        sink = BigTableDataSink(
+            project_id, instance_id, table_id, row_key_column, column_family_mappings, client_kwargs, write_kwargs
+        )
+        return self.write_sink(sink)
+
     ###
     # DataFrame operations
     ###
