@@ -10,17 +10,10 @@ use pyo3::Python;
 /// executes it asynchronously with proper task locals scoping, and extracts
 /// the result into a Rust type.
 ///
-/// # Arguments
-/// * `coroutine_builder` - A closure that creates the Python coroutine
-/// * `task_locals` - The pyo3-async-runtimes task locals for scoping
-///
 /// # Example
-/// ```ignore
+/// ```
 /// let result: MyType = execute_python_coroutine(
-///     |py| {
-///         let coro = some_python_obj.call_method0(py, "async_method")?;
-///         Ok(coro.into_bound(py))
-///     },
+///     |py| some_python_obj.call_method0(py, "async_method"),
 ///     task_locals,
 /// ).await?;
 /// ```
