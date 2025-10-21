@@ -12,6 +12,7 @@ from daft.ai.utils import get_http_udf_options
 from daft.dependencies import np
 
 if TYPE_CHECKING:
+    from openai.types import EmbeddingModel
     from openai.types.create_embedding_response import CreateEmbeddingResponse
 
     from daft.ai.openai.typing import OpenAIProviderOptions
@@ -31,7 +32,7 @@ class _ModelProfile:
     dimensions: EmbeddingDimensions
 
 
-_models: dict[str, _ModelProfile] = {
+_models: dict[EmbeddingModel, _ModelProfile] = {
     "text-embedding-ada-002": _ModelProfile(
         dimensions=EmbeddingDimensions(
             size=1536,

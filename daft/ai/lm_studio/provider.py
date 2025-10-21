@@ -40,6 +40,6 @@ class LMStudioProvider(OpenAIProvider):
         return LMStudioTextEmbedderDescriptor(
             provider_name=self._name,
             provider_options=self._options,
-            model_name=(model or "text-embedding-3-small"),
+            model_name=(model or self.DEFAULT_TEXT_EMBEDDER),
             model_options=options,
         )
