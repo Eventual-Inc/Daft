@@ -57,6 +57,19 @@ class TextClassifierDescriptor(Descriptor[TextClassifier]):
 
 
 @runtime_checkable
+class ImageClassifier(Protocol):
+    """Protocol for image classification implementations."""
+
+    def classify_image(self, image: list[Image], labels: Label | list[Label]) -> list[Label]:
+        """Classifies a batch of image strings using the given label(s)."""
+        ...
+
+
+class ImageClassifierDescriptor(Descriptor[ImageClassifier]):
+    """Descriptor for a ImageClassifier implementation."""
+
+
+@runtime_checkable
 class Prompter(Protocol):
     """Protocol for prompt/chat completion implementations."""
 

@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from daft import Series
     from daft.ai.protocols import (
+        ImageClassifier,
+        ImageClassifierDescriptor,
         ImageEmbedder,
         ImageEmbedderDescriptor,
         Prompter,
@@ -56,6 +58,23 @@ class _TextClassificationExpression:
     def __call__(self, text_series: Series) -> list[Label]:
         text = text_series.to_pylist()
         return self.text_classifier.classify_text(text, labels=self.labels) if text else []
+
+
+class _ImageClassificationExpression:
+    """Function expression implementation for a TextClassifier protocol."""
+
+    image_classifier: ImageClassifier
+    labels: list[Label]
+
+    def __init__(self, image_classifier: ImageClassifierDescriptor, labels: list[Label]):
+        self.image_classifier = image_classifier.instantiate()
+        self.labels = labels
+
+    def __call__(self, image_series: Series) -> list[Label]:
+        from PIL import Image
+
+        images = [Image.fromarray(image) for image in image_series]
+        return self.image_classifier.classify_image(images, labels=self.labels) if images else []
 
 
 class _PrompterExpression:
