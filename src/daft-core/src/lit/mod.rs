@@ -232,8 +232,7 @@ impl Display for Literal {
             #[cfg(feature = "python")]
             Self::Python(pyobj) => write!(f, "PyObject({})", {
                 use pyo3::prelude::*;
-                Python::with_gil(|py| pyobj.0.call_method0(py, pyo3::intern!(py, "__str__")))
-                    .unwrap()
+                Python::attach(|py| pyobj.0.call_method0(py, pyo3::intern!(py, "__str__"))).unwrap()
             }),
             Self::Struct(entries) => {
                 write!(f, "Struct(")?;

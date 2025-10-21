@@ -31,7 +31,7 @@ See also [Window Functions API Docs](../api/window.md) in Daft Documentation.
 First, let's install the necessary python packages and import the libraries we'll use through this tutorial:
 
 * [**Daft**](https://www.daft.ai): Showcasing powerful window functions native in Daft, a unified data engine that leverage both a familiar Python DataFrame API and SQL
-* [**Pandas**](https://pola.rs/): While Daft handles our main data processing, we'll use Pandas to visualize results
+* [**Pandas**](https://pandas.pydata.org/): While Daft handles our main data processing, we'll use Pandas to visualize results
 * [**Matplotlib**](https://matplotlib.org/): For creating visualizations that help us understand the patterns in our data
 
 ```bash

@@ -38,7 +38,7 @@ impl AsyncFileWriter for LanceWriter {
         self.bytes_written += data
             .size_bytes()
             .expect("MicroPartition should have size_bytes for LanceWriter");
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let py_micropartition = py
                 .import(pyo3::intern!(py, "daft.recordbatch"))?
                 .getattr(pyo3::intern!(py, "MicroPartition"))?

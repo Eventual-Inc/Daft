@@ -52,7 +52,7 @@ impl PyFileFormatConfig {
 
     /// Get the underlying data source config.
     #[getter]
-    fn get_config(&self, py: Python) -> PyResult<PyObject> {
+    fn get_config(&self, py: Python) -> PyResult<Py<PyAny>> {
         match self.0.as_ref() {
             FileFormatConfig::Parquet(config) => config
                 .clone()

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_schema::{dtype::DataType, field::Field};
-use pyo3::PyObject;
+use pyo3::{Py, PyAny};
 
 use crate::{
     array::growable::{Growable, bitmap_growable::ArrowBitmapGrowable},
@@ -14,7 +14,7 @@ pub struct PythonGrowable<'a> {
     name: String,
     dtype: DataType,
     arr_refs: Vec<&'a PythonArray>,
-    buffer: Vec<Arc<PyObject>>,
+    buffer: Vec<Arc<Py<PyAny>>>,
     growable_validity: Option<ArrowBitmapGrowable<'a>>,
 }
 
@@ -57,7 +57,7 @@ impl Growable for PythonGrowable<'_> {
     }
 
     fn add_nulls(&mut self, additional: usize) {
-        let pynone = Arc::new(pyo3::Python::with_gil(|py| py.None()));
+        let pynone = Arc::new(pyo3::Python::attach(|py| py.None()));
         self.buffer.extend(std::iter::repeat_n(pynone, additional));
         if let Some(growable_validity) = &mut self.growable_validity {
             growable_validity.add_nulls(additional);

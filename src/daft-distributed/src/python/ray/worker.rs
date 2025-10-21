@@ -15,7 +15,7 @@ type ActiveTaskDetails = HashMap<TaskContext, TaskDetails>;
 #[derive(Debug, Clone)]
 pub(crate) struct RaySwordfishWorker {
     worker_id: WorkerId,
-    ray_worker_handle: Arc<PyObject>,
+    ray_worker_handle: Arc<Py<PyAny>>,
     num_cpus: f64,
     total_memory_bytes: usize,
     num_gpus: f64,
@@ -27,7 +27,7 @@ impl RaySwordfishWorker {
     #[new]
     pub fn new(
         worker_id: String,
-        ray_worker_handle: PyObject,
+        ray_worker_handle: pyo3::Py<pyo3::PyAny>,
         num_cpus: f64,
         num_gpus: f64,
         total_memory_bytes: usize,

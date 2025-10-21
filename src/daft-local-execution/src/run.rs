@@ -27,9 +27,7 @@ use {
     daft_context::python::PyDaftContext,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    pyo3::{
-        Bound, IntoPyObject, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python, pyclass, pymethods,
-    },
+    pyo3::{Bound, IntoPyObject, Py, PyAny, PyRef, PyRefMut, PyResult, Python, pyclass, pymethods},
 };
 
 use crate::{
@@ -68,7 +66,7 @@ fn get_global_runtime() -> &'static Handle {
 #[cfg(feature = "python")]
 #[pyclass]
 struct LocalPartitionIterator {
-    iter: Box<dyn Iterator<Item = DaftResult<PyObject>> + Send + Sync>,
+    iter: Box<dyn Iterator<Item = DaftResult<Py<PyAny>>> + Send + Sync>,
 }
 
 #[cfg(feature = "python")]
@@ -77,16 +75,16 @@ impl LocalPartitionIterator {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
-    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python) -> PyResult<Option<PyObject>> {
+    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python) -> PyResult<Option<Py<PyAny>>> {
         let iter = &mut slf.iter;
-        Ok(py.allow_threads(|| iter.next().transpose())?)
+        Ok(py.detach(|| iter.next().transpose())?)
     }
 }
 
 #[cfg(feature = "python")]
 #[pyclass(frozen)]
 struct LocalPartitionStream {
-    stream: Arc<Mutex<BoxStream<'static, DaftResult<PyObject>>>>,
+    stream: Arc<Mutex<BoxStream<'static, DaftResult<Py<PyAny>>>>>,
 }
 
 #[cfg(feature = "python")]
@@ -157,7 +155,7 @@ impl PyNativeExecutor {
             .collect();
         let psets = InMemoryPartitionSetCache::new(&native_psets);
         let daft_ctx: &DaftContext = daft_ctx.into();
-        let out = py.allow_threads(|| {
+        let out = py.detach(|| {
             self.executor
                 .run(
                     &local_physical_plan.plan,
@@ -170,7 +168,7 @@ impl PyNativeExecutor {
                 .map(|res| res.into_iter())
         })?;
         let iter = Box::new(out.map(|part| {
-            pyo3::Python::with_gil(|py| {
+            pyo3::Python::attach(|py| {
                 Ok(PyMicroPartition::from(part?)
                     .into_pyobject(py)?
                     .unbind()
@@ -207,7 +205,7 @@ impl PyNativeExecutor {
             })
             .collect();
         let psets = InMemoryPartitionSetCache::new(&native_psets);
-        let res = py.allow_threads(|| {
+        let res = py.detach(|| {
             self.executor.run(
                 &local_physical_plan.plan,
                 &psets,
@@ -218,7 +216,7 @@ impl PyNativeExecutor {
             )
         })?;
         let stream = Box::pin(res.into_stream().map(|part| {
-            pyo3::Python::with_gil(|py| {
+            pyo3::Python::attach(|py| {
                 Ok(PyMicroPartition::from(part?)
                     .into_pyobject(py)?
                     .unbind()

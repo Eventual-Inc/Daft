@@ -620,7 +620,7 @@ class Series:
         num_hashes: int,
         ngram_size: int,
         seed: int = 1,
-        hash_function: Literal["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
+        hash_function: Literal["murmurhash3", "xxhash", "xxhash3_64", "xxhash64", "xxhash32", "sha1"] = "murmurhash3",
     ) -> Series:
         """Runs the MinHash algorithm on the series.
 
@@ -634,7 +634,7 @@ class Series:
             num_hashes: The number of hash permutations to compute.
             ngram_size: The number of tokens in each shingle/ngram.
             seed (optional): Seed used for generating permutations and the initial string hashes. Defaults to 1.
-            hash_function (optional): Hash function to use for initial string hashing. One of "murmur3", "xxhash", or "sha1". Defaults to "murmur3".
+            hash_function (optional): Hash function to use for initial string hashing. One of "murmur3", "xxhash3_64" (or alias "xxhash"), "xxhash64", "xxhash32", or "sha1". Defaults to "murmur3".
         """
         if not isinstance(num_hashes, int):
             raise ValueError(f"expected an integer for num_hashes but got {type(num_hashes)}")
@@ -644,11 +644,17 @@ class Series:
             raise ValueError(f"expected an integer or None for seed but got {type(seed)}")
         if not isinstance(hash_function, str):
             raise ValueError(f"expected str for hash_function but got {type(hash_function)}")
-        assert hash_function in [
-            "murmurhash3",
-            "xxhash",
-            "sha1",
-        ], f"hash_function must be one of 'murmurhash3', 'xxhash', 'sha1', got {hash_function}"
+        assert (
+            hash_function
+            in [
+                "murmurhash3",
+                "xxhash",
+                "xxhash3_64",
+                "xxhash64",
+                "xxhash32",
+                "sha1",
+            ]
+        ), f"hash_function must be one of 'murmurhash3', 'xxhash', 'xxhash3_64', 'xxhash64', 'xxhash32', 'sha1', got {hash_function}"
 
         return Series._from_pyseries(self._series.minhash(num_hashes, ngram_size, seed, hash_function))
 
@@ -836,7 +842,7 @@ class SeriesStringNamespace(SeriesNamespace):
             regex: DEPRECATED. Use regexp_split() instead for regex patterns.
 
         Returns:
-            Series: A List[Utf8] series containing the string splits for each string.
+            Series: A List[String] series containing the string splits for each string.
         """
         if regex:
             import warnings
@@ -856,7 +862,7 @@ class SeriesStringNamespace(SeriesNamespace):
             pattern: The regex pattern on which each string should be split.
 
         Returns:
-            Series: A List[Utf8] series containing the string splits for each string.
+            Series: A List[String] series containing the string splits for each string.
         """
         return self._eval_expressions("regexp_split", pattern)
 

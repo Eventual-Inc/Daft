@@ -106,7 +106,7 @@ export default function QueryList() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 max-w-6xl mx-auto">
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
