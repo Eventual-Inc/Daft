@@ -1165,7 +1165,7 @@ dependencies = [
 [[package]]
 name = "azure_core"
 version = "0.21.0"
-source = "git+https://github.com/Eventual-Inc/azure-sdk-for-rust?tag=test-with-panic-2#09c9c71e79f12c874b28a4eb123ff2d1bf511601"
+source = "git+https://github.com/Eventual-Inc/azure-sdk-for-rust?tag=test-with-panic-3#1442eee47198f078f8fe4e04f36162b0b1de6d05"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1194,7 +1194,7 @@ dependencies = [
 [[package]]
 name = "azure_identity"
 version = "0.21.0"
-source = "git+https://github.com/Eventual-Inc/azure-sdk-for-rust?tag=test-with-panic-2#09c9c71e79f12c874b28a4eb123ff2d1bf511601"
+source = "git+https://github.com/Eventual-Inc/azure-sdk-for-rust?tag=test-with-panic-3#1442eee47198f078f8fe4e04f36162b0b1de6d05"
 dependencies = [
  "async-lock",
  "async-process",
@@ -1213,7 +1213,7 @@ dependencies = [
 [[package]]
 name = "azure_storage"
 version = "0.21.0"
-source = "git+https://github.com/Eventual-Inc/azure-sdk-for-rust?tag=test-with-panic-2#09c9c71e79f12c874b28a4eb123ff2d1bf511601"
+source = "git+https://github.com/Eventual-Inc/azure-sdk-for-rust?tag=test-with-panic-3#1442eee47198f078f8fe4e04f36162b0b1de6d05"
 dependencies = [
  "RustyXML",
  "async-lock",
@@ -1231,7 +1231,7 @@ dependencies = [
 [[package]]
 name = "azure_storage_blobs"
 version = "0.21.0"
-source = "git+https://github.com/Eventual-Inc/azure-sdk-for-rust?tag=test-with-panic-2#09c9c71e79f12c874b28a4eb123ff2d1bf511601"
+source = "git+https://github.com/Eventual-Inc/azure-sdk-for-rust?tag=test-with-panic-3#1442eee47198f078f8fe4e04f36162b0b1de6d05"
 dependencies = [
  "RustyXML",
  "azure_core",
@@ -1251,7 +1251,7 @@ dependencies = [
 [[package]]
 name = "azure_svc_blobstorage"
 version = "0.21.0"
-source = "git+https://github.com/Eventual-Inc/azure-sdk-for-rust?tag=test-with-panic-2#09c9c71e79f12c874b28a4eb123ff2d1bf511601"
+source = "git+https://github.com/Eventual-Inc/azure-sdk-for-rust?tag=test-with-panic-3#1442eee47198f078f8fe4e04f36162b0b1de6d05"
 dependencies = [
  "azure_core",
  "bytes",
