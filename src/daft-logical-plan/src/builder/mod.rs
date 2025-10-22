@@ -464,7 +464,7 @@ impl LogicalPlanBuilder {
     /// Creates a logical scan operator by collapsing the plan to just its schema.
     #[cfg(feature = "python")]
     pub fn describe(&self) -> DaftResult<Self> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             // schema = self.schema()
             let schema = py
                 .import(intern!(py, "daft.logical.schema"))?
@@ -727,8 +727,8 @@ impl LogicalPlanBuilder {
         table_location: String,
         partition_spec_id: i64,
         partition_cols: Vec<ExprRef>,
-        iceberg_schema: Arc<PyObject>,
-        iceberg_properties: Arc<PyObject>,
+        iceberg_schema: Arc<Py<PyAny>>,
+        iceberg_properties: Arc<Py<PyAny>>,
         io_config: Option<IOConfig>,
         catalog_columns: Vec<String>,
     ) -> DaftResult<Self> {
@@ -797,7 +797,7 @@ impl LogicalPlanBuilder {
         columns_name: Vec<String>,
         mode: String,
         io_config: Option<IOConfig>,
-        kwargs: Arc<PyObject>,
+        kwargs: Arc<Py<PyAny>>,
     ) -> DaftResult<Self> {
         use crate::sink_info::LanceCatalogInfo;
 
@@ -817,7 +817,7 @@ impl LogicalPlanBuilder {
     }
 
     #[cfg(feature = "python")]
-    pub fn datasink_write(&self, name: String, sink: Arc<PyObject>) -> DaftResult<Self> {
+    pub fn datasink_write(&self, name: String, sink: Arc<Py<PyAny>>) -> DaftResult<Self> {
         use crate::sink_info::DataSinkInfo;
 
         let sink_info = SinkInfo::DataSinkInfo(DataSinkInfo { name, sink });
@@ -1051,7 +1051,7 @@ impl PyLogicalPlanBuilder {
     #[staticmethod]
     pub fn in_memory_scan(
         partition_key: &str,
-        cache_entry: PyObject,
+        cache_entry: pyo3::Py<pyo3::PyAny>,
         schema: PySchema,
         num_partitions: usize,
         size_bytes: usize,
@@ -1390,8 +1390,8 @@ impl PyLogicalPlanBuilder {
         table_location: String,
         partition_spec_id: i64,
         partition_cols: Vec<PyExpr>,
-        iceberg_schema: PyObject,
-        iceberg_properties: PyObject,
+        iceberg_schema: pyo3::Py<pyo3::PyAny>,
+        iceberg_properties: pyo3::Py<pyo3::PyAny>,
         catalog_columns: Vec<String>,
         io_config: Option<common_io_config::python::IOConfig>,
     ) -> PyResult<Self> {
@@ -1458,7 +1458,7 @@ impl PyLogicalPlanBuilder {
         columns_name: Vec<String>,
         mode: String,
         io_config: Option<common_io_config::python::IOConfig>,
-        kwargs: Option<PyObject>,
+        kwargs: Option<pyo3::Py<pyo3::PyAny>>,
     ) -> PyResult<Self> {
         let kwargs = Arc::new(kwargs.unwrap_or_else(|| py.None()));
         Ok(self
@@ -1474,7 +1474,7 @@ impl PyLogicalPlanBuilder {
     }
 
     #[pyo3(signature = (name, sink))]
-    pub fn datasink_write(&self, name: String, sink: PyObject) -> PyResult<Self> {
+    pub fn datasink_write(&self, name: String, sink: pyo3::Py<pyo3::PyAny>) -> PyResult<Self> {
         Ok(self.builder.datasink_write(name, Arc::new(sink))?.into())
     }
 
@@ -1484,7 +1484,7 @@ impl PyLogicalPlanBuilder {
 
     /// Optimize the underlying logical plan, returning a new plan builder containing the optimized plan.
     pub fn optimize(&self, py: Python) -> PyResult<Self> {
-        py.allow_threads(|| Ok(self.builder.optimize()?.into()))
+        py.detach(|| Ok(self.builder.optimize()?.into()))
     }
 
     pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {

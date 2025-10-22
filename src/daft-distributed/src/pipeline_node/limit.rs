@@ -141,6 +141,7 @@ impl LimitNode {
                     make_new_task_from_materialized_outputs(
                         TaskContext::from((&self.context, task_id_counter.next())),
                         vec![next_input],
+                        self.config.schema.clone(),
                         &(self.clone() as Arc<dyn PipelineNodeImpl>),
                         move |input| {
                             if skip_num_rows > 0 {
@@ -162,6 +163,7 @@ impl LimitNode {
                     let task = make_new_task_from_materialized_outputs(
                         TaskContext::from((&self.context, task_id_counter.next())),
                         vec![next_input],
+                        self.config.schema.clone(),
                         &(self.clone() as Arc<dyn PipelineNodeImpl>),
                         move |input| {
                             LocalPhysicalPlan::limit(

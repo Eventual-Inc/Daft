@@ -8,7 +8,7 @@ use common_ndarray::NumpyArray;
 use daft_schema::{
     dtype::DataType,
     prelude::{ImageMode, TimeUnit},
-    python::PyTimeUnit,
+    python::{PyDataType, PyTimeUnit},
 };
 use indexmap::{IndexMap, indexmap};
 use pyo3::{
@@ -331,10 +331,17 @@ impl Literal {
             }
         } else if PyTuple::type_check(ob) {
             pytuple_to_struct_lit(ob, dtype)?
+        } else if isinstance!(ob, "pydantic", "BaseModel") {
+            pydantic_model_to_struct_lit(ob, dtype)?
         } else if isinstance!(ob, "decimal", "Decimal") {
             pydecimal_to_decimal_lit(ob)?
-        } else if isinstance!(ob, "numpy", "ndarray") {
-            numpy_array_to_tensor_lit(ob)?
+        } else if isinstance!(ob, "numpy", "ndarray")
+            || isinstance!(ob, "torch", "Tensor")
+            || isinstance!(ob, "tensorflow", "Tensor")
+            || isinstance!(ob, "jax", "Array")
+            || isinstance!(ob, "cupy", "ndarray")
+        {
+            numpy_array_like_to_tensor_lit(ob)?
         } else if isinstance!(ob, "numpy", "bool_") {
             Self::Boolean(extract_numpy_scalar(ob)?)
         } else if isinstance!(ob, "numpy", "int8") {
@@ -490,7 +497,7 @@ fn pydelta_to_duration_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
 
 fn pylist_to_list_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResult<Literal> {
     let list = ob.downcast::<PyList>()?;
-    let child_dtype = dtype.and_then(|t| match t.to_physical() {
+    let child_dtype = dtype.and_then(|t| match t {
         DataType::List(child) | DataType::FixedSizeList(child, _) => {
             Some(child.as_ref().clone().into())
         }
@@ -501,8 +508,7 @@ fn pylist_to_list_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResult<L
 }
 
 fn pydict_to_struct_lit(dict: &Bound<PyDict>, dtype: Option<&DataType>) -> PyResult<Literal> {
-    let physical = dtype.map(DataType::to_physical);
-    let field_dtypes = if let Some(DataType::Struct(fields)) = &physical {
+    let field_dtypes = if let Some(DataType::Struct(fields)) = dtype {
         fields.iter().map(|f| (&f.name, &f.dtype)).collect()
     } else {
         HashMap::new()
@@ -573,6 +579,30 @@ fn pytuple_to_struct_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResul
     }
 }
 
+fn pydantic_model_to_struct_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResult<Literal> {
+    let py = ob.py();
+
+    // get richer dtype info from object type if dtype not specified
+    let dtype = if let Some(dtype) = dtype {
+        dtype.clone()
+    } else {
+        let datatype_cls = py
+            .import(intern!(py, "daft.datatype"))?
+            .getattr(intern!(py, "DataType"))?;
+        let py_dtype =
+            datatype_cls.call_method1(intern!(py, "infer_from_type"), (ob.get_type(),))?;
+        py_dtype
+            .getattr(intern!(py, "_dtype"))?
+            .extract::<PyDataType>()?
+            .dtype
+    };
+
+    let dict = ob.call_method0(intern!(py, "model_dump"))?;
+    let dict = dict.downcast::<PyDict>()?;
+
+    pydict_to_struct_lit(dict, Some(&dtype))
+}
+
 fn pydecimal_to_decimal_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
     // call `format(ob, 'f')` to force decimal notation, this handles scientific notation.
     let py = ob.py();
@@ -611,15 +641,18 @@ fn pydecimal_to_decimal_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
     Ok(Literal::Decimal(val, precision, scale))
 }
 
-fn numpy_array_to_tensor_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
+fn numpy_array_like_to_tensor_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
+    let py = ob.py();
+    let np_asarray = py
+        .import(intern!(py, "numpy"))?
+        .getattr(intern!(py, "asarray"))?;
+    let ob = np_asarray.call1((ob,))?;
+
     let arr = if let Ok(arr) = ob.extract::<NumpyArray>() {
         arr
     } else {
         // if we do not support the element type, fall back to Python.
         // Series::from_ndarray_flattened will then call Literal::from_pyobj to try to convert each element.
-        let py = ob.py();
-
-        // cast elements to Python object (character code "O")
         let object_array = ob
             .call_method1(intern!(py, "astype"), (intern!(py, "O"),))?
             .extract()?;

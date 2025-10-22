@@ -29,7 +29,7 @@ fn invalid_unity_path(path: &str) -> crate::Error {
 
 pub struct UnitySource {
     /// A `daft.unity_catalog.UnityCatalog` instance
-    unity_catalog: PyObject,
+    unity_catalog: pyo3::Py<pyo3::PyAny>,
     /// map of volume name to io client and storage location
     cached_sources: tokio::sync::RwLock<HashMap<String, Arc<ClientAndLocation>>>,
 }
@@ -50,7 +50,7 @@ impl UnitySource {
             });
         };
 
-        let unity_catalog = Python::with_gil(|py| {
+        let unity_catalog = Python::attach(|py| {
             Ok::<_, PyErr>(
                 py.import(intern!(py, "daft.unity_catalog"))?
                     .getattr(intern!(py, "UnityCatalog"))?
@@ -86,7 +86,7 @@ impl UnitySource {
             return Ok(client.clone());
         }
 
-        let (io_config, storage_location) = Python::with_gil(|py| {
+        let (io_config, storage_location) = Python::attach(|py| {
             let volume = self
                 .unity_catalog
                 .bind(py)

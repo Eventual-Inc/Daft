@@ -18,6 +18,7 @@ __all__ = [
     "EmbeddingDimensions",
     "Image",
     "Label",
+    "UDFOptions",
 ]
 
 
@@ -43,6 +44,11 @@ class Descriptor(ABC, Generic[T]):
     def instantiate(self) -> T:
         """Instantiates and returns a concrete model instance corresponding to this descriptor."""
 
+    @abstractmethod
+    def get_udf_options(self) -> UDFOptions:
+        """Returns the UDF options for this descriptor."""
+        ...
+
 
 # temp definition to defer complexity of a more generic embedding type to later PRs
 if TYPE_CHECKING:
@@ -62,6 +68,14 @@ class EmbeddingDimensions:
 
     def as_dtype(self) -> DataType:
         return DataType.embedding(dtype=self.dtype, size=self.size)
+
+
+@dataclass
+class UDFOptions:
+    """Options for configuring UDF execution."""
+
+    concurrency: int | None = None
+    num_gpus: int | None = None
 
 
 Label = str

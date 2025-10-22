@@ -15,9 +15,8 @@ type ActiveTaskDetails = HashMap<TaskContext, TaskDetails>;
 #[derive(Debug, Clone)]
 pub(crate) struct RaySwordfishWorker {
     worker_id: WorkerId,
-    ray_worker_handle: Arc<PyObject>,
+    ray_worker_handle: Arc<Py<PyAny>>,
     num_cpus: f64,
-    #[allow(dead_code)]
     total_memory_bytes: usize,
     num_gpus: f64,
     active_task_details: ActiveTaskDetails,
@@ -28,7 +27,7 @@ impl RaySwordfishWorker {
     #[new]
     pub fn new(
         worker_id: String,
-        ray_worker_handle: PyObject,
+        ray_worker_handle: pyo3::Py<pyo3::PyAny>,
         num_cpus: f64,
         num_gpus: f64,
         total_memory_bytes: usize,
@@ -45,6 +44,10 @@ impl RaySwordfishWorker {
 }
 
 impl RaySwordfishWorker {
+    pub fn total_memory_bytes(&self) -> usize {
+        self.total_memory_bytes
+    }
+
     pub fn mark_task_finished(&mut self, task_context: &TaskContext) {
         self.active_task_details.remove(task_context);
     }

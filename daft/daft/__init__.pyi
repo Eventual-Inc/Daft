@@ -1,8 +1,14 @@
 import builtins
 import datetime
+import sys
 from collections.abc import AsyncIterator, Iterator
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar
+
+if sys.version_info < (3, 10):
+    from typing_extensions import Concatenate
+else:
+    from typing import Concatenate
 
 from daft.dataframe.display import MermaidOptions
 from daft.execution import physical_plan
@@ -25,6 +31,7 @@ if TYPE_CHECKING:
     from daft.expressions.visitor import ExpressionVisitor
     from daft.runners.runner import Runner
     from daft.subscribers import Subscriber
+    from daft.udf.udf_v2 import ClsBase
 
 R = TypeVar("R")
 
@@ -512,8 +519,8 @@ class S3Config:
         >>> # For S3-compatible services (e.g. Volcengine TOS)
         >>> io_config = IOConfig(
         ...     s3=S3Config(
-        ...         endpoint_url="tos-s3-{region}.ivolces.com",
-        ...         region_name="cn-beijing",
+        ...         endpoint_url="https://tos-s3-{region}.ivolces.com",
+        ...         region_name="{region}",
         ...         force_virtual_addressing=True,
         ...         verify_ssl=True,
         ...         key_id="your-access-key-id",
@@ -857,6 +864,7 @@ class ScanTask:
         size_bytes: int | None,
         pushdowns: PyPushdowns | None,
         stats: PyRecordBatch | None,
+        source_type: str | None = None,
     ) -> ScanTask:
         """Create a Python factory function Scan Task."""
         ...
@@ -1341,9 +1349,25 @@ def udf(
 ) -> PyExpr: ...
 def row_wise_udf(
     name: str,
-    inner: Callable[..., Any],
+    cls: ClsBase[Any],
+    method: Callable[Concatenate[Any, ...], Any],
+    is_async: bool,
     return_dtype: PyDataType,
+    gpus: int,
     use_process: bool | None,
+    max_concurrency: int | None,
+    original_args: tuple[tuple[Any, ...], dict[str, Any]],
+    expr_args: list[PyExpr],
+) -> PyExpr: ...
+def batch_udf(
+    name: str,
+    cls: ClsBase[Any],
+    method: Callable[Concatenate[Any, ...], Any],
+    return_dtype: PyDataType,
+    gpus: int,
+    use_process: bool | None,
+    max_concurrency: int | None,
+    batch_size: int | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
 ) -> PyExpr: ...
@@ -1435,7 +1459,7 @@ class PySeries:
         num_hashes: int,
         ngram_size: int,
         seed: int = 1,
-        hash_function: Literal["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
+        hash_function: Literal["murmurhash3", "xxhash", "xxhash3_64", "xxhash64", "xxhash32", "sha1"] = "murmurhash3",
     ) -> PySeries: ...
     def __invert__(self) -> PySeries: ...
     def count(self, mode: CountMode) -> PySeries: ...
@@ -1974,7 +1998,6 @@ class PyDaftExecutionConfig:
         max_sources_per_scan_task: int | None = None,
         broadcast_join_size_bytes_threshold: int | None = None,
         parquet_split_row_groups_max_files: int | None = None,
-        sort_merge_join_sort_with_aligned_boundaries: bool | None = None,
         hash_join_partition_size_leniency: float | None = None,
         sample_size_for_sort: int | None = None,
         num_preview_rows: int | None = None,
@@ -2008,8 +2031,6 @@ class PyDaftExecutionConfig:
     def max_sources_per_scan_task(self) -> int: ...
     @property
     def broadcast_join_size_bytes_threshold(self) -> int: ...
-    @property
-    def sort_merge_join_sort_with_aligned_boundaries(self) -> bool: ...
     @property
     def hash_join_partition_size_leniency(self) -> float: ...
     @property
@@ -2083,6 +2104,12 @@ class PyNodeInfo:
     node_category: str
     context: dict[str, str]
 
+class PyQueryMetadata:
+    output_schema: PySchema
+    unoptimized_plan: str
+
+    def __init__(self, output_schema: PySchema, unoptimized_plan: str) -> None: ...
+
 class PyDaftContext:
     def __init__(self) -> None: ...
 
@@ -2097,7 +2124,7 @@ class PyDaftContext:
     # Subscriber methods
     def attach_subscriber(self, alias: str, subscriber: Subscriber) -> None: ...
     def detach_subscriber(self, alias: str) -> None: ...
-    def notify_query_start(self, query_id: str, unoptimized_plan: str) -> None: ...
+    def notify_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None: ...
     def notify_query_end(self, query_id: str) -> None: ...
     def notify_result_out(self, query_id: str, result: PartitionT) -> None: ...
     def notify_optimization_start(self, query_id: str) -> None: ...
@@ -2275,6 +2302,7 @@ class PyDaftFile:
     def closed(self) -> bool: ...
     def _supports_range_requests(self) -> bool: ...
     def size(self) -> int: ...
+    def guess_mime_type(self) -> str | None: ...
     @staticmethod
     def _from_file_reference(ref: PyFileReference) -> PyDaftFile: ...
     def __enter__(self) -> PyDaftFile: ...

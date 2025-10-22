@@ -195,11 +195,11 @@ pub fn list_(items: Vec<PyExpr>) -> PyExpr {
 ))]
 pub fn udf(
     name: &str,
-    inner: PyObject,
-    bound_args: PyObject,
+    inner: Py<PyAny>,
+    bound_args: Py<PyAny>,
     expressions: Vec<PyExpr>,
     return_dtype: PyDataType,
-    init_args: PyObject,
+    init_args: Py<PyAny>,
     resource_request: Option<ResourceRequest>,
     batch_size: Option<usize>,
     concurrency: Option<usize>,
@@ -234,24 +234,64 @@ pub fn udf(
 }
 
 #[pyfunction]
+#[allow(clippy::too_many_arguments)]
 pub fn row_wise_udf(
     name: &str,
-    inner: PyObject,
+    cls: Py<PyAny>,
+    method: Py<PyAny>,
+    is_async: bool,
     return_dtype: PyDataType,
+    gpus: usize,
     use_process: Option<bool>,
-    original_args: PyObject,
+    max_concurrency: Option<usize>,
+    original_args: Py<PyAny>,
     expr_args: Vec<PyExpr>,
 ) -> PyExpr {
-    use crate::python_udf::row_wise_udf;
-
     let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
 
     PyExpr {
-        expr: row_wise_udf(
+        expr: crate::python_udf::row_wise_udf(
             name,
-            inner.into(),
+            cls.into(),
+            method.into(),
+            is_async,
             return_dtype.into(),
+            gpus,
             use_process,
+            max_concurrency,
+            original_args.into(),
+            args,
+        )
+        .into(),
+    }
+}
+
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+pub fn batch_udf(
+    name: &str,
+    cls: Py<PyAny>,
+    method: Py<PyAny>,
+    return_dtype: PyDataType,
+    gpus: usize,
+    use_process: Option<bool>,
+    max_concurrency: Option<usize>,
+    batch_size: Option<usize>,
+    original_args: Py<PyAny>,
+    expr_args: Vec<PyExpr>,
+) -> PyExpr {
+    let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
+
+    PyExpr {
+        expr: crate::python_udf::batch_udf(
+            name,
+            cls.into(),
+            method.into(),
+            return_dtype.into(),
+            gpus,
+            use_process,
+            max_concurrency,
+            batch_size,
             original_args.into(),
             args,
         )
@@ -294,7 +334,7 @@ pub enum ApproxPercentileInput {
 impl PyExpr {
     /// converts the pyexpr into a `daft.Expression` python instance
     /// `daft.Expression._from_pyexpr(self)`
-    pub fn into_expr_cls(self, py: Python) -> PyResult<PyObject> {
+    pub fn into_expr_cls(self, py: Python) -> PyResult<Py<PyAny>> {
         let daft = py.import("daft")?;
         let expr_cls = daft.getattr("Expression")?;
         let expr = expr_cls.call_method1("_from_pyexpr", (self,))?;

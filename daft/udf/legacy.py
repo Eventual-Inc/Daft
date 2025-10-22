@@ -6,6 +6,8 @@ import inspect
 import sys
 from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
 
+from .udf_v2 import check_serializable
+
 if sys.version_info >= (3, 10):
     from typing import TypeAlias
 else:
@@ -18,7 +20,6 @@ from daft.dependencies import np, pa
 from daft.errors import UDFException
 from daft.expressions import Expression
 from daft.series import Series
-from daft.udf._internal import check_fn_serializable
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -279,7 +280,11 @@ class UDF:
     def __call__(self, *args: Any, **kwargs: Any) -> Expression:
         self._validate_init_args()
 
-        check_fn_serializable(self.inner, "@daft.udf")
+        check_serializable(
+            self.inner,
+            "`@daft.udf` requires that the UDF is serializable. Please double-check that the function does not use any global variables.\n\nIf it does, please use the legacy `@daft.udf` with a class UDF instead and initialize the global in the `__init__` method.",
+        )
+
         bound_args = self._bind_args(*args, **kwargs)
         expressions = list(bound_args.expressions().values())
 
@@ -430,17 +435,17 @@ class UDF:
             >>> df = df.with_column("bar_world", MyUdfWithInit(df["foo"]))
             >>> df = df.with_column("bar_custom", MyUdfWithInit_CustomInitArgs(df["foo"]))
             >>> df.show()
-            ╭───────┬─────────────┬─────────────────────╮
-            │ foo   ┆ bar_world   ┆ bar_custom          │
-            │ ---   ┆ ---         ┆ ---                 │
-            │ Utf8  ┆ Utf8        ┆ Utf8                │
-            ╞═══════╪═════════════╪═════════════════════╡
-            │ hello ┆ hello world ┆ hello my old friend │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ hello ┆ hello world ┆ hello my old friend │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ hello ┆ hello world ┆ hello my old friend │
-            ╰───────┴─────────────┴─────────────────────╯
+            ╭────────┬─────────────┬─────────────────────╮
+            │ foo    ┆ bar_world   ┆ bar_custom          │
+            │ ---    ┆ ---         ┆ ---                 │
+            │ String ┆ String      ┆ String              │
+            ╞════════╪═════════════╪═════════════════════╡
+            │ hello  ┆ hello world ┆ hello my old friend │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ hello  ┆ hello world ┆ hello my old friend │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ hello  ┆ hello world ┆ hello my old friend │
+            ╰────────┴─────────────┴─────────────────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """

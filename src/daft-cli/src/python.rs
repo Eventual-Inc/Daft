@@ -1,6 +1,8 @@
+use std::str::FromStr;
+
 use clap::{Args, Parser, Subcommand, arg};
 use pyo3::prelude::*;
-use tracing_subscriber::{self, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{self, filter::Directive, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, Args)]
 struct DashboardArgs {
@@ -30,11 +32,16 @@ struct Cli {
 fn run_dashboard(py: Python, args: DashboardArgs) {
     println!("🚀 Launching the Daft Dashboard!");
 
-    let filter = if args.verbose { "DEBUG" } else { "ERROR" };
+    let filter = Directive::from_str(if args.verbose { "INFO" } else { "ERROR" })
+        .expect("Failed to parse tracing filter");
 
     // Set the subscriber for the detached run
     tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::new(filter))
+        .with(
+            tracing_subscriber::EnvFilter::builder()
+                .with_default_directive(filter)
+                .from_env_lossy(),
+        )
         .with(tracing_subscriber::fmt::layer())
         .init();
 
@@ -46,9 +53,25 @@ fn run_dashboard(py: Python, args: DashboardArgs) {
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
     runtime.spawn(async move {
         println!(
-            "✨ View the dashboard at http://{}:{}. Press Ctrl+C to shutdown",
-            daft_dashboard::DEFAULT_SERVER_ADDR,
-            args.port
+            "{}  To get started, run your Daft script with env `{}`",
+            console::style("█").magenta(),
+            console::style(format!(
+                "DAFT_DASHBOARD_URL=\"http://{}:{}\" python ...",
+                daft_dashboard::DEFAULT_SERVER_ADDR,
+                args.port
+            ))
+            .bold(),
+        );
+        println!(
+            "✨ View the dashboard at {}. Press Ctrl+C to shutdown",
+            console::style(format!(
+                "http://{}:{}",
+                daft_dashboard::DEFAULT_SERVER_ADDR,
+                args.port
+            ))
+            .bold()
+            .magenta()
+            .underlined(),
         );
         daft_dashboard::launch_server(args.port, async move { shutdown_rx.await.unwrap() })
             .await
@@ -61,8 +84,13 @@ fn run_dashboard(py: Python, args: DashboardArgs) {
             shutdown_tx
                 .send(())
                 .expect("Failed to shutdown Daft Dashboard");
-            break;
+            return;
         }
+        // Necessary to allow other threads to acquire the GIL
+        // Such as for Python array deserialization
+        py.detach(|| {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        });
     }
 }
 

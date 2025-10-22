@@ -40,9 +40,9 @@ impl PyFileReference {
 
     fn __exit__(
         &mut self,
-        _exc_type: Option<PyObject>,
-        _exc_value: Option<PyObject>,
-        _traceback: Option<PyObject>,
+        _exc_type: Option<Py<PyAny>>,
+        _exc_value: Option<Py<PyAny>>,
+        _traceback: Option<Py<PyAny>>,
     ) -> PyResult<()> {
         Ok(())
     }
@@ -110,7 +110,7 @@ impl PyDaftFile {
     }
 
     #[pyo3(signature=(size=-1))]
-    fn read(&mut self, size: isize) -> PyResult<Option<Vec<u8>>> {
+    fn read(&mut self, size: isize) -> PyResult<Vec<u8>> {
         self.check_context()?;
         let cursor = self
             .inner
@@ -127,12 +127,12 @@ impl PyDaftFile {
             buffer.truncate(bytes_read);
             self.inner.position = bytes_read;
 
-            Ok(Some(buffer))
+            Ok(buffer)
         } else {
             let mut buffer = vec![0u8; size as usize];
 
             if self.inner.position == cursor.size() {
-                return Ok(None);
+                return Ok(vec![]);
             }
 
             let bytes_read = cursor
@@ -142,7 +142,7 @@ impl PyDaftFile {
             buffer.truncate(bytes_read);
             self.position += bytes_read;
 
-            Ok(Some(buffer))
+            Ok(buffer)
         }
     }
 
@@ -198,9 +198,9 @@ impl PyDaftFile {
 
     fn __exit__(
         &mut self,
-        _exc_type: Option<PyObject>,
-        _exc_value: Option<PyObject>,
-        _traceback: Option<PyObject>,
+        _exc_type: Option<Py<PyAny>>,
+        _exc_value: Option<Py<PyAny>>,
+        _traceback: Option<Py<PyAny>>,
     ) -> PyResult<()> {
         self.inside_context.store(false, Ordering::SeqCst);
         self.close()
@@ -242,6 +242,10 @@ impl PyDaftFile {
     #[pyo3(name = "size")]
     fn py_size(&mut self) -> PyResult<usize> {
         Ok(self.size()?)
+    }
+
+    fn guess_mime_type(&mut self) -> Option<String> {
+        self.cursor.as_mut().and_then(|c| c.mime_type())
     }
 }
 

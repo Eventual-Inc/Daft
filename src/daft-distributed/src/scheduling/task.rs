@@ -15,7 +15,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub(crate) struct TaskResourceRequest {
-    resource_request: ResourceRequest,
+    pub resource_request: ResourceRequest,
 }
 
 impl TaskResourceRequest {
@@ -31,7 +31,6 @@ impl TaskResourceRequest {
         self.resource_request.num_gpus().unwrap_or(0.0)
     }
 
-    #[allow(dead_code)]
     pub fn memory_bytes(&self) -> usize {
         self.resource_request.memory_bytes().unwrap_or(0)
     }
@@ -163,11 +162,7 @@ impl std::fmt::Debug for TaskDetails {
 pub(crate) enum SchedulingStrategy {
     Spread,
     // TODO: In the future if we run multiple workers on the same node, we can have a NodeAffinity strategy or a multi-worker affinity strategy
-    #[allow(dead_code)]
-    WorkerAffinity {
-        worker_id: WorkerId,
-        soft: bool,
-    },
+    WorkerAffinity { worker_id: WorkerId, soft: bool },
 }
 
 #[allow(clippy::struct_field_names)]

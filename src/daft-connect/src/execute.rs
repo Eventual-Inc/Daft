@@ -38,7 +38,7 @@ impl ConnectSession {
     ) -> ConnectResult<BoxStream<'_, DaftResult<Arc<MicroPartition>>>> {
         let runner = daft_runners::get_or_create_runner()?;
         let result_set = tokio::task::spawn_blocking(move || {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 Ok::<_, DaftError>(runner.run_iter_tables(py, lp, None)?.collect::<Vec<_>>())
             })
         })

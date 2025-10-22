@@ -117,10 +117,14 @@ kubectl get pods -l app.kubernetes.io/instance=my-release
 ### Access Ray Dashboard (Distributed Mode)
 
 ```bash
-# Port forward dashboard
-kubectl port-forward service/my-release-quickstart-head 8265:8265
+# Port forward to access both Ray Dashboard and Grafana
+kubectl port-forward service/my-release-quickstart-head 8265:8265 3000:3000
 
 # Open http://localhost:8265 in browser
+# Grafana panels will be embedded directly in the Ray Dashboard
+
+# Optionally open http://localhost:3000 to access Grafana directly
+# Default credentials: admin/admin
 ```
 
 ### Check Ray Cluster Status (Distributed Mode)

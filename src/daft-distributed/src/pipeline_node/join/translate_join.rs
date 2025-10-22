@@ -12,7 +12,7 @@ use daft_schema::schema::SchemaRef;
 
 use crate::pipeline_node::{
     DistributedPipelineNode, NodeID,
-    join::{BroadcastJoinNode, CrossJoinNode, HashJoinNode},
+    join::{BroadcastJoinNode, CrossJoinNode, HashJoinNode, SortMergeJoinNode},
     translate::LogicalPlanToPipelineNodeTranslator,
 };
 
@@ -215,6 +215,38 @@ impl LogicalPlanToPipelineNodeTranslator {
         .into_node())
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn gen_sort_merge_join_node(
+        &mut self,
+        logical_node_id: Option<NodeID>,
+        left: DistributedPipelineNode,
+        right: DistributedPipelineNode,
+        left_on: Vec<BoundExpr>,
+        right_on: Vec<BoundExpr>,
+        join_type: JoinType,
+        output_schema: SchemaRef,
+    ) -> DaftResult<DistributedPipelineNode> {
+        let num_partitions = {
+            let left_num_partitions = left.config().clustering_spec.num_partitions();
+            let right_num_partitions = right.config().clustering_spec.num_partitions();
+            max(left_num_partitions, right_num_partitions)
+        };
+
+        Ok(SortMergeJoinNode::new(
+            self.get_next_pipeline_node_id(),
+            logical_node_id,
+            &self.plan_config,
+            left_on,
+            right_on,
+            join_type,
+            num_partitions,
+            left,
+            right,
+            output_schema,
+        )
+        .into_node())
+    }
+
     pub(crate) fn gen_cross_join_node(
         &mut self,
         logical_node_id: Option<NodeID>,
@@ -289,21 +321,15 @@ impl LogicalPlanToPipelineNodeTranslator {
                 join.join_type,
                 join.output_schema.clone(),
             ),
-            JoinStrategy::SortMerge => {
-                tracing::warn!(
-                    "Sort-merge join is not implemented yet, falling back to hash join. Please use the legacy ray runner, daft.set_execution_config(use_legacy_ray_runner=True), for sort merge joins."
-                );
-                self.gen_hash_join_nodes(
-                    logical_node_id,
-                    left_node,
-                    right_node,
-                    left_on,
-                    right_on,
-                    null_equals_nulls,
-                    join.join_type,
-                    join.output_schema.clone(),
-                )
-            }
+            JoinStrategy::SortMerge => self.gen_sort_merge_join_node(
+                logical_node_id,
+                left_node,
+                right_node,
+                left_on,
+                right_on,
+                join.join_type,
+                join.output_schema.clone(),
+            ),
             JoinStrategy::Broadcast => self.gen_broadcast_join_node(
                 logical_node_id,
                 left_on,

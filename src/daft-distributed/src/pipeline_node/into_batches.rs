@@ -99,6 +99,7 @@ impl IntoBatchesNode {
                     let task = make_new_task_from_materialized_outputs(
                         TaskContext::from((&self_clone.context, task_id_counter.next())),
                         std::mem::take(&mut current_group),
+                        self_clone.config.schema.clone(),
                         &(self_clone.clone() as Arc<dyn PipelineNodeImpl>),
                         move |input| {
                             LocalPhysicalPlan::into_batches(
@@ -122,6 +123,7 @@ impl IntoBatchesNode {
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((&self_clone.context, task_id_counter.next())),
                 current_group,
+                self_clone.config.schema.clone(),
                 &(self_clone.clone() as Arc<dyn PipelineNodeImpl>),
                 move |input| {
                     LocalPhysicalPlan::into_batches(
