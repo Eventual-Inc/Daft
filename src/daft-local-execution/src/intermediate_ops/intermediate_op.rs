@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use capitalize::Capitalize;
+use common_daft_config::DaftExecutionConfig;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
@@ -66,6 +67,7 @@ pub(crate) trait IntermediateOperator: Send + Sync {
         &self,
         morsel_size_requirement: MorselSizeRequirement,
         maintain_order: bool,
+        _config: &DaftExecutionConfig,
     ) -> Arc<dyn DispatchSpawner> {
         if maintain_order {
             Arc::new(RoundRobinDispatcher::new(morsel_size_requirement))
@@ -82,6 +84,7 @@ pub struct IntermediateNode<Op: IntermediateOperator> {
     plan_stats: StatsState,
     morsel_size_requirement: MorselSizeRequirement,
     node_info: Arc<NodeInfo>,
+    config: Arc<DaftExecutionConfig>,
 }
 
 impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
@@ -90,6 +93,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         children: Vec<Box<dyn PipelineNode>>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
+        config: Arc<DaftExecutionConfig>,
     ) -> Self {
         let info = ctx.next_node_info(
             Arc::from(intermediate_op.name()),
@@ -107,6 +111,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
             plan_stats,
             morsel_size_requirement,
             node_info: Arc::new(info),
+            config,
         }
     }
 
@@ -269,9 +274,11 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         let (destination_sender, destination_receiver) = create_channel(0);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
 
-        let dispatch_spawner = self
-            .intermediate_op
-            .dispatch_spawner(self.morsel_size_requirement, maintain_order);
+        let dispatch_spawner = self.intermediate_op.dispatch_spawner(
+            self.morsel_size_requirement,
+            maintain_order,
+            &self.config,
+        );
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             child_result_receivers,
             num_workers,
