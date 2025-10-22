@@ -72,23 +72,18 @@ impl ActorHandle {
         task_locals: pyo3_async_runtimes::TaskLocals,
     ) -> DaftResult<Arc<MicroPartition>> {
         let inner = self.inner.clone();
-        let await_coroutine = async move {
-            let result = Python::attach(|py| {
+        let result = common_runtime::python::execute_python_coroutine::<_, PyMicroPartition>(
+            move |py| {
                 let coroutine = inner.call_method1(
                     py,
                     pyo3::intern!(py, "eval_input"),
                     (PyMicroPartition::from(input),),
                 )?;
-                pyo3_async_runtimes::tokio::into_future(coroutine.into_bound(py))
-            })?
-            .await?;
-            DaftResult::Ok(result)
-        };
-        let result = pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine)
-            .await
-            .and_then(|result| {
-                Python::attach(|py| result.extract::<PyMicroPartition>(py)).map_err(|e| e.into())
-            })?;
+                Ok(coroutine.into_bound(py))
+            },
+            task_locals,
+        )
+        .await?;
         Ok(result.into())
     }
 }
@@ -237,7 +232,9 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
     }
 
     fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(self.actor_handles.len())
+        // We set the max concurrency to be the number of actor handles * 2 to such that each actor handle has 2 workers submitting to it.
+        // This allows inputs to be queued up concurrently with UDF execution.
+        Ok(self.actor_handles.len() * 2)
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {

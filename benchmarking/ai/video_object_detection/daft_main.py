@@ -66,6 +66,8 @@ class ExtractImageFeatures:
 
 daft.context.set_runner_ray()
 
+daft.set_planning_config(default_io_config=daft.io.IOConfig(s3=daft.io.S3Config.from_env()))
+
 start_time = time.time()
 
 df = daft.read_video_frames(

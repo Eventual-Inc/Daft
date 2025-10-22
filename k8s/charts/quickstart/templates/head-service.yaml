@@ -30,6 +30,16 @@ spec:
     port: {{ .Values.head.service.ports.metrics }}
     targetPort: 8080
     protocol: TCP
+  {{- if .Values.monitoring.enabled }}
+  - name: prometheus
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+  - name: grafana
+    port: 3000
+    targetPort: 3000
+    protocol: TCP
+  {{- end }}
   selector:
     {{- include "daft.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: head

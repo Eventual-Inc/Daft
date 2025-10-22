@@ -18,10 +18,18 @@
    kubectl logs deployment/{{ include "daft.fullname" . }}-head -c ray-head
 
 4. Access the Ray dashboard (when ready):
+{{- if .Values.monitoring.enabled }}
+
+   kubectl port-forward service/{{ include "daft.headServiceName" . }} 8265:8265 3000:3000
+
+   Ray Dashboard     : http://localhost:8265
+   Grafana (optional): http://localhost:3000 (admin/admin)
+{{- else }}
 
    kubectl port-forward service/{{ include "daft.headServiceName" . }} 8265:8265
 
-   Then visit: http://localhost:8265
+   Ray Dashboard: http://localhost:8265
+{{- end }}
 
 5. Check your job status:
 
