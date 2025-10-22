@@ -64,10 +64,7 @@ def test_image_classifier(mock_image_classifier):
     labels = ["dog", "cat"]
 
     # Mock the pipeline's return value
-    mock_image_classifier._pipeline.return_value = [
-        ["dog", "cat"],
-        ["cat", "dog"],
-    ]
+    mock_image_classifier._pipeline.return_value = ["dog", "cat"]
 
     results = mock_image_classifier.classify_image(images, labels)
     assert results == ["dog", "cat"]
