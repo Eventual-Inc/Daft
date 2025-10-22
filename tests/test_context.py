@@ -74,15 +74,20 @@ def test_implicit_set_runner_ray():
     implicit_set_runner_script_ray = """
 import daft
 import ray
+import os
 ray.init()
 print(daft.runners._get_runner())
+print(f"DAFT_RUNNER: {os.getenv('DAFT_RUNNER')}")
 df = daft.from_pydict({"foo": [1, 2, 3]})
 print(daft.runners._get_runner().name)
     """
 
     with with_null_env():
         result = subprocess.run([sys.executable, "-c", implicit_set_runner_script_ray], capture_output=True)
-        assert result.stdout.decode().strip() == "None\nray"
+        assert (
+            result.stdout.decode().strip()
+            == "get_runner_config_from_env: detect_ray_state == (true, false)\nNone\nDAFT_RUNNER: None\nray"
+        )
 
 
 def test_cannot_switch_local_to_ray():

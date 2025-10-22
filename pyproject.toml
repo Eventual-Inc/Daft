@@ -80,7 +80,7 @@ dev = [
   "pytest-cov==7.0.0",
   "pytest-lazy-fixtures==1.4.0",
   "memray==1.17.2; platform_system != \"Windows\"",
-  "pytest-codspeed==2.2.1",
+  "pytest-codspeed==4.1.1",
   # Testing dependencies
   "lxml==5.3.0",
   "dask[dataframe]==2024.4.1",

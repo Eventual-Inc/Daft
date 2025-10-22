@@ -236,8 +236,14 @@ pub(crate) fn get_runner_type_from_env() -> String {
 
 pub(crate) fn get_runner_config_from_env() -> PyResult<RunnerConfig> {
     match get_runner_type_from_env().as_str() {
-        NativeRunner::NAME => Ok(RunnerConfig::Native { num_threads: None }),
-        RayRunner::NAME => Ok(get_ray_runner_config_from_env()),
+        NativeRunner::NAME => {
+            println!("get_runner_config_from_env: NativeRunner::NAME");
+            Ok(RunnerConfig::Native { num_threads: None })
+        }
+        RayRunner::NAME => {
+            println!("get_runner_config_from_env: RayRunner::NAME");
+            Ok(get_ray_runner_config_from_env())
+        }
         "py" => Err(PyValueError::new_err(
             "The PyRunner was removed from Daft from v0.5.0 onwards. \
             Please set the env to `DAFT_RUNNER=native`."
@@ -246,8 +252,10 @@ pub(crate) fn get_runner_config_from_env() -> PyResult<RunnerConfig> {
         .into()),
         "" => Ok(if detect_ray_state() == (true, false) {
             // on ray but not in ray worker
+            println!("get_runner_config_from_env: detect_ray_state == (true, false)");
             get_ray_runner_config_from_env()
         } else {
+            println!("get_runner_config_from_env: detect_ray_state == (false, false)");
             RunnerConfig::Native { num_threads: None }
         }),
         other => Err(PyValueError::new_err(format!(
