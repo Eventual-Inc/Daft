@@ -17,8 +17,8 @@ if TYPE_CHECKING:
     from daft.dependencies import pa
 
 
-class BigTableDataSink(DataSink[dict[str, Any]]):
-    """WriteSink for writing data to Google Cloud BigTable."""
+class BigtableDataSink(DataSink[dict[str, Any]]):
+    """WriteSink for writing data to Google Cloud Bigtable."""
 
     @staticmethod
     def _import_bigtable() -> ModuleType:
@@ -63,14 +63,14 @@ class BigTableDataSink(DataSink[dict[str, Any]]):
         self._result_schema = Schema._from_field_name_and_types([("write_responses", DataType.python())])
 
     def name(self) -> str:
-        return "BigTable Data Sink"
+        return "Bigtable Data Sink"
 
     def schema(self) -> Schema:
         return self._result_schema
 
     def _write_with_error_handling(self, table: Table, arrow_table: pa.Table) -> WriteResult[dict[str, Any]]:
         try:
-            bigtable_batcher = BigTableDataSink._import_bigtable_batcher()
+            bigtable_batcher = BigtableDataSink._import_bigtable_batcher()
             rows_written = 0
 
             with bigtable_batcher.MutationsBatcher(table=table, **self._write_kwargs) as batcher:
@@ -116,7 +116,7 @@ class BigTableDataSink(DataSink[dict[str, Any]]):
             )
 
     def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[dict[str, Any]]]:
-        bigtable = BigTableDataSink._import_bigtable()
+        bigtable = BigtableDataSink._import_bigtable()
         client = bigtable.Client(project=self._project_id, admin=True, **self._client_kwargs)
         instance = client.instance(self._instance_id)
 

@@ -7,6 +7,7 @@ import os
 import pathlib
 import shutil
 import sys
+import uuid
 from collections.abc import Generator
 from typing import TypeVar
 
@@ -112,17 +113,17 @@ def retry_server_s3_config(request) -> daft.io.IOConfig:
 
 
 ###
-# BigTable emulator fixtures
+# Bigtable emulator fixtures
 ###
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture()
 def bigtable_emulator_config() -> dict[str, str]:
-    """Configuration for BigTable emulator tests."""
+    """Configuration for Bigtable emulator tests."""
     return {
         "project_id": "test-project",
         "instance_id": "test-instance",
-        "table_id": "test-table",
+        "table_id": f"table-{uuid.uuid4()}",
         "emulator_host": os.environ.get("BIGTABLE_EMULATOR_HOST", "localhost:8086"),
     }
 

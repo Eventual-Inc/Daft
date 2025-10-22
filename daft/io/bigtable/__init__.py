@@ -1,3 +1,3 @@
-from .bigtable_data_sink import BigTableDataSink
+from .bigtable_data_sink import BigtableDataSink
 
-__all__ = ["BigTableDataSink"]
+__all__ = ["BigtableDataSink"]
