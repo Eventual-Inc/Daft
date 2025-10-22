@@ -1665,7 +1665,7 @@ class DataFrame:
         if row_key_column not in column_names:
             raise ValueError(f'Row key column "{row_key_column}" not found in schema')
 
-        # Validate that column family mappings cover all columns except the row key column,
+        # Validate that column family mappings cover all columns except the row key column.
         data_columns = [col for col in column_names if col != row_key_column]
         missing_columns = [col for col in data_columns if col not in column_family_mappings]
         if missing_columns:

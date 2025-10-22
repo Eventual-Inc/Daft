@@ -152,7 +152,9 @@ dev = [
   # mcap
   "mcap==1.3.0",
   "mcap-ros2-support==0.5.5",
-  "mcap-protobuf-support==0.5.3"
+  "mcap-protobuf-support==0.5.3",
+  # BigTable
+  "google-cloud-bigtable>=2.33.0"
 ]
 docs = [
   "markdown-exec",

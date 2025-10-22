@@ -112,33 +112,19 @@ def retry_server_s3_config(request) -> daft.io.IOConfig:
 
 
 ###
-# Bigtable emulator fixtures
+# BigTable emulator fixtures
 ###
 
 
 @pytest.fixture(scope="session")
 def bigtable_emulator_config() -> dict[str, str]:
-    """Configuration for Bigtable emulator tests."""
+    """Configuration for BigTable emulator tests."""
     return {
         "project_id": "test-project",
         "instance_id": "test-instance",
         "table_id": "test-table",
         "emulator_host": os.environ.get("BIGTABLE_EMULATOR_HOST", "localhost:8086"),
     }
-
-
-@pytest.fixture(scope="session")
-def bigtable_emulator_available() -> bool:
-    """Check if Bigtable emulator is available for testing."""
-    try:
-        from google.cloud import bigtable
-
-        # Try to connect to emulator.
-        bigtable.Client(project="test-project", admin=True)
-        # If we can create a client without error, emulator is likely available.
-        return True
-    except Exception:
-        return False
 
 
 ###
