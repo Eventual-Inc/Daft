@@ -123,54 +123,23 @@ impl RowWisePyFn {
     fn call_async(&self, args: &[Series], num_rows: usize) -> DaftResult<Series> {
         use common_error::DaftError;
         use daft_core::python::PySeries;
-        use indexmap::IndexMap;
         use pyo3::prelude::*;
+
+        use crate::functions::python::OnError;
+        let py_return_type = daft_core::python::PyDataType::from(self.return_dtype.clone());
         let cls_ref = self.cls.as_ref();
         let method_ref = self.method.as_ref();
         let args_ref = self.original_args.as_ref();
         let max_retries = self.max_retries.unwrap_or(0);
 
-        pyo3::Python::attach(|py| {
-            let f = py
-                .import(pyo3::intern!(py, "daft.udf.execution"))?
-                .getattr(pyo3::intern!(py, "call_async_batch"))?;
+        let try_call_batch = || {
+            pyo3::Python::attach(|py| {
+                let f = py
+                    .import(pyo3::intern!(py, "daft.udf.execution"))?
+                    .getattr(pyo3::intern!(py, "call_async_batch"))?;
 
-            let mut evaluated_args = IndexMap::with_capacity(num_rows);
-            for i in 0..num_rows {
-                let py_args_for_row = args
-                    .iter()
-                    .map(|s| {
-                        let idx = if s.len() == 1 { 0 } else { i };
-                        let lit = s.get_lit(idx);
-                        lit.into_pyobject(py).map_err(|e| e.into())
-                    })
-                    .collect::<DaftResult<Vec<_>>>()?;
-
-                evaluated_args.insert(i, py_args_for_row);
-            }
-
-            let res = f.call1((cls_ref, method_ref, args_ref, evaluated_args))?;
-
-            let name = args[0].name();
-
-            let (mut results, mut errs) =
-                res.extract::<(IndexMap<usize, Bound<PyAny>>, IndexMap<usize, String>)>()?;
-            if errs.is_empty() {
-                let results = results.into_values().collect();
-                let result_series =
-                    PySeries::from_pylist_impl(name, results, self.return_dtype.clone())?;
-
-                return Ok(result_series.series);
-            }
-            let mut delay_ms: u64 = 100; // Start with 100 ms
-            const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
-            for attempt in 0..=max_retries {
-                if errs.is_empty() {
-                    break;
-                }
-
-                let mut evaluated_args = IndexMap::with_capacity(errs.len());
-                for (&i, _) in &errs {
+                let mut evaluated_args = Vec::with_capacity(num_rows);
+                for i in 0..num_rows {
                     let py_args_for_row = args
                         .iter()
                         .map(|s| {
@@ -179,92 +148,64 @@ impl RowWisePyFn {
                             lit.into_pyobject(py).map_err(|e| e.into())
                         })
                         .collect::<DaftResult<Vec<_>>>()?;
-                    evaluated_args.insert(i, py_args_for_row);
+
+                    evaluated_args.push(py_args_for_row);
                 }
 
-                let res = f.call1((cls_ref, method_ref, args_ref, evaluated_args))?;
+                let res = f.call1((
+                    cls_ref,
+                    method_ref,
+                    py_return_type.clone(),
+                    args_ref,
+                    evaluated_args,
+                ))?;
+                let name = args[0].name();
 
-                let (new_results, new_errs) =
-                    res.extract::<(IndexMap<usize, Bound<PyAny>>, IndexMap<usize, String>)>()?;
-                results.extend(new_results);
+                let result_series = res.extract::<PySeries>()?.series;
 
-                errs = new_errs;
+                Ok::<_, PyErr>(result_series.rename(name))
+            })
+        };
 
-                // Update our failure map for next iteration
-                if attempt < max_retries {
-                    use std::{thread, time::Duration};
-                    py.detach(|| {
-                        thread::sleep(Duration::from_millis(delay_ms));
-                    });
-                    // Exponential backoff: multiply by 2, cap at MAX_DELAY_MS
-                    delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
-                }
+        let mut result_series = try_call_batch();
+        let mut delay_ms: u64 = 100; // Start with 100 ms
+        const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
+        for attempt in 0..=max_retries {
+            if result_series.is_ok() {
+                break;
             }
+            result_series = try_call_batch();
 
-            match (errs.is_empty(), self.on_error) {
-                (true, _) => {
-                    results.sort_keys();
-
-                    let result_series = PySeries::from_pylist_impl(
-                        name,
-                        results.into_values().collect(),
-                        self.return_dtype.clone(),
-                    )?;
-
-                    Ok(result_series.series)
-                }
-                (false, crate::functions::python::OnError::Ignore) => {
-                    for (i, _) in errs {
-                        use pyo3::IntoPyObjectExt;
-
-                        results.insert(i, py.None().into_bound_py_any(py)?);
-                    }
-                    results.sort_keys();
-                    let result_series = PySeries::from_pylist_impl(
-                        name,
-                        results.into_values().collect(),
-                        self.return_dtype.clone(),
-                    )?;
-
-                    Ok(result_series.series)
-                }
-                (false, crate::functions::python::OnError::Raise) => {
-                    let err_msg = errs
-                        .into_iter()
-                        .map(|(i, e)| format!("\t{}: {}", i, e))
-                        .join("\n");
-                    Err(DaftError::ComputeError(format!(
-                        "Failed to execute Python UDF on some rows\n: {}",
-                        err_msg
-                    )))
-                }
-                (false, crate::functions::python::OnError::Log) => {
-                    let err_msg = errs
-                        .iter()
-                        .map(|(i, e)| format!("\t{}: {}", i, e))
-                        .join("\n");
-                    let err = DaftError::ComputeError(format!(
-                        "Failed to execute Python UDF on some rows\n: {}",
-                        err_msg
-                    ));
-                    log::warn!("{}", err);
-
-                    for (i, _) in errs {
-                        use pyo3::IntoPyObjectExt;
-
-                        results.insert(i, py.None().into_bound_py_any(py)?);
-                    }
-                    results.sort_keys();
-                    let result_series = PySeries::from_pylist_impl(
-                        name,
-                        results.into_values().collect(),
-                        self.return_dtype.clone(),
-                    )?;
-
-                    Ok(result_series.series)
-                }
+            // Update our failure map for next iteration
+            if attempt < max_retries {
+                use std::{thread, time::Duration};
+                thread::sleep(Duration::from_millis(delay_ms));
+                // Exponential backoff: multiply by 2, cap at MAX_DELAY_MS
+                delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
             }
-        })
+        }
+        let name = args[0].name();
+
+        let result_series = result_series
+            .map_err(DaftError::from)
+            .and_then(|s| Ok(s.cast(&self.return_dtype)?.rename(name)));
+
+        match (result_series, self.on_error) {
+            (Ok(result_series), _) => Ok(result_series),
+            (Err(err), OnError::Raise) => Err(err),
+            (Err(err), OnError::Log) => {
+                log::warn!("Python UDF error: {}", err);
+                // todo: log error
+                let num_rows = args.iter().map(Series::len).max().unwrap();
+
+                // log::error!("Python UDF error: {}", err);
+                Ok(Series::full_null(name, &self.return_dtype, num_rows))
+            }
+            (Err(_), OnError::Ignore) => {
+                let num_rows = args.iter().map(Series::len).max().unwrap();
+                Ok(Series::full_null(name, &self.return_dtype, num_rows))
+            }
+        }
     }
 
     #[cfg(feature = "python")]
@@ -284,7 +225,7 @@ impl RowWisePyFn {
         let delay_ms: u64 = 100; // Start with 100 ms
         const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
 
-        fn retry<'a, F: Fn() -> DaftResult<Literal>>(
+        fn retry<F: Fn() -> DaftResult<Literal>>(
             py: Python,
             func: F,
             max_retries: usize,

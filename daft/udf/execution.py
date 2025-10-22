@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
+from daft import DataType
 from daft.dependencies import np, pa
 from daft.expressions.expressions import Expression
 from daft.series import Series
@@ -13,7 +14,7 @@ else:
     from typing import Concatenate
 
 if TYPE_CHECKING:
-    from daft.daft import PySeries
+    from daft.daft import PyDataType, PySeries
 
     from .udf_v2 import ClsBase
 
@@ -33,44 +34,33 @@ def replace_expressions_with_evaluated_args(
 def call_async_batch(
     cls: ClsBase[C],
     method: Callable[Concatenate[C, ...], Any],
+    return_dtype: PyDataType,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
-    evaluated_args_dict: dict[int, list[Any]],
-) -> tuple[dict[int, Any], dict[int, str]]:
+    evaluated_args_list: list[list[Any]],
+) -> PySeries:
     import asyncio
 
     bound_method = cls._daft_bind_method(method)
-    errors = {}
 
-    # Preallocate outputs with None
-    outputs = {}
+    tasks = []
+    for evaluated_args in evaluated_args_list:
+        args, kwargs = replace_expressions_with_evaluated_args(original_args, evaluated_args)
+        coroutine = bound_method(*args, **kwargs)
+        tasks.append(coroutine)
 
-    async def run_task(idx: int, args: tuple, kwargs: dict) -> tuple[int, Any, Exception | None]:  # type: ignore
-        try:
-            result = await bound_method(*args, **kwargs)
-            return idx, result, None
-        except Exception as e:
-            return idx, None, e
-
-    async def run_tasks() -> list[tuple[int, Any, Exception | None]]:
-        tasks = []
-        for idx, evaluated_args in evaluated_args_dict.items():
-            args, kwargs = replace_expressions_with_evaluated_args(original_args, evaluated_args)
-            tasks.append(run_task(idx, args, kwargs))
+    async def run_tasks() -> list[Any]:
         return await asyncio.gather(*tasks)
 
+    dtype = DataType._from_pydatatype(return_dtype)
+
     try:
+        # try to use existing event loop
         event_loop = asyncio.get_running_loop()
-        results = asyncio.run_coroutine_threadsafe(run_tasks(), event_loop).result()
+        outputs = asyncio.run_coroutine_threadsafe(run_tasks(), event_loop).result()
     except RuntimeError:
-        results = asyncio.run(run_tasks())
+        outputs = asyncio.run(run_tasks())
 
-    for idx, result, error in results:
-        if error is None:
-            outputs[idx] = result
-        else:
-            errors[idx] = str(error)
-
-    return outputs, errors
+    return Series.from_pylist(outputs, dtype=dtype)._series
 
 
 def call_func(
