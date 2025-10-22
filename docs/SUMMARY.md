@@ -66,6 +66,7 @@
     * [Querying Image Data](examples/querying-images.md)
     * [MNIST Digit Classification](examples/mnist.md)
     * [Window Functions](examples/window-functions.md)
+    * [Working with Common Crawl Data](examples/common-crawl-daft-tutorial.md)
 * Python API
     * [Python API](api/index.md)
     * [AI](api/ai.md)

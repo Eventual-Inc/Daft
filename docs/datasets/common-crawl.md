@@ -253,6 +253,7 @@ from daft.functions import try_decode
 
 ## Next steps
 
+- If you want a runnable example of using this dataset and embedding text using Qwen3, take a look at our [Getting Started with Common Crawl in Daft](../examples/common-crawl-daft-tutorial.md) tutorial.
 - When using datasets like Common Crawl for pre-training, content deduplication is essential for model performance.
   Check out our [MinHash deduplication example](../examples/minhash-dedupe.md) to see how this can be done in Daft.
 - See the [Common Crawl Dataset API reference](../api/datasets.md#common-crawl) for complete parameter documentation
