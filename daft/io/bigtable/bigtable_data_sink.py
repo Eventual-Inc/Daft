@@ -117,7 +117,15 @@ class BigtableDataSink(DataSink[dict[str, Any]]):
 
     def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[dict[str, Any]]]:
         bigtable = BigtableDataSink._import_bigtable()
-        client = bigtable.Client(project=self._project_id, admin=True, **self._client_kwargs)
+
+        # Handle emulator host configuration.
+        client_kwargs = self._client_kwargs.copy()
+        if "emulator_host" in client_kwargs:
+            import os
+
+            os.environ["BIGTABLE_EMULATOR_HOST"] = client_kwargs.pop("emulator_host")
+
+        client = bigtable.Client(project=self._project_id, admin=True, **client_kwargs)
         instance = client.instance(self._instance_id)
 
         for micropartition in micropartitions:

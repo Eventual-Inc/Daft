@@ -36,6 +36,16 @@ class TestBigtableIntegration:
             }
         )
 
+    def _get_client_kwargs_for_ray(self, bigtable_emulator_config):
+        """Helper method to get client_kwargs with emulator_host when using Ray runner."""
+        import os
+
+        daft_runner = os.environ.get("DAFT_RUNNER", "").lower()
+        client_kwargs = {}
+        if daft_runner == "ray":
+            client_kwargs["emulator_host"] = bigtable_emulator_config["emulator_host"]
+        return client_kwargs
+
     @staticmethod
     def compare_tables(daft_table: DataFrame, bigtable_table: Table, row_key_column: str):
         type_map: dict[str, daft.DataType] = {}
@@ -96,6 +106,7 @@ class TestBigtableIntegration:
     def test_bigtable_write_basic(self, sample_data, bigtable_emulator_config):
         with bigtable_emulator_setup(bigtable_emulator_config) as bt_setup:
             row_key_column = "id"
+
             result_df = sample_data.write_bigtable(
                 project_id=bigtable_emulator_config["project_id"],
                 instance_id=bigtable_emulator_config["instance_id"],
@@ -107,6 +118,7 @@ class TestBigtableIntegration:
                     "city": "cf2",
                     "email": "cf2",
                 },
+                client_kwargs=self._get_client_kwargs_for_ray(bigtable_emulator_config),
             )
 
             assert result_df.count_rows() == 1
@@ -120,13 +132,15 @@ class TestBigtableIntegration:
     def test_bigtable_write_with_client_kwargs(self, sample_data, bigtable_emulator_config):
         with bigtable_emulator_setup(bigtable_emulator_config) as bt_setup:
             row_key_column = "id"
+            client_kwargs = {"read_only": False}
+            client_kwargs.update(self._get_client_kwargs_for_ray(bigtable_emulator_config))
             result_df = sample_data.write_bigtable(
                 project_id=bigtable_emulator_config["project_id"],
                 instance_id=bigtable_emulator_config["instance_id"],
                 table_id=bigtable_emulator_config["table_id"],
                 row_key_column=row_key_column,
                 column_family_mappings={"name": "cf1", "age": "cf1", "city": "cf2", "email": "cf2", "active": "cf1"},
-                client_kwargs={"read_only": False},
+                client_kwargs=client_kwargs,
             )
 
             assert result_df.count_rows() == 1
@@ -140,6 +154,8 @@ class TestBigtableIntegration:
     def test_bigtable_write_fails_with_read_only(self, sample_data, bigtable_emulator_config):
         with bigtable_emulator_setup(bigtable_emulator_config) as _bt_setup:
             row_key_column = "id"
+            client_kwargs = {"read_only": True}
+            client_kwargs.update(self._get_client_kwargs_for_ray(bigtable_emulator_config))
             # The "performadministrative" typo is from the client library.
             with pytest.raises(
                 RuntimeError,
@@ -157,7 +173,7 @@ class TestBigtableIntegration:
                         "email": "cf2",
                         "active": "cf1",
                     },
-                    client_kwargs={"read_only": True},
+                    client_kwargs=client_kwargs,
                 )
 
     def test_bigtable_write_with_write_kwargs(self, sample_data, bigtable_emulator_config):
@@ -170,6 +186,7 @@ class TestBigtableIntegration:
                 row_key_column=row_key_column,
                 column_family_mappings={"name": "cf1", "age": "cf1", "city": "cf2", "email": "cf2", "active": "cf1"},
                 write_kwargs={"flush_count": 2},
+                client_kwargs=self._get_client_kwargs_for_ray(bigtable_emulator_config),
             )
 
             assert result_df.count_rows() == 1
@@ -190,6 +207,7 @@ class TestBigtableIntegration:
                 table_id=bigtable_emulator_config["table_id"],
                 row_key_column=row_key_column,
                 column_family_mappings={"name": "cf1", "age": "cf1"},
+                client_kwargs=self._get_client_kwargs_for_ray(bigtable_emulator_config),
             )
 
             assert result_df.count_rows() == 0
@@ -212,6 +230,7 @@ class TestBigtableIntegration:
                 table_id=bigtable_emulator_config["table_id"],
                 row_key_column=row_key_column,
                 column_family_mappings={"name": "cf1", "age": "cf1", "city": "cf2"},
+                client_kwargs=self._get_client_kwargs_for_ray(bigtable_emulator_config),
             )
 
             assert result_df.count_rows() == 1
@@ -239,6 +258,7 @@ class TestBigtableIntegration:
                 table_id=bigtable_emulator_config["table_id"],
                 row_key_column=row_key_column,
                 column_family_mappings={"name": "cf1", "age": "cf1", "city": "cf2"},
+                client_kwargs=self._get_client_kwargs_for_ray(bigtable_emulator_config),
             )
 
             assert result_df.count_rows() == 1
@@ -267,6 +287,7 @@ class TestBigtableIntegration:
                 table_id=bigtable_emulator_config["table_id"],
                 row_key_column=row_key_column,
                 column_family_mappings={"name": "cf1", "age": "cf1", "city": "cf2"},
+                client_kwargs=self._get_client_kwargs_for_ray(bigtable_emulator_config),
             )
 
             assert result_df.count_rows() == 1
@@ -304,6 +325,7 @@ class TestBigtableIntegration:
                     "bytes_col": "cf2",
                     "list_col": "cf2",
                 },
+                client_kwargs=self._get_client_kwargs_for_ray(bigtable_emulator_config),
             )
 
             assert result_df.count_rows() == 1
@@ -345,6 +367,7 @@ class TestBigtableIntegration:
                         "list_col": "cf2",
                     },
                     serialize_incompatible_types=False,
+                    client_kwargs=self._get_client_kwargs_for_ray(bigtable_emulator_config),
                 )
 
     def test_bigtable_write_compatible_types_no_serialization(self, bigtable_emulator_config):
@@ -365,6 +388,7 @@ class TestBigtableIntegration:
                 row_key_column=row_key_column,
                 column_family_mappings={"string_col": "cf1", "int_col": "cf1", "bytes_col": "cf2"},
                 serialize_incompatible_types=False,
+                client_kwargs=self._get_client_kwargs_for_ray(bigtable_emulator_config),
             )
 
             assert result_df.count_rows() == 1
@@ -393,6 +417,7 @@ class TestBigtableIntegration:
                 table_id=bigtable_emulator_config["table_id"],
                 row_key_column=row_key_column,
                 column_family_mappings={"name": "cf1", "age": "cf1"},
+                client_kwargs=self._get_client_kwargs_for_ray(bigtable_emulator_config),
             )
 
             # Workflow should still succeed but rows with invalid row keys should be filtered out.
@@ -415,6 +440,7 @@ class TestBigtableIntegration:
                     table_id=bigtable_emulator_config["table_id"],
                     row_key_column="invalid_id",
                     column_family_mappings={"name": "cf1", "age": "cf1"},
+                    client_kwargs=self._get_client_kwargs_for_ray(bigtable_emulator_config),
                 )
 
             # Test missing column family mapping.
@@ -425,4 +451,5 @@ class TestBigtableIntegration:
                     table_id=bigtable_emulator_config["table_id"],
                     row_key_column=row_key_column,
                     column_family_mappings={"name": "cf1"},  # Missing age mapping
+                    client_kwargs=self._get_client_kwargs_for_ray(bigtable_emulator_config),
                 )
