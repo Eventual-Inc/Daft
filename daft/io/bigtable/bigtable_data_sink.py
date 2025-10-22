@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from daft.datatype import DataType
-from daft.dependencies import pc
 from daft.io import DataSink
 from daft.io.sink import WriteResult
 from daft.recordbatch import MicroPartition
@@ -53,22 +52,6 @@ class BigTableDataSink(DataSink[dict[str, Any]]):
         client_kwargs: dict[str, Any] | None = None,
         write_kwargs: dict[str, Any] | None = None,
     ) -> None:
-        """Initialize the BigTable data sink.
-
-        This data sink transforms each row of the dataframe into BigTable rows.
-        A row key is always required. The `row_key_column` parameter can be used to specify the column name to use for the row key.
-
-        All other columns become cells in the specified column family.
-
-        Args:
-            project_id: The Google Cloud project ID.
-            instance_id: The BigTable instance ID.
-            table_id: The table to write to.
-            row_key_column: Column name for the row key.
-            column_family_mappings: Mapping of column names to column families.
-            client_kwargs: Optional dictionary of arguments to pass to the BigTable Client constructor.
-            write_kwargs: Optional dictionary of arguments to pass to the BigTable MutationsBatcher.
-        """
         self._project_id = project_id
         self._instance_id = instance_id
         self._table_id = table_id
@@ -84,24 +67,6 @@ class BigTableDataSink(DataSink[dict[str, Any]]):
 
     def schema(self) -> Schema:
         return self._result_schema
-
-    def _prepare_arrow_table(self, arrow_table: pa.Table) -> pa.Table:
-        if self._row_key_column not in arrow_table.column_names:
-            raise ValueError(f"Row key column {self._row_key_column} not found in schema")
-
-        # Validate that column family mappings cover all columns except the row key column.
-        data_columns = [col for col in arrow_table.column_names if col != self._row_key_column]
-        missing_columns = [col for col in data_columns if col not in self._column_family_mappings]
-        if missing_columns:
-            raise ValueError(
-                f"Column family mappings missing for columns: {missing_columns}. "
-                f"All columns except the row key column ({self._row_key_column}) must have a column family mapping."
-            )
-
-        # Use compute function approach for pyarrow 8.0.0 compatibility.
-        id_column = arrow_table.column(self._row_key_column)
-        mask = pc.invert(pc.is_null(id_column))
-        return arrow_table.filter(mask)
 
     def _write_with_error_handling(self, table: Table, arrow_table: pa.Table) -> WriteResult[dict[str, Any]]:
         try:
@@ -156,7 +121,7 @@ class BigTableDataSink(DataSink[dict[str, Any]]):
         instance = client.instance(self._instance_id)
 
         for micropartition in micropartitions:
-            arrow_table = self._prepare_arrow_table(micropartition.to_arrow())
+            arrow_table = micropartition.to_arrow()
 
             if arrow_table.num_rows == 0:
                 continue

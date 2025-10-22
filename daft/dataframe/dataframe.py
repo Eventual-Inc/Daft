@@ -1656,6 +1656,29 @@ class DataFrame:
         )
         return self.write_sink(sink)
 
+    def _is_bigtable_compatible_type(self, dtype: DataType) -> bool:
+        return dtype.is_integer() or dtype.is_binary() or dtype.is_string()
+
+    def _validate_bigtable_parameters(self, row_key_column: str, column_family_mappings: dict[str, str]) -> None:
+        column_names = self.schema().column_names()
+        # Validate that the row key column exists in the schema.
+        if row_key_column not in column_names:
+            raise ValueError(f'Row key column "{row_key_column}" not found in schema')
+
+        # Validate that column family mappings cover all columns except the row key column,
+        data_columns = [col for col in column_names if col != row_key_column]
+        missing_columns = [col for col in data_columns if col not in column_family_mappings]
+        if missing_columns:
+            raise ValueError(
+                f"Column family mappings missing for columns: {missing_columns}. "
+                f"All columns except the row key column ({row_key_column}) must have a column family mapping."
+            )
+
+    def _filter_invalid_bigtable_row_keys(self, row_key_column: str) -> "DataFrame":
+        from daft.functions import length
+
+        return self.filter(col(row_key_column).not_null() & (length(col(row_key_column)) > lit(0)))
+
     def write_bigtable(
         self,
         project_id: str,
@@ -1665,8 +1688,20 @@ class DataFrame:
         column_family_mappings: dict[str, str],
         client_kwargs: Optional[dict[str, Any]] = None,
         write_kwargs: Optional[dict[str, Any]] = None,
+        serialize_incompatible_types: bool = True,
     ) -> "DataFrame":
         """Write a DataFrame into a Google Cloud BigTable table.
+
+        BigTable only accepts datatypes that can be converted to bytes in cells (for more details, please consult the BigTable documentation: https://cloud.google.com/bigtable/docs/overview#data-types).
+        By default, `write_bigtable` automatically serializes incompatible types to JSON. This can be disabled by setting `auto_convert=False`.
+
+        This data sink transforms each row of the dataframe into BigTable rows.
+        A row key is always required. The `row_key_column` parameter can be used to specify the column name to use for the row key.
+
+        Every column must also belong to a column family. The `column_family_mappings` parameter can be used to specify the column family to use for each column.
+        For example, if you have a column "name" and a column "age", you can specify a "user_data" column family by passing a dictionary like {"name": "user_data", "age": "user_data"}.
+
+        EXPERIMENTAL: This features is early in development and will change.
 
         Args:
             project_id: The Google Cloud project ID.
@@ -1676,13 +1711,51 @@ class DataFrame:
             column_family_mappings: Mapping of column names to column families.
             client_kwargs: Optional dictionary of arguments to pass to the BigTable Client constructor.
             write_kwargs: Optional dictionary of arguments to pass to the BigTable MutationsBatcher.
+            serialize_incompatible_types: Whether to automatically convert non-bytes/int values to BigTable-compatible formats.
+                                          If False, will raise an error for unsupported types. Defaults to True.
         """
+        import warnings
+
+        from daft.functions import serialize
         from daft.io.bigtable.bigtable_data_sink import BigTableDataSink
+
+        # Validate BigTable parameters against the DataFrame schema.
+        self._validate_bigtable_parameters(row_key_column, column_family_mappings)
+
+        df_to_write = self
+
+        # Check for incompatible types and handle them based on whether serialize_incompatible_types is True.
+        incompatible_columns = []
+
+        for field in df_to_write.schema():
+            if self._is_bigtable_compatible_type(field.dtype):
+                continue
+            incompatible_columns.append(field.name)
+
+        if incompatible_columns:
+            if serialize_incompatible_types:
+                warnings.warn(
+                    f"BigTable only supports integer, binary, and string types. Found incompatible columns: "
+                    f"{', '.join([f'{column_name}' for column_name in incompatible_columns])}. "
+                    "These will be automatically serialized to JSON. Set `serialize_incompatible_types=False` to disable automatic conversion."
+                )
+
+                for col in incompatible_columns:
+                    df_to_write = df_to_write.with_column(col, serialize(df_to_write[col], format="json"))
+            else:
+                raise ValueError(
+                    f"BigTable only supports integer, binary, and string types. Found incompatible columns: "
+                    f"{', '.join([f'{column_name}' for column_name in incompatible_columns])}. "
+                    "Set `serialize_incompatible_types=True` to automatically convert these to JSON, or convert them manually before writing."
+                )
+
+        # Filter out rows with invalid row keys.
+        df_to_write = df_to_write._filter_invalid_bigtable_row_keys(row_key_column)
 
         sink = BigTableDataSink(
             project_id, instance_id, table_id, row_key_column, column_family_mappings, client_kwargs, write_kwargs
         )
-        return self.write_sink(sink)
+        return df_to_write.write_sink(sink)
 
     ###
     # DataFrame operations
