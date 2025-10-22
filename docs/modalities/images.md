@@ -216,6 +216,48 @@ Now you're ready to call this function on the `urls` column and store the output
 !!! note "Note"
 
     Execute in notebook to see properly rendered images.
+### Zero Shot Classification
+
+For zero shot classification, you can use our built in `classify_image` function to classify images
+
+=== "🐍 Python"
+
+    ```python
+    classify_images_expr = daft.functions.classify_image(
+      daft.col("image"), labels=[
+        "boxer",
+        "schnauzer",
+        "rottweiler",
+        "staffordshire terrier",
+        "collie",
+        "chihuahua",
+        "corgi"
+      ]
+    )
+    classified_images_df = df_family.with_column("classify_breed", classify_images_expr)
+    classified_images_df.select("dog_name", "image", "classify_breed").show()
+    ```
+
+```{title="Output"}
+╭──────────┬──────────────┬───────────────────────╮
+│ dog_name ┆ image        ┆ classify_breed        │
+│ ---      ┆ ---          ┆ ---                   │
+│ String   ┆ Image[MIXED] ┆ String                │
+╞══════════╪══════════════╪═══════════════════════╡
+│ Ernie    ┆ <Image>      ┆ boxer                 │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Jackie   ┆ <Image>      ┆ staffordshire terrier │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Wolfie   ┆ <Image>      ┆ collie                │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Shaggie  ┆ <Image>      ┆ schnauzer             │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Zadie    ┆ <Image>      ┆ rottweiler            │
+╰──────────┴──────────────┴───────────────────────╯
+
+(Showing first 5 of 5 rows)
+```
+
 
 <!-- todo(docs - jay): Insert table of dog urls? or new UDF example? This was from the original 10-min quickstart with multimodal -->
 

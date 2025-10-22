@@ -17,6 +17,8 @@ if TYPE_CHECKING:
     import pyarrow.fs as pafs
     import pyarrow.json as pajson
     import pyarrow.parquet as pq
+    import tensorflow as tf
+    import torch
 else:
     fsspec = LazyImport("fsspec")
     np = LazyImport("numpy")
@@ -30,6 +32,8 @@ else:
     pc = LazyImport("pyarrow.compute")
     pq = LazyImport("pyarrow.parquet")
     flight = LazyImport("pyarrow.flight")
+    torch = LazyImport("torch")
+    tf = LazyImport("tensorflow")
 
 unity_catalog = LazyImport("daft.unity_catalog")
 
@@ -46,5 +50,7 @@ __all__ = [
     "pd",
     "pil_image",
     "pq",
+    "tf",
+    "torch",
     "unity_catalog",
 ]

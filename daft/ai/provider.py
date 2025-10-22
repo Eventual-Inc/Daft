@@ -8,6 +8,7 @@ from typing_extensions import Literal, Unpack
 if TYPE_CHECKING:
     from daft.ai.openai.typing import OpenAIProviderOptions
     from daft.ai.protocols import (
+        ImageClassifierDescriptor,
         ImageEmbedderDescriptor,
         PrompterDescriptor,
         TextClassifierDescriptor,
@@ -92,6 +93,10 @@ class Provider(ABC):
     def get_image_embedder(self, model: str | None = None, **options: Any) -> ImageEmbedderDescriptor:
         """Returns an ImageEmbedderDescriptor for this provider."""
         raise not_implemented_err(self, method="embed_image")
+
+    def get_image_classifier(self, model: str | None = None, **options: Any) -> ImageClassifierDescriptor:
+        """Returns an ImageClassifierDescriptor for this provider."""
+        raise not_implemented_err(self, method="classify_image")
 
     def get_text_classifier(self, model: str | None = None, **options: Any) -> TextClassifierDescriptor:
         """Returns a TextClassifierDescriptor for this provider."""
