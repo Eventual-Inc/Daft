@@ -10,6 +10,7 @@ from daft.dependencies import av
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from tempfile import _TemporaryFileWrapper
+    from typing import Any
 
     import PIL
 
@@ -120,55 +121,10 @@ class File:
             return temp_file
 
     def is_video(self) -> bool:
-        # Check magic bytes - most are in first 16 bytes
-        try:
-            with self.open() as f:
-                header = f.read(16)
-
-                if header.startswith(b"\x00\x00\x00"):  # MP4 variants
-                    return b"ftyp" in header
-                if header.startswith(b"\x1a\x45\xdf\xa3"):  # Matroska/MKV
-                    return True
-                if header.startswith(b"RIFF"):  # AVI
-                    return header[8:12] == b"AVI "
-                if header.startswith(b"FLV"):  # FLV
-                    return True
-
-                return False
-
-        except Exception:
-            return False
-
-    class VideoFile:
-        """A video-specific file interface that provides video operations."""
-
-        def __init__(self, file: File):
-            self.file = file
-
-        def keyframes(self, start_time: float = 0, end_time: float | None = None) -> Iterator[PIL.Image.Image]:
-            """Lazy iterator of keyframes as PIL Images within time range."""
-            with self.file.open() as f:
-                container = av.open(f)
-                stream = container.streams.video[0]
-
-                # Seek to start time
-                if start_time > 0:
-                    seek_timestamp = int(start_time * av.time_base)
-                    container.seek(seek_timestamp)
-
-                for frame in container.decode(stream):
-                    if not frame.key_frame:
-                        continue
-
-                    # Check end time if specified
-                    if end_time is not None:
-                        frame_time = frame.time
-                        if frame_time and frame_time > end_time:
-                            break
-
-                    yield frame.to_image()
-
-                container.close()
+        mimetype = self.mime_type()
+        if mimetype.startswith("video/"):
+            return True
+        return False
 
     def as_video(self) -> VideoFile:
         """Convert to VideoFile if this file contains video data."""
@@ -178,4 +134,115 @@ class File:
         if not self.is_video():
             raise ValueError(f"File {self} is not a video file")
 
-        return File.VideoFile(self)
+        cls = VideoFile.__new__(VideoFile)
+        cls._inner = self._inner
+
+        return cls
+
+
+class VideoFile(File):
+    """A video-specific file interface that provides video operations."""
+
+    def __init__(self, str_or_bytes: str | bytes, io_config: IOConfig | None = None) -> None:
+        if not av.module_available():
+            raise ImportError("The 'av' module is required to create video files.")
+        super().__init__(str_or_bytes, io_config)
+
+    def __post_init__(self) -> None:
+        if not self.is_video():
+            raise ValueError(f"File {self} is not a video file")
+
+    def metadata(
+        self,
+        *,
+        probesize: str = "64k",
+        analyzeduration_us: int = 200_000,
+    ) -> dict[str, Any]:
+        """Extract basic video metadata from container headers.
+
+        Returns:
+        -------
+        dict
+            width, height, fps, frame_count, time_base, keyframe_pts, keyframe_indices
+        """
+        options = {
+            "probesize": str(probesize),
+            "analyzeduration": str(analyzeduration_us),
+        }
+
+        with av.open(self, mode="r", options=options, metadata_encoding="utf-8") as container:
+            video = next(
+                (stream for stream in container.streams if stream.type == "video"),
+                None,
+            )
+            if video is None:
+                return {
+                    "width": None,
+                    "height": None,
+                    "fps": None,
+                    "frame_count": None,
+                    "time_base": None,
+                }
+
+            # Basic stream properties ----------
+            width = video.width
+            height = video.height
+            time_base = float(video.time_base) if video.time_base else None
+
+            # Frame rate -----------------------
+            fps = None
+            if video.average_rate:
+                fps = float(video.average_rate)
+            elif video.guessed_rate:
+                fps = float(video.guessed_rate)
+
+            # Duration -------------------------
+            duration = None
+            if container.duration and container.duration > 0:
+                duration = container.duration / 1_000_000.0
+            elif video.duration:
+                # Fallback time_base only for duration computation if missing
+                tb_for_dur = float(video.time_base) if video.time_base else (1.0 / 1_000_000.0)
+                duration = float(video.duration * tb_for_dur)
+
+            # Frame count -----------------------
+            frame_count = video.frames
+            if not frame_count or frame_count <= 0:
+                if duration and fps:
+                    frame_count = int(round(duration * fps))
+                else:
+                    frame_count = None
+
+            return {
+                "width": width,
+                "height": height,
+                "fps": fps,
+                "duration": duration,
+                "frame_count": frame_count,
+                "time_base": time_base,
+            }
+
+    def keyframes(self, start_time: float = 0, end_time: float | None = None) -> Iterator[PIL.Image.Image]:
+        """Lazy iterator of keyframes as PIL Images within time range."""
+        with self.open() as f:
+            container = av.open(f)
+            stream = container.streams.video[0]
+
+            # Seek to start time
+            if start_time > 0:
+                seek_timestamp = int(start_time * av.time_base)
+                container.seek(seek_timestamp)
+
+            for frame in container.decode(stream):
+                if not frame.key_frame:
+                    continue
+
+                # Check end time if specified
+                if end_time is not None:
+                    frame_time = frame.time
+                    if frame_time and frame_time > end_time:
+                        break
+
+                yield frame.to_image()
+
+            container.close()
