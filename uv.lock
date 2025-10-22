@@ -1450,9 +1450,6 @@ pandas = [
 ray = [
     { name = "ray", extra = ["client", "data"] },
 ]
-sentence-transformers = [
-    { name = "sentence-transformers" },
-]
 spark = [
     { name = "googleapis-common-protos" },
     { name = "grpcio" },
@@ -1469,6 +1466,7 @@ sql = [
     { name = "sqlglot" },
 ]
 transformers = [
+    { name = "sentence-transformers" },
     { name = "torch" },
     { name = "torchvision" },
     { name = "transformers" },
@@ -1605,7 +1603,7 @@ requires-dist = [
     { name = "pyspark", marker = "extra == 'spark'", specifier = "==3.5.5" },
     { name = "ray", extras = ["data", "client"], marker = "sys_platform == 'win32' and extra == 'ray'", specifier = ">=2.10.0,<2.48.0" },
     { name = "ray", extras = ["data", "client"], marker = "sys_platform != 'win32' and extra == 'ray'", specifier = ">=2.0.0,<2.48.0" },
-    { name = "sentence-transformers", marker = "extra == 'sentence-transformers'" },
+    { name = "sentence-transformers", marker = "extra == 'transformers'" },
     { name = "sqlalchemy", marker = "extra == 'sql'" },
     { name = "sqlglot", marker = "extra == 'sql'" },
     { name = "torch", marker = "extra == 'transformers'" },
@@ -1616,7 +1614,7 @@ requires-dist = [
     { name = "typing-extensions", specifier = ">=4.0.0" },
     { name = "unitycatalog", marker = "extra == 'unity'" },
 ]
-provides-extras = ["all", "aws", "azure", "clickhouse", "deltalake", "gcp", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "ray", "sentence-transformers", "transformers", "spark", "sql", "turbopuffer", "unity", "viz"]
+provides-extras = ["all", "aws", "azure", "clickhouse", "deltalake", "gcp", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "ray", "transformers", "spark", "sql", "turbopuffer", "unity", "viz"]
 
 [package.metadata.requires-dev]
 dev = [
