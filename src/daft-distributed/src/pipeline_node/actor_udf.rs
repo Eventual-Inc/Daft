@@ -7,16 +7,16 @@ use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
-use pyo3::{PyObject, Python, types::PyAnyMethods};
+use pyo3::{Py, PyAny, Python, types::PyAnyMethods};
 
 use super::{
-    DisplayLevel, DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig,
-    PipelineNodeContext, SubmittableTaskStream, TreeDisplay,
+    NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
+    SubmittableTaskStream,
 };
 use crate::{
-    pipeline_node::append_plan_to_existing_task,
+    pipeline_node::{DistributedPipelineNode, append_plan_to_existing_task},
+    plan::{PlanConfig, PlanExecutionContext},
     scheduling::{scheduler::SubmittableTask, task::SwordfishTask},
-    stage::{StageConfig, StageExecutionContext},
     utils::{
         channel::{Sender, create_channel},
         joinset::JoinSet,
@@ -37,38 +37,30 @@ impl UDFActors {
         udf_properties: &UDFProperties,
         actor_ready_timeout: usize,
     ) -> DaftResult<Vec<PyObjectWrapper>> {
-        let (task_locals, py_exprs) = Python::with_gil(|py| {
-            let task_locals = crate::utils::runtime::PYO3_ASYNC_RUNTIME_LOCALS
-                .get()
-                .expect("Python task locals not initialized")
-                .clone_ref(py);
-            let py_exprs = projection
-                .iter()
-                .map(|e| PyExpr {
-                    expr: e.inner().clone(),
-                })
-                .collect::<Vec<_>>();
-            (task_locals, py_exprs)
-        });
+        let task_locals = Python::attach(crate::utils::runtime::get_task_locals);
+        let py_exprs = projection
+            .iter()
+            .map(|e| PyExpr {
+                expr: e.inner().clone(),
+            })
+            .collect::<Vec<_>>();
         let num_actors = udf_properties
             .concurrency
             .expect("ActorUDF should have concurrency specified");
-        let (gpu_request, cpu_request, memory_request) =
-            match udf_properties.resource_request.clone() {
-                Some(resource_request) => (
-                    resource_request.num_gpus().unwrap_or(0.0),
-                    resource_request.num_cpus().unwrap_or(0.0),
-                    resource_request.memory_bytes().unwrap_or(0),
-                ),
-                None => (0.0, 0.0, 0),
-            };
+        let (gpu_request, cpu_request, memory_request) = match &udf_properties.resource_request {
+            Some(resource_request) => (
+                resource_request.num_gpus().unwrap_or(0.0),
+                resource_request.num_cpus().unwrap_or(1.0),
+                resource_request.memory_bytes().unwrap_or(0),
+            ),
+            None => (0.0, 1.0, 0),
+        };
 
-        // Use async pattern similar to DistributedActorPoolProjectOperator
-        let await_coroutine = async move {
-            let result = Python::with_gil(|py| {
+        let result: Vec<Py<PyAny>> = common_runtime::python::execute_python_coroutine(
+            move |py| {
                 let ray_actor_pool_udf_module =
                     py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
-                let coroutine = ray_actor_pool_udf_module.call_method1(
+                ray_actor_pool_udf_module.call_method1(
                     pyo3::intern!(py, "start_udf_actors"),
                     (
                         py_exprs,
@@ -78,23 +70,16 @@ impl UDFActors {
                         memory_request,
                         actor_ready_timeout,
                     ),
-                )?;
-                pyo3_async_runtimes::tokio::into_future(coroutine)
-            })?
-            .await?;
-            DaftResult::Ok(result)
-        };
+                )
+            },
+            task_locals,
+        )
+        .await?;
 
-        // Execute the coroutine with proper task locals
-        let result = pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine).await?;
-        let actors = Python::with_gil(|py| {
-            result.extract::<Vec<PyObject>>(py).map(|py_objects| {
-                py_objects
-                    .into_iter()
-                    .map(|py_object| PyObjectWrapper(Arc::new(py_object)))
-                    .collect::<Vec<_>>()
-            })
-        })?;
+        let actors = result
+            .into_iter()
+            .map(|py_object| PyObjectWrapper(Arc::new(py_object)))
+            .collect::<Vec<_>>();
         Ok(actors)
     }
 
@@ -114,7 +99,7 @@ impl UDFActors {
     }
 
     fn teardown(&mut self) {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             if let Self::Initialized { actors, .. } = self {
                 for actor in actors {
                     if let Err(e) = actor.0.call_method1(py, pyo3::intern!(py, "teardown"), ()) {
@@ -129,7 +114,7 @@ impl UDFActors {
 pub(crate) struct ActorUDF {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    child: Arc<dyn DistributedPipelineNode>,
+    child: DistributedPipelineNode,
     projection: Vec<BoundExpr>,
     udf_properties: UDFProperties,
     actor_ready_timeout: usize,
@@ -142,14 +127,14 @@ impl ActorUDF {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         projection: Vec<BoundExpr>,
         udf_properties: UDFProperties,
         schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNode,
     ) -> DaftResult<Self> {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![child.node_id()],
@@ -158,7 +143,7 @@ impl ActorUDF {
         );
         let config = PipelineNodeConfig::new(
             schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             child.config().clustering_spec.clone(),
         );
         Ok(Self {
@@ -167,12 +152,12 @@ impl ActorUDF {
             child,
             projection,
             udf_properties,
-            actor_ready_timeout: stage_config.config.actor_udf_ready_timeout,
+            actor_ready_timeout: plan_config.config.actor_udf_ready_timeout,
         })
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn execution_loop_fused(
@@ -213,7 +198,7 @@ impl ActorUDF {
         let memory_request = self
             .udf_properties
             .resource_request
-            .clone()
+            .as_ref()
             .and_then(|req| req.memory_bytes())
             .map(|m| m as u64)
             .unwrap_or(0);
@@ -222,7 +207,7 @@ impl ActorUDF {
         let schema = self.config.schema.clone();
         append_plan_to_existing_task(
             submittable_task,
-            &(self.clone() as Arc<dyn DistributedPipelineNode>),
+            &(self.clone() as Arc<dyn PipelineNodeImpl>),
             &move |input| {
                 LocalPhysicalPlan::distributed_actor_pool_project(
                     input,
@@ -235,8 +220,22 @@ impl ActorUDF {
             },
         )
     }
+}
 
-    fn multiline_display(&self) -> Vec<String> {
+impl PipelineNodeImpl for ActorUDF {
+    fn context(&self) -> &PipelineNodeContext {
+        &self.context
+    }
+
+    fn config(&self) -> &PipelineNodeConfig {
+        &self.config
+    }
+
+    fn children(&self) -> Vec<DistributedPipelineNode> {
+        vec![self.child.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         use itertools::Itertools;
         let mut res = vec![];
         res.push("ActorUDF:".to_string());
@@ -251,7 +250,7 @@ impl ActorUDF {
                 .concurrency
                 .expect("ActorUDF should have concurrency specified")
         ));
-        if let Some(resource_request) = self.udf_properties.resource_request.clone() {
+        if let Some(resource_request) = &self.udf_properties.resource_request {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
                 "Resource request = {{ {} }}",
@@ -262,60 +261,17 @@ impl ActorUDF {
         }
         res
     }
-}
-
-impl DistributedPipelineNode for ActorUDF {
-    fn context(&self) -> &PipelineNodeContext {
-        &self.context
-    }
-
-    fn config(&self) -> &PipelineNodeConfig {
-        &self.config
-    }
-
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
-        vec![self.child.clone()]
-    }
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_node = self.child.clone().produce_tasks(stage_context);
+        let input_node = self.child.clone().produce_tasks(plan_context);
 
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.execution_loop_fused(input_node, result_tx);
-        stage_context.spawn(execution_loop);
+        plan_context.spawn(execution_loop);
 
         SubmittableTaskStream::from(result_rx)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
-    }
-}
-
-impl TreeDisplay for ActorUDF {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.name()).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.name().to_string()
     }
 }

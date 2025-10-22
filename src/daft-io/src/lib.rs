@@ -36,7 +36,7 @@ use common_error::{DaftError, DaftResult};
 pub use common_io_config::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config};
 use futures::{FutureExt, stream::BoxStream};
 use object_io::StreamingRetryParams;
-pub use object_io::{FileMetadata, GetResult, ObjectSource};
+pub use object_io::{FileMetadata, FileType, GetResult, ObjectSource};
 #[cfg(feature = "python")]
 pub use python::register_modules;
 pub use s3_like::{S3LikeSource, S3MultipartWriter, S3PartBuffer, s3_config_from_env};
@@ -352,7 +352,6 @@ impl IOClient {
 
     pub async fn single_url_download(
         &self,
-        index: usize,
         input: Option<String>,
         raise_error_on_failure: bool,
         io_stats: Option<IOStatsRef>,
@@ -374,10 +373,6 @@ impl IOClient {
                 if raise_error_on_failure {
                     Err(err)
                 } else {
-                    log::warn!(
-                        "Error occurred during url_download at index: {index} {} (falling back to Null)",
-                        err
-                    );
                     Ok(None)
                 }
             }
@@ -387,7 +382,6 @@ impl IOClient {
 
     pub async fn single_url_upload(
         &self,
-        index: usize,
         dest: String,
         data: Option<bytes::Bytes>,
         raise_error_on_failure: bool,
@@ -406,10 +400,6 @@ impl IOClient {
                 if raise_error_on_failure {
                     Err(err)
                 } else {
-                    log::warn!(
-                        "Error occurred during file upload at index: {index} {} (falling back to Null)",
-                        err
-                    );
                     Ok(None)
                 }
             }

@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 import threading
+import warnings
+from types import GenericAlias
 from typing import TYPE_CHECKING, Any, Callable, Union
 
-from daft.context import get_context
-from daft.daft import ImageMode, PyDataType, PyTimeUnit
-from daft.dependencies import np, pa, pil_image
+from packaging.version import parse
+
+from daft.daft import ImageMode, PyDataType, PyTimeUnit, sql_datatype
+from daft.dependencies import np, pa
+from daft.runners import get_or_create_runner
 
 if TYPE_CHECKING:
     import builtins
+
+    import jaxtyping
 
 
 class TimeUnit:
@@ -96,117 +102,322 @@ class DataType:
             "use a creator method like DataType.int32() or use DataType.from_arrow_type(pa_type)"
         )
 
-    @staticmethod
-    def _infer_dtype_from_pylist(data: list[Any]) -> DataType | None:
-        curr_dtype = None
+    @classmethod
+    def infer_from_type(cls, t: type | GenericAlias) -> DataType:
+        """Infer Daft DataType from a Python type."""
+        # NOTE: Make sure this matches the logic in `Literal::from_pyobj` in Rust
 
-        for item in data:
-            if item is None:
-                continue
+        assert isinstance(t, (type, GenericAlias)), f"Input to DataType.infer_from_type must be a type, found: {t}"
 
-            elif pil_image.module_available() and isinstance(item, pil_image.Image):
-                item_dtype = DataType.image(item.mode)
-                if curr_dtype is None:
-                    curr_dtype = item_dtype
-                elif not curr_dtype.is_image():
-                    return None
-                elif curr_dtype.image_mode and curr_dtype.image_mode != item_dtype.image_mode:
-                    curr_dtype = DataType.image()
-                else:
-                    assert curr_dtype.image_mode == item_dtype.image_mode or curr_dtype.image_mode is None
-                    pass
+        import datetime
+        import decimal
+        import importlib
+        import typing
 
-            elif np.module_available() and isinstance(item, (np.ndarray, np.generic)):  # type: ignore[attr-defined]
+        from typing_extensions import is_typeddict
+
+        import daft.file
+        import daft.series
+
+        origin_or_none = typing.get_origin(t)
+        origin: type = origin_or_none if origin_or_none is not None else t  # type: ignore
+        args = typing.get_args(t)
+
+        def check_type(type_or_path: type | str) -> bool:
+            """Check if `origin` is a subclass of `type_or_path`.
+
+            Pass in a string value for `type_or_path` for types from optional dependencies.
+            """
+            if isinstance(type_or_path, type):
+                type_obj = type_or_path
+            elif isinstance(type_or_path, str):
+                module_name, type_name = type_or_path.rsplit(".", 1)
                 try:
-                    inner_dtype = DataType.from_numpy_dtype(item.dtype)
-                except Exception:
-                    return None
-
-                shape = item.shape
-
-                if len(shape) == 0:
-                    return None
-                item_dtype = DataType.list(inner_dtype) if len(shape) == 1 else DataType.tensor(inner_dtype)
-
-                if curr_dtype is None:
-                    curr_dtype = item_dtype
-                elif curr_dtype != item_dtype:
-                    return None
-                else:
-                    pass
-            elif isinstance(item, tuple):
-                fields = {}
-                fields = {f"_{i}": DataType._infer_type(value) for i, value in enumerate(item)}
-                curr_dtype = DataType.struct(fields)
+                    module = importlib.import_module(module_name)
+                    type_obj = getattr(module, type_name)
+                except (ImportError, AttributeError):
+                    return False
             else:
-                return None
+                raise ValueError("`type_or_path` must be type or string")
 
-        return curr_dtype
+            return issubclass(origin, type_obj)
+
+        if check_type(type(None)):
+            return cls.null()
+        elif check_type(bool):
+            return cls.bool()
+        elif check_type(str):
+            return cls.string()
+        elif check_type(bytes):
+            return cls.binary()
+        elif check_type(int):
+            return cls.int64()
+        elif check_type(float):
+            return cls.float64()
+        elif check_type(datetime.datetime):
+            # cannot derive timezone from type
+            return cls.timestamp(TimeUnit.us(), timezone=None)
+        elif check_type(datetime.date):
+            return cls.date()
+        elif check_type(datetime.time):
+            return cls.time(TimeUnit.us())
+        elif check_type(datetime.timedelta):
+            return cls.duration(TimeUnit.us())
+        elif check_type(list):
+            if len(args) == 0:
+                inner_dtype = cls.python()
+            elif len(args) == 1:
+                inner_dtype = cls.infer_from_type(args[0])
+            else:
+                raise TypeError(f"Python list type cannot have more than one type argument, found: {t}")
+
+            return cls.list(inner_dtype)
+        elif is_typeddict(origin):
+            field_types = typing.get_type_hints(origin)
+            if any(not isinstance(t, str) for t in field_types):
+                warnings.warn(
+                    f"Expected all TypedDict keys to be strings, found: {field_types}. Defaulting to Map[Python, Python] type."
+                )
+                return cls.map(cls.python(), cls.python())
+
+            field_dtypes = {k: cls.infer_from_type(v) for k, v in field_types.items()}
+            return cls.struct(field_dtypes)
+        elif check_type(dict):
+            if len(args) == 0:
+                key_dtype = cls.python()
+                value_dtype = cls.python()
+            elif len(args) == 2:
+                key_dtype = cls.infer_from_type(args[0])
+                value_dtype = cls.infer_from_type(args[1])
+            else:
+                raise TypeError(f"Python dict type must have exactly two type arguments, found: {t}")
+
+            # dict type can also be turned into struct, but we are unable to derive the struct keys from the type alone
+            return cls.map(key_dtype, value_dtype)
+        elif check_type(tuple):
+            if len(args) == 0:
+                # tuple -> List[Python]
+                return cls.list(cls.python())
+            if len(args) == 2 and args[1] is Ellipsis:
+                # tuple[inner_type, ...] -> List[inner_type]
+                inner_dtype = cls.infer_from_type(args[0])
+                return cls.list(inner_dtype)
+            else:
+                # tuple[type0, type1, ...] -> Struct[_0: type0, _1: type1, ...]
+                field_dtypes = {f"_{i}": cls.infer_from_type(arg) for i, arg in enumerate(args)}
+                return cls.struct(field_dtypes)
+        elif check_type("pydantic.BaseModel"):
+            import pydantic
+
+            if not (parse("2.0.0") <= parse(pydantic.__version__) < parse("3.0.0")):
+                raise ValueError(
+                    f"Daft only supports DataType inference for Pydantic V2, found Pydantic V{pydantic.__version__}"
+                )
+
+            model: pydantic.BaseModel = origin
+
+            serialize_by_alias = model.model_config.get("serialize_by_alias", False)
+
+            field_dtypes = {}
+            for attr_name, field_info in model.model_fields.items():
+                if serialize_by_alias:
+                    if field_info.serialization_alias is not None:
+                        serialized_name = field_info.serialization_alias
+                    elif field_info.alias is not None:
+                        serialized_name = field_info.alias
+                    else:
+                        serialized_name = attr_name
+                else:
+                    serialized_name = attr_name
+                field_dtypes[serialized_name] = cls.infer_from_type(field_info.annotation)
+
+            for attr_name, field_info in model.model_computed_fields.items():
+                if serialize_by_alias:
+                    if field_info.alias is not None:
+                        serialized_name = field_info.alias
+                    else:
+                        serialized_name = attr_name
+                else:
+                    serialized_name = attr_name
+                field_dtypes[serialized_name] = cls.infer_from_type(field_info.return_type)
+
+            return cls.struct(field_dtypes)
+        elif check_type(decimal.Decimal):
+            warnings.warn(
+                "Cannot derive precision and scale from decimal.Decimal type, defaulting to DataType.python()"
+            )
+            return cls.python()
+        elif check_type("jaxtyping.AbstractArray"):
+            return cls._infer_from_jaxtyping(origin)
+        elif check_type("numpy.ndarray"):
+            inner_dtype = None
+            if len(args) == 2:
+                # https://numpy.org/doc/2.3/reference/typing.html#numpy.typing.NDArray
+                numpy_dtype_args = typing.get_args(args[1])
+                if len(numpy_dtype_args) == 1:
+                    inner_dtype = cls.infer_from_type(numpy_dtype_args[0])
+
+            if inner_dtype is None:
+                warnings.warn(
+                    f"Cannot derive inner type from {t}, defaulting to DataType.python() for ndarray inner type"
+                )
+                inner_dtype = cls.python()
+
+            return cls.tensor(inner_dtype)
+        elif check_type("torch.FloatTensor"):
+            return cls.tensor(cls.float32())
+        elif check_type("torch.DoubleTensor"):
+            return cls.tensor(cls.float64())
+        elif check_type("torch.ByteTensor"):
+            return cls.tensor(cls.uint8())
+        elif check_type("torch.CharTensor"):
+            return cls.tensor(cls.int8())
+        elif check_type("torch.ShortTensor"):
+            return cls.tensor(cls.int16())
+        elif check_type("torch.IntTensor"):
+            return cls.tensor(cls.int32())
+        elif check_type("torch.LongTensor"):
+            return cls.tensor(cls.int64())
+        elif check_type("torch.BoolTensor"):
+            return cls.tensor(cls.bool())
+        elif (
+            check_type("torch.Tensor")
+            or check_type("tensorflow.Tensor")
+            or check_type("jax.Array")
+            or check_type("cupy.ndarray")
+        ):
+            return cls.tensor(cls.python())
+        elif check_type("numpy.generic"):
+            return cls._infer_from_numpy_scalar_dtype(origin)
+        elif check_type("pandas.Series"):
+            warnings.warn(
+                "Cannot derive inner type from pandas.Series type, defaulting to DataType.python() for Series inner type"
+            )
+            return cls.list(cls.python())
+        elif check_type("PIL.Image.Image"):
+            return cls.image()
+        elif check_type(daft.series.Series):
+            warnings.warn(
+                "Cannot derive inner type from daft.Series type, defaulting to DataType.python() for Series inner type"
+            )
+            return cls.list(cls.python())
+        elif check_type(daft.file.File):
+            return cls.file()
+        else:
+            return cls.python()
 
     @classmethod
-    def _infer_type(cls, user_provided_type: DataTypeLike) -> DataType:
-        import types
-        from typing import get_args, get_origin
+    def _infer_from_numpy_scalar_dtype(cls, t: type) -> DataType:
+        import numpy as np
 
-        if isinstance(user_provided_type, DataType):
-            return user_provided_type
-        elif (
-            isinstance(user_provided_type, types.ModuleType)
-            and hasattr(user_provided_type.module, "__name__")
-            and user_provided_type.module.__name__ == "PIL.Image"
-        ) or (pil_image.module_available() and user_provided_type is pil_image.Image):
-            return DataType.image()
-        elif isinstance(user_provided_type, dict):
-            return DataType.struct({k: DataType._infer_type(user_provided_type[k]) for k in user_provided_type})
-        elif user_provided_type is None:
-            return DataType.null()
-        elif get_origin(user_provided_type) is not None:
-            origin_type = get_origin(user_provided_type)
-            if origin_type is list:
-                child_type = get_args(user_provided_type)[0]
-                return DataType.list(DataType._infer_type(child_type))
-            elif origin_type is dict:
-                (key_type, val_type) = get_args(user_provided_type)
-                return DataType.map(DataType._infer_type(key_type), DataType._infer_type(val_type))
-            else:
-                raise ValueError(f"Unrecognized Python origin type, cannot convert to Daft type: {origin_type}")
-        elif isinstance(user_provided_type, type):
-            if user_provided_type is str:
-                return DataType.string()
-            elif user_provided_type is int:
-                return DataType.int64()
-            elif user_provided_type is float:
-                return DataType.float64()
-            elif user_provided_type is bytes:
-                return DataType.binary()
-            elif user_provided_type is bool:
-                return DataType.bool()
-            elif user_provided_type is list:
-                inner_type = get_args(user_provided_type)
-                return DataType.list(DataType._infer_type(inner_type))
-            elif user_provided_type is object:
-                return DataType.python()
-            else:
-                raise ValueError(f"Unrecognized Python type, cannot convert to Daft type: {user_provided_type}")
-        elif isinstance(user_provided_type, bool):
-            return DataType.bool()
-        elif isinstance(user_provided_type, int):
-            return DataType.int64()
-        elif isinstance(user_provided_type, float):
-            return DataType.float64()
-        elif isinstance(user_provided_type, str):
-            return DataType.string()
-        elif isinstance(user_provided_type, bytes):
-            return DataType.binary()
-
-        elif isinstance(user_provided_type, list):
-            return DataType.list(DataType._infer_type(user_provided_type[0]))
-        elif isinstance(user_provided_type, tuple):
-            return DataType.struct({f"_{i}": DataType._infer_type(value) for i, value in enumerate(user_provided_type)})
-        elif user_provided_type is object:
-            return DataType.python()
+        if t is np.bool_:
+            return cls.bool()
+        elif t is np.int8:
+            return cls.int8()
+        elif t is np.uint8:
+            return cls.uint8()
+        elif t is np.int16:
+            return cls.int16()
+        elif t is np.uint16:
+            return cls.uint16()
+        elif t is np.int32:
+            return cls.int32()
+        elif t is np.uint32:
+            return cls.uint32()
+        elif t is np.int64:
+            return cls.int64()
+        elif t is np.uint64:
+            return cls.uint64()
+        elif t is np.float32:
+            return cls.float32()
+        elif t is np.float64:
+            return cls.float64()
+        elif t is np.datetime64:
+            warnings.warn(
+                "numpy.datetime64 may be converted to either timestamp or date based on the value, defaulting to DataType.timestamp(TimeUnit.us())"
+            )
+            return cls.timestamp(TimeUnit.us(), timezone=None)
         else:
-            raise ValueError(f"Unable to infer Daft DataType for provided value: {user_provided_type}")
+            return cls.python()
+
+    @classmethod
+    def _infer_from_jaxtyping(cls, t: jaxtyping.AbstractArray) -> DataType:
+        print("inferring jaxtyping", t)
+
+        import jaxtyping
+        from jaxtyping._array_types import _FixedDim
+
+        inferred_array_type = cls.infer_from_type(t.array_type)
+        if not inferred_array_type.is_tensor():
+            # if we do not support converting the array type to a tensor, do not infer an inner dtype or shape
+            return inferred_array_type
+
+        def is_dtype(dtype: jaxtyping.AbstractDtype) -> bool:
+            return t.dtypes == dtype[Any, "..."].dtypes
+
+        if is_dtype(jaxtyping.Bool):
+            inner_dtype = cls.bool()
+        elif is_dtype(jaxtyping.Int8):
+            inner_dtype = cls.int8()
+        elif is_dtype(jaxtyping.UInt8):
+            inner_dtype = cls.uint8()
+        elif is_dtype(jaxtyping.Int16):
+            inner_dtype = cls.int16()
+        elif is_dtype(jaxtyping.UInt16):
+            inner_dtype = cls.uint16()
+        elif is_dtype(jaxtyping.Int32):
+            inner_dtype = cls.int32()
+        elif is_dtype(jaxtyping.UInt32):
+            inner_dtype = cls.uint32()
+        elif is_dtype(jaxtyping.Int64) or is_dtype(jaxtyping.Int) or is_dtype(jaxtyping.Integer):
+            inner_dtype = cls.int64()
+        elif is_dtype(jaxtyping.UInt64) or is_dtype(jaxtyping.UInt):
+            inner_dtype = cls.uint64()
+        elif is_dtype(jaxtyping.Float32):
+            inner_dtype = cls.float32()
+        elif is_dtype(jaxtyping.Float64) or is_dtype(jaxtyping.Float) or is_dtype(jaxtyping.Real):
+            inner_dtype = cls.float64()
+        else:
+            inner_dtype = cls.python()
+
+        if len(t.dims) == 0:
+            shape = ()
+        else:
+            # only set shape if all dims are fixed
+            if all(isinstance(dim, _FixedDim) for dim in t.dims):
+                shape = tuple(dim.size for dim in t.dims)
+            else:
+                shape = None
+
+        return cls.tensor(inner_dtype, shape)
+
+    @classmethod
+    def infer_from_object(cls, obj: Any) -> DataType:
+        """Infer Daft DataType from a Python object."""
+        from daft.series import Series
+
+        s = Series.from_pylist([obj])
+        return s.datatype()
+
+    @classmethod
+    def from_sql(cls, sql_type: str) -> DataType:
+        """Construct a Daft DataType from a SQL type."""
+        return cls._from_pydatatype(sql_datatype(sql_type))
+
+    @classmethod
+    def _infer(cls, user_provided_type: DataTypeLike) -> DataType:
+        """Infer Daft DataType from a DataTypeLike.
+
+        Internal use only.
+        """
+        if isinstance(user_provided_type, cls):
+            return user_provided_type
+        elif isinstance(user_provided_type, str):
+            return cls.from_sql(user_provided_type)
+        elif isinstance(user_provided_type, (type, GenericAlias)):
+            return cls.infer_from_type(user_provided_type)
+        else:
+            raise TypeError("DataType._infer expects a DataType, string, or type")
 
     @staticmethod
     def _from_pydatatype(pydt: PyDataType) -> DataType:
@@ -446,8 +657,8 @@ class DataType:
                 each tensor element to vary.
         """
         if shape is not None:
-            if not isinstance(shape, tuple) or not shape or any(not isinstance(n, int) for n in shape):
-                raise ValueError("Tensor shape must be a non-empty tuple of ints, but got: ", shape)
+            if not isinstance(shape, tuple) or any(not isinstance(n, int) for n in shape):
+                raise ValueError("Tensor shape must be a tuple of ints, but got: ", shape)
         return cls._from_pydatatype(PyDataType.tensor(dtype._dtype, shape))
 
     @classmethod
@@ -483,7 +694,7 @@ class DataType:
         return cls._from_pydatatype(PyDataType.sparse_tensor(dtype._dtype, shape, use_offset_indices))
 
     @classmethod
-    def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:
+    def from_arrow_type(cls, arrow_type: pa.lib.DataType, python_fallback: builtins.bool = True) -> DataType:
         """Maps a PyArrow DataType to a Daft DataType."""
         if pa.types.is_int8(arrow_type):
             return cls.int8()
@@ -533,25 +744,25 @@ class DataType:
         elif pa.types.is_list(arrow_type) or pa.types.is_large_list(arrow_type):
             assert isinstance(arrow_type, (pa.ListType, pa.LargeListType))
             field = arrow_type.value_field
-            return cls.list(cls.from_arrow_type(field.type))
+            return cls.list(cls.from_arrow_type(field.type, python_fallback))
         elif pa.types.is_fixed_size_list(arrow_type):
             assert isinstance(arrow_type, pa.FixedSizeListType)
             field = arrow_type.value_field
-            return cls.fixed_size_list(cls.from_arrow_type(field.type), arrow_type.list_size)
+            return cls.fixed_size_list(cls.from_arrow_type(field.type, python_fallback), arrow_type.list_size)
         elif pa.types.is_struct(arrow_type):
             assert isinstance(arrow_type, pa.StructType)
             fields = [arrow_type[i] for i in range(arrow_type.num_fields)]
-            return cls.struct({field.name: cls.from_arrow_type(field.type) for field in fields})
+            return cls.struct({field.name: cls.from_arrow_type(field.type, python_fallback) for field in fields})
         elif pa.types.is_interval(arrow_type):
             return cls.interval()
         elif pa.types.is_map(arrow_type):
             assert isinstance(arrow_type, pa.MapType)
             return cls.map(
-                key_type=cls.from_arrow_type(arrow_type.key_type),
-                value_type=cls.from_arrow_type(arrow_type.item_type),
+                key_type=cls.from_arrow_type(arrow_type.key_type, python_fallback),
+                value_type=cls.from_arrow_type(arrow_type.item_type, python_fallback),
             )
         elif isinstance(arrow_type, getattr(pa, "FixedShapeTensorType", ())):
-            scalar_dtype = cls.from_arrow_type(arrow_type.value_type)
+            scalar_dtype = cls.from_arrow_type(arrow_type.value_type, python_fallback)
             return cls.tensor(scalar_dtype, tuple(arrow_type.shape))
         # Only check for PyExtensionType if pyarrow version is < 21.0.0
         if hasattr(pa, "PyExtensionType") and isinstance(arrow_type, getattr(pa, "PyExtensionType")):
@@ -563,7 +774,7 @@ class DataType:
         elif isinstance(arrow_type, pa.BaseExtensionType):
             name = arrow_type.extension_name
 
-            if (get_context().get_or_create_runner().name == "ray") and (
+            if (get_or_create_runner().name == "ray") and (
                 type(arrow_type).__reduce__ == pa.BaseExtensionType.__reduce__
             ):
                 raise ValueError(
@@ -583,13 +794,16 @@ class DataType:
             else:
                 return cls.extension(
                     name,
-                    cls.from_arrow_type(arrow_type.storage_type),
+                    cls.from_arrow_type(arrow_type.storage_type, python_fallback),
                     metadata,
                 )
         else:
-            # Fall back to a Python object type.
-            # TODO(Clark): Add native support for remaining Arrow types.
-            return cls.python()
+            if python_fallback:
+                # Fall back to a Python object type.
+                # TODO(Clark): Add native support for remaining Arrow types.
+                return cls.python()
+            else:
+                raise TypeError(f"Unsupported Arrow type: {arrow_type}")
 
     @classmethod
     def from_numpy_dtype(cls, np_type: np.dtype[Any]) -> DataType:
@@ -598,6 +812,7 @@ class DataType:
         return cls.from_arrow_type(arrow_type)
 
     def to_arrow_dtype(self) -> pa.DataType:
+        _ensure_registered_super_ext_type()
         return self._dtype.to_arrow()
 
     @classmethod
@@ -1216,7 +1431,7 @@ class DataType:
 
 
 # Type alias for a union of types that can be inferred into a DataType
-DataTypeLike = Union[DataType, type, str, tuple[Any, ...]]
+DataTypeLike = Union[DataType, type, GenericAlias, str]
 
 
 _EXT_TYPE_REGISTRATION_LOCK = threading.Lock()

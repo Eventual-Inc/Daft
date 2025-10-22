@@ -1,0 +1,192 @@
+{{- if .Values.distributed }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "daft.fullname" . }}-head
+  labels:
+    {{- include "daft.labels" . | nindent 4 }}
+    app.kubernetes.io/component: head
+    ray.io/node-type: head
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "daft.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: head
+      ray.io/node-type: head
+  template:
+    metadata:
+      labels:
+        {{- include "daft.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: head
+        ray.io/node-type: head
+        ray.io/cluster: {{ include "daft.fullname" . }}
+        ray.io/identifier: {{ include "daft.fullname" . }}-head
+        ray.io/is-ray-node: "yes"
+    spec:
+      serviceAccountName: {{ include "daft.serviceAccountName" . }}
+      containers:
+      - name: ray-head
+        image: "{{ .Values.image }}"
+        imagePullPolicy: {{ .Values.imagePullPolicy }}
+        command: ["/bin/bash", "-c", "--"]
+        args:
+        - |
+          ulimit -n 65536;
+          ray start --head --block \
+            --dashboard-agent-listen-port=52365 \
+            --dashboard-host=0.0.0.0 \
+            --memory={{ include "daft.calculateRayMemory" .Values.head.resources.requests.memory }} \
+            --metrics-export-port=8080 \
+            --num-cpus=0 \
+        env:
+        - name: RAY_CLUSTER_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['ray.io/cluster']
+        - name: RAY_CLOUD_INSTANCE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: RAY_NODE_TYPE_NAME
+          value: "head"
+        - name: RAY_PORT
+          value: "6379"
+        - name: RAY_ADDRESS
+          value: "127.0.0.1:6379"
+        - name: RAY_DASHBOARD_ENABLE_K8S_DISK_USAGE
+          value: "1"
+        {{- if .Values.monitoring.enabled }}
+        - name: RAY_PROMETHEUS_HOST
+          value: "http://localhost:9090"
+        - name: RAY_GRAFANA_HOST
+          value: "http://localhost:3000"
+        - name: RAY_GRAFANA_IFRAME_HOST
+          value: "http://127.0.0.1:3000"
+        {{- end }}
+        {{- with .Values.head.env }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        ports:
+        - containerPort: 6379
+          name: gcs-server
+          protocol: TCP
+        - containerPort: 8265
+          name: dashboard
+          protocol: TCP
+        - containerPort: 10001
+          name: client
+          protocol: TCP
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
+        livenessProbe:
+          exec:
+            command:
+            - ray
+            - health-check
+          failureThreshold: 120
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - ray
+            - health-check
+          failureThreshold: 10
+          initialDelaySeconds: 1
+          periodSeconds: 1
+          successThreshold: 1
+          timeoutSeconds: 5
+        {{- with .Values.head.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        volumeMounts:
+        - mountPath: /dev/shm
+          name: shm
+        - mountPath: /tmp/ray
+          name: ray-state
+        {{- with .Values.head.volumeMounts }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- if .Values.monitoring.enabled }}
+      - name: prometheus
+        image: {{ .Values.monitoring.prometheus.image }}
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          echo "Waiting for Ray to generate Prometheus config..."
+          while [ ! -f /tmp/ray/session_latest/metrics/prometheus/prometheus.yml ]; do
+            sleep 2
+          done
+          echo "Ray Prometheus config found, starting Prometheus..."
+          exec /bin/prometheus \
+            --config.file=/tmp/ray/session_latest/metrics/prometheus/prometheus.yml
+        ports:
+        - containerPort: 9090
+          name: prometheus
+          protocol: TCP
+        {{- with .Values.monitoring.prometheus.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        volumeMounts:
+        - mountPath: /tmp/ray
+          name: ray-state
+      - name: grafana
+        image: {{ .Values.monitoring.grafana.image }}
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          echo "Waiting for Ray to generate Grafana config..."
+          while [ ! -f /tmp/ray/session_latest/metrics/grafana/grafana.ini ]; do
+            sleep 2
+          done
+          echo "Ray Grafana config found, starting Grafana..."
+          exec /run.sh
+        env:
+        - name: GF_PATHS_CONFIG
+          value: "/tmp/ray/session_latest/metrics/grafana/grafana.ini"
+        - name: GF_PATHS_PROVISIONING
+          value: "/tmp/ray/session_latest/metrics/grafana/provisioning"
+        ports:
+        - containerPort: 3000
+          name: grafana
+          protocol: TCP
+        {{- with .Values.monitoring.grafana.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        volumeMounts:
+        - mountPath: /tmp/ray
+          name: ray-state
+      {{- end }}
+      volumes:
+      - name: shm
+        emptyDir:
+          medium: Memory
+      - name: ray-state
+        emptyDir: {}
+      {{- with .Values.volumes }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- with .Values.head.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.head.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.head.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

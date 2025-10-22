@@ -17,8 +17,6 @@ mod struct_growable;
 
 #[cfg(feature = "python")]
 mod python_growable;
-#[cfg(feature = "python")]
-use crate::datatypes::PythonArray;
 
 /// This function creates a [`Box<dyn Growable>`] when provided with a [`DataType`] and a [`Vec<&Series>`].
 ///
@@ -107,20 +105,6 @@ impl GrowableArray for NullArray {
     }
 }
 
-#[cfg(feature = "python")]
-impl GrowableArray for PythonArray {
-    type GrowableType<'a> = python_growable::PythonGrowable<'a>;
-
-    fn make_growable<'a>(
-        name: &str,
-        dtype: &DataType,
-        arrays: Vec<&'a Self>,
-        _use_validity: bool,
-        capacity: usize,
-    ) -> Self::GrowableType<'a> {
-        python_growable::PythonGrowable::new(name, dtype, arrays, capacity)
-    }
-}
 macro_rules! impl_growable_array {
     (
         $daft_array:ident,
@@ -225,3 +209,6 @@ impl_growable_array!(ImageArray, logical_growable::LogicalImageGrowable<'a>);
 impl_growable_array!(TensorArray, logical_growable::LogicalTensorGrowable<'a>);
 impl_growable_array!(MapArray, map_growable::MapGrowable<'a>);
 impl_growable_array!(FileArray, logical_growable::LogicalFileGrowable<'a>);
+
+#[cfg(feature = "python")]
+impl_growable_array!(PythonArray, python_growable::PythonGrowable<'a>);

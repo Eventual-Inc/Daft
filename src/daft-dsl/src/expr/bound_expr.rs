@@ -73,6 +73,10 @@ impl BoundExpr {
         &self.0
     }
 
+    pub fn into_inner(self) -> ExprRef {
+        self.0
+    }
+
     pub fn bind_all(
         exprs: &[impl Into<ExprRef> + Clone],
         schema: &Schema,
@@ -138,6 +142,10 @@ macro_rules! impl_bound_wrapper {
                 exprs.iter()
                     .map(|expr| Self::try_new(expr.clone(), schema))
                     .collect()
+            }
+
+            pub fn inner(&self) -> &$inner {
+                &self.0
             }
         }
 

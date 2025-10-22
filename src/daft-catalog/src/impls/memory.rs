@@ -1,7 +1,6 @@
 use std::sync::{Arc, RwLock};
 
 use common_error::DaftResult;
-use daft_context::get_context;
 use daft_core::prelude::*;
 use daft_logical_plan::{InMemoryInfo, LogicalPlan, LogicalPlanBuilder, SourceInfo, ops::Source};
 use daft_micropartition::{
@@ -251,7 +250,7 @@ impl Catalog for MemoryCatalog {
     }
 
     #[cfg(feature = "python")]
-    fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
+    fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
         use pyo3::{intern, types::PyAnyMethods};
 
         use crate::python::PyCatalog;
@@ -310,8 +309,8 @@ impl Table for MemoryTable {
         }
 
         let pset = MicroPartitionSet::empty();
-        let runner = get_context().get_or_create_runner()?;
-        pyo3::Python::with_gil(|py| {
+        let runner = daft_runners::get_or_create_runner()?;
+        pyo3::Python::attach(|py| {
             for (i, res) in runner.run_iter_tables(py, plan, None)?.enumerate() {
                 let mp = res?;
                 pset.set_partition(i, &mp)?;
@@ -355,7 +354,7 @@ impl Table for MemoryTable {
     }
 
     #[cfg(feature = "python")]
-    fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
+    fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
         use pyo3::{intern, types::PyAnyMethods};
 
         use crate::python::PyTable;

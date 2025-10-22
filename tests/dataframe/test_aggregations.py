@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from io import StringIO
 
 import numpy as np
 import pyarrow as pa
@@ -1014,19 +1015,17 @@ def test_join_followed_by_groupby(make_df, repartition_nparts, with_morsel_size)
     assert sorted_result == expected
 
 
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() != "ray" or get_context().daft_execution_config.use_legacy_ray_runner is True,
-    reason="Legacy ray runner does not support skipping shuffles on already partitioned data",
-)
-def test_join_on_hash_partitioned_df_does_not_shuffle(capsys):
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Tests Flotilla-specific behavior")
+def test_join_on_hash_partitioned_df_does_not_shuffle():
     df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
     df = df.repartition(2, "a")
     df = df.groupby("a").agg(col("b").sum())
 
-    df.explain(True)
-    captured = capsys.readouterr()
+    plan_io = StringIO()
+    df.explain(True, file=plan_io)
+    captured = plan_io.getvalue()
 
     # Assert that "Repartition" only shows up 3 times in the explain output, logical + optimized + physical
     assert (
-        captured.out.count("Repartition") == 3
-    ), f"Expected 'Repartition' to appear 3 times, got {captured.out.count('Repartition')}\n{captured.out}"
+        captured.count("Repartition") == 3
+    ), f"Expected 'Repartition' to appear 3 times, got {captured.count('Repartition')}\n{captured}"

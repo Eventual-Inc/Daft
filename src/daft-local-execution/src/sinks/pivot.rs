@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
@@ -10,7 +11,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) enum PivotState {
     Accumulating(Vec<Arc<MicroPartition>>),
@@ -43,6 +44,7 @@ struct PivotParams {
     value_column: BoundExpr,
     aggregation: BoundAggExpr,
     names: Vec<String>,
+    pre_agg: bool,
 }
 
 pub struct PivotSink {
@@ -56,6 +58,7 @@ impl PivotSink {
         value_column: BoundExpr,
         aggregation: BoundAggExpr,
         names: Vec<String>,
+        pre_agg: bool,
     ) -> Self {
         Self {
             pivot_params: Arc::new(PivotParams {
@@ -64,6 +67,7 @@ impl PivotSink {
                 value_column,
                 aggregation,
                 names,
+                pre_agg,
             }),
         }
     }
@@ -95,16 +99,22 @@ impl BlockingSink for PivotSink {
                 async move {
                     let all_parts = states.into_iter().flat_map(|mut state| state.finalize());
                     let concated = MicroPartition::concat(all_parts)?;
-                    let group_by_with_pivot = pivot_params
-                        .group_by
-                        .iter()
-                        .chain(std::iter::once(&pivot_params.pivot_column))
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    let agged = concated.agg(
-                        std::slice::from_ref(&pivot_params.aggregation),
-                        &group_by_with_pivot,
-                    )?;
+
+                    let agged = if pivot_params.pre_agg {
+                        let group_by_with_pivot = pivot_params
+                            .group_by
+                            .iter()
+                            .chain(std::iter::once(&pivot_params.pivot_column))
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        concated.agg(
+                            std::slice::from_ref(&pivot_params.aggregation),
+                            &group_by_with_pivot,
+                        )?
+                    } else {
+                        concated
+                    };
+
                     let pivoted = Arc::new(agged.pivot(
                         &pivot_params.group_by,
                         pivot_params.pivot_column.clone(),

@@ -1,19 +1,20 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult, ensure};
+use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use common_py_serde::{PyObjectWrapper, deserialize_py_object, serialize_py_object};
 use common_resource_request::ResourceRequest;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use common_treenode::{DynTreeNode, TreeNode, TreeNodeRecursion};
-use daft_core::prelude::*;
+use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
-    Column, WindowExpr, WindowFrame, WindowSpec,
+    Column, ExprRef, WindowExpr, WindowFrame, WindowSpec,
     expr::{
         BoundColumn,
         bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
     },
-    functions::python::get_resource_request,
+    functions::python::{UDFProperties, get_resource_request},
 };
 use daft_logical_plan::{
     InMemoryInfo, OutputFileInfo,
@@ -27,6 +28,7 @@ pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
 pub enum LocalPhysicalPlan {
     InMemoryScan(InMemoryScan),
     PhysicalScan(PhysicalScan),
+    GlobScan(GlobScan),
     EmptyScan(EmptyScan),
     PlaceholderScan(PlaceholderScan),
     Project(Project),
@@ -54,7 +56,6 @@ pub enum LocalPhysicalPlan {
     Concat(Concat),
     HashJoin(HashJoin),
     CrossJoin(CrossJoin),
-    // SortMergeJoin(SortMergeJoin),
     // BroadcastJoin(BroadcastJoin),
     PhysicalWrite(PhysicalWrite),
     CommitWrite(CommitWrite),
@@ -74,6 +75,7 @@ pub enum LocalPhysicalPlan {
     // Flotilla Only Nodes
     Repartition(Repartition),
     IntoPartitions(IntoPartitions),
+    SortMergeJoin(SortMergeJoin),
     #[cfg(feature = "python")]
     DistributedActorPoolProject(DistributedActorPoolProject),
 }
@@ -94,6 +96,7 @@ impl LocalPhysicalPlan {
         match self {
             Self::InMemoryScan(InMemoryScan { stats_state, .. })
             | Self::PhysicalScan(PhysicalScan { stats_state, .. })
+            | Self::GlobScan(GlobScan { stats_state, .. })
             | Self::PlaceholderScan(PlaceholderScan { stats_state, .. })
             | Self::EmptyScan(EmptyScan { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
@@ -114,6 +117,7 @@ impl LocalPhysicalPlan {
             | Self::Concat(Concat { stats_state, .. })
             | Self::HashJoin(HashJoin { stats_state, .. })
             | Self::CrossJoin(CrossJoin { stats_state, .. })
+            | Self::SortMergeJoin(SortMergeJoin { stats_state, .. })
             | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
             | Self::CommitWrite(CommitWrite { stats_state, .. })
             | Self::Repartition(Repartition { stats_state, .. })
@@ -157,6 +161,23 @@ impl LocalPhysicalPlan {
             pushdowns,
             schema,
             stats_state,
+        })
+        .arced()
+    }
+
+    pub fn glob_scan(
+        glob_paths: Arc<Vec<String>>,
+        pushdowns: Pushdowns,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        io_config: Option<IOConfig>,
+    ) -> LocalPhysicalPlanRef {
+        Self::GlobScan(GlobScan {
+            glob_paths,
+            pushdowns,
+            schema,
+            stats_state,
+            io_config,
         })
         .arced()
     }
@@ -258,14 +279,16 @@ impl LocalPhysicalPlan {
 
     pub fn udf_project(
         input: LocalPhysicalPlanRef,
-        project: BoundExpr,
+        expr: BoundExpr,
+        udf_properties: UDFProperties,
         passthrough_columns: Vec<BoundExpr>,
         schema: SchemaRef,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
         Self::UDFProject(UDFProject {
             input,
-            project,
+            expr,
+            udf_properties,
             passthrough_columns,
             schema,
             stats_state,
@@ -460,13 +483,14 @@ impl LocalPhysicalPlan {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn pivot(
+    pub fn pivot(
         input: LocalPhysicalPlanRef,
         group_by: Vec<BoundExpr>,
         pivot_column: BoundExpr,
         value_column: BoundExpr,
         aggregation: BoundAggExpr,
         names: Vec<String>,
+        pre_agg: bool,
         schema: SchemaRef,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
@@ -477,6 +501,7 @@ impl LocalPhysicalPlan {
             value_column,
             aggregation,
             names,
+            pre_agg,
             schema,
             stats_state,
         })
@@ -567,6 +592,7 @@ impl LocalPhysicalPlan {
         right: LocalPhysicalPlanRef,
         left_on: Vec<BoundExpr>,
         right_on: Vec<BoundExpr>,
+        build_on_left: Option<bool>,
         null_equals_null: Option<Vec<bool>>,
         join_type: JoinType,
         schema: SchemaRef,
@@ -577,6 +603,7 @@ impl LocalPhysicalPlan {
             right,
             left_on,
             right_on,
+            build_on_left,
             null_equals_null,
             join_type,
             schema,
@@ -594,6 +621,27 @@ impl LocalPhysicalPlan {
         Self::CrossJoin(CrossJoin {
             left,
             right,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
+    pub fn sort_merge_join(
+        left: LocalPhysicalPlanRef,
+        right: LocalPhysicalPlanRef,
+        left_on: Vec<BoundExpr>,
+        right_on: Vec<BoundExpr>,
+        join_type: JoinType,
+        schema: SchemaRef,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        Self::SortMergeJoin(SortMergeJoin {
+            left,
+            right,
+            left_on,
+            right_on,
+            join_type,
             schema,
             stats_state,
         })
@@ -734,6 +782,7 @@ impl LocalPhysicalPlan {
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
+            | Self::GlobScan(GlobScan { schema, .. })
             | Self::PlaceholderScan(PlaceholderScan { schema, .. })
             | Self::EmptyScan(EmptyScan { schema, .. })
             | Self::Filter(Filter { schema, .. })
@@ -750,6 +799,7 @@ impl LocalPhysicalPlan {
             | Self::Sample(Sample { schema, .. })
             | Self::HashJoin(HashJoin { schema, .. })
             | Self::CrossJoin(CrossJoin { schema, .. })
+            | Self::SortMergeJoin(SortMergeJoin { schema, .. })
             | Self::Explode(Explode { schema, .. })
             | Self::Unpivot(Unpivot { schema, .. })
             | Self::Concat(Concat { schema, .. })
@@ -781,9 +831,13 @@ impl LocalPhysicalPlan {
     pub fn resource_request(self: &Arc<Self>) -> ResourceRequest {
         let mut base = ResourceRequest::default_cpu();
         self.apply(|plan| match plan.as_ref() {
-            Self::UDFProject(UDFProject { project, .. }) => {
-                if let Some(resource_request) = get_resource_request([project]) {
-                    base = base.max(&resource_request);
+            Self::UDFProject(UDFProject {
+                expr,
+                udf_properties,
+                ..
+            }) => {
+                if let Some(resource_request) = &udf_properties.resource_request {
+                    base = base.max(resource_request);
                 }
                 Ok(TreeNodeRecursion::Continue)
             }
@@ -806,6 +860,7 @@ impl LocalPhysicalPlan {
     fn children(&self) -> Vec<LocalPhysicalPlanRef> {
         match self {
             Self::PhysicalScan(_)
+            | Self::GlobScan(_)
             | Self::PlaceholderScan(_)
             | Self::EmptyScan(_)
             | Self::InMemoryScan(_) => vec![],
@@ -834,6 +889,9 @@ impl LocalPhysicalPlan {
 
             Self::HashJoin(HashJoin { left, right, .. }) => vec![left.clone(), right.clone()],
             Self::CrossJoin(CrossJoin { left, right, .. }) => vec![left.clone(), right.clone()],
+            Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => {
+                vec![left.clone(), right.clone()]
+            }
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { input, .. }) => vec![input.clone()],
             #[cfg(feature = "python")]
@@ -888,13 +946,15 @@ impl LocalPhysicalPlan {
                     StatsState::NotMaterialized,
                 ),
                 Self::UDFProject(UDFProject {
-                    project,
+                    expr,
+                    udf_properties,
                     passthrough_columns,
                     schema,
                     ..
                 }) => Self::udf_project(
                     new_child.clone(),
-                    project.clone(),
+                    expr.clone(),
+                    udf_properties.clone(),
                     passthrough_columns.clone(),
                     schema.clone(),
                     StatsState::NotMaterialized,
@@ -934,6 +994,7 @@ impl LocalPhysicalPlan {
                     pivot_column,
                     value_column,
                     aggregation,
+                    pre_agg,
                     names,
                     schema,
                     ..
@@ -944,6 +1005,7 @@ impl LocalPhysicalPlan {
                     value_column.clone(),
                     aggregation.clone(),
                     names.clone(),
+                    *pre_agg,
                     schema.clone(),
                     StatsState::NotMaterialized,
                 ),
@@ -1212,8 +1274,16 @@ impl LocalPhysicalPlan {
                 Self::CrossJoin(_) => {
                     panic!("LocalPhysicalPlan::with_new_children: CrossJoin should have 2 children")
                 }
+                Self::SortMergeJoin(_) => {
+                    panic!(
+                        "LocalPhysicalPlan::with_new_children: SortMergeJoin should have 2 children"
+                    )
+                }
                 Self::Concat(_) => {
                     panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children")
+                }
+                Self::GlobScan(_) => {
+                    panic!("LocalPhysicalPlan::with_new_children: GlobScan does not have children")
                 }
             },
             [new_left, new_right] => match self {
@@ -1222,6 +1292,7 @@ impl LocalPhysicalPlan {
                     right_on,
                     null_equals_null,
                     join_type,
+                    build_on_left,
                     schema,
                     stats_state,
                     ..
@@ -1230,6 +1301,7 @@ impl LocalPhysicalPlan {
                     new_right.clone(),
                     left_on.clone(),
                     right_on.clone(),
+                    *build_on_left,
                     null_equals_null.clone(),
                     *join_type,
                     schema.clone(),
@@ -1242,6 +1314,22 @@ impl LocalPhysicalPlan {
                 }) => Self::cross_join(
                     new_left.clone(),
                     new_right.clone(),
+                    schema.clone(),
+                    stats_state.clone(),
+                ),
+                Self::SortMergeJoin(SortMergeJoin {
+                    left_on,
+                    right_on,
+                    join_type,
+                    schema,
+                    stats_state,
+                    ..
+                }) => Self::sort_merge_join(
+                    new_left.clone(),
+                    new_right.clone(),
+                    left_on.clone(),
+                    right_on.clone(),
+                    *join_type,
                     schema.clone(),
                     stats_state.clone(),
                 ),
@@ -1310,6 +1398,15 @@ pub struct PhysicalScan {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct GlobScan {
+    pub glob_paths: Arc<Vec<String>>,
+    pub pushdowns: Pushdowns,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub io_config: Option<common_io_config::IOConfig>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PlaceholderScan {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
@@ -1332,7 +1429,8 @@ pub struct Project {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UDFProject {
     pub input: LocalPhysicalPlanRef,
-    pub project: BoundExpr,
+    pub expr: BoundExpr,
+    pub udf_properties: UDFProperties,
     pub passthrough_columns: Vec<BoundExpr>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
@@ -1473,6 +1571,7 @@ pub struct Pivot {
     pub value_column: BoundExpr,
     pub aggregation: BoundAggExpr,
     pub names: Vec<String>,
+    pub pre_agg: bool,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }
@@ -1483,6 +1582,7 @@ pub struct HashJoin {
     pub right: LocalPhysicalPlanRef,
     pub left_on: Vec<BoundExpr>,
     pub right_on: Vec<BoundExpr>,
+    pub build_on_left: Option<bool>,
     pub null_equals_null: Option<Vec<bool>>,
     pub join_type: JoinType,
     pub schema: SchemaRef,
@@ -1493,6 +1593,17 @@ pub struct HashJoin {
 pub struct CrossJoin {
     pub left: LocalPhysicalPlanRef,
     pub right: LocalPhysicalPlanRef,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SortMergeJoin {
+    pub left: LocalPhysicalPlanRef,
+    pub right: LocalPhysicalPlanRef,
+    pub left_on: Vec<BoundExpr>,
+    pub right_on: Vec<BoundExpr>,
+    pub join_type: JoinType,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }

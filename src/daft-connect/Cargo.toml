@@ -9,6 +9,7 @@ daft-catalog = {path = "../daft-catalog", optional = true, features = [
   "python"
 ]}
 daft-context = {workspace = true, optional = true, features = ["python"]}
+daft-runners = {workspace = true, optional = true, features = ["python"]}
 daft-core = {workspace = true, optional = true, features = ["python"]}
 daft-dsl = {workspace = true, optional = true, features = ["python"]}
 daft-functions = {workspace = true, optional = true, features = ["python"]}
@@ -26,13 +27,13 @@ daft-session = {path = "../daft-session", optional = true, features = [
   "python"
 ]}
 daft-sql = {workspace = true, optional = true, features = ["python"]}
-dashmap = "6.1.0"
+dashmap = {workspace = true}
 futures = "0.3.31"
 itertools = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 spark-connect = {workspace = true}
 textwrap = "0.16.1"
-tokio = {version = "1.40.0", features = ["full"]}
+tokio = {version = "1.47.1", features = ["full"]}
 tonic = {workspace = true}
 tracing = {workspace = true}
 snafu.workspace = true
@@ -57,7 +58,8 @@ python = [
   "dep:daft-catalog",
   "dep:daft-functions",
   "dep:daft-functions-utf8",
-  "dep:daft-functions-temporal"
+  "dep:daft-functions-temporal",
+  "dep:daft-runners"
 ]
 
 [lints]

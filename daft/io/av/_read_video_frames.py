@@ -144,16 +144,19 @@ class _VideoFramesSourceTask(DataSourceTask):
                 container.close()
                 raise RuntimeError(f"No video stream found in file: {path}")
 
+            if self.is_key_frame:
+                # https://pyav.org/docs/develop/cookbook/basics.html#saving-keyframes
+                stream.codec_context.skip_frame = "NONKEY"
+
             frame_index: int = 0
             frame: VideoFrame
             while True:
                 try:
                     frame = next(container.decode(stream))
+                except av.EOFError:
+                    break
                 except StopIteration:
                     break
-
-                if self.is_key_frame is not None and self.is_key_frame != frame.key_frame:
-                    continue  # skip based on is_key_frame filter
 
                 frame = frame.reformat(
                     width=self.image_width,

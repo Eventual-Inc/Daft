@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 
 import daft
@@ -62,7 +64,7 @@ def test_row_wise_udf_should_infer_dtype_from_function():
 def test_func_requires_return_dtype_when_no_annotation():
     with pytest.raises(
         ValueError,
-        match="`@daft.func` requires either a return type hint or the `return_dtype` argument to be specified.",
+        match="Daft functions require either a return type hint or the `return_dtype` argument to be specified.",
     ):
 
         @daft.func()
@@ -144,7 +146,8 @@ def test_row_wise_udf_unnest():
 
 def test_row_wise_udf_unnest_error_non_struct():
     with pytest.raises(
-        ValueError, match="Expected Daft function `return_dtype` to be `DataType.struct` when `unnest=True`"
+        ValueError,
+        match=re.escape("Expected Daft function `return_dtype` to be `DataType.struct(..)` when `unnest=True`"),
     ):
 
         @daft.func(return_dtype=daft.DataType.int64(), unnest=True)

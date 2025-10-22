@@ -24,6 +24,13 @@ fn ci_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn default_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if cfg!(debug_assertions) && std::env::var("DAFT_DASHBOARD_SKIP_BUILD").is_ok() {
+        println!(
+            "cargo:warning=Running in debug mode and DAFT_DASHBOARD_SKIP_BUILD is set, skipping dashboard build."
+        );
+        return Ok(());
+    }
+
     println!("cargo:rerun-if-changed=frontend/src/");
     println!("cargo:rerun-if-changed=frontend/bun.lockb");
     println!("cargo:rerun-if-changed=build.rs");
@@ -53,7 +60,13 @@ fn default_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
         .args(["install"])
         .status()?;
 
-    assert!(install_status.success(), "Failed to install dependencies");
+    if cfg!(debug_assertions) {
+        if !install_status.success() {
+            println!("cargo:warning=Failed to install frontend dependencies");
+        }
+    } else {
+        assert!(install_status.success(), "Failed to install dependencies");
+    }
 
     // Run `bun run build`
     let mut cmd = Command::new("bun");
@@ -66,7 +79,13 @@ fn default_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
     };
     let status = status.status()?;
 
-    assert!(status.success(), "Failed to build frontend assets");
+    if cfg!(debug_assertions) {
+        if !status.success() {
+            println!("cargo:warning=Failed to build frontend assets");
+        }
+    } else {
+        assert!(status.success(), "Failed to build frontend assets");
+    }
 
     let frontend_dir = std::env::var("CARGO_MANIFEST_DIR")? + "/frontend/out";
 
@@ -77,7 +96,6 @@ fn default_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     // move the frontend assets to the output directory
     std::fs::rename(frontend_dir, out_dir)?;
-    assert!(status.success(), "Failed to build frontend assets");
     Ok(())
 }
 

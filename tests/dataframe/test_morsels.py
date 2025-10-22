@@ -37,8 +37,8 @@ def test_batch_size_from_udf_propagated_to_scan():
     df.explain(True, file=string_io)
     expected = """
 
-* UDF Executor:
-|   UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop = py_udf(col(0: a)) as a
+* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
+|   Expr = py_udf(col(0: a)) as a
 |   Passthrough Columns = []
 |   Concurrency = 1
 |   Resource request = None
@@ -77,8 +77,8 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
     id_placeholder = m.group(1) if m else ""
     expected = f"""
 
-* UDF Executor:
-|   UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop = py_udf(col(0: __TruncateRootUDF_0-0-0__)) as data
+* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
+|   Expr = py_udf(col(0: __TruncateRootUDF_0-0-0__)) as data
 |   Passthrough Columns = []
 |   Concurrency = 1
 |   Resource request = None
@@ -87,7 +87,7 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 * Project: col(0: __TruncateRootUDF_0-0-0__) as __TruncateRootUDF_0-0-0__
 |   Batch Size = Range(0, 10]
 |
-* Project: image_decode(col(0: {id_placeholder}), lit("raise"), lit(Null)) as __TruncateRootUDF_0-0-0__, col(1: data)
+* Project: image_decode(col(0: {id_placeholder}), lit("raise")) as __TruncateRootUDF_0-0-0__, col(1: data)
 |   Batch Size = Range(0, 10]
 |
 * Project: url_download(col(0: data), lit(true), lit("raise"), lit(32), lit(PyObject(IOConfig:
@@ -158,24 +158,24 @@ def test_batch_size_from_multiple_udfs_do_not_override_each_other():
     df.explain(True, file=string_io)
     expected = """
 
-* UDF Executor:
-|   UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop = py_udf(col(0: __TruncateRootUDF_0-0-0__)) as a
+* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
+|   Expr = py_udf(col(0: __TruncateRootUDF_0-0-0__)) as a
 |   Passthrough Columns = []
 |   Concurrency = 1
 |   Resource request = None
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
 |   Batch Size = 30
 |
-* UDF Executor:
-|   UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop = py_udf(col(0: __TruncateRootUDF_1-0-0__)) as __TruncateRootUDF_0-0-0__
+* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
+|   Expr = py_udf(col(0: __TruncateRootUDF_1-0-0__)) as __TruncateRootUDF_0-0-0__
 |   Passthrough Columns = []
 |   Concurrency = 1
 |   Resource request = None
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
 |   Batch Size = 20
 |
-* UDF Executor:
-|   UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop = py_udf(col(0: a)) as __TruncateRootUDF_1-0-0__
+* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
+|   Expr = py_udf(col(0: a)) as __TruncateRootUDF_1-0-0__
 |   Passthrough Columns = []
 |   Concurrency = 1
 |   Resource request = None
@@ -200,8 +200,8 @@ def test_batch_size_from_udf_not_propagated_through_agg():
     df.explain(True, file=string_io)
     expected = """
 
-* UDF Executor:
-|   UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop = py_udf(col(0: a)) as a
+* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
+|   Expr = py_udf(col(0: a)) as a
 |   Passthrough Columns = []
 |   Concurrency = 1
 |   Resource request = None
@@ -233,8 +233,8 @@ def test_batch_size_from_udf_not_propagated_through_join():
     df.explain(True, file=string_io)
     expected = """
 
-* UDF Executor:
-|   UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop = py_udf(col(0: a)) as a
+* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
+|   Expr = py_udf(col(0: a)) as a
 |   Passthrough Columns = []
 |   Concurrency = 1
 |   Resource request = None
@@ -335,8 +335,8 @@ def test_batch_size_from_into_batches_before_udf():
     print(string_io.getvalue())
     expected = """
 
-* UDF Executor:
-|   UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop = py_udf(col(0: a)) as a
+* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
+|   Expr = py_udf(col(0: a)) as a
 |   Passthrough Columns = []
 |   Concurrency = 1
 |   Resource request = None

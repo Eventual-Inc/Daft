@@ -48,18 +48,13 @@ image = {workspace = true, features = [
 ]}
 indexmap = {workspace = true, features = ["serde"]}
 itertools = {workspace = true}
-log = {workspace = true}
 mur3 = "0.1.0"
 num-traits = {workspace = true}
-numpy = {workspace = true, optional = true}
 pyo3 = {workspace = true, optional = true}
 rand = "0.9.1"
 serde = {workspace = true}
 sketches-ddsketch = {workspace = true}
-
-[dependencies.xxhash-rust]
-features = ["xxh3", "const_xxh3", "xxh64"]
-version = "0.8.5"
+xxhash-rust = {workspace = true}
 
 [dev-dependencies]
 rstest = {workspace = true}
@@ -70,11 +65,11 @@ python = [
   "common-display/python",
   "common-error/python",
   "common-file/python",
+  "common-image/python",
   "common-io-config/python",
   "common-ndarray/python",
   "common-py-serde/python",
   "daft-schema/python",
-  "dep:numpy",
   "dep:pyo3"
 ]
 

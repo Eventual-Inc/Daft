@@ -45,7 +45,7 @@ pub fn to_py_array<'py>(
 
     // fix_child_array_slice_offsets serializes and deserializes into ipc, and is a parallelizable operation.
     // We allow threads here to avoid blocking the GIL.
-    let arrow_arr = py.allow_threads(|| {
+    let arrow_arr = py.detach(|| {
         let fixed_array = fix_child_array_slice_offsets(array);
         Box::new(ffi::export_array_to_c(fixed_array))
     });
@@ -70,7 +70,7 @@ pub fn field_to_py(
     py: Python,
     field: &arrow2::datatypes::Field,
     pyarrow: &Bound<PyModule>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let schema = Box::new(ffi::export_field_to_c(field));
     let schema_ptr: *const ffi::ArrowSchema = &raw const *schema;
 

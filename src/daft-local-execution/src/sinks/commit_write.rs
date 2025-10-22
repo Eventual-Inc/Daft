@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use common_file_formats::WriteMode;
+use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::OutputFileInfo;
@@ -14,7 +15,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) struct CommitWriteState {
     written_file_path_record_batches: Vec<RecordBatch>,
@@ -92,7 +93,7 @@ impl BlockingSink for CommitWriteSink {
                         {
                             use pyo3::{prelude::*, types::PyList};
 
-                            Python::with_gil(|py| {
+                            Python::attach(|py| {
                                 let fs = py.import(pyo3::intern!(py, "daft.filesystem"))?;
                                 let overwrite_files = fs.getattr("overwrite_files")?;
                                 let file_paths = written_file_path_record_batches
@@ -151,7 +152,7 @@ impl BlockingSink for CommitWriteSink {
     }
 
     fn name(&self) -> NodeName {
-        "CommitWriteSink".into()
+        "Commit Write".into()
     }
 
     fn op_type(&self) -> NodeType {
@@ -164,7 +165,7 @@ impl BlockingSink for CommitWriteSink {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut lines = vec![];
-        lines.push("CommitWriteSink".to_string());
+        lines.push("Commit Write".to_string());
         if matches!(self.file_info.write_mode, WriteMode::Overwrite) {
             lines.push("Overwrite".to_string());
         } else if matches!(self.file_info.write_mode, WriteMode::OverwritePartitions) {

@@ -365,6 +365,13 @@ impl HFSource {
 
 #[async_trait]
 impl ObjectSource for HFSource {
+    async fn supports_range(&self, uri: &str) -> super::Result<bool> {
+        let path = uri.parse::<HFPath>()?;
+        let uri = path.get_file_uri(false);
+
+        self.http_source.supports_range(&uri).await
+    }
+
     async fn get(
         &self,
         uri: &str,

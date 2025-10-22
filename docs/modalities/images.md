@@ -1,8 +1,17 @@
 # Working with Images
 
-Daft is built to work comfortably with images.
 
-To setup this example, let's read a Parquet file from a public S3 bucket containing sample dog owners, use the [`daft.col()`][daft.expressions.col] mentioned earlier with the [`df.with_column`][daft.DataFrame.with_column] method to create a new column `full_name`, and join the contents from the `last_name` column to the `first_name` column. Then, let's create a `dogs` DataFrame from a Python dictionary and use [`df.join`][daft.DataFrame.join] to join this with our dataframe of owners:
+Daft is built to work comfortably with images. This guide shows you how to accomplish common image processing tasks with Daft:
+
+- [Downloading and decoding images](#quickstart)
+- [Generate image embeddings](#generate-image-embeddings)
+- [Classify images](#classify-images)
+
+It also explains some concepts on [Dynamic execution for multimodal workloads](#dynamic-execution-for-multimodal-workloads) to improve your mental model of how the Daft engine works.
+
+## Quickstart
+
+To setup this example, let's read a Parquet file from a public S3 bucket containing sample dog owners, use [`daft.col()`][daft.expressions.col] with the [`df.with_column`][daft.DataFrame.with_column] method to create a new column `full_name`, and join the contents from the `last_name` column to the `first_name` column. Then, let's create a `dogs` DataFrame from a Python dictionary and use [`df.join`][daft.DataFrame.join] to join this with our dataframe of owners:
 
 
 === "🐍 Python"
@@ -104,30 +113,34 @@ Let's turn the bytes into human-readable images using [`image.decode()`][daft.ex
     df_family.show()
     ```
 
-### Dynamic Execution for Multimodal Workloads
+## Generate Image Embeddings
 
-Daft uses **dynamic execution** to automatically adjust batch sizes based on the operation type and data characteristics.
+Image embeddings convert images into numerical vectors that capture semantic meaning. Use them for semantic search, similarity calculations, etc.
 
-This is necessary because multimodal data such as images, videos, and audio files have different memory and processing characteristics that can cause issues with fixed batching: large batches may exceed available memory, while small batches may not fully utilize hardware optimizations or network bandwidth.
+### How to use the embed_image function
 
-#### How Batch Sizes Are Determined
+By default, `embed_image` uses the Transformers provider, which requires the `transformers` [optional dependency](../install.md). By default we also use OpenAI's CLIP model ([`openai/clip-vit-base-patch32`](https://huggingface.co/openai/clip-vit-base-patch32)).
 
-**Multimodal Downloads:** Downloads for multimodal data use smaller batch sizes (typically a factor of the max_connections parameter) to prevent memory exhaustion when downloading large files, while maintaining network throughput.
+```bash
+pip install -U "daft[transformers]"
+```
 
-**Vectorized Operations:** Operations that can operate on many rows in parallel, such as byte decoding / encoding, aggregations, and scalar projections, will use larger batch sizes that can take advantage of vectorized execution using SIMD.
+Once installed, we can run:
+
+```python
+import daft
+from daft.functions.ai import embed_image
+
+(
+    daft.read_huggingface("xai-org/RealworldQA")
+    .with_column("image", daft.col("image")["bytes"].image.decode())
+    .with_column("embedding", embed_image(daft.col("image")))
+    .show()
+)
+```
 
 
-=== "🐍 Python"
-    ```python
-    # Each operation uses different batch sizes automatically
-    df = daft.read_parquet("metadata.parquet") # Large batches
-          .with_column("image_data", col("urls").url.download())  # Small batches
-          .with_column("resized", col("image_data").image.resize(224, 224))  # Medium batches
-    ```
-
-This approach allows processing of datasets larger than available memory, while maintaining optimal performance for each operation type.
-
-## Example: UDFs in ML + Multimodal Workload
+## Classify Images
 
 We'll define a function that uses a pre-trained PyTorch model: [ResNet50](https://pytorch.org/vision/main/models/generated/torchvision.models.resnet50.html) to classify the dog pictures. We'll pass the contents of the image `urls` column and send the classification predictions to a new column `classify_breed`.
 
@@ -203,5 +216,70 @@ Now you're ready to call this function on the `urls` column and store the output
 !!! note "Note"
 
     Execute in notebook to see properly rendered images.
+### Zero Shot Classification
+
+For zero shot classification, you can use our built in `classify_image` function to classify images
+
+=== "🐍 Python"
+
+    ```python
+    classify_images_expr = daft.functions.classify_image(
+      daft.col("image"), labels=[
+        "boxer",
+        "schnauzer",
+        "rottweiler",
+        "staffordshire terrier",
+        "collie",
+        "chihuahua",
+        "corgi"
+      ]
+    )
+    classified_images_df = df_family.with_column("classify_breed", classify_images_expr)
+    classified_images_df.select("dog_name", "image", "classify_breed").show()
+    ```
+
+```{title="Output"}
+╭──────────┬──────────────┬───────────────────────╮
+│ dog_name ┆ image        ┆ classify_breed        │
+│ ---      ┆ ---          ┆ ---                   │
+│ String   ┆ Image[MIXED] ┆ String                │
+╞══════════╪══════════════╪═══════════════════════╡
+│ Ernie    ┆ <Image>      ┆ boxer                 │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Jackie   ┆ <Image>      ┆ staffordshire terrier │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Wolfie   ┆ <Image>      ┆ collie                │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Shaggie  ┆ <Image>      ┆ schnauzer             │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Zadie    ┆ <Image>      ┆ rottweiler            │
+╰──────────┴──────────────┴───────────────────────╯
+
+(Showing first 5 of 5 rows)
+```
+
 
 <!-- todo(docs - jay): Insert table of dog urls? or new UDF example? This was from the original 10-min quickstart with multimodal -->
+
+## Dynamic Execution for Multimodal Workloads
+
+Daft uses **dynamic execution** to automatically adjust batch sizes based on the operation type and data characteristics.
+
+This is necessary because multimodal data such as images, videos, and audio files have different memory and processing characteristics that can cause issues with fixed batching: large batches may exceed available memory, while small batches may not fully utilize hardware optimizations or network bandwidth.
+
+### How Batch Sizes Are Determined
+
+**Multimodal Downloads:** Downloads for multimodal data use smaller batch sizes (typically a factor of the max_connections parameter) to prevent memory exhaustion when downloading large files, while maintaining network throughput.
+
+**Vectorized Operations:** Operations that can operate on many rows in parallel, such as byte decoding / encoding, aggregations, and scalar projections, will use larger batch sizes that can take advantage of vectorized execution using SIMD.
+
+
+=== "🐍 Python"
+    ```python
+    # Each operation uses different batch sizes automatically
+    df = daft.read_parquet("metadata.parquet") # Large batches
+          .with_column("image_data", col("urls").url.download())  # Small batches
+          .with_column("resized", col("image_data").image.resize(224, 224))  # Medium batches
+    ```
+
+This approach allows processing of datasets larger than available memory, while maintaining optimal performance for each operation type.

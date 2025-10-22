@@ -4,12 +4,12 @@ use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_micropartition::{MicroPartition, python::PyMicroPartition};
 use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
-use pyo3::{PyObject, Python, types::PyAnyMethods};
+use pyo3::{Python, types::PyAnyMethods};
 
-use crate::AsyncFileWriter;
+use crate::{AsyncFileWriter, WriteResult};
 
 pub struct PyArrowWriter {
-    py_writer: PyObject,
+    py_writer: pyo3::Py<pyo3::PyAny>,
     is_closed: bool,
     bytes_written: usize,
 }
@@ -22,7 +22,7 @@ impl PyArrowWriter {
         io_config: Option<&daft_io::IOConfig>,
         partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Self> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let file_writer_module = py.import(pyo3::intern!(py, "daft.io.writer"))?;
             let file_writer_class = file_writer_module.getattr("ParquetFileWriter")?;
             let _from_pyrecordbatch = py
@@ -61,7 +61,7 @@ impl PyArrowWriter {
         io_config: Option<&daft_io::IOConfig>,
         partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Self> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let file_writer_module = py.import(pyo3::intern!(py, "daft.io.writer"))?;
             let file_writer_class = file_writer_module.getattr("CSVFileWriter")?;
             let _from_pyrecordbatch = py
@@ -101,7 +101,7 @@ impl PyArrowWriter {
         partition_values: Option<&RecordBatch>,
         io_config: Option<&daft_io::IOConfig>,
     ) -> DaftResult<Self> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let file_writer_module = py.import(pyo3::intern!(py, "daft.io.writer"))?;
             let file_writer_class = file_writer_module.getattr("IcebergWriter")?;
             let _from_pyrecordbatch = py
@@ -143,7 +143,7 @@ impl PyArrowWriter {
         partition_values: Option<&RecordBatch>,
         io_config: Option<&daft_io::IOConfig>,
     ) -> DaftResult<Self> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let file_writer_module = py.import(pyo3::intern!(py, "daft.io.writer"))?;
             let file_writer_class = file_writer_module.getattr("DeltalakeWriter")?;
             let _from_pyrecordbatch = py
@@ -182,9 +182,10 @@ impl AsyncFileWriter for PyArrowWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
-    async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {
         assert!(!self.is_closed, "Cannot write to a closed PyArrowWriter");
-        let bytes_written = Python::with_gil(|py| {
+        let rows_written = data.len();
+        let bytes_written = Python::attach(|py| {
             let py_micropartition = py
                 .import(pyo3::intern!(py, "daft.recordbatch"))?
                 .getattr(pyo3::intern!(py, "MicroPartition"))?
@@ -195,7 +196,10 @@ impl AsyncFileWriter for PyArrowWriter {
                 .extract::<usize>(py)
         })?;
         self.bytes_written += bytes_written;
-        Ok(bytes_written)
+        Ok(WriteResult {
+            bytes_written,
+            rows_written,
+        })
     }
 
     fn bytes_written(&self) -> usize {
@@ -208,7 +212,7 @@ impl AsyncFileWriter for PyArrowWriter {
 
     async fn close(&mut self) -> DaftResult<Self::Result> {
         self.is_closed = true;
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let result = self
                 .py_writer
                 .call_method0(py, pyo3::intern!(py, "close"))?

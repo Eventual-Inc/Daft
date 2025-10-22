@@ -1,16 +1,19 @@
 use std::{sync::Arc, time::Duration};
 
+use async_trait::async_trait;
 use common_error::DaftResult;
 use common_logging::GLOBAL_LOGGER;
-use common_metrics::StatSnapshotSend;
+use common_metrics::{
+    NodeID, StatSnapshotSend,
+    ops::{NodeCategory, NodeInfo},
+};
 use indicatif::{ProgressDrawTarget, ProgressStyle};
 use itertools::Itertools;
 use log::Log;
 
 use crate::{
     PythonPrintTarget, STDOUT,
-    ops::{NodeCategory, NodeInfo},
-    runtime_stats::{CPU_US_KEY, RuntimeStats, subscribers::RuntimeStatsSubscriber},
+    runtime_stats::{CPU_US_KEY, subscribers::RuntimeStatsSubscriber},
 };
 
 /// Convert statistics to a message for progress bars
@@ -93,7 +96,7 @@ struct IndicatifProgressBarManager {
 }
 
 impl IndicatifProgressBarManager {
-    fn new(node_stats: &[(Arc<NodeInfo>, Arc<dyn RuntimeStats>)]) -> Self {
+    fn new(node_infos: &[Arc<NodeInfo>]) -> Self {
         let multi_progress = indicatif::MultiProgress::new();
 
         if cfg!(feature = "python") {
@@ -109,7 +112,7 @@ impl IndicatifProgressBarManager {
         multi_progress.set_move_cursor(true);
         multi_progress.set_draw_target(ProgressDrawTarget::stderr_with_hz(10));
 
-        let total = node_stats.len();
+        let total = node_infos.len();
 
         let mut manager = Self {
             multi_progress,
@@ -117,7 +120,7 @@ impl IndicatifProgressBarManager {
             total,
         };
 
-        for (node_info, _) in node_stats {
+        for node_info in node_infos {
             manager.make_new_bar(node_info.as_ref());
         }
 
@@ -169,6 +172,7 @@ impl Drop for IndicatifProgressBarManager {
     }
 }
 
+#[async_trait]
 impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
     #[cfg(test)]
     #[allow(dead_code)]
@@ -176,27 +180,27 @@ impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
         self
     }
 
-    fn initialize_node(&self, node_info: &NodeInfo) -> DaftResult<()> {
-        let pb = self.pbars.get(node_info.id).unwrap();
+    async fn initialize_node(&self, node_id: NodeID) -> DaftResult<()> {
+        let pb = self.pbars.get(node_id).unwrap();
         pb.enable_steady_tick(TICK_INTERVAL);
         Ok(())
     }
 
-    fn finalize_node(&self, node_info: &NodeInfo) -> DaftResult<()> {
-        let pb = self.pbars.get(node_info.id).unwrap();
+    async fn finalize_node(&self, node_id: NodeID) -> DaftResult<()> {
+        let pb = self.pbars.get(node_id).unwrap();
         pb.finish();
         Ok(())
     }
 
-    fn handle_event(&self, events: &[(&NodeInfo, StatSnapshotSend)]) -> DaftResult<()> {
-        for (node_info, event) in events {
-            let pb = self.pbars.get(node_info.id).unwrap();
+    async fn handle_event(&self, events: &[(NodeID, StatSnapshotSend)]) -> DaftResult<()> {
+        for (node_id, event) in events {
+            let pb = self.pbars.get(*node_id).unwrap();
             pb.set_message(event_to_message(event));
         }
         Ok(())
     }
 
-    fn finish(mut self: Box<Self>) -> DaftResult<()> {
+    async fn finish(mut self: Box<Self>) -> DaftResult<()> {
         self.pbars.clear();
         self.multi_progress.clear()?;
         Ok(())
@@ -205,21 +209,19 @@ impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
 
 pub const MAX_PIPELINE_NAME_LEN: usize = 22;
 
-pub fn make_progress_bar_manager(
-    node_stats: &[(Arc<NodeInfo>, Arc<dyn RuntimeStats>)],
-) -> Box<dyn RuntimeStatsSubscriber> {
+pub fn make_progress_bar_manager(node_infos: &[Arc<NodeInfo>]) -> Box<dyn RuntimeStatsSubscriber> {
     #[cfg(feature = "python")]
     {
         if python::in_notebook() {
-            Box::new(python::TqdmProgressBarManager::new(node_stats))
+            Box::new(python::TqdmProgressBarManager::new(node_infos))
         } else {
-            Box::new(IndicatifProgressBarManager::new(node_stats))
+            Box::new(IndicatifProgressBarManager::new(node_infos))
         }
     }
 
     #[cfg(not(feature = "python"))]
     {
-        Box::new(IndicatifProgressBarManager::new(node_stats))
+        Box::new(IndicatifProgressBarManager::new(node_infos))
     }
 }
 
@@ -227,13 +229,13 @@ pub fn make_progress_bar_manager(
 mod python {
     use std::collections::HashMap;
 
-    use pyo3::{PyObject, Python, types::PyAnyMethods};
+    use common_metrics::ops::NodeInfo;
+    use pyo3::{Python, types::PyAnyMethods};
 
     use super::*;
-    use crate::ops::NodeInfo;
 
     pub fn in_notebook() -> bool {
-        pyo3::Python::with_gil(|py| {
+        pyo3::Python::attach(|py| {
             py.import(pyo3::intern!(py, "daft.utils"))
                 .and_then(|m| m.getattr(pyo3::intern!(py, "in_notebook")))
                 .and_then(|m| m.call0())
@@ -244,20 +246,20 @@ mod python {
 
     #[derive(Clone, Debug)]
     pub struct TqdmProgressBarManager {
-        inner: Arc<PyObject>,
+        inner: Arc<pyo3::Py<pyo3::PyAny>>,
         node_id_to_pb_id: HashMap<usize, usize>,
     }
 
     impl TqdmProgressBarManager {
-        pub fn new(node_stats: &[(Arc<NodeInfo>, Arc<dyn RuntimeStats>)]) -> Self {
+        pub fn new(node_infos: &[Arc<NodeInfo>]) -> Self {
             let mut node_id_to_pb_id = HashMap::new();
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let module = py.import("daft.runners.progress_bar")?;
                 let progress_bar_class = module.getattr("SwordfishProgressBar")?;
                 let pb_object = progress_bar_class.call0()?;
 
-                for (node_info, _) in node_stats {
+                for node_info in node_infos {
                     let bar_format = format!(
                         "🗡️ 🐟 {prefix}: {{elapsed}} {{desc}}",
                         prefix = node_info.name
@@ -278,7 +280,7 @@ mod python {
         }
 
         fn update_bar(&self, pb_id: usize, message: &str) -> DaftResult<()> {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 self.inner
                     .call_method1(py, "update_bar", (pb_id, message))?;
                 DaftResult::Ok(())
@@ -286,13 +288,14 @@ mod python {
         }
 
         fn close_bar(&self, pb_id: usize) -> DaftResult<()> {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 self.inner.call_method1(py, "close_bar", (pb_id,))?;
                 DaftResult::Ok(())
             })
         }
     }
 
+    #[async_trait]
     impl RuntimeStatsSubscriber for TqdmProgressBarManager {
         #[cfg(test)]
         #[allow(dead_code)]
@@ -300,25 +303,25 @@ mod python {
             self
         }
 
-        fn initialize_node(&self, _: &NodeInfo) -> DaftResult<()> {
+        async fn initialize_node(&self, _: NodeID) -> DaftResult<()> {
             Ok(())
         }
 
-        fn finalize_node(&self, node_info: &NodeInfo) -> DaftResult<()> {
-            let pb_id = self.node_id_to_pb_id.get(&node_info.id).unwrap();
+        async fn finalize_node(&self, node_id: NodeID) -> DaftResult<()> {
+            let pb_id = self.node_id_to_pb_id.get(&node_id).unwrap();
             self.close_bar(*pb_id)?;
             Ok(())
         }
 
-        fn handle_event(&self, events: &[(&NodeInfo, StatSnapshotSend)]) -> DaftResult<()> {
-            for (node_info, event) in events {
-                let pb_id = self.node_id_to_pb_id.get(&node_info.id).unwrap();
+        async fn handle_event(&self, events: &[(NodeID, StatSnapshotSend)]) -> DaftResult<()> {
+            for (node_id, event) in events {
+                let pb_id = self.node_id_to_pb_id.get(node_id).unwrap();
                 self.update_bar(*pb_id, &event_to_message(event))?;
             }
             Ok(())
         }
 
-        fn finish(self: Box<Self>) -> DaftResult<()> {
+        async fn finish(self: Box<Self>) -> DaftResult<()> {
             Ok(())
         }
     }

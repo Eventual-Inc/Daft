@@ -13,12 +13,7 @@ use daft_core::{
     prelude::*,
     python::{PyDataType, PyField, PySchema, PySeries, PyTimeUnit},
 };
-use pyo3::{
-    exceptions::PyValueError,
-    prelude::*,
-    pyclass::CompareOp,
-    types::{PyBool, PyBytes, PyFloat, PyInt, PyString},
-};
+use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -177,43 +172,7 @@ pub fn list_lit(series: PySeries) -> PyResult<PyExpr> {
 
 #[pyfunction]
 pub fn lit(item: Bound<PyAny>) -> PyResult<PyExpr> {
-    literal_value(item).map(Expr::Literal).map(Into::into)
-}
-
-pub fn literal_value(item: Bound<PyAny>) -> PyResult<Literal> {
-    if item.is_instance_of::<PyBool>() {
-        let val = item.extract::<bool>()?;
-        Ok(val.into())
-    } else if let Ok(int) = item.downcast::<PyInt>() {
-        match int.extract::<i64>() {
-            Ok(val) => {
-                if val >= 0 && val < i32::MAX as i64 || val <= 0 && val > i32::MIN as i64 {
-                    Ok((val as i32).into())
-                } else {
-                    Ok(val.into())
-                }
-            }
-            _ => {
-                let val = int.extract::<u64>()?;
-                Ok(val.into())
-            }
-        }
-    } else if let Ok(float) = item.downcast::<PyFloat>() {
-        let val = float.extract::<f64>()?;
-        Ok(val.into())
-    } else if let Ok(pystr) = item.downcast::<PyString>() {
-        Ok(pystr
-            .extract::<String>()
-            .expect("could not transform Python string to Rust Unicode")
-            .into())
-    } else if let Ok(pybytes) = item.downcast::<PyBytes>() {
-        let bytes = pybytes.as_bytes();
-        Ok(bytes.into())
-    } else if item.is_none() {
-        Ok(Literal::Null)
-    } else {
-        Ok(PyObject::from(item).into())
-    }
+    Literal::from_pyobj(&item, None).map(|l| Expr::Literal(l).into())
 }
 
 #[pyfunction]
@@ -236,11 +195,11 @@ pub fn list_(items: Vec<PyExpr>) -> PyExpr {
 ))]
 pub fn udf(
     name: &str,
-    inner: PyObject,
-    bound_args: PyObject,
+    inner: Py<PyAny>,
+    bound_args: Py<PyAny>,
     expressions: Vec<PyExpr>,
     return_dtype: PyDataType,
-    init_args: PyObject,
+    init_args: Py<PyAny>,
     resource_request: Option<ResourceRequest>,
     batch_size: Option<usize>,
     concurrency: Option<usize>,
@@ -275,22 +234,64 @@ pub fn udf(
 }
 
 #[pyfunction]
+#[allow(clippy::too_many_arguments)]
 pub fn row_wise_udf(
     name: &str,
-    inner: PyObject,
+    cls: Py<PyAny>,
+    method: Py<PyAny>,
+    is_async: bool,
     return_dtype: PyDataType,
-    original_args: PyObject,
+    gpus: usize,
+    use_process: Option<bool>,
+    max_concurrency: Option<usize>,
+    original_args: Py<PyAny>,
     expr_args: Vec<PyExpr>,
 ) -> PyExpr {
-    use crate::python_udf::row_wise_udf;
-
     let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
 
     PyExpr {
-        expr: row_wise_udf(
+        expr: crate::python_udf::row_wise_udf(
             name,
-            inner.into(),
+            cls.into(),
+            method.into(),
+            is_async,
             return_dtype.into(),
+            gpus,
+            use_process,
+            max_concurrency,
+            original_args.into(),
+            args,
+        )
+        .into(),
+    }
+}
+
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+pub fn batch_udf(
+    name: &str,
+    cls: Py<PyAny>,
+    method: Py<PyAny>,
+    return_dtype: PyDataType,
+    gpus: usize,
+    use_process: Option<bool>,
+    max_concurrency: Option<usize>,
+    batch_size: Option<usize>,
+    original_args: Py<PyAny>,
+    expr_args: Vec<PyExpr>,
+) -> PyExpr {
+    let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
+
+    PyExpr {
+        expr: crate::python_udf::batch_udf(
+            name,
+            cls.into(),
+            method.into(),
+            return_dtype.into(),
+            gpus,
+            use_process,
+            max_concurrency,
+            batch_size,
             original_args.into(),
             args,
         )
@@ -306,6 +307,7 @@ pub fn initialize_udfs(expr: PyExpr) -> PyResult<PyExpr> {
 }
 
 /// Get the names of all UDFs in expression
+// TODO: Remove with the old Ray Runner
 #[pyfunction]
 pub fn try_get_udf_name(expr: PyExpr) -> Option<String> {
     use crate::functions::python::try_get_udf_name;
@@ -332,7 +334,7 @@ pub enum ApproxPercentileInput {
 impl PyExpr {
     /// converts the pyexpr into a `daft.Expression` python instance
     /// `daft.Expression._from_pyexpr(self)`
-    pub fn into_expr_cls(self, py: Python) -> PyResult<PyObject> {
+    pub fn into_expr_cls(self, py: Python) -> PyResult<Py<PyAny>> {
         let daft = py.import("daft")?;
         let expr_cls = daft.getattr("Expression")?;
         let expr = expr_cls.call_method1("_from_pyexpr", (self,))?;

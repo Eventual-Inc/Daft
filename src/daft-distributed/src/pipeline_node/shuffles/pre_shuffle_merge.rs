@@ -1,6 +1,5 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
@@ -8,14 +7,15 @@ use futures::TryStreamExt;
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
-        PipelineNodeContext, SubmittableTaskStream, make_in_memory_task_from_materialized_outputs,
+        PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream,
+        make_in_memory_task_from_materialized_outputs,
     },
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
         worker::WorkerId,
     },
-    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::channel::{Sender, create_channel},
 };
 
@@ -23,7 +23,7 @@ pub(crate) struct PreShuffleMergeNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     pre_shuffle_merge_threshold: usize,
-    child: Arc<dyn DistributedPipelineNode>,
+    child: DistributedPipelineNode,
 }
 
 impl PreShuffleMergeNode {
@@ -32,13 +32,13 @@ impl PreShuffleMergeNode {
     pub fn new(
         node_id: NodeID,
         logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         pre_shuffle_merge_threshold: usize,
         schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.plan_id,
             node_id,
             Self::NODE_NAME,
             vec![child.node_id()],
@@ -47,7 +47,7 @@ impl PreShuffleMergeNode {
         );
         let config = PipelineNodeConfig::new(
             schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             child.config().clustering_spec.clone(),
         );
 
@@ -59,44 +59,12 @@ impl PreShuffleMergeNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
-    }
-
-    fn multiline_display(&self) -> Vec<String> {
-        vec![
-            format!("Pre-Shuffle Merge"),
-            format!("Threshold: {}", self.pre_shuffle_merge_threshold),
-        ]
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 
-impl TreeDisplay for PreShuffleMergeNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.context.node_name).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.context.node_name.to_string()
-    }
-}
-
-impl DistributedPipelineNode for PreShuffleMergeNode {
+impl PipelineNodeImpl for PreShuffleMergeNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -105,32 +73,35 @@ impl DistributedPipelineNode for PreShuffleMergeNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        vec![
+            format!("Pre-Shuffle Merge"),
+            format!("Threshold: {}", self.pre_shuffle_merge_threshold),
+        ]
     }
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_node = self.child.clone().produce_tasks(stage_context);
+        let input_node = self.child.clone().produce_tasks(plan_context);
 
         let (result_tx, result_rx) = create_channel(1);
 
-        let task_id_counter = stage_context.task_id_counter();
-        let scheduler_handle = stage_context.scheduler_handle();
+        let task_id_counter = plan_context.task_id_counter();
+        let scheduler_handle = plan_context.scheduler_handle();
 
         let merge_execution = async move {
             self.execute_merge(input_node, task_id_counter, result_tx, scheduler_handle)
                 .await
         };
 
-        stage_context.spawn(merge_execution);
+        plan_context.spawn(merge_execution);
         SubmittableTaskStream::from(result_rx)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
     }
 }
 
@@ -171,7 +142,8 @@ impl PreShuffleMergeNode {
                     let task = make_in_memory_task_from_materialized_outputs(
                         TaskContext::from((self.context(), task_id_counter.next())),
                         materialized_outputs,
-                        &(self_clone as Arc<dyn DistributedPipelineNode>),
+                        self_clone.config.schema.clone(),
+                        &(self_clone as Arc<dyn PipelineNodeImpl>),
                         Some(SchedulingStrategy::WorkerAffinity {
                             worker_id,
                             soft: false,
@@ -193,7 +165,8 @@ impl PreShuffleMergeNode {
                 let task = make_in_memory_task_from_materialized_outputs(
                     TaskContext::from((self.context(), task_id_counter.next())),
                     materialized_outputs,
-                    &(self_clone as Arc<dyn DistributedPipelineNode>),
+                    self_clone.config.schema.clone(),
+                    &(self_clone as Arc<dyn PipelineNodeImpl>),
                     Some(SchedulingStrategy::WorkerAffinity {
                         worker_id,
                         soft: false,

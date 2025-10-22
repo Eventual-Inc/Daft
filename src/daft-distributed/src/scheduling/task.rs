@@ -11,12 +11,11 @@ use super::worker::WorkerId;
 use crate::{
     pipeline_node::{MaterializedOutput, NodeID, PipelineNodeContext},
     plan::PlanID,
-    stage::StageID,
 };
 
 #[derive(Debug, Clone)]
 pub(crate) struct TaskResourceRequest {
-    resource_request: ResourceRequest,
+    pub resource_request: ResourceRequest,
 }
 
 impl TaskResourceRequest {
@@ -32,7 +31,6 @@ impl TaskResourceRequest {
         self.resource_request.num_gpus().unwrap_or(0.0)
     }
 
-    #[allow(dead_code)]
     pub fn memory_bytes(&self) -> usize {
         self.resource_request.memory_bytes().unwrap_or(0)
     }
@@ -45,7 +43,6 @@ pub(crate) type TaskName = String;
 #[allow(clippy::struct_field_names)]
 pub(crate) struct TaskContext {
     pub plan_id: PlanID,
-    pub stage_id: StageID,
     pub node_id: NodeID,
     pub task_id: TaskID,
     pub logical_node_ids: Vec<NodeID>,
@@ -54,14 +51,12 @@ pub(crate) struct TaskContext {
 impl TaskContext {
     pub fn new(
         plan_id: PlanID,
-        stage_id: StageID,
         node_id: NodeID,
         task_id: TaskID,
         logical_node_ids: Vec<NodeID>,
     ) -> Self {
         Self {
             plan_id,
-            stage_id,
             node_id,
             task_id,
             logical_node_ids,
@@ -77,8 +72,8 @@ impl std::fmt::Debug for TaskContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "TaskContext(plan_id = {}, stage_id = {}, node_id = {}, task_id = {})",
-            self.plan_id, self.stage_id, self.node_id, self.task_id
+            "TaskContext(plan_id = {}, node_id = {}, task_id = {})",
+            self.plan_id, self.node_id, self.task_id
         )
     }
 }
@@ -87,7 +82,6 @@ impl From<(&PipelineNodeContext, TaskID)> for TaskContext {
     fn from((node_context, task_id): (&PipelineNodeContext, TaskID)) -> Self {
         Self::new(
             node_context.plan_id,
-            node_context.stage_id,
             node_context.node_id,
             task_id,
             node_context
@@ -112,11 +106,6 @@ pub(crate) trait Task: Send + Sync + Clone + Debug + 'static {
     #[allow(dead_code)]
     fn plan_id(&self) -> PlanID {
         self.task_context().plan_id
-    }
-
-    #[allow(dead_code)]
-    fn stage_id(&self) -> StageID {
-        self.task_context().stage_id
     }
 
     #[allow(dead_code)]
@@ -173,18 +162,13 @@ impl std::fmt::Debug for TaskDetails {
 pub(crate) enum SchedulingStrategy {
     Spread,
     // TODO: In the future if we run multiple workers on the same node, we can have a NodeAffinity strategy or a multi-worker affinity strategy
-    #[allow(dead_code)]
-    WorkerAffinity {
-        worker_id: WorkerId,
-        soft: bool,
-    },
+    WorkerAffinity { worker_id: WorkerId, soft: bool },
 }
 
 #[allow(clippy::struct_field_names)]
 #[derive(Debug, Clone, Copy)]
 struct SwordfishTaskPriority {
     plan_id: PlanID,
-    stage_id: StageID,
     node_id: NodeID,
     task_id: TaskID,
 }
@@ -193,7 +177,6 @@ impl PartialEq for SwordfishTaskPriority {
     fn eq(&self, other: &Self) -> bool {
         self.task_id == other.task_id
             && self.plan_id == other.plan_id
-            && self.stage_id == other.stage_id
             && self.node_id == other.node_id
     }
 }
@@ -210,13 +193,11 @@ impl Ord for SwordfishTaskPriority {
     fn cmp(&self, other: &Self) -> Ordering {
         // Rules for swordfish task priority:
         // 1. Plan ID: Lower plan_id, higher priority
-        // 2. Stage ID: Higher stage_id, higher priority
-        // 3. Node ID: Higher node_id, higher priority
-        // 4. Task ID: Lower task_id, higher priority
+        // 2. Node ID: Higher node_id, higher priority
+        // 3. Task ID: Lower task_id, higher priority
         other
             .plan_id
             .cmp(&self.plan_id)
-            .then_with(|| self.stage_id.cmp(&other.stage_id))
             .then_with(|| self.node_id.cmp(&other.node_id))
             .then_with(|| other.task_id.cmp(&self.task_id))
     }
@@ -303,7 +284,6 @@ impl Task for SwordfishTask {
     fn priority(&self) -> impl TaskPriority {
         SwordfishTaskPriority {
             plan_id: self.task_context.plan_id,
-            stage_id: self.task_context.stage_id,
             node_id: self.task_context.node_id,
             task_id: self.task_context.task_id,
         }
@@ -601,88 +581,63 @@ pub(super) mod tests {
         // Test 1: Different plan_ids (lower plan_id should have higher priority)
         let task1 = SwordfishTaskPriority {
             plan_id: 1,
-            stage_id: 1,
             node_id: 1,
             task_id: 1,
         };
         let task2 = SwordfishTaskPriority {
             plan_id: 2,
-            stage_id: 1,
             node_id: 1,
             task_id: 1,
         };
         assert!(task1 > task2); // plan_id 1 < plan_id 2, so task1 has higher priority (larger in ordering)
 
-        // Test 2: Same plan_id, different stage_ids (higher stage_id should have higher priority)
+        // Test 2: Same plan_id, different task_ids (higher task_id should have higher priority)
         let task1 = SwordfishTaskPriority {
             plan_id: 1,
-            stage_id: 2,
-            node_id: 1,
-            task_id: 1,
-        };
-        let task2 = SwordfishTaskPriority {
-            plan_id: 1,
-            stage_id: 1,
-            node_id: 1,
-            task_id: 1,
-        };
-        assert!(task1 > task2); // stage_id 2 > stage_id 1, so task1 has higher priority (larger in ordering)
-
-        // Test 3: Same plan_id and stage_id, different node_ids (higher node_id should have higher priority)
-        let task1 = SwordfishTaskPriority {
-            plan_id: 1,
-            stage_id: 1,
             node_id: 2,
             task_id: 1,
         };
         let task2 = SwordfishTaskPriority {
             plan_id: 1,
-            stage_id: 1,
             node_id: 1,
             task_id: 1,
         };
         assert!(task1 > task2); // node_id 2 > node_id 1, so task1 has higher priority (larger in ordering)
 
-        // Test 4: Same plan_id, stage_id, and node_id, different task_ids (lower task_id should have higher priority)
+        // Test 3: Same plan_id and node_id, different task_ids (lower task_id should have higher priority)
         let task1 = SwordfishTaskPriority {
             plan_id: 1,
-            stage_id: 1,
             node_id: 1,
             task_id: 1,
         };
         let task2 = SwordfishTaskPriority {
             plan_id: 1,
-            stage_id: 1,
             node_id: 1,
             task_id: 2,
         };
         assert!(task1 > task2); // task_id 1 < task_id 2, so task1 has higher priority (larger in ordering)
 
-        // Test 5: Complex case with multiple differences
+        // Test 4: Complex case with multiple differences
         let task1 = SwordfishTaskPriority {
             plan_id: 1,
-            stage_id: 2,
             node_id: 2,
             task_id: 1,
         };
         let task2 = SwordfishTaskPriority {
             plan_id: 2,
-            stage_id: 1,
             node_id: 1,
             task_id: 1,
         };
         assert!(task1 > task2); // task1 has lower plan_id, so it has higher priority (larger in ordering)
 
-        // Test 6: Equality
+        // Test 5: Equality
         let task1 = SwordfishTaskPriority {
             plan_id: 1,
-            stage_id: 1,
             node_id: 1,
             task_id: 1,
         };
         let task2 = SwordfishTaskPriority {
             plan_id: 1,
-            stage_id: 1,
             node_id: 1,
             task_id: 1,
         };
@@ -700,86 +655,62 @@ pub(super) mod tests {
         // Add tasks in random order - ensuring unique task_ids within each stage
         heap.push(SwordfishTaskPriority {
             plan_id: 2,
-            stage_id: 1,
             node_id: 1,
             task_id: 1,
         });
         heap.push(SwordfishTaskPriority {
             plan_id: 1,
-            stage_id: 2,
-            node_id: 1,
-            task_id: 1,
-        });
-        heap.push(SwordfishTaskPriority {
-            plan_id: 1,
-            stage_id: 1,
             node_id: 2,
             task_id: 3,
         });
         heap.push(SwordfishTaskPriority {
             plan_id: 1,
-            stage_id: 1,
             node_id: 1,
             task_id: 2,
         });
         heap.push(SwordfishTaskPriority {
             plan_id: 1,
-            stage_id: 1,
             node_id: 1,
             task_id: 1,
         });
 
         // Pop tasks in order (BinaryHeap is a max heap, so highest priority comes out first)
         // Expected order (highest priority to lowest priority):
-        // 1. plan_id=1, stage_id=2, node_id=1, task_id=1 (higher stage_id = highest priority = largest in heap)
-        // 2. plan_id=1, stage_id=1, node_id=2, task_id=3 (higher node_id = higher priority = larger in heap)
-        // 3. plan_id=1, stage_id=1, node_id=1, task_id=1 (lower task_id = higher priority = larger in heap)
-        // 4. plan_id=1, stage_id=1, node_id=1, task_id=2 (higher task_id = lower priority = smaller in heap)
-        // 5. plan_id=2, stage_id=1, node_id=1, task_id=1 (higher plan_id = lowest priority = smallest in heap)
+        // 1. plan_id=1, stage_id=1, node_id=2, task_id=3 (higher node_id = higher priority = larger in heap)
+        // 2. plan_id=1, stage_id=1, node_id=1, task_id=1 (lower task_id = higher priority = larger in heap)
+        // 3. plan_id=1, stage_id=1, node_id=1, task_id=2 (higher task_id = lower priority = smaller in heap)
+        // 4. plan_id=2, stage_id=1, node_id=1, task_id=1 (higher plan_id = lowest priority = smallest in heap)
 
         assert_eq!(
             heap.pop().unwrap(),
             SwordfishTaskPriority {
                 plan_id: 1,
-                stage_id: 2,
-                node_id: 1,
-                task_id: 1,
-            }
-        );
-        assert_eq!(
-            heap.pop().unwrap(),
-            SwordfishTaskPriority {
-                plan_id: 1,
-                stage_id: 1,
                 node_id: 2,
-                task_id: 3,
+                task_id: 3
             }
         );
         assert_eq!(
             heap.pop().unwrap(),
             SwordfishTaskPriority {
                 plan_id: 1,
-                stage_id: 1,
                 node_id: 1,
-                task_id: 1,
+                task_id: 1
             }
         );
         assert_eq!(
             heap.pop().unwrap(),
             SwordfishTaskPriority {
                 plan_id: 1,
-                stage_id: 1,
                 node_id: 1,
-                task_id: 2,
+                task_id: 2
             }
         );
         assert_eq!(
             heap.pop().unwrap(),
             SwordfishTaskPriority {
                 plan_id: 2,
-                stage_id: 1,
                 node_id: 1,
-                task_id: 1,
+                task_id: 1
             }
         );
         assert!(heap.pop().is_none()); // Heap should be empty

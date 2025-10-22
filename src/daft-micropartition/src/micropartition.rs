@@ -300,7 +300,7 @@ fn materialize_scan_task(
                 .filters
                 .as_ref()
                 .map(|p| (*p.as_ref()).clone().into());
-            pyo3::Python::with_gil(|py| {
+            pyo3::Python::attach(|py| {
                 let table = crate::python::read_sql_into_py_table(
                     py,
                     sql,
@@ -320,7 +320,11 @@ fn materialize_scan_task(
             })?
         }
         #[cfg(feature = "python")]
-        FileFormatConfig::PythonFunction => {
+        FileFormatConfig::PythonFunction {
+            source_type: _,
+            module_name: _,
+            function_name: _,
+        } => {
             let tables = crate::python::read_pyfunc_into_table_iter(scan_task.clone())?;
             tables.collect::<crate::Result<Vec<_>>>()?
         }

@@ -3,19 +3,21 @@ from __future__ import annotations
 import contextlib
 import logging
 import threading
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from daft import runners
 from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig
 from daft.daft import get_context as _get_context
-from daft.daft import set_runner_native as _set_runner_native
-from daft.daft import set_runner_ray as _set_runner_ray
 
 if TYPE_CHECKING:
     from collections.abc import Generator
 
+    from daft.daft import PyQueryMetadata
     from daft.runners.partitioning import PartitionT
     from daft.runners.runner import Runner
+    from daft.subscribers import Subscriber
 
 logger = logging.getLogger(__name__)
 
@@ -28,14 +30,6 @@ class DaftContext:
 
     _lock: ClassVar[threading.Lock] = threading.Lock()
 
-    @property
-    def _runner(self) -> Runner[PartitionT]:
-        return self._ctx._runner
-
-    @_runner.setter
-    def _runner(self, runner: Runner[PartitionT]) -> None:
-        self._ctx._runner = runner
-
     @staticmethod
     def _from_native(ctx: PyDaftContext) -> DaftContext:
         return DaftContext(ctx=ctx)
@@ -47,7 +41,9 @@ class DaftContext:
             self._ctx = PyDaftContext()
 
     def get_or_infer_runner_type(self) -> str:
-        """Get or infer the runner type.
+        """DEPRECATED: Use daft.get_or_infer_runner_type instead. This method will be removed in v0.7.0.
+
+        Get or infer the runner type.
 
         This API will get or infer the currently used runner type according to the following strategies:
         1. If the `runner` has been set, return its type directly;
@@ -56,13 +52,20 @@ class DaftContext:
 
         :return: runner type string ("native" or "ray")
         """
-        if self._ctx._runner is not None:
-            return self._ctx._runner.name
-
-        return self._ctx.get_or_infer_runner_type()
+        warnings.warn(
+            "This method is deprecated and will be removed in v0.7.0. Use daft.get_or_infer_runner_type instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return runners.get_or_infer_runner_type()
 
     def get_or_create_runner(self) -> Runner[PartitionT]:
-        return self._ctx.get_or_create_runner()
+        warnings.warn(
+            "This method is deprecated and will be removed in v0.7.0. Use daft.get_or_create_runner instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return runners.get_or_create_runner()
 
     @property
     def daft_execution_config(self) -> PyDaftExecutionConfig:
@@ -71,6 +74,45 @@ class DaftContext:
     @property
     def daft_planning_config(self) -> PyDaftPlanningConfig:
         return self._ctx._daft_planning_config
+
+    def attach_subscriber(self, alias: str, subscriber: Subscriber) -> None:
+        """Attaches a subscriber to this context.
+
+        Subscribers listen to events emitted during runtime, particularly during query execution.
+        See the Subscriber class for more details.
+
+        Args:
+            alias (str): alias for the subscriber
+            subscriber (Subscriber): subscriber instance
+        """
+        self._ctx.attach_subscriber(alias, subscriber)
+
+    def detach_subscriber(self, alias: str) -> None:
+        """Detaches a subscriber from this context.
+
+        Args:
+            alias (str): alias for the subscriber
+        """
+        self._ctx.detach_subscriber(alias)
+
+    def _notify_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None:
+        self._ctx.notify_query_start(query_id, metadata)
+
+    def _notify_query_end(self, query_id: str) -> None:
+        self._ctx.notify_query_end(query_id)
+
+    def _notify_optimization_start(self, query_id: str) -> None:
+        self._ctx.notify_optimization_start(query_id)
+
+    def _notify_optimization_end(self, query_id: str, optimized_plan: str) -> None:
+        self._ctx.notify_optimization_end(query_id, optimized_plan)
+
+    def _notify_result_out(self, query_id: str, result: PartitionT) -> None:
+        from daft.recordbatch.micropartition import MicroPartition
+
+        if not isinstance(result, MicroPartition):
+            raise ValueError("Query Managers only support the Native Runner for now")
+        self._ctx.notify_result_out(query_id, result._micropartition)
 
 
 def get_context() -> DaftContext:
@@ -84,7 +126,9 @@ def set_runner_ray(
     max_task_backlog: int | None = None,
     force_client_mode: bool = False,
 ) -> DaftContext:
-    """Configure Daft to execute dataframes using the Ray distributed computing framework.
+    """DEPRECATED: Use daft.set_runner_ray instead. This method will be removed in v0.7.0.
+
+    Configure Daft to execute dataframes using the Ray distributed computing framework.
 
     Args:
         address: Ray cluster address to connect to. If None, connects to or starts a local Ray instance.
@@ -98,18 +142,26 @@ def set_runner_ray(
     Note:
         Can also be configured via environment variable: DAFT_RUNNER=ray
     """
-    py_ctx = _set_runner_ray(
+    warnings.warn(
+        "This method is deprecated and will be removed in v0.7.0. Use daft.set_runner_ray instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
+    _ = runners.set_runner_ray(
         address=address,
         noop_if_initialized=noop_if_initialized,
         max_task_backlog=max_task_backlog,
         force_client_mode=force_client_mode,
     )
 
-    return DaftContext._from_native(py_ctx)
+    return DaftContext._from_native(_get_context())
 
 
 def set_runner_native(num_threads: int | None = None) -> DaftContext:
-    """Configure Daft to execute dataframes using native multi-threaded processing.
+    """DEPRECATED: Use daft.set_runner_native instead. This method will be removed in v0.7.0.
+
+    Configure Daft to execute dataframes using native multi-threaded processing.
 
     This is the default execution mode for Daft.
 
@@ -119,9 +171,14 @@ def set_runner_native(num_threads: int | None = None) -> DaftContext:
     Note:
         Can also be configured via environment variable: DAFT_RUNNER=native
     """
-    py_ctx = _set_runner_native(num_threads=num_threads)
+    warnings.warn(
+        "This method is deprecated and will be removed in v0.7.0. Use daft.set_runner_native instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
-    return DaftContext._from_native(py_ctx)
+    _ = runners.set_runner_native(num_threads=num_threads)
+    return DaftContext._from_native(_get_context())
 
 
 @contextlib.contextmanager
@@ -180,7 +237,6 @@ def set_execution_config(
     max_sources_per_scan_task: int | None = None,
     broadcast_join_size_bytes_threshold: int | None = None,
     parquet_split_row_groups_max_files: int | None = None,
-    sort_merge_join_sort_with_aligned_boundaries: bool | None = None,
     hash_join_partition_size_leniency: float | None = None,
     sample_size_for_sort: int | None = None,
     num_preview_rows: int | None = None,
@@ -224,9 +280,6 @@ def set_execution_config(
         broadcast_join_size_bytes_threshold: If one side of a join is smaller than this threshold, a broadcast join will be used.
             Default is 10 MiB.
         parquet_split_row_groups_max_files: Maximum number of files to read in which the row group splitting should happen. (Defaults to 10)
-        sort_merge_join_sort_with_aligned_boundaries: Whether to use a specialized algorithm for sorting both sides of a
-            sort-merge join such that they have aligned boundaries. This can lead to a faster merge-join at the cost of
-            more skewed sorted join inputs, increasing the risk of OOMs.
         hash_join_partition_size_leniency: If the left side of a hash join is already correctly partitioned and the right side isn't,
             and the ratio between the left and right size is at least this value, then the right side is repartitioned to have an equal
             number of partitions as the left. Defaults to 0.5.
@@ -267,7 +320,6 @@ def set_execution_config(
             max_sources_per_scan_task=max_sources_per_scan_task,
             broadcast_join_size_bytes_threshold=broadcast_join_size_bytes_threshold,
             parquet_split_row_groups_max_files=parquet_split_row_groups_max_files,
-            sort_merge_join_sort_with_aligned_boundaries=sort_merge_join_sort_with_aligned_boundaries,
             hash_join_partition_size_leniency=hash_join_partition_size_leniency,
             sample_size_for_sort=sample_size_for_sort,
             num_preview_rows=num_preview_rows,

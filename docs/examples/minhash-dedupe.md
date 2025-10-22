@@ -1,27 +1,27 @@
-# MinHash Deduplication of Web Text in Common-Crawl
+# MinHash Deduplication on Common-Crawl Web Text
 
 <a target="_blank" href="https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/minhash_dedupe/minhash_dedupe_common_crawl.ipynb">
   <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
 </a>
 
-In this notebook we will be performing the MinHash Deduplication algorithm over extracted text from HTML documents in the Common Crawl dataset.
+In this notebook we will be performing the MinHash Deduplication algorithm over extracted text from html documents in the common crawl dataset. The Common Crawl corpus contains petabytes of data, with its oldest entries dating back to 2008. Each dataset includes raw web page data, metadata extracts, and text extracts. Deduplication is a helpful top-of-funnel strategy for improving dataset quality and is commonly used to improve generalization in LLM training, RAG, and Search.
 
-If you google "minhash deduplication" you'll find a variety of sources that can walk you through the algorithm. [Finding Near Duplicates with Jaccard Similarity and MinHash by Nelson Elhage](https://blog.nelhage.com/post/fuzzy-dedup/) is a great place to start, but if you are looking for the canonical reference for the MinHash deduplication algorithm, it originates from the seminal paper by Andrei Z. Broder, published in 1997, titled:
+When implemented as a pipeline, this workload can process 100,000 web pages in under 4 minutes on a MacBook Air (M2) with 8 GB of RAM. That includes preprocessing pages into html blocks, minhash, lsh banding, connected components, and final dedupe!
 
 ```text
-"On the resemblance and containment of documents"
-Published in: Proceedings of the Compression and Complexity of Sequences 1997 (SEQUENCES '97)
-Publisher: IEEE Computer Society
-DOI: 10.1109/SEQUEN.1997.666900
+# of documents loaded:  100000
+# of text rows before:  4944669
+# of text rows after:   1855814
+% of text rows kept:    37.53%
+Overall Time:           222.21s
 ```
 
----
+## References
 
-The Common Crawl corpus contains petabytes of data, with its oldest entries dating back to 2008, including raw web page data, metadata extracts, and text extracts.
+- [Connected Components in MapReduce and Beyond](https://dl.acm.org/doi/abs/10.1145/2670979.2670997)
+- [On the resemblance and containment of documents](https://ieeexplore.ieee.org/document/666900)
+- [Finding Near Duplicates with Jaccard Similarity and MinHash by Nelson Elhage](https://blog.nelhage.com/post/fuzzy-dedup/)
 
-Deduplication is a helpful top-of-funnel strategy for improving dataset quality and is commonly used to improve generalization in LLM training, RAG, and Search.
-
----
 
 ## Table of Contents
 
@@ -58,11 +58,9 @@ NGRAM_SIZE = 5 # Size of the n-grams
 LSH_THRESHOLD = 0.7 # Jaccard Similarity Threshold for LSH
 ```
 
----
-
 ## Loading HTML Documents from Common Crawl
 
-We will be accessing Common Crawl through [WARC files](https://commoncrawl.org/blog/navigating-the-warc-file-format) since [Daft supports the format natively](../api/io/#daft.read_warc).
+We will be accessing Common Crawl through [WARC files](https://commoncrawl.org/blog/navigating-the-warc-file-format) since [Daft supports the format natively][daft.read_warc].
 
 ### (Optional) AWS Authentication
 
@@ -79,6 +77,7 @@ from IPython.display import clear_output
 ```
 
 ```python
+IN_AWS = False
 if os.environ.get("AWS_ACCESS_KEY_ID"):
     # Make sure to define your AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in your environment variables or in a .env file
     s3_config = S3Config(
@@ -88,21 +87,17 @@ if os.environ.get("AWS_ACCESS_KEY_ID"):
         access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
         anonymous=False,
     )
-
+    IN_AWS = True
     IO_CONFIG = IOConfig(s3=s3_config)
     daft.set_planning_config(default_io_config=IO_CONFIG)
-
-    # Multifile access over S3
-    uri = f"s3://commoncrawl/crawl-data/CC-MAIN-2025-33/segments/*/warc/*.warc.gz"
-else:
-    # For un-authenticated access over http
-    uri = "https://data.commoncrawl.org/crawl-data/CC-MAIN-2025-33/segments/1754151279521.11/warc/CC-MAIN-20250802220907-20250803010907-00000.warc.gz"
-
 ```
 
 ```python
 # Read the WARC files from the Common Crawl S3 bucket or HTTP endpoint
-df_warc = daft.read_warc(uri).limit(NUM_ROWS).collect() # Materialize to avoid re-reading from source
+df_warc = daft.datasets.common_crawl(
+    "CC-MAIN-2025-33",
+    in_aws=IN_AWS
+).limit(NUM_ROWS).collect()
 df_warc.show(3)
 ```
 
@@ -113,11 +108,10 @@ df_warc.select("WARC-Identified-Payload-Type").distinct().show()
 
 ## Preprocessing
 
-Since we are primarily concerned with text, we will focus on `text/html` payloads, extracting text content from html body and normalizing the text itself.
+Since we are primarily concerned with text, we will focus on `text/html` payloads, extracting text content from html body and normalizing the text itself. Common Crawl also comes with text only .wet files that come preprocessed, but here we choose to handle each html block explicitly to ensure consistent comparisons across pages.
 
 ```python
 from daft import col
-
 
 # Define a UDF to remove http headers from the payload
 @daft.func()
@@ -196,7 +190,7 @@ So far we have extracted the text out of each html document into blocks. Now we 
 
 *Note: It is recommended to run your preprocessing pipeline separately from your MinHash deduplication workload.*
 
-See docs: [normalize](../api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.normalize)
+See docs: [normalize][daft.Expression.normalize]
 
 ```python
 # Normalize text
@@ -215,7 +209,7 @@ df_norm.select(index_col, content_col, "content_normalized").show(3)
 
 Normally when you perform a MinHash on text data, you have to define the shingling strategy, hash functions, and permutation parameters manually.
 
-Luckily, Daft has a built-in [MinHash expression](../api/expressions/#daft.expressions.Expression.minhash).
+Luckily, Daft has a built-in [MinHash expression][daft.Expression.minhash].
 
 ```python
 # Calculate the MinHash vectors
@@ -241,7 +235,6 @@ Next, we will:
 1. Use the optimal_param function to determine the best band (b) and row (r) parameters for our LSH bucketing
 2. Split each document's MinHash vector into `B` bands of `R` rows each
 3. Create buckets by hashing each band's signature, grouping similar documents together
-
 
 ```python
 from scipy.integrate import quad as integrate
@@ -334,7 +327,7 @@ id_map = df_minhash.select(index_col, "node_id").distinct()
 
 **Previously** we calculated the MinHashes for our `content_text` where we hashed each word token into an 8-byte integer, taking only 64 samples (at a uniform random sample).
 
-**Next** we took those 64 hashes and chunked them into 8 lists of 8 values.
+**Next** we take those 64 hashes and chunk them into 8 lists of 8 values.
 
 ```python
 # Band Generation
@@ -344,6 +337,7 @@ df_bands = (
 )
 df_bands.select(index_col, content_col, "min_hashes", "bands").show(3)
 ```
+
 **Now** we will explode our bands into new rows, keeping track of their position in the band using `band_idx`.
 
 ```python
@@ -399,7 +393,6 @@ From there we use star-contraction (Kiveris et al., 2014) to snap clusters toget
 
 Repeat Large-star then Small-star until the edge set stops changing. The final “parent” each node points to is its component representative (typically the component’s minimum ID). It’s fast, scalable, and after a handful of rounds, the clusters just fall out!
 
-
 ```python
 # First we must convert our list of nodes into an edge list
 df_edges = (
@@ -414,6 +407,7 @@ df_edges = (
 )
 df_edges.show(5)
 ```
+
 First we need a few utilities
 
 ```python
@@ -463,7 +457,6 @@ We will iteratively compress the graph using two alternating phases until conver
 - Compute min_neighbor = min(neighbors).
 - Use min(u, min_neighbor) as the node’s “parent.”
 - Emit edges (u, parent) but only where parent > u to avoid self-loops and duplicates.
-
 
 ```python
 def large_star(edges: DataFrame) -> DataFrame:
@@ -653,7 +646,6 @@ assignments.show()
 By comparing our Daft-based implementation against igraph's results, we ensure our custom connected components logic correctly identifies all weakly connected subgraphs in the duplicate detection pipeline.
 
 See docs: [Connected Components](https://python.igraph.org/en/main/tutorials/connected_components.html)
-
 
 ```python
 import igraph as ig
@@ -863,11 +855,15 @@ assignments_unique_str = a2.select(
     col("__u_str").alias(index_col),
     col("__rep_str").alias("component")
 )
+assignments_unique_str.show()
 ```
 
 ```python
+# Filter to columns of interest
+df_content = df_text.select("WARC-Record-ID", index_col, "block")
+
 # Join back to original df and filter to keep only rows where the row is its own representative or isolated
-df_joined = df_text.join(assignments_unique_str, on=index_col, how="left")
+df_joined = df_content.join(assignments_unique_str, on=index_col, how="left").collect()
 ```
 
 ```python

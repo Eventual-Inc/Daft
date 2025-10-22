@@ -15,7 +15,11 @@ image = {workspace = true, features = [
   "hdr"
 ]}
 ndarray = {workspace = true}
+pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
+
+[features]
+python = ["dep:pyo3"]
 
 [lints]
 workspace = true

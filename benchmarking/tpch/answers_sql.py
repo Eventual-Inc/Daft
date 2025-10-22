@@ -80,10 +80,6 @@ def get_answer(q: int, get_df) -> daft.DataFrame:
 
 
 def main(parquet_path, q):
-    if q in (11, 22):
-        # TODO: remove this once we support cross joins in Flotilla
-        daft.set_execution_config(use_legacy_ray_runner=True)
-
     s3_config_from_env = S3Config.from_env()
     io_config = IOConfig(s3=s3_config_from_env)
 

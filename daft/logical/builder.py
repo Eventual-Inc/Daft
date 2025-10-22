@@ -150,6 +150,19 @@ class LogicalPlanBuilder:
         builder = logical_plan_table_scan(scan_operator)
         return cls(builder)
 
+    @classmethod
+    @_apply_daft_planning_config_to_initializer
+    def from_glob_scan(
+        cls,
+        glob_paths: list[str],
+        io_config: IOConfig | None = None,
+    ) -> LogicalPlanBuilder:
+        builder = _LogicalPlanBuilder.from_glob_scan(
+            glob_paths,
+            io_config,
+        )
+        return cls(builder)
+
     def select(
         self,
         to_select: list[Expression],
@@ -355,7 +368,7 @@ class LogicalPlanBuilder:
         from daft.io.iceberg.iceberg_write import get_missing_columns, partition_field_to_expr
 
         name = ".".join(table.name())
-        location = f"{table.location()}/data"
+        location = table.metadata.properties.get("write.data.path", f"{table.location()}/data")
         partition_spec = table.spec()
         schema = table.schema()
         missing_columns = get_missing_columns(self.schema().to_pyarrow_schema(), schema)

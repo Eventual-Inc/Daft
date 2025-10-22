@@ -2,7 +2,6 @@ mod buffer;
 mod channel;
 mod dispatcher;
 mod intermediate_ops;
-mod ops;
 mod pipeline;
 mod resource_manager;
 mod run;
@@ -69,18 +68,11 @@ pub(crate) struct TaskSet<T> {
     inner: tokio::task::JoinSet<T>,
 }
 
-impl<T: 'static> TaskSet<T> {
+impl<T: Send + 'static> TaskSet<T> {
     fn new() -> Self {
         Self {
             inner: tokio::task::JoinSet::new(),
         }
-    }
-
-    fn spawn_local<F>(&mut self, future: F)
-    where
-        F: std::future::Future<Output = T> + 'static,
-    {
-        self.inner.spawn_local(future);
     }
 
     fn spawn<F>(&mut self, future: F)
@@ -144,14 +136,14 @@ impl ExecutionRuntimeContext {
         }
     }
 
-    pub fn spawn_local(
+    pub fn spawn(
         &mut self,
-        task: impl std::future::Future<Output = DaftResult<()>> + 'static,
+        task: impl std::future::Future<Output = DaftResult<()>> + Send + 'static,
         node_name: &str,
     ) {
         let node_name = node_name.to_string();
         self.worker_set
-            .spawn_local(task.with_context(|_| PipelineExecutionSnafu { node_name }));
+            .spawn(task.with_context(|_| PipelineExecutionSnafu { node_name }));
     }
 
     pub async fn join_next(&mut self) -> Option<Result<crate::Result<()>, Error>> {

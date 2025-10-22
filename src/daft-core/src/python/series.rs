@@ -1,11 +1,11 @@
 use std::{
-    hash::BuildHasherDefault,
     ops::{Add, Div, Mul, Rem, Sub},
     sync::Arc,
 };
 
 use common_arrow_ffi as ffi;
-use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
+use common_error::DaftError;
+use daft_hash::HashFunctionKind;
 use daft_schema::python::PyDataType;
 use pyo3::{
     exceptions::{PyIndexError, PyStopIteration, PyValueError},
@@ -15,12 +15,19 @@ use pyo3::{
 };
 
 use crate::{
-    array::{DataArray, ops::DaftLogical, pseudo_arrow::PseudoArrowArray},
+    array::ops::DaftLogical,
     count_mode::CountMode,
-    datatypes::{DataType, Field, PythonType},
+    datatypes::{DataType, Field},
     lit::Literal,
-    series::{self, IntoSeries, Series},
-    utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
+    prelude::PythonArray,
+    series::{
+        self, IntoSeries, Series,
+        from_lit::{combine_lit_types, series_from_literals_iter},
+    },
+    utils::{
+        arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
+        supertype::try_get_collection_supertype,
+    },
 };
 
 #[pyclass]
@@ -31,15 +38,18 @@ pub struct PySeries {
 impl PySeries {
     pub fn from_pylist_impl(
         name: &str,
-        vec_pyobj: Vec<Py<PyAny>>,
+        vec_pyobj: Vec<Bound<PyAny>>,
         dtype: DataType,
     ) -> PyResult<Self> {
-        let vec_pyobj_arced = vec_pyobj.into_iter().map(Arc::new).collect();
-        let arrow_array: Box<dyn arrow2::array::Array> =
-            Box::new(PseudoArrowArray::from_pyobj_vec(vec_pyobj_arced));
-        let field = Field::new(name, DataType::Python);
-        let data_array = DataArray::<PythonType>::new(field.into(), arrow_array)?;
-        let series = data_array.cast(&dtype)?;
+        let pyobjs_arced = vec_pyobj.into_iter().map(|obj| {
+            if obj.is_none() {
+                None
+            } else {
+                Some(Arc::new(obj.unbind()))
+            }
+        });
+        let arr = PythonArray::from_iter(name, pyobjs_arced);
+        let series = arr.cast(&dtype)?;
 
         Ok(series.into())
     }
@@ -68,12 +78,50 @@ impl PySeries {
         Ok(series.into())
     }
 
-    // This ingests a Python list[object] directly into a Rust PythonArray.
     #[staticmethod]
-    pub fn from_pylist(name: &str, pylist: Bound<PyAny>, dtype: PyDataType) -> PyResult<Self> {
-        let vec_pyobj: Vec<PyObject> = pylist.extract()?;
+    #[pyo3(signature = (list, name=None, dtype=None))]
+    pub fn from_pylist(
+        list: &Bound<PyList>,
+        name: Option<&str>,
+        dtype: Option<PyDataType>,
+    ) -> PyResult<Self> {
+        let dtype = dtype.map(|t| t.dtype);
+        let mut series = if let Some(dtype) = dtype {
+            let literals = (0..list.len()).map(|i| {
+                list.get_item(i)
+                    .and_then(|elem| Literal::from_pyobj(&elem, Some(&dtype)))
+                    .map_err(DaftError::from)
+            });
+            series_from_literals_iter(literals, Some(dtype.clone()))?
+        } else {
+            let literals = list
+                .iter()
+                .map(|elem| Literal::from_pyobj(&elem, None))
+                .collect::<PyResult<Vec<_>>>()?;
 
-        Self::from_pylist_impl(name, vec_pyobj, dtype.dtype)
+            let supertype = try_get_collection_supertype(literals.iter().map(Literal::get_type))
+                .unwrap_or(DataType::Python);
+
+            let literals_with_supertype = literals.into_iter().enumerate().map(|(i, daft_lit)| {
+                if combine_lit_types(&daft_lit.get_type(), &supertype).as_ref() == Some(&supertype)
+                {
+                    Ok(daft_lit)
+                } else {
+                    let py_lit = list.get_item(i)?;
+
+                    // if literal doesn't match supertype, redo conversion so that for the python data type
+                    // as well as nested types with python type, we avoid any lossy conversions and just keep
+                    // stuff as Python objects
+                    Literal::from_pyobj(&py_lit, Some(&supertype)).map_err(DaftError::from)
+                }
+            });
+            series_from_literals_iter(literals_with_supertype, Some(supertype.clone()))?
+        };
+
+        if let Some(name) = name {
+            series = series.rename(name);
+        }
+        Ok(series.into())
     }
 
     pub fn to_pylist<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyList>> {
@@ -231,25 +279,12 @@ impl PySeries {
             )));
         }
         let seed = seed as u32;
-
         let num_hashes = num_hashes as usize;
         let ngram_size = ngram_size as usize;
 
-        let result = match hash_function {
-            HashFunctionKind::MurmurHash3 => {
-                let hasher = MurBuildHasher::new(seed);
-                self.series.minhash(num_hashes, ngram_size, seed, &hasher)
-            }
-            HashFunctionKind::XxHash => {
-                let hasher = xxhash_rust::xxh64::Xxh64Builder::new(seed as u64);
-                self.series.minhash(num_hashes, ngram_size, seed, &hasher)
-            }
-            HashFunctionKind::Sha1 => {
-                let hasher = BuildHasherDefault::<Sha1Hasher>::default();
-                self.series.minhash(num_hashes, ngram_size, seed, &hasher)
-            }
-        }?;
-
+        let result = self
+            .series
+            .minhash(num_hashes, ngram_size, seed, hash_function)?;
         Ok(result.into())
     }
 
@@ -391,7 +426,7 @@ impl PySeries {
         Ok(self.series.fill_null(&fill_value.series)?.into())
     }
 
-    pub fn _debug_bincode_serialize(&self, py: Python) -> PyResult<PyObject> {
+    pub fn _debug_bincode_serialize(&self, py: Python) -> PyResult<Py<PyAny>> {
         let values = bincode::serialize(&self.series).unwrap();
         Ok(PyBytes::new(py, &values).into())
     }

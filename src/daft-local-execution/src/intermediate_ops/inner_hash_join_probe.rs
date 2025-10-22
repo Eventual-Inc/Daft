@@ -1,20 +1,22 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::prelude::SchemaRef;
+use common_metrics::ops::NodeType;
+use daft_core::{
+    prelude::{SchemaRef, UInt64Array},
+    series::IntoSeries,
+};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::{GrowableRecordBatch, ProbeState, get_columns_by_name};
+use daft_recordbatch::{ProbeState, get_columns_by_name};
 use indexmap::IndexSet;
 use itertools::Itertools;
-use tracing::{Span, info_span, instrument};
+use tracing::{Span, instrument};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{
-    ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef,
-};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef};
 
 pub(crate) enum InnerHashJoinProbeState {
     Building(BroadcastStateBridgeRef<ProbeState>),
@@ -49,8 +51,6 @@ pub struct InnerHashJoinProbeOperator {
 }
 
 impl InnerHashJoinProbeOperator {
-    const DEFAULT_GROWABLE_SIZE: usize = 20;
-
     pub fn new(
         probe_on: Vec<BoundExpr>,
         left_schema: &SchemaRef,
@@ -84,6 +84,7 @@ impl InnerHashJoinProbeOperator {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn probe_inner(
         input: &Arc<MicroPartition>,
         probe_state: &Arc<ProbeState>,
@@ -92,68 +93,58 @@ impl InnerHashJoinProbeOperator {
         left_non_join_columns: &[String],
         right_non_join_columns: &[String],
         build_on_left: bool,
+        output_schema: &SchemaRef,
     ) -> DaftResult<Arc<MicroPartition>> {
-        let probe_table = probe_state.get_probeable();
-        let tables = probe_state.get_tables();
-
-        let _growables = info_span!("InnerHashJoinOperator::build_growables").entered();
-
-        let mut build_side_growable = GrowableRecordBatch::new(
-            &tables.iter().collect::<Vec<_>>(),
-            false,
-            Self::DEFAULT_GROWABLE_SIZE,
-        )?;
+        let build_side_table = probe_state.get_record_batch();
 
         let input_tables = input.get_tables()?;
+        let result_tables = input_tables
+            .iter()
+            .map(|input_table| {
+                let mut build_side_idxs = Vec::new();
+                let mut probe_side_idxs = Vec::new();
 
-        let mut probe_side_growable = GrowableRecordBatch::new(
-            &input_tables.iter().collect::<Vec<_>>(),
-            false,
-            Self::DEFAULT_GROWABLE_SIZE,
-        )?;
-
-        drop(_growables);
-        {
-            let _loop = info_span!("InnerHashJoinOperator::eval_and_probe").entered();
-            for (probe_side_table_idx, table) in input_tables.iter().enumerate() {
-                // we should emit one table at a time when this is streaming
-                let join_keys = table.eval_expression_list(probe_on)?;
-                let idx_mapper = probe_table.probe_indices(&join_keys)?;
-
-                for (probe_row_idx, inner_iter) in idx_mapper.make_iter().enumerate() {
+                let join_keys = input_table.eval_expression_list(probe_on)?;
+                let idx_iter = probe_state.probe_indices(&join_keys)?;
+                for (probe_row_idx, inner_iter) in idx_iter.enumerate() {
                     if let Some(inner_iter) = inner_iter {
-                        for (build_side_table_idx, build_row_idx) in inner_iter {
-                            build_side_growable.extend(
-                                build_side_table_idx as usize,
-                                build_row_idx as usize,
-                                1,
-                            );
-                            // we can perform run length compression for this to make this more efficient
-                            probe_side_growable.extend(probe_side_table_idx, probe_row_idx, 1);
+                        for build_row_idx in inner_iter {
+                            build_side_idxs.push(build_row_idx);
+                            probe_side_idxs.push(probe_row_idx as u64);
                         }
                     }
                 }
-            }
-        }
-        let build_side_table = build_side_growable.build()?;
-        let probe_side_table = probe_side_growable.build()?;
 
-        let (left_table, right_table) = if build_on_left {
-            (build_side_table, probe_side_table)
-        } else {
-            (probe_side_table, build_side_table)
-        };
+                let build_side_table = {
+                    let indices_as_series = UInt64Array::from(("", build_side_idxs)).into_series();
+                    build_side_table.take(&indices_as_series)?
+                };
+                let probe_side_table = {
+                    let indices_as_series = UInt64Array::from(("", probe_side_idxs)).into_series();
+                    input_table.take(&indices_as_series)?
+                };
 
-        let join_keys_table = get_columns_by_name(&left_table, common_join_keys)?;
-        let left_non_join_columns = get_columns_by_name(&left_table, left_non_join_columns)?;
-        let right_non_join_columns = get_columns_by_name(&right_table, right_non_join_columns)?;
-        let final_table = join_keys_table
-            .union(&left_non_join_columns)?
-            .union(&right_non_join_columns)?;
+                let (left_table, right_table) = if build_on_left {
+                    (build_side_table, probe_side_table)
+                } else {
+                    (probe_side_table, build_side_table)
+                };
+
+                let join_keys_table = get_columns_by_name(&left_table, common_join_keys)?;
+                let left_non_join_columns =
+                    get_columns_by_name(&left_table, left_non_join_columns)?;
+                let right_non_join_columns =
+                    get_columns_by_name(&right_table, right_non_join_columns)?;
+                let final_table = join_keys_table
+                    .union(&left_non_join_columns)?
+                    .union(&right_non_join_columns)?;
+                Ok(final_table)
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
 
         Ok(Arc::new(MicroPartition::new_loaded(
-            final_table.schema.clone(),
-            Arc::new(vec![final_table]),
+            output_schema.clone(),
+            Arc::new(result_tables),
             None,
         )))
     }
@@ -179,6 +170,7 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
         }
 
         let params = self.params.clone();
+        let output_schema = self.output_schema.clone();
         task_spawner
             .spawn(
                 async move {
@@ -191,6 +183,7 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
                         &params.left_non_join_columns,
                         &params.right_non_join_columns,
                         params.build_on_left,
+                        &output_schema,
                     );
                     Ok((state, IntermediateOperatorResult::NeedMoreInput(Some(res?))))
                 },
@@ -222,7 +215,7 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
         res
     }
 
-    async fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self) -> DaftResult<Self::State> {
         Ok(InnerHashJoinProbeState::Building(
             self.probe_state_bridge.clone(),
         ))

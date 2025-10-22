@@ -13,29 +13,30 @@ use std::{
     time::{Duration, Instant},
 };
 
+use common_error::DaftResult;
+use common_metrics::NodeID;
 use common_runtime::RuntimeTask;
 use common_tracing::should_enable_opentelemetry;
+use daft_context::Subscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_micropartition::MicroPartition;
+use futures::future;
 use itertools::Itertools;
 use kanal::SendError;
 use tokio::{
-    runtime::{Handle, Runtime},
+    runtime::Handle,
     sync::{mpsc, oneshot},
     time::interval,
 };
 use tracing::{Instrument, instrument::Instrumented};
 pub use values::{CPU_US_KEY, DefaultRuntimeStats, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats};
 
-#[cfg(debug_assertions)]
-use crate::runtime_stats::subscribers::debug::DebugSubscriber;
 use crate::{
     channel::{Receiver, Sender},
-    ops::NodeInfo,
     pipeline::PipelineNode,
     runtime_stats::subscribers::{
-        RuntimeStatsSubscriber, dashboard::DashboardSubscriber,
-        opentelemetry::OpenTelemetrySubscriber, progress_bar::make_progress_bar_manager,
+        RuntimeStatsSubscriber, opentelemetry::OpenTelemetrySubscriber,
+        progress_bar::make_progress_bar_manager, query::SubscriberWrapper,
     },
 };
 
@@ -89,62 +90,57 @@ impl std::fmt::Debug for RuntimeStatsManager {
 
 impl RuntimeStatsManager {
     #[allow(clippy::borrowed_box)]
-    pub fn new(handle: &Handle, pipeline: &Box<dyn PipelineNode>) -> Self {
+    pub fn try_new(
+        handle: &Handle,
+        pipeline: &Box<dyn PipelineNode>,
+        query_subscribers: Vec<Arc<dyn Subscriber>>,
+    ) -> DaftResult<Self> {
         // Construct mapping between node id and their node info and runtime stats
         let mut node_stats_map = HashMap::new();
+        let mut node_infos = HashMap::new();
         let _ = pipeline.apply(|node| {
             let node_info = node.node_info();
             let runtime_stats = node.runtime_stats();
-            node_stats_map.insert(node_info.id, (node_info, runtime_stats));
+            node_stats_map.insert(node_info.id, runtime_stats);
+            node_infos.insert(node_info.id, node_info);
             Ok(TreeNodeRecursion::Continue)
         });
 
-        let total_nodes = node_stats_map.len();
-        let node_stats = (0..total_nodes)
-            .map(|id| {
-                let (node_info, runtime_stats) = node_stats_map.remove(&id).unwrap();
-                (node_info, runtime_stats)
-            })
+        let total_nodes = node_infos.len();
+        let node_infos = (0..total_nodes)
+            .map(|id| node_infos.get(&id).unwrap().clone())
             .collect::<Vec<_>>();
-        debug_assert!(
-            node_stats_map.is_empty(),
-            "All nodes should be in the node_stats map"
-        );
 
         let mut subscribers: Vec<Box<dyn RuntimeStatsSubscriber>> = Vec::new();
+        for subscriber in query_subscribers {
+            subscribers.push(Box::new(SubscriberWrapper::try_new(
+                subscriber,
+                &node_infos,
+            )?));
+        }
 
         if should_enable_progress_bar() {
-            subscribers.push(make_progress_bar_manager(&node_stats));
+            subscribers.push(make_progress_bar_manager(&node_infos));
         }
 
         if should_enable_opentelemetry() {
-            subscribers.push(Box::new(OpenTelemetrySubscriber::new()));
-        }
-
-        if DashboardSubscriber::is_enabled() {
-            subscribers.push(Box::new(DashboardSubscriber::new()));
-        }
-
-        #[cfg(debug_assertions)]
-        if let Ok(s) = std::env::var("DAFT_DEV_ENABLE_RUNTIME_STATS_DBG") {
-            let s = s.to_lowercase();
-            match s.as_ref() {
-                "1" | "true" => {
-                    subscribers.push(Box::new(DebugSubscriber));
-                }
-                _ => {}
-            }
+            subscribers.push(Box::new(OpenTelemetrySubscriber::new(&node_infos)));
         }
 
         let throttle_interval = Duration::from_millis(200);
-        Self::new_impl(handle, subscribers, node_stats, throttle_interval)
+        Ok(Self::new_impl(
+            handle,
+            subscribers,
+            node_stats_map,
+            throttle_interval,
+        ))
     }
 
     // Mostly used for testing purposes so we can inject our own subscribers and throttling interval
     fn new_impl(
         handle: &Handle,
         subscribers: Vec<Box<dyn RuntimeStatsSubscriber>>,
-        node_stats: Vec<(Arc<NodeInfo>, Arc<dyn RuntimeStats>)>,
+        node_stats_map: HashMap<NodeID, Arc<dyn RuntimeStats>>,
         throttle_interval: Duration,
     ) -> Self {
         let (node_tx, mut node_rx) = mpsc::unbounded_channel::<(usize, bool)>();
@@ -153,43 +149,44 @@ impl RuntimeStatsManager {
 
         let event_loop = async move {
             let mut interval = interval(throttle_interval);
-            let mut active_nodes = HashSet::with_capacity(node_stats.len());
+            let mut active_nodes = HashSet::with_capacity(node_stats_map.len());
             // Reuse container for ticks
-            let mut snapshot_container = Vec::with_capacity(node_stats.len());
+            let mut snapshot_container = Vec::with_capacity(node_stats_map.len());
 
             loop {
                 tokio::select! {
                     biased;
+                    Some((node_id, is_initialize)) = node_rx.recv() => {
+                        if is_initialize && active_nodes.insert(node_id) {
+                            for res in future::join_all(subscribers.iter().map(|subscriber| subscriber.initialize_node(node_id))).await {
+                                if let Err(e) = res {
+                                    log::error!("Failed to initialize node: {}", e);
+                                }
+                            }
+                        } else if !is_initialize && active_nodes.remove(&node_id) {
+                            let runtime_stats = &node_stats_map[&node_id];
+                            let event = runtime_stats.flush();
+                            let event = [(node_id, event)];
+
+                            for res in future::join_all(subscribers.iter().map(|subscriber| async {
+                                subscriber.handle_event(&event).await?;
+                                subscriber.finalize_node(node_id).await
+                            })).await {
+                                if let Err(e) = res {
+                                    log::error!("Failed to finalize node: {}", e);
+                                }
+                            }
+                        }
+                    }
+
                     _ = &mut finish_rx => {
                         if !active_nodes.is_empty() {
-                            log::debug!(
+                            log::error!(
                                 "RuntimeStatsManager finished with active nodes {{{}}}",
                                 active_nodes.iter().map(|id: &usize| id.to_string()).join(", ")
                             );
                         }
                         break;
-                    }
-
-                    Some((node_id, is_initialize)) = node_rx.recv() => {
-                        if is_initialize && active_nodes.insert(node_id) {
-                            for subscriber in &subscribers {
-                                if let Err(e) = subscriber.initialize_node(&node_stats[node_id].0) {
-                                    log::error!("Failed to initialize node: {}", e);
-                                }
-                            }
-                        } else if !is_initialize && active_nodes.remove(&node_id) {
-                            let (node_info, runtime_stats) = &node_stats[node_id];
-                            let event = runtime_stats.flush();
-                            let event = [(node_info.as_ref(), event)];
-                            for subscriber in &subscribers {
-                                if let Err(e) = subscriber.handle_event(&event) {
-                                    log::error!("Failed to handle event: {}", e);
-                                }
-                                if let Err(e) = subscriber.finalize_node(&node_stats[node_id].0) {
-                                    log::error!("Failed to finalize node: {}", e);
-                                }
-                            }
-                        }
                     }
 
                     _ = interval.tick() => {
@@ -198,12 +195,14 @@ impl RuntimeStatsManager {
                         }
 
                         for node_id in &active_nodes {
-                            let (node_info, runtime_stats) = &node_stats[*node_id];
+                            let runtime_stats = &node_stats_map[node_id];
                             let event = runtime_stats.snapshot();
-                            snapshot_container.push((node_info.as_ref(), event));
+                            snapshot_container.push((*node_id, event));
                         }
-                        for subscriber in &subscribers {
-                            if let Err(e) = subscriber.handle_event(snapshot_container.as_slice()) {
+                        for res in future::join_all(subscribers.iter().map(|subscriber| {
+                            subscriber.handle_event(snapshot_container.as_slice())
+                        })).await {
+                            if let Err(e) = res {
                                 log::error!("Failed to handle event: {}", e);
                             }
                         }
@@ -213,7 +212,7 @@ impl RuntimeStatsManager {
             }
 
             for subscriber in subscribers {
-                if let Err(e) = subscriber.finish() {
+                if let Err(e) = subscriber.finish().await {
                     log::error!("Failed to flush subscriber: {}", e);
                 }
             }
@@ -231,15 +230,13 @@ impl RuntimeStatsManager {
         RuntimeStatsManagerHandle(self.node_tx.clone())
     }
 
-    pub fn finish(self, runtime: &Runtime) {
+    pub async fn finish(self) {
         self.finish_tx
             .send(())
             .expect("The finish_tx channel was closed");
-        runtime.block_on(async move {
-            self.stats_manager_task
-                .await
-                .expect("The finish_tx channel was closed");
-        });
+        self.stats_manager_task
+            .await
+            .expect("The finish_tx channel was closed");
     }
 }
 
@@ -345,12 +342,12 @@ impl InitializingCountingReceiver {
 mod tests {
     use std::sync::{Arc, Mutex, atomic::AtomicU64};
 
+    use async_trait::async_trait;
     use common_error::DaftResult;
-    use common_metrics::{Stat, StatSnapshotSend};
+    use common_metrics::{NodeID, Stat, StatSnapshotSend};
     use tokio::time::{Duration, sleep};
 
     use super::*;
-    use crate::ops::{NodeCategory, NodeType};
 
     #[derive(Debug)]
     struct MockState {
@@ -384,20 +381,21 @@ mod tests {
         }
     }
 
+    #[async_trait]
     impl RuntimeStatsSubscriber for MockSubscriber {
         fn as_any(&self) -> &dyn std::any::Any {
             self
         }
 
-        fn initialize_node(&self, _node_info: &NodeInfo) -> DaftResult<()> {
+        async fn initialize_node(&self, _node_id: NodeID) -> DaftResult<()> {
             Ok(())
         }
 
-        fn finalize_node(&self, _node_info: &NodeInfo) -> DaftResult<()> {
+        async fn finalize_node(&self, _node_id: NodeID) -> DaftResult<()> {
             Ok(())
         }
 
-        fn handle_event(&self, events: &[(&NodeInfo, StatSnapshotSend)]) -> DaftResult<()> {
+        async fn handle_event(&self, events: &[(NodeID, StatSnapshotSend)]) -> DaftResult<()> {
             self.state
                 .total_calls
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -407,20 +405,9 @@ mod tests {
             Ok(())
         }
 
-        fn finish(self: Box<Self>) -> DaftResult<()> {
+        async fn finish(self: Box<Self>) -> DaftResult<()> {
             Ok(())
         }
-    }
-
-    fn create_node_info(name: &str, id: usize) -> Arc<NodeInfo> {
-        let node_info = NodeInfo {
-            name: Arc::from(name.to_string()),
-            id,
-            node_type: NodeType::Project,
-            node_category: NodeCategory::Intermediate,
-            context: std::collections::HashMap::new(),
-        };
-        Arc::new(node_info)
     }
 
     #[tokio::test(start_paused = true)]
@@ -428,13 +415,12 @@ mod tests {
         let mock_subscriber = Box::new(MockSubscriber::new());
         let mock_state = mock_subscriber.state.clone();
 
-        let node_info = create_node_info("test_node", 0);
-        let node_stat = Arc::new(DefaultRuntimeStats::default());
+        let node_stat = Arc::new(DefaultRuntimeStats::default()) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
             vec![mock_subscriber],
-            vec![(node_info, node_stat.clone())],
+            HashMap::from([(0, node_stat.clone())]),
             throttle_interval,
         );
         let handle = stats_manager.handle();
@@ -488,13 +474,12 @@ mod tests {
         let state1 = subscriber1.state.clone();
         let state2 = subscriber2.state.clone();
 
-        let node_info = create_node_info("test_node", 0);
-        let node_stat = Arc::new(DefaultRuntimeStats::default());
+        let node_stat = Arc::new(DefaultRuntimeStats::default()) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
             vec![subscriber1, subscriber2],
-            vec![(node_info, node_stat.clone())],
+            HashMap::from([(0, node_stat.clone())]),
             throttle_interval,
         );
         let handle = stats_manager.handle();
@@ -514,23 +499,23 @@ mod tests {
         #[derive(Debug)]
         struct FailingSubscriber;
 
+        #[async_trait]
         impl RuntimeStatsSubscriber for FailingSubscriber {
             fn as_any(&self) -> &dyn std::any::Any {
                 self
             }
-            fn initialize_node(&self, _: &NodeInfo) -> DaftResult<()> {
+            async fn initialize_node(&self, _: NodeID) -> DaftResult<()> {
                 Ok(())
             }
-            fn finalize_node(&self, _: &NodeInfo) -> DaftResult<()> {
+            async fn finalize_node(&self, _: NodeID) -> DaftResult<()> {
                 Ok(())
             }
-
-            fn handle_event(&self, _: &[(&NodeInfo, StatSnapshotSend)]) -> DaftResult<()> {
+            async fn handle_event(&self, _: &[(NodeID, StatSnapshotSend)]) -> DaftResult<()> {
                 Err(common_error::DaftError::InternalError(
                     "Test error".to_string(),
                 ))
             }
-            fn finish(self: Box<Self>) -> DaftResult<()> {
+            async fn finish(self: Box<Self>) -> DaftResult<()> {
                 Ok(())
             }
         }
@@ -539,13 +524,12 @@ mod tests {
         let mock_subscriber = Box::new(MockSubscriber::new());
         let state = mock_subscriber.state.clone();
 
-        let node_info = create_node_info("test_node", 0);
-        let node_stat = Arc::new(DefaultRuntimeStats::default());
+        let node_stat = Arc::new(DefaultRuntimeStats::default()) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
             vec![failing_subscriber, mock_subscriber],
-            vec![(node_info, node_stat.clone())],
+            HashMap::from([(0, node_stat.clone())]),
             throttle_interval,
         );
         let handle = stats_manager.handle();
@@ -583,13 +567,12 @@ mod tests {
         let mock_subscriber = Box::new(MockSubscriber::new());
         let state = mock_subscriber.state.clone();
 
-        let node_info = create_node_info("uninitialized_node", 0);
-        let node_stat = Arc::new(DefaultRuntimeStats::default());
+        let node_stat = Arc::new(DefaultRuntimeStats::default()) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
             vec![mock_subscriber],
-            vec![(node_info, node_stat.clone())],
+            HashMap::from([(0, node_stat.clone())]),
             throttle_interval,
         );
         let handle = stats_manager.handle();
@@ -616,12 +599,11 @@ mod tests {
 
         // Use 500ms for the throttle interval.
         let throttle_interval = Duration::from_millis(500);
-        let node_info = create_node_info("fast_query", 0);
-        let node_stat = Arc::new(DefaultRuntimeStats::default());
+        let node_stat = Arc::new(DefaultRuntimeStats::default()) as Arc<dyn RuntimeStats>;
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
             vec![mock_subscriber],
-            vec![(node_info, node_stat.clone())],
+            HashMap::from([(0, node_stat.clone())]),
             throttle_interval,
         );
         let handle = stats_manager.handle();
