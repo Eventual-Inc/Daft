@@ -1940,6 +1940,8 @@ dependencies = [
  "futures",
  "log",
  "oneshot",
+ "pyo3",
+ "pyo3-async-runtimes",
  "tokio",
 ]
 
@@ -2697,9 +2699,11 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-io",
+ "mime_guess",
  "pyo3",
  "serde",
  "typetag",
+ "url",
 ]
 
 [[package]]

@@ -77,6 +77,8 @@ class Embedder:
         )
         return embeddings
 
+daft.set_planning_config(default_io_config=daft.io.IOConfig(s3=daft.io.S3Config.from_env()))
+
 start_time = time.time()
 df = daft.read_parquet(INPUT_PATH)
 df = df.where(daft.col("file_name").str.endswith(".pdf"))
