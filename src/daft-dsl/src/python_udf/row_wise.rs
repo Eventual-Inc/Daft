@@ -164,7 +164,7 @@ impl RowWisePyFn {
         let args_ref = self.original_args.as_ref();
         let name = args[0].name();
         let return_dtype = self.return_dtype.clone();
-        let (s, errs) = Python::attach(|py| {
+        let s = Python::attach(|py| {
             let func = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
                 .getattr(pyo3::intern!(py, "call_func"))?;
@@ -188,16 +188,6 @@ impl RowWisePyFn {
 
             series_from_literals_iter(outputs, Some(self.return_dtype.clone()))
         })?;
-        if let Some(errs) = errs {
-            let errs = errs
-                .into_iter()
-                .map(|(k, v)| format!("{}: {}", k, v))
-                .join("\n");
-            Err(common_error::DaftError::ComputeError(format!(
-                "Error processing some rows:\n{errs}"
-            )))
-        } else {
-            Ok(s.cast(&self.return_dtype)?.rename(name))
-        }
+        Ok(s.cast(&self.return_dtype)?.rename(name))
     }
 }

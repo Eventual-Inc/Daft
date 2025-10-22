@@ -86,7 +86,7 @@ impl PySeries {
         dtype: Option<PyDataType>,
     ) -> PyResult<Self> {
         let dtype = dtype.map(|t| t.dtype);
-        let (mut series, errs) = if let Some(dtype) = dtype {
+        let mut series = if let Some(dtype) = dtype {
             let literals = (0..list.len()).map(|i| {
                 list.get_item(i)
                     .and_then(|elem| Literal::from_pyobj(&elem, Some(&dtype)))
@@ -117,18 +117,11 @@ impl PySeries {
             });
             series_from_literals_iter(literals_with_supertype, Some(supertype.clone()))?
         };
-        if let Some(errors) = errs {
-            let error_message = format!(
-                "Errors occurred while creating series from literals: {:?}",
-                errors
-            );
-            Err(DaftError::ComputeError(error_message).into())
-        } else {
-            if let Some(name) = name {
-                series = series.rename(name);
-            }
-            Ok(series.into())
+
+        if let Some(name) = name {
+            series = series.rename(name);
         }
+        Ok(series.into())
     }
 
     pub fn to_pylist<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyList>> {

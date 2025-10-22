@@ -11,6 +11,7 @@ use arrow2::{
 use common_error::{DaftError, DaftResult};
 use common_image::CowImage;
 use indexmap::IndexMap;
+use itertools::Itertools;
 
 use crate::{array::ops::image::image_array_from_img_buffers, datatypes::FileArray, prelude::*};
 
@@ -95,7 +96,7 @@ pub(crate) fn combine_lit_types(left: &DataType, right: &DataType) -> Option<Dat
 pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>> + TrustedLen>(
     values: I,
     dtype: Option<DataType>,
-) -> DaftResult<(Series, Option<IndexMap<usize, String>>)> {
+) -> DaftResult<Series> {
     let (dtype, values) = match dtype {
         Some(dtype) => (dtype, values),
         None => {
@@ -113,12 +114,12 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
             return series_from_literals_iter(values.into_iter().map(DaftResult::Ok), Some(dtype));
         }
     };
-    let downcasted = downcast_to_lit_compatible(dtype.clone())?;
-
     let len = values.len();
     if len == 0 {
-        return Ok((Series::empty("literal", &dtype), None));
+        return Ok(Series::empty("literal", &dtype));
     }
+    let downcasted = downcast_to_lit_compatible(dtype.clone())?;
+
     let mut errs: IndexMap<usize, String> = IndexMap::new();
     let values = values.enumerate();
 
@@ -523,9 +524,15 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
     };
 
     if errs.is_empty() {
-        Ok((s, None))
+        Ok(s)
     } else {
-        Ok((s, Some(errs)))
+        let errs = errs
+            .into_iter()
+            .map(|(k, v)| format!("{}: {}", k, v))
+            .join("\n");
+        Err(common_error::DaftError::ComputeError(format!(
+            "Error processing some rows:\n{errs}"
+        )))
     }
 }
 
@@ -535,7 +542,7 @@ impl Series {
     /// Literals must all be the same type or null, this function does not do any casting or coercion.
     /// If that is desired, you should handle it for each literal before converting it into a series.
     pub fn from_literals(values: Vec<Literal>) -> DaftResult<Self> {
-        Ok(series_from_literals_iter(values.into_iter().map(DaftResult::Ok), None)?.0)
+        series_from_literals_iter(values.into_iter().map(DaftResult::Ok), None)
     }
 }
 
