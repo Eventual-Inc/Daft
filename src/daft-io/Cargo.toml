@@ -7,10 +7,10 @@ aws-credential-types = {version = "1.2.6", features = ["hardcoded-credentials"]}
 aws-sdk-s3 = {version = "1.96.0", features = ["default-https-client", "rt-tokio", "sigv4a"], default-features = false}
 aws-smithy-http-client = "1.1.1"
 aws-smithy-runtime-api = "1.8.0"
-azure_core = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls", "hmac_rust"], default-features = false}
-azure_identity = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls"], default-features = false}
-azure_storage = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls"], default-features = false}
-azure_storage_blobs = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls"], default-features = false}
+azure_core = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "test-with-panic", features = ["enable_reqwest_rustls", "hmac_rust"], default-features = false}
+azure_identity = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "test-with-panic", features = ["enable_reqwest_rustls"], default-features = false}
+azure_storage = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "test-with-panic", features = ["enable_reqwest_rustls"], default-features = false}
+azure_storage_blobs = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "test-with-panic", features = ["enable_reqwest_rustls"], default-features = false}
 bytes = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-file-formats = {path = "../common/file-formats", default-features = false}
