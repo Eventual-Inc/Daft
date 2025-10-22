@@ -239,7 +239,7 @@ pub fn window_to_agg_exprs(window_exprs: Vec<BoundWindowExpr>) -> DaftResult<Vec
     .into_iter()
     .map(|w| {
         if let WindowExpr::Agg(agg_expr) = w.as_ref() {
-            Ok(BoundAggExpr::new_unchecked(agg_expr.clone()))
+            Ok(BoundAggExpr::new_unchecked(agg_expr.as_ref().clone()))
         } else {
             Err(DaftError::TypeError(format!(
                 "Window function {:?} not implemented in partition-only windows, only aggregation functions are supported",
