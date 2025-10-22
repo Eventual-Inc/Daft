@@ -38,3 +38,12 @@ pub fn get_or_init_runtime() -> &'static Runtime {
     }
     runtime_ref
 }
+
+#[cfg(feature = "python")]
+/// Get a clone of the Python task locals for scoping async operations
+pub fn get_task_locals(py: pyo3::Python) -> pyo3_async_runtimes::TaskLocals {
+    PYO3_ASYNC_RUNTIME_LOCALS
+        .get()
+        .expect("Python task locals not initialized")
+        .clone_ref(py)
+}

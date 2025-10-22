@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING
 
 from daft import (
     DataType,
@@ -13,14 +13,10 @@ from daft import (
     current_session,
     current_provider,
 )
-from daft.ai.provider import load_provider
-from daft.ai.provider import Provider
+from daft.ai.provider import Provider, ProviderType, load_provider, PROVIDERS
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
-
-    from daft.ai.protocols import TextEmbedderDescriptor
-    from daft.utils import ColumnInputType
     from daft.ai.typing import Label
 
 __all__ = [
@@ -31,7 +27,7 @@ __all__ = [
 ]
 
 
-def _resolve_provider(provider: str | Provider | None, default: str) -> Provider:
+def _resolve_provider(provider: str | Provider | None, default: ProviderType) -> Provider:
     """Attempts to resolve a provider based upon the active session and environment variables.
 
     Note:
@@ -46,7 +42,6 @@ def _resolve_provider(provider: str | Provider | None, default: str) -> Provider
         # 1. Load the provider from the active session.
         return curr_sess.get_provider(provider)
     elif provider is not None:
-        # 2. Load a known provider.
         return load_provider(provider)
     elif curr_provider := current_provider():
         # 3. Use the session's current provider, if any.
@@ -102,7 +97,7 @@ def embed_text(
         raise ValueError(f"on_error must be one of 'raise', 'log', or 'ignore', got: {on_error}")
 
     # load a TextEmbedderDescriptor from the resolved provider
-    text_embedder = _resolve_provider(provider, "sentence_transformers").get_text_embedder(model, **options)
+    text_embedder = _resolve_provider(provider, "transformers").get_text_embedder(model, **options)
 
     # implemented as a class-based udf for now
     udf_options = text_embedder.get_udf_options()
@@ -193,18 +188,18 @@ def classify_text(
     """Returns an expression that classifies text using the specified model and provider.
 
     Args:
-        text (String Expression): The input text column expression.
-        labels (str | list[str]): Label(s) for classification.
-        provider (str | Provider | None): The provider to use for the embedding model. If None, the default provider is used.
-        model (str | None): The embedding model to use. Can be a model instance or a model name. If None, the default model is used.
-        max_retries (int):
-            Maximum number of retry attempts for each text item. Default is 3.
-        on_error (str):
-            Error handling mode. Options are:
-            - "raise" (default): Raise exception after exhausting retries
-            - "log": Log error message with RecordBatch, return None for failed items
-            - "ignore": Silently return None for failed items
-        **options: Any additional options to pass for the model.
+        text (String Expression):
+            The input text column expression.
+        labels (str | list[str]):
+            Label(s) for classification.
+        provider (str | Provider | None):
+            The provider to use for the embedding model.
+            By default this will use 'transformers' provider
+        model (str | None):
+            The embedding model to use. Can be a model instance or a model name.
+            By default this will use `zero-shot-classification` model
+        **options:
+            Any additional options to pass for the model.
 
     Note:
         Make sure the required provider packages are installed (e.g. vllm, transformers, openai).

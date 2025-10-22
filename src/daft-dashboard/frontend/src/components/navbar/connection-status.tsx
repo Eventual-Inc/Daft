@@ -42,7 +42,7 @@ export function ConnectionStatus() {
 
   return (
     <div
-      className={`w-full flex items-center justify-center space-x-4 px-3 py-3.5 ${
+      className={`h-full flex items-center justify-center space-x-4 px-6 ${
         connected ? "bg-green-600" : "bg-red-500"
       }`}
     >

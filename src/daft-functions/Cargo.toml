@@ -6,9 +6,8 @@ daft-hash = {workspace = true}
 num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 typetag = {workspace = true}
-xxhash-rust = {workspace = true, features = ["xxh64"]}
-serde.workspace = true
-snafu.workspace = true
+serde = {workspace = true}
+snafu = {workspace = true}
 
 [features]
 python = [

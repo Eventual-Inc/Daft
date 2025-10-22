@@ -1940,6 +1940,8 @@ dependencies = [
  "futures",
  "log",
  "oneshot",
+ "pyo3",
+ "pyo3-async-runtimes",
  "tokio",
 ]
 
@@ -2446,6 +2448,7 @@ name = "daft-cli"
 version = "0.3.0-dev0"
 dependencies = [
  "clap",
+ "console 0.16.1",
  "daft-dashboard",
  "pyo3",
  "tokio",
@@ -2697,9 +2700,11 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-io",
+ "mime_guess",
  "pyo3",
  "serde",
  "typetag",
+ "url",
 ]
 
 [[package]]
@@ -2715,7 +2720,6 @@ dependencies = [
  "serde",
  "snafu",
  "typetag",
- "xxhash-rust",
 ]
 
 [[package]]
@@ -2848,6 +2852,7 @@ dependencies = [
  "mur3",
  "serde",
  "sha1 0.11.0-rc.0",
+ "xxhash-rust",
 ]
 
 [[package]]

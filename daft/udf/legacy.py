@@ -439,17 +439,17 @@ class UDF:
             >>> df = df.with_column("bar_world", MyUdfWithInit(df["foo"]))
             >>> df = df.with_column("bar_custom", MyUdfWithInit_CustomInitArgs(df["foo"]))
             >>> df.show()
-            ╭───────┬─────────────┬─────────────────────╮
-            │ foo   ┆ bar_world   ┆ bar_custom          │
-            │ ---   ┆ ---         ┆ ---                 │
-            │ Utf8  ┆ Utf8        ┆ Utf8                │
-            ╞═══════╪═════════════╪═════════════════════╡
-            │ hello ┆ hello world ┆ hello my old friend │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ hello ┆ hello world ┆ hello my old friend │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ hello ┆ hello world ┆ hello my old friend │
-            ╰───────┴─────────────┴─────────────────────╯
+            ╭────────┬─────────────┬─────────────────────╮
+            │ foo    ┆ bar_world   ┆ bar_custom          │
+            │ ---    ┆ ---         ┆ ---                 │
+            │ String ┆ String      ┆ String              │
+            ╞════════╪═════════════╪═════════════════════╡
+            │ hello  ┆ hello world ┆ hello my old friend │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ hello  ┆ hello world ┆ hello my old friend │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ hello  ┆ hello world ┆ hello my old friend │
+            ╰────────┴─────────────┴─────────────────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """

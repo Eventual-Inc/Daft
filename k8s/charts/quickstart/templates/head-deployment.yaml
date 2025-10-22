@@ -58,6 +58,14 @@ spec:
           value: "127.0.0.1:6379"
         - name: RAY_DASHBOARD_ENABLE_K8S_DISK_USAGE
           value: "1"
+        {{- if .Values.monitoring.enabled }}
+        - name: RAY_PROMETHEUS_HOST
+          value: "http://localhost:9090"
+        - name: RAY_GRAFANA_HOST
+          value: "http://localhost:3000"
+        - name: RAY_GRAFANA_IFRAME_HOST
+          value: "http://127.0.0.1:3000"
+        {{- end }}
         {{- with .Values.head.env }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -106,6 +114,60 @@ spec:
         {{- with .Values.head.volumeMounts }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+      {{- if .Values.monitoring.enabled }}
+      - name: prometheus
+        image: {{ .Values.monitoring.prometheus.image }}
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          echo "Waiting for Ray to generate Prometheus config..."
+          while [ ! -f /tmp/ray/session_latest/metrics/prometheus/prometheus.yml ]; do
+            sleep 2
+          done
+          echo "Ray Prometheus config found, starting Prometheus..."
+          exec /bin/prometheus \
+            --config.file=/tmp/ray/session_latest/metrics/prometheus/prometheus.yml
+        ports:
+        - containerPort: 9090
+          name: prometheus
+          protocol: TCP
+        {{- with .Values.monitoring.prometheus.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        volumeMounts:
+        - mountPath: /tmp/ray
+          name: ray-state
+      - name: grafana
+        image: {{ .Values.monitoring.grafana.image }}
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          echo "Waiting for Ray to generate Grafana config..."
+          while [ ! -f /tmp/ray/session_latest/metrics/grafana/grafana.ini ]; do
+            sleep 2
+          done
+          echo "Ray Grafana config found, starting Grafana..."
+          exec /run.sh
+        env:
+        - name: GF_PATHS_CONFIG
+          value: "/tmp/ray/session_latest/metrics/grafana/grafana.ini"
+        - name: GF_PATHS_PROVISIONING
+          value: "/tmp/ray/session_latest/metrics/grafana/provisioning"
+        ports:
+        - containerPort: 3000
+          name: grafana
+          protocol: TCP
+        {{- with .Values.monitoring.grafana.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        volumeMounts:
+        - mountPath: /tmp/ray
+          name: ray-state
+      {{- end }}
       volumes:
       - name: shm
         emptyDir:
