@@ -270,139 +270,94 @@ impl RowWisePyFn {
     #[cfg(feature = "python")]
     fn call_serial(&self, args: &[Series], num_rows: usize) -> DaftResult<Series> {
         use common_error::DaftError;
-        use indexmap::IndexMap;
         use pyo3::prelude::*;
+
+        use crate::functions::python::OnError;
 
         let cls_ref = self.cls.as_ref();
         let method_ref = self.method.as_ref();
         let args_ref = self.original_args.as_ref();
 
         let name = args[0].name();
+        let on_error = self.on_error;
+        let max_retries = self.max_retries.unwrap_or(0);
+        let delay_ms: u64 = 100; // Start with 100 ms
+        const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
 
-        Python::attach(|py| {
+        fn retry<'a, F: Fn() -> DaftResult<Literal>>(
+            py: Python,
+            func: F,
+            max_retries: usize,
+            on_error: OnError,
+            mut delay_ms: u64,
+        ) -> DaftResult<Literal> {
+            let mut res = Ok(Literal::Null);
+
+            for attempt in 0..=max_retries {
+                match func() {
+                    Ok(result) => {
+                        res = Ok(result);
+                        break;
+                    }
+                    Err(e) => {
+                        if attempt >= max_retries {
+                            match on_error {
+                                OnError::Raise => res = Err(e),
+                                OnError::Log => {
+                                    log::warn!("Retrying function call after error: {}", e);
+                                    res = Ok(Literal::Null);
+                                }
+                                OnError::Ignore => {
+                                    res = Ok(Literal::Null);
+                                }
+                            }
+                            break;
+                        }
+                        // Update our failure map for next iteration
+                        if attempt < max_retries {
+                            use std::{thread, time::Duration};
+                            py.detach(|| {
+                                thread::sleep(Duration::from_millis(delay_ms));
+                            });
+                            // Exponential backoff: multiply by 2, cap at MAX_DELAY_MS
+                            delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
+                        }
+                    }
+                }
+            }
+            res
+        }
+        let literals = Python::attach(|py| {
             let func = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
                 .getattr(pyo3::intern!(py, "call_func"))?;
 
             // pre-allocating py_args vector so we're not creating a new vector for each iteration
             let mut py_args = Vec::with_capacity(args.len());
-            let mut outputs = IndexMap::new();
-            let mut errs = IndexMap::new();
-            for i in 0..num_rows {
-                for s in args {
-                    let idx = if s.len() == 1 { 0 } else { i };
-                    let lit = s.get_lit(idx);
-                    let pyarg = lit.into_pyobject(py)?;
-                    py_args.push(pyarg);
-                }
 
-                let result = func.call1((cls_ref, method_ref, args_ref, &py_args));
-                match result {
-                    Ok(res) => {
-                        let lit = Literal::from_pyobj(&res, None)?;
-                        outputs.insert(i, lit);
-                    }
-                    Err(e) => {
-                        let err = DaftError::from(e);
-                        errs.insert(i, err);
-                    }
-                }
-                py_args.clear();
-            }
-            let max_retries = self.max_retries.unwrap_or(0);
-            let mut delay_ms: u64 = 100; // Start with 100 ms
-            const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
-
-            for attempt in 0..max_retries {
-                if errs.is_empty() {
-                    break;
-                }
-                let mut still_failed = IndexMap::new();
-
-                for (&idx, _) in &errs {
-                    let mut py_args = Vec::new();
+            (0..num_rows)
+                .map(|i| {
                     for s in args {
-                        let arg_idx = if s.len() == 1 { 0 } else { idx };
-                        let lit = s.get_lit(arg_idx);
+                        let idx = if s.len() == 1 { 0 } else { i };
+                        let lit = s.get_lit(idx);
                         let pyarg = lit.into_pyobject(py)?;
                         py_args.push(pyarg);
                     }
 
-                    match func.call1((cls_ref, method_ref, args_ref, &py_args)) {
-                        Ok(result) => {
-                            // Success. insert the value in the outputs indexmap
-                            let new_value = Literal::from_pyobj(&result, None)?;
-                            outputs.insert(idx, new_value);
-                        }
-                        Err(e) => {
-                            still_failed.insert(idx, DaftError::from(e));
-                            // If this is not the last attempt, sleep before retrying
-                        }
-                    }
-                }
-
-                // Update our failure map for next iteration
-                errs = still_failed;
-                if attempt < max_retries {
-                    use std::{thread, time::Duration};
-                    py.detach(|| {
-                        thread::sleep(Duration::from_millis(delay_ms));
-                    });
-                    // Exponential backoff: multiply by 2, cap at MAX_DELAY_MS
-                    delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
-                }
-            }
-            // free up the gil while we're creating the series.
-            py.detach(|| {
-                if errs.is_empty() {
-                    let s = Series::from_literals(outputs.into_values().collect())?;
-                    let s = s.cast(&self.return_dtype)?;
-                    let s = s.rename(name);
-                    Ok(s)
-                } else {
-                    match self.on_error {
-                        crate::functions::python::OnError::Raise => {
-                            let err_msg = errs
-                                .into_iter()
-                                .map(|(i, e)| format!("\t{}: {}", i, e))
-                                .join("\n");
-                            Err(DaftError::ComputeError(format!(
-                                "Failed to execute Python UDF on some rows\n: {}",
-                                err_msg
-                            )))
-                        }
-                        crate::functions::python::OnError::Log => {
-                            let err_msg = errs
-                                .iter()
-                                .map(|(i, e)| format!("\t{}: {}", i, e))
-                                .join("\n");
-                            let err = DaftError::ComputeError(format!(
-                                "Failed to execute Python UDF on some rows\n: {}",
-                                err_msg
-                            ));
-                            log::warn!("{}", err);
-                            let mut result_literals = vec![Literal::Null; num_rows];
-                            for (idx, lit) in outputs {
-                                result_literals[idx] = lit;
-                            }
-                            let s = Series::from_literals(result_literals)?;
-                            let s = s.cast(&self.return_dtype)?;
-                            let s = s.rename(name);
-                            Ok(s)
-                        }
-                        crate::functions::python::OnError::Ignore => {
-                            let mut result_literals = vec![Literal::Null; num_rows];
-                            for (idx, lit) in outputs {
-                                result_literals[idx] = lit;
-                            }
-                            let s = Series::from_literals(result_literals)?;
-                            let s = s.cast(&self.return_dtype)?;
-                            let s = s.rename(name);
-                            Ok(s)
-                        }
-                    }
-                }
-            })
-        })
+                    let f = || {
+                        func.call1((cls_ref, method_ref, args_ref, &py_args))
+                            .and_then(|res| Literal::from_pyobj(&res, None))
+                            .map_err(DaftError::from)
+                    };
+                    let res = retry(py, f, max_retries, on_error, delay_ms);
+                    py_args.clear();
+                    res
+                })
+                .collect::<DaftResult<Vec<_>>>()
+        })?;
+        let s = Series::from_literals(literals)?;
+        let s = s.cast(&self.return_dtype)?;
+        let s = s.rename(name);
+        Ok(s)
     }
 }
