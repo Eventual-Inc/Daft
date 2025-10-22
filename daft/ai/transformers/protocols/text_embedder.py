@@ -17,12 +17,12 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class SentenceTransformersTextEmbedderDescriptor(TextEmbedderDescriptor):
+class TransformersTextEmbedderDescriptor(TextEmbedderDescriptor):
     model: str
     options: Options
 
     def get_provider(self) -> str:
-        return "sentence_transformers"
+        return "transformers"
 
     def get_model(self) -> str:
         return self.model
@@ -38,10 +38,10 @@ class SentenceTransformersTextEmbedderDescriptor(TextEmbedderDescriptor):
         return get_gpu_udf_options()
 
     def instantiate(self) -> TextEmbedder:
-        return SentenceTransformersTextEmbedder(self.model, **self.options)
+        return TransformersTextEmbedder(self.model, **self.options)
 
 
-class SentenceTransformersTextEmbedder(TextEmbedder):
+class TransformersTextEmbedder(TextEmbedder):
     model: SentenceTransformer
     options: Options  # not currently used, torch hardcoded
 
