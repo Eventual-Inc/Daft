@@ -113,8 +113,6 @@ def _range(start: int, end: int | None = None, step: int = 1, partitions: int = 
 
         >>> import daft
         >>> df = daft.range(2, 10, step=2, partitions=2)
-        >>> df.num_partitions()
-        2
         >>> df.show()
         ╭───────╮
         │ id    │

@@ -59,14 +59,9 @@ def test_deltalake_read_row_group_splits(tmp_path, base_table):
     writer_properties = deltalake.WriterProperties(max_row_group_size=2)
     deltalake.write_deltalake(path, base_table, writer_properties=writer_properties)
 
-    # Force file splitting
-    with daft.execution_config_ctx(
-        scan_tasks_min_size_bytes=1,
-        scan_tasks_max_size_bytes=100,
-    ):
-        df = daft.read_deltalake(str(path))
-        df.collect()
-        assert len(df) == 3, "Length of non-materialized data when read through deltalake should be correct"
+    df = daft.read_deltalake(str(path))
+    df.collect()
+    assert len(df) == 3, "Length of non-materialized data when read through deltalake should be correct"
 
 
 def test_deltalake_read_row_group_splits_with_filter(tmp_path, base_table):
@@ -77,15 +72,10 @@ def test_deltalake_read_row_group_splits_with_filter(tmp_path, base_table):
     writer_properties = deltalake.WriterProperties(max_row_group_size=2)
     deltalake.write_deltalake(path, base_table, writer_properties=writer_properties)
 
-    # Force file splitting
-    with daft.execution_config_ctx(
-        scan_tasks_min_size_bytes=1,
-        scan_tasks_max_size_bytes=100,
-    ):
-        df = daft.read_deltalake(str(path))
-        df = df.where(df["a"] > 1)
-        df.collect()
-        assert len(df) == 2, "Length of non-materialized data when read through deltalake should be correct"
+    df = daft.read_deltalake(str(path))
+    df = df.where(df["a"] > 1)
+    df.collect()
+    assert len(df) == 2, "Length of non-materialized data when read through deltalake should be correct"
 
 
 def test_deltalake_read_row_group_splits_with_limit(tmp_path, base_table):
@@ -96,15 +86,10 @@ def test_deltalake_read_row_group_splits_with_limit(tmp_path, base_table):
     writer_properties = deltalake.WriterProperties(max_row_group_size=2)
     deltalake.write_deltalake(path, base_table, writer_properties=writer_properties)
 
-    # Force file splitting
-    with daft.execution_config_ctx(
-        scan_tasks_min_size_bytes=1,
-        scan_tasks_max_size_bytes=100,
-    ):
-        df = daft.read_deltalake(str(path))
-        df = df.limit(2)
-        df.collect()
-        assert len(df) == 2, "Length of non-materialized data when read through deltalake should be correct"
+    df = daft.read_deltalake(str(path))
+    df = df.limit(2)
+    df.collect()
+    assert len(df) == 2, "Length of non-materialized data when read through deltalake should be correct"
 
 
 def test_deltalake_read_versioned(tmp_path, base_table):

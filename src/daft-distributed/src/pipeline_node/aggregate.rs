@@ -176,7 +176,7 @@ fn split_groupby_aggs(
         (first_stage_aggs, first_stage_schema),
         (second_stage_aggs, second_stage_schema),
         final_exprs,
-    ) = daft_physical_plan::populate_aggregation_stages_bound_with_schema(
+    ) = daft_local_plan::agg::populate_aggregation_stages_bound_with_schema(
         aggs,
         input_schema,
         group_by,

@@ -5,12 +5,14 @@ use common_file_formats::WriteMode;
 use common_scan_info::ScanState;
 use daft_core::join::JoinStrategy;
 use daft_dsl::{
-    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    expr::{
+        agg::extract_agg_expr,
+        bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    },
     join::normalize_join_keys,
     resolved_col, window_to_agg_exprs,
 };
 use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo, stats::StatsState};
-use daft_physical_plan::extract_agg_expr;
 
 use super::plan::{LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
 

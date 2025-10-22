@@ -1,3 +1,4 @@
+pub mod agg;
 pub mod bound_expr;
 pub mod window;
 

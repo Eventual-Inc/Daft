@@ -1,3 +1,4 @@
+pub mod agg;
 #[allow(unused)]
 mod plan;
 #[cfg(feature = "python")]

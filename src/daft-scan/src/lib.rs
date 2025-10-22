@@ -23,7 +23,6 @@ pub mod glob;
 mod hive;
 use common_daft_config::DaftExecutionConfig;
 pub mod builder;
-pub mod scan_task_iters;
 
 #[cfg(feature = "python")]
 pub mod python;
