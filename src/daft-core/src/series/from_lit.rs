@@ -307,7 +307,6 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
         }
         DataType::Struct(ref fields) => {
             let values = values.collect::<Vec<_>>();
-
             let children = fields
                 .iter()
                 .enumerate()
@@ -320,7 +319,11 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                         })
                         .collect::<Vec<_>>();
 
-                    Ok(Series::from_literals(child_values)?.rename(&f.name))
+                    Ok(series_from_literals_iter(
+                        child_values.into_iter().map(Ok),
+                        Some(f.dtype.clone()),
+                    )?
+                    .rename(&f.name))
                 })
                 .collect::<DaftResult<_>>()?;
 
