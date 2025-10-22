@@ -226,14 +226,19 @@ class VideoFile(File):
         """Lazy iterator of keyframes as PIL Images within time range."""
         with self.open() as f:
             container = av.open(f)
-            stream = container.streams.video[0]
+            video = next(
+                (stream for stream in container.streams if stream.type == "video"),
+                None,
+            )
+            if video is None:
+                raise ValueError("No video stream found")
 
             # Seek to start time
             if start_time > 0:
                 seek_timestamp = int(start_time * av.time_base)
                 container.seek(seek_timestamp)
 
-            for frame in container.decode(stream):
+            for frame in container.decode(video):
                 if not frame.key_frame:
                     continue
 
