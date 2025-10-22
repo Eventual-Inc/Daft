@@ -59,6 +59,7 @@ python = [
   "common-error/python",
   "common-file-formats/python",
   "common-py-serde/python",
+  "common-runtime/python",
   "common-scan-info/python",
   "common-metrics/python",
   "daft-core/python",
