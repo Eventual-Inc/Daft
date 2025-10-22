@@ -77,6 +77,7 @@ def decoder(token_ids):
     transcription = processor.batch_decode(token_ids, skip_special_tokens=True)
     return transcription
 
+daft.set_planning_config(default_io_config=daft.io.IOConfig(s3=daft.io.S3Config.from_env()))
 
 start_time = time.time()
 

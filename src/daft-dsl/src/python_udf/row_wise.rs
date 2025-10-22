@@ -156,37 +156,38 @@ impl RowWisePyFn {
 
     #[cfg(feature = "python")]
     fn call_serial(&self, args: &[Series], num_rows: usize) -> DaftResult<Series> {
-        use daft_core::python::PySeries;
+        use daft_core::series::from_lit::series_from_literals_iter;
         use pyo3::prelude::*;
 
         let cls_ref = self.cls.as_ref();
         let method_ref = self.method.as_ref();
         let args_ref = self.original_args.as_ref();
         let name = args[0].name();
-
-        Python::attach(|py| {
+        let return_dtype = self.return_dtype.clone();
+        let s = Python::attach(|py| {
             let func = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
                 .getattr(pyo3::intern!(py, "call_func"))?;
 
             // pre-allocating py_args vector so we're not creating a new vector for each iteration
             let mut py_args = Vec::with_capacity(args.len());
-            let outputs = (0..num_rows)
-                .map(|i| {
-                    for s in args {
-                        let idx = if s.len() == 1 { 0 } else { i };
-                        let lit = s.get_lit(idx);
-                        let pyarg = lit.into_pyobject(py)?;
-                        py_args.push(pyarg);
-                    }
+            let outputs = (0..num_rows).map(|i| {
+                for s in args {
+                    let idx = if s.len() == 1 { 0 } else { i };
+                    let lit = s.get_lit(idx);
+                    let pyarg = lit.into_pyobject(py)?;
+                    py_args.push(pyarg);
+                }
 
-                    let result = func.call1((cls_ref, method_ref, args_ref, &py_args))?;
-                    py_args.clear();
-                    DaftResult::Ok(result)
-                })
-                .collect::<DaftResult<Vec<_>>>()?;
+                let result = func.call1((cls_ref, method_ref, args_ref, &py_args))?;
+                let result = Literal::from_pyobj(&result, Some(&return_dtype))?;
 
-            Ok(PySeries::from_pylist_impl(name, outputs, self.return_dtype.clone())?.series)
-        })
+                py_args.clear();
+                DaftResult::Ok(result)
+            });
+
+            series_from_literals_iter(outputs, Some(self.return_dtype.clone()))
+        })?;
+        Ok(s.cast(&self.return_dtype)?.rename(name))
     }
 }

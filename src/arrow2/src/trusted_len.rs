@@ -13,6 +13,7 @@ pub unsafe trait TrustedLen: Iterator {}
 
 unsafe impl TrustedLen for std::ops::Range<usize> {}
 
+
 unsafe impl<T> TrustedLen for Iter<'_, T> {}
 
 unsafe impl<B, I: TrustedLen, T: FnMut(I::Item) -> B> TrustedLen for std::iter::Map<I, T> {}

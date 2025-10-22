@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from daft.ai.typing import Label
 
 __all__ = [
+    "classify_image",
     "classify_text",
     "embed_image",
     "embed_text",
@@ -192,6 +193,57 @@ def classify_text(
     expr = expr_callable(_TextClassificationExpression)
     expr = expr.with_init_args(text_classifier, label_list)
     return expr(text)
+
+
+def classify_image(
+    image: Expression,
+    labels: Label | list[Label],
+    *,
+    provider: str | Provider | None = None,
+    model: str | None = None,
+    **options: str,
+) -> Expression:
+    """Returns an expression that classifies images using the specified model and provider.
+
+    Args:
+        image (Image Expression):
+            The input image column expression.
+        labels (str | list[str]):
+            Label(s) for classification.
+        provider (str | Provider | None):
+            The provider to use for the embedding model.
+            By default this will use 'transformers' provider
+        model (str | None):
+            The embedding model to use. Can be a model instance or a model name.
+            By default this will use `zero-shot-classification` model
+        **options:
+            Any additional options to pass for the model.
+
+    Note:
+        Make sure the required provider packages are installed (e.g. vllm, transformers, openai).
+
+    Returns:
+        Expression (String Expression): An expression representing the most-probable label string.
+    """
+    from daft.ai._expressions import _ImageClassificationExpression
+    from daft.ai.protocols import ImageClassifier
+
+    image_classifier = _resolve_provider(provider, "transformers").get_image_classifier(model, **options)
+
+    # TODO: classification with structured outputs will be more interesting
+    label_list = [labels] if isinstance(labels, str) else labels
+
+    # implemented as a class-based udf for now
+    udf_options = image_classifier.get_udf_options()
+    expr_callable = udf(
+        return_dtype=DataType.string(),
+        concurrency=udf_options.concurrency,
+        num_gpus=udf_options.num_gpus,
+    )
+
+    expr = expr_callable(_ImageClassificationExpression)
+    expr = expr.with_init_args(image_classifier, label_list)
+    return expr(image)
 
 
 ##
