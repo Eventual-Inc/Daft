@@ -7,19 +7,19 @@ from daft.scarf_telemetry import track_import_on_scarf
 ###
 # Set up code coverage for when running code coverage with ray
 ###
-if "COV_CORE_SOURCE" in os.environ:
-    try:
-        from pytest_cov.embed import init
+# if "COV_CORE_SOURCE" in os.environ:
+#     try:
+#         from pytest_cov.embed import init
 
-        init()
-    except Exception as exc:
-        import sys
+#         init()
+#     except Exception as exc:
+#         import sys
 
-        sys.stderr.write(
-            "pytest-cov: Failed to setup subprocess coverage. Environ: {!r} Exception: {!r}\n".format(
-                {k: v for k, v in os.environ.items() if k.startswith("COV_CORE")}, exc
-            )
-        )
+#         sys.stderr.write(
+#             "pytest-cov: Failed to setup subprocess coverage. Environ: {!r} Exception: {!r}\n".format(
+#                 {k: v for k, v in os.environ.items() if k.startswith("COV_CORE")}, exc
+#             )
+#         )
 
 ###
 # Get build constants from Rust .so

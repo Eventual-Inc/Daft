@@ -75,9 +75,9 @@ dev = [
   "viztracer==0.15.6",
   # Testing frameworks
   "hypothesis==6.79.2",
-  "pytest==7.4.3",
-  "pytest-benchmark==4.0.0",
-  "pytest-cov==4.1.0",
+  "pytest==8.4.2",
+  "pytest-benchmark==5.1.0",
+  "pytest-cov==7.0.0",
   "pytest-lazy-fixture==0.6.3",
   "memray==1.17.2; platform_system != \"Windows\"",
   "pytest-codspeed==2.2.1",
@@ -241,3 +241,6 @@ workspace = true
 
 [tool.uv.workspace]
 members = ["daft_dashboard"]
+
+[tool.coverage.run]
+patch = ["subprocess"]
