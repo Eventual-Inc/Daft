@@ -168,6 +168,7 @@ impl RowWisePyFn {
         };
 
         let mut result_series = try_call_batch();
+        // TODO(cory): consider exposing delay and max_delay to users.
         let mut delay_ms: u64 = 100; // Start with 100 ms
         const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
         for attempt in 0..=max_retries {

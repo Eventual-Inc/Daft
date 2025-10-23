@@ -21,6 +21,7 @@ from daft.daft import batch_udf, row_wise_udf
 from daft.datatype import DataType, DataTypeLike
 from daft.expressions.expressions import Expression
 
+# TODO(cory): use a dataclass to hold all of these attributes
 RETURN_DTYPE_ATTR = "_daft_return_dtype"
 UNNEST_ATTR = "_daft_unnest"
 USE_PROCESS_ATTR = "_daft_use_process"
