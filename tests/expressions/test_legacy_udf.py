@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 import os
+import platform
+import subprocess
 import threading
+import time
 
 import httpx
 import numpy as np
 import pyarrow as pa
 import pytest
+import ray
 from openai import APIStatusError
 
 import daft
-from daft import col
-from daft.context import execution_config_ctx
+from daft import col, get_or_infer_runner_type
+from daft.context import execution_config_ctx, get_context
 from daft.datatype import DataType
 from daft.errors import UDFException
 from daft.expressions import Expression
@@ -20,6 +24,7 @@ from daft.recordbatch import MicroPartition
 from daft.series import Series
 from daft.udf import udf
 from tests.conftest import get_tests_daft_runner_name
+from tests.utils import explain_to_text
 
 
 def test_udf():
@@ -754,3 +759,222 @@ def test_udf_error_global_var():
         match="`@daft.udf` requires that the UDF is serializable.",
     ):
         use_global_lambda(col("a"))
+
+
+@pytest.fixture
+def input_df():
+    return daft.range(start=0, end=1024, partitions=100).with_column(
+        "name", col("id").apply(func=lambda x: f"user_{x}", return_dtype=DataType.string())
+    )
+
+
+@udf(return_dtype=daft.DataType.string(), num_cpus=0.1, num_gpus=0)
+def gen_email(names):
+    from faker import Faker
+
+    fake = Faker()
+    return [fake.email(domain="daft.ai") for _ in names]
+
+
+@pytest.mark.skipif(
+    get_or_infer_runner_type() == "native" or get_context().daft_execution_config.use_legacy_ray_runner is True,
+    reason="Native and Legacy Ray Runner doesn't currently support the '@udf(runtime_env=...)' option",
+)
+def test_udf_with_invalid_conda_config(input_df):
+    # 1. The 'concurrency' parameter must be set at the same time
+    with pytest.raises(ValueError) as exc_info:
+        gen_email_udf = gen_email.override_options(runtime_env={"conda": "daft"})
+        input_df.with_column("email", gen_email_udf(col("name"))).collect()
+    assert "The 'concurrency' must also be set when using 'runtime_env' option." == str(exc_info.value)
+
+    # 2. Currently only supports 'conda' option
+    with pytest.raises(ValueError) as exc_info:
+        gen_email_udf = gen_email.override_options(
+            runtime_env={"conda": "daft", "working_dir": "/tmp/daft"}
+        ).with_concurrency(1)
+        input_df.with_column("email", gen_email_udf(col("name")))
+    assert "'@udf(runtime_env=...)' currently only supports 'conda' option, but got 'working_dir'" == str(
+        exc_info.value
+    )
+
+    # 3. Parameter 'conda' in runtime_env must be either a string or dict
+    with pytest.raises(ValueError) as exc_info:
+        gen_email_udf = gen_email.override_options(runtime_env={"conda": 123}).with_concurrency(1)
+        input_df.with_column("email", gen_email_udf(col("name"))).collect()
+    assert "The 'conda' option in 'runtime_env' must be a string or dict." == str(exc_info.value)
+
+    # 4. Unsupported conda option
+    with pytest.raises(Exception) as exc_info:
+        gen_email_udf = gen_email.override_options(
+            runtime_env={"conda": {"name": "punks", "platforms": ["win-64", "osx-64"]}}
+        ).with_concurrency(1)
+        input_df.with_column("email", gen_email_udf(col("name"))).collect()
+    assert str(exc_info.value).startswith("The 'conda' option in 'runtime_env' currently only supports")
+
+
+@pytest.mark.skipif(
+    get_or_infer_runner_type() == "native" or get_context().daft_execution_config.use_legacy_ray_runner is True,
+    reason="Native and Legacy Ray Runner doesn't currently support the '@udf(runtime_env=...)' option",
+)
+def test_udf_with_conda_env_name(input_df):
+    gen_email_udf = gen_email.override_options(runtime_env={"conda": "punks"}).with_concurrency(1)
+    df = input_df.with_column("email", gen_email_udf(col("name")))
+    assert "Runtime env = { conda = punks }" in explain_to_text(df)
+
+
+@pytest.mark.skipif(
+    get_or_infer_runner_type() == "native" or get_context().daft_execution_config.use_legacy_ray_runner is True,
+    reason="Native and Legacy Ray Runner doesn't currently support the '@udf(runtime_env=...)' option",
+)
+def test_udf_with_conda_yaml_file(input_df):
+    gen_email_udf = gen_email.override_options(runtime_env={"conda": "/tmp/daft/conda.yaml"}).with_concurrency(1)
+    df = input_df.with_column("email", gen_email_udf(col("name")))
+    assert "Runtime env = { conda = /tmp/daft/conda.yaml }" in explain_to_text(df)
+
+
+@pytest.mark.skipif(
+    get_or_infer_runner_type() == "native" or get_context().daft_execution_config.use_legacy_ray_runner is True,
+    reason="Native and Legacy Ray Runner doesn't currently support the '@udf(runtime_env=...)' option",
+)
+def test_udf_with_conda_yaml_conf(input_df):
+    gen_email_udf = gen_email.override_options(runtime_env={}).with_concurrency(1)
+    df = input_df.with_column("email", gen_email_udf(col("name")))
+    assert "Runtime env = {  }" in explain_to_text(df)
+
+    gen_email_udf = gen_email.override_options(
+        runtime_env={
+            "conda": {
+                "name": "simple",
+                "channels": ["conda-forge"],
+            }
+        }
+    ).with_concurrency(1)
+
+    df = input_df.with_column("email", gen_email_udf(col("name")))
+    assert (
+        """
+|   Runtime env = {
+|     conda =
+|       name: simple
+|       channels:
+|       - conda-forge
+|    }
+""".strip()
+        in explain_to_text(df)
+    )
+
+    gen_email_udf = gen_email.override_options(
+        runtime_env={
+            "conda": {
+                "name": "stats2",
+                "channels": ["javascript"],
+                "dependencies": [
+                    "python=3.9",
+                    "bokeh=2.4.2",
+                    "conda-forge::numpy=1.21.*",
+                    "nodejs=16.13.*",
+                    "flask",
+                    "pip",
+                    {"pip": ["Flask-Testing"]},
+                ],
+            }
+        }
+    ).with_concurrency(1)
+    df = input_df.with_column("email", gen_email_udf(col("name")))
+    assert (
+        """
+|   Runtime env = {
+|     conda =
+|       name: stats2
+|       channels:
+|       - javascript
+|       dependencies:
+|       - python=3.9
+|       - bokeh=2.4.2
+|       - conda-forge::numpy=1.21.*
+|       - nodejs=16.13.*
+|       - flask
+|       - pip
+|       - pip:
+|         - Flask-Testing
+|    }
+""".strip()
+        in explain_to_text(df)
+    )
+
+
+@pytest.mark.skipif(
+    get_or_infer_runner_type() == "native" or get_context().daft_execution_config.use_legacy_ray_runner is True,
+    reason="Native and Legacy Ray Runner doesn't currently support the '@udf(runtime_env=...)' option",
+)
+def test_udf_with_conda_inject_dependencies(input_df):
+    # missing required modules
+    with pytest.raises(Exception) as exc_info:
+        gen_email_udf = gen_email.override_options(
+            runtime_env={
+                "conda": {
+                    "name": "test",
+                    "dependencies": [
+                        "pip",
+                        {"pip": ["daft"]},
+                    ],
+                }
+            }
+        ).with_concurrency(1)
+        input_df.with_column("email", gen_email_udf(col("name"))).collect()
+    assert "No module named 'faker'" in str(exc_info.value)
+
+    # install required modules at runtime
+    gen_email_udf = gen_email.override_options(
+        runtime_env={
+            "conda": {
+                "dependencies": [
+                    "pip",
+                    {"pip": ["daft", "faker"]},
+                ],
+            }
+        }
+    ).with_concurrency(1)
+    df = input_df.with_column("email", gen_email_udf(col("name"))).select("email")
+    assert 1024 == df.count_rows()
+
+
+@pytest.mark.skipif(
+    get_or_infer_runner_type() == "native" or get_context().daft_execution_config.use_legacy_ray_runner is True,
+    reason="Native and Legacy Ray Runner doesn't currently support the '@udf(runtime_env=...)' option",
+)
+def test_udf_with_prepared_conda_env(input_df):
+    conda_env_name = f"test_udf_with_prepared_conda_env_{int(time.time())}"
+    try:
+        prepare_conda_env_cmd = [
+            "conda",
+            "create",
+            "-n",
+            conda_env_name,
+            "-y",
+            f"python={platform.python_version()}",
+            "pip",
+            "&&",
+            "conda",
+            "run",
+            "-n",
+            conda_env_name,
+            "pip",
+            "install",
+            f"ray=={ray.__version__}",
+            "daft",
+            "faker",
+        ]
+        subprocess.run(" ".join(prepare_conda_env_cmd), check=True, capture_output=True, shell=True)
+
+        gen_email_udf = gen_email.override_options(runtime_env={"conda": conda_env_name}).with_concurrency(1)
+        df = input_df.with_column("email", gen_email_udf(col("name"))).select("email")
+        assert 1024 == df.count_rows()
+    except Exception as e:
+        assert False, f"Execute UDF in prepared Conda env {conda_env_name} error: {e}"
+    finally:
+        try:
+            remove_conda_env_cmd = ["conda", "env", "remove", "-n", conda_env_name, "-y"]
+            subprocess.run(remove_conda_env_cmd, check=False, capture_output=True, shell=True)
+        except Exception:
+            pass

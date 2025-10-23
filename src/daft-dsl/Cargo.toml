@@ -12,6 +12,7 @@ indexmap = {workspace = true}
 itertools = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
+serde_yaml = {workspace = true}
 typetag = {workspace = true}
 
 [dev-dependencies]
