@@ -260,6 +260,8 @@ def classify_image(
         _ImageClassificationExpression,
         max_concurrency=udf_options.concurrency,
         gpus=udf_options.num_gpus or 0,
+        max_retries=udf_options.max_retries,
+        on_error=udf_options.on_error,
     )
     instance = wrapped_cls(image_classifier, label_list)
     return instance(image)
