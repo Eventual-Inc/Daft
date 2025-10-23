@@ -195,10 +195,8 @@ impl RowWisePyFn {
             (Err(err), OnError::Raise) => Err(err),
             (Err(err), OnError::Log) => {
                 log::warn!("Python UDF error: {}", err);
-                // todo: log error
                 let num_rows = args.iter().map(Series::len).max().unwrap();
 
-                // log::error!("Python UDF error: {}", err);
                 Ok(Series::full_null(name, &self.return_dtype, num_rows))
             }
             (Err(_), OnError::Ignore) => {
@@ -287,7 +285,7 @@ impl RowWisePyFn {
 
                 let f = || {
                     func.call1((cls_ref, method_ref, args_ref, &py_args))
-                        .and_then(|res| Literal::from_pyobj(&res, None))
+                        .and_then(|res| Literal::from_pyobj(&res, Some(&self.return_dtype)))
                         .map_err(DaftError::from)
                 };
                 let res = retry(py, f, max_retries, on_error, delay_ms);

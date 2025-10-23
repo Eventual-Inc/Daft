@@ -169,3 +169,69 @@ def test_rowwise_on_err_ignore():
 
     actual = df.select(raise_err(col("value"))).to_pydict()
     assert actual == expected
+
+
+def test_rowwise_retry():
+    first_time = True
+
+    @daft.func(on_error="ignore", max_retries=1)
+    def raise_err_first_time_only(x) -> int:
+        nonlocal first_time
+        if first_time:
+            first_time = False
+            raise ValueError("This is an error")
+        else:
+            return x * 2
+
+    df = daft.from_pydict({"value": [1]})
+
+    expected = {"value": [2]}
+
+    actual = df.select(raise_err_first_time_only(col("value"))).to_pydict()
+    assert actual == expected
+
+
+def test_rowwise_retry_expected_to_fail():
+    first_time = True
+
+    @daft.func(on_error="ignore", max_retries=0)
+    def raise_err_first_time_only(x) -> int:
+        nonlocal first_time
+        if first_time:
+            first_time = False
+            raise ValueError("This is an error")
+        else:
+            return x * 2
+
+    df = daft.from_pydict({"value": [1]})
+
+    expected = {"value": [None]}
+
+    actual = df.select(raise_err_first_time_only(col("value"))).to_pydict()
+    assert actual == expected
+
+
+def test_rowwise_retry_expected_to_fail_with_raise():
+    @daft.func(on_error="raise", max_retries=0)
+    def raise_err(x) -> int:
+        raise ValueError("This is an error")
+
+    df = daft.from_pydict({"value": [1]})
+
+    try:
+        df.select(raise_err(col("value"))).to_pydict()
+    except ValueError:
+        pass
+
+
+def test_rowwise_retry_defaults_to_raise_and_zero_retries():
+    @daft.func
+    def raise_err(x) -> int:
+        raise ValueError("This is an error")
+
+    df = daft.from_pydict({"value": [1]})
+
+    try:
+        df.select(raise_err(col("value"))).to_pydict()
+    except ValueError:
+        pass
