@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Any
 
 from daft.datatype import DataType
+from daft.expressions import col, lit
+from daft.functions import length, serialize
 from daft.io import DataSink
 from daft.io.sink import WriteResult
 from daft.recordbatch import MicroPartition
@@ -14,7 +17,7 @@ if TYPE_CHECKING:
 
     from google.cloud.bigtable.table import Table
 
-    from daft.dependencies import pa
+    from daft.dataframe import DataFrame
 
 
 class BigtableDataSink(DataSink[dict[str, Any]]):
@@ -62,20 +65,82 @@ class BigtableDataSink(DataSink[dict[str, Any]]):
 
         self._result_schema = Schema._from_field_name_and_types([("write_responses", DataType.python())])
 
+    @staticmethod
+    def _is_bigtable_compatible_type(dtype: DataType) -> bool:
+        """Check if a DataType is compatible with Bigtable."""
+        return dtype.is_integer() or dtype.is_binary() or dtype.is_string()
+
+    @staticmethod
+    def _validate_bigtable_parameters(
+        schema: Schema, row_key_column: str, column_family_mappings: dict[str, str]
+    ) -> None:
+        """Validate Bigtable parameters against the DataFrame schema."""
+        column_names = schema.column_names()
+        # Validate that the row key column exists in the schema.
+        if row_key_column not in column_names:
+            raise ValueError(f'Row key column "{row_key_column}" not found in schema')
+
+        # Validate that column family mappings cover all columns except the row key column.
+        data_columns = [col for col in column_names if col != row_key_column]
+        missing_columns = [col for col in data_columns if col not in column_family_mappings]
+        if missing_columns:
+            raise ValueError(
+                f"Column family mappings missing for columns: {missing_columns}. "
+                f"All columns except the row key column ({row_key_column}) must have a column family mapping."
+            )
+
+    def _preprocess_dataframe(self, df: DataFrame, serialize_incompatible_types: bool = True) -> DataFrame:
+        # Validate Bigtable parameters against the DataFrame schema.
+        self._validate_bigtable_parameters(df.schema(), self._row_key_column, self._column_family_mappings)
+
+        df_to_write = df
+
+        # Check for incompatible types and handle them based on whether serialize_incompatible_types is True.
+        incompatible_columns = []
+
+        for field in df_to_write.schema():
+            if self._is_bigtable_compatible_type(field.dtype):
+                continue
+            incompatible_columns.append(field.name)
+
+        if incompatible_columns:
+            if serialize_incompatible_types:
+                warnings.warn(
+                    f"Bigtable only supports integer, binary, and string types. Found incompatible columns: "
+                    f"{', '.join([f'{column_name}' for column_name in incompatible_columns])}. "
+                    "These will be automatically serialized to JSON. Set `serialize_incompatible_types=False` to disable automatic conversion."
+                )
+
+                for col_name in incompatible_columns:
+                    df_to_write = df_to_write.with_column(col_name, serialize(df_to_write[col_name], format="json"))
+            else:
+                raise ValueError(
+                    f"Bigtable only supports integer, binary, and string types. Found incompatible columns: "
+                    f"{', '.join([f'{column_name}' for column_name in incompatible_columns])}. "
+                    "Set `serialize_incompatible_types=True` to automatically convert these to JSON, or convert them manually before writing."
+                )
+
+        # Filter out rows with invalid row keys.
+        df_to_write = df_to_write.filter(
+            col(self._row_key_column).not_null() & (length(col(self._row_key_column)) > lit(0))
+        )
+
+        return df_to_write
+
     def name(self) -> str:
         return "Bigtable Data Sink"
 
     def schema(self) -> Schema:
         return self._result_schema
 
-    def _write_with_error_handling(self, table: Table, arrow_table: pa.Table) -> WriteResult[dict[str, Any]]:
+    def _write_with_error_handling(self, table: Table, mp: MicroPartition) -> WriteResult[dict[str, Any]]:
         try:
             bigtable_batcher = BigtableDataSink._import_bigtable_batcher()
             rows_written = 0
 
             with bigtable_batcher.MutationsBatcher(table=table, **self._write_kwargs) as batcher:
                 rows = []
-                data_list = arrow_table.to_pylist()
+                data_list = mp.to_pylist()
 
                 for row_data in data_list:
                     row_key = str(row_data[self._row_key_column])
@@ -100,14 +165,14 @@ class BigtableDataSink(DataSink[dict[str, Any]]):
             }
             return WriteResult(
                 result=result,
-                bytes_written=arrow_table.nbytes,
+                bytes_written=mp.size_bytes() or 0,
                 rows_written=rows_written,
             )
         except Exception as e:
             result = {
                 "status": "failed",
                 "error": str(e),
-                "rows_not_written": arrow_table.num_rows,
+                "rows_not_written": len(mp),
             }
             return WriteResult(
                 result=result,
@@ -129,13 +194,11 @@ class BigtableDataSink(DataSink[dict[str, Any]]):
         instance = client.instance(self._instance_id)
 
         for micropartition in micropartitions:
-            arrow_table = micropartition.to_arrow()
-
-            if arrow_table.num_rows == 0:
+            if len(micropartition) == 0:
                 continue
 
             table = instance.table(self._table_id)
-            yield self._write_with_error_handling(table, arrow_table)
+            yield self._write_with_error_handling(table, micropartition)
 
     def finalize(self, write_results: list[WriteResult[dict[str, Any]]]) -> MicroPartition:
         if len(write_results) == 0:
