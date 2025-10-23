@@ -1656,6 +1656,52 @@ class DataFrame:
         )
         return self.write_sink(sink)
 
+    def write_bigtable(
+        self,
+        project_id: str,
+        instance_id: str,
+        table_id: str,
+        row_key_column: str,
+        column_family_mappings: dict[str, str],
+        client_kwargs: Optional[dict[str, Any]] = None,
+        write_kwargs: Optional[dict[str, Any]] = None,
+        serialize_incompatible_types: bool = True,
+    ) -> "DataFrame":
+        """Write a DataFrame into a Google Cloud Bigtable table.
+
+        Bigtable only accepts datatypes that can be converted to bytes in cells (for more details, please consult the Bigtable documentation: https://cloud.google.com/bigtable/docs/overview#data-types).
+        By default, `write_bigtable` automatically serializes incompatible types to JSON. This can be disabled by setting `auto_convert=False`.
+
+        This data sink transforms each row of the dataframe into Bigtable rows.
+        A row key is always required. The `row_key_column` parameter can be used to specify the column name to use for the row key.
+
+        Every column must also belong to a column family. The `column_family_mappings` parameter can be used to specify the column family to use for each column.
+        For example, if you have a column "name" and a column "age", you can specify a "user_data" column family by passing a dictionary like {"name": "user_data", "age": "user_data"}.
+
+        EXPERIMENTAL: This features is early in development and will change.
+
+        Args:
+            project_id: The Google Cloud project ID.
+            instance_id: The Bigtable instance ID.
+            table_id: The table to write to.
+            row_key_column: Column name for the row key.
+            column_family_mappings: Mapping of column names to column families.
+            client_kwargs: Optional dictionary of arguments to pass to the Bigtable Client constructor.
+            write_kwargs: Optional dictionary of arguments to pass to the Bigtable MutationsBatcher.
+            serialize_incompatible_types: Whether to automatically convert non-bytes/int values to Bigtable-compatible formats.
+                                          If False, will raise an error for unsupported types. Defaults to True.
+        """
+        from daft.io.bigtable.bigtable_data_sink import BigtableDataSink
+
+        sink = BigtableDataSink(
+            project_id, instance_id, table_id, row_key_column, column_family_mappings, client_kwargs, write_kwargs
+        )
+
+        # Preprocess the DataFrame using the sink's validation and preprocessing logic
+        df_to_write = sink._preprocess_dataframe(self, serialize_incompatible_types)
+
+        return df_to_write.write_sink(sink)
+
     ###
     # DataFrame operations
     ###

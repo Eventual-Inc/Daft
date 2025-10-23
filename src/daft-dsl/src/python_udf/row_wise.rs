@@ -211,6 +211,7 @@ impl RowWisePyFn {
     #[cfg(feature = "python")]
     fn call_serial(&self, args: &[Series], num_rows: usize) -> DaftResult<Series> {
         use common_error::DaftError;
+        use daft_core::series::from_lit::series_from_literals_iter;
         use pyo3::prelude::*;
 
         use crate::functions::python::OnError;
@@ -268,7 +269,7 @@ impl RowWisePyFn {
             }
             res
         }
-        let literals = Python::attach(|py| {
+        let s = Python::attach(|py| {
             let func = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
                 .getattr(pyo3::intern!(py, "call_func"))?;
@@ -276,29 +277,27 @@ impl RowWisePyFn {
             // pre-allocating py_args vector so we're not creating a new vector for each iteration
             let mut py_args = Vec::with_capacity(args.len());
 
-            (0..num_rows)
-                .map(|i| {
-                    for s in args {
-                        let idx = if s.len() == 1 { 0 } else { i };
-                        let lit = s.get_lit(idx);
-                        let pyarg = lit.into_pyobject(py)?;
-                        py_args.push(pyarg);
-                    }
+            let iter = (0..num_rows).map(|i| {
+                for s in args {
+                    let idx = if s.len() == 1 { 0 } else { i };
+                    let lit = s.get_lit(idx);
+                    let pyarg = lit.into_pyobject(py)?;
+                    py_args.push(pyarg);
+                }
 
-                    let f = || {
-                        func.call1((cls_ref, method_ref, args_ref, &py_args))
-                            .and_then(|res| Literal::from_pyobj(&res, None))
-                            .map_err(DaftError::from)
-                    };
-                    let res = retry(py, f, max_retries, on_error, delay_ms);
-                    py_args.clear();
-                    res
-                })
-                .collect::<DaftResult<Vec<_>>>()
-        })?;
-        let s = Series::from_literals(literals)?;
-        let s = s.cast(&self.return_dtype)?;
-        let s = s.rename(name);
+                let f = || {
+                    func.call1((cls_ref, method_ref, args_ref, &py_args))
+                        .and_then(|res| Literal::from_pyobj(&res, None))
+                        .map_err(DaftError::from)
+                };
+                let res = retry(py, f, max_retries, on_error, delay_ms);
+                py_args.clear();
+                res
+            });
+            series_from_literals_iter(iter, Some(self.return_dtype.clone()))
+        })?
+        .rename(name);
+
         Ok(s)
     }
 }

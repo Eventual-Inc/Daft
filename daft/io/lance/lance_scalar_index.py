@@ -137,17 +137,16 @@ def create_scalar_index_internal(
     # Generate index name if not provided
     if name is None:
         name = f"{column}_{index_type.lower()}_idx"
-
     # Handle replace parameter - check for existing index with same name
     if not replace:
         try:
             existing_indices = lance_ds.list_indices()
-            existing_names = {idx["name"] for idx in existing_indices}
-            if name in existing_names:
-                raise ValueError(f"Index with name '{name}' already exists. Set replace=True to replace it.")
         except Exception:
             # If we can't check existing indices, continue
             pass
+        existing_names = {idx["name"] for idx in existing_indices}
+        if name in existing_names:
+            raise ValueError(f"Index with name '{name}' already exists. Set replace=True to replace it.")
 
     # Get available fragment IDs to use
     fragments = lance_ds.get_fragments()
