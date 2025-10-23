@@ -68,7 +68,7 @@ class ClickHouseDataSink(DataSink[QuerySummary]):
                 query_summary = ck_client.insert_df(self._table, df, **self._write_kwargs)
                 yield WriteResult(
                     result=query_summary,
-                    bytes_written=bytes_written,
+                    bytes_written=bytes_written.item(),
                     rows_written=rows_written,
                 )
         finally:
