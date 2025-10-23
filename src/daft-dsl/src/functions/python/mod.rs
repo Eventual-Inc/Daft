@@ -122,8 +122,6 @@ pub struct LegacyPythonUDF {
     pub batch_size: Option<usize>,
     pub concurrency: Option<usize>,
     pub use_process: Option<bool>,
-    pub max_retries: Option<usize>,
-    pub on_error: Option<OnError>,
 }
 
 impl LegacyPythonUDF {
@@ -142,8 +140,6 @@ impl LegacyPythonUDF {
             batch_size: None,
             concurrency: Some(4),
             use_process: None,
-            max_retries: None,
-            on_error: None,
         }
     }
 }
@@ -160,8 +156,6 @@ pub fn udf(
     batch_size: Option<usize>,
     concurrency: Option<usize>,
     use_process: Option<bool>,
-    max_retries: Option<usize>,
-    on_error: Option<OnError>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(LegacyPythonUDF {
@@ -174,8 +168,6 @@ pub fn udf(
             batch_size,
             concurrency,
             use_process,
-            max_retries,
-            on_error,
         }),
         inputs: expressions.into(),
     })
@@ -323,8 +315,6 @@ impl UDFProperties {
                             batch_size,
                             concurrency,
                             use_process,
-                            max_retries,
-                            on_error,
                             ..
                         }),
                     ..
@@ -336,8 +326,8 @@ impl UDFProperties {
                         batch_size: *batch_size,
                         concurrency: *concurrency,
                         use_process: *use_process,
-                        max_retries: *max_retries,
-                        on_error: *on_error,
+                        max_retries: None,
+                        on_error: None,
                     });
                 }
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
@@ -345,6 +335,8 @@ impl UDFProperties {
                     gpus,
                     max_concurrency,
                     use_process,
+                    max_retries,
+                    on_error,
                     ..
                 }))) => {
                     num_udfs += 1;
@@ -358,8 +350,8 @@ impl UDFProperties {
                         batch_size: None,
                         concurrency: *max_concurrency,
                         use_process: *use_process,
-                        max_retries: None,
-                        on_error: None,
+                        max_retries: *max_retries,
+                        on_error: Some(*on_error),
                     });
                 }
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
@@ -368,6 +360,8 @@ impl UDFProperties {
                     max_concurrency,
                     use_process,
                     batch_size,
+                    max_retries,
+                    on_error,
                     ..
                 }))) => {
                     num_udfs += 1;
@@ -381,8 +375,8 @@ impl UDFProperties {
                         batch_size: *batch_size,
                         concurrency: *max_concurrency,
                         use_process: *use_process,
-                        max_retries: None,
-                        on_error: None,
+                        max_retries: *max_retries,
+                        on_error: Some(*on_error),
                     });
                 }
                 _ => {}

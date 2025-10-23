@@ -682,8 +682,6 @@ mod tests {
                 batch_size: None,
                 concurrency: Some(8),
                 use_process: None,
-                max_retries: None,
-                on_error: None,
             }),
             inputs,
         }
@@ -705,8 +703,6 @@ mod tests {
                 batch_size: Some(32),
                 concurrency: None,
                 use_process: None,
-                max_retries: None,
-                on_error: None,
             }),
             inputs,
         }

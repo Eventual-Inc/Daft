@@ -193,8 +193,6 @@ pub fn list_(items: Vec<PyExpr>) -> PyExpr {
     batch_size=None,
     concurrency=None,
     use_process=None,
-    max_retries=None,
-    on_error=None
 ))]
 pub fn udf(
     name: &str,
@@ -207,8 +205,6 @@ pub fn udf(
     batch_size: Option<usize>,
     concurrency: Option<usize>,
     use_process: Option<bool>,
-    max_retries: Option<usize>,
-    on_error: Option<String>,
 ) -> PyResult<PyExpr> {
     use crate::functions::python::udf;
 
@@ -222,17 +218,6 @@ pub fn udf(
 
     let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
 
-    // Convert string on_error to OnError enum
-    let on_error_enum = on_error
-        .as_ref()
-        .and_then(|s| crate::functions::python::OnError::from_str(s).ok());
-
-    if on_error.is_some() && on_error_enum.is_none() {
-        return Err(PyValueError::new_err(
-            "Invalid on_error value. Must be one of: 'raise', 'log', or 'ignore'",
-        ));
-    }
-
     Ok(PyExpr {
         expr: udf(
             name,
@@ -245,8 +230,6 @@ pub fn udf(
             batch_size,
             concurrency,
             use_process,
-            max_retries,
-            on_error_enum,
         )?
         .into(),
     })
@@ -267,12 +250,20 @@ pub fn row_wise_udf(
     on_error: Option<String>,
     original_args: Py<PyAny>,
     expr_args: Vec<PyExpr>,
-) -> PyExpr {
+) -> PyResult<PyExpr> {
     let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
-    let on_error = on_error
-        .and_then(|v| crate::functions::python::OnError::from_str(&v).ok())
-        .unwrap_or_default();
-    PyExpr {
+
+    // Convert string on_error to OnError enum
+    let on_error_enum = on_error
+        .as_ref()
+        .and_then(|s| crate::functions::python::OnError::from_str(s).ok());
+
+    if on_error.is_some() && on_error_enum.is_none() {
+        return Err(PyValueError::new_err(
+            "Invalid on_error value. Must be one of: 'raise', 'log', or 'ignore'",
+        ));
+    }
+    Ok(PyExpr {
         expr: crate::python_udf::row_wise_udf(
             name,
             cls.into(),
@@ -283,12 +274,12 @@ pub fn row_wise_udf(
             use_process,
             max_concurrency,
             max_retries,
-            on_error,
+            on_error_enum.unwrap_or_default(),
             original_args.into(),
             args,
         )
         .into(),
-    }
+    })
 }
 
 #[pyfunction]

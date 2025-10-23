@@ -522,10 +522,6 @@ pub mod scalar_fn {
             pub max_memory_bytes: ::core::option::Option<u64>,
             #[prost(bool, optional, tag = "12")]
             pub use_process: ::core::option::Option<bool>,
-            #[prost(uint64, optional, tag = "13")]
-            pub max_retries: ::core::option::Option<u64>,
-            #[prost(string, optional, tag = "14")]
-            pub on_error: ::core::option::Option<::prost::alloc::string::String>,
         }
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct RowWiseFn {
