@@ -152,6 +152,7 @@ import daft.io as io
 import daft.runners as runners
 import daft.datasets as datasets
 import daft.functions as functions
+import daft.gravitino as gravitino
 
 __all__ = [
     "Catalog",
@@ -217,6 +218,7 @@ __all__ = [
     "get_or_infer_runner_type",
     "get_provider",
     "get_table",
+    "gravitino",
     "has_catalog",
     "has_namespace",
     "has_provider",
