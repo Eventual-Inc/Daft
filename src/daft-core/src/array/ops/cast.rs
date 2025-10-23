@@ -36,6 +36,7 @@ use crate::{
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
     },
+    file::DaftFileFormat,
     lit::Literal,
     series::{IntoSeries, Series},
     utils::display::display_time64,
@@ -545,7 +546,10 @@ impl DurationArray {
     }
 }
 
-impl FileArray {
+impl<T> FileArray<T>
+where
+    T: DaftFileFormat,
+{
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
             DataType::Null => {

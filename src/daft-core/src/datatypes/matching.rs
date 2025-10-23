@@ -8,6 +8,7 @@ macro_rules! with_match_daft_types {
         macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
         use $crate::datatypes::*;
         use $crate::datatypes::DataType;
+        use $crate::file::{FileFormat, UnknownFileType, VideoFileType};
 
         match $key_type {
             // Float16 => unimplemented!("Array for Float16 DataType not implemented"),
@@ -47,7 +48,9 @@ macro_rules! with_match_daft_types {
             DataType::Utf8 => __with_ty__! { Utf8Type },
             #[cfg(feature = "python")]
             DataType::Python => __with_ty__! { PythonType },
-            DataType::File(_) => __with_ty__! { FileType },
+            DataType::File(FileFormat::Unknown) => __with_ty__! { UnknownFileType },
+            DataType::File(FileFormat::Video) => __with_ty__! { VideoFileType },
+
 
             // NOTE: We should not implement a default for match here, because this is meant to be
             // an exhaustive match across **all** Daft types.

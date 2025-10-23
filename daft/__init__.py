@@ -145,7 +145,7 @@ from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_run
 from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
-from daft.file import File
+from daft.file import File, VideoFile
 
 import daft.context as context
 import daft.io as io
@@ -172,6 +172,7 @@ __all__ = [
     "Session",
     "Table",
     "TimeUnit",
+    "VideoFile",
     "Window",
     "attach",
     "attach_catalog",

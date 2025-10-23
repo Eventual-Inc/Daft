@@ -8,7 +8,7 @@ use std::{
 };
 
 use common_error::DaftError;
-use common_file::FileReference;
+use daft_core::file::FileReference;
 use pyo3::{
     exceptions::{PyIOError, PyRuntimeError, PyValueError},
     prelude::*,
@@ -102,7 +102,7 @@ impl PyDaftFile {
     }
 }
 
-#[cfg_attr(feature = "python", pymethods)]
+#[pymethods]
 impl PyDaftFile {
     #[staticmethod]
     fn _from_file_reference(f: PyFileReference) -> PyResult<Self> {

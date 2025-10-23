@@ -13,7 +13,12 @@ use common_image::CowImage;
 use indexmap::IndexMap;
 use itertools::Itertools;
 
-use crate::{array::ops::image::image_array_from_img_buffers, datatypes::FileArray, prelude::*};
+use crate::{
+    array::ops::image::image_array_from_img_buffers,
+    datatypes::FileArray,
+    file::{DataOrReference, FileFormatUnknown},
+    prelude::*,
+};
 
 /// Downcasts a datatype to one that's compatible with literals.
 /// example:
@@ -345,8 +350,6 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
         DataType::File(file_type) => {
             let values = values.collect::<Vec<_>>();
 
-            use common_file::FileReference;
-
             let discriminant = UInt8Array::from_iter(
                 Field::new("discriminant", DataType::UInt8),
                 values
@@ -363,8 +366,8 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                         return ((None, None), None);
                     };
 
-                    match f {
-                        FileReference::Reference(file, ioconfig) => {
+                    match f.inner {
+                        DataOrReference::Reference(file, ioconfig) => {
                             let io_conf = ioconfig.map(|c| {
                                 bincode::serialize(&c)
                                     .expect("Failed to serialize IO configuration")
@@ -372,7 +375,9 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
 
                             ((Some(file), io_conf), None)
                         }
-                        FileReference::Data(items) => ((None, None), Some(items.as_ref().clone())),
+                        DataOrReference::Data(items) => {
+                            ((None, None), Some(items.as_ref().clone()))
+                        }
                     }
                 })
                 .unzip();
@@ -392,7 +397,11 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 ],
                 validity,
             );
-            FileArray::new(Field::new("literal", DataType::File(file_type)), sa).into_series()
+            FileArray::<FileFormatUnknown>::new(
+                Field::new("literal", DataType::File(file_type)),
+                sa,
+            )
+            .into_series()
         }
         DataType::Tensor(_) => {
             let (data, shapes) = values

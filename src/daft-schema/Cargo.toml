@@ -5,7 +5,6 @@ common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 common-version = {path = "../common/version", default-features = false}
-common-file = {path = "../common/file", default-features = false}
 derive_more = {workspace = true}
 educe = {workspace = true}
 html-escape = {workspace = true}

@@ -1,9 +1,11 @@
 use crate::{
-    datatypes::FileArray,
-    prelude::{BinaryArray, UInt8Array},
+    datatypes::FileArray, file::DaftFileFormat, prelude::{BinaryArray, UInt8Array}
 };
 
-impl FileArray {
+impl<T> FileArray<T>
+where
+    T: DaftFileFormat,
+{
     pub fn discriminant_array(&self) -> UInt8Array {
         self.physical
             .get("discriminant")

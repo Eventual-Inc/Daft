@@ -2,10 +2,9 @@ use std::fmt::{Display, Write};
 
 use arrow2::datatypes::DataType as ArrowType;
 use common_error::{DaftError, DaftResult};
-use common_file::FileFormat;
 use serde::{Deserialize, Serialize};
 
-use crate::{field::Field, image_mode::ImageMode, time_unit::TimeUnit};
+use crate::{field::Field, file_format::FileFormat, image_mode::ImageMode, time_unit::TimeUnit};
 
 pub type DaftDataType = DataType;
 
@@ -137,7 +136,7 @@ pub enum DataType {
     Python,
 
     Unknown,
-    File(Option<FileFormat>),
+    File(FileFormat),
 }
 
 impl Display for DataType {
@@ -212,8 +211,7 @@ impl Display for DataType {
             #[cfg(feature = "python")]
             Self::Python => write!(f, "Python"),
             Self::Unknown => write!(f, "Unknown"),
-            Self::File(None) => write!(f, "File"),
-            Self::File(Some(format)) => write!(f, "File[{format}]"),
+            Self::File(format) => write!(f, "File[{format}]"),
         }
     }
 }

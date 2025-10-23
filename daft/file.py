@@ -143,6 +143,12 @@ class File:
 class VideoFile(File):
     """A video-specific file interface that provides video operations."""
 
+    @staticmethod
+    def _from_file_reference(reference: PyFileReference) -> VideoFile:
+        instance = VideoFile.__new__(VideoFile)
+        instance._inner = reference
+        return instance
+
     def __init__(self, str_or_bytes: str | bytes, io_config: IOConfig | None = None) -> None:
         if not av.module_available():
             raise ImportError("The 'av' module is required to create video files.")
@@ -169,58 +175,59 @@ class VideoFile(File):
             "probesize": str(probesize),
             "analyzeduration": str(analyzeduration_us),
         }
+        with self.open() as f:
 
-        with av.open(self, mode="r", options=options, metadata_encoding="utf-8") as container:
-            video = next(
-                (stream for stream in container.streams if stream.type == "video"),
-                None,
-            )
-            if video is None:
+            with av.open(f, mode="r", options=options, metadata_encoding="utf-8") as container:
+                video = next(
+                    (stream for stream in container.streams if stream.type == "video"),
+                    None,
+                )
+                if video is None:
+                    return {
+                        "width": None,
+                        "height": None,
+                        "fps": None,
+                        "frame_count": None,
+                        "time_base": None,
+                    }
+    
+                # Basic stream properties ----------
+                width = video.width
+                height = video.height
+                time_base = float(video.time_base) if video.time_base else None
+    
+                # Frame rate -----------------------
+                fps = None
+                if video.average_rate:
+                    fps = float(video.average_rate)
+                elif video.guessed_rate:
+                    fps = float(video.guessed_rate)
+    
+                # Duration -------------------------
+                duration = None
+                if container.duration and container.duration > 0:
+                    duration = container.duration / 1_000_000.0
+                elif video.duration:
+                    # Fallback time_base only for duration computation if missing
+                    tb_for_dur = float(video.time_base) if video.time_base else (1.0 / 1_000_000.0)
+                    duration = float(video.duration * tb_for_dur)
+    
+                # Frame count -----------------------
+                frame_count = video.frames
+                if not frame_count or frame_count <= 0:
+                    if duration and fps:
+                        frame_count = int(round(duration * fps))
+                    else:
+                        frame_count = None
+    
                 return {
-                    "width": None,
-                    "height": None,
-                    "fps": None,
-                    "frame_count": None,
-                    "time_base": None,
+                    "width": width,
+                    "height": height,
+                    "fps": fps,
+                    "duration": duration,
+                    "frame_count": frame_count,
+                    "time_base": time_base,
                 }
-
-            # Basic stream properties ----------
-            width = video.width
-            height = video.height
-            time_base = float(video.time_base) if video.time_base else None
-
-            # Frame rate -----------------------
-            fps = None
-            if video.average_rate:
-                fps = float(video.average_rate)
-            elif video.guessed_rate:
-                fps = float(video.guessed_rate)
-
-            # Duration -------------------------
-            duration = None
-            if container.duration and container.duration > 0:
-                duration = container.duration / 1_000_000.0
-            elif video.duration:
-                # Fallback time_base only for duration computation if missing
-                tb_for_dur = float(video.time_base) if video.time_base else (1.0 / 1_000_000.0)
-                duration = float(video.duration * tb_for_dur)
-
-            # Frame count -----------------------
-            frame_count = video.frames
-            if not frame_count or frame_count <= 0:
-                if duration and fps:
-                    frame_count = int(round(duration * fps))
-                else:
-                    frame_count = None
-
-            return {
-                "width": width,
-                "height": height,
-                "fps": fps,
-                "duration": duration,
-                "frame_count": frame_count,
-                "time_base": time_base,
-            }
 
     def keyframes(self, start_time: float = 0, end_time: float | None = None) -> Iterator[PIL.Image.Image]:
         """Lazy iterator of keyframes as PIL Images within time range."""

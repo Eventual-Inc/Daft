@@ -8,7 +8,7 @@ use rand::{SeedableRng, rngs::StdRng};
 use crate::prelude::PythonArray;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
-    datatypes::{DaftArrowBackedType, FileArray},
+    datatypes::{DaftArrowBackedType, FileArray}, file::DaftFileFormat,
 };
 
 impl<T> DataArray<T>
@@ -112,7 +112,10 @@ impl StructArray {
     }
 }
 
-impl FileArray {
+impl<T> FileArray<T>
+where
+    T: DaftFileFormat,
+{
     pub fn size_bytes(&self) -> usize {
         self.physical.size_bytes()
     }

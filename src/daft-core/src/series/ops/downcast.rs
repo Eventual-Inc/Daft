@@ -13,6 +13,7 @@ use crate::{
         logical::{DateArray, FixedShapeImageArray, TimeArray, TimestampArray},
         *,
     },
+    file::FileFormatUnknown,
     series::{Series, array_impl::ArrayWrapper},
 };
 
@@ -170,7 +171,7 @@ impl Series {
     pub fn fixed_shape_sparse_tensor(&self) -> DaftResult<&FixedShapeSparseTensorArray> {
         self.downcast()
     }
-    pub fn file(&self) -> DaftResult<&FileArray> {
+    pub fn file(&self) -> DaftResult<&FileArray<FileFormatUnknown>> {
         self.downcast()
     }
 }

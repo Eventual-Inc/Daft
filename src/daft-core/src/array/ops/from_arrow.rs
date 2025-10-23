@@ -6,9 +6,9 @@ use common_error::{DaftError, DaftResult};
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
-        DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field, FieldRef, FileType,
-        logical::LogicalArray,
+        logical::LogicalArray, DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field, FieldRef
     },
+    file::{DaftFileFormat, FileType},
     prelude::*,
     series::Series,
 };
@@ -261,4 +261,19 @@ impl_logical_from_arrow!(FixedShapeTensorType);
 impl_logical_from_arrow!(SparseTensorType);
 impl_logical_from_arrow!(FixedShapeSparseTensorType);
 impl_logical_from_arrow!(FixedShapeImageType);
-impl_logical_from_arrow!(FileType);
+impl<T> FromArrow for LogicalArray<FileType<T>>
+where
+    T: DaftFileFormat,
+{
+    fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
+        let target_convert = field.to_physical();
+        let target_convert_arrow = target_convert.dtype.to_arrow()?;
+        let physical_arrow_array = arrow_arr.convert_logical_type(target_convert_arrow);
+        let physical =
+            <<FileType<T> as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow(
+                Arc::new(target_convert),
+                physical_arrow_array,
+            )?;
+        Ok(Self::new(field, physical))
+    }
+}

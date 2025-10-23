@@ -27,9 +27,12 @@ use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero}
 use serde::Serialize;
 
 pub use crate::array::{DataArray, FixedSizeListArray, file_array::FileArray};
-use crate::array::{ListArray, StructArray, ops::as_arrow::AsArrow};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
+use crate::{
+    array::{ListArray, StructArray, ops::as_arrow::AsArrow},
+    file::{DaftFileFormat, FileType},
+};
 
 pub mod interval;
 pub mod logical;
@@ -59,6 +62,20 @@ pub trait DaftDataType: Sync + Send + Clone + 'static {
     fn get_dtype() -> DataType
     where
         Self: Sized;
+}
+
+impl<T> DaftDataType for T
+where
+    T: DaftFileFormat,
+{
+    type ArrayType = FileArray<T>;
+
+    fn get_dtype() -> DataType
+    where
+        Self: Sized,
+    {
+        DataType::File(T::get_type())
+    }
 }
 
 pub trait DaftPhysicalType: Send + Sync + DaftDataType {}
@@ -237,17 +254,21 @@ impl_daft_logical_fixed_size_list_datatype!(FixedShapeImageType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeTensorType, Unknown);
 impl_daft_logical_list_datatype!(MapType, Unknown);
 
-#[derive(Clone, Debug)]
-pub struct FileType {}
-
-impl DaftDataType for FileType {
+impl<T> DaftDataType for FileType<T>
+where
+    T: DaftFileFormat,
+{
     #[inline]
     fn get_dtype() -> DataType {
-        DataType::File(None)
+        DataType::File(T::get_type())
     }
-    type ArrayType = logical::LogicalArray<FileType>;
+    type ArrayType = logical::LogicalArray<FileType<T>>;
 }
-impl DaftLogicalType for FileType {
+
+impl<T> DaftLogicalType for FileType<T>
+where
+    T: DaftFileFormat,
+{
     type PhysicalType = StructType;
 }
 

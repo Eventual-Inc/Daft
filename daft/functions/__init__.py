@@ -62,7 +62,7 @@ from .datetime import (
 )
 from .embedding import cosine_distance
 
-from .file_ import file, file_size
+from .file_ import file, file_size, video_file
 
 from .image import (
     resize,
@@ -415,6 +415,7 @@ __all__ = [
     "upload",
     "upper",
     "value_counts",
+    "video_file",
     "week_of_year",
     "when",
     "year",
