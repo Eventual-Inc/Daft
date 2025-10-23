@@ -3305,6 +3305,7 @@ dependencies = [
  "common-arrow-ffi",
  "common-display",
  "common-error",
+ "common-file",
  "common-py-serde",
  "common-version",
  "derive_more",

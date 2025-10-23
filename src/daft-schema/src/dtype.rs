@@ -2,6 +2,7 @@ use std::fmt::{Display, Write};
 
 use arrow2::datatypes::DataType as ArrowType;
 use common_error::{DaftError, DaftResult};
+use common_file::FileFormat;
 use serde::{Deserialize, Serialize};
 
 use crate::{field::Field, image_mode::ImageMode, time_unit::TimeUnit};
@@ -136,8 +137,7 @@ pub enum DataType {
     Python,
 
     Unknown,
-
-    File,
+    File(Option<FileFormat>),
 }
 
 impl Display for DataType {
@@ -212,7 +212,8 @@ impl Display for DataType {
             #[cfg(feature = "python")]
             Self::Python => write!(f, "Python"),
             Self::Unknown => write!(f, "Unknown"),
-            Self::File => write!(f, "File"),
+            Self::File(None) => write!(f, "File"),
+            Self::File(Some(format)) => write!(f, "File[{format}]"),
         }
     }
 }
@@ -318,7 +319,7 @@ impl DataType {
             | Self::FixedShapeTensor(..)
             | Self::SparseTensor(..)
             | Self::FixedShapeSparseTensor(..)
-            | Self::File => {
+            | Self::File(..) => {
                 let physical = Box::new(self.to_physical());
                 let logical_extension = Self::Extension(
                     DAFT_SUPER_EXTENSION_NAME.into(),
@@ -404,7 +405,7 @@ impl DataType {
                     Field::new("indices", List(Box::new(minimal_indices_dtype)))
                 },
             ]),
-            File => Struct(vec![
+            File(..) => Struct(vec![
                 Field::new("discriminant", UInt8),
                 Field::new("data", Binary),
                 Field::new("url", Utf8),
@@ -710,7 +711,7 @@ impl DataType {
     #[inline]
     pub fn is_file(&self) -> bool {
         match self {
-            Self::File => true,
+            Self::File(..) => true,
             Self::Extension(_, inner, _) => inner.is_file(),
             _ => false,
         }
@@ -797,7 +798,7 @@ impl DataType {
                 | Self::SparseTensor(..)
                 | Self::FixedShapeSparseTensor(..)
                 | Self::Map { .. }
-                | Self::File
+                | Self::File(..)
         )
     }
 

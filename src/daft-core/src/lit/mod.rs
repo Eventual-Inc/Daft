@@ -329,7 +329,7 @@ impl Literal {
                     .map(|(k, v)| Field::new(k, v.get_type()))
                     .collect(),
             ),
-            Self::File(_) => DataType::File,
+            Self::File(_) => DataType::File(None), // TODO(cory): check the file type
             Self::Tensor { data, .. } => DataType::Tensor(Box::new(data.data_type().clone())),
             Self::SparseTensor {
                 values,

@@ -342,7 +342,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
 
             PythonArray::from_iter("literal", iter).into_series()
         }
-        DataType::File => {
+        DataType::File(file_type) => {
             let values = values.collect::<Vec<_>>();
 
             use common_file::FileReference;
@@ -378,7 +378,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 .unzip();
             let (files, io_confs): (Vec<Option<String>>, Vec<_>) =
                 files_and_configs.into_iter().unzip();
-            let sa_field = Field::new("literal", DataType::File.to_physical());
+            let sa_field = Field::new("literal", DataType::File(file_type).to_physical());
             let io_configs = BinaryArray::from_iter("io_config", io_confs.into_iter());
             let urls = Utf8Array::from_iter("url", files.into_iter());
             let data = BinaryArray::from_iter("data", data.into_iter());
@@ -392,7 +392,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 ],
                 validity,
             );
-            FileArray::new(Field::new("literal", DataType::File), sa).into_series()
+            FileArray::new(Field::new("literal", DataType::File(file_type)), sa).into_series()
         }
         DataType::Tensor(_) => {
             let (data, shapes) = values

@@ -48,7 +48,7 @@ impl ScalarUDF for File {
 
         let input = input.to_field(schema)?;
 
-        Ok(Field::new(input.name, DataType::File))
+        Ok(Field::new(input.name, DataType::File(None)))
     }
 }
 

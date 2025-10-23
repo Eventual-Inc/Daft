@@ -228,8 +228,6 @@ impl_daft_logical_data_array_datatype!(TimestampType, Unknown, Int64Type);
 impl_daft_logical_data_array_datatype!(DateType, Date, Int32Type);
 impl_daft_logical_data_array_datatype!(TimeType, Unknown, Int64Type);
 impl_daft_logical_data_array_datatype!(DurationType, Unknown, Int64Type);
-impl_daft_logical_data_array_datatype!(FileType, File, StructType);
-
 impl_daft_logical_data_array_datatype!(ImageType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(TensorType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(SparseTensorType, Unknown, StructType);
@@ -238,6 +236,20 @@ impl_daft_logical_fixed_size_list_datatype!(EmbeddingType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeImageType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeTensorType, Unknown);
 impl_daft_logical_list_datatype!(MapType, Unknown);
+
+#[derive(Clone, Debug)]
+pub struct FileType {}
+
+impl DaftDataType for FileType {
+    #[inline]
+    fn get_dtype() -> DataType {
+        DataType::File(None)
+    }
+    type ArrayType = logical::LogicalArray<FileType>;
+}
+impl DaftLogicalType for FileType {
+    type PhysicalType = StructType;
+}
 
 #[cfg(feature = "python")]
 #[derive(Clone, Debug)]

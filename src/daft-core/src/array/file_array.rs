@@ -33,7 +33,7 @@ impl FileArray {
         )
         .into_series();
 
-        let sa_field = Field::new("literal", DataType::File.to_physical());
+        let sa_field = Field::new("literal", DataType::File(None).to_physical());
         let io_conf: Option<Vec<u8>> =
             io_config.map(|c| bincode::serialize(&c).expect("Failed to serialize IOConfig"));
         let io_conf = BinaryArray::from_iter("io_config", std::iter::repeat_n(io_conf, urls.len()));
@@ -53,7 +53,7 @@ impl FileArray {
             ],
             urls.validity().cloned(),
         );
-        FileArray::new(Field::new(name, DataType::File), sa)
+        FileArray::new(Field::new(name, DataType::File(None)), sa)
     }
 
     pub fn new_from_data_array(name: &str, values: &BinaryArray) -> Self {
@@ -63,7 +63,7 @@ impl FileArray {
         )
         .into_series();
 
-        let fld = Field::new("literal", DataType::File.to_physical());
+        let fld = Field::new("literal", DataType::File(None).to_physical());
         let urls = Utf8Array::full_null("url", &DataType::Utf8, values.len()).into_series();
         let io_configs =
             BinaryArray::full_null("io_config", &DataType::Binary, values.len()).into_series();
@@ -77,7 +77,7 @@ impl FileArray {
             ],
             values.validity().cloned(),
         );
-        FileArray::new(Field::new(name, DataType::File), sa)
+        FileArray::new(Field::new(name, DataType::File(None)), sa)
     }
 }
 

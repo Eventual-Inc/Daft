@@ -39,6 +39,20 @@ impl FileReference {
 }
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum FileFormat {
+    Video,
+}
+
+impl std::fmt::Display for FileFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Video => write!(f, "Video"),
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum DaftFileType {
     Reference = 0,
