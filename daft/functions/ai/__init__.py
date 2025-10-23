@@ -16,6 +16,7 @@ from daft import (
 from daft.ai.provider import Provider, ProviderType, load_provider, PROVIDERS
 
 if TYPE_CHECKING:
+    from typing import Literal
     from pydantic import BaseModel
     from daft.ai.typing import Label
 
@@ -62,7 +63,7 @@ def embed_text(
     provider: str | Provider | None = None,
     model: str | None = None,
     max_retries: int = 3,
-    on_error: str = "raise",
+    on_error: Literal["raise", "log", "ignore"] = "raise",
     **options: str,
 ) -> Expression:
     """Returns an expression that embeds text using the specified embedding model and provider.
@@ -121,7 +122,7 @@ def embed_image(
     provider: str | Provider | None = None,
     model: str | None = None,
     max_retries: int = 3,
-    on_error: str = "raise",
+    on_error: Literal["raise", "log", "ignore"] = "raise",
     **options: str,
 ) -> Expression:
     """Returns an expression that embeds images using the specified image model and provider.
@@ -182,7 +183,7 @@ def classify_text(
     provider: str | Provider | None = None,
     model: str | None = None,
     max_retries: int = 3,
-    on_error: str = "raise",
+    on_error: Literal["raise", "log", "ignore"] = "raise",
     **options: str,
 ) -> Expression:
     """Returns an expression that classifies text using the specified model and provider.
@@ -247,6 +248,8 @@ def prompt(
     system_message: str | None = None,
     provider: str | Provider | None = None,
     model: str | None = None,
+    max_retries: int = 3,
+    on_error: Literal["raise", "log", "ignore"] = "raise",
     **options: str,
 ) -> Expression:
     from daft.udf import cls as daft_cls, method
@@ -281,6 +284,8 @@ def prompt(
         _PrompterExpression,
         gpus=udf_options.num_gpus or 0,
         max_concurrency=udf_options.concurrency,
+        max_retries=max_retries,
+        on_error=on_error,
     )
 
     # Instantiate the wrapped class with the prompter descriptor

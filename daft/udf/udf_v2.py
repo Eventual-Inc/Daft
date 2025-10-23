@@ -7,16 +7,10 @@ import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Generator, Iterator
 from dataclasses import dataclass, field
-from typing import (
-    Any,
-    Callable,
-    Generic,
-    TypeVar,
-    get_args,
-    get_origin,
-    get_type_hints,
-    overload,
-)
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, get_args, get_origin, get_type_hints, overload
+
+if TYPE_CHECKING:
+    from typing import Literal
 
 if sys.version_info < (3, 10):
     from typing_extensions import Concatenate, ParamSpec
@@ -76,7 +70,7 @@ class Func(Generic[P, T, C]):
         is_batch: bool,
         batch_size: int | None,
         max_retries: int | None,
-        on_error: str | None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Func[P, T, None]:
         # create a class instance with no setup method
         class NoopCls(ClsBase[None]):
@@ -119,7 +113,7 @@ class Func(Generic[P, T, C]):
         use_process: bool | None,
         max_concurrency: int | None,
         max_retries: int | None,
-        on_error: str | None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Func[P, T, C]:
         is_generator = inspect.isgeneratorfunction(method)
         is_async = inspect.iscoroutinefunction(method)
@@ -300,7 +294,7 @@ def mark_cls_method(
     is_batch: bool,
     batch_size: int | None,
     max_retries: int | None = None,
-    on_error: str | None = None,
+    on_error: Literal["raise", "log", "ignore"] | None = None,
 ) -> Callable[P, T]:
     """Mark a Daft class method as a Daft method, along with decorator arguments."""
     setattr(method, RETURN_DTYPE_ATTR, return_dtype)
@@ -332,7 +326,7 @@ def wrap_cls(
     use_process: bool | None,
     max_concurrency: int | None,
     max_retries: int | None,
-    on_error: str | None,
+    on_error: Literal["raise", "log", "ignore"] | None = None,
 ) -> type:
     class Cls(ClsBase[cls]):  # type: ignore[valid-type]
         def __init__(self, *args: Any, **kwargs: Any) -> None:

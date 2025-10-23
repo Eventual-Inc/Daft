@@ -15,6 +15,7 @@ P = ParamSpec("P")
 T = TypeVar("T")
 
 if TYPE_CHECKING:
+    from typing import Literal
     from daft.datatype import DataTypeLike
 
 
@@ -27,7 +28,7 @@ class _FuncDecorator:
         unnest: bool = False,
         use_process: bool | None = None,
         max_retries: int | None = None,
-        on_error: str | None = None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Callable[[Callable[P, T]], Func[P, T, None]]: ...
     @overload
     def __call__(
@@ -38,7 +39,7 @@ class _FuncDecorator:
         unnest: bool = False,
         use_process: bool | None = None,
         max_retries: int | None = None,
-        on_error: str | None = None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Func[P, T, None]: ...
 
     def __call__(
@@ -49,7 +50,7 @@ class _FuncDecorator:
         unnest: bool = False,
         use_process: bool | None = None,
         max_retries: int | None = None,
-        on_error: str | None = None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Callable[[Callable[P, T]], Func[P, T, None]] | Func[P, T, None]:
         """Decorator to convert a Python function into a Daft user-defined function.
 
@@ -236,7 +237,7 @@ class _FuncDecorator:
         use_process: bool | None = None,
         batch_size: int | None = None,
         max_retries: int | None = None,
-        on_error: str | None = None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Callable[[Callable[P, T]], Func[P, T, None]]:
         """Decorator to convert a Python function into a Daft user-defined batch function.
 
@@ -319,11 +320,22 @@ func = _FuncDecorator()
 
 @overload
 def cls(
-    *, gpus: int = 0, use_process: bool | None = None, max_concurrency: int | None = None
+    *,
+    gpus: int = 0,
+    use_process: bool | None = None,
+    max_concurrency: int | None = None,
+    max_retries: int | None = None,
+    on_error: Literal["raise", "log", "ignore"] | None = None,
 ) -> Callable[[type], type]: ...
 @overload
 def cls(
-    class_: type, *, gpus: int = 0, use_process: bool | None = None, max_concurrency: int | None = None
+    class_: type,
+    *,
+    gpus: int = 0,
+    use_process: bool | None = None,
+    max_concurrency: int | None = None,
+    max_retries: int | None = None,
+    on_error: Literal["raise", "log", "ignore"] | None = None,
 ) -> type: ...
 def cls(
     class_: type | None = None,
@@ -332,7 +344,7 @@ def cls(
     use_process: bool | None = None,
     max_concurrency: int | None = None,
     max_retries: int | None = None,
-    on_error: str | None = None,
+    on_error: Literal["raise", "log", "ignore"] | None = None,
 ) -> type | Callable[[type], type]:
     """Decorator to convert a Python class into a Daft user-defined class.
 
@@ -431,7 +443,7 @@ class _MethodDecorator:
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
         max_retries: int | None = None,
-        on_error: str | None = None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Callable[P, T] | Callable[[Callable[P, T]], Callable[P, T]]:
         """Decorator to convert a Python method into a Daft user-defined function. This should be used in a class that is decorated with `@daft.cls`.
 
@@ -460,7 +472,7 @@ class _MethodDecorator:
         unnest: bool = False,
         batch_size: int | None = None,
         max_retries: int | None = None,
-        on_error: str | None = None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Callable[[Callable[P, T]], Callable[P, T]]:
         """Decorator to convert a Python method into a Daft user-defined batch function. This should be used in a class that is decorated with `@daft.cls`.
 

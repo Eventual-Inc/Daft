@@ -23,6 +23,7 @@ from daft.series import Series
 
 if TYPE_CHECKING:
     from collections.abc import Generator
+    from typing import Literal
 
 
 InitArgsType: TypeAlias = Optional[tuple[tuple[Any, ...], dict[str, Any]]]
@@ -479,7 +480,7 @@ def udf(
     concurrency: int | None = None,
     use_process: bool | None = None,
     max_retries: int | None = None,
-    on_error: str | None = None,
+    on_error: Literal["raise", "log", "ignore"] | None = None,
 ) -> Callable[[UserDefinedPyFuncLike], UDF]:
     """`@udf` Decorator to convert a Python function/class into a `UDF`.
 
