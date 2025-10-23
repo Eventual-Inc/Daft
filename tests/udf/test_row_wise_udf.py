@@ -220,6 +220,7 @@ def test_rowwise_retry_expected_to_fail_with_raise():
 
     try:
         df.select(raise_err(col("value"))).to_pydict()
+        pytest.fail("Expected ValueError")
     except ValueError:
         pass
 
@@ -233,5 +234,6 @@ def test_rowwise_retry_defaults_to_raise_and_zero_retries():
 
     try:
         df.select(raise_err(col("value"))).to_pydict()
+        pytest.fail("Expected ValueError")
     except ValueError:
         pass
