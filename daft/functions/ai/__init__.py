@@ -80,6 +80,30 @@ def embed_text(
 
     Returns:
         Expression (Embedding Expression): An expression representing the embedded text vectors.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import embed_text
+        >>> df = daft.from_pydict({"text": ["Hello World"]})
+        >>> # Embed Text with Defaults
+        >>> df = df.with_column(
+        ...     "embeddings",
+        ...     embed_text(
+        ...         daft.col("image"),
+        ...         provider="openai",  # Ensure OPENAI_API_KEY is set
+        ...         model="text-embedding-3-small",
+        ...     ),
+        ... )
+        >>> df.show()
+        ╭─────────────┬──────────────────────────╮
+        │ text        ┆ embeddings               │
+        │ ---         ┆ ---                      │
+        │ String      ┆ Embedding[Float32; 1536] │
+        ╞═════════════╪══════════════════════════╡
+        │ Hello World ┆ ▆█▆▆▆▃▆▆▂▄▃▂▃▃▄▁▃▅▂▃▂▂▂▂ │
+        ╰─────────────┴──────────────────────────╯
+        <BLANKLINE>
+        (Showing first 1 of 1 rows)
     """
     from daft.ai._expressions import _TextEmbedderExpression
     from daft.ai.protocols import TextEmbedder
@@ -120,6 +144,43 @@ def embed_image(
 
     Returns:
         Expression (Embedding Expression): An expression representing the embedded image vectors.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import embed_image, decode_image
+        >>> df = (
+        ...     # Discover a few images from HuggingFace
+        ...     daft.from_glob_path("hf://datasets/datasets-examples/doc-image-3/images")
+        ...     # Read the 4 PNG, JPEG, TIFF, WEBP Images
+        ...     .with_column("image_bytes", daft.col("path").url.download())
+        ...     # Decode the image bytes into a daft Image DataType
+        ...     .with_column("image_type", decode_image(daft.col("image_bytes")))
+        ...     # Convert Image to RGB and resize the image to 288x288
+        ...     .with_column("image_resized", daft.col("image_type").convert_image("RGB").resize(288, 288))
+        ...     # Embed the image
+        ...     .with_column(
+        ...         "image_embeddings",
+        ...         embed_image(
+        ...             daft.col("image_resized"), provider="transformers", model="apple/aimv2-large-patch14-224-lit"
+        ...         ),
+        ...     )
+        ... )
+        >>> df.show()
+        ╭────────────────────────────────┬─────────┬───────────────┬──────────────┬───────────────────────┬──────────────────────────╮
+        │ path                           ┆ size    ┆ image_bytes   ┆ image_type   ┆ image_resized         ┆ image_embeddings         │
+        │ ---                            ┆ ---     ┆ ---           ┆ ---          ┆ ---                   ┆ ---                      │
+        │ String                         ┆ Int64   ┆ Binary        ┆ Image[MIXED] ┆ Image[RGB; 288 x 288] ┆ Embedding[Float32; 768]  │
+        ╞════════════════════════════════╪═════════╪═══════════════╪══════════════╪═══════════════════════╪══════════════════════════╡
+        │ hf://datasets/datasets-exampl… ┆ 113469  ┆ ...           ┆ <Image>      ┆ <FixedShapeImage>     ┆ ▃▅▅▆▆▂▅▆▅▇█▂▂▄▅▂▆▃▃▅▁▇▃▅ │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ hf://datasets/datasets-exampl… ┆ 206898  ┆ ...           ┆ <Image>      ┆ <FixedShapeImage>     ┆ ▃▃▄▆▄▅▃▄▅▅▅▃▂▇▁▁▁▂▃▅▄█▃▅ │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ hf://datasets/datasets-exampl… ┆ 1871034 ┆ ...           ┆ <Image>      ┆ <FixedShapeImage>     ┆ ▂▃▃▃▄▄▃▆▆▄▅▂▁▃▁▄▃▅▄▄▂█▆▆ │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ hf://datasets/datasets-exampl… ┆ 22022   ┆ ...           ┆ <Image>      ┆ <FixedShapeImage>     ┆ ▄▂▂▅▆▆▅▇▆▄▅▆▃▅▅▁▃▄▄▄▃█▃▆ │
+        ╰────────────────────────────────┴─────────┴───────────────┴──────────────┴───────────────────────┴──────────────────────────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
     """
     from daft.ai._expressions import _ImageEmbedderExpression
     from daft.ai.protocols import ImageEmbedder
@@ -173,6 +234,30 @@ def classify_text(
 
     Returns:
         Expression (String Expression): An expression representing the most-probable label string.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import classify_text
+        >>> df = daft.from_pydict({"text": ["Daft is wicked fast!"]})
+        >>> df = df.with_column(
+        ...     "label",
+        ...     classify_text(
+        ...         daft.col("text"),
+        ...         labels=["Positive", "Negative"],
+        ...         provider="transformers",
+        ...         model="tabularisai/multilingual-sentiment-analysis",
+        ...     ),
+        ... )
+        >>> df.show()
+        ╭─────────────────────┬───────────╮
+        │ text                ┆ label     │
+        │ ---                 ┆ ---       │
+        │ String              ┆ String    │
+        ╞═════════════════════╪═══════════╡
+        │ Daft is wicked fast!┆ Positive  │
+        ╰─────────────────────┴───────────╯
+        <BLANKLINE>
+        (Showing first 1 of 1 rows)
     """
     from daft.ai._expressions import _TextClassificationExpression
     from daft.ai.protocols import TextClassifier
@@ -224,6 +309,46 @@ def classify_image(
 
     Returns:
         Expression (String Expression): An expression representing the most-probable label string.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import classify_image, decode_image
+        >>> df = (
+        ...     # Discover a few images from HuggingFace
+        ...     daft.from_glob_path("hf://datasets/datasets-examples/doc-image-3/images")
+        ...     # Read the 4 PNG, JPEG, TIFF, WEBP Images
+        ...     .with_column("image_bytes", daft.col("path").url.download())
+        ...     # Decode the image bytes into a daft Image DataType
+        ...     .with_column("image_type", decode_image(daft.col("image_bytes")))
+        ...     # Convert Image to RGB and resize the image to 288x288
+        ...     .with_column("image_resized", daft.col("image_type").convert_image("RGB").resize(288, 288))
+        ...     # Classify the image
+        ...     .with_column(
+        ...         "image_label",
+        ...         classify_image(
+        ...             daft.col("image_resized"),
+        ...             labels=["bulbasaur", "catapie", "voltorb", "electrode"],
+        ...             provider="transformers",
+        ...             model="google/vit-base-patch16-224",
+        ...         ),
+        ...     )
+        ... )
+        >>> df.show()
+        ╭────────────────────────────────┬─────────┬────────────────┬──────────────┬───────────────────────┬───────────────╮
+        │ path                           ┆ size    ┆ image_bytes    ┆ image_type   ┆ image_resized         ┆ image_labels  │
+        │ ---                            ┆ ---     ┆ ---            ┆ ---          ┆ ---                   ┆ ---           │
+        │ String                         ┆ Int64   ┆ Binary         ┆ Image[MIXED] ┆ Image[RGB; 288 x 288] ┆ String        │
+        ╞════════════════════════════════╪═════════╪════════════════╪══════════════╪═══════════════════════╪═══════════════╡
+        │ hf://datasets/datasets-exampl… ┆ 113469  ┆ ...            ┆ <Image>      ┆ <FixedShapeImage>     ┆ bulbasaur     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ hf://datasets/datasets-exampl… ┆ 206898  ┆ ...            ┆ <Image>      ┆ <FixedShapeImage>     ┆ catapie       │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ hf://datasets/datasets-exampl… ┆ 1871034 ┆ ...            ┆ <Image>      ┆ <FixedShapeImage>     ┆ voltorb       │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ hf://datasets/datasets-exampl… ┆ 22022   ┆ ...            ┆ <Image>      ┆ <FixedShapeImage>     ┆ electrode     │
+        ╰────────────────────────────────┴─────────┴────────────────┴──────────────┴───────────────────────┴───────────────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
     """
     from daft.ai._expressions import _ImageClassificationExpression
     from daft.ai.protocols import ImageClassifier
@@ -260,6 +385,120 @@ def prompt(
     model: str | None = None,
     **options: str,
 ) -> Expression:
+    """Returns an expression that prompts a large language model using the specified model and provider.
+
+    Args:
+        messages (Expression): The input messages column expression.
+        return_format (BaseModel | None): The return format for the prompt.
+        system_message (str | None): The system message for the prompt.
+        provider (str | Provider | None): The provider to use for the prompt.
+        model (str | None): The model to use for the prompt.
+        **options: Any additional options to pass for the prompt.
+
+    Returns:
+        Expression (String Expression): An expression representing the prompt result.
+
+    Examples:
+        Basic Usage:
+        >>> import daft
+        >>> from daft.ai.openai.provider import OpenAIProvider
+        >>> from daft.functions.ai import prompt
+        >>> # Create a dataframe with the quotes
+        >>> df = daft.from_pydict(
+        ...     {
+        ...         "quote": [
+        ...             "I am going to be the king of the pirates!",
+        ...             "I'm going to be the next Hokage!",
+        ...         ],
+        ...     }
+        ... )
+        >>> # Use the prompt function to classify the quotes
+        >>> df = df.with_column(
+        ...     "response",
+        ...     prompt(
+        ...         daft.col("quote"),
+        ...         system_message="You are an anime expert. Classify the anime based on the text and returns the name, character, and quote.",
+        ...         provider="openai",  # Make sure OPENAI_API_KEY is set
+        ...         model="gpt-5-nano",
+        ...     ),
+        ... )
+        >>> df.show(format="fancy", max_width=120)
+        ╭───────────────────────────────────────────┬─────────────────────────────────────────────────────────╮
+        │ quote                                     ┆ response                                                │
+        ╞═══════════════════════════════════════════╪═════════════════════════════════════════════════════════╡
+        │ I am going to be the king of the pirates! ┆ **Anime Name:** *One Piece*                             │
+        │                                           ┆ **Character:** Monkey D. Luffy                          │
+        │                                           ┆ **Quote:** "I am going to be the king of the pirates!"… │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ I'm going to be the next Hokage!          ┆ **Name:** Naruto                                        │
+        │                                           ┆ **Character:** Naruto Uzumaki                           │
+        │                                           ┆ **Quote:** *"I'm going to be the next Hokage!"*         │
+        │                                           ┆                                                         │
+        │                                           ┆ This quote refl…                                        │
+        ╰───────────────────────────────────────────┴─────────────────────────────────────────────────────────╯
+
+        Structured Outputs with Custom OpenAI Provider:
+        >>> import os
+        >>> from dotenv import load_dotenv
+        >>> import daft
+        >>> from daft.ai.openai.provider import OpenAIProvider
+        >>> from daft.functions.ai import prompt
+        >>> from daft.functions import unnest
+        >>> from daft.session import Session
+        >>> from pydantic import BaseModel, Field
+        >>> # Load environment variables
+        >>> load_dotenv()
+        >>> class Anime(BaseModel):
+        >>>     show: str = Field(description="The name of the anime show")
+        >>>     character: str = Field(description="The name of the character who says the quote")
+        >>>     explanation: str = Field(description="Why the character says the quote")
+        ...
+        >>> # Create an OpenRouter provider
+        >>> openrouter_provider = OpenAIProvider(
+        >>>     name="OpenRouter",
+        >>>     base_url="https://openrouter.ai/api/v1",
+        >>>     api_key=os.environ.get("OPENROUTER_API_KEY")
+        >>> )
+        ...
+        >>> # Create a session and attach the provider
+        >>> sess = Session()
+        >>> sess.attach_provider(openrouter_provider)
+        >>> sess.set_provider("OpenRouter")
+        >>> # Create a dataframe with the quotes
+        >>> df = daft.from_pydict({
+        >>>     "quote": [
+        >>>         "I am going to be the king of the pirates!",
+        >>>         "I'm going to be the next Hokage!",
+        >>>     ],
+        >>> })
+        ...
+        >>> # Use the prompt function to classify the quotes
+        >>> df = (
+        >>>     df
+        >>>     .with_column(
+        >>>         "nemotron-response",
+        >>>         prompt(
+        >>>             daft.col("quote"),
+        >>>             system_message="Classify the anime from the quote and return the show, character name, and explanation.",
+        >>>             return_format=Anime,
+        >>>             provider=sess.get_provider("OpenRouter"),
+        >>>             model="nvidia/nemotron-nano-9b-v2:free"
+        >>>         )
+        >>>     )
+        >>>     .select("quote", unnest(daft.col("nemotron-response")))
+        >>> )
+        ...
+        >>> df.show(format="fancy", max_width=120)
+        ╭───────────────────────────────────────────┬───────────┬─────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+        │ quote                                     ┆ show      ┆ character       ┆ explanation                                                                                                            │
+        ╞═══════════════════════════════════════════╪═══════════╪═════════════════╪════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+        │ I am going to be the king of the pirates! ┆ One Piece ┆ Monkey D. Luffy ┆ Luffy famously states his dream of becoming the Pirate King throughout the series.                                     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ I'm going to be the next Hokage!          ┆ Naruto    ┆ Naruto Uzumaki  ┆ The phrase 'I'm going to be the next Hokage!' is a recurring aspiration in the *Naruto* series, particularly voiced b… │
+        ╰───────────────────────────────────────────┴───────────┴─────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+    """
     from daft.udf import cls as daft_cls, method
     from daft.ai._expressions import _PrompterExpression
 

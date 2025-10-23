@@ -1,14 +1,15 @@
-# Models and Providers
+# Contributing New AI Functions
 
-This page contains references and guides for working with Models in daft.
+This page contains references and guides for developing new AI Functions in daft.
 
-## Implementing Model Expressions (Guide)
+## Implementing New AI Functions (Guide)
 
 These steps will guide you through implementing a model expression like:
 
 - `embed_text`
 - `embed_image`
 - `classify_text`
+- `prompt`
 
 ### Step 1. Define the Protocol and Descriptor
 

@@ -4,6 +4,10 @@
     * [Installation](install.md)
     * Common Use Cases
         * [Batch Inference](use-case/batch-inference.md)
+    * AI Functions and Providers
+        * [Functions](ai/ai-functions.md)
+        * [Providers](ai/ai-providers.md)
+        * [Adding a New AI Function](ai/contributing-new-ai-functions.md)
     * Working with Modalities
         * [Modalities](modalities/index.md)
         * [Custom Modalities](modalities/custom.md)
@@ -15,8 +19,6 @@
     * Running Custom Python Code
         * [User-Defined Functions (UDFs)](custom-code/udfs.md)
         * [Next-Generation UDFs](custom-code/func.md)
-    * Models and Providers
-        * [Models and Providers](models/index.md)
     * Datasets
         * [Common Crawl](datasets/common-crawl.md)
     * Data Connectors
@@ -44,6 +46,7 @@
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning and Batching](optimization/partitioning.md)
         * [Observability](optimization/observability.md)
+    * [Sessions](sessions.md)
     * [Benchmarks](benchmarks/index.md)
     * [Community <sup>↗</sup>](http://www.daft.ai/slack)
     * [Contributing](contributing-to-daft.md)
