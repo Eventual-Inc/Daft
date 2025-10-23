@@ -468,10 +468,12 @@ class RayRunnerIO(runner_io.RunnerIO):
         )
 
 
+# add resource options
+# see more https://docs.ray.io/en/latest/ray-core/scheduling/resources.html#specify-node-resources
 def _get_ray_task_options(resource_request: ResourceRequest) -> dict[str, Any]:
-    options = {}
+    options: dict[str, Any] = {}
     # FYI: Ray's default resource behaviour is documented here:
-    # https://docs.ray.io/en/latest/ray-core/tasks/resources.html
+    # https://docs.ray.io/en/latest/ray-core/tasks.html
     if resource_request.num_cpus is not None:
         # Ray worker pool will thrash if a request comes in for fractional cpus,
         # so we floor the request to at least 1 cpu here.
@@ -484,6 +486,9 @@ def _get_ray_task_options(resource_request: ResourceRequest) -> dict[str, Any]:
         # Note that lower versions of Ray do not accept a value of 0 here,
         # so the if-clause is load-bearing.
         options["memory"] = resource_request.memory_bytes
+    if resource_request.label_selector:
+        # Use label_selector for Ray node selection (logical option)
+        options["label_selector"] = resource_request.label_selector
     return options
 
 
@@ -1060,7 +1065,11 @@ def _build_partitions(
             )
         else:
             ray_options["scheduling_strategy"] = "SPREAD"
-        build_remote_runner = build_remote.options(**ray_options).with_tracing(runner_tracer, task)
+        from daft.runners.ray_compat import normalize_ray_options_with_label_selector
+
+        build_remote_runner = build_remote.options(
+            **normalize_ray_options_with_label_selector(ray_options)
+        ).with_tracing(runner_tracer, task)
         [metadatas_ref, *partitions] = build_remote_runner.remote(
             PartitionTaskContext(job_id=job_id, task_id=task.id(), stage_id=task.stage_id),
             daft_execution_config_objref,
@@ -1077,7 +1086,11 @@ def _build_partitions(
         )
         if task.instructions and isinstance(task.instructions[0], ScanWithTask):
             ray_options["scheduling_strategy"] = "SPREAD"
-        build_remote_runner = build_remote.options(**ray_options).with_tracing(runner_tracer, task)
+        from daft.runners.ray_compat import normalize_ray_options_with_label_selector
+
+        build_remote_runner = build_remote.options(
+            **normalize_ray_options_with_label_selector(ray_options)
+        ).with_tracing(runner_tracer, task)
         [metadatas_ref, *partitions] = build_remote_runner.remote(
             PartitionTaskContext(job_id=job_id, task_id=task.id(), stage_id=task.stage_id),
             daft_execution_config_objref,
@@ -1182,6 +1195,9 @@ class RayRoundRobinActorPool:
 
     def setup(self) -> None:
         ray_options = _get_ray_task_options(self._resource_request_per_actor)
+        from daft.runners.ray_compat import normalize_ray_options_with_label_selector
+
+        ray_options = normalize_ray_options_with_label_selector(ray_options)
 
         self._actors = [
             DaftRayActor.options(name=f"rank={rank}-{self._id}", **ray_options).remote(  # type: ignore

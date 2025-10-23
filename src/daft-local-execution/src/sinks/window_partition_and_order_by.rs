@@ -188,7 +188,9 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                             };
                                             partition.window_agg_dynamic_frame(
                                                 name.clone(),
-                                                &BoundAggExpr::new_unchecked(agg_expr.clone()),
+                                                &BoundAggExpr::new_unchecked(
+                                                    agg_expr.as_ref().clone(),
+                                                ),
                                                 &params.order_by,
                                                 &params.descending,
                                                 1,

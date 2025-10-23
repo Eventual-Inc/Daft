@@ -363,7 +363,7 @@ pub enum AggExpr {
 
     #[display("{}", function_display_without_formatter(func, inputs)?)]
     MapGroups {
-        func: FunctionExpr,
+        func: Box<FunctionExpr>,
         inputs: Vec<ExprRef>,
     },
 }
@@ -371,7 +371,7 @@ pub enum AggExpr {
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum WindowExpr {
     #[display("agg({_0})")]
-    Agg(AggExpr),
+    Agg(Box<AggExpr>),
 
     #[display("row_number")]
     RowNumber,
@@ -843,7 +843,9 @@ impl WindowExpr {
 
     pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
         match self {
-            Self::Agg(agg_expr) => Self::Agg(agg_expr.with_new_children(children)),
+            Self::Agg(agg_expr) => {
+                Self::Agg(Box::new(agg_expr.as_ref().with_new_children(children)))
+            }
             Self::RowNumber => Self::RowNumber,
             Self::Rank => Self::Rank,
             Self::DenseRank => Self::DenseRank,
@@ -896,7 +898,7 @@ impl From<&WindowExpr> for ExprRef {
 
 impl From<AggExpr> for WindowExpr {
     fn from(agg_expr: AggExpr) -> Self {
-        Self::Agg(agg_expr)
+        Self::Agg(Box::new(agg_expr))
     }
 }
 
@@ -905,7 +907,7 @@ impl TryFrom<ExprRef> for WindowExpr {
 
     fn try_from(expr: ExprRef) -> Result<Self, Self::Error> {
         match expr.as_ref() {
-            Expr::Agg(agg_expr) => Ok(Self::Agg(agg_expr.clone())),
+            Expr::Agg(agg_expr) => Ok(Self::Agg(Box::new(agg_expr.clone()))),
             Expr::WindowFunction(window_expr) => Ok(window_expr.clone()),
             _ => Err(DaftError::ValueError(format!(
                 "Expected an AggExpr or WindowFunction, got {:?}",

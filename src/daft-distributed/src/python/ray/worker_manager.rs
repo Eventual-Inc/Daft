@@ -163,14 +163,19 @@ impl WorkerManager for RayWorkerManager {
     }
 
     fn try_autoscale(&self, bundles: Vec<TaskResourceRequest>) -> DaftResult<()> {
-        let (requested_num_cpus, requested_num_gpus, requested_memory_bytes) =
-            bundles.iter().fold((0.0, 0.0, 0), |acc, bundle| {
-                (
-                    acc.0 + bundle.resource_request.num_cpus().unwrap_or(0.0),
-                    acc.1 + bundle.resource_request.num_gpus().unwrap_or(0.0),
-                    acc.2 + bundle.resource_request.memory_bytes().unwrap_or(0),
-                )
-            });
+        let (requested_num_cpus, requested_num_gpus, requested_memory_bytes, label_selector) =
+            bundles
+                .iter()
+                .fold((0.0, 0.0, 0, HashMap::new()), |acc, bundle| {
+                    let label_selector =
+                        bundle.resource_request.label_selector().unwrap_or_default();
+                    (
+                        acc.0 + bundle.resource_request.num_cpus().unwrap_or(0.0),
+                        acc.1 + bundle.resource_request.num_gpus().unwrap_or(0.0),
+                        acc.2 + bundle.resource_request.memory_bytes().unwrap_or(0),
+                        label_selector,
+                    )
+                });
 
         let mut state = self
             .state
@@ -205,6 +210,7 @@ impl WorkerManager for RayWorkerManager {
                 Some(requested_num_cpus),
                 Some(requested_num_gpus),
                 Some(requested_memory_bytes),
+                Some(label_selector),
             )?;
             let python_bundles = bundles
                 .iter()

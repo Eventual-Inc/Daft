@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use common_py_serde::PyObjectWrapper;
@@ -47,14 +47,16 @@ impl UDFActors {
         let num_actors = udf_properties
             .concurrency
             .expect("ActorUDF should have concurrency specified");
-        let (gpu_request, cpu_request, memory_request) = match &udf_properties.resource_request {
-            Some(resource_request) => (
-                resource_request.num_gpus().unwrap_or(0.0),
-                resource_request.num_cpus().unwrap_or(1.0),
-                resource_request.memory_bytes().unwrap_or(0),
-            ),
-            None => (0.0, 1.0, 0),
-        };
+        let (gpu_request, cpu_request, memory_request, label_selector) =
+            match &udf_properties.resource_request {
+                Some(resource_request) => (
+                    resource_request.num_gpus().unwrap_or(0.0),
+                    resource_request.num_cpus().unwrap_or(1.0),
+                    resource_request.memory_bytes().unwrap_or(0),
+                    resource_request.label_selector().unwrap_or_default(),
+                ),
+                None => (0.0, 1.0, 0, HashMap::new()),
+            };
 
         let result: Vec<Py<PyAny>> = common_runtime::python::execute_python_coroutine(
             move |py| {
@@ -68,6 +70,7 @@ impl UDFActors {
                         gpu_request,
                         cpu_request,
                         memory_request,
+                        label_selector,
                         actor_ready_timeout,
                     ),
                 )
