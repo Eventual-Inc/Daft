@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import shutil
 import tempfile
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING
 
 from daft.daft import PyDaftFile, PyFileReference
 from daft.dependencies import av
+from daft.file.typing import VideoMetadata
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -137,15 +138,6 @@ class File:
         cls._inner = self._inner
 
         return cls
-
-
-class VideoMetadata(TypedDict):
-    width: int | None
-    height: int | None
-    fps: float | None
-    duration: float | None
-    frame_count: int | None
-    time_base: float | None
 
 
 class VideoFile(File):

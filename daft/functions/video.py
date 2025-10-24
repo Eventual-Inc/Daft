@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import daft
-from daft.file import VideoMetadata
+from daft.file.typing import VideoMetadata
 from daft.udf.udf_v2 import Func
 
 if TYPE_CHECKING:

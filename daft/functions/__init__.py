@@ -62,7 +62,7 @@ from .datetime import (
 )
 from .embedding import cosine_distance
 
-from .file_ import file, file_size, video_file
+from .file import file, file_size, video_file
 
 from .image import (
     resize,
