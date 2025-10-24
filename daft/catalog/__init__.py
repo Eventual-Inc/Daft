@@ -240,6 +240,29 @@ class Catalog(ABC):
             raise ImportError("Unity support not installed: pip install -U 'daft[unity]'")
 
     @staticmethod
+    def from_gravitino(catalog: object) -> Catalog:
+        """Create a Daft Catalog from a Gravitino client.
+
+        Args:
+            catalog (object): a Gravitino client instance
+
+        Returns:
+            Catalog: a new Catalog instance backed by the Gravitino catalog.
+
+        Examples:
+            >>> from daft.gravitino import GravitinoClient
+            >>> gravitino_client = GravitinoClient(...)
+            >>> catalog = Catalog.from_gravitino(gravitino_client)
+
+        """
+        try:
+            from daft.catalog.__gravitino import GravitinoCatalog
+
+            return GravitinoCatalog._from_obj(catalog)
+        except ImportError:
+            raise ImportError("Gravitino support not installed: pip install -U 'daft[gravitino]'")
+
+    @staticmethod
     def from_s3tables(
         table_bucket_arn: str,
         client: object | None = None,
@@ -344,7 +367,7 @@ class Catalog(ABC):
     @staticmethod
     def _from_obj(obj: object) -> Catalog:
         """Returns a Daft Catalog from a supported object type or raises a ValueError."""
-        for factory in (Catalog.from_iceberg, Catalog.from_unity):
+        for factory in (Catalog.from_iceberg, Catalog.from_unity, Catalog.from_gravitino):
             try:
                 return factory(obj)
             except ValueError:
@@ -762,8 +785,22 @@ class Table(ABC):
             raise ImportError("Unity support not installed: pip install -U 'daft[unity]'")
 
     @staticmethod
+    def from_gravitino(table: object) -> Table:
+        """Returns a Daft Table instance from a Gravitino table.
+
+        Args:
+            table (object): gravitino table instance.
+        """
+        try:
+            from daft.catalog.__gravitino import GravitinoTable
+
+            return GravitinoTable._from_obj(table)
+        except ImportError:
+            raise ImportError("Gravitino support not installed: pip install -U 'daft[gravitino]'")
+
+    @staticmethod
     def _from_obj(obj: object) -> Table:
-        for factory in (Table.from_iceberg, Table.from_unity):
+        for factory in (Table.from_iceberg, Table.from_unity, Table.from_gravitino):
             try:
                 return factory(obj)
             except ValueError:

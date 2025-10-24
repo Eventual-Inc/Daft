@@ -106,7 +106,7 @@ class GravitinoClient:
 
     >>> client = GravitinoClient("http://localhost:8090", "my_metalake", auth_type="simple", username="admin")
     >>> table = client.load_table("my_catalog.my_schema.my_table")
-    >>> df = daft.read_deltalake(table)
+    >>> df = daft.read_iceberg(table)
     """
 
     def __init__(
@@ -266,7 +266,7 @@ class GravitinoClient:
                 schema=schema_name,
                 table_type=table_data.get("type", "EXTERNAL"),
                 storage_location=table_data.get("properties", {}).get("location", ""),
-                format=table_data.get("properties", {}).get("format", "DELTA"),
+                format=table_data.get("properties", {}).get("format", "ICEBERG"),
                 properties=table_data.get("properties", {}),
             )
 

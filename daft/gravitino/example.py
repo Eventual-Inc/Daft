@@ -45,9 +45,9 @@ def example_gravitino_usage() -> None:
                 print(f"Loaded table: {table.table_info.name}")
                 print(f"Storage location: {table.table_uri}")
 
-                # Read the table with Daft (assuming it's a Delta table)
-                if table.table_info.format.upper() == "DELTA":
-                    df = daft.read_deltalake(table.table_uri, io_config=table.io_config)
+                # Read the table with Daft (assuming it's an Iceberg table)
+                if table.table_info.format.upper() == "ICEBERG":
+                    df = daft.read_iceberg(table.table_uri, io_config=table.io_config)
                     print(f"DataFrame schema: {df.schema}")
                 elif table.table_info.format.upper() == "PARQUET":
                     df = daft.read_parquet(table.table_uri, io_config=table.io_config)
