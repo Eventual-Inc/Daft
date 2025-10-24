@@ -8,19 +8,19 @@ Daft is purpose-built for scaling Multimodal AI workloads. We are rapidly expand
 
 <div class="grid cards" markdown>
 
-- [**prompt**](/en/stable/api/functions/prompt)
+- [**prompt**](../api/functions/prompt)
 
     Generate text completions and structured outputs using language models with customizable prompts and system messages.
 
-- [**embed_text**](/en/stable/api/functions/embed_text/)
+- [**embed_text**](../api/functions/embed_text/)
 
     Generate vector embeddings from text for semantic search, similarity matching, and retrieval-augmented generation (RAG) applications.
 
-- [**embed_image**](/en/stable/api/functions/embed_image/)
+- [**embed_image**](../api/functions/embed_image/)
 
     Generate vector embeddings from images for similarity search, clustering, and other machine learning tasks.
 
-- [**classify_text**](/en/stable/api/functions/classify_text/)
+- [**classify_text**](../api/functions/classify_text/)
 
     Classify text against labels using open-source models
 
