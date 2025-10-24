@@ -32,7 +32,14 @@ def get_metadata_impl(
 
 
 get_metadata = Func._from_func(
-    get_metadata_impl, return_dtype=VideoMetadata, unnest=False, use_process=None, is_batch=False, batch_size=None
+    get_metadata_impl,
+    return_dtype=VideoMetadata,
+    unnest=False,
+    use_process=None,
+    is_batch=False,
+    batch_size=None,
+    max_retries=None,
+    on_error=None,
 )
 
 
@@ -53,5 +60,12 @@ def keyframes_impl(
 
 
 keyframes = Func._from_func(
-    keyframes_impl, return_dtype=daft.DataType.python(), unnest=False, use_process=None, is_batch=False, batch_size=None
+    keyframes_impl,
+    return_dtype=daft.DataType.python(),
+    unnest=False,
+    use_process=None,
+    is_batch=False,
+    batch_size=None,
+    max_retries=None,
+    on_error=None,
 )
