@@ -14,8 +14,10 @@ from daft import (
     current_provider,
 )
 from daft.ai.provider import Provider, ProviderType, load_provider, PROVIDERS
+from daft.udf import cls as daft_cls, method
 
 if TYPE_CHECKING:
+    from typing import Literal
     from pydantic import BaseModel
     from daft.ai.typing import Label
 
@@ -111,16 +113,21 @@ def embed_text(
     # load a TextEmbedderDescriptor from the resolved provider
     text_embedder = _resolve_provider(provider, "transformers").get_text_embedder(model, **options)
 
-    # implemented as a class-based udf for now
     udf_options = text_embedder.get_udf_options()
-    expr_callable = udf(
-        return_dtype=text_embedder.get_dimensions().as_dtype(),
-        concurrency=udf_options.concurrency,
-        num_gpus=udf_options.num_gpus,
+
+    # Decorate the __call__ method with @daft.method to specify return_dtype
+    _TextEmbedderExpression.__call__ = method.batch(  # type: ignore[method-assign]
+        method=_TextEmbedderExpression.__call__, return_dtype=text_embedder.get_dimensions().dtype
+    )
+    wrapped_cls = daft_cls(
+        _TextEmbedderExpression,
+        max_concurrency=udf_options.concurrency,
+        gpus=udf_options.num_gpus or 0,
+        max_retries=udf_options.max_retries,
+        on_error=udf_options.on_error,
     )
 
-    expr = expr_callable(_TextEmbedderExpression)
-    expr = expr.with_init_args(text_embedder)
+    expr = wrapped_cls(text_embedder)
     return expr(text)
 
 
@@ -187,16 +194,22 @@ def embed_image(
 
     image_embedder = _resolve_provider(provider, "transformers").get_image_embedder(model, **options)
 
-    # implemented as a class-based udf for now
     udf_options = image_embedder.get_udf_options()
-    expr_udf = udf(
-        return_dtype=image_embedder.get_dimensions().as_dtype(),
-        concurrency=udf_options.concurrency,
-        num_gpus=udf_options.num_gpus,
+
+    # Decorate the __call__ method with @daft.method to specify return_dtype
+    _ImageEmbedderExpression.__call__ = method.batch(  # type: ignore[method-assign] # type: ignore[method-assign] # type: ignore[method-assign]
+        method=_ImageEmbedderExpression.__call__, return_dtype=image_embedder.get_dimensions().dtype
     )
 
-    expr = expr_udf(_ImageEmbedderExpression)
-    expr = expr.with_init_args(image_embedder)
+    wrapped_cls = daft_cls(
+        _ImageEmbedderExpression,
+        max_concurrency=udf_options.concurrency,
+        gpus=udf_options.num_gpus or 0,
+        max_retries=udf_options.max_retries,
+        on_error=udf_options.on_error,
+    )
+
+    expr = wrapped_cls(image_embedder)
     return expr(image)
 
 
@@ -267,16 +280,20 @@ def classify_text(
     # TODO(rchowell): classification with structured outputs will be more interesting
     label_list = [labels] if isinstance(labels, str) else labels
 
-    # implemented as a class-based udf for now
     udf_options = text_classifier.get_udf_options()
-    expr_callable = udf(
-        return_dtype=DataType.string(),
-        concurrency=udf_options.concurrency,
-        num_gpus=udf_options.num_gpus,
+    # Decorate the __call__ method with @daft.method to specify return_dtype
+    _TextClassificationExpression.__call__ = method.batch(  # type: ignore[method-assign]
+        method=_TextClassificationExpression.__call__, return_dtype=DataType.string()
+    )
+    wrapped_cls = daft_cls(
+        _TextClassificationExpression,
+        max_concurrency=udf_options.concurrency,
+        gpus=udf_options.num_gpus or 0,
+        max_retries=udf_options.max_retries,
+        on_error=udf_options.on_error,
     )
 
-    expr = expr_callable(_TextClassificationExpression)
-    expr = expr.with_init_args(text_classifier, label_list)
+    expr = wrapped_cls(text_classifier, label_list)
     return expr(text)
 
 
@@ -357,18 +374,22 @@ def classify_image(
 
     # TODO: classification with structured outputs will be more interesting
     label_list = [labels] if isinstance(labels, str) else labels
-
+    # Decorate the __call__ method with @daft.method to specify return_dtype
+    _ImageClassificationExpression.__call__ = method.batch(  # type: ignore[method-assign]
+        method=_ImageClassificationExpression.__call__,
+        return_dtype=DataType.string(),
+    )
     # implemented as a class-based udf for now
     udf_options = image_classifier.get_udf_options()
-    expr_callable = udf(
-        return_dtype=DataType.string(),
-        concurrency=udf_options.concurrency,
-        num_gpus=udf_options.num_gpus,
+    wrapped_cls = daft_cls(
+        _ImageClassificationExpression,
+        max_concurrency=udf_options.concurrency,
+        gpus=udf_options.num_gpus or 0,
+        max_retries=udf_options.max_retries,
+        on_error=udf_options.on_error,
     )
-
-    expr = expr_callable(_ImageClassificationExpression)
-    expr = expr.with_init_args(image_classifier, label_list)
-    return expr(image)
+    instance = wrapped_cls(image_classifier, label_list)
+    return instance(image)
 
 
 ##
@@ -455,10 +476,10 @@ def prompt(
         ...
         >>> # Create an OpenRouter provider
         >>> openrouter_provider = OpenAIProvider(
-        >>>     name="OpenRouter",
-        >>>     base_url="https://openrouter.ai/api/v1",
-        >>>     api_key=os.environ.get("OPENROUTER_API_KEY")
-        >>> )
+        ...     name="OpenRouter",
+        ...     base_url="https://openrouter.ai/api/v1",
+        ...     api_key=os.environ.get("OPENROUTER_API_KEY")
+        ... )
         ...
         >>> # Create a session and attach the provider
         >>> sess = Session()
@@ -466,27 +487,27 @@ def prompt(
         >>> sess.set_provider("OpenRouter")
         >>> # Create a dataframe with the quotes
         >>> df = daft.from_pydict({
-        >>>     "quote": [
-        >>>         "I am going to be the king of the pirates!",
-        >>>         "I'm going to be the next Hokage!",
-        >>>     ],
-        >>> })
+        ...     "quote": [
+        ...         "I am going to be the king of the pirates!",
+        ...         "I'm going to be the next Hokage!",
+        ...     ],
+        ... })
         ...
         >>> # Use the prompt function to classify the quotes
         >>> df = (
-        >>>     df
-        >>>     .with_column(
-        >>>         "nemotron-response",
-        >>>         prompt(
-        >>>             daft.col("quote"),
-        >>>             system_message="Classify the anime from the quote and return the show, character name, and explanation.",
-        >>>             return_format=Anime,
-        >>>             provider=sess.get_provider("OpenRouter"),
-        >>>             model="nvidia/nemotron-nano-9b-v2:free"
-        >>>         )
-        >>>     )
-        >>>     .select("quote", unnest(daft.col("nemotron-response")))
-        >>> )
+        ...     df
+        ...     .with_column(
+        ...         "nemotron-response",
+        ...         prompt(
+        ...             daft.col("quote"),
+        ...             system_message="Classify the anime from the quote and return the show, character name, and explanation.",
+        ...             return_format=Anime,
+        ...             provider=sess.get_provider("OpenRouter"),
+        ...             model="nvidia/nemotron-nano-9b-v2:free"
+        ...         )
+        ...     )
+        ...     .select("quote", unnest(daft.col("nemotron-response")))
+        ... )
         ...
         >>> df.show(format="fancy", max_width=120)
         ╭───────────────────────────────────────────┬───────────┬─────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
@@ -499,7 +520,6 @@ def prompt(
         <BLANKLINE>
         (Showing first 2 of 2 rows)
     """
-    from daft.udf import cls as daft_cls, method
     from daft.ai._expressions import _PrompterExpression
 
     # Add return_format to options for the provider
@@ -531,6 +551,8 @@ def prompt(
         _PrompterExpression,
         gpus=udf_options.num_gpus or 0,
         max_concurrency=udf_options.concurrency,
+        max_retries=udf_options.max_retries,
+        on_error=udf_options.on_error,
     )
 
     # Instantiate the wrapped class with the prompter descriptor
