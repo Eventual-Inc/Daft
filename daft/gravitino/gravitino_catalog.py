@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import dataclasses
+import re
 import warnings
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-import requests
-
-from daft.io import AzureConfig, IOConfig, S3Config
+from daft.dependencies import requests
+from daft.io import AzureConfig, GravitinoConfig, IOConfig, S3Config
 
 
 @dataclasses.dataclass(frozen=True)
@@ -68,18 +68,29 @@ def _io_config_from_storage_location(storage_location: str, properties: dict[str
 
     if scheme == "s3" or scheme == "s3a":
         # Extract S3 credentials from properties if available
-        access_key = properties.get("s3.access-key-id")
-        secret_key = properties.get("s3.secret-access-key")
+        access_key = properties.get("s3-access-key-id")
+        secret_key = properties.get("s3-secret-access-key")
+        endpoint_url = properties.get("s3-endpoint")
         session_token = properties.get("s3.session-token")
+        region_name = properties.get("s3-region")
+
+        # Try to extract region from endpoint URL if not explicitly provided
+        if not region_name and endpoint_url:
+            # Match patterns like "s3.ap-northeast-1.amazonaws.com" or "s3-ap-northeast-1.amazonaws.com"
+            region_match = re.search(r"s3[.-]([a-z0-9-]+)\.amazonaws\.com", endpoint_url)
+            if region_match:
+                region_name = region_match.group(1)
 
         if access_key and secret_key:
-            return IOConfig(
-                s3=S3Config(
-                    key_id=access_key,
-                    access_key=secret_key,
-                    session_token=session_token,
-                )
+            s3_config = S3Config(
+                region_name=region_name,
+                key_id=access_key,
+                access_key=secret_key,
+                endpoint_url=endpoint_url,
+                session_token=session_token,
             )
+
+            return IOConfig(s3=s3_config)
         return None
     elif scheme == "gcs" or scheme == "gs":
         # GCS configuration would go here
@@ -106,7 +117,7 @@ class GravitinoClient:
 
     >>> client = GravitinoClient("http://localhost:8090", "my_metalake", auth_type="simple", username="admin")
     >>> table = client.load_table("my_catalog.my_schema.my_table")
-    >>> df = daft.read_deltalake(table)
+    >>> df = daft.read_iceberg(table)
     """
 
     def __init__(
@@ -152,22 +163,12 @@ class GravitinoClient:
         response.raise_for_status()
         return response.json()
 
-    def list_metalakes(self) -> list[str]:
-        """List all available metalakes."""
-        try:
-            response = self._make_request("GET", "/metalakes")
-            metalakes = response.get("metalakes", [])
-            return [metalake.get("name", "") for metalake in metalakes if metalake.get("name")]
-        except Exception as e:
-            warnings.warn(f"Failed to list metalakes: {e}")
-            return []
-
     def list_catalogs(self) -> list[str]:
         """List all available catalogs in the metalake."""
         try:
             response = self._make_request("GET", f"/metalakes/{self._metalake_name}/catalogs")
-            catalogs = response.get("catalogs", [])
-            return [catalog.get("name", "") for catalog in catalogs if catalog.get("name")]
+            identifiers = response.get("identifiers", [])
+            return [identifier.get("name", "") for identifier in identifiers if identifier.get("name")]
         except Exception as e:
             warnings.warn(f"Failed to list catalogs: {e}")
             return []
@@ -207,6 +208,17 @@ class GravitinoClient:
         """List schemas in a catalog."""
         try:
             response = self._make_request("GET", f"/metalakes/{self._metalake_name}/catalogs/{catalog_name}/schemas")
+
+            # Try new format with identifiers first
+            if "identifiers" in response:
+                identifiers = response.get("identifiers", [])
+                return [
+                    f"{catalog_name}.{identifier.get('name', '')}"
+                    for identifier in identifiers
+                    if identifier.get("name")
+                ]
+
+            # Fall back to old format for backward compatibility
             schemas = response.get("schemas", [])
             return [f"{catalog_name}.{schema.get('name', '')}" for schema in schemas if schema.get("name")]
         except Exception as e:
@@ -226,6 +238,17 @@ class GravitinoClient:
             response = self._make_request(
                 "GET", f"/metalakes/{self._metalake_name}/catalogs/{catalog_name}/schemas/{schema_name_only}/tables"
             )
+
+            # Try new format with identifiers first
+            if "identifiers" in response:
+                identifiers = response.get("identifiers", [])
+                return [
+                    f"{catalog_name}.{schema_name_only}.{identifier.get('name', '')}"
+                    for identifier in identifiers
+                    if identifier.get("name")
+                ]
+
+            # Fall back to old format for backward compatibility
             tables = response.get("tables", [])
             return [
                 f"{catalog_name}.{schema_name_only}.{table.get('name', '')}" for table in tables if table.get("name")
@@ -260,14 +283,37 @@ class GravitinoClient:
             )
             table_data = response.get("table", {})
 
+            # Handle Gravitino 1.0+ API format with storageLocations for tables
+            storage_locations = table_data.get("storageLocations", {})
+            properties = table_data.get("properties", {})
+
+            # Determine the storage location to use
+            storage_location = ""
+            if storage_locations:
+                # Use the default location specified in properties, or fall back to "default" key
+                default_location_name = properties.get("default-location-name", "default")
+                storage_location = storage_locations.get(default_location_name, "")
+
+                # If default location not found, use the first available location
+                if not storage_location and storage_locations:
+                    storage_location = next(iter(storage_locations.values()))
+            else:
+                # Fallback to old API format for backward compatibility
+                storage_location = properties.get("location", "")
+
+            # Convert Gravitino file URL format to Daft-compatible format
+            # Gravitino returns "file:/path" but Daft expects "file:///path"
+            if storage_location.startswith("file:/") and not storage_location.startswith("file:///"):
+                storage_location = storage_location.replace("file:/", "file:///", 1)
+
             table_info = GravitinoTableInfo(
                 name=table_data.get("name", table_name_only),
                 catalog=catalog_name,
                 schema=schema_name,
-                table_type=table_data.get("type", "EXTERNAL"),
-                storage_location=table_data.get("properties", {}).get("location", ""),
-                format=table_data.get("properties", {}).get("format", "DELTA"),
-                properties=table_data.get("properties", {}),
+                table_type=table_data.get("provider", ""),
+                storage_location=storage_location,
+                format=properties.get("format", "ICEBERG"),
+                properties=properties,
             )
 
         except requests.exceptions.HTTPError as e:
@@ -309,13 +355,44 @@ class GravitinoClient:
             )
             fileset_data = response.get("fileset", {})
 
+            # Handle Gravitino 1.0+ API format with storageLocations
+            storage_locations = fileset_data.get("storageLocations", {})
+            properties = fileset_data.get("properties", {})
+
+            # Determine the storage location to use
+            storage_location = ""
+            if storage_locations:
+                # Use the default location specified in properties, or fall back to "default" key
+                default_location_name = properties.get("default-location-name", "default")
+                storage_location = storage_locations.get(default_location_name, "")
+
+                # If default location not found, use the first available location
+                if not storage_location and storage_locations:
+                    storage_location = next(iter(storage_locations.values()))
+            else:
+                # Fallback to old API format for backward compatibility
+                storage_location = properties.get("location", "")
+
+            # Convert Gravitino URL formats to Daft-compatible formats
+            # Gravitino returns "file:/path" but Daft expects "file:///path"
+            if storage_location.startswith("file:/") and not storage_location.startswith("file:///"):
+                storage_location = storage_location.replace("file:/", "file:///", 1)
+
+            fileset_catalog = self.load_catalog(catalog_name)
+            catalog_properties = fileset_catalog.properties
+
+            # Merge catalog properties into fileset properties
+            # Fileset properties take precedence over catalog properties
+            merged_properties = catalog_properties.copy()
+            merged_properties.update(properties)
+
             fileset_info = GravitinoFilesetInfo(
                 name=fileset_data.get("name", fileset_name_only),
                 catalog=catalog_name,
                 schema=schema_name,
                 fileset_type=fileset_data.get("type", "EXTERNAL"),
-                storage_location=fileset_data.get("properties", {}).get("location", ""),
-                properties=fileset_data.get("properties", {}),
+                storage_location=storage_location,
+                properties=merged_properties,
             )
 
             # Create IO config from fileset properties
@@ -329,10 +406,16 @@ class GravitinoClient:
     def to_io_config(self) -> IOConfig:
         """Convert client configuration to IOConfig.
 
-        Note: Gravitino doesn't have a direct IOConfig equivalent like Unity Catalog,
-        so this returns a basic IOConfig. Specific credentials should be handled
-        per table/fileset.
+        Returns an IOConfig with only the Gravitino configuration from this client.
+        S3 and other storage credentials are handled per-fileset by the Gravitino source.
         """
-        # Gravitino doesn't have a unified credential system like Unity Catalog
-        # Credentials are typically managed per table/fileset
-        return IOConfig()
+        gravitino_config = GravitinoConfig(
+            endpoint=self._endpoint,
+            metalake_name=self._metalake_name,
+            auth_type=self._auth_type,
+            username=self._username,
+            password=self._password,
+            token=self._token,
+        )
+        # Only include Gravitino config - let Gravitino source handle storage credentials
+        return IOConfig(gravitino=gravitino_config)

@@ -1,0 +1,9 @@
+services:
+  gravitino:
+    image: apache/gravitino:1.0.1
+    container_name: daft-gravitino
+    ports:
+    - "${GRAVITINO_PORT:-8090}:8090"
+    environment:
+      GRAVITINO_HTTP_PORT: 8090
+    restart: unless-stopped

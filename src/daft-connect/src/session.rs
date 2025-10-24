@@ -74,6 +74,7 @@ impl ConnectSession {
             unity,
             hf,
             mut tos,
+            gravitino,
         } = get_context().io_config();
 
         self.s3_config_helper(&mut s3)?;
@@ -90,6 +91,7 @@ impl ConnectSession {
             unity,
             hf,
             tos,
+            gravitino,
         })
     }
 

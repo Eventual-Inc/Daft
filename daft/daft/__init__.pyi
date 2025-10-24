@@ -730,6 +730,37 @@ class UnityConfig:
         """Replaces values if provided, returning a new UnityConfig."""
         ...
 
+class GravitinoConfig:
+    """I/O configuration for Gravitino filesets."""
+
+    endpoint: str | None
+    metalake_name: str | None
+    auth_type: str | None
+    username: str | None
+    password: str | None
+    token: str | None
+
+    def __init__(
+        self,
+        endpoint: str | None,
+        metalake_name: str | None,
+        auth_type: str | None,
+        username: str | None,
+        password: str | None,
+        token: str | None,
+    ): ...
+    def replace(
+        self,
+        endpoint: str | None,
+        metalake_name: str | None,
+        auth_type: str | None,
+        username: str | None,
+        password: str | None,
+        token: str | None,
+    ) -> GravitinoConfig:
+        """Replaces values if provided, returning a new GravitinoConfig."""
+        ...
+
 class HuggingFaceConfig:
     """I/O configuration for accessing Hugging Face datasets.
 
@@ -869,6 +900,7 @@ class IOConfig:
     unity: UnityConfig
     hf: HuggingFaceConfig
     tos: TosConfig
+    gravitino: GravitinoConfig
 
     def __init__(
         self,
@@ -879,6 +911,7 @@ class IOConfig:
         unity: UnityConfig | None = None,
         hf: HuggingFaceConfig | None = None,
         tos: TosConfig | None = None,
+        gravitino: GravitinoConfig | None = None,
     ): ...
     def replace(
         self,
@@ -889,6 +922,7 @@ class IOConfig:
         unity: UnityConfig | None = None,
         hf: HuggingFaceConfig | None = None,
         tos: TosConfig | None = None,
+        gravitino: GravitinoConfig | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig."""
         ...
@@ -2275,6 +2309,12 @@ def io_glob(
     page_size: int | None = None,
     limit: int | None = None,
 ) -> list[dict[str, Any]]: ...
+def io_put(
+    path: str,
+    data: bytes,
+    multithreaded_io: bool | None = None,
+    io_config: IOConfig | None = None,
+) -> None: ...
 
 class SystemInfo:
     """Accessor for system information."""
