@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from daft import (
     DataType,
@@ -299,3 +299,19 @@ def prompt(
 
     # Call the instance (which calls __call__ method) with the messages expression
     return instance(messages)
+
+
+def vllm_prompt(
+    messages: Expression,
+    model: str,
+    concurrency: int = 1,
+    batch_size: int | None = None,
+    engine_args: dict[str, Any] = {},
+    generate_args: dict[str, Any] = {},
+) -> Expression:
+    """(EXPERIMENTAL) Prefix-cache optimized LLM batch inference with vLLM.
+
+    Note:
+        This function is highly experimental and may not work. In addition, the API will likely change (or be removed) in the near future.
+    """
+    return Expression._from_pyexpr(messages._expr.vllm(model, concurrency, batch_size, engine_args, generate_args))

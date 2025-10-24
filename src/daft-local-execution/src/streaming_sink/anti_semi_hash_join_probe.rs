@@ -290,8 +290,10 @@ impl StreamingSink for AntiSemiProbeSink {
         }
     }
 
-    fn make_state(&self) -> Self::State {
-        AntiSemiProbeState::Building(self.probe_state_bridge.clone())
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(AntiSemiProbeState::Building(
+            self.probe_state_bridge.clone(),
+        ))
     }
 
     fn max_concurrency(&self) -> usize {

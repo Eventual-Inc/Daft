@@ -25,6 +25,7 @@ pub enum NodeType {
     Sample,
     UDFProject,
     Unpivot,
+    VLLMProject,
 
     // Blocking Sinks
     // Consumes all input MicroPartitions before producing 1-N outputs

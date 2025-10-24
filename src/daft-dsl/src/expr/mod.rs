@@ -38,7 +38,7 @@ use crate::{
     functions::{
         BuiltinScalarFn, FUNCTION_REGISTRY, FunctionArg, FunctionArgs, FunctionEvaluator,
         function_display_without_formatter, function_semantic_id,
-        python::LegacyPythonUDF,
+        python::{LegacyPythonUDF, RuntimePyObject},
         scalar::{ScalarFn, scalar_function_semantic_id},
         sketch::{HashableVecPercentiles, SketchExpr},
         struct_::StructExpr,
@@ -296,6 +296,30 @@ pub enum Expr {
 
     #[display("exists {_0}")]
     Exists(Subquery),
+
+    #[display("vllm({_0})")]
+    VLLM(VLLMExpr),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+/// Experimental expression for running cache-optimized LLM inference using vLLM.
+pub struct VLLMExpr {
+    pub model: String,
+    pub input: ExprRef,
+    pub concurrency: usize,
+    pub batch_size: Option<usize>,
+    pub engine_args: RuntimePyObject,
+    pub generate_args: RuntimePyObject,
+}
+
+impl std::fmt::Display for VLLMExpr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "vllm(model: {}, input: {}, concurrency: {}, engine_args: {:?}, generate_args: {:?})",
+            self.model, self.input, self.concurrency, self.engine_args, self.generate_args
+        )
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
@@ -1330,6 +1354,16 @@ impl Expr {
                     .join(",");
                 FieldID::new(format!("BatchPythonUDF_{name}({children_ids})"))
             }
+            Self::VLLM(VLLMExpr {
+                model,
+                input,
+                concurrency,
+                batch_size,
+                engine_args,
+                generate_args,
+            }) => FieldID::new(format!(
+                "VLLM({model}, {input}, {concurrency}, {batch_size:?}, {engine_args:?}, {generate_args:?})"
+            )),
         }
     }
 
@@ -1371,6 +1405,7 @@ impl Expr {
             Self::FillNull(expr, fill_value) => vec![expr.clone(), fill_value.clone()],
             Self::ScalarFn(ScalarFn::Builtin(sf)) => sf.inputs.clone().into_inner(),
             Self::ScalarFn(ScalarFn::Python(udf)) => udf.args(),
+            Self::VLLM(VLLMExpr { input, .. }) => vec![input.clone()],
         }
     }
 
@@ -1491,6 +1526,21 @@ impl Expr {
             Self::ScalarFn(ScalarFn::Python(udf)) => {
                 Self::ScalarFn(ScalarFn::Python(udf.with_new_children(children)))
             }
+            Self::VLLM(VLLMExpr {
+                model,
+                input: _,
+                concurrency,
+                batch_size,
+                engine_args,
+                generate_args,
+            }) => Self::VLLM(VLLMExpr {
+                model: model.clone(),
+                input: children.first().expect("Should have 1 child").clone(),
+                concurrency: *concurrency,
+                batch_size: *batch_size,
+                engine_args: engine_args.clone(),
+                generate_args: generate_args.clone(),
+            }),
         }
     }
 
@@ -1692,6 +1742,7 @@ impl Expr {
             Self::Exists(_) => Ok(Field::new("exists", DataType::Boolean)),
             Self::Over(expr, _) => expr.to_field(schema),
             Self::WindowFunction(expr) => expr.to_field(schema),
+            Self::VLLM(VLLMExpr { input, .. }) => input.to_field(schema),
         }
     }
 
@@ -1760,6 +1811,7 @@ impl Expr {
                     }
                 }
             },
+            Self::VLLM(VLLMExpr { input, .. }) => input.name(),
         }
     }
 
@@ -1846,7 +1898,8 @@ impl Expr {
                 | Expr::Exists(..)
                 | Expr::Over(..)
                 | Expr::WindowFunction(..)
-                | Expr::Column(_) => Err(io::Error::other(
+                | Expr::Column(_)
+                | Expr::VLLM(..) => Err(io::Error::other(
                     "Unsupported expression for SQL translation",
                 )),
             }
@@ -1901,6 +1954,7 @@ impl Expr {
             } => if_true.has_compute() || if_false.has_compute() || predicate.has_compute(),
             Self::InSubquery(expr, _) => expr.has_compute(),
             Self::List(..) => true,
+            Self::VLLM(..) => true,
         }
     }
 
@@ -2169,7 +2223,8 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         | Expr::Function { .. }
         | Expr::Column(_)
         | Expr::IfElse { .. }
-        | Expr::FillNull(_, _) => match expr.to_field(schema) {
+        | Expr::FillNull(_, _)
+        | Expr::VLLM(..) => match expr.to_field(schema) {
             Ok(field) if field.dtype == DataType::Boolean => 0.2,
             _ => 1.0,
         },

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use daft_core::{join::JoinType, prelude::SchemaRef};
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -144,7 +145,7 @@ impl StreamingSink for SortMergeJoinProbe {
         1
     }
 
-    fn make_state(&self) -> Self::State {
-        SortMergeJoinProbeState::Building(self.state_bridge.clone())
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(SortMergeJoinProbeState::Building(self.state_bridge.clone()))
     }
 }

@@ -285,6 +285,9 @@ impl ToFromProto for ir::Expr {
                 // todo(conner)
                 not_implemented_err!("exists")
             }
+            Self::VLLM(..) => {
+                not_implemented_err!("vllm")
+            }
         };
         Ok(proto::Expr {
             variant: Some(variant),
