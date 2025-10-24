@@ -76,9 +76,6 @@ client = GravitinoClient(
 ### Exploring the Catalog
 
 ```python
-# List available metalakes
-metalakes = client.list_metalakes()
-print(f"Metalakes: {metalakes}")
 
 # List available catalogs in the metalake
 catalogs = client.list_catalogs()
@@ -130,7 +127,7 @@ df = table.read()
 table = client.load_table("my_catalog.my_schema.my_table")
 
 # Read with Daft based on table format
-if table.table_info.format.upper() == "ICEBERG":
+if table.table_info.format.upper().startswith("ICEBERG"):
     df = daft.read_iceberg(table.table_uri, io_config=table.io_config)
 elif table.table_info.format.upper() == "PARQUET":
     df = daft.read_parquet(table.table_uri, io_config=table.io_config)
@@ -210,7 +207,6 @@ table = Table.from_gravitino(gravitino_table)
 Main client class for interacting with Gravitino.
 
 **Methods:**
-- `list_metalakes()` - List all metalakes
 - `list_catalogs()` - List all catalogs in the metalake
 - `load_catalog(catalog_name)` - Load catalog details
 - `list_schemas(catalog_name)` - List schemas in a catalog
@@ -250,6 +246,7 @@ Represents a fileset in Gravitino for file storage.
 
 - Apache Gravitino server (0.5.0+)
 - Python requests library
+- PyIceberg library for reading Iceberg tables: `pip install 'daft[iceberg]'` or `pip install pyiceberg`
 - Appropriate cloud storage credentials configured in Gravitino
 
 ## Limitations

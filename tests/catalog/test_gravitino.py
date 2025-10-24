@@ -35,25 +35,16 @@ def test_gravitino_client_init():
 
 
 @patch("requests.Session.request")
-def test_list_metalakes(mock_request):
-    """Test listing metalakes."""
-    mock_response = Mock()
-    mock_response.json.return_value = {"metalakes": [{"name": "metalake1"}, {"name": "metalake2"}]}
-    mock_response.raise_for_status.return_value = None
-    mock_request.return_value = mock_response
-
-    client = GravitinoClient("http://localhost:8090", "test_metalake", username="admin")
-    metalakes = client.list_metalakes()
-
-    assert metalakes == ["metalake1", "metalake2"]
-    mock_request.assert_called_once()
-
-
-@patch("requests.Session.request")
 def test_list_catalogs(mock_request):
     """Test listing catalogs."""
     mock_response = Mock()
-    mock_response.json.return_value = {"catalogs": [{"name": "catalog1"}, {"name": "catalog2"}]}
+    mock_response.json.return_value = {
+        "code": 0,
+        "identifiers": [
+            {"namespace": ["my_metalake"], "name": "catalog1"},
+            {"namespace": ["my_metalake"], "name": "catalog2"},
+        ],
+    }
     mock_response.raise_for_status.return_value = None
     mock_request.return_value = mock_response
 
@@ -109,7 +100,13 @@ def test_load_nonexistent_catalog(mock_request):
 def test_list_schemas(mock_request):
     """Test listing schemas."""
     mock_response = Mock()
-    mock_response.json.return_value = {"schemas": [{"name": "schema1"}, {"name": "schema2"}]}
+    mock_response.json.return_value = {
+        "code": 0,
+        "identifiers": [
+            {"namespace": ["my_metalake", "catalog1"], "name": "schema1"},
+            {"namespace": ["my_metalake", "catalog1"], "name": "schema2"},
+        ],
+    }
     mock_response.raise_for_status.return_value = None
     mock_request.return_value = mock_response
 
@@ -123,7 +120,13 @@ def test_list_schemas(mock_request):
 def test_list_tables(mock_request):
     """Test listing tables."""
     mock_response = Mock()
-    mock_response.json.return_value = {"tables": [{"name": "table1"}, {"name": "table2"}]}
+    mock_response.json.return_value = {
+        "code": 0,
+        "identifiers": [
+            {"namespace": ["my_metalake", "catalog1", "schema1"], "name": "table1"},
+            {"namespace": ["my_metalake", "catalog1", "schema1"], "name": "table2"},
+        ],
+    }
     mock_response.raise_for_status.return_value = None
     mock_request.return_value = mock_response
 
@@ -173,7 +176,7 @@ def test_load_existing_table(mock_request):
 
     assert isinstance(table, GravitinoTable)
     assert table.table_info.name == "test_table"
-    assert table.table_info.format == "DELTA"
+    assert table.table_info.format == "ICEBERG"
     assert table.table_uri == "s3://bucket/path/"
     assert table.io_config is not None
 

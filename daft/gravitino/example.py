@@ -17,10 +17,6 @@ def example_gravitino_usage() -> None:
         endpoint="http://localhost:8090", metalake_name="my_metalake", auth_type="simple", username="admin"
     )
 
-    # List available metalakes
-    metalakes = client.list_metalakes()
-    print(f"Available metalakes: {metalakes}")
-
     # List available catalogs
     catalogs = client.list_catalogs()
     print(f"Available catalogs: {catalogs}")
@@ -46,7 +42,7 @@ def example_gravitino_usage() -> None:
                 print(f"Storage location: {table.table_uri}")
 
                 # Read the table with Daft (assuming it's an Iceberg table)
-                if table.table_info.format.upper() == "ICEBERG":
+                if table.table_info.format.upper().startswith("ICEBERG"):
                     df = daft.read_iceberg(table.table_uri, io_config=table.io_config)
                     print(f"DataFrame schema: {df.schema}")
                 elif table.table_info.format.upper() == "PARQUET":

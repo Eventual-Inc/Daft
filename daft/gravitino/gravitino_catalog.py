@@ -152,22 +152,12 @@ class GravitinoClient:
         response.raise_for_status()
         return response.json()
 
-    def list_metalakes(self) -> list[str]:
-        """List all available metalakes."""
-        try:
-            response = self._make_request("GET", "/metalakes")
-            metalakes = response.get("metalakes", [])
-            return [metalake.get("name", "") for metalake in metalakes if metalake.get("name")]
-        except Exception as e:
-            warnings.warn(f"Failed to list metalakes: {e}")
-            return []
-
     def list_catalogs(self) -> list[str]:
         """List all available catalogs in the metalake."""
         try:
             response = self._make_request("GET", f"/metalakes/{self._metalake_name}/catalogs")
-            catalogs = response.get("catalogs", [])
-            return [catalog.get("name", "") for catalog in catalogs if catalog.get("name")]
+            identifiers = response.get("identifiers", [])
+            return [identifier.get("name", "") for identifier in identifiers if identifier.get("name")]
         except Exception as e:
             warnings.warn(f"Failed to list catalogs: {e}")
             return []
@@ -207,6 +197,17 @@ class GravitinoClient:
         """List schemas in a catalog."""
         try:
             response = self._make_request("GET", f"/metalakes/{self._metalake_name}/catalogs/{catalog_name}/schemas")
+
+            # Try new format with identifiers first
+            if "identifiers" in response:
+                identifiers = response.get("identifiers", [])
+                return [
+                    f"{catalog_name}.{identifier.get('name', '')}"
+                    for identifier in identifiers
+                    if identifier.get("name")
+                ]
+
+            # Fall back to old format for backward compatibility
             schemas = response.get("schemas", [])
             return [f"{catalog_name}.{schema.get('name', '')}" for schema in schemas if schema.get("name")]
         except Exception as e:
@@ -226,6 +227,17 @@ class GravitinoClient:
             response = self._make_request(
                 "GET", f"/metalakes/{self._metalake_name}/catalogs/{catalog_name}/schemas/{schema_name_only}/tables"
             )
+
+            # Try new format with identifiers first
+            if "identifiers" in response:
+                identifiers = response.get("identifiers", [])
+                return [
+                    f"{catalog_name}.{schema_name_only}.{identifier.get('name', '')}"
+                    for identifier in identifiers
+                    if identifier.get("name")
+                ]
+
+            # Fall back to old format for backward compatibility
             tables = response.get("tables", [])
             return [
                 f"{catalog_name}.{schema_name_only}.{table.get('name', '')}" for table in tables if table.get("name")
@@ -264,7 +276,7 @@ class GravitinoClient:
                 name=table_data.get("name", table_name_only),
                 catalog=catalog_name,
                 schema=schema_name,
-                table_type=table_data.get("type", "EXTERNAL"),
+                table_type=table_data.get("provider", ""),
                 storage_location=table_data.get("properties", {}).get("location", ""),
                 format=table_data.get("properties", {}).get("format", "ICEBERG"),
                 properties=table_data.get("properties", {}),

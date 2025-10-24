@@ -148,7 +148,27 @@ class GravitinoTable(Table):
     def read(self, **options: Any) -> DataFrame:
         Table._validate_options("Gravitino read", options, GravitinoTable._read_options)
 
-        return read_iceberg(self._inner, snapshot_id=options.get("snapshot_id"))
+        # For Iceberg tables, use the storage location (metadata path)
+        if self._inner.table_info.format.upper().startswith("ICEBERG"):
+            try:
+                return read_iceberg(
+                    table=self._inner.table_uri,
+                    snapshot_id=options.get("current-snapshot-id"),
+                    io_config=self._inner.io_config,
+                )
+            except ImportError as e:
+                if "pyiceberg" in str(e):
+                    raise ImportError(
+                        "PyIceberg is required to read Iceberg tables. "
+                        "Install it with: pip install 'daft[iceberg]' or pip install pyiceberg"
+                    ) from e
+                raise
+        else:
+            # For other formats, we might need different handling
+            raise NotImplementedError(
+                f"Reading {self._inner.table_info.format} format tables is not yet supported. "
+                f"Currently only ICEBERG format (and variants like ICEBERG/PARQUET) are supported."
+            )
 
     ###
     # write methods
@@ -157,9 +177,19 @@ class GravitinoTable(Table):
     def append(self, df: DataFrame, **options: Any) -> None:
         self._validate_options("Gravitino write", options, GravitinoTable._write_options)
 
-        df.write_iceberg(self._inner, mode="append")
+        if self._inner.table_info.format.upper().startswith("ICEBERG"):
+            # For Iceberg tables, we need to create a PyIceberg table object
+            # This is more complex and may require additional Gravitino integration
+            raise NotImplementedError("Writing to Iceberg tables through Gravitino is not yet supported")
+        else:
+            raise NotImplementedError(f"Writing {self._inner.table_info.format} format tables is not yet supported")
 
     def overwrite(self, df: DataFrame, **options: Any) -> None:
         self._validate_options("Gravitino write", options, GravitinoTable._write_options)
 
-        df.write_iceberg(self._inner, mode="overwrite")
+        if self._inner.table_info.format.upper().startswith("ICEBERG"):
+            # For Iceberg tables, we need to create a PyIceberg table object
+            # This is more complex and may require additional Gravitino integration
+            raise NotImplementedError("Writing to Iceberg tables through Gravitino is not yet supported")
+        else:
+            raise NotImplementedError(f"Writing {self._inner.table_info.format} format tables is not yet supported")
