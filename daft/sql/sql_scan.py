@@ -174,7 +174,7 @@ class SQLScanOperator(ScanOperator):
                 "Failed to get the number of rows: COUNT(*) query returned an unexpected number of columns."
             )
 
-        return pa_table.column(0)[0].as_py()
+        return int(pa_table.column(0)[0].as_py())
 
     def _get_partition_bounds(self, num_scan_tasks: int) -> list[Any]:
         if self._partition_col is None:

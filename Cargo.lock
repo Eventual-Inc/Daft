@@ -2671,6 +2671,7 @@ dependencies = [
  "derive_more",
  "indexmap 2.11.4",
  "itertools 0.14.0",
+ "log",
  "pyo3",
  "rstest",
  "serde",
