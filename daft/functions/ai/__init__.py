@@ -89,7 +89,7 @@ def embed_text(
         >>> df = df.with_column(
         ...     "embeddings",
         ...     embed_text(
-        ...         daft.col("image"),
+        ...         daft.col("text"),
         ...         provider="openai",  # Ensure OPENAI_API_KEY is set
         ...         model="text-embedding-3-small",
         ...     ),
@@ -417,7 +417,7 @@ def prompt(
         ...     "response",
         ...     prompt(
         ...         daft.col("quote"),
-        ...         system_message="You are an anime expert. Classify the anime based on the text and returns the name, character, and quote.",
+        ...         system_message="Classify the anime from the quote and return the show, character name, and explanation.",
         ...         provider="openai",  # Make sure OPENAI_API_KEY is set
         ...         model="gpt-5-nano",
         ...     ),

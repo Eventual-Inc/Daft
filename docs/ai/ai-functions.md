@@ -1,38 +1,38 @@
 # AI Functions Overview
 
-Daft is purpose-built for scaling Multimodal AI workloads. We are rapidly expanding support for new [AI Functions](/api/functions/\#ai-functions) covering a variety of inference tasks.
+
+!!! warning "Warning"
+
+    These APIs are early in their development. Please feel free to [open a feature request and file issues](https://github.com/Eventual-Inc/Daft/issues/new/choose).
+
+Daft is purpose-built for scaling Multimodal AI workloads. We are rapidly expanding support for new [AI Functions](../api/functions/) covering a variety of inference tasks.
 
 
 <div class="grid cards" markdown>
 
-- [**prompt**](/en/stable/api/functions/prompt/)
+- [**prompt**](/en/stable/api/functions/prompt)
 
     Generate text completions and structured outputs using language models with customizable prompts and system messages.
 
-- [**classify_text**](../api/functions/classify_text/)
-
-    Classify text against labels using open-source models
-
-- [**embed_image**](../api/functions/classify_text/)
-
-    Generate vector embeddings from images for similarity search, clustering, and other machine learning tasks.
-
-- [**embed_text**](../api/functions/classify_text/)
+- [**embed_text**](/en/stable/api/functions/embed_text/)
 
     Generate vector embeddings from text for semantic search, similarity matching, and retrieval-augmented generation (RAG) applications.
 
+- [**embed_image**](/en/stable/api/functions/embed_image/)
+
+    Generate vector embeddings from images for similarity search, clustering, and other machine learning tasks.
+
+- [**classify_text**](/en/stable/api/functions/classify_text/)
+
+    Classify text against labels using open-source models
+
 </div>
 
-!!! warning "Warning"
-
-    These APIs are early in their development. Please feel free to [open feature requests and file issues](https://github.com/Eventual-Inc/Daft/issues/new/choose). We'd love hear want you would like, thank you! 🤘
 
 
 If you would like to contribute a new AI function or would like to expand the list of supported providers, take a look at [Contributing New AI Functions](contributing-new-ai-functions.md). For more detailed information and usage patterns on using the [Providers API](../api/ai.md), see [AI Providers Overview](ai-providers.md).
 
-## Canonical Usage
-
-The canonical means of working with AI Model Functions and Providers is as follows:
+## Usage
 
 ```python
 import os
@@ -41,24 +41,18 @@ from dotenv import load_dotenv
 import daft
 from daft.ai.openai.provider import OpenAIProvider
 from daft.functions.ai import prompt
-from daft.session import Session
 
 load_dotenv()
 
-# Create an OpenRouter provider
-openrouter_provider = OpenAIProvider(
-    name="OpenRouter",
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.environ.get("OPENROUTER_API_KEY")
+daft.set_provider(
+    OpenAIProvider(
+        name="OpenRouter",
+        base_url="https://openrouter.ai/api/v1",
+        api_key=os.environ.get("OPENROUTER_API_KEY")
+    )
 )
 
-# Create a session and attach the provider
-sess = Session()
-sess.attach_provider(openrouter_provider)
-sess.set_provider("OpenRouter")
 
-
-# Create a dataframe with the quotes
 df = daft.from_pydict({
     "quote": [
         "I am going to be the king of the pirates!",
@@ -66,15 +60,14 @@ df = daft.from_pydict({
     ],
 })
 
-# Use the prompt function to classify the quotes
 df = (
     df
     .with_column(
         "response",
         prompt(
             daft.col("quote"),
-            system_message="You are an anime expert. Classify the anime based on the text and returns the name, character, and quote.",
-            provider=sess.get_provider("OpenRouter"),
+            system_message="Classify the anime from the quote and return the show, character name, and explanation.",
+            provider=daft.get_provider("OpenRouter"),
             model="nvidia/nemotron-nano-9b-v2:free"
         )
     )
@@ -99,32 +92,25 @@ df.show(format="fancy", max_width=120)
 ╰───────────────────────────────────────────┴─────────────────────────────────────────────────────────╯
 ```
 
-## AI Functions Usage Patterns
-
-
-
 ### Embedding Text with an implicit provider
 
-Setting a provider is not strictly necessary. For example, if already have `OPENAI_API_KEY` environment variable set, simply specifying `"openai"` will automatically add an `OpenAIProvider` to the global [session](../sessions.md).
+Setting a provider is not strictly necessary. For example, if already have `OPENAI_API_KEY` environment variable set, simply specifying `"openai"` will automatically add an `OpenAIProvider` to the global session.
 
 ```python
 import daft
 from daft.functions import embed_text
 
-# Grab some Text Content
 df = daft.from_pydict({"text": ["Hello World"]})
 
-# Embed Text with Defaults
 df = df.with_column(
     "embeddings",
     embed_text(
-        daft.col("image"),
+        daft.col("text"),
         provider="openai",
         model="text-embedding-3-small"
     )
 )
 
-# Display the Results
 df.show()
 ```
 
@@ -140,13 +126,14 @@ df.show()
 
 ### Embedding Images
 
-Daft Natively supports images with it's [Image DataType](../modalities/images.md). Working with images can be tricky, but daft simpilfies multimodal preprocessing with handy built-in utilities like `decode_image`, `convert_image`, and `resize`. In this example, we read 4 different image formats from HuggingFace, download their contents to bytes, and then prepare the image for inference. We'll leverage Apple's [apple/aimv2-large-patch14-224-lit](https://huggingface.co/apple/aimv2-large-patch14-224-lit) for state-of-the-art image understanding.
+Daft Natively supports images with the [Image DataType](../modalities/images.md). Working with images can be tricky, but with daft multimodal preprocessing is simplified with handy built-in utilities like `decode_image`, `convert_image`, and `resize`.
+
+In this example, we read 4 different image formats from HuggingFace, download their contents to bytes, and then prepare the image for inference. We'll leverage Apple's [apple/aimv2-large-patch14-224-lit](https://huggingface.co/apple/aimv2-large-patch14-224-lit) for state-of-the-art image understanding.
 
 ```python
 import daft
 from daft.functions import embed_image, decode_image
 
-# Embed Text with Defaults
 df = (
     # Discover a few images from HuggingFace
     daft.from_glob_path("hf://datasets/datasets-examples/doc-image-3/images")
@@ -192,14 +179,13 @@ df.show()
 
 ```
 
-### Prompt a Large Language Model like gpt-5 with OpenAI
+### Prompt GPT-5 with OpenAI
 
-Next we will
+Prompt OpenAI’s GPT-5 models via the provider shortcut to generate text responses; set `OPENAI_API_KEY` and specify the model.
 
 ```python
 import os
 import daft
-from daft.ai.openai.provider import OpenAIProvider
 from daft.functions.ai import prompt
 
 # Create a dataframe with the quotes
@@ -217,7 +203,7 @@ df = (
         "response",
         prompt(
             daft.col("quote"),
-            system_message="You are an anime expert. Classify the anime based on the text and returns the name, character, and quote.",
+            system_message="Classify the anime from the quote and return the show, character name, and explanation.",
             provider="openai", # Make sure OPENAI_API_KEY is set
             model="gpt-5-nano"
         )
@@ -244,6 +230,8 @@ df.show(format="fancy", max_width=120)
 ```
 
 ### Structured Outputs with Custom OpenAI Provider
+
+Attach a named `OpenAIProvider` (e.g., OpenRouter) to your session and use `return_format` to coerce model output into a Pydantic schema for reliable structured results.
 
 ```python
 import os
@@ -287,7 +275,7 @@ df = daft.from_pydict({
 df = (
     df
     .with_column(
-        "nemotron-response",
+        "response",
         prompt(
             daft.col("quote"),
             system_message="Classify the anime from the quote and return the show, character name, and explanation.",
@@ -296,7 +284,7 @@ df = (
             model="nvidia/nemotron-nano-9b-v2:free"
         )
     )
-    .select("quote", unnest(daft.col("nemotron-response")))
+    .select("quote", unnest(daft.col("response")))
 )
 
 df.show(format="fancy", max_width=120)
@@ -310,4 +298,37 @@ df.show(format="fancy", max_width=120)
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
 │ I'm going to be the next Hokage!          ┆ Naruto    ┆ Naruto Uzumaki  ┆ The phrase 'I'm going to be the next Hokage!' is a recurring aspiration in the *Naruto* series, particularly voiced b… │
 ╰───────────────────────────────────────────┴───────────┴─────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+```
+
+### Classify Text with Transformers
+
+Perform zero-shot text classification with Hugging Face Transformers by providing candidate labels, `provider="transformers"`, and a model.
+
+```python
+import daft
+from daft.functions import classify_text
+
+df = daft.from_pydict({"text": ["Daft is wicked fast!"]})
+
+df = df.with_column(
+    "label",
+    classify_text(
+        daft.col("text"),
+        labels=["Positive", "Negative"],
+        provider="transformers",
+        model="tabularisai/multilingual-sentiment-analysis"
+    )
+)
+
+df.show()
+```
+
+```
+╭─────────────────────┬───────────╮
+│ text                ┆ label     │
+│ ---                 ┆ ---       │
+│ String              ┆ String    │
+╞═════════════════════╪═══════════╡
+│ Daft is wicked fast!┆ Positive  │
+╰─────────────────────┴───────────╯
 ```

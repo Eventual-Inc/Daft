@@ -1,10 +1,6 @@
 # Contributing New AI Functions
 
-This page contains references and guides for developing new AI Functions in daft.
-
-## Implementing New AI Functions (Guide)
-
-These steps will guide you through implementing a model expression like:
+This page contains references and guides for developing new AI Functions in daft. These steps will guide you through implementing a model expression like:
 
 - `embed_text`
 - `embed_image`
@@ -23,7 +19,7 @@ descriptor is used to instantiate the model at runtime.
 class TextClassifier(Protocol):
     """Protocol for text classification implementations."""
 
-    def embed_text(self, text: list[str], labels: LabelLike | list[LabelLike]) -> list[Embedding]:
+    def classify_text(self, text: list[str], labels: LabelLike | list[LabelLike]) -> list[Embedding]:
         """Classifies a batch of text strings using the given label(s)."""
         ...
 

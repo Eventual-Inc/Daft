@@ -46,7 +46,6 @@
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning and Batching](optimization/partitioning.md)
         * [Observability](optimization/observability.md)
-    * [Sessions](sessions.md)
     * [Benchmarks](benchmarks/index.md)
     * [Community <sup>↗</sup>](http://www.daft.ai/slack)
     * [Contributing](contributing-to-daft.md)
