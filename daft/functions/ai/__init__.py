@@ -476,39 +476,32 @@ def prompt(
         ...
         >>> # Create an OpenRouter provider
         >>> openrouter_provider = OpenAIProvider(
-        ...     name="OpenRouter",
-        ...     base_url="https://openrouter.ai/api/v1",
-        ...     api_key=os.environ.get("OPENROUTER_API_KEY")
+        ...     name="OpenRouter", base_url="https://openrouter.ai/api/v1", api_key=os.environ.get("OPENROUTER_API_KEY")
         ... )
-        ...
         >>> # Create a session and attach the provider
         >>> sess = Session()
         >>> sess.attach_provider(openrouter_provider)
         >>> sess.set_provider("OpenRouter")
         >>> # Create a dataframe with the quotes
-        >>> df = daft.from_pydict({
-        ...     "quote": [
-        ...         "I am going to be the king of the pirates!",
-        ...         "I'm going to be the next Hokage!",
-        ...     ],
-        ... })
-        ...
-        >>> # Use the prompt function to classify the quotes
-        >>> df = (
-        ...     df
-        ...     .with_column(
-        ...         "nemotron-response",
-        ...         prompt(
-        ...             daft.col("quote"),
-        ...             system_message="Classify the anime from the quote and return the show, character name, and explanation.",
-        ...             return_format=Anime,
-        ...             provider=sess.get_provider("OpenRouter"),
-        ...             model="nvidia/nemotron-nano-9b-v2:free"
-        ...         )
-        ...     )
-        ...     .select("quote", unnest(daft.col("nemotron-response")))
+        >>> df = daft.from_pydict(
+        ...     {
+        ...         "quote": [
+        ...             "I am going to be the king of the pirates!",
+        ...             "I'm going to be the next Hokage!",
+        ...         ],
+        ...     }
         ... )
-        ...
+        >>> # Use the prompt function to classify the quotes
+        >>> df = df.with_column(
+        ...     "nemotron-response",
+        ...     prompt(
+        ...         daft.col("quote"),
+        ...         system_message="Classify the anime from the quote and return the show, character name, and explanation.",
+        ...         return_format=Anime,
+        ...         provider=sess.get_provider("OpenRouter"),
+        ...         model="nvidia/nemotron-nano-9b-v2:free",
+        ...     ),
+        ... ).select("quote", unnest(daft.col("nemotron-response")))
         >>> df.show(format="fancy", max_width=120)
         ╭───────────────────────────────────────────┬───────────┬─────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
         │ quote                                     ┆ show      ┆ character       ┆ explanation                                                                                                            │
