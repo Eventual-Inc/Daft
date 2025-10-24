@@ -102,8 +102,8 @@ impl TryFrom<u8> for FileReferenceType {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0 => Ok(FileReferenceType::Reference),
-            1 => Ok(FileReferenceType::Data),
+            0 => Ok(Self::Reference),
+            1 => Ok(Self::Data),
             _ => Err(format!("Invalid FileReferenceType discriminant: {}", value)),
         }
     }

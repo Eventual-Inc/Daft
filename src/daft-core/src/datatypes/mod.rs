@@ -262,6 +262,7 @@ where
     fn get_dtype() -> DataType {
         DataType::File(T::get_type())
     }
+    #[allow(clippy::use_self)]
     type ArrayType = logical::LogicalArray<FileType<T>>;
 }
 

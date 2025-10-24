@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import shutil
 import tempfile
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 from daft.daft import PyDaftFile, PyFileReference
 from daft.dependencies import av
@@ -10,7 +10,6 @@ from daft.dependencies import av
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from tempfile import _TemporaryFileWrapper
-    from typing import Any
 
     import PIL
 
@@ -140,6 +139,15 @@ class File:
         return cls
 
 
+class VideoMetadata(TypedDict):
+    width: int | None
+    height: int | None
+    fps: float | None
+    duration: float | None
+    frame_count: int | None
+    time_base: float | None
+
+
 class VideoFile(File):
     """A video-specific file interface that provides video operations."""
 
@@ -163,7 +171,7 @@ class VideoFile(File):
         *,
         probesize: str = "64k",
         analyzeduration_us: int = 200_000,
-    ) -> dict[str, Any]:
+    ) -> VideoMetadata:
         """Extract basic video metadata from container headers.
 
         Returns:
@@ -176,33 +184,33 @@ class VideoFile(File):
             "analyzeduration": str(analyzeduration_us),
         }
         with self.open() as f:
-
             with av.open(f, mode="r", options=options, metadata_encoding="utf-8") as container:
                 video = next(
                     (stream for stream in container.streams if stream.type == "video"),
                     None,
                 )
                 if video is None:
-                    return {
-                        "width": None,
-                        "height": None,
-                        "fps": None,
-                        "frame_count": None,
-                        "time_base": None,
-                    }
-    
+                    return VideoMetadata(
+                        width=None,
+                        height=None,
+                        fps=None,
+                        duration=None,
+                        frame_count=None,
+                        time_base=None,
+                    )
+
                 # Basic stream properties ----------
                 width = video.width
                 height = video.height
                 time_base = float(video.time_base) if video.time_base else None
-    
+
                 # Frame rate -----------------------
                 fps = None
                 if video.average_rate:
                     fps = float(video.average_rate)
                 elif video.guessed_rate:
                     fps = float(video.guessed_rate)
-    
+
                 # Duration -------------------------
                 duration = None
                 if container.duration and container.duration > 0:
@@ -211,7 +219,7 @@ class VideoFile(File):
                     # Fallback time_base only for duration computation if missing
                     tb_for_dur = float(video.time_base) if video.time_base else (1.0 / 1_000_000.0)
                     duration = float(video.duration * tb_for_dur)
-    
+
                 # Frame count -----------------------
                 frame_count = video.frames
                 if not frame_count or frame_count <= 0:
@@ -219,15 +227,15 @@ class VideoFile(File):
                         frame_count = int(round(duration * fps))
                     else:
                         frame_count = None
-    
-                return {
-                    "width": width,
-                    "height": height,
-                    "fps": fps,
-                    "duration": duration,
-                    "frame_count": frame_count,
-                    "time_base": time_base,
-                }
+
+                return VideoMetadata(
+                    width=width,
+                    height=height,
+                    fps=fps,
+                    duration=duration,
+                    frame_count=frame_count,
+                    time_base=time_base,
+                )
 
     def keyframes(self, start_time: float = 0, end_time: float | None = None) -> Iterator[PIL.Image.Image]:
         """Lazy iterator of keyframes as PIL Images within time range."""

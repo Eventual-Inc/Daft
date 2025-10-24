@@ -94,9 +94,7 @@ impl ScalarUDF for VideoFile {
                     "Invalid video file: {:?}",
                     mime_type
                 ))),
-                None => Err(DaftError::ValueError(
-                    "Cannot determine mime type".to_string(),
-                )),
+                None => Err(DaftError::ValueError("Invalid Video file".to_string())),
             }
         }
         Ok(match input.data_type() {

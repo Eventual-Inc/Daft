@@ -42,10 +42,7 @@ where
         let mut urls_arr = MutableUtf8Array::<i64>::new();
 
         for value in iter {
-            let value = match value {
-                Ok(value) => value,
-                Err(err) => return Err(err),
-            };
+            let value = value?;
             match value {
                 Some(value) => {
                     discriminant_arr.push(Some(value.get_type() as u8));

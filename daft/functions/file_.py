@@ -34,10 +34,12 @@ def video_file(filepath_or_bytes: Expression, verify: bool = False, io_config: I
     Args:
         filepath_or_bytes (String or Binary Expression):
             If the input is a string, it is assumed to be a file path and is converted to a `daft.VideoFile`.
-
             If the input is a binary column, it is converted to a `daft.VideoFile` where the entire contents are buffered in memory.
 
-        verify: If True, verify that the file exists and is a video file.
+        verify:
+            If True, verify that the file exists and is a video file.
+            If **ANY** files are not videos, this will produce an error.
+
         io_config (IOConfig, default=None): The IO configuration to use.
 
 

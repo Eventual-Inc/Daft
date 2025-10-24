@@ -39,6 +39,6 @@ where
     T: DaftFileFormat,
 {
     pub fn new(files: FileArray<T>) -> Self {
-        DaftFileIterator { files, index: 0 }
+        Self { files, index: 0 }
     }
 }

@@ -337,8 +337,8 @@ impl PyDataType {
     }
 
     #[staticmethod]
-    pub fn file() -> PyResult<Self> {
-        Ok(DataType::File(FileFormat::Unknown).into())
+    pub fn file(ff: FileFormat) -> PyResult<Self> {
+        Ok(DataType::File(ff).into())
     }
 
     pub fn to_arrow<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {

@@ -202,6 +202,7 @@ from .str import (
 )
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
+from .video import get_metadata
 from .window import (
     row_number,
     rank,
@@ -286,6 +287,7 @@ __all__ = [
     "floor",
     "format",
     "get",
+    "get_metadata",
     "hash",
     "hour",
     "ilike",
