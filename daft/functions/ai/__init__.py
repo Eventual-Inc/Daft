@@ -92,7 +92,7 @@ def embed_text(
     udf_options = text_embedder.get_udf_options()
 
     # Decorate the __call__ method with @daft.method to specify return_dtype
-    _TextEmbedderExpression.__call__ = method(  # type: ignore[method-assign]
+    _TextEmbedderExpression.__call__ = method.batch(  # type: ignore[method-assign]
         method=_TextEmbedderExpression.__call__, return_dtype=text_embedder.get_dimensions().dtype
     )
     wrapped_cls = daft_cls(
@@ -136,7 +136,7 @@ def embed_image(
     udf_options = image_embedder.get_udf_options()
 
     # Decorate the __call__ method with @daft.method to specify return_dtype
-    _ImageEmbedderExpression.__call__ = method(  # type: ignore[method-assign] # type: ignore[method-assign] # type: ignore[method-assign]
+    _ImageEmbedderExpression.__call__ = method.batch(  # type: ignore[method-assign] # type: ignore[method-assign] # type: ignore[method-assign]
         method=_ImageEmbedderExpression.__call__, return_dtype=image_embedder.get_dimensions().dtype
     )
 
@@ -197,7 +197,7 @@ def classify_text(
 
     udf_options = text_classifier.get_udf_options()
     # Decorate the __call__ method with @daft.method to specify return_dtype
-    _TextClassificationExpression.__call__ = method(  # type: ignore[method-assign]
+    _TextClassificationExpression.__call__ = method.batch(  # type: ignore[method-assign]
         method=_TextClassificationExpression.__call__, return_dtype=DataType.string()
     )
     wrapped_cls = daft_cls(
@@ -250,7 +250,7 @@ def classify_image(
     # TODO: classification with structured outputs will be more interesting
     label_list = [labels] if isinstance(labels, str) else labels
     # Decorate the __call__ method with @daft.method to specify return_dtype
-    _ImageClassificationExpression.__call__ = method(  # type: ignore[method-assign]
+    _ImageClassificationExpression.__call__ = method.batch(  # type: ignore[method-assign]
         method=_ImageClassificationExpression.__call__,
         return_dtype=DataType.string(),
     )

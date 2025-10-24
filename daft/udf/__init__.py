@@ -465,15 +465,37 @@ class _MethodDecorator:
 
         return partial_method if method is None else partial_method(method)
 
+    @overload
     def batch(
         self,
         *,
-        return_dtype: DataTypeLike,
+        return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
         batch_size: int | None = None,
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
-    ) -> Callable[[Callable[P, T]], Callable[P, T]]:
+    ) -> Callable[[Callable[P, T]], Callable[P, T]]: ...
+    @overload
+    def batch(
+        self,
+        method: Callable[P, T],
+        *,
+        return_dtype: DataTypeLike | None = None,
+        unnest: bool = False,
+        batch_size: int | None = None,
+        max_retries: int | None = None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
+    ) -> Callable[P, T]: ...
+    def batch(
+        self,
+        method: Callable[P, T] | None = None,
+        *,
+        return_dtype: DataTypeLike | None = None,
+        unnest: bool = False,
+        batch_size: int | None = None,
+        max_retries: int | None = None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
+    ) -> Callable[P, T] | Callable[[Callable[P, T]], Callable[P, T]]:
         """Decorator to convert a Python method into a Daft user-defined batch function. This should be used in a class that is decorated with `@daft.cls`.
 
         Args:
@@ -491,7 +513,7 @@ class _MethodDecorator:
         def partial_method(m: Callable[P, T]) -> Callable[P, T]:
             return mark_cls_method(m, return_dtype, unnest, True, batch_size, max_retries, on_error)
 
-        return partial_method
+        return partial_method if method is None else partial_method(method)
 
 
 method = _MethodDecorator()
