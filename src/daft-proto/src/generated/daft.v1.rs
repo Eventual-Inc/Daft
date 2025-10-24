@@ -49,18 +49,14 @@ pub mod data_type {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct FixedSizeList {
         #[prost(message, optional, boxed, tag = "1")]
-        pub element_type: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::DataType>,
-        >,
+        pub element_type: ::core::option::Option<::prost::alloc::boxed::Box<super::DataType>>,
         #[prost(uint64, tag = "2")]
         pub size: u64,
     }
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct List {
         #[prost(message, optional, boxed, tag = "1")]
-        pub element_type: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::DataType>,
-        >,
+        pub element_type: ::core::option::Option<::prost::alloc::boxed::Box<super::DataType>>,
     }
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Struct {
@@ -70,31 +66,23 @@ pub mod data_type {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Map {
         #[prost(message, optional, boxed, tag = "1")]
-        pub key_type: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::DataType>,
-        >,
+        pub key_type: ::core::option::Option<::prost::alloc::boxed::Box<super::DataType>>,
         #[prost(message, optional, boxed, tag = "2")]
-        pub value_type: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::DataType>,
-        >,
+        pub value_type: ::core::option::Option<::prost::alloc::boxed::Box<super::DataType>>,
     }
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Extension {
         #[prost(string, tag = "1")]
         pub name: ::prost::alloc::string::String,
         #[prost(message, optional, boxed, tag = "2")]
-        pub data_type: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::DataType>,
-        >,
+        pub data_type: ::core::option::Option<::prost::alloc::boxed::Box<super::DataType>>,
         #[prost(string, optional, tag = "3")]
         pub metadata: ::core::option::Option<::prost::alloc::string::String>,
     }
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Embedding {
         #[prost(message, optional, boxed, tag = "1")]
-        pub element_type: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::DataType>,
-        >,
+        pub element_type: ::core::option::Option<::prost::alloc::boxed::Box<super::DataType>>,
         #[prost(uint64, tag = "2")]
         pub size: u64,
     }
@@ -115,34 +103,26 @@ pub mod data_type {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Tensor {
         #[prost(message, optional, boxed, tag = "1")]
-        pub element_type: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::DataType>,
-        >,
+        pub element_type: ::core::option::Option<::prost::alloc::boxed::Box<super::DataType>>,
     }
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct FixedShapeTensor {
         #[prost(message, optional, boxed, tag = "1")]
-        pub element_type: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::DataType>,
-        >,
+        pub element_type: ::core::option::Option<::prost::alloc::boxed::Box<super::DataType>>,
         #[prost(uint64, repeated, tag = "2")]
         pub shape: ::prost::alloc::vec::Vec<u64>,
     }
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct SparseTensor {
         #[prost(message, optional, boxed, tag = "1")]
-        pub element_type: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::DataType>,
-        >,
+        pub element_type: ::core::option::Option<::prost::alloc::boxed::Box<super::DataType>>,
         #[prost(bool, tag = "2")]
         pub indices_offset: bool,
     }
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct FixedShapeSparseTensor {
         #[prost(message, optional, boxed, tag = "1")]
-        pub element_type: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::DataType>,
-        >,
+        pub element_type: ::core::option::Option<::prost::alloc::boxed::Box<super::DataType>>,
         #[prost(uint64, repeated, tag = "2")]
         pub shape: ::prost::alloc::vec::Vec<u64>,
         #[prost(bool, tag = "3")]
@@ -709,17 +689,7 @@ pub struct SubqueryTest {
 /// Nested message and enum types in `SubqueryTest`.
 pub mod subquery_test {
     /// EXISTS and UNIQUE are defined by SQL.
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum Test {
         Unspecified = 0,
@@ -795,9 +765,7 @@ pub mod rel {
         #[prost(message, tag = "16")]
         Explode(::prost::alloc::boxed::Box<super::RelExplode>),
         #[prost(message, tag = "17")]
-        MonotonicallyIncreasingId(
-            ::prost::alloc::boxed::Box<super::RelMonotonicallyIncreasingId>,
-        ),
+        MonotonicallyIncreasingId(::prost::alloc::boxed::Box<super::RelMonotonicallyIncreasingId>),
         #[prost(message, tag = "18")]
         Pivot(::prost::alloc::boxed::Box<super::RelPivot>),
         #[prost(message, tag = "19")]
@@ -993,9 +961,7 @@ pub mod source_info {
         #[prost(message, optional, tag = "2")]
         pub partitions: ::core::option::Option<super::PartitionFields>,
         #[prost(message, optional, boxed, tag = "3")]
-        pub pushdowns: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::Pushdowns>,
-        >,
+        pub pushdowns: ::core::option::Option<::prost::alloc::boxed::Box<super::Pushdowns>>,
         #[prost(message, optional, tag = "4")]
         pub tasks: ::core::option::Option<super::ScanTasks>,
     }
@@ -1006,9 +972,7 @@ pub mod source_info {
         #[prost(message, optional, tag = "2")]
         pub schema: ::core::option::Option<super::Schema>,
         #[prost(message, optional, boxed, tag = "3")]
-        pub pushdowns: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::Pushdowns>,
-        >,
+        pub pushdowns: ::core::option::Option<::prost::alloc::boxed::Box<super::Pushdowns>>,
         #[prost(message, optional, tag = "4")]
         pub io_config: ::core::option::Option<super::IoConfig>,
     }
@@ -1185,7 +1149,10 @@ pub struct PartitionField {
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct PartitionTransform {
-    #[prost(oneof = "partition_transform::Variant", tags = "1, 2, 4, 5, 6, 7, 8, 9")]
+    #[prost(
+        oneof = "partition_transform::Variant",
+        tags = "1, 2, 4, 5, 6, 7, 8, 9"
+    )]
     pub variant: ::core::option::Option<partition_transform::Variant>,
 }
 /// Nested message and enum types in `PartitionTransform`.
@@ -1320,17 +1287,7 @@ pub mod agg {
         #[prost(message, repeated, tag = "2")]
         pub inputs: ::prost::alloc::vec::Vec<super::Expr>,
     }
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum SketchType {
         Unspecified = 0,
