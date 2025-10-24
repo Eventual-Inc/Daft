@@ -2,8 +2,8 @@ use common_error::DaftError;
 use daft_core::{
     datatypes::FileArray,
     file::{FileFormatUnknown, FileFormatVideo, FileReference},
-    prelude::UInt64Array,
     series::IntoSeries,
+    with_match_file_types,
 };
 use daft_dsl::functions::{UnaryArg, prelude::*};
 use daft_io::IOConfig;
@@ -33,6 +33,13 @@ impl ScalarUDF for File {
         } = args.try_into()?;
 
         Ok(match input.data_type() {
+            DataType::File(FileFormat::Unknown) => input,
+            DataType::File(FileFormat::Video) => input
+                .file::<FileFormatVideo>()?
+                .clone()
+                .change_type::<FileFormatUnknown>()
+                .into_series(),
+
             DataType::Binary => {
                 FileArray::<FileFormatUnknown>::new_from_data_array(input.name(), input.binary()?)
                     .into_series()
@@ -98,6 +105,17 @@ impl ScalarUDF for VideoFile {
             }
         }
         Ok(match input.data_type() {
+            DataType::File(FileFormat::Video) => input,
+            DataType::File(FileFormat::Unknown) => {
+                let f = input.file::<FileFormatUnknown>()?.clone();
+                let files = f.change_type::<FileFormatVideo>();
+                if verify {
+                    for file in files.into_iter().flatten() {
+                        verify_file(file)?;
+                    }
+                }
+                files.into_series()
+            }
             DataType::Binary => {
                 let bin = input.binary()?;
 
@@ -165,26 +183,28 @@ impl ScalarUDF for Size {
 
     fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
         let UnaryArg { input } = args.try_into()?;
-        let s = input.file()?;
-        let len = s.len();
-        let mut out = Vec::with_capacity(len);
-        // todo(cory): can likely optimize this a lot more than a naive for loop.
-        for i in 0..len {
-            let opt: Option<u64> = s
-                .get(i)
-                .map(|f| {
-                    let f = DaftFile::try_from(f)?;
-                    let size = f.size()?;
-                    DaftResult::Ok(size as _)
-                })
-                .transpose()?;
-            out.push(opt);
-        }
 
-        Ok(
-            UInt64Array::from_iter(Field::new(s.name(), DataType::UInt64), out.into_iter())
-                .into_series(),
-        )
+        with_match_file_types!(input.data_type(), |$P| {
+            let s = input.file::<$P>()?;
+            let len = s.len();
+            let mut out = Vec::with_capacity(len);
+            // todo(cory): can likely optimize this a lot more than a naive for loop.
+            for i in 0..len {
+                let opt: Option<u64> = s
+                    .get(i)
+                    .map(|f| {
+                        let f = DaftFile::try_from(f)?;
+                        let size = f.size()?;
+                        DaftResult::Ok(size as _)
+                    })
+                    .transpose()?;
+                out.push(opt);
+            }
+            Ok(
+                daft_core::prelude::UInt64Array::from_iter(Field::new(s.name(), DataType::UInt64), out.into_iter())
+                    .into_series(),
+            )
+        })
     }
 
     fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {

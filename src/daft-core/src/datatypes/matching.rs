@@ -364,3 +364,23 @@ macro_rules! with_match_daft_logical_primitive_types {
         }
     }};
 }
+
+#[macro_export]
+macro_rules! with_match_file_types {
+    (
+        $key_type:expr
+        , |$_:tt $T:ident| $($body:tt)*
+        $(,)?
+    ) => {{
+        macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+        use $crate::datatypes::*;
+        use $crate::datatypes::DataType;
+        use $crate::file::{FileFormat, FileFormatUnknown, FileFormatVideo};
+
+        match $key_type {
+            DataType::File(FileFormat::Unknown) => __with_ty__! { FileFormatUnknown },
+            DataType::File(FileFormat::Video) => __with_ty__! { FileFormatVideo },
+            _ => panic!("Only File Types are supported, {:?} not implemented", $key_type)
+        }
+    }};
+}

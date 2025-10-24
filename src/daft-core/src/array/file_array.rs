@@ -7,6 +7,7 @@ use daft_schema::{dtype::DataType, field::Field};
 
 use crate::{
     array::prelude::*,
+    datatypes::logical::LogicalArrayImpl,
     file::{DaftFileFormat, DataOrReference, FileReference, FileReferenceType, FileType},
     series::{IntoSeries, Series},
 };
@@ -27,6 +28,29 @@ use crate::{
 /// The io_config field contains bincode-serialized IOConfig objects, as this was the most
 /// straightforward approach to store these configuration objects in our array structure.
 pub type FileArray<T> = LogicalArray<FileType<T>>;
+
+impl<U> FileArray<U>
+where
+    U: DaftFileFormat,
+{
+    /// Converts to a different file format
+    pub fn change_type<T: DaftFileFormat>(self) -> FileArray<T> {
+        let LogicalArrayImpl {
+            field,
+            mut physical,
+            ..
+        } = self;
+        physical.field = Arc::new(Field::new(
+            "literal",
+            DataType::File(T::get_type()).to_physical(),
+        ));
+
+        FileArray::new(
+            Field::new(&field.name, DataType::File(T::get_type())),
+            physical,
+        )
+    }
+}
 
 impl<T> FileArray<T>
 where
@@ -155,6 +179,52 @@ where
             values.validity().cloned(),
         );
         FileArray::new(Field::new(name, DataType::File(T::get_type())), sa)
+    }
+    pub fn iter(&self) -> FileArrayIter<'_, T> {
+        FileArrayIter {
+            array: self,
+            idx: 0,
+        }
+    }
+}
+
+pub struct FileArrayIter<'a, T>
+where
+    T: DaftFileFormat,
+{
+    array: &'a FileArray<T>,
+    idx: usize,
+}
+
+impl<T> Iterator for FileArrayIter<'_, T>
+where
+    T: DaftFileFormat,
+{
+    type Item = Option<FileReference>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.idx >= self.array.len() {
+            None
+        } else {
+            let file_ref = self.array.get(self.idx);
+            self.idx += 1;
+            Some(file_ref)
+        }
+    }
+}
+
+impl<'a, T> IntoIterator for &'a FileArray<T>
+where
+    T: DaftFileFormat,
+{
+    type Item = Option<FileReference>;
+    type IntoIter = FileArrayIter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        FileArrayIter {
+            array: self,
+            idx: 0,
+        }
     }
 }
 
