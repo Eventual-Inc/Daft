@@ -1,12 +1,10 @@
 # AI Functions Overview
 
+Daft is purpose-built for scaling Multimodal AI workloads. We are rapidly expanding support for new [AI Functions](../api/functions/) covering a variety of inference tasks.
 
 !!! warning "Warning"
 
     These APIs are early in their development. Please feel free to [open a feature request and file issues](https://github.com/Eventual-Inc/Daft/issues/new/choose).
-
-Daft is purpose-built for scaling Multimodal AI workloads. We are rapidly expanding support for new [AI Functions](../api/functions/) covering a variety of inference tasks.
-
 
 <div class="grid cards" markdown>
 

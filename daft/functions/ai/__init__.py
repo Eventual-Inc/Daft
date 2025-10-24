@@ -86,26 +86,30 @@ def embed_text(
     Examples:
         >>> import daft
         >>> from daft.functions import embed_text
-        >>> df = daft.from_pydict({"text": ["Hello World"]})
+        >>> df = daft.read_huggingface("togethercomputer/RedPajama-Data-1T")
         >>> # Embed Text with Defaults
         >>> df = df.with_column(
         ...     "embeddings",
         ...     embed_text(
         ...         daft.col("text"),
-        ...         provider="openai",  # Ensure OPENAI_API_KEY is set
-        ...         model="text-embedding-3-small",
+        ...         provider="sentence_transformers",
+        ...         model="sentence-transformers/all-MiniLM-L6-v2",
         ...     ),
         ... )
-        >>> df.show()
-        ╭─────────────┬──────────────────────────╮
-        │ text        ┆ embeddings               │
-        │ ---         ┆ ---                      │
-        │ String      ┆ Embedding[Float32; 1536] │
-        ╞═════════════╪══════════════════════════╡
-        │ Hello World ┆ ▆█▆▆▆▃▆▆▂▄▃▂▃▃▄▁▃▅▂▃▂▂▂▂ │
-        ╰─────────────┴──────────────────────────╯
+        >>> df.limit(3).show()
+        ╭────────────────────────────────┬────────────────────────────────┬───────────────────┬──────────────────────────╮
+        │ text                           ┆ meta                           ┆ red_pajama_subset ┆ embeddings               │
+        │ ---                            ┆ ---                            ┆ ---               ┆ ---                      │
+        │ String                         ┆ String                         ┆ String            ┆ Embedding[Float32; 384]  │
+        ╞════════════════════════════════╪════════════════════════════════╪═══════════════════╪══════════════════════════╡
+        │ Григорианският календар (поня… ┆ {'title': 'Григориански кален… ┆ wikipedia         ┆ ▃▆█▆▆▆█▇▆▅▃▆▆▅▅▆▅▅▂▂▇▇▄▁ │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ GNU General Public License (н… ┆ {'title': 'GNU General Public… ┆ wikipedia         ┆ ▆▁▇█▄▅▄▅▄▄▁▆▃▅▂▃▆▃▄▃█▆▇▅ │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ Лицензът за свободна документ… ┆ {'title': 'Лиценз за свободна… ┆ wikipedia         ┆ ▄▆██▇▇▇█▇▆▂▇▄▁▅▃▇▇▃▃▆▆▅▂ │
+        ╰────────────────────────────────┴────────────────────────────────┴───────────────────┴──────────────────────────╯
         <BLANKLINE>
-        (Showing first 1 of 1 rows)
+        (Showing first 3 of 3 rows)
     """
     from daft.ai._expressions import _TextEmbedderExpression
     from daft.ai.protocols import TextEmbedder

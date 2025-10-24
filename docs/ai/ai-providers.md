@@ -25,11 +25,11 @@ daft.set_provider(
 daft.get_provider("openai")
 ```
 
-Supported [AI Providers](../api/ai.md)
+See our full list of supported [AI Providers](../api/ai.md#providers):
 
-- OpenAI
-- Transformers (+ Sentence Transformers)
-- LMStudio
+- [OpenAI](https://platform.openai.com/docs/api-reference/introduction) - State-of-the-art AI models for text generation, natural language processing, computer vision, and more.
+- [Transformers](https://huggingface.co/docs/transformers/index) - HuggingFace's model-definition framework for state-of-the-art machine learning models in text, computer vision, audio, video, and multimodal model, for both inference and training.
+- [LMStudio](https://lmstudio.ai/) - Run local AI models like gpt-oss, Qwen, Gemma, DeepSeek and many more on your computer, privately and for free.
 
 ### Setting a named OpenAI Provider within a daft Session
 
