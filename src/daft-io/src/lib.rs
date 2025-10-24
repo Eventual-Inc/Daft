@@ -1,5 +1,4 @@
 #![feature(if_let_guard)]
-
 mod azure_blob;
 mod counting_reader;
 mod google_cloud;
