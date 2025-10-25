@@ -1008,6 +1008,8 @@ pub struct IoConfig {
     pub unity: ::core::option::Option<UnityConfig>,
     #[prost(message, optional, tag = "6")]
     pub hf: ::core::option::Option<HuggingFaceConfig>,
+    #[prost(bool, tag = "7")]
+    pub disable_suffix_range: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct S3Config {
