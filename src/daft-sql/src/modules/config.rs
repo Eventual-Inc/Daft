@@ -101,7 +101,7 @@ impl SQLFunction for S3ConfigFunction {
         let multipart_size = args.try_get_named("multipart_size")?.map(|t: i64| t as u64);
         let multipart_max_concurrency = args
             .try_get_named("multipart_max_concurrency")?
-            .map(|t: i64| t as u64);
+            .map(|t: i64| t as u32);
         let custom_retry_msgs = args.try_get_named::<String>("custom_retry_msgs")?;
 
         let entries = vec![
