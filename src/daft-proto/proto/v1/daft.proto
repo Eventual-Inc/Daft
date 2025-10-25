@@ -371,6 +371,8 @@ message ScalarFn {
       optional bool use_process = 7;
       optional uint64 max_concurrency = 8;
       bool is_async = 9;
+      optional uint64 max_retries = 10;
+      optional string on_error = 11;
     }
 
     message BatchFn {
@@ -383,6 +385,8 @@ message ScalarFn {
       optional bool use_process = 7;
       optional uint64 max_concurrency = 8;
       optional uint64 batch_size = 9;
+      optional uint64 max_retries = 10;
+      optional string on_error = 11;
     }
   }
 }

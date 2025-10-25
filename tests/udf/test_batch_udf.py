@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import daft
 from daft import DataType, Series, col
 
@@ -200,3 +202,48 @@ def test_batch_udf_literal_eval_returns_numpy():
     import numpy as np
 
     assert np.array_equal(result, np.array([5, 10, 15]))
+
+
+def test_batch_on_error_ignore():
+    @daft.func.batch(on_error="ignore", return_dtype=int)
+    def raise_err(x):
+        raise ValueError("batch failed")
+
+    df = daft.from_pydict({"value": [1, 2, 3]})
+
+    expected = {"value": [None, None, None]}
+
+    actual = df.select(raise_err(col("value"))).to_pydict()
+    assert actual == expected
+
+
+def test_batch_retry_defaults_to_raise_and_zero_retries():
+    @daft.func.batch(return_dtype=int)
+    def raise_err(x):
+        raise ValueError("This is an error")
+
+    df = daft.from_pydict({"value": [1]})
+
+    try:
+        df.select(raise_err(col("value"))).to_pydict()
+        pytest.fail("Expected ValueError")
+    except ValueError:
+        pass
+
+
+def test_batch_max_retries():
+    first_time = True
+
+    @daft.func.batch(return_dtype=int, max_retries=1)
+    def raise_err_first_time_only(x: Series):
+        nonlocal first_time
+        if first_time:
+            first_time = False
+            raise ValueError("This is an error")
+
+        return [val * 2 for val in x]
+
+    df = daft.from_pydict({"value": [1, 2, 3]})
+    actual = df.select(raise_err_first_time_only(col("value"))).to_pydict()
+    expected = {"value": [2, 4, 6]}
+    assert actual == expected
