@@ -5,11 +5,13 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use common_file::FileReference;
+use daft_core::file::{DataOrReference, FileReference};
 use daft_io::{GetRange, IOConfig, IOStatsRef, ObjectSource};
+use daft_schema::file_format::FileFormat;
 use url::Url;
 
 pub struct DaftFile {
+    pub file_format: FileFormat,
     pub(crate) cursor: Option<FileCursor>,
     pub(crate) position: usize,
 }
@@ -18,17 +20,26 @@ impl TryFrom<FileReference> for DaftFile {
     type Error = DaftError;
 
     fn try_from(value: FileReference) -> Result<Self, Self::Error> {
-        match value {
-            FileReference::Reference(path, ioconfig) => {
-                Self::from_path(path, ioconfig.map(|cfg| cfg.as_ref().clone()))
-            }
-            FileReference::Data(items) => Ok(Self::from_bytes(Arc::unwrap_or_clone(items))),
+        match value.inner {
+            DataOrReference::Reference(path, ioconfig) => Self::from_path(
+                value.file_format,
+                path,
+                ioconfig.map(|cfg| cfg.as_ref().clone()),
+            ),
+            DataOrReference::Data(items) => Ok(Self::from_bytes(
+                value.file_format,
+                Arc::unwrap_or_clone(items),
+            )),
         }
     }
 }
 
 impl DaftFile {
-    pub fn from_path(path: String, io_conf: Option<IOConfig>) -> DaftResult<Self> {
+    pub fn from_path(
+        file_format: FileFormat,
+        path: String,
+        io_conf: Option<IOConfig>,
+    ) -> DaftResult<Self> {
         let io_client = daft_io::get_io_client(true, io_conf.map(Arc::new).unwrap_or_default())?;
         let rt = common_runtime::get_io_runtime(true);
 
@@ -58,20 +69,23 @@ impl DaftFile {
         if !supports_range || file_size <= DEFAULT_BUFFER_SIZE {
             let mut buf = Vec::with_capacity(file_size);
             reader.read_to_end(&mut buf)?;
-            Ok(Self::from_bytes(buf))
+            Ok(Self::from_bytes(file_format, buf))
         } else {
             // we wrap it in a BufReader so we are not making so many network requests for each byte read
             let buffered_reader = BufReader::with_capacity(DEFAULT_BUFFER_SIZE, reader);
 
             Ok(Self {
+                file_format,
                 cursor: Some(FileCursor::ObjectReader(buffered_reader)),
                 position: 0,
             })
         }
     }
 
-    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+    pub fn from_bytes(file_format: FileFormat, bytes: Vec<u8>) -> Self {
         Self {
+            file_format,
+
             cursor: Some(FileCursor::Memory(Cursor::new(bytes))),
             position: 0,
         }

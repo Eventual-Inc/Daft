@@ -5,7 +5,10 @@ pub mod schema;
 
 pub use datatype::{PyDataType, PyTimeUnit};
 
-use crate::{image_format::ImageFormat, image_mode::ImageMode, image_property::ImageProperty};
+use crate::{
+    file_format::FileFormat, image_format::ImageFormat, image_mode::ImageMode,
+    image_property::ImageProperty,
+};
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<datatype::PyDataType>()?;
@@ -15,6 +18,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<ImageMode>()?;
     parent.add_class::<ImageFormat>()?;
     parent.add_class::<ImageProperty>()?;
+    parent.add_class::<FileFormat>()?;
 
     Ok(())
 }

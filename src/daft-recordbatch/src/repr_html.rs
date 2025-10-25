@@ -1,4 +1,6 @@
-use daft_core::{datatypes::ExtensionArray, prelude::DataType, series::Series};
+use daft_core::{
+    datatypes::ExtensionArray, prelude::DataType, series::Series, with_match_file_types,
+};
 
 pub fn html_value(s: &Series, idx: usize, truncate: bool) -> String {
     match s.data_type() {
@@ -140,9 +142,11 @@ pub fn html_value(s: &Series, idx: usize, truncate: bool) -> String {
             let arr = s.python().unwrap();
             arr.html_value(idx, truncate)
         }
-        DataType::File => {
-            let arr = s.file().unwrap();
-            arr.html_value(idx, truncate)
+        DataType::File(_) => {
+            with_match_file_types!(s.data_type(), |$P| {
+                let arr = s.file::<$P>().unwrap();
+                arr.html_value(idx, truncate)
+            })
         }
         DataType::Unknown => {
             panic!("Unknown data type")

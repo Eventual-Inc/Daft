@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable, Union
 
 from packaging.version import parse
 
-from daft.daft import ImageMode, PyDataType, PyTimeUnit, sql_datatype
+from daft.daft import ImageMode, PyDataType, PyFileFormat, PyTimeUnit, sql_datatype
 from daft.dependencies import np, pa
 from daft.runners import get_or_create_runner
 
@@ -15,6 +15,29 @@ if TYPE_CHECKING:
     import builtins
 
     import jaxtyping
+
+
+class FileFormat:
+    _fileformat: PyFileFormat
+
+    def __init__(self) -> None:
+        raise NotImplementedError("Please use FileFormat.unknown() or .video() instead.")
+
+    @classmethod
+    def _from_pyfileformat(cls, o3: PyFileFormat) -> FileFormat:
+        fileformat = FileFormat.__new__(FileFormat)
+        fileformat._fileformat = o3
+        return fileformat
+
+    @classmethod
+    def unknown(cls) -> FileFormat:
+        """Represents an unknown file format."""
+        return cls._from_pyfileformat(PyFileFormat.unknown())
+
+    @classmethod
+    def video(cls) -> FileFormat:
+        """Represents a video file format."""
+        return cls._from_pyfileformat(PyFileFormat.video())
 
 
 class TimeUnit:
@@ -301,8 +324,10 @@ class DataType:
                 "Cannot derive inner type from daft.Series type, defaulting to DataType.python() for Series inner type"
             )
             return cls.list(cls.python())
+        elif check_type(daft.file.VideoFile):
+            return cls.file(FileFormat.video())
         elif check_type(daft.file.File):
-            return cls.file()
+            return cls.file(FileFormat.unknown())
         else:
             return cls.python()
 
@@ -821,9 +846,9 @@ class DataType:
         return cls._from_pydatatype(PyDataType.python())
 
     @classmethod
-    def file(cls) -> DataType:
+    def file(cls, file_format: FileFormat) -> DataType:
         """Create a File DataType: a type which refers to a file object."""
-        return cls._from_pydatatype(PyDataType.file())
+        return cls._from_pydatatype(PyDataType.file(file_format._fileformat))
 
     def is_null(self) -> builtins.bool:
         """Check if this is a null type.

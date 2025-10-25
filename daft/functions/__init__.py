@@ -62,7 +62,7 @@ from .datetime import (
 )
 from .embedding import cosine_distance
 
-from .file_ import file, file_size
+from .file import file, file_size, video_file
 
 from .image import (
     resize,
@@ -202,6 +202,7 @@ from .str import (
 )
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
+from .video import get_metadata
 from .window import (
     row_number,
     rank,
@@ -286,6 +287,7 @@ __all__ = [
     "floor",
     "format",
     "get",
+    "get_metadata",
     "hash",
     "hour",
     "ilike",
@@ -415,6 +417,7 @@ __all__ = [
     "upload",
     "upper",
     "value_counts",
+    "video_file",
     "week_of_year",
     "when",
     "year",

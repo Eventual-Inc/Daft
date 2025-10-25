@@ -5,6 +5,7 @@ pub mod image_mode;
 pub mod image_property;
 pub mod prelude;
 
+pub mod file_format;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod schema;

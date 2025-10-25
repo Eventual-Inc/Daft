@@ -1,7 +1,6 @@
 [dependencies]
 common-daft-config = {path = "src/common/daft-config", default-features = false}
 common-display = {path = "src/common/display", default-features = false}
-common-file = {path = "src/common/file", default-features = false}
 common-file-formats = {path = "src/common/file-formats", default-features = false}
 common-hashable-float-wrapper = {path = "src/common/hashable-float-wrapper", default-features = false}
 common-logging = {path = "src/common/logging", default-features = false}
@@ -73,7 +72,6 @@ python = [
   "common-display/python",
   "common-partitioning/python",
   "common-resource-request/python",
-  "common-file/python",
   "common-file-formats/python",
   "common-scan-info/python",
   "common-system-info/python",
@@ -244,7 +242,6 @@ comfy-table = "7.1.1"
 common-daft-config = {path = "src/common/daft-config"}
 common-display = {path = "src/common/display", default-features = false}
 common-error = {path = "src/common/error", default-features = false}
-common-file = {path = "src/common/file"}
 common-file-formats = {path = "src/common/file-formats"}
 common-image = {path = "src/common/image", default-features = false}
 common-metrics = {path = "src/common/metrics"}

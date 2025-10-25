@@ -8,6 +8,7 @@ use crate::{
         prelude::*,
     },
     datatypes::{FileArray, IntervalArray, prelude::*},
+    file::DaftFileFormat,
 };
 
 impl<T> DataArray<T>
@@ -75,7 +76,19 @@ impl_logicalarray_take!(SparseTensorArray);
 impl_logicalarray_take!(FixedShapeSparseTensorArray);
 impl_logicalarray_take!(FixedShapeTensorArray);
 impl_logicalarray_take!(MapArray);
-impl_logicalarray_take!(FileArray);
+impl<T> FileArray<T>
+where
+    T: DaftFileFormat,
+{
+    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let new_array = self.physical.take(idx)?;
+        Ok(Self::new(self.field.clone(), new_array))
+    }
+}
 
 impl FixedSizeBinaryArray {
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
