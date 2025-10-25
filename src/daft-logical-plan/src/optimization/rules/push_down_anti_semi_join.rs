@@ -317,7 +317,8 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                     | LogicalPlan::Source(_)
                     | LogicalPlan::Repartition(_)
                     | LogicalPlan::IntoBatches(_)
-                    | LogicalPlan::Concat(_) => {}
+                    | LogicalPlan::Concat(_)
+                    | LogicalPlan::VLLMProject(..) => {}
                 }
             }
 

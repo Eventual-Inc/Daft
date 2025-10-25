@@ -195,7 +195,8 @@ impl PushDownLimit {
                     | LogicalPlan::MonotonicallyIncreasingId(..)
                     | LogicalPlan::SubqueryAlias(..)
                     | LogicalPlan::Window(..)
-                    | LogicalPlan::Concat(_) => Ok(Transformed::no(plan)),
+                    | LogicalPlan::Concat(_)
+                    | LogicalPlan::VLLMProject(..) => Ok(Transformed::no(plan)),
                 }
             }
             _ => Ok(Transformed::no(plan)),

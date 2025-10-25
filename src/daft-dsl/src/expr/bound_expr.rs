@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use super::{
     AggExpr, Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowExpr, bound_col,
 };
+use crate::expr::VLLMExpr;
 
 #[derive(Clone, Display, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 /// A simple newtype around ExprRef that ensures that all of the columns in the held expression are bound.
@@ -171,3 +172,5 @@ macro_rules! impl_bound_wrapper {
 
 impl_bound_wrapper!(BoundAggExpr, AggExpr, Agg);
 impl_bound_wrapper!(BoundWindowExpr, WindowExpr, WindowFunction);
+
+impl_bound_wrapper!(BoundVLLMExpr, VLLMExpr, VLLM);

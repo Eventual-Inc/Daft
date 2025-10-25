@@ -545,6 +545,9 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .into_node()
             }
+            LogicalPlan::VLLMProject(..) => {
+                todo!("VLLMProject not yet implemented for distributed execution")
+            }
             LogicalPlan::SubqueryAlias(_)
             | LogicalPlan::Union(_)
             | LogicalPlan::Intersect(_)

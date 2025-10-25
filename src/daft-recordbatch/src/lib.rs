@@ -788,6 +788,7 @@ impl RecordBatch {
                 "EXISTS <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
             )),
             Expr::Column(_) => unreachable!("bound expressions should not have unbound columns"),
+            Expr::VLLM(..) => unreachable!("VLLM expressions should not be evaluated directly. This indicates a bug in the query optimizer."),
         }?;
 
         if expected_field.name != series.field().name {

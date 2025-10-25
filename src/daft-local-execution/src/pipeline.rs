@@ -16,7 +16,7 @@ use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, GlobScan, HashAggregate,
     HashJoin, InMemoryScan, IntoBatches, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId,
     PhysicalWrite, Pivot, Project, Sample, SamplingMethod, Sort, SortMergeJoin, TopN, UDFProject,
-    UnGroupedAggregate, Unpivot, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
+    UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
     WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
@@ -66,6 +66,7 @@ use crate::{
         anti_semi_hash_join_probe::AntiSemiProbeSink, base::StreamingSinkNode, concat::ConcatSink,
         limit::LimitSink, monotonically_increasing_id::MonotonicallyIncreasingIdSink,
         outer_hash_join_probe::OuterHashJoinProbeSink, sort_merge_join_probe::SortMergeJoinProbe,
+        vllm::VLLMSink,
     },
 };
 
@@ -1294,6 +1295,22 @@ fn physical_plan_to_pipeline(
                 io_config.clone(),
             );
             SourceNode::new(source.arced(), stats_state.clone(), ctx).boxed()
+        }
+        LocalPhysicalPlan::VLLMProject(VLLMProject {
+            input,
+            expr,
+            schema,
+            stats_state,
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
+            let vllm_sink = VLLMSink::new(expr.clone(), schema.clone());
+            StreamingSinkNode::new(
+                Arc::new(vllm_sink),
+                vec![child_node],
+                stats_state.clone(),
+                ctx,
+            )
+            .boxed()
         }
     };
 

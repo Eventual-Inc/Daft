@@ -203,7 +203,8 @@ impl ToFromProto for ir::rel::LogicalPlan {
             | Self::SubqueryAlias(_)
             | Self::Window(_)
             | Self::TopN(_)
-            | Self::Offset(_) => {
+            | Self::Offset(_)
+            | Self::VLLMProject(..) => {
                 not_implemented_err!("{}", self.name());
             }
         };

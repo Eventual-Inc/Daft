@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
@@ -110,10 +111,10 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
         Ok(None).into()
     }
 
-    fn make_state(&self) -> Self::State {
-        MonotonicallyIncreasingIdState {
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(MonotonicallyIncreasingIdState {
             id_offset: self.params.starting_offset.unwrap_or(0),
-        }
+        })
     }
 
     // Monotonically increasing id is a memory-bound operation, so there's no performance benefit to parallelizing it.

@@ -3,6 +3,7 @@ use std::{
     sync::Arc,
 };
 
+use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use daft_micropartition::MicroPartition;
 use tracing::{Span, instrument};
@@ -122,8 +123,8 @@ impl StreamingSink for LimitSink {
         Ok(None).into()
     }
 
-    fn make_state(&self) -> Self::State {
-        LimitSinkState::new(self.limit, self.offset)
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(LimitSinkState::new(self.limit, self.offset))
     }
 
     fn max_concurrency(&self) -> usize {

@@ -62,7 +62,7 @@ pub(crate) trait StreamingSink: Send + Sync {
     fn multiline_display(&self) -> Vec<String>;
 
     /// Create a new worker-local state for this StreamingSink.
-    fn make_state(&self) -> Self::State;
+    fn make_state(&self) -> DaftResult<Self::State>;
 
     /// Create a new RuntimeStats for this StreamingSink.
     fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
@@ -138,7 +138,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         let compute_runtime = get_compute_runtime();
         let spawner =
             ExecutionTaskSpawner::new(compute_runtime, memory_manager, runtime_stats, span);
-        let mut state = op.make_state();
+        let mut state = op.make_state()?;
         while let Some(morsel) = input_receiver.recv().await {
             loop {
                 let result = op.execute(morsel.clone(), state, &spawner).await??;
