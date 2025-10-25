@@ -218,7 +218,7 @@ impl Default for S3Config {
             read_timeout_ms: 30_000,
             // AWS EMR actually does 100 tries by default for AIMD retries
             // (See [Advanced AIMD retry settings]: https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-emrfs-retry.html)
-            num_tries: 2,
+            num_tries: 25,
             retry_mode: Some("adaptive".to_string()),
             anonymous: false,
             use_ssl: true,
@@ -228,7 +228,7 @@ impl Default for S3Config {
             force_virtual_addressing: false,
             profile_name: None,
             multipart_size: 8 * 1024 * 1024, // 8MB
-            multipart_max_concurrency: 8,
+            multipart_max_concurrency: 100,
             custom_retry_msgs: vec!["UnexpectedEof".to_string(), "Timeout".to_string()],
         }
     }

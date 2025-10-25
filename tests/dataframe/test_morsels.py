@@ -112,7 +112,7 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |       requester_pays: false
 |       force_virtual_addressing: false
 |       multipart_size: 8388608
-|       multipart_max_concurrency: 8
+|       multipart_max_concurrency: 100
 |       custom_retry_msgs:["UnexpectedEof","Timeout"]
 |   AzureConfig
 |       storage_account: None
