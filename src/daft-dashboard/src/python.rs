@@ -57,7 +57,7 @@ pub fn generate_interactive_html(df_id: String) -> PyResult<String> {
     let html = super::generate_interactive_html(
         &record_batch,
         &df_id,
-        &super::DEFAULT_SERVER_ADDR.to_string(),
+        super::DEFAULT_SERVER_ADDR,
         DEFAULT_SERVER_PORT,
     );
     Ok(html)
@@ -68,6 +68,7 @@ fn tokio_runtime() -> Runtime {
 }
 
 #[pyfunction]
+// TODO(void001): Make addr & port configurable
 pub fn launch(noop_if_initialized: bool) -> PyResult<ConnectionHandle> {
     // Check if server is already running
     if DASHBOARD_ENABLED.load(Ordering::SeqCst) {
@@ -83,7 +84,7 @@ pub fn launch(noop_if_initialized: bool) -> PyResult<ConnectionHandle> {
         }
     }
 
-    let port = super::DEFAULT_SERVER_PORT; // TODO: Make configurable
+    let port = super::DEFAULT_SERVER_PORT;
     let (send, recv) = oneshot::channel::<()>();
 
     let handle = ConnectionHandle {
@@ -93,7 +94,7 @@ pub fn launch(noop_if_initialized: bool) -> PyResult<ConnectionHandle> {
     let _ = std::thread::spawn(move || {
         DASHBOARD_ENABLED.store(true, Ordering::SeqCst);
         let res = tokio_runtime().block_on(async {
-            super::launch_server(port, async move { recv.await.unwrap() }).await
+            super::launch_server("::", port, async move { recv.await.unwrap() }).await
         });
         DASHBOARD_ENABLED.store(false, Ordering::SeqCst);
         res
