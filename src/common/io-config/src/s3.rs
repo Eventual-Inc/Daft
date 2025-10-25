@@ -242,24 +242,24 @@ impl Display for S3Config {
     region_name: {:?}
     endpoint_url: {:?}
     key_id: {:?}
-    session_token: {:?},
+    session_token: {:?}
     access_key: {:?}
     credentials_provider: {:?}
     buffer_time: {:?}
-    max_connections: {},
-    retry_initial_backoff_ms: {},
-    connect_timeout_ms: {},
-    read_timeout_ms: {},
-    num_tries: {:?},
-    retry_mode: {:?},
-    anonymous: {},
-    use_ssl: {},
-    verify_ssl: {},
+    max_connections: {}
+    retry_initial_backoff_ms: {}
+    connect_timeout_ms: {}
+    read_timeout_ms: {}
+    num_tries: {:?}
+    retry_mode: {:?}
+    anonymous: {}
+    use_ssl: {}
+    verify_ssl: {}
     check_hostname_ssl: {}
     requester_pays: {}
     force_virtual_addressing: {}
-    multipart_size: {:?},
-    multipart_max_concurrency: {:?},
+    multipart_size: {:?}
+    multipart_max_concurrency: {:?}
     custom_retry_msgs: {:?}",
             self.region_name,
             self.endpoint_url,
