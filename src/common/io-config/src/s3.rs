@@ -40,6 +40,7 @@ pub struct S3Config {
     pub profile_name: Option<String>,
     pub multipart_size: u64,
     pub multipart_max_concurrency: u32,
+    pub custom_retry_msgs: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -191,6 +192,12 @@ impl S3Config {
         if let Some(name) = &self.profile_name {
             res.push(format!("Profile Name = {name}"));
         }
+        if !self.custom_retry_msgs.is_empty() {
+            res.push(format!(
+                "Custom retry messages = {:?}",
+                self.custom_retry_msgs
+            ));
+        }
         res
     }
 }
@@ -211,7 +218,7 @@ impl Default for S3Config {
             read_timeout_ms: 30_000,
             // AWS EMR actually does 100 tries by default for AIMD retries
             // (See [Advanced AIMD retry settings]: https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-emrfs-retry.html)
-            num_tries: 25,
+            num_tries: 2,
             retry_mode: Some("adaptive".to_string()),
             anonymous: false,
             use_ssl: true,
@@ -221,7 +228,8 @@ impl Default for S3Config {
             force_virtual_addressing: false,
             profile_name: None,
             multipart_size: 8 * 1024 * 1024, // 8MB
-            multipart_max_concurrency: 100,
+            multipart_max_concurrency: 8,
+            custom_retry_msgs: vec!["UnexpectedEof".to_string(), "Timeout".to_string()],
         }
     }
 }
@@ -249,7 +257,10 @@ impl Display for S3Config {
     verify_ssl: {},
     check_hostname_ssl: {}
     requester_pays: {}
-    force_virtual_addressing: {}",
+    force_virtual_addressing: {}
+    multipart_size: {:?},
+    multipart_max_concurrency: {:?},
+    custom_retry_msgs: {:?}",
             self.region_name,
             self.endpoint_url,
             self.key_id,
@@ -268,7 +279,10 @@ impl Display for S3Config {
             self.verify_ssl,
             self.check_hostname_ssl,
             self.requester_pays,
-            self.force_virtual_addressing
+            self.force_virtual_addressing,
+            self.multipart_size,
+            self.multipart_max_concurrency,
+            self.custom_retry_msgs
         )?;
         Ok(())
     }

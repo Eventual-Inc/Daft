@@ -57,6 +57,9 @@ impl SQLFunction for S3ConfigFunction {
                 "requester_pays",
                 "force_virtual_addressing",
                 "profile_name",
+                "multipart_size",
+                "multipart_max_concurrency",
+                "custom_retry_msgs",
             ],
             0,
         )?;
@@ -95,6 +98,12 @@ impl SQLFunction for S3ConfigFunction {
         let force_virtual_addressing = args.try_get_named::<bool>("force_virtual_addressing")?;
         let profile_name = args.try_get_named::<String>("profile_name")?;
 
+        let multipart_size = args.try_get_named("multipart_size")?.map(|t: i64| t as u64);
+        let multipart_max_concurrency = args
+            .try_get_named("multipart_max_concurrency")?
+            .map(|t: i64| t as u64);
+        let custom_retry_msgs = args.try_get_named::<String>("custom_retry_msgs")?;
+
         let entries = vec![
             ("variant".to_string(), "s3".into()),
             item!(region_name),
@@ -116,6 +125,9 @@ impl SQLFunction for S3ConfigFunction {
             item!(requester_pays),
             item!(force_virtual_addressing),
             item!(profile_name),
+            item!(multipart_size),
+            item!(multipart_max_concurrency),
+            item!(custom_retry_msgs),
         ]
         .into_iter()
         .collect::<_>();
@@ -148,6 +160,9 @@ impl SQLFunction for S3ConfigFunction {
             "requester_pays",
             "force_virtual_addressing",
             "profile_name",
+            "multipart_size",
+            "multipart_max_concurrency",
+            "custom_retry_msgs",
         ]
     }
 }
@@ -373,6 +388,10 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
             let profile_name = get_value!("profile_name", Utf8)?;
             let multipart_size = get_value!("multipart_size", UInt64)?;
             let multipart_max_concurrency = get_value!("multipart_max_concurrency", UInt32)?;
+            let custom_retry_msgs_str: Option<String> = get_value!("custom_retry_msgs", Utf8)?;
+            let custom_retry_msgs =
+                custom_retry_msgs_str.map(|s| s.split(',').map(|s| s.into()).collect());
+
             let default = S3Config::default();
             let s3_config = S3Config {
                 region_name,
@@ -401,6 +420,7 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
                 multipart_size: multipart_size.unwrap_or(default.multipart_size),
                 multipart_max_concurrency: multipart_max_concurrency
                     .unwrap_or(default.multipart_max_concurrency),
+                custom_retry_msgs: custom_retry_msgs.unwrap_or(default.custom_retry_msgs),
             };
 
             Ok(IOConfig {
