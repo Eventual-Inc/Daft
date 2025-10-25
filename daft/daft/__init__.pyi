@@ -510,6 +510,7 @@ class S3Config:
         profile_name (str, optional): Name of AWS_PROFILE to load, defaults to None which will then check the Environment Variable `AWS_PROFILE` then fall back to `default`
         multipart_size (int, optional): The size of multipart part (bytes), the size range should be 5MB to 5GB, defaults to 8MB.
         multipart_max_concurrency (int, optional): The max concurrency of upload part per object, defaults to 100.
+        custom_retry_msgs (list[str], optional): Will retry the request if any custom retry message appeared in the error message of response, defaults to ["UnexpectedEof", "Timeout"].
 
     Examples:
         >>> # For AWS S3
@@ -551,6 +552,7 @@ class S3Config:
     profile_name: str | None
     multipart_size: int | None
     multipart_max_concurrency: int | None
+    custom_retry_msgs: list[str] | None
 
     def __init__(
         self,
@@ -576,6 +578,7 @@ class S3Config:
         profile_name: str | None = None,
         multipart_size: int | None = None,
         multipart_max_concurrency: int | None = None,
+        custom_retry_msgs: list[str] | None = None,
     ): ...
     def replace(
         self,
@@ -600,6 +603,7 @@ class S3Config:
         profile_name: str | None = None,
         multipart_size: int | None = None,
         multipart_max_concurrency: int | None = None,
+        custom_retry_msgs: list[str] | None = None,
     ) -> S3Config:
         """Replaces values if provided, returning a new S3Config."""
         ...
