@@ -750,7 +750,7 @@ def drop_namespace(identifier: Identifier | str) -> None:
 
 def drop_table(identifier: Identifier | str) -> None:
     """Drops the table in the current session's active catalog."""
-    return _session().drop_namespace(identifier)
+    return _session().drop_table(identifier)
 
 
 ###
