@@ -494,7 +494,7 @@ impl S3Config {
                 multipart_max_concurrency: multipart_max_concurrency
                     .unwrap_or(self.config.multipart_max_concurrency),
                 custom_retry_msgs: custom_retry_msgs
-                    .unwrap_or(self.config.custom_retry_msgs.clone()),
+                    .unwrap_or_else(|| self.config.custom_retry_msgs.clone()),
             },
         })
     }
