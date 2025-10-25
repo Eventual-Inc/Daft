@@ -44,6 +44,9 @@ print(daft.runners._get_runner().name)
 def test_implicit_set_runner_native():
     """Test that a freshly imported context doesn't have a runner config set and is set implicitly to Native."""
     implicit_set_runner_script = """
+import os
+# clear the env var
+os.environ.pop("DAFT_RUNNER", None)
 import daft
 print(daft.runners._get_runner())
 df = daft.from_pydict({"foo": [1, 2, 3]})
@@ -72,6 +75,9 @@ print(daft.runners._get_runner().name)
 def test_implicit_set_runner_ray():
     """Test that a freshly imported context doesn't have a runner config set and can be set implicitly to Ray."""
     implicit_set_runner_script_ray = """
+import os
+# clear the env var
+os.environ.pop("DAFT_RUNNER", None)
 import daft
 import ray
 ray.init()
@@ -175,6 +181,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
 
 def test_cannot_set_runner_ray_after_py():
     cannot_set_runner_ray_after_py_script = """
+import os
+# clear the env var
+os.environ.pop("DAFT_RUNNER", None)
 import daft
 df = daft.from_pydict({"foo": [1, 2, 3]})
 print(daft.runners._get_runner().name)
