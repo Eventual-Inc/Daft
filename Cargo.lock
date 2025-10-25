@@ -2679,6 +2679,8 @@ dependencies = [
  "common-resource-request",
  "common-treenode",
  "daft-core",
+ "daft-io",
+ "daft-schema",
  "daft-sketch",
  "derive_more",
  "indexmap 2.11.4",
@@ -2687,6 +2689,7 @@ dependencies = [
  "pyo3",
  "rstest",
  "serde",
+ "serde_json",
  "typetag",
 ]
 
@@ -3323,11 +3326,14 @@ dependencies = [
 name = "daft-session"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-error",
+ "common-py-serde",
  "daft-ai",
  "daft-catalog",
  "daft-core",
  "daft-dsl",
  "daft-logical-plan",
+ "indexmap 2.11.4",
  "pyo3",
  "uuid 1.18.1",
 ]
