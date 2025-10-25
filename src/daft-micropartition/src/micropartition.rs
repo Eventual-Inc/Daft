@@ -134,6 +134,7 @@ fn materialize_scan_task(
             coerce_int96_timestamp_unit,
             field_id_mapping,
             chunk_size,
+            ignore_error,
             ..
         }) => {
             let inference_options =
@@ -172,24 +173,64 @@ fn materialize_scan_task(
                 .iter()
                 .map(|s| s.get_parquet_metadata().cloned())
                 .collect::<Option<Vec<_>>>();
-            daft_parquet::read::read_parquet_bulk(
-                urls.as_slice(),
-                file_column_names.as_deref(),
-                None,
-                scan_task.pushdowns.limit,
-                row_groups,
-                scan_task.pushdowns.filters.clone(),
-                io_client,
-                io_stats,
-                num_parallel_tasks,
-                multithreaded_io,
-                &inference_options,
-                field_id_mapping.clone(),
-                metadatas,
-                Some(delete_map),
-                *chunk_size,
-            )
-            .context(DaftCoreComputeSnafu)?
+
+            if *ignore_error {
+                let rt = common_runtime::get_io_runtime(multithreaded_io);
+                let results = rt
+                    .block_on_current_thread(daft_parquet::read::read_parquet_bulk_async(
+                        urls.iter().map(|s| (*s).to_string()).collect(),
+                        file_column_names
+                            .as_ref()
+                            .map(|s| s.iter().map(|v| (*v).to_string()).collect()),
+                        None,
+                        scan_task.pushdowns.limit,
+                        row_groups,
+                        scan_task.pushdowns.filters.clone(),
+                        io_client,
+                        io_stats,
+                        num_parallel_tasks,
+                        inference_options,
+                        field_id_mapping.clone(),
+                        metadatas,
+                        Some(delete_map),
+                        *chunk_size,
+                    ))
+                    .context(DaftCoreComputeSnafu)?;
+                results
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(i, r)| match r {
+                        Ok(tbl) => Some(tbl),
+                        Err(e) => {
+                            log::warn!(
+                                "Skipping unreadable/corrupt parquet file {}: {}",
+                                urls[i],
+                                e
+                            );
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                daft_parquet::read::read_parquet_bulk(
+                    urls.as_slice(),
+                    file_column_names.as_deref(),
+                    None,
+                    scan_task.pushdowns.limit,
+                    row_groups,
+                    scan_task.pushdowns.filters.clone(),
+                    io_client,
+                    io_stats,
+                    num_parallel_tasks,
+                    multithreaded_io,
+                    &inference_options,
+                    field_id_mapping.clone(),
+                    metadatas,
+                    Some(delete_map),
+                    *chunk_size,
+                )
+                .context(DaftCoreComputeSnafu)?
+            }
         }
 
         // ****************
@@ -1316,6 +1357,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
                 field_id_mapping,
                 row_groups,
                 chunk_size,
+                ignore_error: false,
             })
             .into(),
             scan_task_daft_schema,
