@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     AzureConfig, GCSConfig, HTTPConfig, S3Config, huggingface::HuggingFaceConfig, tos::TosConfig,
-    unity::UnityConfig,
+    unity::UnityConfig, gravitino::GravitinoConfig
 };
 #[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct IOConfig {
@@ -13,6 +13,7 @@ pub struct IOConfig {
     pub gcs: GCSConfig,
     pub http: HTTPConfig,
     pub unity: UnityConfig,
+    pub gravitino: GravitinoConfig,
     pub hf: HuggingFaceConfig,
     pub tos: TosConfig,
 }
@@ -40,6 +41,10 @@ impl IOConfig {
         res.push(format!(
             "Unity config = {{ {} }}",
             self.unity.multiline_display().join(", ")
+        ));
+        res.push(format!(
+            "Gravitino config = {{ {} }}",
+            self.gravitino.multiline_display().join(", ")
         ));
         res.push(format!(
             "Hugging Face config = {{ {} }}",
