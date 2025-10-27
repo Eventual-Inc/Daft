@@ -260,8 +260,7 @@ def prompt(
     model: str | None = None,
     **options: str,
 ) -> Expression:
-    from daft.udf import cls as daft_cls, method
-    from daft.ai._expressions import _PrompterExpression
+    from daft.ai.vllm.provider import VLLMPrefixCachedProvider
 
     # Add return_format to options for the provider
     if return_format is not None:
@@ -271,6 +270,32 @@ def prompt(
 
     # Load a PrompterDescriptor from the resolved provider
     prompter_descriptor = _resolve_provider(provider, "openai").get_prompter(model, **options)
+
+    # Check if this is a vLLM provider - if so, use PyExpr.vllm directly
+    from daft.ai.vllm.protocols.prompter import VLLMPrefixCachedPrompterDescriptor
+
+    if isinstance(prompter_descriptor, VLLMPrefixCachedPrompterDescriptor):
+        if return_format is not None:
+            raise ValueError("return_format is not supported for vLLM provider")
+
+        if system_message is not None:
+            raise ValueError("system_message is not supported for vLLM provider")
+
+        return Expression._from_pyexpr(
+            messages._expr.vllm(
+                prompter_descriptor.model_name,
+                prompter_descriptor.concurrency,
+                prompter_descriptor.max_buffer_size,
+                prompter_descriptor.max_running_tasks,
+                prompter_descriptor.batch_size,
+                prompter_descriptor.engine_args,
+                prompter_descriptor.generate_args,
+            )
+        )
+
+    # For non-vLLM providers, use the standard UDF-based execution path
+    from daft.udf import cls as daft_cls, method
+    from daft.ai._expressions import _PrompterExpression
 
     # Determine return dtype
     if return_format is not None:
@@ -299,19 +324,3 @@ def prompt(
 
     # Call the instance (which calls __call__ method) with the messages expression
     return instance(messages)
-
-
-def vllm_prompt(
-    messages: Expression,
-    model: str,
-    concurrency: int = 1,
-    batch_size: int | None = None,
-    engine_args: dict[str, Any] = {},
-    generate_args: dict[str, Any] = {},
-) -> Expression:
-    """(EXPERIMENTAL) Prefix-cache optimized LLM batch inference with vLLM.
-
-    Note:
-        This function is highly experimental and may not work. In addition, the API will likely change (or be removed) in the near future.
-    """
-    return Expression._from_pyexpr(messages._expr.vllm(model, concurrency, batch_size, engine_args, generate_args))

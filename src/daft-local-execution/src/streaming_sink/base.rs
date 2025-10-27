@@ -26,14 +26,22 @@ use crate::{
 pub enum StreamingSinkOutput {
     NeedMoreInput(Option<Arc<MicroPartition>>),
     #[allow(dead_code)]
-    HasMoreOutput(Arc<MicroPartition>),
+    HasMoreOutput(Option<Arc<MicroPartition>>),
+    Finished(Option<Arc<MicroPartition>>),
+}
+
+pub enum StreamingSinkFinalizeOutput<Op: StreamingSink> {
+    HasMoreOutput {
+        states: Vec<Op::State>,
+        output: Option<Arc<MicroPartition>>,
+    },
     Finished(Option<Arc<MicroPartition>>),
 }
 
 pub(crate) type StreamingSinkExecuteResult<Op> =
     OperatorOutput<DaftResult<(<Op as StreamingSink>::State, StreamingSinkOutput)>>;
-pub(crate) type StreamingSinkFinalizeResult =
-    OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>>;
+pub(crate) type StreamingSinkFinalizeResult<Op> =
+    OperatorOutput<DaftResult<StreamingSinkFinalizeOutput<Op>>>;
 pub(crate) trait StreamingSink: Send + Sync {
     type State: Send + Sync + Unpin;
     /// Execute the StreamingSink operator on the morsel of input data,
@@ -51,7 +59,9 @@ pub(crate) trait StreamingSink: Send + Sync {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkFinalizeResult;
+    ) -> StreamingSinkFinalizeResult<Self>
+    where
+        Self: Sized;
 
     /// The name of the StreamingSink operator. Used for display purposes.
     fn name(&self) -> NodeName;
@@ -153,7 +163,9 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                         break;
                     }
                     StreamingSinkOutput::HasMoreOutput(mp) => {
-                        if output_sender.send(mp).await.is_err() {
+                        if let Some(mp) = mp
+                            && output_sender.send(mp).await.is_err()
+                        {
                             return Ok(state);
                         }
                     }
@@ -331,10 +343,25 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                     runtime_stats.clone(),
                     info_span!("StreamingSink::Finalize"),
                 );
-                let finalized_result = op.finalize(finished_states, &spawner).await??;
-                if let Some(res) = finalized_result {
-                    let _ = counting_sender.send(res).await;
+
+                loop {
+                    let finalized_result = op.finalize(finished_states, &spawner).await??;
+                    match finalized_result {
+                        StreamingSinkFinalizeOutput::HasMoreOutput { states, output } => {
+                            if let Some(mp) = output {
+                                let _ = counting_sender.send(mp).await;
+                            }
+                            finished_states = states;
+                        }
+                        StreamingSinkFinalizeOutput::Finished(output) => {
+                            if let Some(mp) = output {
+                                let _ = counting_sender.send(mp).await;
+                            }
+                            break;
+                        }
+                    }
                 }
+
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },

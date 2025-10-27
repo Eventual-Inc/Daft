@@ -307,6 +307,8 @@ pub struct VLLMExpr {
     pub model: String,
     pub input: ExprRef,
     pub concurrency: usize,
+    pub max_buffer_size: usize,
+    pub max_running_tasks: usize,
     pub batch_size: Option<usize>,
     pub engine_args: RuntimePyObject,
     pub generate_args: RuntimePyObject,
@@ -314,11 +316,7 @@ pub struct VLLMExpr {
 
 impl std::fmt::Display for VLLMExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "vllm(model: {}, input: {}, concurrency: {}, engine_args: {:?}, generate_args: {:?})",
-            self.model, self.input, self.concurrency, self.engine_args, self.generate_args
-        )
+        write!(f, "vllm(model: {}, input: {})", self.model, self.input)
     }
 }
 
@@ -1358,11 +1356,13 @@ impl Expr {
                 model,
                 input,
                 concurrency,
+                max_buffer_size,
+                max_running_tasks,
                 batch_size,
                 engine_args,
                 generate_args,
             }) => FieldID::new(format!(
-                "VLLM({model}, {input}, {concurrency}, {batch_size:?}, {engine_args:?}, {generate_args:?})"
+                "VLLM({model}, {input}, {concurrency}, {max_buffer_size}, {max_running_tasks}, {batch_size:?}, {engine_args:?}, {generate_args:?})"
             )),
         }
     }
@@ -1530,6 +1530,8 @@ impl Expr {
                 model,
                 input: _,
                 concurrency,
+                max_buffer_size,
+                max_running_tasks,
                 batch_size,
                 engine_args,
                 generate_args,
@@ -1537,6 +1539,8 @@ impl Expr {
                 model: model.clone(),
                 input: children.first().expect("Should have 1 child").clone(),
                 concurrency: *concurrency,
+                max_buffer_size: *max_buffer_size,
+                max_running_tasks: *max_running_tasks,
                 batch_size: *batch_size,
                 engine_args: engine_args.clone(),
                 generate_args: generate_args.clone(),

@@ -20,7 +20,10 @@ use tracing::{Span, instrument};
 use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef};
+use crate::{
+    ExecutionTaskSpawner, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef,
+    streaming_sink::base::StreamingSinkFinalizeOutput,
+};
 
 pub(crate) struct IndexBitmapBuilder {
     mutable_bitmap: MutableBitmap,
@@ -664,46 +667,48 @@ impl StreamingSink for OuterHashJoinProbeSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkFinalizeResult {
+    ) -> StreamingSinkFinalizeResult<Self> {
         if self.needs_bitmap {
             let params = self.params.clone();
             spawner
                 .spawn(
                     async move {
-                        match params.join_type {
-                        JoinType::Left => Self::finalize_left(
-                            states,
-                            &params.common_join_cols,
-                            &params.left_non_join_columns,
-                            &params.right_non_join_schema,
-                        )
-                        .await,
-                        JoinType::Right => Self::finalize_right(
-                            states,
-                            &params.common_join_cols,
-                            &params.right_non_join_columns,
-                            &params.left_non_join_schema,
-                        )
-                        .await,
-                        JoinType::Outer => Self::finalize_outer(
+                        let output = match params.join_type {
+                            JoinType::Left => Self::finalize_left(
                                 states,
                                 &params.common_join_cols,
-                                &params.outer_common_col_schema,
                                 &params.left_non_join_columns,
                                 &params.right_non_join_schema,
-                                params.build_on_left,
                             )
                             .await,
-                        _ => unreachable!(
-                            "Only Left, Right, and Outer joins are supported in OuterHashJoinProbeSink"
-                        ),
-                    }
+                            JoinType::Right => Self::finalize_right(
+                                states,
+                                &params.common_join_cols,
+                                &params.right_non_join_columns,
+                                &params.left_non_join_schema,
+                            )
+                            .await,
+                            JoinType::Outer => Self::finalize_outer(
+                                    states,
+                                    &params.common_join_cols,
+                                    &params.outer_common_col_schema,
+                                    &params.left_non_join_columns,
+                                    &params.right_non_join_schema,
+                                    params.build_on_left,
+                                )
+                                .await,
+                            _ => unreachable!(
+                                "Only Left, Right, and Outer joins are supported in OuterHashJoinProbeSink"
+                            ),
+                        }?;
+
+                        Ok(StreamingSinkFinalizeOutput::Finished(output))
                     },
                     Span::current(),
                 )
                 .into()
         } else {
-            Ok(None).into()
+            Ok(StreamingSinkFinalizeOutput::Finished(None)).into()
         }
     }
 

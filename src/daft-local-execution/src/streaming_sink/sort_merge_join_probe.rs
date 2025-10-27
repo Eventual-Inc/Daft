@@ -13,7 +13,8 @@ use crate::{
     pipeline::NodeName,
     state_bridge::BroadcastStateBridgeRef,
     streaming_sink::base::{
-        StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
+        StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
+        StreamingSinkFinalizeResult, StreamingSinkOutput,
     },
 };
 
@@ -97,7 +98,7 @@ impl StreamingSink for SortMergeJoinProbe {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkFinalizeResult {
+    ) -> StreamingSinkFinalizeResult<Self> {
         debug_assert_eq!(states.len(), 1);
         let mut state = states.into_iter().next().expect("Expect exactly one state");
         let params = self.params.clone();
@@ -122,7 +123,9 @@ impl StreamingSink for SortMergeJoinProbe {
                         params.join_type,
                         false,
                     )?;
-                    Ok(Some(Arc::new(joined)))
+                    Ok(StreamingSinkFinalizeOutput::Finished(Some(Arc::new(
+                        joined,
+                    ))))
                 },
                 Span::current(),
             )

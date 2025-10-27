@@ -19,8 +19,10 @@ use super::{
     outer_hash_join_probe::IndexBitmapBuilder,
 };
 use crate::{
-    ExecutionTaskSpawner, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef,
-    streaming_sink::base::StreamingSinkFinalizeResult,
+    ExecutionTaskSpawner,
+    pipeline::NodeName,
+    state_bridge::BroadcastStateBridgeRef,
+    streaming_sink::base::{StreamingSinkFinalizeOutput, StreamingSinkFinalizeResult},
 };
 
 pub(crate) enum AntiSemiProbeState {
@@ -276,17 +278,20 @@ impl StreamingSink for AntiSemiProbeSink {
         &self,
         states: Vec<Self::State>,
         task_spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkFinalizeResult {
+    ) -> StreamingSinkFinalizeResult<Self> {
         if self.build_on_left {
             let is_semi = self.params.is_semi;
             task_spawner
                 .spawn(
-                    async move { Self::finalize_anti_semi(states, is_semi).await },
+                    async move {
+                        let output = Self::finalize_anti_semi(states, is_semi).await?;
+                        Ok(StreamingSinkFinalizeOutput::Finished(output))
+                    },
                     Span::current(),
                 )
                 .into()
         } else {
-            Ok(None).into()
+            Ok(StreamingSinkFinalizeOutput::Finished(None)).into()
         }
     }
 

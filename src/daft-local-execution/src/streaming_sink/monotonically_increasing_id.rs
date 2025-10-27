@@ -9,7 +9,9 @@ use tracing::{Span, instrument};
 use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
+use crate::{
+    ExecutionTaskSpawner, pipeline::NodeName, streaming_sink::base::StreamingSinkFinalizeOutput,
+};
 
 pub(crate) struct MonotonicallyIncreasingIdState {
     id_offset: u64,
@@ -107,8 +109,8 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
         &self,
         _states: Vec<Self::State>,
         _spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkFinalizeResult {
-        Ok(None).into()
+    ) -> StreamingSinkFinalizeResult<Self> {
+        Ok(StreamingSinkFinalizeOutput::Finished(None)).into()
     }
 
     fn make_state(&self) -> DaftResult<Self::State> {

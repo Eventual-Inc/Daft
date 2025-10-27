@@ -11,7 +11,9 @@ use tracing::{Span, instrument};
 use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
+use crate::{
+    ExecutionTaskSpawner, pipeline::NodeName, streaming_sink::base::StreamingSinkFinalizeOutput,
+};
 
 pub(crate) struct LimitSinkState {
     // The remaining number of rows to skip
@@ -119,8 +121,8 @@ impl StreamingSink for LimitSink {
         &self,
         _states: Vec<Self::State>,
         _spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkFinalizeResult {
-        Ok(None).into()
+    ) -> StreamingSinkFinalizeResult<Self> {
+        Ok(StreamingSinkFinalizeOutput::Finished(None)).into()
     }
 
     fn make_state(&self) -> DaftResult<Self::State> {
