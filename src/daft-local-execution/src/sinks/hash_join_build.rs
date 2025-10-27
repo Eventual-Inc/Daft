@@ -13,6 +13,7 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::{ProbeState, ProbeableBuilder, RecordBatch, make_probeable_builder};
 use itertools::Itertools;
+use opentelemetry::{global, metrics::Counter};
 use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
@@ -99,10 +100,19 @@ impl ProbeTableState {
     }
 }
 
-#[derive(Default)]
 struct HashJoinBuildRuntimeStats {
     cpu_us: AtomicU64,
     rows_in: AtomicU64,
+    cpu_us_otel: Counter<u64>,
+    rows_in_otel: Counter<u64>,
+}
+impl HashJoinBuildRuntimeStats {
+    pub fn new(name: &str) -> Self {
+        let meter = global::meter("runtime_stats");
+        let cpu_us_otel = meter.u64_counter(format!("{name}.cpu_us")).build();
+        let rows_in_otel = meter.u64_counter(format!("{name}.rows_in")).build();
+        Self { cpu_us: AtomicU64::new(0), rows_in: AtomicU64::new(0), cpu_us_otel, rows_in_otel }
+    }
 }
 
 impl RuntimeStats for HashJoinBuildRuntimeStats {
@@ -119,6 +129,7 @@ impl RuntimeStats for HashJoinBuildRuntimeStats {
 
     fn add_rows_in(&self, rows: u64) {
         self.rows_in.fetch_add(rows, Ordering::Relaxed);
+        self.rows_in_otel.add(rows, &[]);
     }
 
     fn add_rows_out(&self, _: u64) {
@@ -127,6 +138,7 @@ impl RuntimeStats for HashJoinBuildRuntimeStats {
 
     fn add_cpu_us(&self, cpu_us: u64) {
         self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
+        self.cpu_us_otel.add(cpu_us, &[]);
     }
 }
 
@@ -225,8 +237,8 @@ impl BlockingSink for HashJoinBuildSink {
         )
     }
 
-    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        Arc::new(HashJoinBuildRuntimeStats::default())
+    fn make_runtime_stats(&self, name: &str) -> Arc<dyn RuntimeStats> {
+        Arc::new(HashJoinBuildRuntimeStats::new(name))
     }
 
     fn morsel_size_requirement(&self) -> Option<crate::pipeline::MorselSizeRequirement> {

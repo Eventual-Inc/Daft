@@ -190,7 +190,7 @@ impl RuntimeContext {
         Self::new_with_context(HashMap::new())
     }
 
-    pub fn new_with_context(mut context: HashMap<String, String>) -> Self {
+    pub fn new_with_context( mut context: HashMap<String, String>) -> Self {
         if !context.contains_key("plan_id") {
             let plan_id = uuid::Uuid::new_v4().to_string();
             context.insert("plan_id".to_string(), plan_id);
