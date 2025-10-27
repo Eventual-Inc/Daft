@@ -202,7 +202,7 @@ from .str import (
 )
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
-from .video import get_metadata, keyframes
+from .video import video_metadata, video_keyframes
 from .window import (
     row_number,
     rank,
@@ -287,7 +287,6 @@ __all__ = [
     "floor",
     "format",
     "get",
-    "get_metadata",
     "hash",
     "hour",
     "ilike",
@@ -301,7 +300,6 @@ __all__ = [
     "is_nan",
     "is_null",
     "jq",
-    "keyframes",
     "lag",
     "lead",
     "left",
@@ -419,6 +417,8 @@ __all__ = [
     "upper",
     "value_counts",
     "video_file",
+    "video_keyframes",
+    "video_metadata",
     "week_of_year",
     "when",
     "year",
