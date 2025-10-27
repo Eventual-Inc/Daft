@@ -305,7 +305,9 @@ impl StreamingSink for VLLMSink {
         spawner
             .spawn(
                 async move {
-                    let state = &mut states[0];
+                    let [state] = states.as_mut_slice() else {
+                        unreachable!("VLLMSink should have exactly one state");
+                    };
 
                     let null_rows: Vec<RecordBatch> = this.submit_tasks(state)?;
 
