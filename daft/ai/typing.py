@@ -8,6 +8,10 @@ from typing_extensions import TypeAlias
 
 from daft.datatype import DataType
 
+if TYPE_CHECKING:
+    from typing import Literal
+
+
 Options = dict[str, Any]
 
 T = TypeVar("T")
@@ -76,6 +80,8 @@ class UDFOptions:
 
     concurrency: int | None = None
     num_gpus: int | None = None
+    max_retries: int = 3
+    on_error: Literal["raise", "log", "ignore"] = "raise"
 
 
 Label = str

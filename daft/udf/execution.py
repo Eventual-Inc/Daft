@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
-from daft.datatype import DataType
+from daft import DataType
 from daft.dependencies import np, pa
 from daft.expressions.expressions import Expression
 from daft.series import Series
