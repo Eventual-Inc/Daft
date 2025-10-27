@@ -26,6 +26,7 @@ use crate::{
     },
 };
 
+#[derive(Clone)]
 pub(crate) struct VLLMSink {
     expr: BoundVLLMExpr,
     output_column_name: Arc<str>,
@@ -78,28 +79,23 @@ impl VLLMExecutor {
         Ok(())
     }
 
-    fn poll(&self, output_column_name: &str, schema: SchemaRef) -> DaftResult<Option<RecordBatch>> {
+    fn poll(&self) -> DaftResult<Option<(Vec<String>, RecordBatch)>> {
         Python::attach(|py| {
             use daft_recordbatch::python::PyRecordBatch;
 
             let output = self.0.bind(py).call_method0(intern!(py, "poll"))?;
 
             if output.is_none() {
-                return Ok(None);
+                Ok(None)
+            } else {
+                let (outputs, rows): (Vec<String>, Bound<PyAny>) = output.extract()?;
+                let rows = rows
+                    .getattr(intern!(py, "_recordbatch"))?
+                    .extract::<PyRecordBatch>()?
+                    .record_batch;
+
+                Ok(Some((outputs, rows)))
             }
-
-            let (outputs, rows): (Vec<String>, Bound<PyAny>) = output.extract()?;
-
-            let rows = rows
-                .getattr(intern!(py, "_recordbatch"))?
-                .extract::<PyRecordBatch>()?
-                .record_batch;
-
-            let output_series =
-                Utf8Array::from((output_column_name, outputs.as_slice())).into_series();
-
-            let output_batch = rows.append_column(schema, output_series)?;
-            Ok(Some(output_batch))
         })
     }
 
@@ -124,11 +120,7 @@ impl VLLMExecutor {
         unimplemented!("VLLMExecutor::submit is not supported without the Python feature.")
     }
 
-    fn poll(
-        &self,
-        _output_column_name: &str,
-        _schema: SchemaRef,
-    ) -> DaftResult<Option<RecordBatch>> {
+    fn poll(&self) -> DaftResult<Option<(Vec<String>, RecordBatch)>> {
         unimplemented!("VLLMExecutor::poll is not supported without the Python feature.")
     }
 
@@ -152,13 +144,11 @@ impl VLLMSink {
         }
     }
 
-    fn submit_tasks(
-        state: &mut VLLMState,
-        max_running_tasks: usize,
-        expr_input: BoundExpr,
-        output_column_name: &str,
-        schema: SchemaRef,
-    ) -> DaftResult<Vec<RecordBatch>> {
+    fn submit_tasks(&self, state: &mut VLLMState) -> DaftResult<Vec<RecordBatch>> {
+        let expr = self.expr.inner();
+        let max_running_tasks = expr.max_running_tasks;
+        let expr_input = BoundExpr::new_unchecked(expr.input.clone());
+
         let io_stats = IOStatsContext::new("VLLMSink::execute");
 
         let mut available_tasks =
@@ -212,8 +202,8 @@ impl VLLMSink {
             .into_iter()
             .map(|rb| {
                 rb.append_column(
-                    schema.clone(),
-                    Series::full_null(output_column_name, &DataType::Utf8, rb.len()),
+                    self.schema.clone(),
+                    Series::full_null(&self.output_column_name, &DataType::Utf8, rb.len()),
                 )
                 .unwrap()
             })
@@ -222,17 +212,28 @@ impl VLLMSink {
         Ok(null_rows)
     }
 
+    fn poll_tasks(&self, state: &VLLMState) -> DaftResult<Option<RecordBatch>> {
+        Ok(state.executor.poll()?.map(|(outputs, rows)| {
+            let output_series =
+                Utf8Array::from((self.output_column_name.as_ref(), outputs.as_slice()))
+                    .into_series();
+
+            rows.append_column(self.schema.clone(), output_series)
+                .unwrap()
+        }))
+    }
+
     fn combine_output_with_null_rows(
+        &self,
         output_batch: Option<RecordBatch>,
         null_rows: Vec<RecordBatch>,
-        schema: SchemaRef,
     ) -> Option<Arc<MicroPartition>> {
         if let Some(output_batch) = output_batch {
             let mut output_batches = null_rows;
             output_batches.push(output_batch);
 
             Some(Arc::new(MicroPartition::new_loaded(
-                schema,
+                self.schema.clone(),
                 Arc::new(output_batches),
                 None,
             )))
@@ -240,10 +241,21 @@ impl VLLMSink {
             None
         } else {
             Some(Arc::new(MicroPartition::new_loaded(
-                schema,
+                self.schema.clone(),
                 Arc::new(null_rows),
                 None,
             )))
+        }
+    }
+
+    fn try_add_to_buffer(&self, state: &mut VLLMState, input: Arc<MicroPartition>) -> bool {
+        if state.buffer_size < self.expr.inner().max_buffer_size {
+            state.buffer_size += input.len();
+            state.buffer.push_back(input);
+
+            true
+        } else {
+            false
         }
     }
 }
@@ -257,36 +269,22 @@ impl StreamingSink for VLLMSink {
         mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult<Self> {
-        let schema = self.schema.clone();
-        let expr = self.expr.inner();
-        let output_column_name = self.output_column_name.clone();
-        let max_running_tasks = expr.max_running_tasks;
-        let max_buffer_size = expr.max_buffer_size;
-        let expr_input = BoundExpr::new_unchecked(expr.input.clone());
+        let this = self.clone();
 
         spawner
             .spawn(
                 async move {
-                    let null_rows = Self::submit_tasks(
-                        &mut state,
-                        max_running_tasks,
-                        expr_input,
-                        &output_column_name,
-                        schema.clone(),
-                    )?;
+                    let input_added = this.try_add_to_buffer(&mut state, input.clone());
 
-                    let output_batch = state.executor.poll(&output_column_name, schema.clone())?;
+                    let null_rows = this.submit_tasks(&mut state)?;
 
-                    let output = Self::combine_output_with_null_rows(
-                        output_batch,
-                        null_rows,
-                        schema.clone(),
-                    );
+                    let output_batch = this.poll_tasks(&state)?;
+                    let output = this.combine_output_with_null_rows(output_batch, null_rows);
 
-                    if state.buffer_size < max_buffer_size {
-                        state.buffer_size += input.len();
-                        state.buffer.push_back(input);
-
+                    if input_added {
+                        Ok((state, StreamingSinkOutput::NeedMoreInput(output)))
+                    } else if this.try_add_to_buffer(&mut state, input.clone()) {
+                        // try adding again now that we've submitted tasks
                         Ok((state, StreamingSinkOutput::NeedMoreInput(output)))
                     } else {
                         Ok((state, StreamingSinkOutput::HasMoreOutput(output)))
@@ -302,35 +300,20 @@ impl StreamingSink for VLLMSink {
         mut states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult<Self> {
-        let schema = self.schema.clone();
-        let expr = self.expr.inner();
-        let output_column_name = self.output_column_name.clone();
-        let max_running_tasks = expr.max_running_tasks;
-        let expr_input = BoundExpr::new_unchecked(expr.input.clone());
+        let this = self.clone();
 
         spawner
             .spawn(
                 async move {
                     let state = &mut states[0];
 
-                    let null_rows: Vec<RecordBatch> = Self::submit_tasks(
-                        state,
-                        max_running_tasks,
-                        expr_input,
-                        &output_column_name,
-                        schema.clone(),
-                    )?;
+                    let null_rows: Vec<RecordBatch> = this.submit_tasks(state)?;
 
                     let finished =
                         state.executor.num_running_tasks()? == 0 && state.buffer_size == 0;
 
-                    let output_batch = state.executor.poll(&output_column_name, schema.clone())?;
-
-                    let output = Self::combine_output_with_null_rows(
-                        output_batch,
-                        null_rows,
-                        schema.clone(),
-                    );
+                    let output_batch = this.poll_tasks(state)?;
+                    let output = this.combine_output_with_null_rows(output_batch, null_rows);
 
                     if finished {
                         Ok(StreamingSinkFinalizeOutput::Finished(output))
