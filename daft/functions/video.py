@@ -3,13 +3,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import daft
-from daft.file.typing import VideoMetadata
 from daft.udf.udf_v2 import Func
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
-
     import PIL
+
+    from daft.file.typing import VideoMetadata
 
 
 def get_metadata_impl(
@@ -33,7 +32,15 @@ def get_metadata_impl(
 
 get_metadata = Func._from_func(
     get_metadata_impl,
-    return_dtype=VideoMetadata,
+    return_dtype=daft.DataType.struct(
+        {
+            "width": daft.DataType.int64(),
+            "height": daft.DataType.int64(),
+            "fps": daft.DataType.float64(),
+            "frame_count": daft.DataType.int64(),
+            "time_base": daft.DataType.float64(),
+        }
+    ),
     unnest=False,
     use_process=None,
     is_batch=False,
@@ -45,7 +52,7 @@ get_metadata = Func._from_func(
 
 def keyframes_impl(
     file: daft.VideoFile, *, start_time: float = 0, end_time: float | None = None
-) -> Iterator[PIL.Image.Image]:
+) -> list[PIL.Image.Image]:
     """Get keyframes for a video file.
 
     Args:
@@ -56,12 +63,12 @@ def keyframes_impl(
     Returns:
         Python Iterator: A Python iterator containing the keyframes.
     """
-    return file.keyframes(start_time, end_time)
+    return list(file.keyframes(start_time, end_time))
 
 
 keyframes = Func._from_func(
     keyframes_impl,
-    return_dtype=daft.DataType.python(),
+    return_dtype=daft.DataType.list(daft.DataType.image()),
     unnest=False,
     use_process=None,
     is_batch=False,

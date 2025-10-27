@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import pytest
 
+pytest.importorskip("av")
+
 import daft
+from daft.schema import Field
 
 
 @pytest.fixture
@@ -44,3 +47,16 @@ def test_get_metadata(sample_video_path):
     }
 
     assert df.to_pydict() == expected
+
+
+def test_keyframes(sample_video_path):
+    df = daft.from_pydict({"path": [sample_video_path]})
+    df = df.select(daft.functions.video_file(df["path"], verify=True).alias("video"))
+    df = df.select(daft.functions.keyframes(df["video"]))
+    expected_schema = daft.Schema._from_fields([Field.create("video", daft.DataType.list(daft.DataType.image()))])
+
+    actual_schema = df.schema()
+    assert actual_schema == expected_schema
+
+    values = df.to_pydict()["video"][0]
+    assert len(values) == 13
