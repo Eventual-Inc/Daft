@@ -88,7 +88,7 @@ impl ScalarUDF for VideoFile {
         } = args.try_into()?;
 
         fn verify_file(file_ref: FileReference) -> DaftResult<FileReference> {
-            let mut daft_file: DaftFile = file_ref.clone().try_into()?;
+            let mut daft_file = DaftFile::new_blocking(file_ref.clone())?;
 
             let mime_type = daft_file.guess_mime_type();
             match mime_type {
@@ -190,7 +190,7 @@ impl ScalarUDF for Size {
                 let opt: Option<u64> = s
                     .get(i)
                     .map(|f| {
-                        let f = DaftFile::try_from(f)?;
+                        let f = DaftFile::new_blocking(f)?;
                         let size = f.size()?;
                         DaftResult::Ok(size as _)
                     })

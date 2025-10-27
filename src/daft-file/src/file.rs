@@ -16,35 +16,13 @@ pub struct DaftFile {
     pub(crate) position: usize,
 }
 
-impl TryFrom<FileReference> for DaftFile {
-    type Error = DaftError;
-
-    fn try_from(value: FileReference) -> Result<Self, Self::Error> {
-        match value.inner {
-            DataOrReference::Reference(path, ioconfig) => Self::from_path(
-                value.media_type,
-                path,
-                ioconfig.map(|cfg| cfg.as_ref().clone()),
-            ),
-            DataOrReference::Data(items) => Ok(Self::from_bytes(
-                value.media_type,
-                Arc::unwrap_or_clone(items),
-            )),
-        }
-    }
-}
-
 impl DaftFile {
-    pub fn from_path(
-        media_type: MediaType,
-        path: String,
-        io_conf: Option<IOConfig>,
-    ) -> DaftResult<Self> {
-        let io_client = daft_io::get_io_client(true, io_conf.map(Arc::new).unwrap_or_default())?;
-        let rt = common_runtime::get_io_runtime(true);
+    pub async fn new(file_ref: FileReference) -> DaftResult<Self> {
+        match file_ref.inner {
+            DataOrReference::Reference(path, io_conf) => {
+                let media_type = file_ref.media_type;
+                let io_client = daft_io::get_io_client(true, io_conf.unwrap_or_default())?;
 
-        let (source, path, file_size, supports_range) =
-            rt.block_within_async_context(async move {
                 let (source, path) = io_client
                     .get_source_and_path(&path)
                     .await
@@ -59,27 +37,49 @@ impl DaftFile {
                     .supports_range(&path)
                     .await
                     .map_err(|e| DaftError::ComputeError(e.to_string()))?;
-                DaftResult::Ok((source, path, file_size, supports_range))
-            })??;
 
-        // Default to 16MB buffer
-        const DEFAULT_BUFFER_SIZE: usize = 16 * 1024 * 1024;
+                // Default to 16MB buffer
+                const DEFAULT_BUFFER_SIZE: usize = 16 * 1024 * 1024;
 
-        let mut reader = ObjectSourceReader::new(source, path, None, file_size);
-        if !supports_range || file_size <= DEFAULT_BUFFER_SIZE {
-            let mut buf = Vec::with_capacity(file_size);
-            reader.read_to_end(&mut buf)?;
-            Ok(Self::from_bytes(media_type, buf))
-        } else {
-            // we wrap it in a BufReader so we are not making so many network requests for each byte read
-            let buffered_reader = BufReader::with_capacity(DEFAULT_BUFFER_SIZE, reader);
+                let mut reader = ObjectSourceReader::new(source, path, None, file_size);
+                if !supports_range || file_size <= DEFAULT_BUFFER_SIZE {
+                    let mut buf = Vec::with_capacity(file_size);
+                    reader.read_to_end(&mut buf)?;
+                    Ok(Self::from_bytes(media_type, buf))
+                } else {
+                    // we wrap it in a BufReader so we are not making so many network requests for each byte read
+                    let buffered_reader = BufReader::with_capacity(DEFAULT_BUFFER_SIZE, reader);
 
-            Ok(Self {
-                media_type,
-                cursor: Some(FileCursor::ObjectReader(buffered_reader)),
-                position: 0,
-            })
+                    Ok(Self {
+                        media_type,
+                        cursor: Some(FileCursor::ObjectReader(buffered_reader)),
+                        position: 0,
+                    })
+                }
+            }
+            DataOrReference::Data(items) => Ok(Self::from_bytes(
+                file_ref.media_type,
+                Arc::unwrap_or_clone(items),
+            )),
         }
+    }
+
+    /// Create a new file. unlike the async `new`, this will block the current thread until the file is created.
+    pub fn new_blocking(file_ref: FileReference) -> DaftResult<Self> {
+        let rt = common_runtime::get_io_runtime(true);
+        rt.block_within_async_context(async move { Self::new(file_ref).await })
+            .flatten()
+    }
+
+    pub fn from_path(
+        media_type: MediaType,
+        path: String,
+        io_conf: Option<IOConfig>,
+    ) -> DaftResult<Self> {
+        Self::new_blocking(FileReference {
+            media_type,
+            inner: DataOrReference::Reference(path, io_conf.map(Arc::new)),
+        })
     }
 
     pub fn from_bytes(media_type: MediaType, bytes: Vec<u8>) -> Self {

@@ -29,7 +29,9 @@ where
         } else {
             let file = self.files.get(self.index).unwrap();
             self.index += 1;
-            Some(file.try_into().expect("Failed to convert file"))
+            let file = DaftFile::new_blocking(file).expect("Failed to create DaftFile");
+
+            Some(file)
         }
     }
 }
