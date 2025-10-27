@@ -34,11 +34,7 @@ impl ScalarUDF for File {
 
         Ok(match input.data_type() {
             DataType::File(MediaType::Unknown) => input,
-            DataType::File(MediaType::Video) => input
-                .file::<MediaTypeVideo>()?
-                .clone()
-                .change_type::<MediaTypeUnknown>()
-                .into_series(),
+            DataType::File(MediaType::Video) => input.cast(&DataType::File(MediaType::Unknown))?,
 
             DataType::Binary => {
                 FileArray::<MediaTypeUnknown>::new_from_data_array(input.name(), input.binary()?)
@@ -107,8 +103,9 @@ impl ScalarUDF for VideoFile {
         Ok(match input.data_type() {
             DataType::File(MediaType::Video) => input,
             DataType::File(MediaType::Unknown) => {
-                let f = input.file::<MediaTypeUnknown>()?.clone();
-                let files = f.change_type::<MediaTypeVideo>();
+                let casted = input.cast(&DataType::File(MediaType::Video))?;
+                let files = casted.file::<MediaTypeVideo>()?.clone();
+
                 if verify {
                     for file in files.into_iter().flatten() {
                         verify_file(file)?;

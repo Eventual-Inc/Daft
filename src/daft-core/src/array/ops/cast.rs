@@ -36,7 +36,7 @@ use crate::{
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
     },
-    file::DaftMediaType,
+    file::{DaftMediaType, MediaTypeUnknown, MediaTypeVideo},
     lit::Literal,
     series::{IntoSeries, Series},
     utils::display::display_time64,
@@ -551,7 +551,15 @@ where
     T: DaftMediaType,
 {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        use daft_schema::media_type::MediaType::*;
         match dtype {
+            DataType::File(media_type) => match (media_type, T::get_type()) {
+                (Unknown, Unknown) | (Video, Video) => Ok(self.clone().into_series()),
+                (Unknown, Video) => Ok(self.clone().change_type::<MediaTypeVideo>().into_series()),
+                (Video, Unknown) => {
+                    Ok(self.clone().change_type::<MediaTypeUnknown>().into_series())
+                }
+            },
             DataType::Null => {
                 Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
             }

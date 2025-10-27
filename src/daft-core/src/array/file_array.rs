@@ -3,7 +3,7 @@ use std::sync::Arc;
 use arrow2::array::{MutableArray, MutableBinaryArray, MutablePrimitiveArray, MutableUtf8Array};
 use common_error::DaftResult;
 use common_io_config::IOConfig;
-use daft_schema::{dtype::DataType, field::Field};
+use daft_schema::{dtype::DataType, field::Field, media_type::MediaType};
 
 use crate::{
     array::prelude::*,
@@ -56,6 +56,9 @@ impl<T> FileArray<T>
 where
     T: DaftMediaType,
 {
+    pub fn media_type(&self) -> MediaType {
+        T::get_type()
+    }
     pub fn new_from_file_references<I: Iterator<Item = DaftResult<Option<FileReference>>>>(
         name: &str,
         iter: I,
