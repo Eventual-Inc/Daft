@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, TypedDict
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
+
 
 class OpenAIProviderOptions(TypedDict, total=False):
     """These are OpenAI client constructor parameters."""

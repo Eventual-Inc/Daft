@@ -1,12 +1,3 @@
-"""OpenAI Integration Tests.
-
-Note:
-    These tests require an OPENAI_API_KEY environment variable WITH credit.
-
-Usage:
-    pytest -m integration ./tests/integration/ai/test_openai.py --credentials
-"""
-
 from __future__ import annotations
 
 import os
@@ -78,7 +69,7 @@ def test_prompt_plain_text(session):
         "answer",
         prompt(
             daft.col("question"),
-            model="gpt-5-mini",
+            model="openai/gpt-5-nano",
         ),
     )
 
@@ -119,7 +110,7 @@ def test_prompt_structured_output(session):
                 daft.col("anime"),
             ),
             return_format=MovieReview,
-            model="gpt-5-mini",
+            model="openai/gpt-5-nano",
         ),
     )
 

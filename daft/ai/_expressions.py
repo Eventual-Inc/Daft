@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Any
 from daft.dependencies import pil_image
 
 if TYPE_CHECKING:
-    from daft import Series
     from daft.ai.protocols import (
         ImageClassifier,
         ImageClassifierDescriptor,
@@ -19,6 +18,7 @@ if TYPE_CHECKING:
         TextEmbedderDescriptor,
     )
     from daft.ai.typing import Embedding, Label
+    from daft.series import Series
 
 
 class _TextEmbedderExpression:
@@ -80,7 +80,7 @@ class _ImageClassificationExpression:
         return self.image_classifier.classify_image(images, labels=self.labels)
 
 
-class _PrompterExpression:
+class _SyncPrompterExpression:
     """Function expression implementation for a Prompter protocol."""
 
     prompter: Prompter
@@ -88,5 +88,17 @@ class _PrompterExpression:
     def __init__(self, prompter: PrompterDescriptor):
         self.prompter = prompter.instantiate()
 
-    async def __call__(self, message: str) -> Any:
-        return await self.prompter.prompt(message)
+    def __call__(self, messages: str) -> Any:
+        return self.prompter.prompt(messages)
+
+
+class _AsyncPrompterExpression:
+    """Function expression implementation for a Prompter protocol."""
+
+    prompter: Prompter
+
+    def __init__(self, prompter: PrompterDescriptor):
+        self.prompter = prompter.instantiate()
+
+    async def __call__(self, messages: str) -> Any:
+        return await self.prompter.prompt(messages)

@@ -279,10 +279,10 @@ def prompt(
     system_message: str | None = None,
     provider: str | Provider | None = None,
     model: str | None = None,
-    **options: str,
+    **options,
 ) -> Expression:
     from daft.udf import cls as daft_cls
-    from daft.ai._expressions import _PrompterExpression
+    from daft.ai._expressions import _AsyncPrompterExpression, _SyncPrompterExpression
 
     # Add return_format to options for the provider
     if return_format is not None:
@@ -292,6 +292,12 @@ def prompt(
 
     # Load a PrompterDescriptor from the resolved provider
     prompter_descriptor = _resolve_provider(provider, "openai").get_prompter(model, **options)
+
+    # Resolve the appropriate Prompter Expression based upon the Prompter Descriptor
+    if prompter_descriptor.get_provider() == "openai":
+        _PrompterExpression = _AsyncPrompterExpression
+    else:
+        _PrompterExpression = _SyncPrompterExpression
 
     # Determine return dtype
     if return_format is not None:
@@ -305,7 +311,6 @@ def prompt(
     # Get UDF options from the descriptor
     udf_options = prompter_descriptor.get_udf_options()
 
-    # Decorate the __call__ method with @daft.method to specify return_dtype
     _PrompterExpression.__call__ = method(method=_PrompterExpression.__call__, return_dtype=return_dtype)  # type: ignore[method-assign]
 
     # Wrap the class with @daft.cls
@@ -320,5 +325,5 @@ def prompt(
     # Instantiate the wrapped class with the prompter descriptor
     instance = wrapped_cls(prompter_descriptor)
 
-    # Call the instance (which calls __call__ method) with the messages expression
+    # Call the instance
     return instance(messages)

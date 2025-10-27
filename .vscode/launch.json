@@ -22,7 +22,7 @@
     },
     {
       "name": "Rust LLDB",
-      "pid": "0",
+      "pid": "7074",
       "type": "lldb",
       "request": "attach",
       "program": "${command:python.interpreterPath}",

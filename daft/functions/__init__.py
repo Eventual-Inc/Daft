@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from .ai import classify_image, classify_text, embed_text, embed_image, prompt
+from .ai import (
+    classify_text,
+    embed_text,
+    embed_image,
+    classify_image,
+    prompt,
+)
 from .agg import (
     count,
     count_distinct,
@@ -351,6 +357,7 @@ __all__ = [
     "partition_iceberg_truncate",
     "partition_months",
     "partition_years",
+    "prompt",
     "prompt",
     "quarter",
     "radians",
