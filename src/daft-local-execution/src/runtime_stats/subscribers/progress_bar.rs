@@ -230,12 +230,12 @@ mod python {
     use std::collections::HashMap;
 
     use common_metrics::ops::NodeInfo;
-    use pyo3::{PyObject, Python, types::PyAnyMethods};
+    use pyo3::{Python, types::PyAnyMethods};
 
     use super::*;
 
     pub fn in_notebook() -> bool {
-        pyo3::Python::with_gil(|py| {
+        pyo3::Python::attach(|py| {
             py.import(pyo3::intern!(py, "daft.utils"))
                 .and_then(|m| m.getattr(pyo3::intern!(py, "in_notebook")))
                 .and_then(|m| m.call0())
@@ -246,7 +246,7 @@ mod python {
 
     #[derive(Clone, Debug)]
     pub struct TqdmProgressBarManager {
-        inner: Arc<PyObject>,
+        inner: Arc<pyo3::Py<pyo3::PyAny>>,
         node_id_to_pb_id: HashMap<usize, usize>,
     }
 
@@ -254,7 +254,7 @@ mod python {
         pub fn new(node_infos: &[Arc<NodeInfo>]) -> Self {
             let mut node_id_to_pb_id = HashMap::new();
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let module = py.import("daft.runners.progress_bar")?;
                 let progress_bar_class = module.getattr("SwordfishProgressBar")?;
                 let pb_object = progress_bar_class.call0()?;
@@ -280,7 +280,7 @@ mod python {
         }
 
         fn update_bar(&self, pb_id: usize, message: &str) -> DaftResult<()> {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 self.inner
                     .call_method1(py, "update_bar", (pb_id, message))?;
                 DaftResult::Ok(())
@@ -288,7 +288,7 @@ mod python {
         }
 
         fn close_bar(&self, pb_id: usize) -> DaftResult<()> {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 self.inner.call_method1(py, "close_bar", (pb_id,))?;
                 DaftResult::Ok(())
             })

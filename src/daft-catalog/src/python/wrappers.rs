@@ -10,11 +10,11 @@ use crate::{Catalog, Identifier, Table, TableRef, error::CatalogResult};
 
 /// Newtype to implement the Catalog trait for a Python catalog
 #[derive(Debug)]
-pub struct PyCatalogWrapper(pub(super) PyObject);
+pub struct PyCatalogWrapper(pub(super) Py<PyAny>);
 
 impl Catalog for PyCatalogWrapper {
     fn name(&self) -> String {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             // catalog = 'python catalog object'
             let catalog = self.0.bind(py);
             // name = catalog.name
@@ -26,12 +26,12 @@ impl Catalog for PyCatalogWrapper {
         })
     }
 
-    fn to_py(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn to_py(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(self.0.clone_ref(py))
     }
 
     fn create_namespace(&self, ident: &Identifier) -> CatalogResult<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let catalog = self.0.bind(py);
             let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
             catalog.call_method1(intern!(py, "_create_namespace"), (ident,))?;
@@ -40,7 +40,7 @@ impl Catalog for PyCatalogWrapper {
     }
 
     fn has_namespace(&self, ident: &Identifier) -> CatalogResult<bool> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let catalog = self.0.bind(py);
             let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
             Ok(catalog
@@ -50,7 +50,7 @@ impl Catalog for PyCatalogWrapper {
     }
 
     fn drop_namespace(&self, ident: &Identifier) -> CatalogResult<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let catalog = self.0.bind(py);
             let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
             catalog.call_method1(intern!(py, "_drop_namespace"), (ident,))?;
@@ -59,7 +59,7 @@ impl Catalog for PyCatalogWrapper {
     }
 
     fn list_namespaces(&self, pattern: Option<&str>) -> CatalogResult<Vec<Identifier>> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let catalog = self.0.bind(py);
             let namespaces_py =
                 catalog.call_method1(intern!(py, "_list_namespaces"), (pattern,))?;
@@ -78,7 +78,7 @@ impl Catalog for PyCatalogWrapper {
     }
 
     fn create_table(&self, ident: &Identifier, schema: SchemaRef) -> CatalogResult<TableRef> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let catalog = self.0.bind(py);
             let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
             let schema = PySchema { schema };
@@ -93,7 +93,7 @@ impl Catalog for PyCatalogWrapper {
     }
 
     fn has_table(&self, ident: &Identifier) -> CatalogResult<bool> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let catalog = self.0.bind(py);
             let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
             Ok(catalog
@@ -103,7 +103,7 @@ impl Catalog for PyCatalogWrapper {
     }
 
     fn drop_table(&self, ident: &Identifier) -> CatalogResult<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let catalog = self.0.bind(py);
             let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
             catalog.call_method1(intern!(py, "_drop_table"), (ident,))?;
@@ -112,7 +112,7 @@ impl Catalog for PyCatalogWrapper {
     }
 
     fn list_tables(&self, pattern: Option<&str>) -> CatalogResult<Vec<Identifier>> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let catalog = self.0.bind(py);
             let namespaces_py = catalog.call_method1(intern!(py, "_list_tables"), (pattern,))?;
             Ok(namespaces_py
@@ -130,7 +130,7 @@ impl Catalog for PyCatalogWrapper {
     }
 
     fn get_table(&self, ident: &Identifier) -> CatalogResult<TableRef> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let catalog = self.0.bind(py);
             let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
             let table = catalog.call_method1(intern!(py, "_get_table"), (ident,))?;
@@ -141,11 +141,11 @@ impl Catalog for PyCatalogWrapper {
 
 /// Newtype to implement the Table trait for a Python table
 #[derive(Debug)]
-pub struct PyTableWrapper(pub(super) PyObject);
+pub struct PyTableWrapper(pub(super) Py<PyAny>);
 
 impl Table for PyTableWrapper {
     fn name(&self) -> String {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let table = self.0.bind(py);
             table
                 .getattr(intern!(py, "name"))
@@ -156,7 +156,7 @@ impl Table for PyTableWrapper {
     }
 
     fn schema(&self) -> CatalogResult<SchemaRef> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let table = self.0.bind(py);
             let schema_py = table.call_method0(intern!(py, "schema"))?;
             let schema = schema_py
@@ -169,7 +169,7 @@ impl Table for PyTableWrapper {
     }
 
     fn to_logical_plan(&self) -> CatalogResult<LogicalPlanBuilder> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             // table = 'python table object'
             let table = self.0.bind(py);
             // df = table.read()
@@ -192,7 +192,7 @@ impl Table for PyTableWrapper {
         plan: LogicalPlanBuilder,
         options: IndexMap<String, Literal>,
     ) -> CatalogResult<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let table = self.0.bind(py);
             let plan_py = PyLogicalPlanBuilder { builder: plan };
             let df = py
@@ -209,7 +209,7 @@ impl Table for PyTableWrapper {
         plan: LogicalPlanBuilder,
         options: IndexMap<String, Literal>,
     ) -> CatalogResult<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let table = self.0.bind(py);
             let plan_py = PyLogicalPlanBuilder { builder: plan };
             let df = py
@@ -221,7 +221,7 @@ impl Table for PyTableWrapper {
         })
     }
 
-    fn to_py(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn to_py(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(self.0.clone_ref(py))
     }
 }

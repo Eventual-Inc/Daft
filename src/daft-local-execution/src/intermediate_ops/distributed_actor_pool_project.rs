@@ -27,7 +27,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub(crate) struct ActorHandle {
     #[cfg(feature = "python")]
-    inner: Arc<PyObject>,
+    inner: Arc<Py<PyAny>>,
 }
 
 impl ActorHandle {
@@ -38,7 +38,7 @@ impl ActorHandle {
             .map(|e| e.inner)
             .collect::<Vec<_>>();
 
-        let (local_actors, remote_actors) = Python::with_gil(|py| {
+        let (local_actors, remote_actors) = Python::attach(|py| {
             let actor_handles = actor_handles
                 .into_iter()
                 .map(|e| e.as_ref().clone_ref(py))
@@ -50,7 +50,7 @@ impl ActorHandle {
                     pyo3::intern!(py, "get_ready_actors_by_location"),
                     (actor_handles,),
                 )?
-                .extract::<(Vec<PyObject>, Vec<PyObject>)>()?;
+                .extract::<(Vec<Py<PyAny>>, Vec<Py<PyAny>>)>()?;
             DaftResult::Ok((local_actors, remote_actors))
         })?;
 
@@ -72,23 +72,18 @@ impl ActorHandle {
         task_locals: pyo3_async_runtimes::TaskLocals,
     ) -> DaftResult<Arc<MicroPartition>> {
         let inner = self.inner.clone();
-        let await_coroutine = async move {
-            let result = Python::with_gil(|py| {
+        let result = common_runtime::python::execute_python_coroutine::<_, PyMicroPartition>(
+            move |py| {
                 let coroutine = inner.call_method1(
                     py,
                     pyo3::intern!(py, "eval_input"),
                     (PyMicroPartition::from(input),),
                 )?;
-                pyo3_async_runtimes::tokio::into_future(coroutine.into_bound(py))
-            })?
-            .await?;
-            DaftResult::Ok(result)
-        };
-        let result = pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine)
-            .await
-            .and_then(|result| {
-                Python::with_gil(|py| result.extract::<PyMicroPartition>(py)).map_err(|e| e.into())
-            })?;
+                Ok(coroutine.into_bound(py))
+            },
+            task_locals,
+        )
+        .await?;
         Ok(result.into())
     }
 }
@@ -129,7 +124,7 @@ impl DistributedActorPoolProjectOperator {
         batch_size: Option<usize>,
         memory_request: u64,
     ) -> DaftResult<Self> {
-        let task_locals = Python::with_gil(pyo3_async_runtimes::tokio::get_current_locals)?;
+        let task_locals = Python::attach(pyo3_async_runtimes::tokio::get_current_locals)?;
 
         let (local_actor_handles, remote_actor_handles) =
             ActorHandle::get_actors_on_current_node(actor_handles)?;
@@ -178,7 +173,7 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         let memory_request = self.memory_request;
         #[cfg(feature = "python")]
         {
-            let task_locals = Python::with_gil(|py| self.task_locals.clone_ref(py));
+            let task_locals = Python::attach(|py| self.task_locals.clone_ref(py));
             let fut = task_spawner.spawn_with_memory_request(
                 memory_request,
                 async move {
@@ -217,7 +212,7 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         res
     }
 
-    async fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self) -> DaftResult<Self::State> {
         // Check if we need to initialize the filtered actor handles
         #[cfg(feature = "python")]
         {
@@ -237,7 +232,9 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
     }
 
     fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(self.actor_handles.len())
+        // We set the max concurrency to be the number of actor handles * 2 to such that each actor handle has 2 workers submitting to it.
+        // This allows inputs to be queued up concurrently with UDF execution.
+        Ok(self.actor_handles.len() * 2)
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {

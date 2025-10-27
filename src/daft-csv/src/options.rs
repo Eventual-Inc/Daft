@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use {
     daft_core::python::PySchema,
     daft_dsl::python::PyExpr,
-    pyo3::{PyObject, PyResult, Python, pyclass, pyclass::CompareOp, pymethods},
+    pyo3::{PyResult, Python, pyclass, pyclass::CompareOp, pymethods},
 };
 
 /// Options for converting CSV data to Daft data.

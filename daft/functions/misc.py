@@ -110,17 +110,17 @@ def cast(expr: Expression, dtype: DataTypeLike) -> Expression:
         ...     df["a"].cast("tinyint").alias("sql_tinyint"),
         ... )
         >>> df.show()
-        ╭──────┬───────┬─────────┬────────────┬─────────┬─────────────╮
-        │ str  ┆ int   ┆ float   ┆ sql_string ┆ sql_int ┆ sql_tinyint │
-        │ ---  ┆ ---   ┆ ---     ┆ ---        ┆ ---     ┆ ---         │
-        │ Utf8 ┆ Int64 ┆ Float64 ┆ Utf8       ┆ Int32   ┆ Int8        │
-        ╞══════╪═══════╪═════════╪════════════╪═════════╪═════════════╡
-        │ 1    ┆ 1     ┆ 1       ┆ 1          ┆ 1       ┆ 1           │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2    ┆ 2     ┆ 2       ┆ 2          ┆ 2       ┆ 2           │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 3    ┆ 3     ┆ 3       ┆ 3          ┆ 3       ┆ 3           │
-        ╰──────┴───────┴─────────┴────────────┴─────────┴─────────────╯
+        ╭────────┬───────┬─────────┬────────────┬─────────┬─────────────╮
+        │ str    ┆ int   ┆ float   ┆ sql_string ┆ sql_int ┆ sql_tinyint │
+        │ ---    ┆ ---   ┆ ---     ┆ ---        ┆ ---     ┆ ---         │
+        │ String ┆ Int64 ┆ Float64 ┆ String     ┆ Int32   ┆ Int8        │
+        ╞════════╪═══════╪═════════╪════════════╪═════════╪═════════════╡
+        │ 1      ┆ 1     ┆ 1       ┆ 1          ┆ 1       ┆ 1           │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2      ┆ 2     ┆ 2       ┆ 2          ┆ 2       ┆ 2           │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3      ┆ 3     ┆ 3       ┆ 3          ┆ 3       ┆ 3           │
+        ╰────────┴───────┴─────────┴────────────┴─────────┴─────────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
     """
@@ -142,17 +142,17 @@ def is_null(expr: Expression) -> Expression:
         >>> df = daft.from_pydict({"x": [1.0, None, float("nan")]})
         >>> df = df.select(is_null(df["x"]))
         >>> df.collect()
-        ╭─────────╮
-        │ x       │
-        │ ---     │
-        │ Boolean │
-        ╞═════════╡
-        │ false   │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ true    │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ false   │
-        ╰─────────╯
+        ╭───────╮
+        │ x     │
+        │ ---   │
+        │ Bool  │
+        ╞═══════╡
+        │ false │
+        ├╌╌╌╌╌╌╌┤
+        │ true  │
+        ├╌╌╌╌╌╌╌┤
+        │ false │
+        ╰───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -174,17 +174,17 @@ def not_null(expr: Expression) -> Expression:
         >>> df = daft.from_pydict({"x": [1.0, None, float("nan")]})
         >>> df = df.select(not_null(df["x"]))
         >>> df.collect()
-        ╭─────────╮
-        │ x       │
-        │ ---     │
-        │ Boolean │
-        ╞═════════╡
-        │ true    │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ false   │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ true    │
-        ╰─────────╯
+        ╭───────╮
+        │ x     │
+        │ ---   │
+        │ Bool  │
+        ╞═══════╡
+        │ true  │
+        ├╌╌╌╌╌╌╌┤
+        │ false │
+        ├╌╌╌╌╌╌╌┤
+        │ true  │
+        ╰───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -239,17 +239,17 @@ def is_in(expr: Expression, other: Any) -> Expression:
         >>> df = daft.from_pydict({"data": [1, 2, 3]})
         >>> df = df.select(is_in(df["data"], [1, 3]))
         >>> df.collect()
-        ╭─────────╮
-        │ data    │
-        │ ---     │
-        │ Boolean │
-        ╞═════════╡
-        │ true    │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ false   │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ true    │
-        ╰─────────╯
+        ╭───────╮
+        │ data  │
+        │ ---   │
+        │ Bool  │
+        ╞═══════╡
+        │ true  │
+        ├╌╌╌╌╌╌╌┤
+        │ false │
+        ├╌╌╌╌╌╌╌┤
+        │ true  │
+        ╰───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -269,7 +269,7 @@ def is_in(expr: Expression, other: Any) -> Expression:
 def hash(
     expr: Expression,
     seed: Any | None = None,
-    hash_function: Literal["xxhash", "murmurhash3", "sha1"] | None = "xxhash",
+    hash_function: Literal["xxhash", "xxhash32", "xxhash64", "xxhash3_64", "murmurhash3", "sha1"] | None = "xxhash",
 ) -> Expression:
     """Hashes the values in the Expression.
 
@@ -278,7 +278,7 @@ def hash(
     Args:
         expr: The expression to hash.
         seed (optional): Seed used for generating the hash. Defaults to 0.
-        hash_function (optional): Hash function to use. One of "xxhash", "murmurhash3", or "sha1". Defaults to "xxhash".
+        hash_function (optional): Hash function to use. One of "xxhash" (alias for "xxhash3_64"), "xxhash32", "xxhash64", "xxhash3_64", "murmurhash3", or "sha1". Defaults to "xxhash" (alias for "xxhash3_64").
 
     Returns:
         Expression (UInt64 Expression): The hashed expression.
@@ -302,7 +302,7 @@ def minhash(
     num_hashes: int,
     ngram_size: int,
     seed: int = 1,
-    hash_function: Literal["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
+    hash_function: Literal["murmurhash3", "xxhash", "xxhash32", "xxhash64", "xxhash3_64", "sha1"] = "murmurhash3",
 ) -> Expression:
     """Runs the MinHash algorithm on the series.
 
@@ -314,11 +314,11 @@ def minhash(
     to normalize the strings yourself.
 
     Args:
-        text (String Expression): expression to hash.
+        text (String Expression): The expression to hash.
         num_hashes (int): The number of hash permutations to compute.
         ngram_size (int): The number of tokens in each shingle/ngram.
         seed (int, default=1): Seed used for generating permutations and the initial string hashes. Defaults to 1.
-        hash_function (str, default="murmurhash3"): Hash function to use for initial string hashing. One of "murmurhash3", "xxhash", or "sha1". Defaults to "murmurhash3".
+        hash_function (str, default="murmurhash3"): Hash function to use for initial string hashing. One of "murmurhash3", "xxhash" (alias for "xxhash3_64"), "xxhash32", "xxhash64", "xxhash3_64", or "sha1". Defaults to "murmurhash3".
 
     Returns:
         Expression (FixedSizedList[UInt32, num_hashes] Expression):
@@ -423,17 +423,17 @@ def concat(left: Expression | str | bytes, right: Expression | str | bytes) -> E
         >>>
         >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"], "y": ["a", "b", "c"]})
         >>> df.select(concat(df["x"], df["y"])).collect()
-        ╭──────╮
-        │ x    │
-        │ ---  │
-        │ Utf8 │
-        ╞══════╡
-        │ fooa │
-        ├╌╌╌╌╌╌┤
-        │ barb │
-        ├╌╌╌╌╌╌┤
-        │ bazc │
-        ╰──────╯
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ fooa   │
+        ├╌╌╌╌╌╌╌╌┤
+        │ barb   │
+        ├╌╌╌╌╌╌╌╌┤
+        │ bazc   │
+        ╰────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -559,15 +559,15 @@ def get(expr: Expression, key: int | str | Expression, default: Any = None) -> E
         >>> df = daft.from_pydict({"structs": [{"name": "Alice", "age": 25}, {"name": "Bob", "age": 30}]})
         >>> df = df.select(df["structs"].get("name"), df["structs"].get("age"))
         >>> df.show()
-        ╭───────┬───────╮
-        │ name  ┆ age   │
-        │ ---   ┆ ---   │
-        │ Utf8  ┆ Int64 │
-        ╞═══════╪═══════╡
-        │ Alice ┆ 25    │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ Bob   ┆ 30    │
-        ╰───────┴───────╯
+        ╭────────┬───────╮
+        │ name   ┆ age   │
+        │ ---    ┆ ---   │
+        │ String ┆ Int64 │
+        ╞════════╪═══════╡
+        │ Alice  ┆ 25    │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ Bob    ┆ 30    │
+        ╰────────┴───────╯
         <BLANKLINE>
         (Showing first 2 of 2 rows)
 
@@ -634,21 +634,21 @@ def map_get(expr: Expression, key: Expression) -> Expression:
         >>> df = daft.from_arrow(pa.table({"map_col": pa_array}))
         >>> df = df.with_column("a", df["map_col"].map_get("a"))
         >>> df.show()
-        ╭──────────────────┬───────╮
-        │ map_col          ┆ a     │
-        │ ---              ┆ ---   │
-        │ Map[Utf8: Int64] ┆ Int64 │
-        ╞══════════════════╪═══════╡
-        │ [{key: a,        ┆ 1     │
-        │ value: 1,        ┆       │
-        │ }]               ┆       │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ []               ┆ None  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ [{key: b,        ┆ None  │
-        │ value: 2,        ┆       │
-        │ }]               ┆       │
-        ╰──────────────────┴───────╯
+        ╭────────────────────┬───────╮
+        │ map_col            ┆ a     │
+        │ ---                ┆ ---   │
+        │ Map[String: Int64] ┆ Int64 │
+        ╞════════════════════╪═══════╡
+        │ [{key: a,          ┆ 1     │
+        │ value: 1,          ┆       │
+        │ }]                 ┆       │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ []                 ┆ None  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ [{key: b,          ┆ None  │
+        │ value: 2,          ┆       │
+        │ }]                 ┆       │
+        ╰────────────────────┴───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -712,100 +712,6 @@ def slice(expr: Expression, start: int | Expression, end: int | Expression | Non
     return Expression._call_builtin_scalar_fn("slice", expr, start, end=end)
 
 
-def case(
-    expr: Expression | None = None,
-    branches: list[tuple[Expression | Any, Expression | Any]] | None = None,
-    else_: Expression | Any | None = None,
-) -> Expression:
-    """Build a SQL-style CASE expression that's easy to construct programmatically.
-
-    Think of this as a more flexible alternative to chaining multiple `when()` calls.
-    You can either match against specific values (simple case) or evaluate boolean
-    conditions (searched case), and you can build the branches dynamically from lists
-    or dictionaries.
-
-    Args:
-        expr: The expression to match against for simple case. Leave as None for searched case.
-        branches: List of (condition/value, result) pairs. Each tuple represents one branch
-                 of your case statement.
-        else_: What to return when none of the branches match. Defaults to None if not specified.
-
-    Returns:
-        Expression: A case expression that evaluates the branches in order
-
-    Examples:
-        Convert letter grades to GPA points:
-        >>> import daft
-        >>> from daft.functions import case
-        >>>
-        >>> df = daft.from_pydict({"grade": ["A", "B", "C", "D", "F"]})
-        >>> result = df.select(
-        ...     case(
-        ...         df["grade"],  # Match against this column
-        ...         [
-        ...             ("A", 4.0),  # When grade is "A", return 4.0
-        ...             ("B", 3.0),  # When grade is "B", return 3.0
-        ...             ("C", 2.0),
-        ...             ("D", 1.0),
-        ...         ],
-        ...         else_=0.0,  # Default for anything else (like "F")
-        ...     ).alias("gpa")
-        ... )
-        >>> result.to_pydict()["gpa"]
-        [4.0, 3.0, 2.0, 1.0, 0.0]
-
-        Assign grades based on numeric scores:
-        >>> df = daft.from_pydict({"score": [85, 92, 78, 65, 88]})
-        >>> result = df.select(
-        ...     case(
-        ...         branches=[  # No expr means we're doing searched case
-        ...             (df["score"] >= 90, "A"),  # Check conditions
-        ...             (df["score"] >= 80, "B"),
-        ...             (df["score"] >= 70, "C"),
-        ...             (df["score"] >= 60, "D"),
-        ...         ],
-        ...         else_="F",
-        ...     ).alias("grade")
-        ... )
-        >>> result.to_pydict()["grade"]
-        ['B', 'A', 'C', 'D', 'B']
-
-        Build branches programmatically from a dictionary:
-        >>> grade_thresholds = {90: "Excellent", 70: "Good", 50: "Fair"}
-        >>> conditions = [(df["score"] >= threshold, label) for threshold, label in grade_thresholds.items()]
-        >>> result = df.select(case(branches=conditions, else_="Poor").alias("performance"))
-        >>> result.to_pydict()["performance"]
-        ['Good', 'Excellent', 'Good', 'Fair', 'Good']
-    """
-    # Handle the case where someone passes None for branches
-    if branches is None:
-        branches = []
-
-    # We need at least one branch to make sense
-    if not branches:
-        raise ValueError("At least one branch must be provided")
-
-    # Build up the internal representation that Daft expects
-    when_cases = []
-    for condition_or_value, then_value in branches:
-        if expr is not None:
-            # Simple case: we're matching expr against specific values
-            condition = expr == condition_or_value
-        else:
-            # Searched case: condition_or_value should already be a boolean expression
-            condition = Expression._to_expression(condition_or_value)
-
-        # Make sure the result value is also an expression
-        then_expr = Expression._to_expression(then_value)
-        when_cases.append((condition._expr, then_expr._expr))
-
-    # Handle the else clause (what happens when nothing matches)
-    else_expr = Expression._to_expression(else_) if else_ is not None else Expression._to_expression(None)
-
-    # Use the existing WhenExpr machinery to build the final expression
-    return Expression._from_pyexpr(WhenExpr._construct_pyexpr(when_cases, else_expr._expr))
-
-
 def when(condition: Expression | bool, then: Expression | Any) -> WhenExpr:
     """Start a conditional expression, similar to SQL CASE WHEN.
 
@@ -830,7 +736,7 @@ def when(condition: Expression | bool, then: Expression | Any) -> WhenExpr:
         ╭──────────╮
         │ category │
         │ ---      │
-        │ Utf8     │
+        │ String   │
         ╞══════════╡
         │ low      │
         ├╌╌╌╌╌╌╌╌╌╌┤
@@ -855,21 +761,21 @@ def when(condition: Expression | bool, then: Expression | Any) -> WhenExpr:
         ...     .alias("grade")
         ... )
         >>> df.show()
-        ╭───────╮
-        │ grade │
-        │ ---   │
-        │ Utf8  │
-        ╞═══════╡
-        │ B     │
-        ├╌╌╌╌╌╌╌┤
-        │ A     │
-        ├╌╌╌╌╌╌╌┤
-        │ C     │
-        ├╌╌╌╌╌╌╌┤
-        │ F     │
-        ├╌╌╌╌╌╌╌┤
-        │ B     │
-        ╰───────╯
+        ╭────────╮
+        │ grade  │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ B      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ A      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ C      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ F      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ B      │
+        ╰────────╯
         <BLANKLINE>
         (Showing first 5 of 5 rows)
 
@@ -886,7 +792,7 @@ def when(condition: Expression | bool, then: Expression | Any) -> WhenExpr:
         ╭─────────┬─────────────╮
         │ name    ┆ working_age │
         │ ---     ┆ ---         │
-        │ Utf8    ┆ Int64       │
+        │ String  ┆ Int64       │
         ╞═════════╪═════════════╡
         │ Alice   ┆ 25          │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -910,7 +816,7 @@ def when(condition: Expression | bool, then: Expression | Any) -> WhenExpr:
         ╭─────────╮
         │ status  │
         │ ---     │
-        │ Utf8    │
+        │ String  │
         ╞═════════╡
         │ normal  │
         ├╌╌╌╌╌╌╌╌╌┤
@@ -930,7 +836,7 @@ def when(condition: Expression | bool, then: Expression | Any) -> WhenExpr:
         ╭────────╮
         │ result │
         │ ---    │
-        │ Utf8   │
+        │ String │
         ╞════════╡
         │ None   │
         ├╌╌╌╌╌╌╌╌┤

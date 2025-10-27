@@ -13,9 +13,10 @@ import os
 import time
 
 import pytest
+from pydantic import BaseModel, Field
 
 import daft
-from daft.functions.ai import embed_text
+from daft.functions.ai import embed_text, prompt
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -32,7 +33,7 @@ def session(skip_no_credential):
     with daft.session() as session:
         # the key is not explicitly needed, but was added with angry lookup for clarity.
         session.set_provider("openai", api_key=os.environ["OPENAI_API_KEY"])
-        yield session
+        yield
 
 
 @pytest.mark.integration()
@@ -58,3 +59,77 @@ def test_embed_text_sanity_all_models(session):
         df = df.with_column("embedding", embed_text(df["text"], model=model))
         df.collect()
         time.sleep(1)  # self limit to ~1 tps.
+
+
+@pytest.mark.integration()
+def test_prompt_plain_text(session):
+    """Test prompt function with plain text response."""
+    df = daft.from_pydict(
+        {
+            "question": [
+                "What is the capital of France?",
+                "What is 2 + 2?",
+                "Name one primary color.",
+            ]
+        }
+    )
+
+    df = df.with_column(
+        "answer",
+        prompt(
+            daft.col("question"),
+            model="gpt-5-mini",
+        ),
+    )
+
+    answers = df.to_pydict()["answer"]
+
+    # Basic sanity checks - responses should be non-empty strings
+    assert len(answers) == 3
+    for answer in answers:
+        assert isinstance(answer, str)
+        assert len(answer) > 0
+
+    time.sleep(1)  # self limit to ~1 tps.
+
+
+@pytest.mark.integration()
+def test_prompt_structured_output(session):
+    """Test prompt function with structured output (Pydantic model)."""
+
+    class MovieReview(BaseModel):
+        rating: int = Field(..., description="Rating from 1-5")
+        summary: str = Field(..., description="Brief summary")
+
+    df = daft.from_pydict(
+        {
+            "anime": [
+                "Naruto",
+                "One Piece",
+                "Dragon Ball Z",
+            ]
+        }
+    )
+
+    df = df.with_column(
+        "review",
+        prompt(
+            daft.functions.format(
+                "You are an avid anime lover. Rate this anime on a scale of 1-5 and provide a brief summary: {}",
+                daft.col("anime"),
+            ),
+            return_format=MovieReview,
+            model="gpt-5-mini",
+        ),
+    )
+
+    reviews = df.to_pydict()["review"]
+
+    # Verify structured output
+    assert len(reviews) == 3
+    for review in reviews:
+        assert 1 <= review["rating"] <= 5
+        assert isinstance(review["summary"], str)
+        assert len(review["summary"]) > 0
+
+    time.sleep(1)  # self limit to ~1 tps.

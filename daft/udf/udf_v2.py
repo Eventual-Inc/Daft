@@ -7,16 +7,10 @@ import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Generator, Iterator
 from dataclasses import dataclass, field
-from typing import (
-    Any,
-    Callable,
-    Generic,
-    TypeVar,
-    get_args,
-    get_origin,
-    get_type_hints,
-    overload,
-)
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, get_args, get_origin, get_type_hints, overload
+
+if TYPE_CHECKING:
+    from typing import Literal
 
 if sys.version_info < (3, 10):
     from typing_extensions import Concatenate, ParamSpec
@@ -27,11 +21,14 @@ from daft.daft import batch_udf, row_wise_udf
 from daft.datatype import DataType, DataTypeLike
 from daft.expressions.expressions import Expression
 
+# TODO(cory): use a dataclass to hold all of these attributes
 RETURN_DTYPE_ATTR = "_daft_return_dtype"
 UNNEST_ATTR = "_daft_unnest"
 USE_PROCESS_ATTR = "_daft_use_process"
 BATCH_ATTR = "_daft_batch_method"
 BATCH_SIZE_ATTR = "_daft_batch_size"
+MAX_RETRIES_ATTR = "_daft_max_retries"
+ON_ERROR_ATTR = "_daft_on_error"
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -59,6 +56,8 @@ class Func(Generic[P, T, C]):
     gpus: int
     use_process: bool | None
     max_concurrency: int | None
+    max_retries: int | None
+    on_error: str | None
     return_dtype: DataType
     name: str = field(init=False)
 
@@ -71,6 +70,8 @@ class Func(Generic[P, T, C]):
         use_process: bool | None,
         is_batch: bool,
         batch_size: int | None,
+        max_retries: int | None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Func[P, T, None]:
         # create a class instance with no setup method
         class NoopCls(ClsBase[None]):
@@ -99,6 +100,8 @@ class Func(Generic[P, T, C]):
             0,
             use_process,
             None,
+            max_retries,
+            on_error,
             return_dtype,
         )
 
@@ -110,6 +113,8 @@ class Func(Generic[P, T, C]):
         gpus: int,
         use_process: bool | None,
         max_concurrency: int | None,
+        max_retries: int | None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Func[P, T, C]:
         is_generator = inspect.isgeneratorfunction(method)
         is_async = inspect.iscoroutinefunction(method)
@@ -119,7 +124,6 @@ class Func(Generic[P, T, C]):
         batch_size = getattr(method, BATCH_SIZE_ATTR, None)
         return_dtype = getattr(method, RETURN_DTYPE_ATTR, None)
         return_dtype = cls._get_return_dtype(method, return_dtype, is_generator, is_batch)
-
         return cls(
             cls_,
             method,
@@ -131,6 +135,8 @@ class Func(Generic[P, T, C]):
             gpus,
             use_process,
             max_concurrency,
+            max_retries,
+            on_error,
             return_dtype,
         )
 
@@ -235,6 +241,8 @@ class Func(Generic[P, T, C]):
                     self.gpus,
                     self.use_process,
                     self.max_concurrency,
+                    self.max_retries,
+                    self.on_error,
                     (args, kwargs),
                     expr_args,
                 )
@@ -250,6 +258,8 @@ class Func(Generic[P, T, C]):
                     self.use_process,
                     self.max_concurrency,
                     self.batch_size,
+                    self.max_retries,
+                    self.on_error,
                     (args, kwargs),
                     expr_args,
                 )
@@ -265,6 +275,8 @@ class Func(Generic[P, T, C]):
                     self.gpus,
                     self.use_process,
                     self.max_concurrency,
+                    self.max_retries,
+                    self.on_error,
                     (args, kwargs),
                     expr_args,
                 )
@@ -277,13 +289,21 @@ class Func(Generic[P, T, C]):
 
 
 def mark_cls_method(
-    method: Callable[P, T], return_dtype: DataTypeLike | None, unnest: bool, is_batch: bool, batch_size: int | None
+    method: Callable[P, T],
+    return_dtype: DataTypeLike | None,
+    unnest: bool,
+    is_batch: bool,
+    batch_size: int | None,
+    max_retries: int | None = None,
+    on_error: Literal["raise", "log", "ignore"] | None = None,
 ) -> Callable[P, T]:
     """Mark a Daft class method as a Daft method, along with decorator arguments."""
     setattr(method, RETURN_DTYPE_ATTR, return_dtype)
     setattr(method, UNNEST_ATTR, unnest)
     setattr(method, BATCH_ATTR, is_batch)
     setattr(method, BATCH_SIZE_ATTR, batch_size)
+    setattr(method, MAX_RETRIES_ATTR, max_retries)
+    setattr(method, ON_ERROR_ATTR, on_error)
     return method
 
 
@@ -301,7 +321,14 @@ class ClsBase(ABC, Generic[C]):
         return bound_method
 
 
-def wrap_cls(cls: type, gpus: int, use_process: bool | None, max_concurrency: int | None) -> type:
+def wrap_cls(
+    cls: type,
+    gpus: int,
+    use_process: bool | None,
+    max_concurrency: int | None,
+    max_retries: int | None,
+    on_error: Literal["raise", "log", "ignore"] | None = None,
+) -> type:
     class Cls(ClsBase[cls]):  # type: ignore[valid-type]
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             self._daft_setup_args = (args, kwargs)
@@ -324,7 +351,7 @@ def wrap_cls(cls: type, gpus: int, use_process: bool | None, max_concurrency: in
             if not inspect.isfunction(attr) or isinstance(attr, (classmethod, staticmethod)):
                 raise AttributeError("Can only access methods on a Daft class instance.")
 
-            return Func._from_method(self, attr, gpus, use_process, max_concurrency)
+            return Func._from_method(self, attr, gpus, use_process, max_concurrency, max_retries, on_error)
 
         def __call__(self, *args: Any, **kwargs: Any) -> Any:
             return self.__getattr__("__call__")(*args, **kwargs)

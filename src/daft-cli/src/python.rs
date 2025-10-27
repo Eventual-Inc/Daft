@@ -88,7 +88,7 @@ fn run_dashboard(py: Python, args: DashboardArgs) {
         }
         // Necessary to allow other threads to acquire the GIL
         // Such as for Python array deserialization
-        py.allow_threads(|| {
+        py.detach(|| {
             std::thread::sleep(std::time::Duration::from_millis(100));
         });
     }

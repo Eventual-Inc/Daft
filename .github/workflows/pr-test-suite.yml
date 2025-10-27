@@ -81,13 +81,10 @@ jobs:
         python-version: ['3.9', '3.12']
         daft-runner: [ray, native]
         pyarrow-version: [8.0.0, 19.0.1]
-        flotilla: [1, 0]
         os: [ubuntu-latest, macos-latest]
         on-main:
         - ${{ github.ref == 'refs/heads/main' }}
         exclude:
-        - daft-runner: native
-          flotilla: 0
         - daft-runner: ray
           pyarrow-version: 8.0.0
         - python-version: '3.9'
@@ -96,8 +93,6 @@ jobs:
           os: macos-latest
         - python-version: '3.12'
           pyarrow-version: 8.0.0
-        - os: macos-latest
-          flotilla: 0
         # don't run mac unit tests in PRs
         - os: macos-latest
           on-main: false
@@ -178,7 +173,6 @@ jobs:
         CARGO_TARGET_DIR: ./target
 
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_FLOTILLA: ${{ matrix.flotilla }}
 
     - name: Upload coverage report
       uses: actions/upload-artifact@v4
@@ -333,16 +327,6 @@ jobs:
         python tools/aggregate_test_durations.py tpch_pytest_output.txt
       env:
         DAFT_RUNNER: ray
-        DAFT_FLOTILLA: 0
-    - name: Run TPCH integration tests (flotilla)
-      run: |
-        set -o pipefail
-        source .venv/bin/activate
-        pytest tests/integration/test_tpch.py --durations=0 | ./tools/capture-durations.sh "tpch_pytest_output.txt"
-        python tools/aggregate_test_durations.py tpch_pytest_output.txt
-      env:
-        DAFT_RUNNER: ray
-        DAFT_FLOTILLA: 1
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
@@ -375,10 +359,6 @@ jobs:
       matrix:
         python-version: ['3.9']
         daft-runner: [ray, native]
-        flotilla: [1, 0]
-        exclude:
-        - daft-runner: native
-          flotilla: 1
     steps:
     - uses: actions/checkout@v4
       with:
@@ -429,7 +409,6 @@ jobs:
         python tools/aggregate_test_durations.py io_integration_pytest_output.txt io_integration_pytest_output_2.txt
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_FLOTILLA: ${{ matrix.flotilla }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.event_name == 'push') }}
@@ -462,10 +441,6 @@ jobs:
       matrix:
         python-version: ['3.9']
         daft-runner: [ray, native]
-        flotilla: [1, 0]
-        exclude:
-        - daft-runner: native
-          flotilla: 1
     # These permissions are needed to interact with GitHub's OIDC Token endpoint.
     # This is used in the step "Assume GitHub Actions AWS Credentials"
     permissions:
@@ -534,7 +509,6 @@ jobs:
         python tools/aggregate_test_durations.py io_credentialed_pytest_output.txt
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_FLOTILLA: ${{ matrix.flotilla }}
         HF_TOKEN: ${{ secrets.ACTIONS_HF_TOKEN }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
@@ -622,16 +596,6 @@ jobs:
         python tools/aggregate_test_durations.py sql_pytest_output.txt
       env:
         DAFT_RUNNER: ray
-        DAFT_FLOTILLA: 0
-    - name: Run sql integration tests (flotilla)
-      run: |
-        set -o pipefail
-        source .venv/bin/activate
-        pytest tests/integration/sql -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "sql_pytest_output.txt"
-        python tools/aggregate_test_durations.py sql_pytest_output.txt
-      env:
-        DAFT_RUNNER: ray
-        DAFT_FLOTILLA: 1
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
@@ -749,18 +713,6 @@ jobs:
         python tools/aggregate_test_durations.py unity_pytest_output.txt
       env:
         DAFT_RUNNER: ray
-        DAFT_FLOTILLA: 0
-        UNITY_CATALOG_PORT: 3000
-    - name: Run Unity integration tests (flotilla)
-      if: always()
-      run: |
-        set -o pipefail
-        source .venv/bin/activate
-        pytest tests/integration/unity -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
-        python tools/aggregate_test_durations.py unity_pytest_output.txt
-      env:
-        DAFT_RUNNER: ray
-        DAFT_FLOTILLA: 1
         UNITY_CATALOG_PORT: 3000
     # Iceberg tests
     - name: Run Iceberg integration tests (native)
@@ -781,17 +733,6 @@ jobs:
         python tools/aggregate_test_durations.py iceberg_pytest_output.txt
       env:
         DAFT_RUNNER: ray
-        DAFT_FLOTILLA: 0
-    - name: Run Iceberg integration tests (flotilla)
-      if: always()
-      run: |
-        set -o pipefail
-        source .venv/bin/activate
-        pytest tests/integration/iceberg -m 'integration' --durations=0 | ./tools/capture-durations.sh "iceberg_pytest_output.txt"
-        python tools/aggregate_test_durations.py iceberg_pytest_output.txt
-      env:
-        DAFT_RUNNER: ray
-        DAFT_FLOTILLA: 1
     # Delta Lake tests
     - name: Run Delta Lake integration tests (native)
       if: always()
@@ -811,17 +752,6 @@ jobs:
         python tools/aggregate_test_durations.py delta_lake_pytest_output.txt
       env:
         DAFT_RUNNER: ray
-        DAFT_FLOTILLA: 0
-    - name: Run Delta Lake integration tests (flotilla)
-      if: always()
-      run: |
-        set -o pipefail
-        source .venv/bin/activate
-        pytest tests/integration/delta_lake -m 'integration' --durations=0 | ./tools/capture-durations.sh "delta_lake_pytest_output.txt"
-        python tools/aggregate_test_durations.py delta_lake_pytest_output.txt
-      env:
-        DAFT_RUNNER: ray
-        DAFT_FLOTILLA: 1
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0
@@ -855,10 +785,6 @@ jobs:
       matrix:
         python-version: ['3.9']
         daft-runner: [ray, native]
-        flotilla: [1, 0]
-        exclude:
-        - daft-runner: native
-          flotilla: 1
     steps:
     - uses: actions/checkout@v4
       with:
@@ -931,10 +857,6 @@ jobs:
       matrix:
         python-version: ['3.9']
         daft-runner: [ray, native]
-        flotilla: [1, 0]
-        exclude:
-        - daft-runner: native
-          flotilla: 1
     steps:
     - uses: actions/checkout@v4
       with:
@@ -1035,7 +957,7 @@ jobs:
           uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
 
-    - name: Run Ray Integration Tests (Ray Runner)
+    - name: Run Ray Integration Tests
       run: |
         set -o pipefail
         source .venv/bin/activate
@@ -1046,19 +968,6 @@ jobs:
         done
       env:
         DAFT_RUNNER: ray
-        DAFT_FLOTILLA: 0
-    - name: Run Ray Integration Tests (Flotilla)
-      run: |
-        set -o pipefail
-        source .venv/bin/activate
-        test_names=$(pytest --collect-only -q -m integration tests/integration/ray | grep "::test_")
-        for test in $test_names; do
-          echo "Running $test..."
-          pytest -m integration $test --durations=0
-        done
-      env:
-        DAFT_RUNNER: ray
-        DAFT_FLOTILLA: 1
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.0.0

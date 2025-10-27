@@ -114,14 +114,14 @@ def test_empty_df_repr(make_df):
     num_cols = 2
     df = make_df({"A": [1, 2, 3], "B": ["a", "b", "c"]})
     df = df.where(df["A"] > 10)
-    expected_data = {"A": ("Int64", []), "B": ("Utf8", [])}
+    expected_data = {"A": ("Int64", []), "B": ("String", [])}
 
     assert parse_str_table(df.__repr__(), expected_user_msg_regex=UNMATERIALIZED_REGEX) == expected_data
     assert (
         df._repr_html_()
         == f"""<div>
 <table class="dataframe">
-<thead><tr><th {dataframe_th_style_schema()}>A<br />Int64</th><th {dataframe_th_style_schema()}>B<br />Utf8</th></tr></thead>
+<thead><tr><th {dataframe_th_style_schema()}>A<br />Int64</th><th {dataframe_th_style_schema()}>B<br />String</th></tr></thead>
 </table>
 <small>(No data to display: Dataframe not materialized)</small>
 </div>"""
@@ -134,7 +134,7 @@ def test_empty_df_repr(make_df):
             [],
         ),
         "B": (
-            "Utf8",
+            "String",
             [],
         ),
     }
@@ -143,7 +143,7 @@ def test_empty_df_repr(make_df):
         df._repr_html_()
         == f"""<div>
 <table class="dataframe" style="table-layout: fixed; min-width: 100%">
-<thead><tr><th {dataframe_th_style(num_cols)}>A<br />Int64</th><th {dataframe_th_style(num_cols)}>B<br />Utf8</th></tr></thead>
+<thead><tr><th {dataframe_th_style(num_cols)}>A<br />Int64</th><th {dataframe_th_style(num_cols)}>B<br />String</th></tr></thead>
 <tbody>
 </tbody>
 </table>
@@ -159,13 +159,13 @@ def test_alias_repr(make_df):
     df = make_df({"A": [1, 2, 3], "B": ["a", "b", "c"]})
     df = df.select(df["A"].alias("A2"), df["B"])
 
-    expected_data = {"A2": ("Int64", []), "B": ("Utf8", [])}
+    expected_data = {"A2": ("Int64", []), "B": ("String", [])}
     assert parse_str_table(df.__repr__(), expected_user_msg_regex=UNMATERIALIZED_REGEX) == expected_data
     assert (
         df._repr_html_()
         == f"""<div>
 <table class="dataframe">
-<thead><tr><th {dataframe_th_style_schema()}>A2<br />Int64</th><th {dataframe_th_style_schema()}>B<br />Utf8</th></tr></thead>
+<thead><tr><th {dataframe_th_style_schema()}>A2<br />Int64</th><th {dataframe_th_style_schema()}>B<br />String</th></tr></thead>
 </table>
 <small>(No data to display: Dataframe not materialized)</small>
 </div>"""
@@ -179,7 +179,7 @@ def test_alias_repr(make_df):
             ["1", "2", "3"],
         ),
         "B": (
-            "Utf8",
+            "String",
             ["a", "b", "c"],
         ),
     }
@@ -188,7 +188,7 @@ def test_alias_repr(make_df):
         df._repr_html_()
         == f"""<div>
 <table class="dataframe" style="table-layout: fixed; min-width: 100%">
-<thead><tr><th {th_style}>A2<br />Int64</th><th {th_style}>B<br />Utf8</th></tr></thead>
+<thead><tr><th {th_style}>A2<br />Int64</th><th {th_style}>B<br />String</th></tr></thead>
 <tbody>
 <tr><td data-row="0" data-col="0"><div {td_style}>1</div></td><td data-row="0" data-col="1"><div {td_style}>a</div></td></tr>
 <tr><td data-row="1" data-col="0"><div {td_style}>2</div></td><td data-row="1" data-col="1"><div {td_style}>b</div></td></tr>
@@ -205,14 +205,14 @@ def test_repr_with_unicode(make_df, data_source):
     th_style = dataframe_th_style(num_cols)
     td_style = dataframe_td_style(num_cols)
     df = make_df({"🔥": [1, 2, 3], "🦁": ["🔥a", "b🔥", "🦁🔥" * 60]})
-    expected_data_unmaterialized = {"🔥": ("Int64", []), "🦁": ("Utf8", [])}
+    expected_data_unmaterialized = {"🔥": ("Int64", []), "🦁": ("String", [])}
     expected_data_materialized = {
         "🔥": (
             "Int64",
             ["1", "2", "3"],
         ),
         "🦁": (
-            "Utf8",
+            "String",
             [
                 "🔥a",
                 "b🔥",
@@ -224,13 +224,13 @@ def test_repr_with_unicode(make_df, data_source):
     string_array = ["🔥a", "b🔥", "🦁🔥" * 60]  # we dont truncate for html
     expected_html_unmaterialized = f"""<div>
 <table class="dataframe">
-<thead><tr><th {dataframe_th_style_schema()}>🔥<br />Int64</th><th {dataframe_th_style_schema()}>🦁<br />Utf8</th></tr></thead>
+<thead><tr><th {dataframe_th_style_schema()}>🔥<br />Int64</th><th {dataframe_th_style_schema()}>🦁<br />String</th></tr></thead>
 </table>
 <small>(No data to display: Dataframe not materialized)</small>
 </div>"""
     expected_html_materialized = f"""<div>
 <table class="dataframe" style="table-layout: fixed; min-width: 100%">
-<thead><tr><th {th_style}>🔥<br />Int64</th><th {th_style}>🦁<br />Utf8</th></tr></thead>
+<thead><tr><th {th_style}>🔥<br />Int64</th><th {th_style}>🦁<br />String</th></tr></thead>
 <tbody>
 <tr><td data-row="0" data-col="0"><div {td_style}>1</div></td><td data-row="0" data-col="1"><div {td_style}>{string_array[0]}</div></td></tr>
 <tr><td data-row="1" data-col="0"><div {td_style}>2</div></td><td data-row="1" data-col="1"><div {td_style}>{string_array[1]}</div></td></tr>
@@ -394,7 +394,7 @@ def test_interactive_html_with_record_batch():
 
     # Test exact match for the dataframe table
     expected_table = f"""<table class="dataframe" style="table-layout: fixed; min-width: 100%">
-<thead><tr><th {dataframe_th_style(2)}>A<br />Int64</th><th {dataframe_th_style(2)}>B<br />Utf8</th></tr></thead>
+<thead><tr><th {dataframe_th_style(2)}>A<br />Int64</th><th {dataframe_th_style(2)}>B<br />String</th></tr></thead>
 <tbody>
 <tr><td data-row="0" data-col="0"><div {dataframe_td_style(2)}>1</div></td><td data-row="0" data-col="1"><div {dataframe_td_style(2)}>a</div></td></tr>
 <tr><td data-row="1" data-col="0"><div {dataframe_td_style(2)}>2</div></td><td data-row="1" data-col="1"><div {dataframe_td_style(2)}>b</div></td></tr>

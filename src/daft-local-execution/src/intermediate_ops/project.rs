@@ -170,7 +170,7 @@ impl IntermediateOperator for ProjectOperator {
             .map(|batch_size| MorselSizeRequirement::Flexible(0, batch_size))
     }
 
-    async fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self) -> DaftResult<Self::State> {
         Ok(())
     }
 }
