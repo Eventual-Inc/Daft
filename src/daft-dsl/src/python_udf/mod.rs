@@ -34,7 +34,7 @@ impl PyScalarFn {
     pub async fn call_async(
         &self,
         args: &[Series],
-        task_locals: &pyo3_async_runtimes::TaskLocals,
+        task_locals: Option<&pyo3_async_runtimes::TaskLocals>,
     ) -> DaftResult<Series> {
         match self {
             Self::RowWise(func) => func.call_async(args, task_locals).await,

@@ -124,7 +124,7 @@ impl DistributedActorPoolProjectOperator {
         batch_size: Option<usize>,
         memory_request: u64,
     ) -> DaftResult<Self> {
-        let task_locals = Python::attach(crate::run::get_global_runtime_locals);
+        let task_locals = Python::attach(|py| common_runtime::get_task_locals().clone_ref(py));
 
         let (local_actor_handles, remote_actor_handles) =
             ActorHandle::get_actors_on_current_node(actor_handles)?;

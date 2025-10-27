@@ -37,7 +37,7 @@ impl UDFActors {
         udf_properties: &UDFProperties,
         actor_ready_timeout: usize,
     ) -> DaftResult<Vec<PyObjectWrapper>> {
-        let task_locals = Python::attach(crate::utils::runtime::get_task_locals);
+        let task_locals = Python::attach(|py| common_runtime::get_task_locals().clone_ref(py));
         let py_exprs = projection
             .iter()
             .map(|e| PyExpr {

@@ -44,9 +44,6 @@ use crate::{
 /// Global tokio runtime shared by all NativeExecutor instances
 static GLOBAL_RUNTIME: OnceLock<Handle> = OnceLock::new();
 
-#[cfg(feature = "python")]
-pub static PYO3_ASYNC_RUNTIME_LOCALS: OnceLock<pyo3_async_runtimes::TaskLocals> = OnceLock::new();
-
 /// Get or initialize the global tokio runtime
 #[cfg(feature = "python")]
 fn get_global_runtime(py: Python) -> &'static Handle {
@@ -57,20 +54,10 @@ fn get_global_runtime(py: Python) -> &'static Handle {
         std::thread::spawn(move || {
             pyo3_async_runtimes::tokio::get_runtime().block_on(futures::future::pending::<()>());
         });
-        PYO3_ASYNC_RUNTIME_LOCALS.get_or_init(|| {
-            pyo3_async_runtimes::tokio::get_current_locals(py)
-                .expect("Failed to get current task locals")
-        });
+        // Initialize the task locals in the centralized location
+        common_runtime::init_task_locals(py);
         pyo3_async_runtimes::tokio::get_runtime().handle().clone()
     })
-}
-
-#[cfg(feature = "python")]
-pub fn get_global_runtime_locals(py: Python) -> pyo3_async_runtimes::TaskLocals {
-    PYO3_ASYNC_RUNTIME_LOCALS
-        .get()
-        .expect("Python task locals not initialized")
-        .clone_ref(py)
 }
 
 #[cfg(not(feature = "python"))]

@@ -103,7 +103,7 @@ pub(crate) struct UdfHandle {
     #[cfg(feature = "python")]
     handle: Option<Py<PyAny>>,
     #[cfg(feature = "python")]
-    task_locals: pyo3_async_runtimes::TaskLocals,
+    task_locals: &'static pyo3_async_runtimes::TaskLocals,
 }
 
 impl UdfHandle {
@@ -115,7 +115,7 @@ impl UdfHandle {
             #[cfg(feature = "python")]
             handle: None,
             #[cfg(feature = "python")]
-            task_locals: Python::attach(crate::run::get_global_runtime_locals),
+            task_locals: common_runtime::get_task_locals(),
         }
     }
 
@@ -200,7 +200,7 @@ impl UdfHandle {
                         })
                         .collect::<DaftResult<Vec<_>>>()?;
                     python_udf
-                        .call_async(args.as_slice(), &self.task_locals)
+                        .call_async(args.as_slice(), Some(self.task_locals))
                         .await
                 }
                 _ => unreachable!(),

@@ -1,7 +1,40 @@
 #[cfg(feature = "python")]
+use std::sync::OnceLock;
+
+#[cfg(feature = "python")]
 use common_error::DaftResult;
 #[cfg(feature = "python")]
 use pyo3::Python;
+
+/// Global storage for Python async runtime task locals
+#[cfg(feature = "python")]
+static PYO3_ASYNC_RUNTIME_LOCALS: OnceLock<pyo3_async_runtimes::TaskLocals> = OnceLock::new();
+
+#[cfg(feature = "python")]
+/// Initialize the Python task locals from the current Python context.
+///
+/// This should be called once during runtime initialization when the async runtime
+/// has been set up and we have access to a Python instance.
+///
+/// # Panics
+/// Panics if unable to get the current task locals from pyo3_async_runtimes.
+pub fn init_task_locals(py: Python) {
+    PYO3_ASYNC_RUNTIME_LOCALS.get_or_init(|| {
+        pyo3_async_runtimes::tokio::get_current_locals(py)
+            .expect("Failed to get current task locals")
+    });
+}
+
+#[cfg(feature = "python")]
+/// Get a clone of the Python task locals for scoping async operations.
+///
+/// # Panics
+/// Panics if the task locals have not been initialized via `init_task_locals`.
+pub fn get_task_locals() -> &'static pyo3_async_runtimes::TaskLocals {
+    PYO3_ASYNC_RUNTIME_LOCALS
+        .get()
+        .expect("Python task locals not initialized. Call init_task_locals first.")
+}
 
 #[cfg(feature = "python")]
 /// Execute a Python coroutine and extract the result.

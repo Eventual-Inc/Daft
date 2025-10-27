@@ -118,13 +118,17 @@ impl RowWisePyFn {
     pub async fn call_async(
         &self,
         args: &[Series],
-        task_locals: &pyo3_async_runtimes::TaskLocals,
+        task_locals: Option<&pyo3_async_runtimes::TaskLocals>,
     ) -> DaftResult<Series> {
         use common_error::DaftError;
         use daft_core::python::PySeries;
         use pyo3::prelude::*;
 
         use crate::functions::python::OnError;
+        let task_locals = match task_locals {
+            Some(task_locals) => task_locals,
+            None => common_runtime::get_task_locals(),
+        };
         let num_rows = args
             .iter()
             .map(Series::len)

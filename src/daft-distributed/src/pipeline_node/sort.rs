@@ -58,7 +58,7 @@ pub(crate) async fn get_partition_boundaries_from_samples(
         .collect::<DaftResult<Vec<_>>>()?;
 
     let (task_locals, py_object_refs) = Python::attach(|py| {
-        let task_locals = crate::utils::runtime::get_task_locals(py);
+        let task_locals = common_runtime::get_task_locals().clone_ref(py);
         let py_object_refs = ray_partition_refs
             .into_iter()
             .map(|pr| pr.get_object_ref(py))

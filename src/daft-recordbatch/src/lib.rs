@@ -25,7 +25,9 @@ use daft_dsl::{
         bound_expr::{BoundAggExpr, BoundExpr},
     },
     functions::{FunctionArgs, FunctionEvaluator, scalar::ScalarFn},
-    null_lit, resolved_col,
+    null_lit,
+    python_udf::PyScalarFn,
+    resolved_col,
 };
 use daft_functions_list::SeriesListExtension;
 use file_info::FileInfos;
@@ -776,7 +778,20 @@ impl RecordBatch {
             },
             Expr::ScalarFn(ScalarFn::Python(python_udf)) => {
                 let args = python_udf.args().iter().map(|expr| self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))).collect::<DaftResult<Vec<_>>>()?;
-                python_udf.call(args.as_slice())
+                let is_async = match python_udf {
+                    PyScalarFn::RowWise(func) => func.is_async,
+                    PyScalarFn::Batch(..) => false,
+                };
+                if is_async {
+                    #[cfg(feature = "python")] {
+                        get_compute_runtime().block_on_current_thread(python_udf.call_async(args.as_slice(), None))
+                    }
+                    #[cfg(not(feature = "python"))] {
+                        panic!("Cannot evaluate a Python UDF asynchronously without compiling for Python");
+                    }
+                } else {
+                    python_udf.call(args.as_slice())
+                }
             }
             Expr::Subquery(_subquery) => Err(DaftError::ComputeError(
                 "Subquery should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
