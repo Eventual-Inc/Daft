@@ -87,6 +87,7 @@ impl ScalarUDF for VideoFile {
             io_config,
         } = args.try_into()?;
 
+        // todo(universalmind303): can we use an async stream here instead so we're not blocking on each iteration
         fn verify_file(file_ref: FileReference) -> DaftResult<FileReference> {
             let mut daft_file = DaftFile::new_blocking(file_ref.clone())?;
 
