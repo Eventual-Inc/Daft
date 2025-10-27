@@ -322,8 +322,9 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    use run::PyNativeExecutor;
+    use run::{LocalPartitionStream, PyNativeExecutor};
 
     parent.add_class::<PyNativeExecutor>()?;
+    parent.add_class::<LocalPartitionStream>()?;
     Ok(())
 }

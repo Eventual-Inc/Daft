@@ -83,4 +83,11 @@ impl PyScalarFn {
             Self::Batch(batch_py_fn) => Self::Batch(batch_py_fn.with_new_children(children)),
         }
     }
+
+    pub fn dtype(&self) -> DataType {
+        match self {
+            Self::RowWise(RowWisePyFn { return_dtype, .. })
+            | Self::Batch(BatchPyFn { return_dtype, .. }) => return_dtype.clone(),
+        }
+    }
 }

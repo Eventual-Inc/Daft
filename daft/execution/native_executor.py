@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any
 from daft.daft import (
     LocalPhysicalPlan,
     PyDaftExecutionConfig,
+    PyLocalPartitionStream,
+    PyMicroPartition,
 )
 from daft.daft import (
     NativeExecutor as _NativeExecutor,
@@ -43,6 +45,17 @@ class BackgroundEventLoop:
 LOOP = BackgroundEventLoop()
 
 
+class LocalPartitionStream:
+    def __init__(self, stream: PyLocalPartitionStream) -> None:
+        self._stream = stream
+
+    def __aiter__(self) -> LocalPartitionStream:
+        return self
+
+    async def __anext__(self) -> PyMicroPartition:
+        return await self._stream.__anext__()
+
+
 class NativeExecutor:
     def __init__(self) -> None:
         self._executor = _NativeExecutor()
@@ -60,15 +73,19 @@ class NativeExecutor:
         psets_mp = {
             part_id: [part.micropartition()._micropartition for part in parts] for part_id, parts in psets.items()
         }
-        executor_async_iter = self._executor.run(
-            local_physical_plan,
-            psets_mp,
-            ctx._ctx,
-            results_buffer_size,
-            context,
-        )
+
+        async def run_executor() -> PyLocalPartitionStream:
+            return self._executor.run(
+                local_physical_plan,
+                psets_mp,
+                ctx._ctx,
+                results_buffer_size,
+                context,
+            )
+
+        async_iter = LocalPartitionStream(LOOP.run(run_executor()))
         while True:
-            part = LOOP.run(executor_async_iter.__anext__())
+            part = LOOP.run(async_iter.__anext__())
             if part is None:
                 break
             yield LocalMaterializedResult(MicroPartition._from_pymicropartition(part))

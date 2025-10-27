@@ -188,26 +188,52 @@ impl UdfHandle {
         // Only actually initialized the first time
         self.udf_expr = BoundExpr::new_unchecked(initialize_udfs(self.udf_expr.inner().clone())?);
         if self.params.udf_properties.is_async {
+            use daft_core::prelude::Schema;
             use daft_dsl::functions::scalar::ScalarFn;
 
-            let result = match self.udf_expr.as_ref() {
-                Expr::ScalarFn(ScalarFn::Python(python_udf)) => {
-                    let args = python_udf
-                        .args()
-                        .iter()
-                        .map(|expr| {
-                            func_input.eval_expression(&BoundExpr::new_unchecked(expr.clone()))
-                        })
-                        .collect::<DaftResult<Vec<_>>>()?;
-                    python_udf
-                        .call_async(args.as_slice(), Some(self.task_locals))
-                        .await
-                }
-                _ => unreachable!(),
-            };
-            return result;
+            let mut udf = None;
+            let mut args = None;
+            let new_expr = self
+                .udf_expr
+                .inner()
+                .clone()
+                .transform_down(|e| match e.as_ref() {
+                    Expr::ScalarFn(ScalarFn::Python(python_udf)) => {
+                        args = Some(
+                            python_udf
+                                .args()
+                                .iter()
+                                .map(|expr| {
+                                    func_input
+                                        .eval_expression(&BoundExpr::new_unchecked(expr.clone()))
+                                })
+                                .collect::<DaftResult<Vec<_>>>()?,
+                        );
+                        udf = Some(python_udf.clone());
+
+                        let name = args.as_ref().unwrap().first().unwrap().name().to_string();
+                        Ok(Transformed::yes(
+                            Expr::Column(Column::Resolved(daft_dsl::ResolvedColumn::Basic(
+                                name.into(),
+                            )))
+                            .into(),
+                        ))
+                    }
+                    _ => Ok(Transformed::no(e)),
+                })?
+                .data;
+            let udf = udf.expect("UDF should be Python UDF");
+            let args = args.expect("UDF should have arguments");
+            let result = udf
+                .call_async(args.as_slice(), Some(self.task_locals))
+                .await?;
+            let schema = Schema::new(vec![result.field().clone()]);
+            let result_rb = RecordBatch::new_unchecked(schema, vec![result], func_input.num_rows());
+
+            result_rb.eval_expression(&BoundExpr::try_new(new_expr, &result_rb.schema)?)
+        } else {
+            func_input.eval_expression(&self.udf_expr)
         }
-        func_input.eval_expression(&self.udf_expr)
     }
 
     #[cfg(not(feature = "python"))]

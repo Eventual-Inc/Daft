@@ -54,7 +54,6 @@ fn get_global_runtime(py: Python) -> &'static Handle {
         std::thread::spawn(move || {
             pyo3_async_runtimes::tokio::get_runtime().block_on(futures::future::pending::<()>());
         });
-        // Initialize the task locals in the centralized location
         common_runtime::init_task_locals(py);
         pyo3_async_runtimes::tokio::get_runtime().handle().clone()
     })
@@ -66,8 +65,8 @@ fn get_global_runtime() -> &'static Handle {
 }
 
 #[cfg(feature = "python")]
-#[pyclass(frozen)]
-struct LocalPartitionStream {
+#[pyclass(module = "daft.daft", name = "PyLocalPartitionStream", frozen)]
+pub struct LocalPartitionStream {
     stream: Arc<Mutex<BoxStream<'static, DaftResult<Py<PyAny>>>>>,
 }
 
