@@ -57,7 +57,7 @@ def video_metadata(
         analyzeduration_us (int, optional): The duration of the analysis. Defaults to 200_000.
 
     Returns:
-        Struct: A struct containing the metadata (width, height, fps, frame_count, time_base)
+        Expression (Struct Expression): A struct containing the metadata (width, height, fps, frame_count, time_base)
     """
     return video_metadata_fn(file_expr, probesize=probesize, analyzeduration_us=analyzeduration_us)  # type: ignore
 
