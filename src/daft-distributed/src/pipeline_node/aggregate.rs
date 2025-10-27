@@ -353,7 +353,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         output_schema: SchemaRef,
         partition_by: Vec<BoundExpr>,
     ) -> DaftResult<DistributedPipelineNode> {
-        if self.is_already_hash_partitioned_by(&input_node, &group_by)? {
+        if Self::needs_hash_repartition(&input_node, &group_by)? {
             return Ok(AggregateNode::new(
                 self.get_next_pipeline_node_id(),
                 logical_node_id,

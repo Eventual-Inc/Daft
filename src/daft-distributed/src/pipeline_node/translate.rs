@@ -61,8 +61,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         self.pipeline_node_id_counter
     }
 
-    pub(crate) fn is_already_hash_partitioned_by(
-        &self,
+    pub(crate) fn needs_hash_repartition(
         input_node: &DistributedPipelineNode,
         partition_columns: &[BoundExpr],
     ) -> DaftResult<bool> {
@@ -362,7 +361,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let input_node = self.curr_node.pop().unwrap();
 
                 // Check if we can elide the repartition
-                if self.is_already_hash_partitioned_by(&input_node, &columns)? {
+                if Self::needs_hash_repartition(&input_node, &columns)? {
                     DistinctNode::new(
                         self.get_next_pipeline_node_id(),
                         logical_node_id,
@@ -420,7 +419,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let input_node = self.curr_node.pop().unwrap();
                 let repartition = if partition_by.is_empty() {
                     self.gen_gather_node(logical_node_id, input_node)
-                } else if self.is_already_hash_partitioned_by(&input_node, &partition_by)? {
+                } else if Self::needs_hash_repartition(&input_node, &partition_by)? {
                     input_node
                 } else {
                     self.gen_shuffle_node(
