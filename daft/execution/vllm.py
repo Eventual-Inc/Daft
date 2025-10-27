@@ -104,4 +104,5 @@ class VLLMExecutor:
         return completed_outputs, completed_rows_batch
 
     def num_running_tasks(self) -> int:
-        return self.running_task_count
+        with self.task_count_lock:
+            return self.running_task_count

@@ -342,7 +342,7 @@ impl StreamingSink for VLLMSink {
     }
 
     fn max_concurrency(&self) -> usize {
-        self.expr.inner().concurrency
+        1
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
