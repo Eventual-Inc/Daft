@@ -178,9 +178,9 @@ impl<'py> IntoPyObject<'py> for Literal {
                 .collect::<IndexMap<_, _>>()
                 .into_bound_py_any(py),
             Self::File(f) => {
-                let file_class = match f.file_format {
-                    daft_schema::file_format::FileFormat::Unknown => intern!(py, "File"),
-                    daft_schema::file_format::FileFormat::Video => intern!(py, "VideoFile"),
+                let file_class = match f.media_type {
+                    daft_schema::media_type::MediaType::Unknown => intern!(py, "File"),
+                    daft_schema::media_type::MediaType::Video => intern!(py, "VideoFile"),
                 };
 
                 let pytuple = f.into_bound_py_any(py)?;

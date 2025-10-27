@@ -6,14 +6,14 @@ use serde::{Deserialize, Serialize};
     feature = "python",
     pyclass(name = "PyFileFormat", module = "daft.daft", eq, eq_int)
 )]
-pub enum FileFormat {
+pub enum MediaType {
     Unknown,
     Video,
 }
 
 #[cfg(feature = "python")]
 #[cfg_attr(feature = "python", pymethods)]
-impl FileFormat {
+impl MediaType {
     #[staticmethod]
     pub fn unknown() -> Self {
         Self::Unknown
@@ -24,7 +24,7 @@ impl FileFormat {
     }
 }
 
-impl std::fmt::Display for FileFormat {
+impl std::fmt::Display for MediaType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Unknown => write!(f, "Unknown"),

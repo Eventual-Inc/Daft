@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use super::field::PyField;
 use crate::{
-    dtype::DataType, field::Field, file_format::FileFormat, image_mode::ImageMode,
+    dtype::DataType, field::Field, image_mode::ImageMode, media_type::MediaType,
     time_unit::TimeUnit,
 };
 
@@ -337,7 +337,7 @@ impl PyDataType {
     }
 
     #[staticmethod]
-    pub fn file(ff: FileFormat) -> PyResult<Self> {
+    pub fn file(ff: MediaType) -> PyResult<Self> {
         Ok(DataType::File(ff).into())
     }
 

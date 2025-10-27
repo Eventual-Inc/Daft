@@ -4,7 +4,7 @@ use super::{ArrayWrapper, IntoSeries, Series};
 use crate::{
     array::{ops::GroupIndices, prelude::*},
     datatypes::{FileArray, prelude::*},
-    file::DaftFileFormat,
+    file::DaftMediaType,
     lit::Literal,
     series::{DaftResult, SeriesLike},
     with_match_integer_daft_types,
@@ -207,7 +207,7 @@ impl_series_like_for_logical_array!(MapArray);
 
 impl<T> SeriesLike for ArrayWrapper<FileArray<T>>
 where
-    T: DaftFileFormat + std::fmt::Debug,
+    T: DaftMediaType + std::fmt::Debug,
 {
     fn into_series(&self) -> Series {
         self.0.clone().into_series()

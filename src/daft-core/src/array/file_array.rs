@@ -8,7 +8,7 @@ use daft_schema::{dtype::DataType, field::Field};
 use crate::{
     array::prelude::*,
     datatypes::logical::LogicalArrayImpl,
-    file::{DaftFileFormat, DataOrReference, FileReference, FileReferenceType, FileType},
+    file::{DaftMediaType, DataOrReference, FileReference, FileReferenceType, FileType},
     series::{IntoSeries, Series},
 };
 
@@ -31,10 +31,10 @@ pub type FileArray<T> = LogicalArray<FileType<T>>;
 
 impl<U> FileArray<U>
 where
-    U: DaftFileFormat,
+    U: DaftMediaType,
 {
     /// Converts to a different file format
-    pub fn change_type<T: DaftFileFormat>(self) -> FileArray<T> {
+    pub fn change_type<T: DaftMediaType>(self) -> FileArray<T> {
         let LogicalArrayImpl {
             field,
             mut physical,
@@ -54,7 +54,7 @@ where
 
 impl<T> FileArray<T>
 where
-    T: DaftFileFormat,
+    T: DaftMediaType,
 {
     pub fn new_from_file_references<I: Iterator<Item = DaftResult<Option<FileReference>>>>(
         name: &str,
@@ -190,7 +190,7 @@ where
 
 pub struct FileArrayIter<'a, T>
 where
-    T: DaftFileFormat,
+    T: DaftMediaType,
 {
     array: &'a FileArray<T>,
     idx: usize,
@@ -198,7 +198,7 @@ where
 
 impl<T> Iterator for FileArrayIter<'_, T>
 where
-    T: DaftFileFormat,
+    T: DaftMediaType,
 {
     type Item = Option<FileReference>;
 
@@ -215,7 +215,7 @@ where
 
 impl<'a, T> IntoIterator for &'a FileArray<T>
 where
-    T: DaftFileFormat,
+    T: DaftMediaType,
 {
     type Item = Option<FileReference>;
     type IntoIter = FileArrayIter<'a, T>;
@@ -236,7 +236,7 @@ mod tests {
 
     use crate::{
         datatypes::FileArray,
-        file::{DataOrReference, FileFormatUnknown, FileReference},
+        file::{DataOrReference, FileReference, MediaTypeUnknown},
         lit::Literal,
         prelude::{BinaryArray, FromArrow},
         series::Series,
@@ -247,10 +247,10 @@ mod tests {
         let data = vec![1, 2, 3];
         let bin_arr = BinaryArray::from_iter("data", std::iter::once(Some(data.clone())));
 
-        let arr = FileArray::<FileFormatUnknown>::new_from_data_array("data", &bin_arr);
+        let arr = FileArray::<MediaTypeUnknown>::new_from_data_array("data", &bin_arr);
         let arrow_data = arr.to_arrow();
 
-        let new_arr = FileArray::<FileFormatUnknown>::from_arrow(arr.field.clone(), arrow_data)
+        let new_arr = FileArray::<MediaTypeUnknown>::from_arrow(arr.field.clone(), arrow_data)
             .expect("Failed to create FileArray from arrow data");
         let new_arr = new_arr.data_array();
 
@@ -267,14 +267,14 @@ mod tests {
         let urls = urls.utf8().unwrap();
 
         let arr =
-            FileArray::<FileFormatUnknown>::new_from_reference_array("urls", urls, io_conf.clone());
+            FileArray::<MediaTypeUnknown>::new_from_reference_array("urls", urls, io_conf.clone());
         let arrow_data = arr.to_arrow();
 
-        let new_arr = FileArray::<FileFormatUnknown>::from_arrow(arr.field.clone(), arrow_data)
+        let new_arr = FileArray::<MediaTypeUnknown>::from_arrow(arr.field.clone(), arrow_data)
             .expect("Failed to create FileArray from arrow data");
 
         let FileReference {
-            file_format: _,
+            media_type: _,
             inner: DataOrReference::Reference(url, io_config),
         } = new_arr.get(0).expect("Failed to get data")
         else {

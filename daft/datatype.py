@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable, Union
 
 from packaging.version import parse
 
-from daft.daft import ImageMode, PyDataType, PyFileFormat, PyTimeUnit, sql_datatype
+from daft.daft import ImageMode, PyDataType, PyMediaType, PyTimeUnit, sql_datatype
 from daft.dependencies import np, pa
 from daft.runners import get_or_create_runner
 
@@ -17,27 +17,27 @@ if TYPE_CHECKING:
     import jaxtyping
 
 
-class FileFormat:
-    _fileformat: PyFileFormat
+class MediaType:
+    _media_type: PyMediaType
 
     def __init__(self) -> None:
-        raise NotImplementedError("Please use FileFormat.unknown() or .video() instead.")
+        raise NotImplementedError("Please use MediaType.unknown() or .video() instead.")
 
     @classmethod
-    def _from_pyfileformat(cls, o3: PyFileFormat) -> FileFormat:
-        fileformat = FileFormat.__new__(FileFormat)
-        fileformat._fileformat = o3
+    def _from_pyfileformat(cls, mt: PyMediaType) -> MediaType:
+        fileformat = MediaType.__new__(MediaType)
+        fileformat._media_type = mt
         return fileformat
 
     @classmethod
-    def unknown(cls) -> FileFormat:
-        """Represents an unknown file format."""
-        return cls._from_pyfileformat(PyFileFormat.unknown())
+    def unknown(cls) -> MediaType:
+        """Represents an unknown media type."""
+        return cls._from_pyfileformat(PyMediaType.unknown())
 
     @classmethod
-    def video(cls) -> FileFormat:
-        """Represents a video file format."""
-        return cls._from_pyfileformat(PyFileFormat.video())
+    def video(cls) -> MediaType:
+        """Represents a video media type."""
+        return cls._from_pyfileformat(PyMediaType.video())
 
 
 class TimeUnit:
@@ -325,9 +325,9 @@ class DataType:
             )
             return cls.list(cls.python())
         elif check_type(daft.file.VideoFile):
-            return cls.file(FileFormat.video())
+            return cls.file(MediaType.video())
         elif check_type(daft.file.File):
-            return cls.file(FileFormat.unknown())
+            return cls.file(MediaType.unknown())
         else:
             return cls.python()
 
@@ -846,9 +846,9 @@ class DataType:
         return cls._from_pydatatype(PyDataType.python())
 
     @classmethod
-    def file(cls, file_format: FileFormat) -> DataType:
+    def file(cls, media_type: MediaType) -> DataType:
         """Create a File DataType: a type which refers to a file object."""
-        return cls._from_pydatatype(PyDataType.file(file_format._fileformat))
+        return cls._from_pydatatype(PyDataType.file(media_type._media_type))
 
     def is_null(self) -> builtins.bool:
         """Check if this is a null type.

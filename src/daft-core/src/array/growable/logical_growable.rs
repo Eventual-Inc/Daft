@@ -6,7 +6,7 @@ use super::{Growable, GrowableArray};
 use crate::{
     array::prelude::*,
     datatypes::prelude::*,
-    file::{DaftFileFormat, FileType},
+    file::{DaftMediaType, FileType},
     series::{IntoSeries, Series},
 };
 
@@ -90,7 +90,7 @@ pub type LogicalFileGrowable<'a, T> = LogicalGrowable<FileType<T>, <<<FileType<T
 
 impl<'a, T> LogicalFileGrowable<'a, T>
 where
-    T: DaftFileFormat,
+    T: DaftMediaType,
 {
     pub fn new(
         name: &str,

@@ -31,7 +31,7 @@ pub use crate::array::{DataArray, FixedSizeListArray, file_array::FileArray};
 use crate::prelude::PythonArray;
 use crate::{
     array::{ListArray, StructArray, ops::as_arrow::AsArrow},
-    file::{DaftFileFormat, FileType},
+    file::{DaftMediaType, FileType},
 };
 
 pub mod interval;
@@ -66,7 +66,7 @@ pub trait DaftDataType: Sync + Send + Clone + 'static {
 
 impl<T> DaftDataType for T
 where
-    T: DaftFileFormat,
+    T: DaftMediaType,
 {
     type ArrayType = FileArray<T>;
 
@@ -256,7 +256,7 @@ impl_daft_logical_list_datatype!(MapType, Unknown);
 
 impl<T> DaftDataType for FileType<T>
 where
-    T: DaftFileFormat,
+    T: DaftMediaType,
 {
     #[inline]
     fn get_dtype() -> DataType {
@@ -268,7 +268,7 @@ where
 
 impl<T> DaftLogicalType for FileType<T>
 where
-    T: DaftFileFormat,
+    T: DaftMediaType,
 {
     type PhysicalType = StructType;
 }

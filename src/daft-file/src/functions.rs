@@ -1,13 +1,13 @@
 use common_error::DaftError;
 use daft_core::{
     datatypes::FileArray,
-    file::{FileFormatUnknown, FileFormatVideo, FileReference},
+    file::{FileReference, MediaTypeUnknown, MediaTypeVideo},
     series::IntoSeries,
     with_match_file_types,
 };
 use daft_dsl::functions::{UnaryArg, prelude::*};
 use daft_io::IOConfig;
-use daft_schema::file_format::FileFormat;
+use daft_schema::media_type::MediaType;
 use serde::{Deserialize, Serialize};
 
 use crate::file::DaftFile;
@@ -33,18 +33,18 @@ impl ScalarUDF for File {
         } = args.try_into()?;
 
         Ok(match input.data_type() {
-            DataType::File(FileFormat::Unknown) => input,
-            DataType::File(FileFormat::Video) => input
-                .file::<FileFormatVideo>()?
+            DataType::File(MediaType::Unknown) => input,
+            DataType::File(MediaType::Video) => input
+                .file::<MediaTypeVideo>()?
                 .clone()
-                .change_type::<FileFormatUnknown>()
+                .change_type::<MediaTypeUnknown>()
                 .into_series(),
 
             DataType::Binary => {
-                FileArray::<FileFormatUnknown>::new_from_data_array(input.name(), input.binary()?)
+                FileArray::<MediaTypeUnknown>::new_from_data_array(input.name(), input.binary()?)
                     .into_series()
             }
-            DataType::Utf8 => FileArray::<FileFormatUnknown>::new_from_reference_array(
+            DataType::Utf8 => FileArray::<MediaTypeUnknown>::new_from_reference_array(
                 input.name(),
                 input.utf8()?,
                 io_config,
@@ -64,7 +64,7 @@ impl ScalarUDF for File {
 
         let input = input.to_field(schema)?;
 
-        Ok(Field::new(input.name, DataType::File(FileFormat::Unknown)))
+        Ok(Field::new(input.name, DataType::File(MediaType::Unknown)))
     }
 }
 
@@ -105,10 +105,10 @@ impl ScalarUDF for VideoFile {
             }
         }
         Ok(match input.data_type() {
-            DataType::File(FileFormat::Video) => input,
-            DataType::File(FileFormat::Unknown) => {
-                let f = input.file::<FileFormatUnknown>()?.clone();
-                let files = f.change_type::<FileFormatVideo>();
+            DataType::File(MediaType::Video) => input,
+            DataType::File(MediaType::Unknown) => {
+                let f = input.file::<MediaTypeUnknown>()?.clone();
+                let files = f.change_type::<MediaTypeVideo>();
                 if verify {
                     for file in files.into_iter().flatten() {
                         verify_file(file)?;
@@ -122,7 +122,7 @@ impl ScalarUDF for VideoFile {
                 let data = bin.into_iter().map(|data| {
                     data.map(|data| {
                         let file_ref =
-                            FileReference::new_from_data(FileFormat::Video, data.to_vec());
+                            FileReference::new_from_data(MediaType::Video, data.to_vec());
                         if verify {
                             verify_file(file_ref)
                         } else {
@@ -131,7 +131,7 @@ impl ScalarUDF for VideoFile {
                     })
                     .transpose()
                 });
-                FileArray::<FileFormatVideo>::new_from_file_references(input.name(), data)?
+                FileArray::<MediaTypeVideo>::new_from_file_references(input.name(), data)?
                     .into_series()
             }
             DataType::Utf8 => {
@@ -139,7 +139,7 @@ impl ScalarUDF for VideoFile {
                 let data = utf8.into_iter().map(|data| {
                     data.map(|data| {
                         let file_ref = FileReference::new_from_reference(
-                            FileFormat::Video,
+                            MediaType::Video,
                             data.to_string(),
                             io_config.clone(),
                         );
@@ -151,7 +151,7 @@ impl ScalarUDF for VideoFile {
                     })
                     .transpose()
                 });
-                FileArray::<FileFormatVideo>::new_from_file_references(input.name(), data)?
+                FileArray::<MediaTypeVideo>::new_from_file_references(input.name(), data)?
                     .into_series()
             }
             _ => {
@@ -168,7 +168,7 @@ impl ScalarUDF for VideoFile {
 
         let input = input.to_field(schema)?;
 
-        Ok(Field::new(input.name, DataType::File(FileFormat::Video)))
+        Ok(Field::new(input.name, DataType::File(MediaType::Video)))
     }
 }
 

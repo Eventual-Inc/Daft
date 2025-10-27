@@ -77,7 +77,7 @@ from daft.convert import (
 from daft.daft import ImageFormat, ImageMode, ImageProperty, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.schema import Schema
-from daft.datatype import DataType, TimeUnit, FileFormat
+from daft.datatype import DataType, TimeUnit, MediaType
 from daft.expressions import Expression, col, element, list_, lit, interval, struct, coalesce
 from daft.series import Series
 from daft.session import (
@@ -161,12 +161,12 @@ __all__ = [
     "DataType",
     "Expression",
     "File",
-    "FileFormat",
     "IOConfig",
     "Identifier",
     "ImageFormat",
     "ImageMode",
     "ImageProperty",
+    "MediaType",
     "ResourceRequest",
     "Schema",
     "Series",

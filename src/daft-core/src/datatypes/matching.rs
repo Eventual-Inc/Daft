@@ -8,7 +8,7 @@ macro_rules! with_match_daft_types {
         macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
         use $crate::datatypes::*;
         use $crate::datatypes::DataType;
-        use $crate::file::{FileFormat, UnknownFileType, VideoFileType};
+        use $crate::file::{MediaType, UnknownFileType, VideoFileType};
 
         match $key_type {
             // Float16 => unimplemented!("Array for Float16 DataType not implemented"),
@@ -48,8 +48,8 @@ macro_rules! with_match_daft_types {
             DataType::Utf8 => __with_ty__! { Utf8Type },
             #[cfg(feature = "python")]
             DataType::Python => __with_ty__! { PythonType },
-            DataType::File(FileFormat::Unknown) => __with_ty__! { UnknownFileType },
-            DataType::File(FileFormat::Video) => __with_ty__! { VideoFileType },
+            DataType::File(MediaType::Unknown) => __with_ty__! { UnknownFileType },
+            DataType::File(MediaType::Video) => __with_ty__! { VideoFileType },
 
 
             // NOTE: We should not implement a default for match here, because this is meant to be
@@ -375,11 +375,11 @@ macro_rules! with_match_file_types {
         macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
         use $crate::datatypes::*;
         use $crate::datatypes::DataType;
-        use $crate::file::{FileFormat, FileFormatUnknown, FileFormatVideo};
+        use $crate::file::{MediaType, MediaTypeUnknown, MediaTypeVideo};
 
         match $key_type {
-            DataType::File(FileFormat::Unknown) => __with_ty__! { FileFormatUnknown },
-            DataType::File(FileFormat::Video) => __with_ty__! { FileFormatVideo },
+            DataType::File(MediaType::Unknown) => __with_ty__! { MediaTypeUnknown },
+            DataType::File(MediaType::Video) => __with_ty__! { MediaTypeVideo },
             _ => panic!("Only File Types are supported, {:?} not implemented", $key_type)
         }
     }};

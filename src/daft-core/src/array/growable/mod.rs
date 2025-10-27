@@ -3,7 +3,7 @@ use common_error::DaftResult;
 use crate::{
     array::{FixedSizeListArray, ListArray, StructArray, prelude::*},
     datatypes::{FileArray, prelude::*},
-    file::DaftFileFormat,
+    file::DaftMediaType,
     series::Series,
     with_match_daft_types,
 };
@@ -211,7 +211,7 @@ impl_growable_array!(TensorArray, logical_growable::LogicalTensorGrowable<'a>);
 impl_growable_array!(MapArray, map_growable::MapGrowable<'a>);
 impl<T> GrowableArray for FileArray<T>
 where
-    T: DaftFileFormat,
+    T: DaftMediaType,
 {
     type GrowableType<'a> = logical_growable::LogicalFileGrowable<'a, T>;
     fn make_growable<'a>(

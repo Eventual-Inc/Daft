@@ -7,11 +7,11 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use daft_core::file::{DataOrReference, FileReference};
 use daft_io::{GetRange, IOConfig, IOStatsRef, ObjectSource};
-use daft_schema::file_format::FileFormat;
+use daft_schema::media_type::MediaType;
 use url::Url;
 
 pub struct DaftFile {
-    pub file_format: FileFormat,
+    pub media_type: MediaType,
     pub(crate) cursor: Option<FileCursor>,
     pub(crate) position: usize,
 }
@@ -22,12 +22,12 @@ impl TryFrom<FileReference> for DaftFile {
     fn try_from(value: FileReference) -> Result<Self, Self::Error> {
         match value.inner {
             DataOrReference::Reference(path, ioconfig) => Self::from_path(
-                value.file_format,
+                value.media_type,
                 path,
                 ioconfig.map(|cfg| cfg.as_ref().clone()),
             ),
             DataOrReference::Data(items) => Ok(Self::from_bytes(
-                value.file_format,
+                value.media_type,
                 Arc::unwrap_or_clone(items),
             )),
         }
@@ -36,7 +36,7 @@ impl TryFrom<FileReference> for DaftFile {
 
 impl DaftFile {
     pub fn from_path(
-        file_format: FileFormat,
+        media_type: MediaType,
         path: String,
         io_conf: Option<IOConfig>,
     ) -> DaftResult<Self> {
@@ -69,22 +69,22 @@ impl DaftFile {
         if !supports_range || file_size <= DEFAULT_BUFFER_SIZE {
             let mut buf = Vec::with_capacity(file_size);
             reader.read_to_end(&mut buf)?;
-            Ok(Self::from_bytes(file_format, buf))
+            Ok(Self::from_bytes(media_type, buf))
         } else {
             // we wrap it in a BufReader so we are not making so many network requests for each byte read
             let buffered_reader = BufReader::with_capacity(DEFAULT_BUFFER_SIZE, reader);
 
             Ok(Self {
-                file_format,
+                media_type,
                 cursor: Some(FileCursor::ObjectReader(buffered_reader)),
                 position: 0,
             })
         }
     }
 
-    pub fn from_bytes(file_format: FileFormat, bytes: Vec<u8>) -> Self {
+    pub fn from_bytes(media_type: MediaType, bytes: Vec<u8>) -> Self {
         Self {
-            file_format,
+            media_type,
 
             cursor: Some(FileCursor::Memory(Cursor::new(bytes))),
             position: 0,

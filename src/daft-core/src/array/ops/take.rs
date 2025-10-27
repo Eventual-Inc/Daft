@@ -8,7 +8,7 @@ use crate::{
         prelude::*,
     },
     datatypes::{FileArray, IntervalArray, prelude::*},
-    file::DaftFileFormat,
+    file::DaftMediaType,
 };
 
 impl<T> DataArray<T>
@@ -78,7 +78,7 @@ impl_logicalarray_take!(FixedShapeTensorArray);
 impl_logicalarray_take!(MapArray);
 impl<T> FileArray<T>
 where
-    T: DaftFileFormat,
+    T: DaftMediaType,
 {
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where

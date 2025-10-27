@@ -14,7 +14,7 @@ use crate::{
             DateArray, DurationArray, LogicalArrayImpl, MapArray, TimeArray, TimestampArray,
         },
     },
-    file::{DaftFileFormat, FileReference, FileReferenceType},
+    file::{DaftMediaType, FileReference, FileReferenceType},
     series::Series,
 };
 
@@ -189,7 +189,7 @@ impl MapArray {
 
 impl<T> FileArray<T>
 where
-    T: DaftFileFormat,
+    T: DaftMediaType,
 {
     #[inline]
     pub fn get(&self, idx: usize) -> Option<FileReference> {

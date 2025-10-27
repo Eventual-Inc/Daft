@@ -1,7 +1,7 @@
 mod file;
 mod functions;
 
-use daft_core::{datatypes::FileArray, file::DaftFileFormat};
+use daft_core::{datatypes::FileArray, file::DaftMediaType};
 pub use functions::*;
 
 pub use crate::file::DaftFile;
@@ -11,7 +11,7 @@ pub mod python;
 
 pub struct DaftFileIterator<T>
 where
-    T: DaftFileFormat,
+    T: DaftMediaType,
 {
     files: FileArray<T>,
     index: usize,
@@ -19,7 +19,7 @@ where
 
 impl<T> Iterator for DaftFileIterator<T>
 where
-    T: DaftFileFormat,
+    T: DaftMediaType,
 {
     type Item = DaftFile;
 
@@ -36,7 +36,7 @@ where
 
 impl<T> DaftFileIterator<T>
 where
-    T: DaftFileFormat,
+    T: DaftMediaType,
 {
     pub fn new(files: FileArray<T>) -> Self {
         Self { files, index: 0 }

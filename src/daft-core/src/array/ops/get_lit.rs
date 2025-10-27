@@ -1,7 +1,7 @@
 use common_image::Image;
 
 use crate::{
-    array::ops::image::AsImageObj, datatypes::FileArray, file::DaftFileFormat, lit::Literal,
+    array::ops::image::AsImageObj, datatypes::FileArray, file::DaftMediaType, lit::Literal,
     prelude::*,
 };
 
@@ -248,7 +248,7 @@ impl_array_get_lit!(EmbeddingArray, Embedding);
 
 impl<T> FileArray<T>
 where
-    T: DaftFileFormat,
+    T: DaftMediaType,
 {
     pub fn get_lit(&self, idx: usize) -> Literal {
         map_or_null(self.get(idx), Literal::File)

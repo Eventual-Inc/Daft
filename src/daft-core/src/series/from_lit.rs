@@ -16,7 +16,7 @@ use itertools::Itertools;
 use crate::{
     array::ops::image::image_array_from_img_buffers,
     datatypes::FileArray,
-    file::{DataOrReference, FileFormatUnknown},
+    file::{DataOrReference, MediaTypeUnknown},
     prelude::*,
 };
 
@@ -397,11 +397,8 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 ],
                 validity,
             );
-            FileArray::<FileFormatUnknown>::new(
-                Field::new("literal", DataType::File(file_type)),
-                sa,
-            )
-            .into_series()
+            FileArray::<MediaTypeUnknown>::new(Field::new("literal", DataType::File(file_type)), sa)
+                .into_series()
         }
         DataType::Tensor(_) => {
             let (data, shapes) = values

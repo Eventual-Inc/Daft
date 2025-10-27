@@ -329,7 +329,7 @@ impl Literal {
                     .map(|(k, v)| Field::new(k, v.get_type()))
                     .collect(),
             ),
-            Self::File(f) => DataType::File(f.file_format),
+            Self::File(f) => DataType::File(f.media_type),
             Self::Tensor { data, .. } => DataType::Tensor(Box::new(data.data_type().clone())),
             Self::SparseTensor {
                 values,

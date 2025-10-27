@@ -19,7 +19,7 @@ def test_video_file_dtype(sample_video_path):
 
     field = next(df.schema().__iter__())
 
-    assert field.dtype == daft.DataType.file(daft.FileFormat.video())
+    assert field.dtype == daft.DataType.file(daft.MediaType.video())
 
 
 def test_video_file_verify():

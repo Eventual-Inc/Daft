@@ -4,8 +4,7 @@ use arrow2::datatypes::DataType as ArrowType;
 use common_error::{DaftError, DaftResult};
 use serde::{Deserialize, Serialize};
 
-use crate::{field::Field, file_format::FileFormat, image_mode::ImageMode, time_unit::TimeUnit};
-
+use crate::{field::Field, image_mode::ImageMode, media_type::MediaType, time_unit::TimeUnit};
 pub type DaftDataType = DataType;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -136,7 +135,7 @@ pub enum DataType {
     Python,
 
     Unknown,
-    File(FileFormat),
+    File(MediaType),
 }
 
 impl Display for DataType {

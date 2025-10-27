@@ -4,47 +4,47 @@ pub mod python;
 use std::{marker::PhantomData, sync::Arc};
 
 use common_io_config::IOConfig;
-pub use daft_schema::file_format::FileFormat;
+pub use daft_schema::media_type::MediaType;
 use serde::{Deserialize, Serialize};
 
-pub trait DaftFileFormat: Sync + Send + Clone + 'static + std::fmt::Debug {
-    fn get_type() -> FileFormat
+pub trait DaftMediaType: Sync + Send + Clone + 'static + std::fmt::Debug {
+    fn get_type() -> MediaType
     where
         Self: Sized;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct FileFormatUnknown;
+pub struct MediaTypeUnknown;
 
-impl DaftFileFormat for FileFormatUnknown {
-    fn get_type() -> FileFormat {
-        FileFormat::Unknown
+impl DaftMediaType for MediaTypeUnknown {
+    fn get_type() -> MediaType {
+        MediaType::Unknown
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct FileFormatVideo;
+pub struct MediaTypeVideo;
 
-impl DaftFileFormat for FileFormatVideo {
-    fn get_type() -> FileFormat {
-        FileFormat::Video
+impl DaftMediaType for MediaTypeVideo {
+    fn get_type() -> MediaType {
+        MediaType::Video
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct FileType<T>
 where
-    T: DaftFileFormat,
+    T: DaftMediaType,
 {
     _phantom: PhantomData<T>,
 }
 
-pub type UnknownFileType = FileType<FileFormatUnknown>;
-pub type VideoFileType = FileType<FileFormatVideo>;
+pub type UnknownFileType = FileType<MediaTypeUnknown>;
+pub type VideoFileType = FileType<MediaTypeVideo>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct FileReference {
-    pub file_format: FileFormat,
+    pub media_type: MediaType,
     pub inner: DataOrReference,
 }
 
@@ -57,19 +57,19 @@ pub enum DataOrReference {
 }
 
 impl FileReference {
-    pub fn new_from_data(file_format: FileFormat, data: Vec<u8>) -> Self {
+    pub fn new_from_data(media_type: MediaType, data: Vec<u8>) -> Self {
         Self {
-            file_format,
+            media_type,
             inner: DataOrReference::Data(Arc::new(data)),
         }
     }
     pub fn new_from_reference(
-        file_format: FileFormat,
+        media_type: MediaType,
         reference: String,
         io_config: Option<IOConfig>,
     ) -> Self {
         Self {
-            file_format,
+            media_type,
             inner: DataOrReference::Reference(reference, io_config.map(Arc::new)),
         }
     }
