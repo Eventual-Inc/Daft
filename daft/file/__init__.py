@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from daft.daft import PyDaftFile, PyFileReference
 from daft.dependencies import av
 from daft.file.typing import VideoMetadata
+from daft.datatype import MediaType
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -49,11 +50,13 @@ class File:
         instance._inner = reference
         return instance
 
-    def __init__(self, str_or_bytes: str | bytes, io_config: IOConfig | None = None) -> None:
+    def __init__(
+        self, str_or_bytes: str | bytes, io_config: IOConfig | None = None, media_type: MediaType = MediaType.unknown()
+    ) -> None:
         if isinstance(str_or_bytes, str):
-            self._inner = PyFileReference._from_tuple((str_or_bytes, io_config))  # type: ignore
+            self._inner = PyFileReference._from_tuple((media_type._media_type, str_or_bytes, io_config))  # type: ignore
         elif isinstance(str_or_bytes, bytes):
-            self._inner = PyFileReference._from_tuple((str_or_bytes, io_config))  # type: ignore
+            self._inner = PyFileReference._from_tuple((media_type._media_type, str_or_bytes, io_config))  # type: ignore
         else:
             raise TypeError("str_or_bytes must be a string or bytes")
 
@@ -152,7 +155,7 @@ class VideoFile(File):
     def __init__(self, str_or_bytes: str | bytes, io_config: IOConfig | None = None) -> None:
         if not av.module_available():
             raise ImportError("The 'av' module is required to create video files.")
-        super().__init__(str_or_bytes, io_config)
+        super().__init__(str_or_bytes, io_config, MediaType.video())
 
     def __post_init__(self) -> None:
         if not self.is_video():
