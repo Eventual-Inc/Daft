@@ -4,18 +4,17 @@
     * [Installation](install.md)
     * Common Use Cases
         * [Batch Inference](use-case/batch-inference.md)
-    * AI Functions and Providers
-        * [Functions](ai/ai-functions.md)
-        * [Providers](ai/ai-providers.md)
-        * [Adding a New AI Function](ai/contributing-new-ai-functions.md)
-    * Working with Modalities
-        * [Modalities](modalities/index.md)
-        * [Custom Modalities](modalities/custom.md)
-        * [URLs and Files](modalities/urls.md)
-        * [Text](modalities/text.md)
-        * [Images](modalities/images.md)
-        * [Videos](modalities/videos.md)
-        * [JSON and Nested Data](modalities/json.md)
+    * Multimodal AI
+        * [Modalities](multimodal-ai/index.md)
+        * [Functions](multimodal-ai/ai-functions.md)
+        * [Providers](multimodal-ai/ai-providers.md)
+        * [Text](multimodal-ai/text.md)
+        * [Images](multimodal-ai/images.md)
+        * [Audio](multimodal-ai/audio.md)
+        * [Videos](multimodal-ai/videos.md)
+        * [JSON and Nested Data](multimodal-ai/json.md)
+        * [URLs and Files](multimodal-ai/urls.md)
+        * [Custom Modalities](multimodal-ai/custom.md)
     * Running Custom Python Code
         * [User-Defined Functions (UDFs)](custom-code/udfs.md)
         * [Next-Generation UDFs](custom-code/func.md)
@@ -46,10 +45,13 @@
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning and Batching](optimization/partitioning.md)
         * [Observability](optimization/observability.md)
+    * Contributing
+        * [Contributing](contributing-to-daft.md)
+        * [AI Functions](contributing/contributing-ai-functions.md)
+    * [Sessions](sessions.md)
+    * [Roadmap](roadmap.md)
     * [Benchmarks](benchmarks/index.md)
     * [Community <sup>↗</sup>](http://www.daft.ai/slack)
-    * [Contributing](contributing-to-daft.md)
-    * [Roadmap](roadmap.md)
     * [Release Notes <sup>↗</sup>](https://github.com/Eventual-Inc/Daft/releases)
     * [Usage Telemetry](telemetry.md)
 * Examples

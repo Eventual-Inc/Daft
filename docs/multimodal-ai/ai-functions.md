@@ -1,55 +1,46 @@
 # AI Functions Overview
 
-Daft is purpose-built for scaling Multimodal AI workloads. We are rapidly expanding support for new [AI Functions](../api/functions/) covering a variety of inference tasks.
+Daft is purpose-built for scaling Multimodal AI workloads. AI Functions provide a unified interface for running inference tasks across different models and providers. Whether you're generating embeddings, classifying content, or prompting large language models.
 
-!!! warning "Warning"
+This guide shows you common usage patterns for AI functions in Daft:
 
-    These APIs are early in their development. Please feel free to [open a feature request and file issues](https://github.com/Eventual-Inc/Daft/issues/new/choose).
+- [Quickstart: Prompt with OpenAI-compatible providers](#quickstart-prompt-with-openai-compatible-providers)
+- [Generate text embeddings](#embedding-text-with-an-implicit-provider)
+- [Generate image embeddings](#embedding-images)
+- [Use OpenAI models directly](#prompt-gpt-5-with-openai)
+- [Get structured outputs with Pydantic](#structured-outputs-with-custom-openai-provider)
+- [Classify text with Transformers](#classify-text-with-transformers)
 
-<div class="grid cards" markdown>
+!!! warning "Early Development"
 
-- [**prompt**](../api/functions/prompt)
+    These APIs are early in their development. Please feel free to [open a feature request and file issues](https://github.com/Eventual-Inc/Daft/issues/new/choose) if you see opportunities for improvements. We're always looking for inputs from the community!
 
-    Generate text completions and structured outputs using language models with customizable prompts and system messages.
+## Available AI Functions
 
-- [**embed_text**](../api/functions/embed_text/)
+The current list of AI functions includes:
 
-    Generate vector embeddings from text for semantic search, similarity matching, and retrieval-augmented generation (RAG) applications.
+- `prompt` - Generate text completions from language models
+- `embed_text` - Create vector embeddings from text
+- `embed_image` - Create vector embeddings from images
+- `classify_text` - Zero-shot text classification
+- `classify_image` - Zero-shot image classification
 
-- [**embed_image**](../api/functions/embed_image/)
+For more detailed information on the [Providers API](../api/ai.md), see [AI Providers Overview](ai-providers.md). If you'd like to contribute a new AI function or expand provider support, check out [Contributing New AI Functions](../contributing/contributing-ai-functions.md).
 
-    Generate vector embeddings from images for similarity search, clustering, and other machine learning tasks.
+## Quickstart: Prompt with OpenAI-compatible providers
 
-- [**classify_text**](../api/functions/classify_text/)
-
-    Classify text against labels using open-source models
-
-</div>
-
-
-
-If you would like to contribute a new AI function or would like to expand the list of supported providers, take a look at [Contributing New AI Functions](contributing-new-ai-functions.md). For more detailed information and usage patterns on using the [Providers API](../api/ai.md), see [AI Providers Overview](ai-providers.md).
-
-## Usage
+This example shows how to use the `prompt` function with an OpenAI-compatible provider like OpenRouter to classify anime quotes.
 
 ```python
 import os
-from dotenv import load_dotenv
-
 import daft
-from daft.ai.openai.provider import OpenAIProvider
 from daft.functions.ai import prompt
 
-load_dotenv()
-
 daft.set_provider(
-    OpenAIProvider(
-        name="OpenRouter",
-        base_url="https://openrouter.ai/api/v1",
-        api_key=os.environ.get("OPENROUTER_API_KEY")
-    )
+    "openai",
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.environ.get("OPENROUTER_API_KEY")
 )
-
 
 df = daft.from_pydict({
     "quote": [
@@ -65,7 +56,7 @@ df = (
         prompt(
             daft.col("quote"),
             system_message="Classify the anime from the quote and return the show, character name, and explanation.",
-            provider=daft.get_provider("OpenRouter"),
+            provider="openai",
             model="nvidia/nemotron-nano-9b-v2:free"
         )
     )
@@ -90,9 +81,9 @@ df.show(format="fancy", max_width=120)
 ╰───────────────────────────────────────────┴─────────────────────────────────────────────────────────╯
 ```
 
-### Embedding Text with an implicit provider
+## Embedding Text with an implicit provider
 
-Setting a provider is not strictly necessary. For example, if already have `OPENAI_API_KEY` environment variable set, simply specifying `"openai"` will automatically add an `OpenAIProvider` to the global session.
+You can use AI functions without explicitly configuring a provider. If you already have an `OPENAI_API_KEY` environment variable set, simply specifying `provider="openai"` will automatically create an `OpenAIProvider` for the global session.
 
 ```python
 import daft
@@ -122,11 +113,11 @@ df.show()
 ╰─────────────┴──────────────────────────╯
 ```
 
-### Embedding Images
+## Embedding Images
 
-Daft Natively supports images with the [Image DataType](../modalities/images.md). Working with images can be tricky, but with daft multimodal preprocessing is simplified with handy built-in utilities like `decode_image`, `convert_image`, and `resize`.
+Daft natively supports images with the [Image DataType](images.md). Multimodal preprocessing that's typically complex becomes simple with built-in utilities like `decode_image`, `convert_image`, and `resize`.
 
-In this example, we read 4 different image formats from HuggingFace, download their contents to bytes, and then prepare the image for inference. We'll leverage Apple's [apple/aimv2-large-patch14-224-lit](https://huggingface.co/apple/aimv2-large-patch14-224-lit) for state-of-the-art image understanding.
+This example demonstrates reading multiple image formats (PNG, JPEG, TIFF, WEBP) from HuggingFace, preprocessing them, and generating embeddings using Apple's state-of-the-art [aimv2-large-patch14-224-lit](https://huggingface.co/apple/aimv2-large-patch14-224-lit) model.
 
 ```python
 import daft
@@ -177,9 +168,13 @@ df.show()
 
 ```
 
-### Prompt GPT-5 with OpenAI
+!!! tip "Image Preprocessing"
 
-Prompt OpenAI’s GPT-5 models via the provider shortcut to generate text responses; set `OPENAI_API_KEY` and specify the model.
+    When working with images for embedding, it's important to preprocess them correctly. Different models expect different input formats—some require RGB, others accept RGBA. Check your model's documentation for specific requirements regarding image format, size, and normalization.
+
+## Prompt GPT-5 with OpenAI
+
+Use OpenAI's latest models directly by specifying the `openai` provider and your desired model. Make sure your `OPENAI_API_KEY` environment variable is set.
 
 ```python
 import os
@@ -227,9 +222,11 @@ df.show(format="fancy", max_width=120)
 ╰───────────────────────────────────────────┴─────────────────────────────────────────────────────────╯
 ```
 
-### Structured Outputs with Custom OpenAI Provider
+## Structured Outputs with Custom OpenAI Provider
 
-Attach a named `OpenAIProvider` (e.g., OpenRouter) to your session and use `return_format` to coerce model output into a Pydantic schema for reliable structured results.
+For production workloads, you often need structured, predictable outputs rather than free-form text. Use `return_format` with a Pydantic schema to automatically parse model responses into typed Python objects.
+
+This example shows how to create a custom provider (OpenRouter) and enforce structured outputs.
 
 ```python
 import os
@@ -298,9 +295,13 @@ df.show(format="fancy", max_width=120)
 ╰───────────────────────────────────────────┴───────────┴─────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
-### Classify Text with Transformers
+!!! tip "Why Structured Outputs?"
 
-Perform zero-shot text classification with Hugging Face Transformers by providing candidate labels, `provider="transformers"`, and a model.
+    Structured outputs with Pydantic provide type safety, automatic validation, and easier integration with downstream systems. Instead of parsing free-form text with regex or custom logic, you get well-typed Python objects that can be directly inserted into databases, APIs, or other data pipelines.
+
+## Classify Text with Transformers
+
+Perform zero-shot text classification using Hugging Face Transformers without any training data. Simply provide candidate labels and Daft will use a pre-trained model to classify your text.
 
 ```python
 import daft
@@ -330,3 +331,12 @@ df.show()
 │ Daft is wicked fast!┆ Positive  │
 ╰─────────────────────┴───────────╯
 ```
+
+## More Resources
+
+For deeper dives into specific AI function use cases:
+
+- **[AI Providers Overview](ai-providers.md)** - Learn how to configure and manage multiple providers
+- **[Working with Text](text.md)** - Text embeddings and processing workflows
+- **[Working with Images](images.md)** - Image embeddings and classification examples
+- **[Contributing AI Functions](../contributing/contributing-ai-functions.md)** - Add new AI functions or providers
