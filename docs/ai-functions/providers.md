@@ -158,7 +158,7 @@ This example demonstrates:
 
 ## More Resources
 
-- **[AI Functions Overview](ai-functions.md)** - Learn about available AI functions and usage patterns
-- **[Working with Text](text.md)** - Text processing and embeddings
-- **[Working with Images](images.md)** - Image processing and embeddings
+- **[AI Functions Overview](../modalities/index.md)** - Learn about available AI functions and usage patterns
+- **[Working with Text](../modalities/text.md)** - Text processing and embeddings
+- **[Working with Images](../modalities/images.md)** - Image processing and embeddings
 - **[Contributing AI Functions](../contributing/contributing-ai-functions.md)** - Add new providers or AI functions

@@ -25,7 +25,7 @@ The current list of AI functions includes:
 - `classify_text` - Zero-shot text classification
 - `classify_image` - Zero-shot image classification
 
-For more detailed information on the [Providers API](../api/ai.md), see [AI Providers Overview](ai-providers.md). If you'd like to contribute a new AI function or expand provider support, check out [Contributing New AI Functions](../contributing/contributing-ai-functions.md).
+For more detailed information on the [Providers API](../api/ai.md), see [AI Providers Overview](providers.md). If you'd like to contribute a new AI function or expand provider support, check out [Contributing New AI Functions](../contributing/contributing-ai-functions.md).
 
 ## Quickstart: Prompt with OpenAI-compatible providers
 
@@ -115,7 +115,7 @@ df.show()
 
 ## Embedding Images
 
-Daft natively supports images with the [Image DataType](images.md). Multimodal preprocessing that's typically complex becomes simple with built-in utilities like `decode_image`, `convert_image`, and `resize`.
+Daft natively supports images with the [Image DataType](../modalities/images.md). Multimodal preprocessing that's typically complex becomes simple with built-in utilities like `decode_image`, `convert_image`, and `resize`.
 
 This example demonstrates reading multiple image formats (PNG, JPEG, TIFF, WEBP) from HuggingFace, preprocessing them, and generating embeddings using Apple's state-of-the-art [aimv2-large-patch14-224-lit](https://huggingface.co/apple/aimv2-large-patch14-224-lit) model.
 
@@ -336,7 +336,7 @@ df.show()
 
 For deeper dives into specific AI function use cases:
 
-- **[AI Providers Overview](ai-providers.md)** - Learn how to configure and manage multiple providers
-- **[Working with Text](text.md)** - Text embeddings and processing workflows
-- **[Working with Images](images.md)** - Image embeddings and classification examples
+- **[AI Providers Overview](providers.md)** - Learn how to configure and manage multiple providers
+- **[Working with Text](../modalities/text.md)** - Text embeddings and processing workflows
+- **[Working with Images](../modalities/images.md)** - Image embeddings and classification examples
 - **[Contributing AI Functions](../contributing/contributing-ai-functions.md)** - Add new AI functions or providers

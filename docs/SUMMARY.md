@@ -2,22 +2,23 @@
     * [Overview](index.md)
     * [Quickstart](quickstart.md)
     * [Installation](install.md)
-    * Common Use Cases
-        * [Batch Inference](use-case/batch-inference.md)
-    * Multimodal AI
-        * [Modalities](multimodal-ai/index.md)
-        * [Functions](multimodal-ai/ai-functions.md)
-        * [Providers](multimodal-ai/ai-providers.md)
-        * [Text](multimodal-ai/text.md)
-        * [Images](multimodal-ai/images.md)
-        * [Audio](multimodal-ai/audio.md)
-        * [Videos](multimodal-ai/videos.md)
-        * [JSON and Nested Data](multimodal-ai/json.md)
-        * [URLs and Files](multimodal-ai/urls.md)
-        * [Custom Modalities](multimodal-ai/custom.md)
+    * AI Functions
+        * [Functions](ai-functions/index.md)
+        * [Providers](ai-functions/providers.md)
+    * Modalities
+        * [Modalities](modalities/index.md)
+        * [Text](modalities/text.md)
+        * [Images](modalities/images.md)
+        * [Audio](modalities/audio.md)
+        * [Videos](modalities/videos.md)
+        * [JSON and Nested Data](modalities/json.md)
+        * [URLs and Files](modalities/urls.md)
+        * [Custom Modalities](modalities/custom.md)
     * Running Custom Python Code
         * [User-Defined Functions (UDFs)](custom-code/udfs.md)
         * [Next-Generation UDFs](custom-code/func.md)
+    * Common Use Cases
+        * [Batch Inference](use-case/batch-inference.md)
     * Datasets
         * [Common Crawl](datasets/common-crawl.md)
     * Data Connectors
@@ -48,7 +49,7 @@
     * Contributing
         * [Contributing](contributing-to-daft.md)
         * [AI Functions](contributing/contributing-ai-functions.md)
-    * [Sessions](sessions.md)
+    * [Sessions](sessions-usage.md)
     * [Roadmap](roadmap.md)
     * [Benchmarks](benchmarks/index.md)
     * [Community <sup>↗</sup>](http://www.daft.ai/slack)
