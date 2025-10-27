@@ -244,10 +244,19 @@ Represents a fileset in Gravitino for file storage.
 
 ## Requirements
 
-- Apache Gravitino server (0.5.0+)
+- Apache Gravitino server (0.5.0+, with full support for 1.0+ API format)
 - Python requests library
 - PyIceberg library for reading Iceberg tables: `pip install 'daft[iceberg]'` or `pip install pyiceberg`
 - Appropriate cloud storage credentials configured in Gravitino
+
+## Compatibility
+
+This integration supports both legacy and current Gravitino API formats:
+
+- **Legacy format** (pre-1.0): Storage location in `properties.location`
+- **Current format** (1.0+): Multiple storage locations in `storageLocations` with configurable default
+
+The client automatically detects and handles both formats for seamless compatibility.
 
 ## Limitations
 

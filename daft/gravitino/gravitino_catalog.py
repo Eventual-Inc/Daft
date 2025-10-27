@@ -272,14 +272,37 @@ class GravitinoClient:
             )
             table_data = response.get("table", {})
 
+            # Handle Gravitino 1.0+ API format with storageLocations for tables
+            storage_locations = table_data.get("storageLocations", {})
+            properties = table_data.get("properties", {})
+
+            # Determine the storage location to use
+            storage_location = ""
+            if storage_locations:
+                # Use the default location specified in properties, or fall back to "default" key
+                default_location_name = properties.get("default-location-name", "default")
+                storage_location = storage_locations.get(default_location_name, "")
+
+                # If default location not found, use the first available location
+                if not storage_location and storage_locations:
+                    storage_location = next(iter(storage_locations.values()))
+            else:
+                # Fallback to old API format for backward compatibility
+                storage_location = properties.get("location", "")
+
+            # Convert Gravitino file URL format to Daft-compatible format
+            # Gravitino returns "file:/path" but Daft expects "file:///path"
+            if storage_location.startswith("file:/") and not storage_location.startswith("file:///"):
+                storage_location = storage_location.replace("file:/", "file:///", 1)
+
             table_info = GravitinoTableInfo(
                 name=table_data.get("name", table_name_only),
                 catalog=catalog_name,
                 schema=schema_name,
                 table_type=table_data.get("provider", ""),
-                storage_location=table_data.get("properties", {}).get("location", ""),
-                format=table_data.get("properties", {}).get("format", "ICEBERG"),
-                properties=table_data.get("properties", {}),
+                storage_location=storage_location,
+                format=properties.get("format", "ICEBERG"),
+                properties=properties,
             )
 
         except requests.exceptions.HTTPError as e:
@@ -321,13 +344,36 @@ class GravitinoClient:
             )
             fileset_data = response.get("fileset", {})
 
+            # Handle Gravitino 1.0+ API format with storageLocations
+            storage_locations = fileset_data.get("storageLocations", {})
+            properties = fileset_data.get("properties", {})
+
+            # Determine the storage location to use
+            storage_location = ""
+            if storage_locations:
+                # Use the default location specified in properties, or fall back to "default" key
+                default_location_name = properties.get("default-location-name", "default")
+                storage_location = storage_locations.get(default_location_name, "")
+
+                # If default location not found, use the first available location
+                if not storage_location and storage_locations:
+                    storage_location = next(iter(storage_locations.values()))
+            else:
+                # Fallback to old API format for backward compatibility
+                storage_location = properties.get("location", "")
+
+            # Convert Gravitino file URL format to Daft-compatible format
+            # Gravitino returns "file:/path" but Daft expects "file:///path"
+            if storage_location.startswith("file:/") and not storage_location.startswith("file:///"):
+                storage_location = storage_location.replace("file:/", "file:///", 1)
+
             fileset_info = GravitinoFilesetInfo(
                 name=fileset_data.get("name", fileset_name_only),
                 catalog=catalog_name,
                 schema=schema_name,
                 fileset_type=fileset_data.get("type", "EXTERNAL"),
-                storage_location=fileset_data.get("properties", {}).get("location", ""),
-                properties=fileset_data.get("properties", {}),
+                storage_location=storage_location,
+                properties=properties,
             )
 
             # Create IO config from fileset properties

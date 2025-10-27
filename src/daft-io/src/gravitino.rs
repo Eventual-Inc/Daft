@@ -149,13 +149,18 @@ impl GravitinoSource {
     ) -> super::Result<(Arc<dyn ObjectSource>, String)> {
         let url = url::Url::parse(path).context(InvalidUrlSnafu { path })?;
 
+        // Check that the scheme is gvfs and host is fileset
+        if url.scheme() != "gvfs" {
+            return Err(invalid_gravitino_path(path));
+        }
+
+        if url.host_str() != Some("fileset") {
+            return Err(invalid_gravitino_path(path));
+        }
+
         let mut segments = url
             .path_segments()
             .ok_or_else(|| invalid_gravitino_path(path))?;
-
-        if segments.next() != Some("fileset") {
-            return Err(invalid_gravitino_path(path));
-        }
 
         let catalog_name = segments
             .next()
