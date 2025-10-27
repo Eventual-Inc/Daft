@@ -1,7 +1,7 @@
 import builtins
 import datetime
 import sys
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar
 
@@ -1960,18 +1960,9 @@ class NativeExecutor:
         plan: LocalPhysicalPlan,
         psets: dict[str, list[PyMicroPartition]],
         daft_ctx: PyDaftContext,
-        results_buffer_size: int | None,
-        context: dict[str, str] | None = None,
-    ) -> Iterator[PyMicroPartition]: ...
-    # Primarily used for Flotilla, so subscribers are unused
-    def run_async(
-        self,
-        plan: LocalPhysicalPlan,
-        psets: dict[str, list[PyMicroPartition]],
-        daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: int | None = None,
         context: dict[str, str] | None = None,
-    ) -> AsyncIterator[PyMicroPartition]: ...
+    ) -> AsyncGenerator[PyMicroPartition]: ...
     @staticmethod
     def repr_ascii(builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, simple: bool) -> str: ...
     @staticmethod

@@ -30,6 +30,18 @@ impl PyScalarFn {
         }
     }
 
+    #[cfg(feature = "python")]
+    pub async fn call_async(
+        &self,
+        args: &[Series],
+        task_locals: &pyo3_async_runtimes::TaskLocals,
+    ) -> DaftResult<Series> {
+        match self {
+            Self::RowWise(func) => func.call_async(args, task_locals).await,
+            Self::Batch(..) => unimplemented!(),
+        }
+    }
+
     pub fn args(&self) -> Vec<ExprRef> {
         match self {
             Self::RowWise(RowWisePyFn { args, .. }) | Self::Batch(BatchPyFn { args, .. }) => {

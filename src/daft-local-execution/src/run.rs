@@ -27,7 +27,7 @@ use {
     daft_context::python::PyDaftContext,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    pyo3::{Bound, IntoPyObject, Py, PyAny, PyRef, PyRefMut, PyResult, Python, pyclass, pymethods},
+    pyo3::{Bound, IntoPyObject, Py, PyAny, PyRef, PyResult, Python, pyclass, pymethods},
 };
 
 use crate::{
@@ -44,9 +44,12 @@ use crate::{
 /// Global tokio runtime shared by all NativeExecutor instances
 static GLOBAL_RUNTIME: OnceLock<Handle> = OnceLock::new();
 
+#[cfg(feature = "python")]
+pub static PYO3_ASYNC_RUNTIME_LOCALS: OnceLock<pyo3_async_runtimes::TaskLocals> = OnceLock::new();
+
 /// Get or initialize the global tokio runtime
 #[cfg(feature = "python")]
-fn get_global_runtime() -> &'static Handle {
+fn get_global_runtime(py: Python) -> &'static Handle {
     GLOBAL_RUNTIME.get_or_init(|| {
         let mut builder = tokio::runtime::Builder::new_current_thread();
         builder.enable_all();
@@ -54,31 +57,25 @@ fn get_global_runtime() -> &'static Handle {
         std::thread::spawn(move || {
             pyo3_async_runtimes::tokio::get_runtime().block_on(futures::future::pending::<()>());
         });
+        PYO3_ASYNC_RUNTIME_LOCALS.get_or_init(|| {
+            pyo3_async_runtimes::tokio::get_current_locals(py)
+                .expect("Failed to get current task locals")
+        });
         pyo3_async_runtimes::tokio::get_runtime().handle().clone()
     })
+}
+
+#[cfg(feature = "python")]
+pub fn get_global_runtime_locals(py: Python) -> pyo3_async_runtimes::TaskLocals {
+    PYO3_ASYNC_RUNTIME_LOCALS
+        .get()
+        .expect("Python task locals not initialized")
+        .clone_ref(py)
 }
 
 #[cfg(not(feature = "python"))]
 fn get_global_runtime() -> &'static Handle {
     unimplemented!("get_global_runtime is not implemented without python feature");
-}
-
-#[cfg(feature = "python")]
-#[pyclass]
-struct LocalPartitionIterator {
-    iter: Box<dyn Iterator<Item = DaftResult<Py<PyAny>>> + Send + Sync>,
-}
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl LocalPartitionIterator {
-    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python) -> PyResult<Option<Py<PyAny>>> {
-        let iter = &mut slf.iter;
-        Ok(py.detach(|| iter.next().transpose())?)
-    }
 }
 
 #[cfg(feature = "python")]
@@ -155,64 +152,16 @@ impl PyNativeExecutor {
             .collect();
         let psets = InMemoryPartitionSetCache::new(&native_psets);
         let daft_ctx: &DaftContext = daft_ctx.into();
-        let out = py.detach(|| {
-            self.executor
-                .run(
-                    &local_physical_plan.plan,
-                    &psets,
-                    daft_ctx.execution_config(),
-                    daft_ctx.subscribers(),
-                    results_buffer_size,
-                    context,
-                )
-                .map(|res| res.into_iter())
-        })?;
-        let iter = Box::new(out.map(|part| {
-            pyo3::Python::attach(|py| {
-                Ok(PyMicroPartition::from(part?)
-                    .into_pyobject(py)?
-                    .unbind()
-                    .into_any())
-            })
-        }));
-        let part_iter = LocalPartitionIterator { iter };
-        Ok(part_iter.into_pyobject(py)?.into_any())
-    }
-
-    #[pyo3(signature = (local_physical_plan, psets, exec_cfg, results_buffer_size=None, context=None))]
-    pub fn run_async<'a>(
-        &self,
-        py: Python<'a>,
-        local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
-        psets: HashMap<String, Vec<PyMicroPartition>>,
-        exec_cfg: PyDaftExecutionConfig,
-        results_buffer_size: Option<usize>,
-        context: Option<HashMap<String, String>>,
-    ) -> PyResult<Bound<'a, PyAny>> {
-        let native_psets: HashMap<String, Arc<MicroPartitionSet>> = psets
-            .into_iter()
-            .map(|(part_id, parts)| {
-                (
-                    part_id,
-                    Arc::new(
-                        parts
-                            .into_iter()
-                            .map(std::convert::Into::into)
-                            .collect::<Vec<Arc<MicroPartition>>>()
-                            .into(),
-                    ),
-                )
-            })
-            .collect();
-        let psets = InMemoryPartitionSetCache::new(&native_psets);
+        let handle = get_global_runtime(py);
         let res = py.detach(|| {
             self.executor.run(
                 &local_physical_plan.plan,
                 &psets,
-                exec_cfg.config,
-                vec![],
+                daft_ctx.execution_config(),
+                daft_ctx.subscribers(),
                 results_buffer_size,
                 context,
+                handle,
             )
         })?;
         let stream = Box::pin(res.into_stream().map(|part| {
@@ -292,6 +241,7 @@ impl NativeExecutor {
         self
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn run(
         &self,
         local_physical_plan: &LocalPhysicalPlanRef,
@@ -300,6 +250,7 @@ impl NativeExecutor {
         subscribers: Vec<Arc<dyn Subscriber>>,
         results_buffer_size: Option<usize>,
         additional_context: Option<HashMap<String, String>>,
+        handle: &Handle,
     ) -> DaftResult<ExecutionEngineResult> {
         let cancel = self.cancel.clone();
         let ctx = RuntimeContext::new_with_context(additional_context.unwrap_or_default());
@@ -307,8 +258,6 @@ impl NativeExecutor {
             translate_physical_plan_to_pipeline(local_physical_plan, psets, &exec_cfg, &ctx)?;
 
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
-
-        let handle = get_global_runtime();
         let enable_explain_analyze = self.enable_explain_analyze;
 
         // Spawn execution on the global runtime - returns immediately
@@ -464,35 +413,6 @@ fn should_enable_explain_analyze() -> bool {
         false
     }
 }
-
-pub struct ExecutionEngineReceiverIterator {
-    receiver: kanal::Receiver<Arc<MicroPartition>>,
-    handle: Option<RuntimeTask<DaftResult<()>>>,
-}
-
-impl Iterator for ExecutionEngineReceiverIterator {
-    type Item = DaftResult<Arc<MicroPartition>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.receiver.recv().ok() {
-            Some(part) => Some(Ok(part)),
-            None => {
-                if let Some(handle) = self.handle.take() {
-                    let runtime = get_global_runtime();
-                    let join_result = runtime.block_on(handle);
-                    match join_result {
-                        Ok(Ok(())) => None,
-                        Ok(Err(e)) => Some(Err(e)),
-                        Err(e) => Some(Err(e)),
-                    }
-                } else {
-                    None
-                }
-            }
-        }
-    }
-}
-
 pub struct ExecutionEngineResult {
     handle: RuntimeTask<DaftResult<()>>,
     receiver: Receiver<Arc<MicroPartition>>,
@@ -527,17 +447,5 @@ impl ExecutionEngineResult {
                 }
             }
         })
-    }
-}
-
-impl IntoIterator for ExecutionEngineResult {
-    type Item = DaftResult<Arc<MicroPartition>>;
-    type IntoIter = ExecutionEngineReceiverIterator;
-
-    fn into_iter(self) -> Self::IntoIter {
-        ExecutionEngineReceiverIterator {
-            receiver: self.receiver.into_inner().to_sync(),
-            handle: Some(self.handle),
-        }
     }
 }

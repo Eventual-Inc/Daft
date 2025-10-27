@@ -2677,6 +2677,7 @@ dependencies = [
  "common-macros",
  "common-py-serde",
  "common-resource-request",
+ "common-runtime",
  "common-treenode",
  "daft-core",
  "daft-sketch",
@@ -2685,8 +2686,10 @@ dependencies = [
  "itertools 0.14.0",
  "log",
  "pyo3",
+ "pyo3-async-runtimes",
  "rstest",
  "serde",
+ "tokio",
  "typetag",
 ]
 

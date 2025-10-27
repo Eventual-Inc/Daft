@@ -102,6 +102,8 @@ pub(crate) struct UdfHandle {
     // Second bool indicates if the UDF was initialized
     #[cfg(feature = "python")]
     handle: Option<Py<PyAny>>,
+    #[cfg(feature = "python")]
+    task_locals: pyo3_async_runtimes::TaskLocals,
 }
 
 impl UdfHandle {
@@ -112,6 +114,8 @@ impl UdfHandle {
             worker_idx,
             #[cfg(feature = "python")]
             handle: None,
+            #[cfg(feature = "python")]
+            task_locals: Python::attach(crate::run::get_global_runtime_locals),
         }
     }
 
@@ -178,21 +182,41 @@ impl UdfHandle {
     }
 
     #[cfg(feature = "python")]
-    fn eval_input_inline(&mut self, func_input: RecordBatch) -> DaftResult<Series> {
+    async fn eval_input_inline(&mut self, func_input: RecordBatch) -> DaftResult<Series> {
         use daft_dsl::functions::python::initialize_udfs;
 
         // Only actually initialized the first time
         self.udf_expr = BoundExpr::new_unchecked(initialize_udfs(self.udf_expr.inner().clone())?);
+        if self.params.udf_properties.is_async {
+            use daft_dsl::functions::scalar::ScalarFn;
+
+            let result = match self.udf_expr.as_ref() {
+                Expr::ScalarFn(ScalarFn::Python(python_udf)) => {
+                    let args = python_udf
+                        .args()
+                        .iter()
+                        .map(|expr| {
+                            func_input.eval_expression(&BoundExpr::new_unchecked(expr.clone()))
+                        })
+                        .collect::<DaftResult<Vec<_>>>()?;
+                    python_udf
+                        .call_async(args.as_slice(), &self.task_locals)
+                        .await
+                }
+                _ => unreachable!(),
+            };
+            return result;
+        }
         func_input.eval_expression(&self.udf_expr)
     }
 
     #[cfg(not(feature = "python"))]
-    fn eval_input(&mut self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
+    async fn eval_input(&mut self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
         panic!("Cannot evaluate a UDF without compiling for Python");
     }
 
     #[cfg(feature = "python")]
-    fn eval_input(&mut self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
+    async fn eval_input(&mut self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
         let input_batches = input.get_tables()?;
         let mut output_batches = Vec::with_capacity(input_batches.len());
 
@@ -204,7 +228,7 @@ impl UdfHandle {
             let mut result = if let Some(handle) = &self.handle {
                 self.eval_input_with_handle(func_input, handle)
             } else {
-                self.eval_input_inline(func_input)
+                self.eval_input_inline(func_input).await
             }?;
             // If result.len() == 1 (because it was a 0-column UDF), broadcast to right size
             if result.len() == 1 {
@@ -355,6 +379,7 @@ impl IntermediateOperator for UdfOperator {
                 let res = state
                     .udf_handle
                     .eval_input(input)
+                    .await
                     .map(|result| IntermediateOperatorResult::NeedMoreInput(Some(result)))?;
                 Ok((state, res))
             },

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import asyncio
+import threading
+from typing import TYPE_CHECKING, Any
 
 from daft.daft import (
     LocalPhysicalPlan,
@@ -13,7 +15,7 @@ from daft.dataframe.display import MermaidOptions
 from daft.recordbatch import MicroPartition
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Coroutine, Iterator
 
     from daft.context import DaftContext
     from daft.logical.builder import LogicalPlanBuilder
@@ -22,6 +24,23 @@ if TYPE_CHECKING:
         MaterializedResult,
         PartitionT,
     )
+
+
+class BackgroundEventLoop:
+    def __init__(self) -> None:
+        self.loop = asyncio.new_event_loop()
+        self.thread = threading.Thread(
+            target=self.loop.run_forever,
+            name="DaftBackgroundEventLoop",
+            daemon=True,
+        )
+        self.thread.start()
+
+    def run(self, future: Coroutine[Any, Any, Any]) -> Any:
+        return asyncio.run_coroutine_threadsafe(future, self.loop).result()
+
+
+LOOP = BackgroundEventLoop()
 
 
 class NativeExecutor:
@@ -41,16 +60,18 @@ class NativeExecutor:
         psets_mp = {
             part_id: [part.micropartition()._micropartition for part in parts] for part_id, parts in psets.items()
         }
-        return (
-            LocalMaterializedResult(MicroPartition._from_pymicropartition(part))
-            for part in self._executor.run(
-                local_physical_plan,
-                psets_mp,
-                ctx._ctx,
-                results_buffer_size,
-                context,
-            )
+        executor_async_iter = self._executor.run(
+            local_physical_plan,
+            psets_mp,
+            ctx._ctx,
+            results_buffer_size,
+            context,
         )
+        while True:
+            part = LOOP.run(executor_async_iter.__anext__())
+            if part is None:
+                break
+            yield LocalMaterializedResult(MicroPartition._from_pymicropartition(part))
 
     def pretty_print(
         self,

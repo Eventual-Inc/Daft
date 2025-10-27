@@ -11,6 +11,7 @@ from daft.daft import (
     DistributedPhysicalPlanRunner,
     LocalPhysicalPlan,
     NativeExecutor,
+    PyDaftContext,
     PyDaftExecutionConfig,
     PyMicroPartition,
     RayPartitionRef,
@@ -67,7 +68,9 @@ class RaySwordfishActor:
 
             metas = []
             native_executor = NativeExecutor()
-            async for partition in native_executor.run_async(plan, psets_mp, exec_cfg, None, context):
+            ctx = PyDaftContext()
+            ctx._daft_execution_config = exec_cfg
+            async for partition in native_executor.run(plan, psets_mp, ctx, None, context):
                 if partition is None:
                     break
                 mp = MicroPartition._from_pymicropartition(partition)
