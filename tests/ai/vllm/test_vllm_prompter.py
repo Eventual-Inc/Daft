@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import pytest
+
 import daft
 from daft.datatype import DataType
 from daft.functions import prompt
 
 
-# @pytest.mark.skip(
-#     reason="Running any language model locally takes a lot of resources. This is just here for manual testing."
-# )
+@pytest.mark.skip(
+    reason="Running any language model locally takes a lot of resources. This is just here for manual testing."
+)
 def test_vllm_prompter():
     df = daft.from_pydict({"prompt": ["Hello, world!", "This is a test", "Goodbye, world!"]})
 
