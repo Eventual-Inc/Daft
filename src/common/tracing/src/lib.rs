@@ -7,8 +7,7 @@ use common_runtime::get_io_runtime;
 use opentelemetry::{KeyValue, global, trace::TracerProvider};
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
-    Resource,
-    trace::{Sampler, SdkTracerProvider},
+    metrics::Temporality, trace::{Sampler, SdkTracerProvider}, Resource
 };
 use tracing_subscriber::{layer::SubscriberExt, prelude::*};
 
@@ -62,8 +61,13 @@ async fn init_otlp_metrics_provider(otlp_endpoint: &str) {
         .build()
         .expect("Failed to build OTLP metric exporter for tracing");
 
+    // let stdout_exporter = opentelemetry_stdout::MetricExporter::builder()
+    //     .with_temporality(Temporality::Cumulative)
+    //     .build();
+        
     let metrics_provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
         .with_periodic_exporter(metrics_exporter) // To customize the export interval, set the **"OTEL_METRIC_EXPORT_INTERVAL"** environment variable (in milliseconds).
+        // .with_periodic_exporter(stdout_exporter)
         .with_resource(resource)
         .build();
 
@@ -75,7 +79,7 @@ async fn init_otlp_metrics_provider(otlp_endpoint: &str) {
 pub fn flush_oltp_metrics_provider() {
     let mg = GLOBAL_METER_PROVIDER.lock().unwrap();
     if let Some(meter_provider) = mg.as_ref()
-        && let Err(e) = meter_provider.force_flush()
+        && let Err(e) = meter_provider.shutdown()
     {
         println!("Failed to flush OTLP metrics provider: {}", e);
     }

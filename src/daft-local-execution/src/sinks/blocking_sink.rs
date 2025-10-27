@@ -60,8 +60,8 @@ pub(crate) trait BlockingSink: Send + Sync {
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Self::State>;
-    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::default())
+    fn make_runtime_stats(&self, name: &str) -> Arc<dyn RuntimeStats> {
+        Arc::new(DefaultRuntimeStats::new(name))
     }
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
         None
@@ -98,9 +98,9 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         plan_stats: StatsState,
         ctx: &RuntimeContext,
     ) -> Self {
-        let name = op.name().into();
-        let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::BlockingSink);
-        let runtime_stats = op.make_runtime_stats();
+        let name: Arc<str> = op.name().into();
+        let node_info = ctx.next_node_info(name.clone(), op.op_type(), NodeCategory::BlockingSink);
+        let runtime_stats = op.make_runtime_stats(name.as_ref());
 
         let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
