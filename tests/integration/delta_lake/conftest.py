@@ -13,7 +13,7 @@ import boto3
 import pyarrow as pa
 import pytest
 from azure.storage.blob import BlobServiceClient
-from pytest_lazyfixture import lazy_fixture
+from pytest_lazy_fixtures import lf as lazy_fixture
 
 import daft
 from daft import DataCatalogTable, DataCatalogType
