@@ -846,7 +846,7 @@ class DataType:
         return cls._from_pydatatype(PyDataType.python())
 
     @classmethod
-    def file(cls, media_type: MediaType) -> DataType:
+    def file(cls, media_type: MediaType = MediaType.unknown()) -> DataType:
         """Create a File DataType: a type which refers to a file object."""
         return cls._from_pydatatype(PyDataType.file(media_type._media_type))
 
