@@ -13,6 +13,12 @@ def sample_video_path():
     return "tests/assets/sample_video.mp4"
 
 
+def test_video_file_standalone(sample_video_path):
+    file = daft.VideoFile(sample_video_path)
+    keyframes = list(file.keyframes())
+    assert len(keyframes) == 13
+
+
 def test_video_file_dtype(sample_video_path):
     df = daft.from_pydict({"path": [sample_video_path]})
     df = df.select(daft.functions.video_file(df["path"]).alias("video"))

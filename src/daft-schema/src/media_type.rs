@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[cfg_attr(
     feature = "python",
-    pyclass(name = "PyFileFormat", module = "daft.daft", eq, eq_int)
+    pyclass(name = "PyMediaType", module = "daft.daft", eq, eq_int)
 )]
 pub enum MediaType {
     Unknown,
