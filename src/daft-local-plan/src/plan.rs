@@ -784,12 +784,14 @@ impl LocalPhysicalPlan {
     pub fn vllm_project(
         input: LocalPhysicalPlanRef,
         expr: BoundVLLMExpr,
+        output_column_name: Arc<str>,
         schema: SchemaRef,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
         Self::VLLMProject(VLLMProject {
             input,
             expr,
+            output_column_name,
             schema,
             stats_state,
         })
@@ -1290,11 +1292,13 @@ impl LocalPhysicalPlan {
                 Self::VLLMProject(VLLMProject {
                     input,
                     expr,
+                    output_column_name,
                     schema,
                     stats_state,
                 }) => Self::vllm_project(
                     new_child.clone(),
                     expr.clone(),
+                    output_column_name.clone(),
                     schema.clone(),
                     stats_state.clone(),
                 ),
@@ -1763,6 +1767,7 @@ pub struct IntoPartitions {
 pub struct VLLMProject {
     pub input: LocalPhysicalPlanRef,
     pub expr: BoundVLLMExpr,
+    pub output_column_name: Arc<str>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }

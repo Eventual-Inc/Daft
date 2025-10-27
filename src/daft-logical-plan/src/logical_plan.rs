@@ -659,9 +659,15 @@ impl LogicalPlan {
                     )
                     .unwrap(),
                 ),
-                Self::VLLMProject(VLLMProject { expr, .. }) => {
-                    Self::VLLMProject(VLLMProject::new(input.clone(), expr.clone()))
-                }
+                Self::VLLMProject(VLLMProject {
+                    expr,
+                    output_column_name,
+                    ..
+                }) => Self::VLLMProject(VLLMProject::new(
+                    input.clone(),
+                    expr.clone(),
+                    output_column_name.clone(),
+                )),
                 Self::Concat(_) | Self::Intersect(_) | Self::Union(_) | Self::Join(_) => panic!(
                     "{} ops should never have only one input, but got one",
                     input.name()

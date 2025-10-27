@@ -1299,11 +1299,12 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::VLLMProject(VLLMProject {
             input,
             expr,
+            output_column_name,
             schema,
             stats_state,
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            let vllm_sink = VLLMSink::new(expr.clone(), schema.clone());
+            let vllm_sink = VLLMSink::new(expr.clone(), output_column_name.clone(), schema.clone());
             StreamingSinkNode::new(
                 Arc::new(vllm_sink),
                 vec![child_node],

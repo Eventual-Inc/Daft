@@ -13,16 +13,17 @@ pub struct VLLMProject {
     pub node_id: Option<usize>,
     pub expr: VLLMExpr,
     pub input: LogicalPlanRef,
+    pub output_column_name: Arc<str>,
 
     pub output_schema: SchemaRef,
     pub stats_state: StatsState,
 }
 
 impl VLLMProject {
-    pub fn new(input: LogicalPlanRef, expr: VLLMExpr) -> Self {
+    pub fn new(input: LogicalPlanRef, expr: VLLMExpr, output_column_name: Arc<str>) -> Self {
         let output_fields = [
             input.schema().fields().to_vec(),
-            vec![Field::new("daft_vllm_output", DataType::Utf8)],
+            vec![Field::new(output_column_name.to_string(), DataType::Utf8)],
         ]
         .concat();
         let output_schema = Arc::new(Schema::new(output_fields));
@@ -32,6 +33,7 @@ impl VLLMProject {
             node_id: None,
             input,
             expr,
+            output_column_name,
             output_schema,
             stats_state: StatsState::NotMaterialized,
         }

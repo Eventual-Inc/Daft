@@ -28,6 +28,7 @@ use crate::{
 
 pub(crate) struct VLLMSink {
     expr: BoundVLLMExpr,
+    output_column_name: Arc<str>,
     schema: SchemaRef,
 }
 
@@ -77,7 +78,7 @@ impl VLLMExecutor {
         Ok(())
     }
 
-    fn poll(&self, schema: SchemaRef) -> DaftResult<Option<RecordBatch>> {
+    fn poll(&self, output_column_name: &str, schema: SchemaRef) -> DaftResult<Option<RecordBatch>> {
         Python::attach(|py| {
             use daft_recordbatch::python::PyRecordBatch;
 
@@ -95,7 +96,7 @@ impl VLLMExecutor {
                 .record_batch;
 
             let output_series =
-                Utf8Array::from(("daft_vllm_output", outputs.as_slice())).into_series();
+                Utf8Array::from((output_column_name, outputs.as_slice())).into_series();
 
             let output_batch = rows.append_column(schema, output_series)?;
             Ok(Some(output_batch))
@@ -123,7 +124,11 @@ impl VLLMExecutor {
         unimplemented!("VLLMExecutor::submit is not supported without the Python feature.")
     }
 
-    fn poll(&self, _schema: SchemaRef) -> DaftResult<Option<RecordBatch>> {
+    fn poll(
+        &self,
+        _output_column_name: &str,
+        _schema: SchemaRef,
+    ) -> DaftResult<Option<RecordBatch>> {
         unimplemented!("VLLMExecutor::poll is not supported without the Python feature.")
     }
 
@@ -135,14 +140,23 @@ impl VLLMExecutor {
 }
 
 impl VLLMSink {
-    pub(crate) fn new(expr: BoundVLLMExpr, schema: SchemaRef) -> Self {
-        Self { expr, schema }
+    pub(crate) fn new(
+        expr: BoundVLLMExpr,
+        output_column_name: Arc<str>,
+        schema: SchemaRef,
+    ) -> Self {
+        Self {
+            expr,
+            output_column_name,
+            schema,
+        }
     }
 
     fn submit_tasks(
         state: &mut VLLMState,
         max_running_tasks: usize,
         expr_input: BoundExpr,
+        output_column_name: &str,
         schema: SchemaRef,
     ) -> DaftResult<Vec<RecordBatch>> {
         let io_stats = IOStatsContext::new("VLLMSink::execute");
@@ -199,7 +213,7 @@ impl VLLMSink {
             .map(|rb| {
                 rb.append_column(
                     schema.clone(),
-                    Series::full_null("daft_vllm_output", &DataType::Utf8, rb.len()),
+                    Series::full_null(output_column_name, &DataType::Utf8, rb.len()),
                 )
                 .unwrap()
             })
@@ -245,6 +259,7 @@ impl StreamingSink for VLLMSink {
     ) -> StreamingSinkExecuteResult<Self> {
         let schema = self.schema.clone();
         let expr = self.expr.inner();
+        let output_column_name = self.output_column_name.clone();
         let max_running_tasks = expr.max_running_tasks;
         let max_buffer_size = expr.max_buffer_size;
         let expr_input = BoundExpr::new_unchecked(expr.input.clone());
@@ -256,10 +271,11 @@ impl StreamingSink for VLLMSink {
                         &mut state,
                         max_running_tasks,
                         expr_input,
+                        &output_column_name,
                         schema.clone(),
                     )?;
 
-                    let output_batch = state.executor.poll(schema.clone())?;
+                    let output_batch = state.executor.poll(&output_column_name, schema.clone())?;
 
                     let output = Self::combine_output_with_null_rows(
                         output_batch,
@@ -288,6 +304,7 @@ impl StreamingSink for VLLMSink {
     ) -> StreamingSinkFinalizeResult<Self> {
         let schema = self.schema.clone();
         let expr = self.expr.inner();
+        let output_column_name = self.output_column_name.clone();
         let max_running_tasks = expr.max_running_tasks;
         let expr_input = BoundExpr::new_unchecked(expr.input.clone());
 
@@ -296,13 +313,18 @@ impl StreamingSink for VLLMSink {
                 async move {
                     let state = &mut states[0];
 
-                    let null_rows: Vec<RecordBatch> =
-                        Self::submit_tasks(state, max_running_tasks, expr_input, schema.clone())?;
+                    let null_rows: Vec<RecordBatch> = Self::submit_tasks(
+                        state,
+                        max_running_tasks,
+                        expr_input,
+                        &output_column_name,
+                        schema.clone(),
+                    )?;
 
                     let finished =
                         state.executor.num_running_tasks()? == 0 && state.buffer_size == 0;
 
-                    let output_batch = state.executor.poll(schema.clone())?;
+                    let output_batch = state.executor.poll(&output_column_name, schema.clone())?;
 
                     let output = Self::combine_output_with_null_rows(
                         output_batch,
