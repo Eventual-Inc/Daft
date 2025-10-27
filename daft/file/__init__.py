@@ -242,7 +242,7 @@ class VideoFile(File):
 
             # Seek to start time
             if start_time > 0:
-                seek_timestamp = int(start_time * av.time_base)
+                seek_timestamp = int(start_time * video.time_base)
                 container.seek(seek_timestamp)
 
             for frame in container.decode(video):
