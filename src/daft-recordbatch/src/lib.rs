@@ -803,7 +803,11 @@ impl RecordBatch {
                     self.eval_expression_async(BoundExpr::new_unchecked(expr), task_locals)
                 );
                 let args = futures::future::try_join_all(args_futures).await?;
-                python_udf.call_async(args.as_slice(), task_locals).await
+                if python_udf.is_async() {
+                    python_udf.call_async(args.as_slice(), task_locals).await
+                } else {
+                    python_udf.call(args.as_slice())
+                }
             }
             Expr::Subquery(_subquery) => Err(DaftError::ComputeError(
                 "Subquery should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),

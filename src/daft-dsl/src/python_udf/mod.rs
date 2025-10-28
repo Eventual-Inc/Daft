@@ -90,4 +90,11 @@ impl PyScalarFn {
             | Self::Batch(BatchPyFn { return_dtype, .. }) => return_dtype.clone(),
         }
     }
+
+    pub fn is_async(&self) -> bool {
+        match self {
+            Self::RowWise(RowWisePyFn { is_async, .. }) => *is_async,
+            Self::Batch(BatchPyFn { .. }) => false,
+        }
+    }
 }
