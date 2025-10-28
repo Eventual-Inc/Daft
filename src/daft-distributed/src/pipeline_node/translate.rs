@@ -60,6 +60,35 @@ impl LogicalPlanToPipelineNodeTranslator {
         self.pipeline_node_id_counter += 1;
         self.pipeline_node_id_counter
     }
+
+    pub(crate) fn needs_hash_repartition(
+        input_node: &DistributedPipelineNode,
+        partition_columns: &[BoundExpr],
+    ) -> DaftResult<bool> {
+        let input_clustering_spec = &input_node.config().clustering_spec;
+        // If there is only one partition, we can skip the shuffle
+        if input_clustering_spec.num_partitions() == 1 {
+            return Ok(true);
+        }
+
+        // Check if input is hash partitioned
+        if !matches!(input_clustering_spec.as_ref(), ClusteringSpec::Hash(_)) {
+            return Ok(false);
+        }
+
+        // Check if the partition columns are compatible
+        let is_compatible = is_partition_compatible(
+            BoundExpr::bind_all(
+                &input_clustering_spec.partition_by(),
+                &input_node.config().schema,
+            )?
+            .iter()
+            .map(|e| e.inner()),
+            partition_columns.iter().map(|e| e.inner()),
+        );
+
+        Ok(is_compatible)
+    }
 }
 
 impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
@@ -332,24 +361,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let input_node = self.curr_node.pop().unwrap();
 
                 // Check if we can elide the repartition
-                let input_clustering_spec = &input_node.config().clustering_spec;
-                // If there is only one partition, or the input is already partitioned by the distinct columns,
-                // then we can just do a single stage distinct and skip the shuffle.
-                let is_hash_partitioned_by_columns =
-                    matches!(input_clustering_spec.as_ref(), ClusteringSpec::Hash(_))
-                        && !columns.is_empty()
-                        && is_partition_compatible(
-                            BoundExpr::bind_all(
-                                &input_clustering_spec.partition_by(),
-                                &input_node.config().schema,
-                            )?
-                            .iter()
-                            .map(|e| e.inner()),
-                            columns.iter().map(|e| e.inner()),
-                        );
-
-                if input_clustering_spec.num_partitions() == 1 || is_hash_partitioned_by_columns {
-                    // Single partition or already properly partitioned - skip shuffle
+                if Self::needs_hash_repartition(&input_node, &columns)? {
                     DistinctNode::new(
                         self.get_next_pipeline_node_id(),
                         logical_node_id,
@@ -407,6 +419,8 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let input_node = self.curr_node.pop().unwrap();
                 let repartition = if partition_by.is_empty() {
                     self.gen_gather_node(logical_node_id, input_node)
+                } else if Self::needs_hash_repartition(&input_node, &partition_by)? {
+                    input_node
                 } else {
                     self.gen_shuffle_node(
                         logical_node_id,
