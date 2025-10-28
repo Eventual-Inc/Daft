@@ -68,18 +68,44 @@ def _io_config_from_storage_location(storage_location: str, properties: dict[str
 
     if scheme == "s3" or scheme == "s3a":
         # Extract S3 credentials from properties if available
-        access_key = properties.get("s3.access-key-id")
-        secret_key = properties.get("s3.secret-access-key")
+        access_key = properties.get("s3-access-key-id")
+        secret_key = properties.get("s3-secret-access-key")
+        endpoint_url = properties.get("s3-endpoint")
         session_token = properties.get("s3.session-token")
+        region_name = properties.get("s3-region")
+
+        # Try to extract region from endpoint URL if not explicitly provided
+        if not region_name and endpoint_url:
+            import re
+
+            # Match patterns like "s3.ap-northeast-1.amazonaws.com" or "s3-ap-northeast-1.amazonaws.com"
+            region_match = re.search(r"s3[.-]([a-z0-9-]+)\.amazonaws\.com", endpoint_url)
+            if region_match:
+                region_name = region_match.group(1)
 
         if access_key and secret_key:
-            return IOConfig(
-                s3=S3Config(
-                    key_id=access_key,
-                    access_key=secret_key,
-                    session_token=session_token,
-                )
+            # Fix endpoint URL format - ensure HTTPS for AWS S3
+            fixed_endpoint_url = endpoint_url
+            if endpoint_url and endpoint_url.startswith("http://s3.") and "amazonaws.com" in endpoint_url:
+                fixed_endpoint_url = endpoint_url.replace("http://", "https://")
+                print(f"PYTHON DEBUG: Fixed endpoint URL from {endpoint_url} to {fixed_endpoint_url}")
+
+            s3_config = S3Config(
+                region_name=region_name,
+                key_id=access_key,
+                access_key=secret_key,
+                endpoint_url=fixed_endpoint_url,
+                session_token=session_token,
             )
+
+            print("PYTHON DEBUG: Created S3Config:")
+            print(f"  region_name: {s3_config.region_name}")
+            print(f"  endpoint_url: {s3_config.endpoint_url}")
+            print(f"  key_id: {s3_config.key_id}")
+            print(f"  access_key: {'***' + (s3_config.access_key[-4:] if s3_config.access_key else 'None')}")
+            print(f"  session_token: {s3_config.session_token}")
+
+            return IOConfig(s3=s3_config)
         return None
     elif scheme == "gcs" or scheme == "gs":
         # GCS configuration would go here
@@ -295,14 +321,23 @@ class GravitinoClient:
             if storage_location.startswith("file:/") and not storage_location.startswith("file:///"):
                 storage_location = storage_location.replace("file:/", "file:///", 1)
 
+            # Load catalog to get catalog-level properties
+            table_catalog = self.load_catalog(catalog_name)
+            catalog_properties = table_catalog.properties
+
+            # Merge catalog properties into table properties
+            # Table properties take precedence over catalog properties
+            merged_properties = catalog_properties.copy()
+            merged_properties.update(properties)
+
             table_info = GravitinoTableInfo(
                 name=table_data.get("name", table_name_only),
                 catalog=catalog_name,
                 schema=schema_name,
                 table_type=table_data.get("provider", ""),
                 storage_location=storage_location,
-                format=properties.get("format", "ICEBERG"),
-                properties=properties,
+                format=merged_properties.get("format", "ICEBERG"),
+                properties=merged_properties,
             )
 
         except requests.exceptions.HTTPError as e:
@@ -367,13 +402,21 @@ class GravitinoClient:
             if storage_location.startswith("file:/") and not storage_location.startswith("file:///"):
                 storage_location = storage_location.replace("file:/", "file:///", 1)
 
+            fileset_catalog = self.load_catalog(catalog_name)
+            catalog_properties = fileset_catalog.properties
+
+            # Merge catalog properties into fileset properties
+            # Fileset properties take precedence over catalog properties
+            merged_properties = catalog_properties.copy()
+            merged_properties.update(properties)
+
             fileset_info = GravitinoFilesetInfo(
                 name=fileset_data.get("name", fileset_name_only),
                 catalog=catalog_name,
                 schema=schema_name,
                 fileset_type=fileset_data.get("type", "EXTERNAL"),
                 storage_location=storage_location,
-                properties=properties,
+                properties=merged_properties,
             )
 
             # Create IO config from fileset properties
@@ -387,10 +430,16 @@ class GravitinoClient:
     def to_io_config(self) -> IOConfig:
         """Convert client configuration to IOConfig.
 
-        Note: Gravitino doesn't have a direct IOConfig equivalent like Unity Catalog,
-        so this returns a basic IOConfig. Specific credentials should be handled
-        per table/fileset.
+        Returns an IOConfig with the Gravitino configuration from this client.
         """
-        # Gravitino doesn't have a unified credential system like Unity Catalog
-        # Credentials are typically managed per table/fileset
-        return IOConfig()
+        from daft.io import GravitinoConfig
+
+        gravitino_config = GravitinoConfig(
+            endpoint=self._endpoint,
+            metalake_name=self._metalake_name,
+            auth_type=self._auth_type,
+            username=self._username,
+            password=self._password,
+            token=self._token,
+        )
+        return IOConfig(gravitino=gravitino_config)
