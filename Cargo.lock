@@ -3226,7 +3226,6 @@ dependencies = [
  "indexmap 2.11.4",
  "num-traits",
  "pyo3",
- "pyo3-async-runtimes",
  "rand 0.8.5",
  "serde",
  "serde_json",
