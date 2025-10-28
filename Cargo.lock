@@ -2672,6 +2672,7 @@ dependencies = [
 name = "daft-dsl"
 version = "0.3.0-dev0"
 dependencies = [
+ "async-trait",
  "common-error",
  "common-hashable-float-wrapper",
  "common-macros",

@@ -24,7 +24,9 @@ use daft_dsl::{
         BoundColumn,
         bound_expr::{BoundAggExpr, BoundExpr},
     },
-    functions::{FunctionArg, FunctionArgs, FunctionEvaluator, scalar::ScalarFn},
+    functions::{
+        BuiltinScalarFnVariant, FunctionArg, FunctionArgs, FunctionEvaluator, scalar::ScalarFn,
+    },
     null_lit,
     python_udf::PyScalarFn,
     resolved_col,
@@ -773,7 +775,12 @@ impl RecordBatch {
                     evaluated_args.push(evaluated);
                 }
                 let args = FunctionArgs::new_unchecked(evaluated_args);
-                func.udf.call(args)
+
+                match &func.func {
+                  BuiltinScalarFnVariant::Sync(func) => func.call(args),
+                  BuiltinScalarFnVariant::Async(func) => func.call(args).await,
+                }
+
             }
             Expr::Literal(lit_value) => Ok(lit_value.clone().into()),
             Expr::IfElse {
@@ -927,7 +934,10 @@ impl RecordBatch {
                     .collect::<DaftResult<FunctionArgs<Series>>>()?;
 
 
-                func.udf.call(args)
+                match &func.func {
+                  BuiltinScalarFnVariant::Sync(func) => func.call(args),
+                  BuiltinScalarFnVariant::Async(func) => get_compute_runtime().block_on_current_thread(func.call(args)),
+                }
             }
             Expr::Literal(lit_value) => Ok(lit_value.clone().into()),
             Expr::IfElse {

@@ -22,7 +22,7 @@ use daft_core::prelude::*;
 pub use function_args::{FunctionArg, FunctionArgs, UnaryArg};
 use python::LegacyPythonUDF;
 use scalar::DynamicScalarFunction;
-pub use scalar::{BuiltinScalarFn, ScalarFunctionFactory, ScalarUDF};
+pub use scalar::{BuiltinScalarFn, BuiltinScalarFnVariant, ScalarFunctionFactory, ScalarUDF};
 use serde::{Deserialize, Serialize};
 
 use self::{map::MapExpr, partitioning::PartitioningExpr, sketch::SketchExpr, struct_::StructExpr};
@@ -163,6 +163,7 @@ impl FunctionRegistry {
     pub fn add_fn<UDF: ScalarUDF + 'static>(&mut self, func: UDF) {
         // casting to dyn ScalarUDF so as to not modify the signature
         let udf = Arc::new(func) as Arc<dyn ScalarUDF>;
+        let udf = BuiltinScalarFnVariant::Sync(udf);
         let function = DynamicScalarFunction::from(udf);
         self.add_fn_factory(function);
     }

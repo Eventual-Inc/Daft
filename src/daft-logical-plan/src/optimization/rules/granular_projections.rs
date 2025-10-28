@@ -47,7 +47,7 @@ impl SplitGranularProjection {
         // As well as good testing
         matches!(
             expr,
-            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. })) if udf.as_ref().type_id() == TypeId::of::<UrlDownload>()
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func, .. })) if func.type_id() == TypeId::of::<UrlDownload>()
         )
     }
 
@@ -319,7 +319,7 @@ mod tests {
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. })) if udf.as_ref().type_id() == TypeId::of::<BinaryDecode>()
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func, .. })) if func.type_id() == TypeId::of::<BinaryDecode>()
         ));
 
         // Check that the top level project has a single child, which is a project
@@ -340,7 +340,7 @@ mod tests {
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. })) if udf.as_ref().type_id() == TypeId::of::<UrlDownload>()
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func, .. })) if func.type_id() == TypeId::of::<UrlDownload>()
         ));
 
         // Check that the bottom level project has a single child, which is a source node
@@ -430,7 +430,7 @@ mod tests {
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. })) if udf.as_ref().type_id() == TypeId::of::<UrlDownload>()
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func, .. })) if func.type_id() == TypeId::of::<UrlDownload>()
         ));
 
         // Check that the middle level project has a single child, which is a project
@@ -451,7 +451,7 @@ mod tests {
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. })) if udf.as_ref().type_id() == TypeId::of::<Capitalize>()
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func, .. })) if func.type_id() == TypeId::of::<Capitalize>()
         ));
 
         // Check that the bottom level project has a single child, which is a source node
