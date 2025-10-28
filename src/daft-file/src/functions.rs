@@ -2,6 +2,7 @@ use common_error::DaftError;
 use daft_core::{datatypes::FileArray, prelude::UInt64Array, series::IntoSeries};
 use daft_dsl::functions::{UnaryArg, prelude::*, scalar::AsyncScalarUDF};
 use daft_io::IOConfig;
+use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
 
 use crate::file::DaftFile;
@@ -63,31 +64,32 @@ impl AsyncScalarUDF for Size {
     }
 
     async fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+        use futures::stream::{self, StreamExt};
         let UnaryArg { input } = args.try_into()?;
         let s = input.file()?;
         let len = s.len();
-        use futures::stream::{self, StreamExt};
 
-        let results: Vec<Option<u64>> = stream::iter((0..len).map(|i| async move {
+        let mut results: Vec<(usize, Option<u64>)> = stream::iter((0..len).map(|i| async move {
             match s.get(i) {
                 Some(f) => {
                     let f = DaftFile::new(f).await?;
                     let size = f.size()?;
-                    DaftResult::Ok(Some(size as u64))
+                    DaftResult::Ok((i, Some(size as u64)))
                 }
-                None => DaftResult::Ok(None),
+                None => DaftResult::Ok((i, None)),
             }
         }))
-        .buffer_unordered(100)
-        .collect::<Vec<_>>()
-        .await
-        .into_iter()
-        .collect::<DaftResult<Vec<_>>>()?;
+        .buffer_unordered(64)
+        .try_collect::<Vec<_>>()
+        .await?;
 
-        Ok(
-            UInt64Array::from_iter(Field::new(s.name(), DataType::UInt64), results.into_iter())
-                .into_series(),
+        results.sort_by_key(|(i, _)| *i);
+
+        Ok(UInt64Array::from_iter(
+            Field::new(s.name(), DataType::UInt64),
+            results.into_iter().map(|(_, v)| v),
         )
+        .into_series())
     }
 
     fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {

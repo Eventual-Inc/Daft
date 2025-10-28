@@ -7,7 +7,7 @@ use daft_dsl::{
     Expr,
     common_treenode::{self, TreeNode},
     expr::bound_expr::BoundExpr,
-    functions::{BuiltinScalarFn, scalar::ScalarFn},
+    functions::{BuiltinScalarFn, BuiltinScalarFnVariant, scalar::ScalarFn},
 };
 use daft_functions_uri::download::UrlDownloadArgs;
 use daft_micropartition::MicroPartition;
@@ -21,6 +21,7 @@ use crate::{
     ExecutionTaskSpawner,
     pipeline::{MorselSizeRequirement, NodeName},
 };
+
 fn num_parallel_exprs(projection: &[BoundExpr]) -> usize {
     max(
         projection
@@ -51,7 +52,7 @@ pub fn try_get_batch_size(exprs: &[BoundExpr]) -> Option<usize> {
             .apply(|e| {
                 let found_batch_size = match e.as_ref() {
                     Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn {
-                        func: udf,
+                        func: BuiltinScalarFnVariant::Sync(udf),
                         inputs,
                         ..
                     })) if udf.name() == "url_download" => {
@@ -62,6 +63,10 @@ pub fn try_get_batch_size(exprs: &[BoundExpr]) -> Option<usize> {
                             max_connections.unwrap_or(DEFAULT_URL_MAX_CONNECTIONS);
                         Some(max_connections * CONNECTION_BATCH_FACTOR)
                     }
+                    Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn {
+                        func: BuiltinScalarFnVariant::Async(udf),
+                        ..
+                    })) => udf.preferred_batch_size(),
                     _ => None,
                 };
 
@@ -75,22 +80,40 @@ pub fn try_get_batch_size(exprs: &[BoundExpr]) -> Option<usize> {
     projection_batch_size
 }
 
+pub fn num_async_exprs(exprs: &[BoundExpr]) -> usize {
+    exprs
+        .iter()
+        .filter(|expr| {
+            matches!(
+                expr.as_ref(),
+                Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn {
+                    func: BuiltinScalarFnVariant::Async(_),
+                    ..
+                }))
+            )
+        })
+        .count()
+}
+
 pub struct ProjectOperator {
     projection: Arc<Vec<BoundExpr>>,
     max_concurrency: usize,
     parallel_exprs: usize,
+    async_exprs: usize,
     batch_size: Option<usize>,
 }
 
 impl ProjectOperator {
     pub fn new(projection: Vec<BoundExpr>) -> DaftResult<Self> {
         let (max_concurrency, parallel_exprs) = Self::get_optimal_allocation(&projection)?;
+        let async_exprs = num_async_exprs(&projection);
         let batch_size = try_get_batch_size(&projection);
         Ok(Self {
             projection: Arc::new(projection),
             max_concurrency,
             parallel_exprs,
             batch_size,
+            async_exprs,
         })
     }
 
@@ -126,12 +149,14 @@ impl IntermediateOperator for ProjectOperator {
     ) -> IntermediateOpExecuteResult<Self> {
         let projection = self.projection.clone();
         let num_parallel_exprs = self.parallel_exprs;
+        let num_async_exprs = self.async_exprs;
+        let max_concurrency = dbg!(self.max_concurrency);
         task_spawner
             .spawn(
                 async move {
-                    let out = if num_parallel_exprs > 1 {
+                    let out = if num_parallel_exprs > 1 || num_async_exprs > 0 {
                         input
-                            .par_eval_expression_list(&projection, num_parallel_exprs)
+                            .par_eval_expression_list(&projection, max_concurrency)
                             .await?
                     } else {
                         input.eval_expression_list(&projection)?

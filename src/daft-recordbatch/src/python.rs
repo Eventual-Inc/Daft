@@ -35,6 +35,7 @@ impl PyRecordBatch {
     }
 
     pub fn eval_expression_list(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
+        dbg!();
         let converted_exprs = BoundExpr::bind_all(&exprs, &self.record_batch.schema)?;
         py.detach(|| {
             Ok(self

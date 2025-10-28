@@ -229,6 +229,11 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
 #[typetag::serde(tag = "type")]
 #[async_trait::async_trait]
 pub trait AsyncScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
+    
+    fn preferred_batch_size(&self) -> Option<usize> {
+        None
+    }
+
     /// The name of the function.
     fn name(&self) -> &'static str;
 

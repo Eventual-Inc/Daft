@@ -847,6 +847,7 @@ impl RecordBatch {
     }
 
     pub fn eval_expression(&self, expr: &BoundExpr) -> DaftResult<Series> {
+        dbg!();
         let expected_field = expr.inner().to_field(self.schema.as_ref())?;
         let series = match expr.as_ref() {
             Expr::Alias(child, name) => Ok(self.eval_expression(&BoundExpr::new_unchecked(child.clone()))?.rename(name)),
@@ -1015,6 +1016,7 @@ impl RecordBatch {
     }
 
     pub fn eval_expression_list(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
+        dbg!();
         let result_series: Vec<_> = exprs
             .iter()
             .map(|e| self.eval_expression(e))
@@ -1045,7 +1047,7 @@ impl RecordBatch {
         let compute_runtime = get_compute_runtime();
         let compute_futures = compute_exprs.into_iter().map(|(i, e)| {
             let table = self.clone();
-            compute_runtime.spawn(async move { (i, table.eval_expression(&e)) })
+            compute_runtime.spawn(async move { (i, table.eval_expression_async(e).await) })
         });
 
         // Collect the results of the compute expressions
