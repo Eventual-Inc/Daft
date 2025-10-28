@@ -19,6 +19,7 @@ fn infer_schema(exprs: &[BoundExpr], schema: &Schema) -> DaftResult<Schema> {
 }
 
 impl MicroPartition {
+    // TODO(universalmind303): make this async
     pub fn eval_expression_list(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::eval_expression_list");
 

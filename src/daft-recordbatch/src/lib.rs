@@ -940,6 +940,7 @@ impl RecordBatch {
                   BuiltinScalarFnVariant::Sync(func) => func.call(args),
                   BuiltinScalarFnVariant::Async(func) => {
                     let fut = func.call(args);
+                    // TODO(universalmind303): avoid just blocking here.
                     tokio::task::block_in_place(|| {
                         tokio::runtime::Handle::current().block_on(fut)
                     })
@@ -1015,6 +1016,7 @@ impl RecordBatch {
         Ok(series)
     }
 
+    // TODO(universalmind303): make this async
     pub fn eval_expression_list(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
         let result_series: Vec<_> = exprs
             .iter()

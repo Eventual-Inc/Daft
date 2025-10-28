@@ -65,40 +65,22 @@ pub fn try_get_batch_size(exprs: &[BoundExpr]) -> Option<usize> {
     projection_batch_size
 }
 
-pub fn num_async_exprs(exprs: &[BoundExpr]) -> usize {
-    exprs
-        .iter()
-        .filter(|expr| {
-            matches!(
-                expr.as_ref(),
-                Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn {
-                    func: BuiltinScalarFnVariant::Async(_),
-                    ..
-                }))
-            )
-        })
-        .count()
-}
-
 pub struct ProjectOperator {
     projection: Arc<Vec<BoundExpr>>,
     max_concurrency: usize,
     parallel_exprs: usize,
-    async_exprs: usize,
     batch_size: Option<usize>,
 }
 
 impl ProjectOperator {
     pub fn new(projection: Vec<BoundExpr>) -> DaftResult<Self> {
         let (max_concurrency, parallel_exprs) = Self::get_optimal_allocation(&projection)?;
-        let async_exprs = num_async_exprs(&projection);
         let batch_size = try_get_batch_size(&projection);
         Ok(Self {
             projection: Arc::new(projection),
             max_concurrency,
             parallel_exprs,
             batch_size,
-            async_exprs,
         })
     }
 
@@ -134,11 +116,10 @@ impl IntermediateOperator for ProjectOperator {
     ) -> IntermediateOpExecuteResult<Self> {
         let projection = self.projection.clone();
         let num_parallel_exprs = self.parallel_exprs;
-        let num_async_exprs = self.async_exprs;
         task_spawner
             .spawn(
                 async move {
-                    let out = if num_parallel_exprs > 1 || num_async_exprs > 0 {
+                    let out = if num_parallel_exprs > 1 {
                         input
                             .par_eval_expression_list(&projection, num_parallel_exprs)
                             .await?
