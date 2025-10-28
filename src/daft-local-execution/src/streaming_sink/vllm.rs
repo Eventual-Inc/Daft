@@ -1,10 +1,10 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{collections::BinaryHeap, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
 use daft_core::{
-    prelude::{AsArrow, BooleanArray, DataType, SchemaRef, Utf8Array},
-    series::{IntoSeries, Series},
+    prelude::{AsArrow, SchemaRef, Utf8Array},
+    series::IntoSeries,
 };
 use daft_dsl::expr::{
     VLLMExpr,
@@ -13,6 +13,7 @@ use daft_dsl::expr::{
 use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
+use itertools::Itertools;
 #[cfg(feature = "python")]
 use pyo3::{intern, prelude::*};
 use tracing::Span;
@@ -35,8 +36,9 @@ pub(crate) struct VLLMSink {
 
 pub(crate) struct VLLMState {
     executor: VLLMExecutor,
-    buffer: VecDeque<Arc<MicroPartition>>,
+    buffer: Vec<Arc<MicroPartition>>,
     buffer_size: usize,
+    finished_submitting: bool,
 }
 
 #[cfg(feature = "python")]
@@ -61,7 +63,7 @@ impl VLLMExecutor {
         Ok(Self(executor))
     }
 
-    fn submit(&self, prompts: Vec<&str>, rows: RecordBatch) -> DaftResult<()> {
+    fn submit(&self, prompts: Vec<String>, rows: RecordBatch) -> DaftResult<()> {
         use daft_recordbatch::python::PyRecordBatch;
 
         let py_rows = PyRecordBatch { record_batch: rows };
@@ -99,12 +101,24 @@ impl VLLMExecutor {
         })
     }
 
-    fn num_running_tasks(&self) -> DaftResult<usize> {
+    fn finished_submitting(&self) -> DaftResult<()> {
         Python::attach(|py| {
             self.0
                 .bind(py)
-                .call_method0(intern!(py, "num_running_tasks"))?
-                .extract::<usize>()
+                .call_method0(intern!(py, "finished_submitting"))?;
+
+            Ok::<_, PyErr>(())
+        })?;
+
+        Ok(())
+    }
+
+    fn all_tasks_finished(&self) -> DaftResult<bool> {
+        Python::attach(|py| {
+            self.0
+                .bind(py)
+                .call_method0(intern!(py, "all_tasks_finished"))?
+                .extract::<bool>()
         })
         .map_err(Into::into)
     }
@@ -116,7 +130,7 @@ impl VLLMExecutor {
         Ok(Self)
     }
 
-    fn submit(&self, _prompts: Vec<&str>, _rows: RecordBatch) -> DaftResult<()> {
+    fn submit(&self, _prompts: Vec<String>, _rows: RecordBatch) -> DaftResult<()> {
         unimplemented!("VLLMExecutor::submit is not supported without the Python feature.")
     }
 
@@ -124,9 +138,15 @@ impl VLLMExecutor {
         unimplemented!("VLLMExecutor::poll is not supported without the Python feature.")
     }
 
-    fn num_running_tasks(&self) -> DaftResult<usize> {
+    fn finished_submitting(&self) -> DaftResult<()> {
         unimplemented!(
-            "VLLMExecutor::num_running_tasks is not supported without the Python feature."
+            "VLLMExecutor::finished_submitting is not supported without the Python feature."
+        )
+    }
+
+    fn all_tasks_finished(&self) -> DaftResult<bool> {
+        unimplemented!(
+            "VLLMExecutor::all_tasks_finished is not supported without the Python feature."
         )
     }
 }
@@ -144,119 +164,116 @@ impl VLLMSink {
         }
     }
 
-    fn submit_tasks(&self, state: &mut VLLMState) -> DaftResult<Vec<RecordBatch>> {
-        let expr = self.expr.inner();
-        let max_running_tasks = expr.max_running_tasks;
-        let expr_input = BoundExpr::new_unchecked(expr.input.clone());
-
-        let io_stats = IOStatsContext::new("VLLMSink::execute");
-
-        let mut available_tasks =
-            max_running_tasks as isize - state.executor.num_running_tasks()? as isize;
-
-        let mut null_rows = Vec::new();
-
-        while available_tasks > 0 && !state.buffer.is_empty() {
-            let mp = state.buffer.pop_front().unwrap();
-            state.buffer_size -= mp.len();
-            available_tasks -= mp.len() as isize;
-
-            let Some(rb) = mp.concat_or_get_update(io_stats.clone())? else {
-                // micropartition is empty, don't submit to executor
-                continue;
-            };
-
-            let prompt_series = rb.eval_expression(&expr_input)?;
-            let (prompt_series, rb) = if let Some(validity) = prompt_series.validity()
-                && validity.unset_bits() > 0
-            {
-                let valid_mask = BooleanArray::from(("valid_mask", validity.clone()));
-                let invalid_mask = BooleanArray::from(("valid_mask", !validity)).into_series();
-
-                let nulls = rb.mask_filter(&invalid_mask)?;
-                null_rows.push(nulls);
-
-                let valid_prompt_series = prompt_series.filter(&valid_mask)?;
-                let valid_rb = rb.mask_filter(&valid_mask.into_series())?;
-                (valid_prompt_series, valid_rb)
-            } else {
-                (prompt_series, rb)
-            };
-
-            let prompts = prompt_series
-                .utf8()
-                .map_err(|_| {
-                    DaftError::type_error(format!(
-                        "Expected input to `prompt` to be string, got {}",
-                        prompt_series.data_type()
-                    ))
-                })?
-                .as_arrow()
-                .values_iter()
-                .collect::<Vec<_>>();
-
-            state.executor.submit(prompts, rb)?;
-        }
-
-        let null_rows = null_rows
-            .into_iter()
-            .map(|rb| {
-                rb.append_column(
-                    self.schema.clone(),
-                    Series::full_null(&self.output_column_name, &DataType::Utf8, rb.len()),
-                )
-                .unwrap()
-            })
-            .collect::<Vec<_>>();
-
-        Ok(null_rows)
-    }
-
-    fn poll_tasks(&self, state: &VLLMState) -> DaftResult<Option<RecordBatch>> {
+    fn poll_tasks(&self, state: &VLLMState) -> DaftResult<Option<Arc<MicroPartition>>> {
         Ok(state.executor.poll()?.map(|(outputs, rows)| {
             let output_series =
                 Utf8Array::from((self.output_column_name.as_ref(), outputs.as_slice()))
                     .into_series();
 
-            rows.append_column(self.schema.clone(), output_series)
-                .unwrap()
+            let rb = rows
+                .append_column(self.schema.clone(), output_series)
+                .unwrap();
+
+            Arc::new(MicroPartition::new_loaded(
+                self.schema.clone(),
+                Arc::new(vec![rb]),
+                None,
+            ))
         }))
     }
 
-    fn combine_output_with_null_rows(
+    /// Pop values from the buffer for submission until the buffer length is less than the max buffer size.
+    ///
+    /// Pops them by bucketing based on prefix and submitting the largest buckets first.
+    fn pop_tasks(
         &self,
-        output_batch: Option<RecordBatch>,
-        null_rows: Vec<RecordBatch>,
-    ) -> Option<Arc<MicroPartition>> {
-        if let Some(output_batch) = output_batch {
-            let mut output_batches = null_rows;
-            output_batches.push(output_batch);
+        state: &mut VLLMState,
+        max_buffer_size: usize,
+    ) -> DaftResult<Vec<(Vec<String>, RecordBatch)>> {
+        let expr = self.expr.inner();
+        let prefix_match_threshold = expr.prefix_match_threshold.0;
+        let expr_input = BoundExpr::new_unchecked(expr.input.clone());
 
-            Some(Arc::new(MicroPartition::new_loaded(
-                self.schema.clone(),
-                Arc::new(output_batches),
-                None,
-            )))
-        } else if null_rows.is_empty() {
-            None
+        if state.buffer_size > max_buffer_size {
+            let concatted = MicroPartition::concat(&state.buffer)?
+                .concat_or_get_update(IOStatsContext::new("VLLMSink::pop_tasks"))?
+                .unwrap();
+
+            let sorted = concatted.sort(std::slice::from_ref(&expr_input), &[false], &[false])?;
+
+            let prompts_vec = self.get_prompts_for_batch(&sorted)?;
+
+            let mut splits = BinaryHeap::new();
+            let mut prev_split_idx = 0;
+
+            for (i, (p1, p2)) in prompts_vec.iter().tuple_windows().enumerate() {
+                let common_prefix_len = p1
+                    .chars()
+                    .zip(p2.chars())
+                    .take_while(|(c1, c2)| c1 == c2)
+                    .count();
+
+                let p1_prefix_ratio = common_prefix_len as f64 / p1.len() as f64;
+                let p2_prefix_ratio = common_prefix_len as f64 / p2.len() as f64;
+
+                if p1_prefix_ratio < prefix_match_threshold
+                    && p2_prefix_ratio < prefix_match_threshold
+                {
+                    let next_split_idx = i + 1;
+                    let split_len = next_split_idx - prev_split_idx;
+                    splits.push((split_len, prev_split_idx, next_split_idx));
+                    prev_split_idx = next_split_idx;
+                }
+            }
+
+            let end_idx = prompts_vec.len();
+            let split_len = end_idx - prev_split_idx;
+            splits.push((split_len, prev_split_idx, end_idx));
+
+            let mut tasks = Vec::new();
+            while state.buffer_size > max_buffer_size {
+                let (len, start_idx, end_idx) = splits.pop().unwrap();
+                let prompts = prompts_vec[start_idx..end_idx].to_vec();
+                let rb = sorted.slice(start_idx, end_idx)?;
+                tasks.push((prompts, rb));
+                state.buffer_size -= len;
+            }
+
+            let mut remaining = Vec::with_capacity(splits.len());
+            for (_, start_idx, end_idx) in splits {
+                remaining.push(sorted.slice(start_idx, end_idx)?);
+            }
+
+            let mp = MicroPartition::new_loaded(sorted.schema, Arc::new(remaining), None);
+            state.buffer = vec![mp.into()];
+
+            Ok(tasks)
         } else {
-            Some(Arc::new(MicroPartition::new_loaded(
-                self.schema.clone(),
-                Arc::new(null_rows),
-                None,
-            )))
+            Ok(vec![])
         }
     }
 
-    fn try_add_to_buffer(&self, state: &mut VLLMState, input: Arc<MicroPartition>) -> bool {
-        if state.buffer_size < self.expr.inner().max_buffer_size {
-            state.buffer_size += input.len();
-            state.buffer.push_back(input);
+    fn get_prompts_for_batch(&self, batch: &RecordBatch) -> DaftResult<Vec<String>> {
+        let expr = self.expr.inner();
+        let expr_input = BoundExpr::new_unchecked(expr.input.clone());
 
-            true
-        } else {
-            false
-        }
+        let prompts = batch.eval_expression(&expr_input)?;
+
+        // TODO: handle nulls
+        let prompts_vec = prompts
+            .utf8()
+            .map_err(|_| {
+                DaftError::type_error(format!(
+                    "Expected input to `prompt` to be string, got {}",
+                    prompts.data_type()
+                ))
+            })?
+            .as_arrow()
+            .values_iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+
+        Ok(prompts_vec)
     }
 }
 
@@ -274,21 +291,27 @@ impl StreamingSink for VLLMSink {
         spawner
             .spawn(
                 async move {
-                    let input_added = this.try_add_to_buffer(&mut state, input.clone());
-
-                    let null_rows = this.submit_tasks(&mut state)?;
-
-                    let output_batch = this.poll_tasks(&state)?;
-                    let output = this.combine_output_with_null_rows(output_batch, null_rows);
-
-                    if input_added {
-                        Ok((state, StreamingSinkOutput::NeedMoreInput(output)))
-                    } else if this.try_add_to_buffer(&mut state, input.clone()) {
-                        // try adding again now that we've submitted tasks
-                        Ok((state, StreamingSinkOutput::NeedMoreInput(output)))
+                    let tasks = if this.expr.inner().do_prefix_routing {
+                        state.buffer_size += input.len();
+                        state.buffer.push(input);
+                        this.pop_tasks(&mut state, this.expr.inner().max_buffer_size)?
+                    } else if input.is_empty() {
+                        vec![]
                     } else {
-                        Ok((state, StreamingSinkOutput::HasMoreOutput(output)))
+                        let batch = input
+                            .concat_or_get_update(IOStatsContext::new("VLLMSink::execute"))?
+                            .unwrap();
+                        let prompts = this.get_prompts_for_batch(&batch)?;
+
+                        vec![(prompts, batch)]
+                    };
+
+                    for (prompts, rows) in tasks {
+                        state.executor.submit(prompts, rows)?;
                     }
+
+                    let output = this.poll_tasks(&state)?;
+                    Ok((state, StreamingSinkOutput::NeedMoreInput(output)))
                 },
                 Span::current(),
             )
@@ -309,15 +332,18 @@ impl StreamingSink for VLLMSink {
                         unreachable!("VLLMSink should have exactly one state");
                     };
 
-                    let null_rows: Vec<RecordBatch> = this.submit_tasks(state)?;
+                    if !state.finished_submitting {
+                        let tasks = this.pop_tasks(state, 0)?;
+                        for (prompts, rows) in tasks {
+                            state.executor.submit(prompts, rows)?;
+                        }
+                        state.finished_submitting = true;
+                        state.executor.finished_submitting()?;
+                    }
 
-                    let finished =
-                        state.executor.num_running_tasks()? == 0 && state.buffer_size == 0;
+                    let output = this.poll_tasks(state)?;
 
-                    let output_batch = this.poll_tasks(state)?;
-                    let output = this.combine_output_with_null_rows(output_batch, null_rows);
-
-                    if finished {
+                    if state.executor.all_tasks_finished()? {
                         Ok(StreamingSinkFinalizeOutput::Finished(output))
                     } else {
                         Ok(StreamingSinkFinalizeOutput::HasMoreOutput { states, output })
@@ -343,8 +369,9 @@ impl StreamingSink for VLLMSink {
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(VLLMState {
             executor: VLLMExecutor::new(self.expr.inner())?,
-            buffer: VecDeque::new(),
+            buffer: Vec::new(),
             buffer_size: 0,
+            finished_submitting: false,
         })
     }
 

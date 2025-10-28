@@ -33,6 +33,7 @@ class VLLMExecutor:
         self.loop_ready.wait()
 
         self._shutdown = False
+        self._finished_submitting = False
 
     def _run_event_loop(self) -> None:
         """Run the event loop in a separate thread."""
@@ -103,6 +104,9 @@ class VLLMExecutor:
         completed_rows_batch = RecordBatch.concat(completed_rows)
         return completed_outputs, completed_rows_batch
 
-    def num_running_tasks(self) -> int:
+    def finished_submitting(self) -> None:
+        self._finished_submitting = True
+
+    def all_tasks_finished(self) -> bool:
         with self.task_count_lock:
-            return self.running_task_count
+            return self._finished_submitting and self.running_task_count == 0

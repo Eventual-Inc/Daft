@@ -307,8 +307,10 @@ def prompt(
             messages._expr.vllm(
                 prompter_descriptor.model_name,
                 prompter_descriptor.concurrency,
+                prompter_descriptor.do_prefix_routing,
                 prompter_descriptor.max_buffer_size,
-                prompter_descriptor.max_running_tasks,
+                prompter_descriptor.prefix_match_threshold,
+                prompter_descriptor.load_balance_threshold,
                 prompter_descriptor.batch_size,
                 prompter_descriptor.engine_args,
                 prompter_descriptor.generate_args,
