@@ -36,8 +36,8 @@ use super::functions::FunctionExpr;
 use crate::{
     expr::bound_expr::BoundExpr,
     functions::{
-        BuiltinScalarFn, FUNCTION_REGISTRY, FunctionArg, FunctionArgs, FunctionEvaluator,
-        function_display_without_formatter, function_semantic_id,
+        BuiltinScalarFn, BuiltinScalarFnVariant, FUNCTION_REGISTRY, FunctionArg, FunctionArgs,
+        FunctionEvaluator, function_display_without_formatter, function_semantic_id,
         python::LegacyPythonUDF,
         scalar::{ScalarFn, scalar_function_semantic_id},
         sketch::{HashableVecPercentiles, SketchExpr},
@@ -1873,7 +1873,7 @@ impl Expr {
             _ => None,
         }
     }
-
+    /// Returns true if the expression has any CPU bound operations.
     pub fn has_compute(&self) -> bool {
         match self {
             Self::Column(..) => false,
@@ -1901,6 +1901,41 @@ impl Expr {
             } => if_true.has_compute() || if_false.has_compute() || predicate.has_compute(),
             Self::InSubquery(expr, _) => expr.has_compute(),
             Self::List(..) => true,
+        }
+    }
+
+    /// Returns true if the expression has any IO bound operations.
+    pub fn has_io(&self) -> bool {
+        match self {
+            Self::Column(..) => false,
+            Self::Literal(..) => false,
+            Self::Subquery(..) => false,
+            Self::Exists(..) => false,
+            Self::Function { .. } => false,
+            Self::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn {
+                func: BuiltinScalarFnVariant::Async(_),
+                ..
+            })) => true,
+            Self::ScalarFn(_) => false,
+            Self::Agg(_) => false,
+            Self::Over(..) => false,
+            Self::WindowFunction(..) => false,
+            Self::IsIn(..) => false,
+            Self::Between(..) => false,
+            Self::BinaryOp { .. } => false,
+            Self::Alias(expr, ..) => expr.has_io(),
+            Self::Cast(expr, ..) => expr.has_io(),
+            Self::Not(expr) => expr.has_io(),
+            Self::IsNull(expr) => expr.has_io(),
+            Self::NotNull(expr) => expr.has_io(),
+            Self::FillNull(expr, fill_value) => expr.has_io() || fill_value.has_io(),
+            Self::IfElse {
+                if_true,
+                if_false,
+                predicate,
+            } => if_true.has_io() || if_false.has_io() || predicate.has_io(),
+            Self::InSubquery(expr, _) => expr.has_io(),
+            Self::List(..) => false,
         }
     }
 

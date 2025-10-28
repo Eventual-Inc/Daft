@@ -1016,12 +1016,22 @@ impl RecordBatch {
         Ok(series)
     }
 
-    // TODO(universalmind303): make this async
     pub fn eval_expression_list(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
         let result_series: Vec<_> = exprs
             .iter()
             .map(|e| self.eval_expression(e))
             .try_collect()?;
+
+        self.process_eval_results(exprs, result_series)
+    }
+
+    pub async fn eval_expression_list_async(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
+        let s = futures::stream::iter(exprs).map(|e| self.eval_expression_async(e.clone()));
+        let result_series: Vec<Series> = s
+            .collect::<futures::stream::FuturesOrdered<_>>()
+            .await
+            .try_collect()
+            .await?;
 
         self.process_eval_results(exprs, result_series)
     }

@@ -40,6 +40,10 @@ fn smallest_batch_size(prev: Option<usize>, next: Option<usize>) -> Option<usize
     }
 }
 
+fn is_all_async_exprs(exprs: &[BoundExpr]) -> bool {
+    exprs.iter().all(|expr| expr.inner().has_io())
+}
+
 /// Gets the batch size from the first UDF encountered in a given slice of expressions
 pub fn try_get_batch_size(exprs: &[BoundExpr]) -> Option<usize> {
     let mut projection_batch_size = None;
@@ -116,24 +120,48 @@ impl IntermediateOperator for ProjectOperator {
     ) -> IntermediateOpExecuteResult<Self> {
         let projection = self.projection.clone();
         let num_parallel_exprs = self.parallel_exprs;
-        task_spawner
-            .spawn(
-                async move {
-                    let out = if num_parallel_exprs > 1 {
-                        input
-                            .par_eval_expression_list(&projection, num_parallel_exprs)
-                            .await?
-                    } else {
-                        input.eval_expression_list(&projection)?
-                    };
-                    Ok((
-                        state,
-                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
-                    ))
-                },
-                Span::current(),
-            )
-            .into()
+        let is_all_async = is_all_async_exprs(&projection);
+
+        // if the projection only consists of async expressions which are generally IO bound
+        // then we do not want to spawn them in the compute runtime (spawner.spawn)
+        // but instead use the dedicated io runtime which will be much faster than mixing io/cpu tasks
+        //
+        //
+        // However if there is any mix of compute/io bound expressions, then we don't yet have a good way to handle this.
+        // For now, we just spawn a compute task and let it handle both compute and io expressions.
+        if is_all_async {
+            task_spawner
+                .spawn_io_task(
+                    async move {
+                        let out = input.eval_expression_list_async(&projection).await?;
+                        Ok((
+                            state,
+                            IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
+                        ))
+                    },
+                    Span::current(),
+                )
+                .into()
+        } else {
+            task_spawner
+                .spawn(
+                    async move {
+                        let out = if num_parallel_exprs > 1 {
+                            input
+                                .par_eval_expression_list(&projection, num_parallel_exprs)
+                                .await?
+                        } else {
+                            input.eval_expression_list(&projection)?
+                        };
+                        Ok((
+                            state,
+                            IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
+                        ))
+                    },
+                    Span::current(),
+                )
+                .into()
+        }
     }
 
     fn name(&self) -> NodeName {
