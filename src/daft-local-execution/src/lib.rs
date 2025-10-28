@@ -90,6 +90,12 @@ impl<T: Send + 'static> TaskSet<T> {
             .map(|r| r.map_err(|e| Error::JoinError { source: e }))
     }
 
+    fn try_join_next(&mut self) -> Option<Result<T, Error>> {
+        self.inner
+            .try_join_next()
+            .map(|r| r.map_err(|e| Error::JoinError { source: e }))
+    }
+
     async fn shutdown(&mut self) {
         self.inner.shutdown().await;
     }
