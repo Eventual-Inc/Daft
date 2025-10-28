@@ -43,7 +43,7 @@ use crate::{
 ///
 /// Note that if there are no used columns, we just return the first
 /// because we can't execute UDFs on empty recordbatches.
-fn remap_used_cols(expr: BoundExpr) -> (BoundExpr, Vec<usize>) {
+pub(crate) fn remap_used_cols(expr: BoundExpr) -> (BoundExpr, Vec<usize>) {
     let mut count = 0;
     let mut cols_to_idx = HashMap::new();
     let new_expr = expr

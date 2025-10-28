@@ -30,6 +30,13 @@ impl PyScalarFn {
         }
     }
 
+    pub async fn call_async(&self, args: &[Series]) -> DaftResult<Series> {
+        match self {
+            Self::RowWise(func) => func.call_async(args).await,
+            Self::Batch(..) => unimplemented!(),
+        }
+    }
+
     pub fn args(&self) -> Vec<ExprRef> {
         match self {
             Self::RowWise(RowWisePyFn { args, .. }) | Self::Batch(BatchPyFn { args, .. }) => {
@@ -69,6 +76,20 @@ impl PyScalarFn {
                 Self::RowWise(row_wise_py_fn.with_new_children(children))
             }
             Self::Batch(batch_py_fn) => Self::Batch(batch_py_fn.with_new_children(children)),
+        }
+    }
+
+    pub fn dtype(&self) -> DataType {
+        match self {
+            Self::RowWise(RowWisePyFn { return_dtype, .. })
+            | Self::Batch(BatchPyFn { return_dtype, .. }) => return_dtype.clone(),
+        }
+    }
+
+    pub fn is_async(&self) -> bool {
+        match self {
+            Self::RowWise(RowWisePyFn { is_async, .. }) => *is_async,
+            Self::Batch(BatchPyFn { .. }) => false,
         }
     }
 }

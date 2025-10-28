@@ -61,13 +61,18 @@ class RaySwordfishActor:
         context: dict[str, str] | None,
     ) -> AsyncGenerator[MicroPartition | list[PartitionMetadata], None]:
         """Run a plan on swordfish and yield partitions."""
+        # We import PyDaftContext inside the function because PyDaftContext is not serializable.
+        from daft.daft import PyDaftContext
+
         with profile():
             psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
             psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
 
             metas = []
             native_executor = NativeExecutor()
-            async for partition in native_executor.run_async(plan, psets_mp, exec_cfg, None, context):
+            ctx = PyDaftContext()
+            ctx._daft_execution_config = exec_cfg
+            async for partition in native_executor.run(plan, psets_mp, ctx, None, context):
                 if partition is None:
                     break
                 mp = MicroPartition._from_pymicropartition(partition)

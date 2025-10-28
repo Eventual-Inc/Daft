@@ -19,6 +19,6 @@ def test_dataframe_running_in_async_context():
             .limit(10)
             .to_pydict()
         )
-        assert df == {"id": [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]}
+        assert sorted(df["id"]) == [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
 
     asyncio.run(main())

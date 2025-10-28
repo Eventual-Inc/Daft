@@ -4,8 +4,6 @@ use common_runtime::{PoolType, Runtime, RuntimeRef};
 
 pub static RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
 pub static PYO3_RUNTIME_INITIALIZED: Once = Once::new();
-#[cfg(feature = "python")]
-pub static PYO3_ASYNC_RUNTIME_LOCALS: OnceLock<pyo3_async_runtimes::TaskLocals> = OnceLock::new();
 
 pub fn get_or_init_runtime() -> &'static Runtime {
     let runtime_ref = RUNTIME.get_or_init(|| {
@@ -26,24 +24,10 @@ pub fn get_or_init_runtime() -> &'static Runtime {
         PYO3_RUNTIME_INITIALIZED.call_once(|| {
             pyo3_async_runtimes::tokio::init_with_runtime(&runtime_ref.runtime)
                 .expect("Failed to initialize python runtime");
-            PYO3_ASYNC_RUNTIME_LOCALS.get_or_init(|| {
-                use pyo3::Python;
-
-                Python::attach(|py| {
-                    pyo3_async_runtimes::tokio::get_current_locals(py)
-                        .expect("Failed to get current task locals")
-                })
-            });
+            // Initialize the task locals in the centralized location
+            use pyo3::Python;
+            Python::attach(common_runtime::init_task_locals);
         });
     }
     runtime_ref
-}
-
-#[cfg(feature = "python")]
-/// Get a clone of the Python task locals for scoping async operations
-pub fn get_task_locals(py: pyo3::Python) -> pyo3_async_runtimes::TaskLocals {
-    PYO3_ASYNC_RUNTIME_LOCALS
-        .get()
-        .expect("Python task locals not initialized")
-        .clone_ref(py)
 }
