@@ -3210,6 +3210,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
  "arrow2",
+ "async-recursion",
  "comfy-table 7.1.4",
  "common-arrow-ffi",
  "common-display",
@@ -3226,6 +3227,7 @@ dependencies = [
  "indexmap 2.11.4",
  "num-traits",
  "pyo3",
+ "pyo3-async-runtimes",
  "rand 0.8.5",
  "serde",
  "serde_json",

@@ -1,4 +1,5 @@
 [dependencies]
+async-recursion = "1.0.4"
 arrow-array = {version = "54.2.1"}
 arrow2 = {workspace = true, features = ["arrow"]}
 comfy-table = {workspace = true}
@@ -17,6 +18,7 @@ html-escape = {workspace = true}
 indexmap = {workspace = true}
 num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
+pyo3-async-runtimes = {workspace = true, optional = true}
 rand = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
@@ -25,6 +27,7 @@ serde_json = {workspace = true}
 arrow = ["arrow2/arrow"]
 python = [
   "dep:pyo3",
+  "dep:pyo3-async-runtimes",
   "common-error/python",
   "daft-core/python",
   "daft-dsl/python",
