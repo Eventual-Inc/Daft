@@ -69,24 +69,27 @@ impl AsyncScalarUDF for Size {
         let s = input.file()?;
         let len = s.len();
 
-        let results: Vec<Option<u64>> = stream::iter((0..len).map(|i| async move {
+        let mut results: Vec<(usize, Option<u64>)> = stream::iter((0..len).map(|i| async move {
             match s.get(i) {
                 Some(f) => {
                     let f = DaftFile::new(f).await?;
                     let size = f.size()?;
-                    DaftResult::Ok(Some(size as u64))
+                    DaftResult::Ok((i, Some(size as u64)))
                 }
-                None => DaftResult::Ok(None),
+                None => DaftResult::Ok((i, None)),
             }
         }))
-        .buffered(256)
+        .buffer_unordered(256) // todo(universalmin303): somehow set this as a variable on the file array instead.
         .try_collect::<Vec<_>>()
         .await?;
 
-        Ok(
-            UInt64Array::from_iter(Field::new(s.name(), DataType::UInt64), results.into_iter())
-                .into_series(),
+        results.sort_by_key(|k| k.0);
+
+        Ok(UInt64Array::from_iter(
+            Field::new(s.name(), DataType::UInt64),
+            results.into_iter().map(|(_, v)| v),
         )
+        .into_series())
     }
 
     fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {

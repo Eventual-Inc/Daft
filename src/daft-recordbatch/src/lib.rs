@@ -11,6 +11,7 @@ use std::{
 use arrow2::{array::Array, chunk::Chunk};
 use common_display::table_display::{StrValue, make_comfy_table};
 use common_error::{DaftError, DaftResult};
+#[cfg(feature = "python")]
 use common_runtime::get_compute_runtime;
 use daft_core::{
     array::ops::{

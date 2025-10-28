@@ -83,6 +83,13 @@ impl BuiltinScalarFn {
             inputs: FunctionArgs::new_unchecked(inputs),
         }
     }
+    pub fn new_async<UDF: AsyncScalarUDF + 'static>(udf: UDF, inputs: Vec<ExprRef>) -> Self {
+        let inputs = inputs.into_iter().map(FunctionArg::unnamed).collect();
+        Self {
+            func: BuiltinScalarFnVariant::Async(Arc::new(udf)),
+            inputs: FunctionArgs::new_unchecked(inputs),
+        }
+    }
     pub fn name(&self) -> &str {
         self.func.name()
     }
@@ -229,8 +236,8 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
 #[typetag::serde(tag = "type")]
 #[async_trait::async_trait]
 pub trait AsyncScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
-    fn preferred_batch_size(&self) -> Option<usize> {
-        None
+    fn preferred_batch_size(&self, _inputs: FunctionArgs<ExprRef>) -> DaftResult<Option<usize>> {
+        Ok(None)
     }
 
     /// The name of the function.

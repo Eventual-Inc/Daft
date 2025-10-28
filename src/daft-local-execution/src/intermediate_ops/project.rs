@@ -9,7 +9,6 @@ use daft_dsl::{
     expr::bound_expr::BoundExpr,
     functions::{BuiltinScalarFn, BuiltinScalarFnVariant, scalar::ScalarFn},
 };
-use daft_functions_uri::download::UrlDownloadArgs;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
@@ -41,9 +40,6 @@ fn smallest_batch_size(prev: Option<usize>, next: Option<usize>) -> Option<usize
     }
 }
 
-const CONNECTION_BATCH_FACTOR: usize = 4;
-const DEFAULT_URL_MAX_CONNECTIONS: usize = 32;
-
 /// Gets the batch size from the first UDF encountered in a given slice of expressions
 pub fn try_get_batch_size(exprs: &[BoundExpr]) -> Option<usize> {
     let mut projection_batch_size = None;
@@ -52,21 +48,10 @@ pub fn try_get_batch_size(exprs: &[BoundExpr]) -> Option<usize> {
             .apply(|e| {
                 let found_batch_size = match e.as_ref() {
                     Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn {
-                        func: BuiltinScalarFnVariant::Sync(udf),
+                        func: BuiltinScalarFnVariant::Async(udf),
                         inputs,
                         ..
-                    })) if udf.name() == "url_download" => {
-                        let UrlDownloadArgs {
-                            max_connections, ..
-                        } = inputs.clone().try_into()?;
-                        let max_connections =
-                            max_connections.unwrap_or(DEFAULT_URL_MAX_CONNECTIONS);
-                        Some(max_connections * CONNECTION_BATCH_FACTOR)
-                    }
-                    Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn {
-                        func: BuiltinScalarFnVariant::Async(udf),
-                        ..
-                    })) => udf.preferred_batch_size(),
+                    })) => udf.preferred_batch_size(inputs.clone()).unwrap_or(None),
                     _ => None,
                 };
 
@@ -208,7 +193,7 @@ mod tests {
     use daft_core::prelude::{DataType, Field};
     use daft_dsl::{
         expr::bound_col,
-        functions::{BuiltinScalarFnVariant, FunctionArg, FunctionArgs},
+        functions::{AsyncScalarUDF, BuiltinScalarFnVariant, FunctionArg, FunctionArgs},
         lit,
     };
     use daft_functions_uri::download::UrlDownload;
@@ -232,7 +217,7 @@ mod tests {
             BoundExpr::new_unchecked(bound_col(1, Field::new("b", DataType::Utf8))),
             BoundExpr::new_unchecked(
                 BuiltinScalarFn {
-                    func: BuiltinScalarFnVariant::Sync(Arc::new(UrlDownload)),
+                    func: BuiltinScalarFnVariant::Async(Arc::new(UrlDownload)),
                     inputs: FunctionArgs::try_new(vec![FunctionArg::unnamed(bound_col(
                         0,
                         Field::new("a", DataType::Utf8),
@@ -246,7 +231,7 @@ mod tests {
         let batch_size = try_get_batch_size(projection.as_slice());
         assert_eq!(
             batch_size,
-            Some(CONNECTION_BATCH_FACTOR * DEFAULT_URL_MAX_CONNECTIONS)
+            Some(UrlDownload::CONNECTION_BATCH_FACTOR * UrlDownload::DEFAULT_URL_MAX_CONNECTIONS)
         );
     }
 
@@ -256,7 +241,7 @@ mod tests {
             BoundExpr::new_unchecked(bound_col(0, Field::new("a", DataType::Utf8))),
             BoundExpr::new_unchecked(
                 BuiltinScalarFn {
-                    func: BuiltinScalarFnVariant::Sync(Arc::new(UrlDownload)),
+                    func: BuiltinScalarFnVariant::Async(Arc::new(UrlDownload)),
                     inputs: FunctionArgs::try_new(vec![
                         FunctionArg::unnamed(bound_col(0, Field::new("a", DataType::Utf8))),
                         FunctionArg::named("max_connections", lit(10)),
@@ -268,39 +253,46 @@ mod tests {
         ];
 
         let batch_size = try_get_batch_size(projection.as_slice());
-        assert_eq!(batch_size, Some(CONNECTION_BATCH_FACTOR * 10));
+        assert_eq!(batch_size, Some(UrlDownload::CONNECTION_BATCH_FACTOR * 10));
     }
 
     #[test]
     fn test_get_batch_size_with_multiple_urls() {
+        let input_0 = FunctionArgs::try_new(vec![
+            FunctionArg::unnamed(bound_col(0, Field::new("a", DataType::Utf8))),
+            FunctionArg::named("max_connections", lit(4)),
+        ])
+        .unwrap();
+        let input_1 = FunctionArgs::try_new(vec![FunctionArg::unnamed(bound_col(
+            1,
+            Field::new("b", DataType::Utf8),
+        ))])
+        .unwrap();
+
         let projection = vec![
             BoundExpr::new_unchecked(bound_col(0, Field::new("a", DataType::Utf8))),
             BoundExpr::new_unchecked(bound_col(1, Field::new("b", DataType::Utf8))),
             BoundExpr::new_unchecked(
                 BuiltinScalarFn {
-                    func: BuiltinScalarFnVariant::Sync(Arc::new(UrlDownload)),
-                    inputs: FunctionArgs::try_new(vec![
-                        FunctionArg::unnamed(bound_col(0, Field::new("a", DataType::Utf8))),
-                        FunctionArg::named("max_connections", lit(4)),
-                    ])
-                    .unwrap(),
+                    func: BuiltinScalarFnVariant::Async(Arc::new(UrlDownload)),
+                    inputs: input_0.clone(),
                 }
                 .into(),
             ),
             BoundExpr::new_unchecked(
                 BuiltinScalarFn {
-                    func: BuiltinScalarFnVariant::Sync(Arc::new(UrlDownload)),
-                    inputs: FunctionArgs::try_new(vec![FunctionArg::unnamed(bound_col(
-                        1,
-                        Field::new("b", DataType::Utf8),
-                    ))])
-                    .unwrap(),
+                    func: BuiltinScalarFnVariant::Async(Arc::new(UrlDownload)),
+                    inputs: input_1.clone(),
                 }
                 .into(),
             ),
         ];
+        let expected_batch_size = vec![input_0, input_1]
+            .into_iter()
+            .map(|input| UrlDownload.preferred_batch_size(input).unwrap().unwrap())
+            .min();
 
         let batch_size = try_get_batch_size(projection.as_slice());
-        assert_eq!(batch_size, Some(CONNECTION_BATCH_FACTOR * 4));
+        assert_eq!(batch_size, expected_batch_size);
     }
 }

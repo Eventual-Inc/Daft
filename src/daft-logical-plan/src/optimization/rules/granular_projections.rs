@@ -252,7 +252,7 @@ mod tests {
             Pushdowns::default(),
         )
         .with_columns(vec![
-            BuiltinScalarFn::new(UrlDownload, vec![resolved_col("url")]).into(),
+            BuiltinScalarFn::new_async(UrlDownload, vec![resolved_col("url")]).into(),
         ])
         .unwrap()
         .build();
@@ -279,7 +279,7 @@ mod tests {
             ExprRef::from(BuiltinScalarFn::new(
                 BinaryDecode,
                 vec![
-                    BuiltinScalarFn::new(UrlDownload, vec![resolved_col("url")]).into(),
+                    BuiltinScalarFn::new_async(UrlDownload, vec![resolved_col("url")]).into(),
                     lit(Codec::Utf8),
                 ],
             ))
@@ -366,8 +366,11 @@ mod tests {
         .select(vec![
             Arc::new(Expr::BinaryOp {
                 op: Operator::Plus,
-                left: BuiltinScalarFn::new(UrlDownload, vec![capitalize(resolved_col("url"))])
-                    .into(),
+                left: BuiltinScalarFn::new_async(
+                    UrlDownload,
+                    vec![capitalize(resolved_col("url"))],
+                )
+                .into(),
                 right: resolved_col("extra"),
             })
             .alias("url_data"),
