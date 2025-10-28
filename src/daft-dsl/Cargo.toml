@@ -12,7 +12,6 @@ derive_more = {workspace = true}
 indexmap = {workspace = true}
 itertools = {workspace = true}
 log = {workspace = true}
-pyo3-async-runtimes = {workspace = true, optional = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 tokio = {workspace = true, optional = true}
@@ -24,7 +23,6 @@ rstest = {workspace = true}
 [features]
 python = [
   "dep:pyo3",
-  "dep:pyo3-async-runtimes",
   "dep:tokio",
   "common-error/python",
   "common-runtime/python",
