@@ -63,8 +63,9 @@ use crate::{
     sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource, source::SourceNode},
     state_bridge::BroadcastStateBridge,
     streaming_sink::{
-        anti_semi_hash_join_probe::AntiSemiProbeSink, base::StreamingSinkNode, concat::ConcatSink,
-        limit::LimitSink, monotonically_increasing_id::MonotonicallyIncreasingIdSink,
+        anti_semi_hash_join_probe::AntiSemiProbeSink, async_udf::AsyncUdfSink,
+        base::StreamingSinkNode, concat::ConcatSink, limit::LimitSink,
+        monotonically_increasing_id::MonotonicallyIncreasingIdSink,
         outer_hash_join_probe::OuterHashJoinProbeSink, sort_merge_join_probe::SortMergeJoinProbe,
     },
 };
@@ -512,22 +513,16 @@ fn physical_plan_to_pipeline(
             schema,
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            // Route to AsyncUdfSink when async, no explicit concurrency, and not using external process
             if udf_properties.is_async
                 && udf_properties.concurrency.is_none()
                 && !udf_properties.use_process.unwrap_or(false)
             {
-                use crate::streaming_sink::{async_udf::AsyncUdfSink, base::StreamingSinkNode};
-
-                let async_sink = AsyncUdfSink::try_new(
+                let async_sink = AsyncUdfSink::new(
                     expr.clone(),
                     udf_properties.clone(),
                     passthrough_columns.clone(),
                     schema,
-                )
-                .with_context(|_| PipelineCreationSnafu {
-                    plan_name: physical_plan.name(),
-                })?;
+                );
                 StreamingSinkNode::new(
                     Arc::new(async_sink),
                     vec![child_node],

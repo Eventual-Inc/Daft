@@ -50,25 +50,18 @@ pub fn get_task_locals() -> &'static pyo3_async_runtimes::TaskLocals {
 ///     task_locals,
 /// ).await?;
 /// ```
-pub async fn execute_python_coroutine<F, R>(
-    coroutine_builder: F,
-    task_locals: pyo3_async_runtimes::TaskLocals,
-) -> DaftResult<R>
+pub async fn execute_python_coroutine<F, R>(coroutine_builder: F) -> DaftResult<R>
 where
     F: FnOnce(Python) -> pyo3::PyResult<pyo3::Bound<'_, pyo3::PyAny>> + Send + 'static,
     R: for<'py> pyo3::FromPyObject<'py> + Send + 'static,
 {
     // Execute the coroutine with the task_locals
-    let await_coroutine = async move {
-        let result = Python::attach(|py| {
-            let coroutine: pyo3::Bound<'_, pyo3::PyAny> = coroutine_builder(py)?;
-            pyo3_async_runtimes::tokio::into_future(coroutine)
-        })?
-        .await?;
-        DaftResult::Ok(result)
-    };
-
-    let result = pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine).await?;
+    let task_locals = get_task_locals();
+    let result = Python::attach(|py| {
+        let coroutine: pyo3::Bound<'_, pyo3::PyAny> = coroutine_builder(py)?;
+        pyo3_async_runtimes::into_future_with_locals(task_locals, coroutine)
+    })?
+    .await?;
 
     // Extract the result
     let extracted = Python::attach(|py| result.extract::<R>(py))?;

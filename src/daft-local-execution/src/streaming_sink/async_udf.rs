@@ -31,15 +31,15 @@ pub struct AsyncUdfSink {
 }
 
 impl AsyncUdfSink {
-    pub fn try_new(
+    pub fn new(
         expr: BoundExpr,
         udf_properties: UDFProperties,
         passthrough_columns: Vec<BoundExpr>,
         output_schema: &SchemaRef,
-    ) -> DaftResult<Self> {
+    ) -> Self {
         let (expr, required_cols) = remap_used_cols(expr);
 
-        Ok(Self {
+        Self {
             params: Arc::new(AsyncUdfParams {
                 expr,
                 udf_properties,
@@ -47,14 +47,12 @@ impl AsyncUdfSink {
                 output_schema: output_schema.clone(),
                 required_cols,
             }),
-        })
+        }
     }
 }
 
 pub struct AsyncUdfState {
     udf_expr: BoundExpr,
-    #[cfg(feature = "python")]
-    task_locals: &'static pyo3_async_runtimes::TaskLocals,
     task_set: TaskSet<DaftResult<RecordBatch>>,
     udf_initialized: bool,
 }
@@ -86,17 +84,16 @@ impl StreamingSink for AsyncUdfSink {
                             state.udf_initialized = true;
                         }
 
+                        // Spawn tasks for each batch
                         for batch in input_batches.as_ref() {
                             let params = params.clone();
                             let expr = state.udf_expr.clone();
-                            let task_locals = state.task_locals;
                             let batch = batch.clone();
                             state.task_set.spawn(async move {
                                 let func_input = batch.get_columns(params.required_cols.as_slice());
 
-                                let mut result: Series = func_input
-                                    .eval_expression_async(expr, Some(task_locals))
-                                    .await?;
+                                let mut result: Series =
+                                    func_input.eval_expression_async(expr).await?;
 
                                 if result.len() == 1 {
                                     result = result.broadcast(batch.num_rows())?;
@@ -110,8 +107,8 @@ impl StreamingSink for AsyncUdfSink {
                             });
                         }
 
-                        // Drain any ready tasks non-blockingly using a zero-timeout join_next loop
-                        let mut ready_batches: Vec<RecordBatch> = Vec::new();
+                        // Drain any ready tasks non-blockingly
+                        let mut ready_batches = Vec::new();
                         while let Some(join_res) = state.task_set.try_join_next() {
                             let batch = join_res??;
                             ready_batches.push(batch);
@@ -143,24 +140,25 @@ impl StreamingSink for AsyncUdfSink {
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult {
+        debug_assert!(states.len() == 1, "AsyncUdfSink should only have one state");
         let params = self.params.clone();
         spawner
             .spawn(
                 async move {
-                    let mut remaining: Vec<RecordBatch> = Vec::new();
-                    for mut state in states {
-                        while let Some(join_res) = state.task_set.join_next().await {
-                            let batch = join_res??;
-                            remaining.push(batch);
-                        }
+                    let mut ready_batches = Vec::new();
+                    let mut task_set = states.into_iter().next().unwrap().task_set;
+
+                    while let Some(join_res) = task_set.join_next().await {
+                        let batch = join_res??;
+                        ready_batches.push(batch);
                     }
 
-                    if remaining.is_empty() {
+                    if ready_batches.is_empty() {
                         Ok(None)
                     } else {
                         let output = Arc::new(MicroPartition::new_loaded(
                             params.output_schema.clone(),
-                            Arc::new(remaining),
+                            Arc::new(ready_batches),
                             None,
                         ));
                         Ok(Some(output))
@@ -209,8 +207,6 @@ impl StreamingSink for AsyncUdfSink {
     fn make_state(&self) -> Self::State {
         AsyncUdfState {
             udf_expr: self.params.expr.clone(),
-            #[cfg(feature = "python")]
-            task_locals: common_runtime::get_task_locals(),
             task_set: TaskSet::new(),
             udf_initialized: false,
         }

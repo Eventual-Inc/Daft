@@ -667,41 +667,36 @@ impl RecordBatch {
         }
     }
 
-    #[cfg(feature = "python")]
     #[async_recursion::async_recursion]
-    pub async fn eval_expression_async(
-        &self,
-        expr: BoundExpr,
-        task_locals: Option<&'static pyo3_async_runtimes::TaskLocals>,
-    ) -> DaftResult<Series> {
+    pub async fn eval_expression_async(&self, expr: BoundExpr) -> DaftResult<Series> {
         let expected_field = expr.inner().to_field(self.schema.as_ref())?;
         let series = match expr.as_ref() {
-                Expr::Alias(child, name) => Ok(self.eval_expression_async(BoundExpr::new_unchecked(child.clone()), task_locals).await?.rename(name)),
+            Expr::Alias(child, name) => Ok(self.eval_expression_async(BoundExpr::new_unchecked(child.clone())).await?.rename(name)),
             Expr::Agg(agg_expr) => self.eval_agg_expression(&BoundAggExpr::new_unchecked(agg_expr.clone()), None),
             Expr::Over(..) => Err(DaftError::ComputeError("Window expressions should be evaluated via the window operator.".to_string())),
             Expr::WindowFunction(..) => Err(DaftError::ComputeError("Window expressions cannot be directly evaluated. Please specify a window using \"over\".".to_string())),
-            Expr::Cast(child, dtype) => self.eval_expression_async(BoundExpr::new_unchecked(child.clone()), task_locals).await?.cast(dtype),
+            Expr::Cast(child, dtype) => self.eval_expression_async(BoundExpr::new_unchecked(child.clone())).await?.cast(dtype),
             Expr::Column(Column::Bound(BoundColumn { index, .. })) => Ok(self.columns[*index].clone()),
-            Expr::Not(child) => !(self.eval_expression_async(BoundExpr::new_unchecked(child.clone()), task_locals).await?),
-            Expr::IsNull(child) => self.eval_expression_async(BoundExpr::new_unchecked(child.clone()), task_locals).await?.is_null(),
-            Expr::NotNull(child) => self.eval_expression_async(BoundExpr::new_unchecked(child.clone()), task_locals).await?.not_null(),
+            Expr::Not(child) => !(self.eval_expression_async(BoundExpr::new_unchecked(child.clone())).await?),
+            Expr::IsNull(child) => self.eval_expression_async(BoundExpr::new_unchecked(child.clone())).await?.is_null(),
+            Expr::NotNull(child) => self.eval_expression_async(BoundExpr::new_unchecked(child.clone())).await?.not_null(),
             Expr::FillNull(child, fill_value) => {
-                let fill_value = self.eval_expression_async(BoundExpr::new_unchecked(fill_value.clone()), task_locals).await?;
-                self.eval_expression_async(BoundExpr::new_unchecked(child.clone()), task_locals).await?.fill_null(&fill_value)
+                let fill_value = self.eval_expression_async(BoundExpr::new_unchecked(fill_value.clone())).await?;
+                self.eval_expression_async(BoundExpr::new_unchecked(child.clone())).await?.fill_null(&fill_value)
             }
             Expr::IsIn(child, items) => {
                 if items.is_empty() {
                     return BooleanArray::from_iter(&child.get_name(&self.schema)?, std::iter::once(Some(false))).into_series().broadcast(self.len());
                 }
                 let items_futures = items.iter().map(|i| async {
-                    self.eval_expression_async(BoundExpr::new_unchecked(i.clone()), task_locals).await
+                    self.eval_expression_async(BoundExpr::new_unchecked(i.clone())).await
                 });
                 let items = futures::future::try_join_all(items_futures).await?;
 
                 let items = items.iter().collect::<Vec<&Series>>();
                 let s = Series::concat(items.as_slice())?;
                 self
-                .eval_expression_async(BoundExpr::new_unchecked(child.clone()), task_locals).await?
+                .eval_expression_async(BoundExpr::new_unchecked(child.clone())).await?
                 .is_in(&s)
             }
             Expr::List(items) => {
@@ -716,7 +711,7 @@ impl RecordBatch {
                 // compute child series with explicit casts to the supertype
                 let items = items.iter().map(|i| i.clone().cast(dtype)).collect::<Vec<_>>();
                 let items_futures = items.iter().map(|i| async {
-                    self.eval_expression_async(BoundExpr::new_unchecked(i.clone()), task_locals).await
+                    self.eval_expression_async(BoundExpr::new_unchecked(i.clone())).await
                 });
                 let items = futures::future::try_join_all(items_futures).await?;
                 let items = items.iter().collect::<Vec<&Series>>();
@@ -724,14 +719,14 @@ impl RecordBatch {
                 Series::zip(field, items.as_slice())
             }
             Expr::Between(child, lower, upper) => {
-                let child_series = self.eval_expression_async(BoundExpr::new_unchecked(child.clone()), task_locals).await?;
-                let lower_series = self.eval_expression_async(BoundExpr::new_unchecked(lower.clone()), task_locals).await?;
-                let upper_series = self.eval_expression_async(BoundExpr::new_unchecked(upper.clone()), task_locals).await?;
+                    let child_series = self.eval_expression_async(BoundExpr::new_unchecked(child.clone())).await?;
+                let lower_series = self.eval_expression_async(BoundExpr::new_unchecked(lower.clone())).await?;
+                let upper_series = self.eval_expression_async(BoundExpr::new_unchecked(upper.clone())).await?;
                 child_series.between(&lower_series, &upper_series)
             }
             Expr::BinaryOp { op, left, right } => {
-                let lhs = self.eval_expression_async(BoundExpr::new_unchecked(left.clone()), task_locals).await?;
-                let rhs = self.eval_expression_async(BoundExpr::new_unchecked(right.clone()), task_locals).await?;
+                let lhs = self.eval_expression_async(BoundExpr::new_unchecked(left.clone())).await?;
+                let rhs = self.eval_expression_async(BoundExpr::new_unchecked(right.clone())).await?;
                 use daft_core::array::ops::{DaftCompare, DaftLogical};
                 use daft_dsl::Operator::*;
                 match op {
@@ -757,7 +752,7 @@ impl RecordBatch {
             }
             Expr::Function { func, inputs } => {
                 let input_futures = inputs.iter().map(|e| async {
-                    self.eval_expression_async(BoundExpr::new_unchecked(e.clone()), task_locals).await
+                    self.eval_expression_async(BoundExpr::new_unchecked(e.clone())).await
                 });
                 let evaluated_inputs = futures::future::try_join_all(input_futures).await?;
                 func.evaluate(evaluated_inputs.as_slice(), func)
@@ -767,11 +762,11 @@ impl RecordBatch {
                 for arg in func.inputs.iter() {
                     let evaluated = match arg {
                         FunctionArg::Named { name, arg: e } => {
-                            let result = self.eval_expression_async(BoundExpr::new_unchecked(e.clone()), task_locals).await?;
+                            let result = self.eval_expression_async(BoundExpr::new_unchecked(e.clone())).await?;
                             FunctionArg::Named { name: name.clone(), arg: result }
                         }
                         FunctionArg::Unnamed(e) => {
-                            let result = self.eval_expression_async(BoundExpr::new_unchecked(e.clone()), task_locals).await?;
+                            let result = self.eval_expression_async(BoundExpr::new_unchecked(e.clone())).await?;
                             FunctionArg::Unnamed(result)
                         }
                     };
@@ -787,24 +782,24 @@ impl RecordBatch {
                 predicate,
             } => match predicate.as_ref() {
                 // TODO: move this into simplify expression
-                Expr::Literal(Literal::Boolean(true)) => self.eval_expression_async(BoundExpr::new_unchecked(if_true.clone()), task_locals).await,
+                Expr::Literal(Literal::Boolean(true)) => self.eval_expression_async(BoundExpr::new_unchecked(if_true.clone())).await,
                 Expr::Literal(Literal::Boolean(false)) => {
-                    Ok(self.eval_expression_async(BoundExpr::new_unchecked(if_false.clone()), task_locals).await?.rename(if_true.get_name(&self.schema)?))
+                    Ok(self.eval_expression_async(BoundExpr::new_unchecked(if_false.clone())).await?.rename(if_true.get_name(&self.schema)?))
                 }
                 _ => {
-                    let if_true_series = self.eval_expression_async(BoundExpr::new_unchecked(if_true.clone()), task_locals).await?;
-                    let if_false_series = self.eval_expression_async(BoundExpr::new_unchecked(if_false.clone()), task_locals).await?;
-                    let predicate_series = self.eval_expression_async(BoundExpr::new_unchecked(predicate.clone()), task_locals).await?;
+                    let if_true_series = self.eval_expression_async(BoundExpr::new_unchecked(if_true.clone())).await?;
+                    let if_false_series = self.eval_expression_async(BoundExpr::new_unchecked(if_false.clone())).await?;
+                    let predicate_series = self.eval_expression_async(BoundExpr::new_unchecked(predicate.clone())).await?;
                     Ok(if_true_series.if_else(&if_false_series, &predicate_series)?)
                 }
             },
             Expr::ScalarFn(ScalarFn::Python(python_udf)) => {
                 let args_futures = python_udf.args().into_iter().map(|expr|
-                    self.eval_expression_async(BoundExpr::new_unchecked(expr), task_locals)
+                    self.eval_expression_async(BoundExpr::new_unchecked(expr))
                 );
                 let args = futures::future::try_join_all(args_futures).await?;
                 if python_udf.is_async() {
-                    python_udf.call_async(args.as_slice(), task_locals).await
+                    python_udf.call_async(args.as_slice()).await
                 } else {
                     python_udf.call(args.as_slice())
                 }
@@ -960,7 +955,7 @@ impl RecordBatch {
                 };
                 if is_async {
                     #[cfg(feature = "python")] {
-                        get_compute_runtime().block_on_current_thread(python_udf.call_async(args.as_slice(), None))
+                        get_compute_runtime().block_on_current_thread(python_udf.call_async(args.as_slice()))
                     }
                     #[cfg(not(feature = "python"))] {
                         panic!("Cannot evaluate a Python UDF asynchronously without compiling for Python");

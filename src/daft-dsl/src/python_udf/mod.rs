@@ -30,14 +30,9 @@ impl PyScalarFn {
         }
     }
 
-    #[cfg(feature = "python")]
-    pub async fn call_async(
-        &self,
-        args: &[Series],
-        task_locals: Option<&pyo3_async_runtimes::TaskLocals>,
-    ) -> DaftResult<Series> {
+    pub async fn call_async(&self, args: &[Series]) -> DaftResult<Series> {
         match self {
-            Self::RowWise(func) => func.call_async(args, task_locals).await,
+            Self::RowWise(func) => func.call_async(args).await,
             Self::Batch(..) => unimplemented!(),
         }
     }

@@ -40,7 +40,7 @@ pub(crate) async fn get_partition_boundaries_from_samples(
     num_partitions: usize,
 ) -> DaftResult<RecordBatch> {
     use daft_io::IOStatsContext;
-    use pyo3::{Python, prelude::*};
+    use pyo3::prelude::*;
 
     // Extract partition refs from samples
     let ray_partition_refs = samples
@@ -57,15 +57,6 @@ pub(crate) async fn get_partition_boundaries_from_samples(
         })
         .collect::<DaftResult<Vec<_>>>()?;
 
-    let (task_locals, py_object_refs) = Python::attach(|py| {
-        let task_locals = common_runtime::get_task_locals().clone_ref(py);
-        let py_object_refs = ray_partition_refs
-            .into_iter()
-            .map(|pr| pr.get_object_ref(py))
-            .collect::<Vec<_>>();
-
-        (task_locals, py_object_refs)
-    });
     let py_sort_by = partition_by
         .iter()
         .map(|e| daft_dsl::python::PyExpr {
@@ -74,22 +65,23 @@ pub(crate) async fn get_partition_boundaries_from_samples(
         .collect::<Vec<_>>();
 
     let boundaries: daft_micropartition::python::PyMicroPartition =
-        common_runtime::python::execute_python_coroutine(
-            move |py| {
-                let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
-                flotilla_module.call_method1(
-                    pyo3::intern!(py, "get_boundaries"),
-                    (
-                        py_object_refs,
-                        py_sort_by,
-                        descending,
-                        nulls_first,
-                        num_partitions,
-                    ),
-                )
-            },
-            task_locals,
-        )
+        common_runtime::python::execute_python_coroutine(move |py| {
+            let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+            let py_object_refs = ray_partition_refs
+                .into_iter()
+                .map(|pr| pr.get_object_ref(py))
+                .collect::<Vec<_>>();
+            flotilla_module.call_method1(
+                pyo3::intern!(py, "get_boundaries"),
+                (
+                    py_object_refs,
+                    py_sort_by,
+                    descending,
+                    nulls_first,
+                    num_partitions,
+                ),
+            )
+        })
         .await?;
 
     let boundaries = boundaries
