@@ -454,6 +454,11 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             }
         };
 
+        let runtime_env = message
+            .runtime_env
+            .map(|env| from_proto(Some(env)))
+            .transpose()?;
+
         Ok(Self {
             name: name.into(),
             func,
@@ -464,6 +469,7 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             batch_size,
             concurrency,
             use_process,
+            runtime_env,
         })
     }
 
@@ -505,6 +511,12 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             None => (None, None, None),
         };
 
+        let runtime_env = self
+            .runtime_env
+            .as_ref()
+            .map(|env| env.to_proto())
+            .transpose()?;
+
         Ok(Self::Message {
             name,
             arity,
@@ -518,6 +530,7 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             num_gpus,
             max_memory_bytes,
             use_process: self.use_process,
+            runtime_env,
         })
     }
 }

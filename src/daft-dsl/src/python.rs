@@ -193,6 +193,7 @@ pub fn list_(items: Vec<PyExpr>) -> PyExpr {
     batch_size=None,
     concurrency=None,
     use_process=None,
+    runtime_env=None,
 ))]
 pub fn udf(
     name: &str,
@@ -205,6 +206,7 @@ pub fn udf(
     batch_size: Option<usize>,
     concurrency: Option<usize>,
     use_process: Option<bool>,
+    runtime_env: Option<Py<PyAny>>,
 ) -> PyResult<PyExpr> {
     use crate::functions::python::udf;
 
@@ -230,6 +232,7 @@ pub fn udf(
             batch_size,
             concurrency,
             use_process,
+            runtime_env.map(|env| env.into()),
         )?
         .into(),
     })
