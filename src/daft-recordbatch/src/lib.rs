@@ -25,7 +25,8 @@ use daft_dsl::{
         bound_expr::{BoundAggExpr, BoundExpr},
     },
     functions::{
-        BuiltinScalarFnVariant, FunctionArg, FunctionArgs, FunctionEvaluator, scalar::ScalarFn,
+        BuiltinScalarFn, BuiltinScalarFnVariant, FunctionArg, FunctionArgs, FunctionEvaluator,
+        scalar::ScalarFn,
     },
     null_lit,
     python_udf::PyScalarFn,
@@ -925,8 +926,8 @@ impl RecordBatch {
                     .collect::<DaftResult<Vec<_>>>()?;
                 func.evaluate(evaluated_inputs.as_slice(), func)
             }
-            Expr::ScalarFn(ScalarFn::Builtin(func)) => {
-                let args = func.inputs
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn {func, inputs})) => {
+                let args = inputs
                     .iter()
                     .map(|e| {
                         e.map(|e| self.eval_expression(&BoundExpr::new_unchecked(e.clone())))
@@ -934,9 +935,14 @@ impl RecordBatch {
                     .collect::<DaftResult<FunctionArgs<Series>>>()?;
 
 
-                match &func.func {
+                match func {
                   BuiltinScalarFnVariant::Sync(func) => func.call(args),
-                  BuiltinScalarFnVariant::Async(func) => get_compute_runtime().block_on_current_thread(func.call(args)),
+                  BuiltinScalarFnVariant::Async(func) => {
+                    let fut = func.call(args);
+                    tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(fut)
+                    })
+                  },
                 }
             }
             Expr::Literal(lit_value) => Ok(lit_value.clone().into()),

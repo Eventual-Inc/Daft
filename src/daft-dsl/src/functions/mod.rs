@@ -26,7 +26,7 @@ pub use scalar::{BuiltinScalarFn, BuiltinScalarFnVariant, ScalarFunctionFactory,
 use serde::{Deserialize, Serialize};
 
 use self::{map::MapExpr, partitioning::PartitioningExpr, sketch::SketchExpr, struct_::StructExpr};
-use crate::ExprRef;
+use crate::{ExprRef, functions::scalar::AsyncScalarUDF};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum FunctionExpr {
@@ -164,6 +164,13 @@ impl FunctionRegistry {
         // casting to dyn ScalarUDF so as to not modify the signature
         let udf = Arc::new(func) as Arc<dyn ScalarUDF>;
         let udf = BuiltinScalarFnVariant::Sync(udf);
+        let function = DynamicScalarFunction::from(udf);
+        self.add_fn_factory(function);
+    }
+
+    pub fn add_async_fn<UDF: AsyncScalarUDF + 'static>(&mut self, func: UDF) {
+        let udf = Arc::new(func) as Arc<dyn AsyncScalarUDF>;
+        let udf = BuiltinScalarFnVariant::Async(udf);
         let function = DynamicScalarFunction::from(udf);
         self.add_fn_factory(function);
     }

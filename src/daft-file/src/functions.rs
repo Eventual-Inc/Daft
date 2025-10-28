@@ -1,6 +1,6 @@
 use common_error::DaftError;
 use daft_core::{datatypes::FileArray, prelude::UInt64Array, series::IntoSeries};
-use daft_dsl::functions::{UnaryArg, prelude::*};
+use daft_dsl::functions::{UnaryArg, prelude::*, scalar::AsyncScalarUDF};
 use daft_io::IOConfig;
 use serde::{Deserialize, Serialize};
 
@@ -56,31 +56,36 @@ impl ScalarUDF for File {
 pub struct Size;
 
 #[typetag::serde]
-impl ScalarUDF for Size {
+#[async_trait::async_trait]
+impl AsyncScalarUDF for Size {
     fn name(&self) -> &'static str {
         "file_size"
     }
 
-    fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+    async fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
         let UnaryArg { input } = args.try_into()?;
         let s = input.file()?;
         let len = s.len();
-        let mut out = Vec::with_capacity(len);
-        // todo(cory): can likely optimize this a lot more than a naive for loop.
-        for i in 0..len {
-            let opt: Option<u64> = s
-                .get(i)
-                .map(|f| {
-                    let f = DaftFile::try_from(f)?;
+        use futures::stream::{self, StreamExt};
+
+        let results: Vec<Option<u64>> = stream::iter((0..len).map(|i| async move {
+            match s.get(i) {
+                Some(f) => {
+                    let f = DaftFile::new(f).await?;
                     let size = f.size()?;
-                    DaftResult::Ok(size as _)
-                })
-                .transpose()?;
-            out.push(opt);
-        }
+                    DaftResult::Ok(Some(size as u64))
+                }
+                None => DaftResult::Ok(None),
+            }
+        }))
+        .buffer_unordered(100)
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<DaftResult<Vec<_>>>()?;
 
         Ok(
-            UInt64Array::from_iter(Field::new(s.name(), DataType::UInt64), out.into_iter())
+            UInt64Array::from_iter(Field::new(s.name(), DataType::UInt64), results.into_iter())
                 .into_series(),
         )
     }

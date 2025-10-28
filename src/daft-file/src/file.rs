@@ -28,12 +28,11 @@ impl TryFrom<FileReference> for DaftFile {
 }
 
 impl DaftFile {
-    pub fn from_path(path: String, io_conf: Option<IOConfig>) -> DaftResult<Self> {
-        let io_client = daft_io::get_io_client(true, io_conf.map(Arc::new).unwrap_or_default())?;
-        let rt = common_runtime::get_io_runtime(true);
+    pub async fn new(file_ref: FileReference) -> DaftResult<Self> {
+        match file_ref {
+            FileReference::Reference(path, io_conf) => {
+                let io_client = daft_io::get_io_client(true, io_conf.unwrap_or_default())?;
 
-        let (source, path, file_size, supports_range) =
-            rt.block_within_async_context(async move {
                 let (source, path) = io_client
                     .get_source_and_path(&path)
                     .await
@@ -48,26 +47,36 @@ impl DaftFile {
                     .supports_range(&path)
                     .await
                     .map_err(|e| DaftError::ComputeError(e.to_string()))?;
-                DaftResult::Ok((source, path, file_size, supports_range))
-            })??;
 
-        // Default to 16MB buffer
-        const DEFAULT_BUFFER_SIZE: usize = 16 * 1024 * 1024;
+                // Default to 16MB buffer
+                const DEFAULT_BUFFER_SIZE: usize = 16 * 1024 * 1024;
 
-        let mut reader = ObjectSourceReader::new(source, path, None, file_size);
-        if !supports_range || file_size <= DEFAULT_BUFFER_SIZE {
-            let mut buf = Vec::with_capacity(file_size);
-            reader.read_to_end(&mut buf)?;
-            Ok(Self::from_bytes(buf))
-        } else {
-            // we wrap it in a BufReader so we are not making so many network requests for each byte read
-            let buffered_reader = BufReader::with_capacity(DEFAULT_BUFFER_SIZE, reader);
+                let mut reader = ObjectSourceReader::new(source, path, None, file_size);
+                if !supports_range || file_size <= DEFAULT_BUFFER_SIZE {
+                    let mut buf = Vec::with_capacity(file_size);
+                    reader.read_to_end(&mut buf)?;
+                    Ok(Self::from_bytes(buf))
+                } else {
+                    // we wrap it in a BufReader so we are not making so many network requests for each byte read
+                    let buffered_reader = BufReader::with_capacity(DEFAULT_BUFFER_SIZE, reader);
 
-            Ok(Self {
-                cursor: Some(FileCursor::ObjectReader(buffered_reader)),
-                position: 0,
-            })
+                    Ok(Self {
+                        cursor: Some(FileCursor::ObjectReader(buffered_reader)),
+                        position: 0,
+                    })
+                }
+            }
+            FileReference::Data(items) => Ok(Self::from_bytes(Arc::unwrap_or_clone(items))),
         }
+    }
+
+    pub fn from_path(path: String, io_conf: Option<IOConfig>) -> DaftResult<Self> {
+        let rt = common_runtime::get_io_runtime(true);
+
+        rt.block_within_async_context(Self::new(FileReference::Reference(
+            path,
+            io_conf.map(Arc::new),
+        )))?
     }
 
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
