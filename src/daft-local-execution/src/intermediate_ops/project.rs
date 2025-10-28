@@ -150,13 +150,12 @@ impl IntermediateOperator for ProjectOperator {
         let projection = self.projection.clone();
         let num_parallel_exprs = self.parallel_exprs;
         let num_async_exprs = self.async_exprs;
-        let max_concurrency = dbg!(self.max_concurrency);
         task_spawner
             .spawn(
                 async move {
                     let out = if num_parallel_exprs > 1 || num_async_exprs > 0 {
                         input
-                            .par_eval_expression_list(&projection, max_concurrency)
+                            .par_eval_expression_list(&projection, num_parallel_exprs)
                             .await?
                     } else {
                         input.eval_expression_list(&projection)?
