@@ -28,21 +28,28 @@ if TYPE_CHECKING:
     )
 
 
-class BackgroundEventLoop:
-    def __init__(self) -> None:
-        self.loop = asyncio.new_event_loop()
-        self.thread = threading.Thread(
-            target=self.loop.run_forever,
-            name="DaftBackgroundEventLoop",
-            daemon=True,
-        )
-        self.thread.start()
-
-    def run(self, future: Coroutine[Any, Any, Any]) -> Any:
-        return asyncio.run_coroutine_threadsafe(future, self.loop).result()
+LOOP: asyncio.AbstractEventLoop | None = None
 
 
-LOOP = BackgroundEventLoop()
+def get_or_init_event_loop() -> asyncio.AbstractEventLoop:
+    global LOOP
+    try:
+        return asyncio.get_running_loop()
+    except RuntimeError:
+        if LOOP is None:
+            loop = asyncio.new_event_loop()
+            thread = threading.Thread(
+                target=loop.run_forever,
+                name="DaftBackgroundEventLoop",
+                daemon=True,
+            )
+            thread.start()
+            LOOP = loop
+        return LOOP
+
+
+def run_coroutine_threadsafe(loop: asyncio.AbstractEventLoop, coroutine: Coroutine[Any, Any, Any]) -> Any:
+    return asyncio.run_coroutine_threadsafe(coroutine, loop).result()
 
 
 class LocalPartitionStream:
@@ -83,9 +90,10 @@ class NativeExecutor:
                 context,
             )
 
-        async_iter = LocalPartitionStream(LOOP.run(run_executor()))
+        loop = get_or_init_event_loop()
+        async_iter = LocalPartitionStream(run_coroutine_threadsafe(loop, run_executor()))
         while True:
-            part = LOOP.run(async_iter.__anext__())
+            part = run_coroutine_threadsafe(loop, async_iter.__anext__())
             if part is None:
                 break
             yield LocalMaterializedResult(MicroPartition._from_pymicropartition(part))

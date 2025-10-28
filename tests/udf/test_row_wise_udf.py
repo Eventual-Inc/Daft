@@ -298,3 +298,16 @@ def test_async_rowwise_retry_defaults_to_raise_and_zero_retries():
         pytest.fail("Expected ValueError")
     except ValueError:
         pass
+
+
+def test_row_wise_async_udf_use_process():
+    import asyncio
+
+    @daft.func(use_process=True)
+    async def my_async_stringify_and_sum(a: int, b: int) -> str:
+        await asyncio.sleep(0.01)
+        return f"{a + b}"
+
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+    async_df = df.select(my_async_stringify_and_sum(col("x"), col("y")))
+    assert async_df.to_pydict() == {"x": ["5", "7", "9"]}

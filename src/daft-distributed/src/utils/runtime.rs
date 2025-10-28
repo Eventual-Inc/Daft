@@ -26,7 +26,7 @@ pub fn get_or_init_runtime() -> &'static Runtime {
                 .expect("Failed to initialize python runtime");
             // Initialize the task locals in the centralized location
             use pyo3::Python;
-            Python::attach(common_runtime::init_task_locals);
+            Python::attach(common_runtime::python::get_or_init_task_locals);
         });
     }
     runtime_ref

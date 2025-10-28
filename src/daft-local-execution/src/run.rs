@@ -54,7 +54,7 @@ fn get_global_runtime(py: Python) -> &'static Handle {
         std::thread::spawn(move || {
             pyo3_async_runtimes::tokio::get_runtime().block_on(futures::future::pending::<()>());
         });
-        common_runtime::init_task_locals(py);
+        common_runtime::python::get_or_init_task_locals(py);
         pyo3_async_runtimes::tokio::get_runtime().handle().clone()
     })
 }
