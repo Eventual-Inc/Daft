@@ -31,7 +31,7 @@ def replace_expressions_with_evaluated_args(
     return new_args, new_kwargs
 
 
-def call_async_batch(
+async def call_async_batch(
     cls: ClsBase[C],
     method: Callable[Concatenate[C, ...], Any],
     return_dtype: PyDataType,
@@ -48,18 +48,8 @@ def call_async_batch(
         coroutine = bound_method(*args, **kwargs)
         tasks.append(coroutine)
 
-    async def run_tasks() -> list[Any]:
-        return await asyncio.gather(*tasks)
-
     dtype = DataType._from_pydatatype(return_dtype)
-
-    try:
-        # try to use existing event loop
-        event_loop = asyncio.get_running_loop()
-        outputs = asyncio.run_coroutine_threadsafe(run_tasks(), event_loop).result()
-    except RuntimeError:
-        outputs = asyncio.run(run_tasks())
-
+    outputs = await asyncio.gather(*tasks)
     return Series.from_pylist(outputs, dtype=dtype)._series
 
 

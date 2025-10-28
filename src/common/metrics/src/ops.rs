@@ -49,6 +49,7 @@ pub enum NodeType {
     // Both consumes and produces MicroPartitions at arbitrary intervals
     // For example, limit cuts off early.
     AntiSemiHashJoinProbe,
+    AsyncUDFProject,
     Concat,
     Limit,
     MonotonicallyIncreasingId,
