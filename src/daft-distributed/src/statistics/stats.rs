@@ -41,12 +41,20 @@ impl DefaultRuntimeStats {
 
     fn inc_active_tasks(&self) {
         self.active_tasks_count.fetch_add(1, Ordering::Relaxed);
+        eprintln!(
+            "Incrementing active tasks count to: {:?}",
+            self.active_tasks_count.load(Ordering::Relaxed)
+        );
         self.active_tasks_gauge
             .record(self.active_tasks_count.load(Ordering::Relaxed), &[]);
     }
 
     fn dec_active_tasks(&self) {
         self.active_tasks_count.fetch_sub(1, Ordering::Relaxed);
+        eprintln!(
+            "Decrementing active tasks count to: {:?}",
+            self.active_tasks_count.load(Ordering::Relaxed)
+        );
         self.active_tasks_gauge
             .record(self.active_tasks_count.load(Ordering::Relaxed), &[]);
     }
@@ -60,14 +68,17 @@ impl RuntimeStats for DefaultRuntimeStats {
             }
             TaskEvent::TaskCompleted { .. } => {
                 self.dec_active_tasks();
+                eprintln!("Incrementing completed tasks count");
                 self.completed_tasks.add(1, &[]);
             }
             TaskEvent::TaskFailed { .. } => {
                 self.dec_active_tasks();
+                eprintln!("Incrementing failed tasks count");
                 self.failed_tasks.add(1, &[]);
             }
             TaskEvent::TaskCancelled { .. } => {
                 self.dec_active_tasks();
+                eprintln!("Incrementing cancelled tasks count");
                 self.cancelled_tasks.add(1, &[]);
             }
             TaskEvent::TaskSubmitted { .. } => (), // We don't track submitted tasks
