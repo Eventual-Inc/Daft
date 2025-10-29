@@ -90,10 +90,11 @@ def test_cls_multiple_instances():
     }
 
 
-def test_cls_async_method():
+@pytest.mark.parametrize("concurrency", [None, 1, 2])
+def test_cls_async_method(concurrency):
     df = daft.from_pydict({"a": [1, 2, 3]})
 
-    @daft.cls
+    @daft.cls(max_concurrency=concurrency)
     class AsyncProcessor:
         def __init__(self, delay: float):
             self.delay = delay
@@ -278,19 +279,20 @@ def test_cls_batch_method_scalar_eval():
     assert multiplier.multiply(a).to_pylist() == [5, 10, 15]
 
 
-@pytest.mark.parametrize("concurrency", [1, 2])
-def test_cls_async_method_max_concurrency(concurrency):
-    df = daft.from_pydict({"a": [1, 2, 3]})
+@pytest.mark.parametrize("concurrency", [None, 1, 2])
+def test_cls_async_batch_method(concurrency):
+    df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
 
     @daft.cls(max_concurrency=concurrency)
-    class AsyncProcessor:
+    class AsyncBatchProcessor:
         def __init__(self, delay: float):
             self.delay = delay
 
-        async def __call__(self, x: int) -> int:
+        @daft.method.batch(return_dtype=DataType.int64())
+        async def process(self, a: daft.Series) -> daft.Series:
             await asyncio.sleep(self.delay)
-            return x * 2
+            return a
 
-    processor = AsyncProcessor(0.01)
-    result = df.select(processor(df["a"]))
-    assert result.to_pydict() == {"a": [2, 4, 6]}
+    processor = AsyncBatchProcessor(delay=0.01)
+    result = df.select(processor.process(df["a"]))
+    assert result.to_pydict() == {"a": [1, 2, 3]}

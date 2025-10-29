@@ -366,6 +366,7 @@ impl UDFProperties {
                     batch_size,
                     max_retries,
                     on_error,
+                    is_async,
                     ..
                 }))) => {
                     num_udfs += 1;
@@ -380,7 +381,7 @@ impl UDFProperties {
                         concurrency: *max_concurrency,
                         use_process: *use_process,
                         max_retries: *max_retries,
-                        is_async: false,
+                        is_async: *is_async,
                         on_error: Some(*on_error),
                     });
                 }
