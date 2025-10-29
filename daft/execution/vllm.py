@@ -106,7 +106,9 @@ class BlockingVLLMExecutor(VLLMExecutor):
 
 
 class LocalVLLMExecutor(VLLMExecutor):
-    def __init__(self, model: str, engine_args: dict[str, Any], generate_args: dict[str, Any]):
+    def __init__(
+        self, model: str, engine_args: dict[str, Any], generate_args: dict[str, Any], use_threading: bool = True
+    ):
         import time
 
         from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
@@ -129,11 +131,13 @@ class LocalVLLMExecutor(VLLMExecutor):
 
         self.completed_tasks: deque[tuple[str, RecordBatch]] = deque()
 
-        # Create a dedicated event loop in a separate thread
-        self.loop_ready = threading.Event()
-        self.loop_thread = threading.Thread(target=self._run_event_loop, daemon=True)
-        self.loop_thread.start()
-        self.loop_ready.wait()
+        self.use_threading = use_threading
+        if self.use_threading:
+            # Create a dedicated event loop in a separate thread
+            self.loop_ready = threading.Event()
+            self.loop_thread = threading.Thread(target=self._run_event_loop, daemon=True)
+            self.loop_thread.start()
+            self.loop_ready.wait()
 
         self._finished_submitting = False
 
@@ -169,6 +173,9 @@ class LocalVLLMExecutor(VLLMExecutor):
         """Submit a batch of prompts and rows to the executor, returning once all tasks are started."""
         assert len(prompts) == len(rows), "Number of prompts and rows must match"
 
+        if not self.use_threading:
+            raise ValueError("Synchronous mode not supported when use_threading is False")
+
         with self.task_count_lock:
             self.running_task_count += len(prompts)
 
@@ -176,6 +183,17 @@ class LocalVLLMExecutor(VLLMExecutor):
             prompt = prompts[i]
             row = rows.slice(i, i + 1)
             asyncio.run_coroutine_threadsafe(self._generate(prompt, row), self.loop)
+
+    async def submit_async(self, prompts: list[str], rows: RecordBatch) -> None:
+        assert len(prompts) == len(rows), "Number of prompts and rows must match"
+
+        with self.task_count_lock:
+            self.running_task_count += len(prompts)
+
+        for i in range(len(prompts)):
+            prompt = prompts[i]
+            row = rows.slice(i, i + 1)
+            asyncio.create_task(self._generate(prompt, row))
 
     def poll(self) -> tuple[list[str], RecordBatch] | None:
         """Poll the executor for completed tasks."""
@@ -228,7 +246,7 @@ class DistributedVLLMExecutor(VLLMExecutor):
         import ray
 
         route_to = ray.get(self.router_actor.route.remote(prefix, len(prompts)))
-        self.llm_actors[route_to].submit.remote(prefix, prompts, rows)
+        ray.get(self.llm_actors[route_to].submit_async.remote(prompts, rows))
 
     def poll(self) -> tuple[list[str], RecordBatch] | None:
         import ray
