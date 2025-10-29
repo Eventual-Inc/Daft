@@ -17,7 +17,7 @@ static PYO3_ASYNC_RUNTIME_LOCALS: OnceLock<pyo3_async_runtimes::TaskLocals> = On
 fn get_or_init_task_locals(py: Python) -> &'static pyo3_async_runtimes::TaskLocals {
     PYO3_ASYNC_RUNTIME_LOCALS.get_or_init(|| {
         let event_loop_module = py
-            .import(pyo3::intern!(py, "daft.execution.native_executor"))
+            .import(pyo3::intern!(py, "daft.event_loop"))
             .expect("Failed to import native executor module");
         let event_loop = event_loop_module
             .call_method0(pyo3::intern!(py, "get_or_init_event_loop"))
