@@ -2005,6 +2005,7 @@ class PyDaftExecutionConfig:
         parquet_inflation_factor: float | None = None,
         csv_target_filesize: int | None = None,
         csv_inflation_factor: float | None = None,
+        json_inflation_factor: float | None = None,
         shuffle_aggregation_default_partitions: int | None = None,
         partial_aggregation_threshold: int | None = None,
         high_cardinality_aggregation_threshold: float | None = None,
@@ -2046,6 +2047,8 @@ class PyDaftExecutionConfig:
     def csv_target_filesize(self) -> int: ...
     @property
     def csv_inflation_factor(self) -> float: ...
+    @property
+    def json_inflation_factor(self) -> float: ...
     @property
     def shuffle_aggregation_default_partitions(self) -> int: ...
     @property
