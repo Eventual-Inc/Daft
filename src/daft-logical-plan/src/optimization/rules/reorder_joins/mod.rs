@@ -3,17 +3,10 @@ mod join_graph;
 #[cfg(test)]
 mod naive_left_deep_join_order;
 
-#[derive(Default, Debug)]
-pub struct ReorderJoins {}
-
-impl ReorderJoins {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
 use std::sync::Arc;
 
 use brute_force_join_order::BruteForceJoinOrderer;
+use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use join_graph::JoinGraphBuilder;
@@ -23,11 +16,36 @@ use crate::{
     optimization::rules::{OptimizerRule, reorder_joins::join_graph::JoinOrderer},
 };
 
+#[derive(Debug)]
+pub struct ReorderJoins {
+    cfg: Arc<DaftExecutionConfig>,
+}
+
+impl Default for ReorderJoins {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ReorderJoins {
+    pub fn new() -> Self {
+        Self {
+            cfg: Arc::new(DaftExecutionConfig::default()),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn with_config(cfg: Arc<DaftExecutionConfig>) -> Self {
+        Self { cfg }
+    }
+}
+
 // Reorder joins in a query tree.
 impl OptimizerRule for ReorderJoins {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         if let LogicalPlan::Join(_) = &*plan {
-            let mut join_graph = JoinGraphBuilder::from_logical_plan(plan.clone()).build();
+            let mut join_graph =
+                JoinGraphBuilder::from_logical_plan(plan.clone(), self.cfg.clone()).build();
             // Return early if the join graph won't reorder joins.
             // TODO(desmond): We also want to check if we can potentially reorder joins within relations themselves.
             // E.g., we might have a query plan like:
