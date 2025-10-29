@@ -1,8 +1,7 @@
 use common_error::DaftError;
 use daft_core::{datatypes::FileArray, prelude::UInt64Array, series::IntoSeries};
-use daft_dsl::functions::{UnaryArg, prelude::*, scalar::AsyncScalarUDF};
+use daft_dsl::functions::{UnaryArg, prelude::*};
 use daft_io::IOConfig;
-use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
 
 use crate::file::DaftFile;
@@ -57,39 +56,33 @@ impl ScalarUDF for File {
 pub struct Size;
 
 #[typetag::serde]
-#[async_trait::async_trait]
-impl AsyncScalarUDF for Size {
+impl ScalarUDF for Size {
     fn name(&self) -> &'static str {
         "file_size"
     }
 
-    async fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
-        use futures::stream::{self, StreamExt};
+    fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
         let UnaryArg { input } = args.try_into()?;
         let s = input.file()?;
         let len = s.len();
-
-        let mut results: Vec<(usize, Option<u64>)> = stream::iter((0..len).map(|i| async move {
-            match s.get(i) {
-                Some(f) => {
-                    let f = DaftFile::new(f).await?;
+        let mut out = Vec::with_capacity(len);
+        // todo(cory): can likely optimize this a lot more than a naive for loop.
+        for i in 0..len {
+            let opt: Option<u64> = s
+                .get(i)
+                .map(|f| {
+                    let f = DaftFile::try_from(f)?;
                     let size = f.size()?;
-                    DaftResult::Ok((i, Some(size as u64)))
-                }
-                None => DaftResult::Ok((i, None)),
-            }
-        }))
-        .buffer_unordered(256) // todo(universalmin303): somehow set this as a variable on the file array instead.
-        .try_collect::<Vec<_>>()
-        .await?;
+                    DaftResult::Ok(size as _)
+                })
+                .transpose()?;
+            out.push(opt);
+        }
 
-        results.sort_by_key(|k| k.0);
-
-        Ok(UInt64Array::from_iter(
-            Field::new(s.name(), DataType::UInt64),
-            results.into_iter().map(|(_, v)| v),
+        Ok(
+            UInt64Array::from_iter(Field::new(s.name(), DataType::UInt64), out.into_iter())
+                .into_series(),
         )
-        .into_series())
     }
 
     fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {

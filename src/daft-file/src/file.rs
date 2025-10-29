@@ -28,11 +28,12 @@ impl TryFrom<FileReference> for DaftFile {
 }
 
 impl DaftFile {
-    pub async fn new(file_ref: FileReference) -> DaftResult<Self> {
-        match file_ref {
-            FileReference::Reference(path, io_conf) => {
-                let io_client = daft_io::get_io_client(true, io_conf.unwrap_or_default())?;
+    pub fn from_path(path: String, io_conf: Option<IOConfig>) -> DaftResult<Self> {
+        let io_client = daft_io::get_io_client(true, io_conf.map(Arc::new).unwrap_or_default())?;
+        let rt = common_runtime::get_io_runtime(true);
 
+        let (source, path, file_size, supports_range) =
+            rt.block_within_async_context(async move {
                 let (source, path) = io_client
                     .get_source_and_path(&path)
                     .await
@@ -47,47 +48,25 @@ impl DaftFile {
                     .supports_range(&path)
                     .await
                     .map_err(|e| DaftError::ComputeError(e.to_string()))?;
+                DaftResult::Ok((source, path, file_size, supports_range))
+            })??;
 
-                // Default to 16MB buffer
-                const DEFAULT_BUFFER_SIZE: usize = 16 * 1024 * 1024;
+        // Default to 16MB buffer
+        const DEFAULT_BUFFER_SIZE: usize = 16 * 1024 * 1024;
 
-                let mut reader = ObjectSourceReader::new(source, path, None, file_size);
-                if !supports_range || file_size <= DEFAULT_BUFFER_SIZE {
-                    let mut buf = Vec::with_capacity(file_size);
-                    reader.read_to_end(&mut buf)?;
-                    Ok(Self::from_bytes(buf))
-                } else {
-                    // we wrap it in a BufReader so we are not making so many network requests for each byte read
-                    let buffered_reader = BufReader::with_capacity(DEFAULT_BUFFER_SIZE, reader);
+        let mut reader = ObjectSourceReader::new(source, path, None, file_size);
+        if !supports_range || file_size <= DEFAULT_BUFFER_SIZE {
+            let mut buf = Vec::with_capacity(file_size);
+            reader.read_to_end(&mut buf)?;
+            Ok(Self::from_bytes(buf))
+        } else {
+            // we wrap it in a BufReader so we are not making so many network requests for each byte read
+            let buffered_reader = BufReader::with_capacity(DEFAULT_BUFFER_SIZE, reader);
 
-                    Ok(Self {
-                        cursor: Some(FileCursor::ObjectReader(buffered_reader)),
-                        position: 0,
-                    })
-                }
-            }
-            FileReference::Data(items) => Ok(Self::from_bytes(Arc::unwrap_or_clone(items))),
-        }
-    }
-
-    pub fn from_path(path: String, io_conf: Option<IOConfig>) -> DaftResult<Self> {
-        let fut = Self::new(FileReference::Reference(path, io_conf.map(Arc::new)));
-
-        // Since DaftFile can be used standalone, and within daft.func's,
-        // it may or may not be inside an existing runtime. and it may or may not be on the main thread.
-        match tokio::runtime::Handle::try_current() {
-            // if it's inside a udf, we can't block on the main thread as we get the tokio error:
-            // `attempted to block the current thread while the thread is being used to drive asynchronous tasks.`
-            // So as a workaround, we spawn a new thread and block on it.
-            // TODO(universalmind303): this is a very temporary workaround. I plan on redoing some internals to DaftFile.
-            Ok(handle) => std::thread::spawn(move || handle.block_on(fut))
-                .join()
-                .unwrap(),
-            // if there's no runtime, we can block on the current thread
-            Err(_) => {
-                let rt = common_runtime::get_io_runtime(true);
-                rt.block_on_current_thread(fut)
-            }
+            Ok(Self {
+                cursor: Some(FileCursor::ObjectReader(buffered_reader)),
+                position: 0,
+            })
         }
     }
 
