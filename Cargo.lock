@@ -2643,6 +2643,7 @@ dependencies = [
  "daft-physical-plan",
  "daft-recordbatch",
  "daft-schema",
+ "dashmap",
  "futures",
  "itertools 0.14.0",
  "opentelemetry",
@@ -2969,6 +2970,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "arc-swap",
  "async-trait",
+ "bincode",
  "capitalize",
  "common-daft-config",
  "common-display",
@@ -3011,7 +3013,12 @@ dependencies = [
  "pyo3",
  "pyo3-async-runtimes",
  "rand 0.8.5",
+<<<<<<< HEAD
  "serde_json",
+=======
+ "reqwest",
+ "serde",
+>>>>>>> 61da1da0f (Initial conversion)
  "snafu",
  "tokio",
  "tokio-util",

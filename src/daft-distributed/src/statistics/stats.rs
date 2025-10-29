@@ -1,7 +1,9 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use common_error::DaftResult;
 use opentelemetry::{
-    KeyValue, global,
-    metrics::{Counter, Meter, UpDownCounter},
+    global,
+    metrics::{Counter, Gauge},
 };
 
 use crate::{pipeline_node::NodeID, statistics::TaskEvent};
@@ -10,45 +12,43 @@ pub trait RuntimeStats: Send + Sync + 'static {
     fn handle_task_event(&self, event: &TaskEvent) -> DaftResult<()>;
 }
 
-#[allow(clippy::struct_field_names)]
 pub struct DefaultRuntimeStats {
-    pub node_kv: Vec<KeyValue>,
-    active_tasks: UpDownCounter<i64>,
+    active_tasks_count: AtomicU64,
+    active_tasks_gauge: Gauge<u64>,
     completed_tasks: Counter<u64>,
     failed_tasks: Counter<u64>,
     cancelled_tasks: Counter<u64>,
 }
 
 impl DefaultRuntimeStats {
-    pub fn new_impl(meter: &Meter, node_id: NodeID) -> Self {
-        let node_kv = KeyValue::new("node_id", node_id.to_string());
+    pub fn new(node_id: NodeID) -> Self {
+        let meter = global::meter("FlotillaScheduler");
+
         Self {
-            node_kv: vec![node_kv],
-            active_tasks: meter
-                .i64_up_down_counter("daft.distributed.node_stats.active_tasks")
-                .build(),
+            active_tasks_count: AtomicU64::new(0),
+            active_tasks_gauge: meter.u64_gauge(format!("{}.active_tasks", node_id)).build(),
             completed_tasks: meter
-                .u64_counter("daft.distributed.node_stats.completed_tasks")
+                .u64_counter(format!("{}.completed_tasks", node_id))
                 .build(),
             failed_tasks: meter
-                .u64_counter("daft.distributed.node_stats.failed_tasks")
+                .u64_counter(format!("{}.failed_tasks", node_id))
                 .build(),
             cancelled_tasks: meter
-                .u64_counter("daft.distributed.node_stats.cancelled_tasks")
+                .u64_counter(format!("{}.cancelled_tasks", node_id))
                 .build(),
         }
     }
 
-    pub fn new(node_id: NodeID) -> Self {
-        Self::new_impl(&global::meter("daft.distributed.node_stats"), node_id)
-    }
-
     fn inc_active_tasks(&self) {
-        self.active_tasks.add(1, self.node_kv.as_slice());
+        self.active_tasks_count.fetch_add(1, Ordering::Relaxed);
+        self.active_tasks_gauge
+            .record(self.active_tasks_count.load(Ordering::Relaxed), &[]);
     }
 
     fn dec_active_tasks(&self) {
-        self.active_tasks.add(-1, self.node_kv.as_slice());
+        self.active_tasks_count.fetch_sub(1, Ordering::Relaxed);
+        self.active_tasks_gauge
+            .record(self.active_tasks_count.load(Ordering::Relaxed), &[]);
     }
 }
 
@@ -60,15 +60,15 @@ impl RuntimeStats for DefaultRuntimeStats {
             }
             TaskEvent::TaskCompleted { .. } => {
                 self.dec_active_tasks();
-                self.completed_tasks.add(1, self.node_kv.as_slice());
+                self.completed_tasks.add(1, &[]);
             }
             TaskEvent::TaskFailed { .. } => {
                 self.dec_active_tasks();
-                self.failed_tasks.add(1, self.node_kv.as_slice());
+                self.failed_tasks.add(1, &[]);
             }
             TaskEvent::TaskCancelled { .. } => {
                 self.dec_active_tasks();
-                self.cancelled_tasks.add(1, self.node_kv.as_slice());
+                self.cancelled_tasks.add(1, &[]);
             }
             TaskEvent::TaskSubmitted { .. } => (), // We don't track submitted tasks
         }
