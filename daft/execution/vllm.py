@@ -62,10 +62,16 @@ class DummyVLLMExecutor(VLLMExecutor):
 
 class LocalVLLMExecutor(VLLMExecutor):
     def __init__(self, model: str, engine_args: dict[str, Any], generate_args: dict[str, Any]):
+        import time
+
         from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
 
         args = AsyncEngineArgs(model=model, **engine_args)
+
+        start_time = time.perf_counter()
         self.llm = AsyncLLMEngine.from_engine_args(args)
+        end_time = time.perf_counter()
+        print(f"LLM initialized in {end_time - start_time:.2f} seconds.")
 
         self.sampling_params = generate_args.pop("sampling_params", SamplingParams())
         self.generate_args = generate_args
