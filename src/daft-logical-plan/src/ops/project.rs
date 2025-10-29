@@ -5,6 +5,7 @@ use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
     AggExpr, ApproxPercentileParams, Column, Expr, ExprRef,
+    expr::VLLMExpr,
     functions::{FunctionArgs, scalar::ScalarFn},
     optimization, resolved_col,
 };
@@ -498,6 +499,13 @@ fn replace_column_with_semantic_id(
                         udf.with_new_children(new_children),
                     ))))
                 }
+            }
+            Expr::VLLM(VLLMExpr { input, .. }) => {
+                replace_column_with_semantic_id(input.clone(), subexprs_to_replace, schema)
+                    .map_yes_no(
+                        |transformed_input| Arc::new(e.with_new_children(vec![transformed_input])),
+                        |e| e,
+                    )
             }
         }
     }

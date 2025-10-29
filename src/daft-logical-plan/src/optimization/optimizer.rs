@@ -16,7 +16,7 @@ use super::{
         UnnestScalarSubquery,
     },
 };
-use crate::LogicalPlan;
+use crate::{LogicalPlan, optimization::rules::SplitVLLM};
 
 /// Config for optimizer.
 #[derive(Debug)]
@@ -173,6 +173,7 @@ impl OptimizerBuilder {
                 vec![
                     Box::new(SplitUDFsFromFilters::new()),
                     Box::new(SplitUDFs::new()),
+                    Box::new(SplitVLLM),
                     Box::new(PushDownProjection::new()),
                     Box::new(DetectMonotonicId::new()),
                 ],

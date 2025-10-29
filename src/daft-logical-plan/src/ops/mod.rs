@@ -21,6 +21,7 @@ mod summarize;
 mod top_n;
 mod udf;
 mod unpivot;
+mod vllm;
 mod window;
 
 pub use agg::Aggregate;
@@ -46,4 +47,5 @@ pub use summarize::summarize;
 pub use top_n::TopN;
 pub use udf::UDFProject;
 pub use unpivot::Unpivot;
+pub use vllm::VLLMProject;
 pub use window::Window;

@@ -1286,6 +1286,16 @@ class PyExpr:
     def partitioning_years(self) -> PyExpr: ...
     def partitioning_iceberg_bucket(self, n: int) -> PyExpr: ...
     def partitioning_iceberg_truncate(self, w: int) -> PyExpr: ...
+    def vllm(
+        self,
+        model: str,
+        concurrency: int,
+        max_buffer_size: int,
+        max_running_tasks: int,
+        batch_size: int | None,
+        engine_args: Any,
+        generate_args: Any,
+    ) -> PyExpr: ...
 
     ###
     # Visitor methods

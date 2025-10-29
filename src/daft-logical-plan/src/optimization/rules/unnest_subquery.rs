@@ -540,7 +540,8 @@ fn pull_up_correlated_cols(
         | LogicalPlan::Concat(..)
         | LogicalPlan::Join(..)
         | LogicalPlan::Sink(..)
-        | LogicalPlan::Window(..) => {
+        | LogicalPlan::Window(..)
+        | LogicalPlan::VLLMProject(..) => {
             if subquery_on.is_empty() {
                 Ok((plan.clone(), vec![], vec![]))
             } else {

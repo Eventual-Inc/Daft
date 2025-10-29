@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ExprRef, Operator,
-    expr::{Expr, WindowExpr},
+    expr::{Expr, VLLMExpr, WindowExpr},
     visitor::accept,
 };
 
@@ -667,6 +667,30 @@ impl PyExpr {
                 &self.expr
             )))
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn vllm(
+        &self,
+        model: String,
+        concurrency: usize,
+        max_buffer_size: usize,
+        max_running_tasks: usize,
+        batch_size: Option<usize>,
+        engine_args: Py<PyAny>,
+        generate_args: Py<PyAny>,
+    ) -> PyResult<Self> {
+        Ok(Expr::VLLM(VLLMExpr {
+            input: self.expr.clone(),
+            model,
+            concurrency,
+            max_buffer_size,
+            max_running_tasks,
+            batch_size,
+            engine_args: engine_args.into(),
+            generate_args: generate_args.into(),
+        })
+        .into())
     }
 }
 

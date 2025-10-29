@@ -143,6 +143,9 @@ where
                 }
                 json!(obj)
             }
+            LogicalPlan::VLLMProject(vllm_project) => json!({
+                "expr": vllm_project.expr.to_string(),
+            }),
         }
     }
 }
