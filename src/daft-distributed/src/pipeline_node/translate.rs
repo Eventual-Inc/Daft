@@ -6,7 +6,7 @@ use common_partitioning::PartitionRef;
 use common_scan_info::ScanState;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
-    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundVLLMExpr, BoundWindowExpr},
     is_partition_compatible, resolved_col,
 };
 use daft_logical_plan::{
@@ -24,7 +24,8 @@ use crate::{
         into_partitions::IntoPartitionsNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, pivot::PivotNode,
         project::ProjectNode, sample::SampleNode, scan_source::ScanSourceNode, sink::SinkNode,
-        sort::SortNode, top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode, window::WindowNode,
+        sort::SortNode, top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode, vllm::VLLMNode,
+        window::WindowNode,
     },
     plan::PlanConfig,
 };
@@ -545,8 +546,20 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .into_node()
             }
-            LogicalPlan::VLLMProject(..) => {
-                todo!("VLLMProject not yet implemented for distributed execution")
+            LogicalPlan::VLLMProject(vllm_project) => {
+                let input_schema = vllm_project.input.schema();
+                let expr = BoundVLLMExpr::try_new(vllm_project.expr.clone(), &input_schema)?;
+
+                VLLMNode::new(
+                    self.get_next_pipeline_node_id(),
+                    logical_node_id,
+                    &self.plan_config,
+                    expr,
+                    vllm_project.output_column_name.clone(),
+                    vllm_project.output_schema.clone(),
+                    self.curr_node.pop().unwrap(),
+                )
+                .into_node()
             }
             LogicalPlan::SubqueryAlias(_)
             | LogicalPlan::Union(_)

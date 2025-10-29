@@ -460,6 +460,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             Ok(LocalPhysicalPlan::vllm_project(
                 input,
                 expr,
+                None,
                 vllm_project.output_column_name.clone(),
                 vllm_project.output_schema.clone(),
                 vllm_project.stats_state.clone(),

@@ -2,13 +2,65 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from abc import ABC, abstractmethod
 from collections import deque
 from typing import Any
 
 from daft.recordbatch import RecordBatch
 
 
-class VLLMExecutor:
+class VLLMExecutor(ABC):
+    @abstractmethod
+    def submit(self, prefix: str, prompts: list[str], rows: RecordBatch) -> None:
+        pass
+
+    @abstractmethod
+    def poll(self) -> tuple[list[str], RecordBatch] | None:
+        pass
+
+    @abstractmethod
+    def finished_submitting(self) -> None:
+        pass
+
+    @abstractmethod
+    def all_tasks_finished(self) -> bool:
+        pass
+
+    @abstractmethod
+    def teardown(self) -> None:
+        pass
+
+
+class DummyVLLMExecutor(VLLMExecutor):
+    def __init__(self, _model: str, _engine_args: dict[str, Any], _generate_args: dict[str, Any]):
+        self.prompts: list[str] = []
+        self.rows: list[RecordBatch] = []
+        self._finished_submitting = False
+
+    def submit(self, prefix: str, prompts: list[str], rows: RecordBatch) -> None:
+        self.prompts.extend(prompts)
+        self.rows.append(rows)
+
+    def poll(self) -> tuple[list[str], RecordBatch] | None:
+        if len(self.prompts) == 0:
+            return None
+        else:
+            results = (self.prompts, RecordBatch.concat(self.rows))
+            self.prompts = []
+            self.rows = []
+            return results
+
+    def finished_submitting(self) -> None:
+        self._finished_submitting = True
+
+    def all_tasks_finished(self) -> bool:
+        return self._finished_submitting
+
+    def teardown(self) -> None:
+        pass
+
+
+class LocalVLLMExecutor(VLLMExecutor):
     def __init__(self, model: str, engine_args: dict[str, Any], generate_args: dict[str, Any]):
         from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
 
@@ -42,17 +94,37 @@ class VLLMExecutor:
         self.loop_ready.set()  # Signal that the loop is ready
         self.loop.run_forever()
 
-    def __del__(self) -> None:
+    def teardown(self) -> None:
         if self._shutdown:
             return
 
         self._shutdown = True
 
+        del self.llm
+
         if self.loop is not None and self.loop.is_running():
-            self.loop.call_soon_threadsafe(self.loop.stop)
+            # Cancel all tasks before stopping the loop
+            future = asyncio.run_coroutine_threadsafe(self._shutdown_loop(), self.loop)
+            try:
+                future.result(timeout=5.0)
+            except Exception:
+                # Force stop if shutdown takes too long
+                self.loop.call_soon_threadsafe(self.loop.stop)
 
         if self.loop_thread.is_alive():
             self.loop_thread.join(timeout=5.0)
+
+    async def _shutdown_loop(self) -> None:
+        """Cancel all pending tasks and stop the event loop."""
+        # Get all pending tasks (excluding the current task)
+        tasks = [task for task in asyncio.all_tasks(self.loop) if task is not asyncio.current_task()]
+
+        # Wait for all tasks to complete
+        for task in tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Now stop the loop
+        self.loop.stop()
 
     async def _generate(self, prompt: str, row: RecordBatch) -> None:
         with self.counter_lock:
@@ -69,7 +141,7 @@ class VLLMExecutor:
         with self.task_count_lock:
             self.running_task_count -= 1
 
-    def submit(self, prompts: list[str], rows: RecordBatch) -> None:
+    def submit(self, _prefix: str, prompts: list[str], rows: RecordBatch) -> None:
         """Submit a batch of prompts and rows to the executor, returning once all tasks are started."""
         if self._shutdown:
             raise RuntimeError("Cannot submit tasks to a shutdown executor")
@@ -110,3 +182,133 @@ class VLLMExecutor:
     def all_tasks_finished(self) -> bool:
         with self.task_count_lock:
             return self._finished_submitting and self.running_task_count == 0
+
+
+class DistributedVLLMExecutor(VLLMExecutor):
+    def __init__(self, llm_actors: LLMActors):
+        import ray
+        from ray._private.state import actors
+
+        self.router_actor = llm_actors.router_actor
+        self.router_actor.report_start.remote()
+
+        self.llm_actors = llm_actors.llm_actors
+
+        current_node_id = ray.get_runtime_context().get_node_id()
+
+        self.local_llm_actors = []
+        for llm_actor in self.llm_actors:
+            actor_id = llm_actor._actor_id.hex()
+            actor_state = actors(actor_id)
+            if actor_state["Address"]["NodeID"] == current_node_id:
+                self.local_llm_actors.append(llm_actor)
+
+    def teardown(self) -> None:
+        for llm_actor in self.local_llm_actors:
+            llm_actor.teardown.remote()
+            llm_actor.__ray_terminate__.remote()
+
+    def submit(self, prefix: str, prompts: list[str], rows: RecordBatch) -> None:
+        import ray
+
+        route_to = ray.get(self.router_actor.route.remote(prefix, len(prompts)))
+        self.local_llm_actors[route_to].submit.remote(prefix, prompts, rows)
+
+    def poll(self) -> tuple[list[str], RecordBatch] | None:
+        import ray
+
+        all_outputs = []
+        all_rows = []
+
+        for llm_actor in self.local_llm_actors:
+            result = ray.get(llm_actor.poll.remote())
+            if result is not None:
+                outputs, rows = result
+                all_outputs.extend(outputs)
+                all_rows.append(rows)
+
+        if len(all_outputs) == 0:
+            return None
+        else:
+            return all_outputs, RecordBatch.concat(all_rows)
+
+    def finished_submitting(self) -> None:
+        self.router_actor.report_completion.remote()
+        for llm_actor in self.local_llm_actors:
+            llm_actor.finished_submitting.remote()
+
+    def all_tasks_finished(self) -> bool:
+        import ray
+
+        return ray.get(self.router_actor.all_actors_finished.remote()) and all(
+            ray.get(llm_actor.all_tasks_finished.remote()) for llm_actor in self.local_llm_actors
+        )
+
+
+class PrefixRouter:
+    def __init__(self, num_llm_actors: int, load_balance_threshold: int, max_recent_prefixes: int = 8):
+        self.loads = [0] * num_llm_actors
+        self.recent_prefixes: list[list[str]] = [[] for _ in range(num_llm_actors)]
+        self.load_balance_threshold = load_balance_threshold
+        self.max_recent_prefixes = max_recent_prefixes
+        self.unfinished_actors = 0
+
+    def route(self, prefix: str, batch_size: int) -> int:
+        min_load = min(self.loads)
+
+        best_actor = None
+        best_actor_recency = None
+        for i in range(len(self.loads)):
+            if self.loads[i] < min_load + self.load_balance_threshold:
+                try:
+                    recency = self.recent_prefixes[i].index(prefix)
+                except ValueError:
+                    recency = None
+
+                if best_actor_recency is None:
+                    best_actor = i
+                    best_actor_recency = recency
+                elif recency is not None and recency < best_actor_recency:
+                    best_actor = i
+                    best_actor_recency = recency
+
+        assert best_actor is not None, "No actor found for prefix"
+
+        self.recent_prefixes[best_actor].insert(0, prefix)
+        if len(self.recent_prefixes[best_actor]) > self.max_recent_prefixes:
+            self.recent_prefixes[best_actor].pop()
+
+        self.loads[best_actor] += batch_size
+
+        return best_actor
+
+    def report_start(self) -> None:
+        self.unfinished_actors += 1
+
+    def report_completion(self) -> None:
+        self.unfinished_actors -= 1
+
+    def all_actors_finished(self) -> bool:
+        return self.unfinished_actors == 0
+
+
+class LLMActors:
+    def __init__(
+        self,
+        model: str,
+        engine_args: dict[str, Any],
+        generate_args: dict[str, Any],
+        gpus_per_actor: int,
+        concurrency: int,
+        load_balance_threshold: int,
+    ):
+        import ray
+
+        LocalVLLMExecutorActor = ray.remote(num_gpus=gpus_per_actor)(LocalVLLMExecutor)
+        PrefixRouterActor = ray.remote(PrefixRouter)
+
+        self.llm_actors = [LocalVLLMExecutorActor.remote(model, engine_args, generate_args) for _ in range(concurrency)]
+        self.router_actor = PrefixRouterActor.remote(len(self.llm_actors), load_balance_threshold)
+
+    def teardown(self) -> None:
+        self.router_actor.__ray_terminate__.remote()

@@ -1290,6 +1290,7 @@ class PyExpr:
         self,
         model: str,
         concurrency: int,
+        gpus_per_actor: int,
         do_prefix_routing: bool,
         max_buffer_size: int,
         prefix_match_threshold: float,

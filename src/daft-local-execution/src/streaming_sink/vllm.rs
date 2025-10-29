@@ -6,9 +6,12 @@ use daft_core::{
     prelude::{AsArrow, SchemaRef, Utf8Array},
     series::IntoSeries,
 };
-use daft_dsl::expr::{
-    VLLMExpr,
-    bound_expr::{BoundExpr, BoundVLLMExpr},
+use daft_dsl::{
+    expr::{
+        VLLMExpr,
+        bound_expr::{BoundExpr, BoundVLLMExpr},
+    },
+    functions::python::RuntimePyObject,
 };
 use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
@@ -29,8 +32,9 @@ use crate::{
 
 #[derive(Clone)]
 pub(crate) struct VLLMSink {
-    expr: BoundVLLMExpr,
+    expr: Arc<BoundVLLMExpr>,
     output_column_name: Arc<str>,
+    llm_actors: Option<RuntimePyObject>,
     schema: SchemaRef,
 }
 
@@ -49,10 +53,10 @@ struct VLLMExecutor;
 
 #[cfg(feature = "python")]
 impl VLLMExecutor {
-    fn new(expr: &VLLMExpr) -> DaftResult<Self> {
+    fn new_local(expr: &VLLMExpr) -> DaftResult<Self> {
         let executor = Python::attach(|py| {
             py.import(intern!(py, "daft.execution.vllm"))?
-                .getattr(intern!(py, "VLLMExecutor"))?
+                .getattr(intern!(py, "LocalVLLMExecutor"))?
                 .call1((
                     &expr.model,
                     expr.engine_args.as_ref(),
@@ -63,7 +67,22 @@ impl VLLMExecutor {
         Ok(Self(executor))
     }
 
-    fn submit(&self, prompts: Vec<String>, rows: RecordBatch) -> DaftResult<()> {
+    fn new_distributed(llm_actors: &RuntimePyObject) -> DaftResult<Self> {
+        let executor = Python::attach(|py| {
+            py.import(intern!(py, "daft.execution.vllm"))?
+                .getattr(intern!(py, "DistributedVLLMExecutor"))?
+                .call1((llm_actors.as_ref(),))
+                .map(Bound::unbind)
+        })?;
+        Ok(Self(executor))
+    }
+
+    fn teardown(&self) -> DaftResult<()> {
+        Python::attach(|py| self.0.call_method0(py, intern!(py, "teardown")))?;
+        Ok(())
+    }
+
+    fn submit(&self, prefix: String, prompts: Vec<String>, rows: RecordBatch) -> DaftResult<()> {
         use daft_recordbatch::python::PyRecordBatch;
 
         let py_rows = PyRecordBatch { record_batch: rows };
@@ -76,7 +95,7 @@ impl VLLMExecutor {
                 recordbatch_class.call_method1(intern!(py, "_from_pyrecordbatch"), (py_rows,))?;
 
             self.0
-                .call_method1(py, intern!(py, "submit"), (prompts, recordbatch))
+                .call_method1(py, intern!(py, "submit"), (prefix, prompts, recordbatch))
         })?;
         Ok(())
     }
@@ -126,11 +145,15 @@ impl VLLMExecutor {
 
 #[cfg(not(feature = "python"))]
 impl VLLMExecutor {
-    fn new(_expr: &VLLMExpr) -> DaftResult<Self> {
+    fn new_local(_expr: &VLLMExpr) -> DaftResult<Self> {
         Ok(Self)
     }
 
-    fn submit(&self, _prompts: Vec<String>, _rows: RecordBatch) -> DaftResult<()> {
+    fn new_distributed(_llm_actors: &RuntimePyObject) -> DaftResult<Self> {
+        Ok(Self)
+    }
+
+    fn submit(&self, _prefix: String, _prompts: Vec<String>, _rows: RecordBatch) -> DaftResult<()> {
         unimplemented!("VLLMExecutor::submit is not supported without the Python feature.")
     }
 
@@ -149,17 +172,23 @@ impl VLLMExecutor {
             "VLLMExecutor::all_tasks_finished is not supported without the Python feature."
         )
     }
+
+    fn teardown(&self) -> DaftResult<()> {
+        unimplemented!("VLLMExecutor::teardown is not supported without the Python feature.")
+    }
 }
 
 impl VLLMSink {
     pub(crate) fn new(
-        expr: BoundVLLMExpr,
+        expr: Arc<BoundVLLMExpr>,
         output_column_name: Arc<str>,
+        llm_actors: Option<RuntimePyObject>,
         schema: SchemaRef,
     ) -> Self {
         Self {
             expr,
             output_column_name,
+            llm_actors,
             schema,
         }
     }
@@ -189,7 +218,7 @@ impl VLLMSink {
         &self,
         state: &mut VLLMState,
         max_buffer_size: usize,
-    ) -> DaftResult<Vec<(Vec<String>, RecordBatch)>> {
+    ) -> DaftResult<Vec<(String, Vec<String>, RecordBatch)>> {
         let expr = self.expr.inner();
         let prefix_match_threshold = expr.prefix_match_threshold.0;
         let expr_input = BoundExpr::new_unchecked(expr.input.clone());
@@ -208,8 +237,8 @@ impl VLLMSink {
 
             for (i, (p1, p2)) in prompts_vec.iter().tuple_windows().enumerate() {
                 let common_prefix_len = p1
-                    .chars()
-                    .zip(p2.chars())
+                    .bytes()
+                    .zip(p2.bytes())
                     .take_while(|(c1, c2)| c1 == c2)
                     .count();
 
@@ -234,8 +263,24 @@ impl VLLMSink {
             while state.buffer_size > max_buffer_size {
                 let (len, start_idx, end_idx) = splits.pop().unwrap();
                 let prompts = prompts_vec[start_idx..end_idx].to_vec();
+
+                // find the longest common prefix in all prompts
+                let mut prefix_len = 0;
+                for i in 0..prompts[0].len() {
+                    if prompts
+                        .iter()
+                        .all(|p| p.as_bytes().get(i) == prompts[0].as_bytes().get(i))
+                    {
+                        prefix_len = i + 1;
+                    } else {
+                        break;
+                    }
+                }
+
+                let prefix = prompts[0][..prefix_len].to_string();
+
                 let rb = sorted.slice(start_idx, end_idx)?;
-                tasks.push((prompts, rb));
+                tasks.push((prefix, prompts, rb));
                 state.buffer_size -= len;
             }
 
@@ -303,11 +348,11 @@ impl StreamingSink for VLLMSink {
                             .unwrap();
                         let prompts = this.get_prompts_for_batch(&batch)?;
 
-                        vec![(prompts, batch)]
+                        vec![(String::new(), prompts, batch)]
                     };
 
-                    for (prompts, rows) in tasks {
-                        state.executor.submit(prompts, rows)?;
+                    for (prefix, prompts, rows) in tasks {
+                        state.executor.submit(prefix, prompts, rows)?;
                     }
 
                     let output = this.poll_tasks(&state)?;
@@ -334,8 +379,8 @@ impl StreamingSink for VLLMSink {
 
                     if !state.finished_submitting {
                         let tasks = this.pop_tasks(state, 0)?;
-                        for (prompts, rows) in tasks {
-                            state.executor.submit(prompts, rows)?;
+                        for (prefix, prompts, rows) in tasks {
+                            state.executor.submit(prefix, prompts, rows)?;
                         }
                         state.finished_submitting = true;
                         state.executor.finished_submitting()?;
@@ -344,6 +389,7 @@ impl StreamingSink for VLLMSink {
                     let output = this.poll_tasks(state)?;
 
                     if state.executor.all_tasks_finished()? {
+                        state.executor.teardown()?;
                         Ok(StreamingSinkFinalizeOutput::Finished(output))
                     } else {
                         Ok(StreamingSinkFinalizeOutput::HasMoreOutput { states, output })
@@ -367,8 +413,14 @@ impl StreamingSink for VLLMSink {
     }
 
     fn make_state(&self) -> DaftResult<Self::State> {
+        let executor = if let Some(llm_actors) = &self.llm_actors {
+            VLLMExecutor::new_distributed(llm_actors)?
+        } else {
+            VLLMExecutor::new_local(self.expr.inner())?
+        };
+
         Ok(VLLMState {
-            executor: VLLMExecutor::new(self.expr.inner())?,
+            executor,
             buffer: Vec::new(),
             buffer_size: 0,
             finished_submitting: false,

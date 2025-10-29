@@ -21,6 +21,7 @@ class VLLMPrefixCachedPrompterDescriptor(PrompterDescriptor):
     provider_name: str
     model_name: str = "facebook/opt-125m"
     concurrency: int = 1
+    gpus_per_actor: int = 1
     do_prefix_routing: bool = True
     max_buffer_size: int = 5000
     prefix_match_threshold: float = 0.5
@@ -39,6 +40,7 @@ class VLLMPrefixCachedPrompterDescriptor(PrompterDescriptor):
     def get_options(self) -> Options:
         return {
             "concurrency": self.concurrency,
+            "gpus_per_actor": self.gpus_per_actor,
             "do_prefix_routing": self.do_prefix_routing,
             "max_buffer_size": self.max_buffer_size,
             "prefix_match_threshold": self.prefix_match_threshold,

@@ -307,6 +307,7 @@ pub struct VLLMExpr {
     pub model: String,
     pub input: ExprRef,
     pub concurrency: usize,
+    pub gpus_per_actor: usize,
     pub do_prefix_routing: bool,
     pub max_buffer_size: usize,
     pub prefix_match_threshold: FloatWrapper<f64>,
@@ -1358,6 +1359,7 @@ impl Expr {
                 model,
                 input,
                 concurrency,
+                gpus_per_actor,
                 do_prefix_routing,
                 max_buffer_size,
                 prefix_match_threshold,
@@ -1366,7 +1368,7 @@ impl Expr {
                 engine_args,
                 generate_args,
             }) => FieldID::new(format!(
-                "VLLM({model}, {input}, {concurrency}, {do_prefix_routing}, {max_buffer_size}, {prefix_match_threshold:?}, {load_balance_threshold}, {batch_size:?}, {engine_args:?}, {generate_args:?})"
+                "VLLM({model}, {input}, {concurrency}, {gpus_per_actor}, {do_prefix_routing}, {max_buffer_size}, {prefix_match_threshold:?}, {load_balance_threshold}, {batch_size:?}, {engine_args:?}, {generate_args:?})"
             )),
         }
     }
@@ -1534,6 +1536,7 @@ impl Expr {
                 model,
                 input: _,
                 concurrency,
+                gpus_per_actor,
                 do_prefix_routing,
                 max_buffer_size,
                 prefix_match_threshold,
@@ -1545,6 +1548,7 @@ impl Expr {
                 model: model.clone(),
                 input: children.first().expect("Should have 1 child").clone(),
                 concurrency: *concurrency,
+                gpus_per_actor: *gpus_per_actor,
                 do_prefix_routing: *do_prefix_routing,
                 max_buffer_size: *max_buffer_size,
                 prefix_match_threshold: prefix_match_threshold.clone(),

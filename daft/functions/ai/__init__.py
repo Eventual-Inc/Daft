@@ -307,6 +307,7 @@ def prompt(
             messages._expr.vllm(
                 prompter_descriptor.model_name,
                 prompter_descriptor.concurrency,
+                prompter_descriptor.gpus_per_actor,
                 prompter_descriptor.do_prefix_routing,
                 prompter_descriptor.max_buffer_size,
                 prompter_descriptor.prefix_match_threshold,
