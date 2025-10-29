@@ -72,7 +72,7 @@ fn check_and_modify_struct(s: &str) -> SQLPlannerResult<Option<String>> {
                     if depth == 0 {
                         let inner_tokens = &non_whitespace_tokens[start + 2..end];
                         validate_colons(inner_tokens)?;
-                        return Ok(Some(replace_colons_in_range(s, &tokens, start + 2, end)));
+                        return Ok(Some(s.replace(':', " ")));
                     }
                 }
                 _ => {}
