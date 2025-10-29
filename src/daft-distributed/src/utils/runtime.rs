@@ -24,9 +24,6 @@ pub fn get_or_init_runtime() -> &'static Runtime {
         PYO3_RUNTIME_INITIALIZED.call_once(|| {
             pyo3_async_runtimes::tokio::init_with_runtime(&runtime_ref.runtime)
                 .expect("Failed to initialize python runtime");
-            // Initialize the task locals in the centralized location
-            use pyo3::Python;
-            Python::attach(common_runtime::init_task_locals);
         });
     }
     runtime_ref

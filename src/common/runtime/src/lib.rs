@@ -20,7 +20,7 @@ use tokio::{
 pub mod python;
 
 #[cfg(feature = "python")]
-pub use python::{execute_python_coroutine, get_task_locals, init_task_locals};
+pub use python::execute_python_coroutine;
 
 static NUM_CPUS: LazyLock<usize> =
     LazyLock::new(|| std::thread::available_parallelism().unwrap().get());
