@@ -221,22 +221,6 @@ class TestGravitinoIOLiveServer:
     """
 
     @pytest.fixture
-    def live_gravitino_client(self):
-        """Create Gravitino client for live server."""
-        from daft.gravitino.gravitino_catalog import GravitinoClient
-
-        return GravitinoClient(
-            endpoint=os.environ.get("GRAVITINO_ENDPOINT", "http://localhost:8090"),
-            metalake_name=os.environ.get("GRAVITINO_METALAKE", "metalake_demo"),
-            auth_type="simple",
-        )
-
-    @pytest.fixture
-    def live_gravitino_config(self, live_gravitino_client):
-        """Create IOConfig from Gravitino client."""
-        return live_gravitino_client.to_io_config()
-
-    @pytest.fixture
     def gravitino_only_config(self):
         """Create IOConfig with only Gravitino config (no S3 override)."""
         return IOConfig(
@@ -247,7 +231,7 @@ class TestGravitinoIOLiveServer:
             )
         )
 
-    def test_read_live_gvfs_file(self, live_gravitino_config):
+    def test_read_live_gvfs_file(self, gravitino_only_config):
         """Test reading a file from live Gravitino server."""
         # This test requires a pre-existing fileset with data
         # URL format: gvfs://fileset/catalog/schema/fileset/path
@@ -259,8 +243,8 @@ class TestGravitinoIOLiveServer:
         try:
             # Attempt to read the file
             print(f"PYTHON DEBUG: About to call daft.read_parquet with gvfs_url: {gvfs_url}")
-            print(f"PYTHON DEBUG: Passing live_gravitino_config: {live_gravitino_config}")
-            df = daft.read_parquet(gvfs_url, io_config=live_gravitino_config)
+            print(f"PYTHON DEBUG: Passing gravitino_only_config: {gravitino_only_config}")
+            df = daft.read_parquet(gvfs_url, io_config=gravitino_only_config)
             result = df.collect()
 
             # Basic validation that we got some data
@@ -279,14 +263,16 @@ class TestGravitinoIOLiveServer:
             traceback.print_exc()
             pytest.skip(f"Live server test failed (expected if no live server/data): {type(e).__name__}: {e}")
 
-    def test_list_live_gvfs_directory(self, live_gravitino_config):
+    def test_list_live_gvfs_directory(self, gravitino_only_config):
         """Test listing files in a live Gravitino fileset."""
         # URL format: gvfs://fileset/catalog/schema/fileset/path
         gvfs_dir = os.environ.get("GRAVITINO_TEST_DIR", "gvfs://fileset/s3_fileset_catalog3/test_schema/test_fileset/")
 
         try:
+            print(f"PYTHON DEBUG: About to call daft.read_parquet with gvfs_url: {gvfs_dir}")
+            print(f"PYTHON DEBUG: Passing gravitino_only_config: {gravitino_only_config}")
             # Attempt to list files in the directory
-            files = daft.from_glob_path(gvfs_dir + "**/*.parquet", io_config=live_gravitino_config)
+            files = daft.from_glob_path(gvfs_dir + "**/*.parquet", io_config=gravitino_only_config)
             result = files.collect()
 
             print(f"✓ Found {len(result)} files in {gvfs_dir}")

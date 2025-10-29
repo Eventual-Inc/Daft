@@ -68,8 +68,10 @@ impl Display for IOConfig {
 {}
 {}
 {}
-",
-            self.s3, self.azure, self.gcs, self.http, self.tos
+{}
+{}
+{}",
+            self.s3, self.azure, self.gcs, self.http, self.tos, self.unity, self.gravitino, self.hf,
         )
     }
 }

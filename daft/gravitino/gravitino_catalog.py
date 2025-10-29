@@ -397,10 +397,15 @@ class GravitinoClient:
                 # Fallback to old API format for backward compatibility
                 storage_location = properties.get("location", "")
 
-            # Convert Gravitino file URL format to Daft-compatible format
+            # Convert Gravitino URL formats to Daft-compatible formats
             # Gravitino returns "file:/path" but Daft expects "file:///path"
             if storage_location.startswith("file:/") and not storage_location.startswith("file:///"):
                 storage_location = storage_location.replace("file:/", "file:///", 1)
+
+            # Convert s3a:// (Hadoop/Spark format) to s3:// (AWS S3 format)
+            if storage_location.startswith("s3a://"):
+                storage_location = storage_location.replace("s3a://", "s3://", 1)
+                print(f"PYTHON DEBUG [load_fileset]: Converted s3a:// to s3:// -> {storage_location}")
 
             fileset_catalog = self.load_catalog(catalog_name)
             catalog_properties = fileset_catalog.properties
@@ -430,7 +435,8 @@ class GravitinoClient:
     def to_io_config(self) -> IOConfig:
         """Convert client configuration to IOConfig.
 
-        Returns an IOConfig with the Gravitino configuration from this client.
+        Returns an IOConfig with only the Gravitino configuration from this client.
+        S3 and other storage credentials are handled per-fileset by the Gravitino source.
         """
         from daft.io import GravitinoConfig
 
@@ -442,4 +448,5 @@ class GravitinoClient:
             password=self._password,
             token=self._token,
         )
+        # Only include Gravitino config - let Gravitino source handle storage credentials
         return IOConfig(gravitino=gravitino_config)

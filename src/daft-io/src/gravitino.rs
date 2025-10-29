@@ -114,8 +114,10 @@ impl GravitinoSource {
 
             let py_io_config = fileset.getattr(intern!(py, "io_config"))?;
             let io_config = if py_io_config.is_none() {
+                println!("RUST DEBUG [get_or_create_io_client]: Fileset {} has no io_config, using default", name);
                 IOConfig::default()
             } else {
+                println!("RUST DEBUG [get_or_create_io_client]: Fileset {} has io_config, extracting", name);
                 py_io_config
                     .extract::<common_io_config::python::IOConfig>()?
                     .config
@@ -147,6 +149,10 @@ impl GravitinoSource {
         &self,
         path: &str,
     ) -> super::Result<(Arc<dyn ObjectSource>, String)> {
+        println!(
+            "RUST DEBUG [fileset_path_to_source_and_url]: Processing path: {}",
+            path
+        );
         let url = url::Url::parse(path).context(InvalidUrlSnafu { path })?;
 
         // Check that the scheme is gvfs and host is fileset
@@ -174,6 +180,10 @@ impl GravitinoSource {
         let fileset_path = segments.join("/");
 
         let combined_name = format!("{catalog_name}.{schema_name}.{fileset_name}");
+        println!(
+            "RUST DEBUG [fileset_path_to_source_and_url]: Combined fileset name: {}",
+            combined_name
+        );
 
         let client = self.get_or_create_io_client(&combined_name).await?;
 
@@ -182,7 +192,16 @@ impl GravitinoSource {
         } else {
             format!("{}/{}", client.storage_location, fileset_path)
         };
+        println!(
+            "RUST DEBUG [fileset_path_to_source_and_url]: Final source path: {}",
+            source_path
+        );
+
         let source = client.io_client.get_source(&source_path).await?;
+        println!(
+            "RUST DEBUG [fileset_path_to_source_and_url]: Created source for path: {}",
+            source_path
+        );
 
         Ok((source, source_path))
     }
@@ -200,8 +219,20 @@ impl ObjectSource for GravitinoSource {
         range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
+        println!("RUST DEBUG [GravitinoSource::get]: Getting file: {}", uri);
         let (source, source_uri) = self.fileset_path_to_source_and_url(uri).await?;
-        source.get(&source_uri, range, io_stats).await
+        println!(
+            "RUST DEBUG [GravitinoSource::get]: Delegating to underlying source for: {}",
+            source_uri
+        );
+        let result = source.get(&source_uri, range, io_stats).await;
+        if let Err(ref e) = result {
+            println!(
+                "RUST DEBUG [GravitinoSource::get]: Error from underlying source: {:?}",
+                e
+            );
+        }
+        result
     }
 
     async fn put(&self, uri: &str, data: Bytes, io_stats: Option<IOStatsRef>) -> super::Result<()> {
