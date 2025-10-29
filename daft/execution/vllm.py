@@ -212,7 +212,7 @@ class DistributedVLLMExecutor(VLLMExecutor):
         import ray
 
         route_to = ray.get(self.router_actor.route.remote(prefix, len(prompts)))
-        self.local_llm_actors[route_to].submit.remote(prefix, prompts, rows)
+        ray.get(self.local_llm_actors[route_to].submit.remote(prefix, prompts, rows))
 
     def poll(self) -> tuple[list[str], RecordBatch] | None:
         import ray
