@@ -21,7 +21,7 @@ use crate::{
     },
     plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
     python::ray::RayTaskResult,
-    statistics::{HttpSubscriber, StatisticsManager, StatisticsSubscriber},
+    statistics::StatisticsSubscriber,
 };
 
 #[pyclass(frozen)]
@@ -155,25 +155,10 @@ impl PyDistributedPhysicalPlanRunner {
             })
             .collect();
 
-        let mut subscribers: Vec<Box<dyn StatisticsSubscriber>> =
+        let subscribers: Vec<Box<dyn StatisticsSubscriber>> =
             vec![Box::new(FlotillaProgressBar::try_new(py)?)];
 
-        tracing::info!("Checking DAFT_DASHBOARD_URL environment variable");
-        match std::env::var("DAFT_DASHBOARD_URL") {
-            Ok(url) => {
-                tracing::info!("DAFT_DASHBOARD_URL is set to: {}", url);
-                tracing::info!("Adding HttpSubscriber to statistics manager");
-                subscribers.push(Box::new(HttpSubscriber::new()));
-            }
-            Err(_) => {
-                tracing::info!("DAFT_DASHBOARD_URL not set, skipping HttpSubscriber");
-            }
-        }
-
-        let statistics_manager = StatisticsManager::new(subscribers);
-        let plan_result = self
-            .runner
-            .run_plan(&plan.plan, psets, statistics_manager)?;
+        let plan_result = self.runner.run_plan(&plan.plan, psets, subscribers)?;
         let part_stream = PythonPartitionRefStream {
             inner: Arc::new(Mutex::new(plan_result.into_stream())),
         };

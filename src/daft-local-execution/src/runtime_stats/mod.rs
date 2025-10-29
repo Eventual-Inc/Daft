@@ -199,6 +199,7 @@ impl RuntimeStatsManager {
                             let event = runtime_stats.snapshot();
                             snapshot_container.push((*node_id, event));
                         }
+
                         for res in future::join_all(subscribers.iter().map(|subscriber| {
                             subscriber.handle_event(snapshot_container.as_slice())
                         })).await {

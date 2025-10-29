@@ -48,7 +48,10 @@ snafu = {workspace = true}
 tokio = {workspace = true, features = ["test-util"]}
 tokio-util = {workspace = true}
 tracing = {workspace = true}
-uuid.workspace = true
+uuid = {workspace = true}
+reqwest = {workspace = true, default-features = false}
+bincode = {workspace = true}
+serde = {workspace = true}
 
 [features]
 python = [

@@ -30,7 +30,9 @@ tokio-stream = {workspace = true}
 tokio-util = {workspace = true}
 tracing = {workspace = true}
 uuid = {workspace = true}
-itertools.workspace = true
+itertools = {workspace = true}
+opentelemetry = {workspace = true}
+dashmap = {workspace = true}
 
 [features]
 python = [
