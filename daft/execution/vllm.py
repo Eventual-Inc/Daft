@@ -78,6 +78,9 @@ class BlockingVLLMExecutor(VLLMExecutor):
         self.completed_tasks.append((outputs, rows))
 
     def poll(self) -> tuple[list[str], RecordBatch] | None:
+        if len(self.completed_tasks) == 0:
+            return None
+
         completed_outputs = [output for outputs in (t[0] for t in self.completed_tasks) for output in outputs]
         completed_rows = [t[1] for t in self.completed_tasks]
         completed_rows_batch = RecordBatch.concat(completed_rows)
