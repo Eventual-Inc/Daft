@@ -1,14 +1,11 @@
 # AI
 
-Daft has a Provider interface and model protocols for various inference APIs.
-
 ## Providers
 
 ::: daft.ai.provider.Provider
     options:
         filters: ["!^_"]
         heading_level: 3
-
 
 ::: daft.ai.provider.load_provider
     options:
@@ -22,7 +19,12 @@ Daft has a Provider interface and model protocols for various inference APIs.
     options:
         heading_level: 3
 
+
 ## Model Protocols
+
+::: daft.ai.protocols.Prompter
+    options:
+        heading_level: 3
 
 ::: daft.ai.protocols.TextEmbedder
     options:
