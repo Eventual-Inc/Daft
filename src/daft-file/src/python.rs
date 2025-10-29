@@ -31,7 +31,7 @@ impl PyFileReference {
     }
 
     pub fn __enter__(&self) -> PyResult<PyDaftFile> {
-        Ok(DaftFile::new_blocking(self.inner.as_ref().clone())?.into())
+        Ok(DaftFile::load_blocking(self.inner.as_ref().clone(), true)?.into())
     }
 
     pub fn _get_file(&self) -> FileReference {
@@ -106,7 +106,7 @@ impl PyDaftFile {
 impl PyDaftFile {
     #[staticmethod]
     fn _from_file_reference(f: PyFileReference) -> PyResult<Self> {
-        Ok(DaftFile::new_blocking(f.inner.as_ref().clone())?.into())
+        Ok(DaftFile::load_blocking(f.inner.as_ref().clone(), false)?.into())
     }
 
     #[pyo3(signature=(size=-1))]

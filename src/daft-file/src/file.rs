@@ -15,9 +15,10 @@ pub struct DaftFile {
     pub(crate) cursor: Option<FileCursor>,
     pub(crate) position: usize,
 }
-
+// TODO(universalmind303): convert all the Read and Seek impls to AsyncRead and AsyncSeek.
+// The python wrapper should handle blocking, but the core implementation should be fully async.
 impl DaftFile {
-    pub async fn new(file_ref: FileReference) -> DaftResult<Self> {
+    pub async fn load(file_ref: FileReference, download_small_files: bool) -> DaftResult<Self> {
         match file_ref.inner {
             DataOrReference::Reference(path, io_conf) => {
                 let media_type = file_ref.media_type;
@@ -41,10 +42,10 @@ impl DaftFile {
                 // Default to 16MB buffer
                 const DEFAULT_BUFFER_SIZE: usize = 16 * 1024 * 1024;
 
-                let mut reader = ObjectSourceReader::new(source, path, None, file_size);
-                if !supports_range || file_size <= DEFAULT_BUFFER_SIZE {
-                    let mut buf = Vec::with_capacity(file_size);
-                    reader.read_to_end(&mut buf)?;
+                let reader = ObjectSourceReader::new(source, path, None, file_size);
+                if !supports_range || (file_size <= DEFAULT_BUFFER_SIZE && download_small_files) {
+                    let buf = reader.read_full_content().await?;
+
                     Ok(Self::from_bytes(media_type, buf))
                 } else {
                     // we wrap it in a BufReader so we are not making so many network requests for each byte read
@@ -65,9 +66,9 @@ impl DaftFile {
     }
 
     /// Create a new file. unlike the async `new`, this will block the current thread until the file is created.
-    pub fn new_blocking(file_ref: FileReference) -> DaftResult<Self> {
+    pub fn load_blocking(file_ref: FileReference, download_small_files: bool) -> DaftResult<Self> {
         let rt = common_runtime::get_io_runtime(true);
-        rt.block_within_async_context(async move { Self::new(file_ref).await })
+        rt.block_within_async_context(Self::load(file_ref, download_small_files))
             .flatten()
     }
 
@@ -76,10 +77,13 @@ impl DaftFile {
         path: String,
         io_conf: Option<IOConfig>,
     ) -> DaftResult<Self> {
-        Self::new_blocking(FileReference {
-            media_type,
-            inner: DataOrReference::Reference(path, io_conf.map(Arc::new)),
-        })
+        Self::load_blocking(
+            FileReference {
+                media_type,
+                inner: DataOrReference::Reference(path, io_conf.map(Arc::new)),
+            },
+            true,
+        )
     }
 
     pub fn from_bytes(media_type: MediaType, bytes: Vec<u8>) -> Self {
@@ -128,8 +132,7 @@ impl ObjectSourceReader {
             size,
         }
     }
-    // Helper to read the entire file content
-    fn read_full_content(&self) -> io::Result<Vec<u8>> {
+    fn read_full_content_blocking(&self) -> io::Result<Vec<u8>> {
         let rt = common_runtime::get_io_runtime(true);
 
         let source = self.source.clone();
@@ -150,6 +153,20 @@ impl ObjectSourceReader {
         })
         .map_err(map_async_error)
         .flatten()
+    }
+
+    async fn read_full_content(&self) -> io::Result<Vec<u8>> {
+        let result = self
+            .source
+            .get(&self.uri, None, self.io_stats.clone())
+            .await
+            .map_err(map_get_error)?;
+
+        result
+            .bytes()
+            .await
+            .map(|b| b.to_vec())
+            .map_err(map_bytes_error)
     }
 }
 
@@ -210,7 +227,7 @@ impl Read for ObjectSourceReader {
     }
 
     fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
-        let content = self.read_full_content()?;
+        let content = self.read_full_content_blocking()?;
 
         if self.position >= content.len() {
             return Ok(0);

@@ -89,7 +89,7 @@ impl ScalarUDF for VideoFile {
 
         // todo(universalmind303): can we use an async stream here instead so we're not blocking on each iteration
         fn verify_file(file_ref: FileReference) -> DaftResult<FileReference> {
-            let mut daft_file = DaftFile::new_blocking(file_ref.clone())?;
+            let mut daft_file = DaftFile::load_blocking(file_ref.clone(), false)?;
 
             let mime_type = daft_file.guess_mime_type();
             match mime_type {
@@ -191,7 +191,7 @@ impl ScalarUDF for Size {
                 let opt: Option<u64> = s
                     .get(i)
                     .map(|f| {
-                        let f = DaftFile::new_blocking(f)?;
+                        let f = DaftFile::load_blocking(f, false)?;
                         let size = f.size()?;
                         DaftResult::Ok(size as _)
                     })
