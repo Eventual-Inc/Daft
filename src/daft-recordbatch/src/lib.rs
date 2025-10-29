@@ -34,7 +34,7 @@ use daft_dsl::{
 };
 use daft_functions_list::SeriesListExtension;
 use file_info::FileInfos;
-use futures::{StreamExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt, future::try_join_all};
 use num_traits::ToPrimitive;
 #[cfg(feature = "python")]
 pub mod ffi;
@@ -1024,6 +1024,17 @@ impl RecordBatch {
             .try_collect()?;
 
         self.process_eval_results(exprs, result_series)
+    }
+
+    pub async fn eval_expression_list_async(&self, exprs: Vec<BoundExpr>) -> DaftResult<Self> {
+        let futs = exprs
+            .clone()
+            .into_iter()
+            .map(|e| self.eval_expression_async(e));
+
+        let result_series = try_join_all(futs).await?;
+
+        self.process_eval_results(exprs.as_ref(), result_series)
     }
 
     pub async fn par_eval_expression_list(

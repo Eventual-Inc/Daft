@@ -2708,6 +2708,7 @@ dependencies = [
  "mime_guess",
  "pyo3",
  "serde",
+ "tokio",
  "typetag",
  "url",
 ]

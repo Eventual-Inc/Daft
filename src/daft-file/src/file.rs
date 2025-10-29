@@ -71,12 +71,23 @@ impl DaftFile {
     }
 
     pub fn from_path(path: String, io_conf: Option<IOConfig>) -> DaftResult<Self> {
-        let rt = common_runtime::get_io_runtime(true);
+        let fut = Self::new(FileReference::Reference(path, io_conf.map(Arc::new)));
 
-        rt.block_within_async_context(Self::new(FileReference::Reference(
-            path,
-            io_conf.map(Arc::new),
-        )))?
+        // Since DaftFile can be used standalone, and within daft.func's,
+        // it may or may not be inside an existing runtime. and it may or may not be on the main thread.
+        match tokio::runtime::Handle::try_current() {
+            // if it's inside a udf, we can't block on the main thread as we get the tokio error:
+            // `attempted to block the current thread while the thread is being used to drive asynchronous tasks.`
+            // So as a workaround, we spawn a new thread and block on it.
+            Ok(handle) => std::thread::spawn(move || handle.block_on(fut))
+                .join()
+                .unwrap(),
+            // if there's no runtime, we can block on the current thread
+            Err(_) => {
+                let rt = common_runtime::get_io_runtime(true);
+                rt.block_on_current_thread(fut)
+            }
+        }
     }
 
     pub fn from_bytes(bytes: Vec<u8>) -> Self {

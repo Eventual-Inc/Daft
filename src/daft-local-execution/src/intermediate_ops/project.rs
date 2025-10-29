@@ -125,7 +125,9 @@ impl IntermediateOperator for ProjectOperator {
                             .par_eval_expression_list(&projection, num_parallel_exprs)
                             .await?
                     } else {
-                        input.eval_expression_list(&projection)?
+                        input
+                            .eval_expression_list_async(Arc::unwrap_or_clone(projection))
+                            .await?
                     };
                     Ok((
                         state,
