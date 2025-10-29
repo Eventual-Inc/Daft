@@ -20,7 +20,7 @@ use std::{
 
 use arc_swap::ArcSwap;
 use common_error::{DaftError, DaftResult};
-use common_runtime::{RuntimeRef, RuntimeTask, get_io_runtime};
+use common_runtime::{RuntimeRef, RuntimeTask};
 use console::style;
 use resource_manager::MemoryManager;
 pub use run::{ExecutionEngineResult, NativeExecutor};
@@ -177,7 +177,6 @@ impl ExecutionRuntimeContext {
 
 pub(crate) struct ExecutionTaskSpawner {
     runtime_ref: RuntimeRef,
-    io_runtime: RuntimeRef,
     memory_manager: Arc<MemoryManager>,
     runtime_stats: Arc<dyn RuntimeStats>,
     outer_span: tracing::Span,
@@ -190,12 +189,10 @@ impl ExecutionTaskSpawner {
         runtime_stats: Arc<dyn RuntimeStats>,
         span: tracing::Span,
     ) -> Self {
-        let io_runtime = get_io_runtime(true);
         Self {
             runtime_ref,
             memory_manager,
             runtime_stats,
-            io_runtime,
             outer_span: span,
         }
     }
@@ -235,24 +232,6 @@ impl ExecutionTaskSpawner {
             self.outer_span.clone(),
         );
         self.runtime_ref.spawn(timed_fut)
-    }
-
-    pub fn spawn_io_task<F, O>(
-        &self,
-        future: F,
-        inner_span: tracing::Span,
-    ) -> RuntimeTask<DaftResult<O>>
-    where
-        F: Future<Output = DaftResult<O>> + Send + 'static,
-        O: Send + 'static,
-    {
-        let instrumented = future.instrument(inner_span);
-        let timed_fut = TimedFuture::new(
-            instrumented,
-            self.runtime_stats.clone(),
-            self.outer_span.clone(),
-        );
-        self.io_runtime.spawn(timed_fut)
     }
 }
 

@@ -11,7 +11,6 @@ use std::{
 use arrow2::{array::Array, chunk::Chunk};
 use common_display::table_display::{StrValue, make_comfy_table};
 use common_error::{DaftError, DaftResult};
-#[cfg(feature = "python")]
 use common_runtime::get_compute_runtime;
 use daft_core::{
     array::ops::{
@@ -35,7 +34,7 @@ use daft_dsl::{
 };
 use daft_functions_list::SeriesListExtension;
 use file_info::FileInfos;
-use futures::{FutureExt, StreamExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt};
 use num_traits::ToPrimitive;
 #[cfg(feature = "python")]
 pub mod ffi;
@@ -1016,22 +1015,13 @@ impl RecordBatch {
         Ok(series)
     }
 
+    // TODO(universalmind303): since we now have async expressions, the entire evaluation should happen async
+    // Refactor all eval_expression's to async and remove the sync version.
     pub fn eval_expression_list(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
         let result_series: Vec<_> = exprs
             .iter()
             .map(|e| self.eval_expression(e))
             .try_collect()?;
-
-        self.process_eval_results(exprs, result_series)
-    }
-
-    pub async fn eval_expression_list_async(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
-        let s = futures::stream::iter(exprs).map(|e| self.eval_expression_async(e.clone()));
-        let result_series: Vec<Series> = s
-            .collect::<futures::stream::FuturesOrdered<_>>()
-            .await
-            .try_collect()
-            .await?;
 
         self.process_eval_results(exprs, result_series)
     }
@@ -1054,14 +1044,11 @@ impl RecordBatch {
             .map(|(i, e)| (i, self.eval_expression(&e)))
             .collect::<Vec<_>>();
 
+        let compute_runtime = get_compute_runtime();
+
         let compute_futures = compute_exprs.into_iter().map(|(i, e)| {
             let table = self.clone();
-            async move {
-                table
-                    .eval_expression_async(e)
-                    .map(|expr| DaftResult::Ok((i, expr)))
-                    .await
-            }
+            compute_runtime.spawn(async move { (i, table.eval_expression_async(e).await) })
         });
 
         // Collect the results of the compute expressions

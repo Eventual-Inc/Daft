@@ -44,31 +44,6 @@ impl MicroPartition {
             eval_stats,
         ))
     }
-    pub async fn eval_expression_list_async(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
-        let io_stats = IOStatsContext::new("MicroPartition::eval_expression_list");
-
-        let expected_schema = infer_schema(exprs, &self.schema)?;
-
-        let tables = self.tables_or_read(io_stats)?;
-
-        let evaluated_table_futs = tables
-            .iter()
-            .map(|table| table.eval_expression_list_async(exprs));
-
-        let evaluated_tables = futures::future::try_join_all(evaluated_table_futs).await?;
-
-        let eval_stats = self
-            .statistics
-            .as_ref()
-            .map(|table_statistics| table_statistics.eval_expression_list(exprs))
-            .transpose()?;
-
-        Ok(Self::new_loaded(
-            expected_schema.into(),
-            Arc::new(evaluated_tables),
-            eval_stats,
-        ))
-    }
 
     pub async fn par_eval_expression_list(
         &self,
