@@ -734,6 +734,7 @@ mod tests {
         // Check that the limit commutes with the actor pool project.
         let optimizer = OptimizerBuilder::default()
             .with_default_optimizations()
+            .enrich_with_stats(None)
             .build();
         let opt_plan = optimizer.optimize(plan, |_, _, _, _, _| {})?;
         assert_eq!(
@@ -795,6 +796,7 @@ mod tests {
         // Check that the filter commutes with the actor pool project.
         let optimizer = OptimizerBuilder::default()
             .with_default_optimizations()
+            .enrich_with_stats(None)
             .build();
         let opt_plan = optimizer.optimize(plan, |_, _, _, _, _| {})?;
         assert_eq!(
@@ -851,6 +853,7 @@ mod tests {
 
         let optimizer = OptimizerBuilder::default()
             .with_default_optimizations()
+            .enrich_with_stats(None)
             .build();
         let opt_plan = optimizer.optimize(plan, |_, _, _, _, _| {})?;
 
