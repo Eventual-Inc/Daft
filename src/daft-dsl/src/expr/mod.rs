@@ -36,8 +36,8 @@ use super::functions::FunctionExpr;
 use crate::{
     expr::bound_expr::BoundExpr,
     functions::{
-        BuiltinScalarFn, BuiltinScalarFnVariant, FUNCTION_REGISTRY, FunctionArg, FunctionArgs,
-        FunctionEvaluator, function_display_without_formatter, function_semantic_id,
+        BuiltinScalarFn, FUNCTION_REGISTRY, FunctionArg, FunctionArgs, FunctionEvaluator,
+        function_display_without_formatter, function_semantic_id,
         python::LegacyPythonUDF,
         scalar::{ScalarFn, scalar_function_semantic_id},
         sketch::{HashableVecPercentiles, SketchExpr},

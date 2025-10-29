@@ -79,6 +79,7 @@ impl DaftFile {
             // if it's inside a udf, we can't block on the main thread as we get the tokio error:
             // `attempted to block the current thread while the thread is being used to drive asynchronous tasks.`
             // So as a workaround, we spawn a new thread and block on it.
+            // TODO(universalmind303): this is a very temporary workaround. I plan on redoing some internals to DaftFile.
             Ok(handle) => std::thread::spawn(move || handle.block_on(fut))
                 .join()
                 .unwrap(),
