@@ -71,23 +71,11 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
         else:
             raise TypeError(f"Expected schema to be Schema or pa.Schema, got {type(schema)}")
 
-        table = self._load_existing_dataset(lance)
-        self._validate_dataset(table)
-
         self._version: int = 0
         self._table_schema: pa.Schema | None = None
 
-        if table is not None:
-            self._table_schema = table.schema
-            self._version = table.latest_version
-            if not pyarrow_schema_castable(self._pyarrow_schema, self._table_schema) and not (
-                self._mode == "overwrite"
-            ):
-                raise ValueError(
-                    "Schema of data does not match table schema\n"
-                    f"Data schema:\n{self._pyarrow_schema}\nTable Schema:\n{self._table_schema}"
-                )
-
+        table = self._load_existing_dataset(lance)
+        self._validate_dataset(table)
         self._schema = Schema._from_field_name_and_types(
             [
                 ("num_fragments", DataType.int64()),
