@@ -18,7 +18,7 @@ fn get_or_init_task_locals(py: Python) -> &'static pyo3_async_runtimes::TaskLoca
     PYO3_ASYNC_RUNTIME_LOCALS.get_or_init(|| {
         let event_loop_module = py
             .import(pyo3::intern!(py, "daft.event_loop"))
-            .expect("Failed to import native executor module");
+            .expect("Failed to import event loop module");
         let event_loop = event_loop_module
             .call_method0(pyo3::intern!(py, "get_or_init_event_loop"))
             .expect("Failed to call get_or_init_event_loop method")
