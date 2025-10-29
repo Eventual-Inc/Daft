@@ -1,4 +1,4 @@
-use std::{collections::BinaryHeap, sync::Arc};
+use std::{collections::BinaryHeap, sync::Arc, time::Duration};
 
 use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
@@ -77,7 +77,12 @@ impl VLLMExecutor {
         Ok(Self(executor))
     }
 
-    fn submit(&self, prefix: String, prompts: Vec<String>, rows: RecordBatch) -> DaftResult<()> {
+    fn submit(
+        &self,
+        prefix: Option<String>,
+        prompts: Vec<String>,
+        rows: RecordBatch,
+    ) -> DaftResult<()> {
         use daft_recordbatch::python::PyRecordBatch;
 
         let py_rows = PyRecordBatch { record_batch: rows };
@@ -148,7 +153,12 @@ impl VLLMExecutor {
         Ok(Self)
     }
 
-    fn submit(&self, _prefix: String, _prompts: Vec<String>, _rows: RecordBatch) -> DaftResult<()> {
+    fn submit(
+        &self,
+        _prefix: Option<String>,
+        _prompts: Vec<String>,
+        _rows: RecordBatch,
+    ) -> DaftResult<()> {
         unimplemented!("VLLMExecutor::submit is not supported without the Python feature.")
     }
 
@@ -205,13 +215,15 @@ impl VLLMSink {
     /// Pop values from the buffer for submission until the buffer length is less than the max buffer size.
     ///
     /// Pops them by bucketing based on prefix and submitting the largest buckets first.
+    #[allow(clippy::type_complexity)]
     fn pop_tasks(
         &self,
         state: &mut VLLMState,
         max_buffer_size: usize,
-    ) -> DaftResult<Vec<(String, Vec<String>, RecordBatch)>> {
+    ) -> DaftResult<Vec<(Option<String>, Vec<String>, RecordBatch)>> {
         let expr = self.expr.inner();
         let prefix_match_threshold = expr.prefix_match_threshold.0;
+        let min_bucket_size = expr.min_bucket_size;
         let expr_input = BoundExpr::new_unchecked(expr.input.clone());
 
         if state.buffer_size > max_buffer_size {
@@ -250,6 +262,7 @@ impl VLLMSink {
             let split_len = end_idx - prev_split_idx;
             splits.push((split_len, prev_split_idx, end_idx));
 
+            let mut curr_task: Option<(Vec<String>, Vec<RecordBatch>)> = None;
             let mut tasks = Vec::new();
             while state.buffer_size > max_buffer_size {
                 let (len, start_idx, end_idx) = splits.pop().unwrap();
@@ -271,8 +284,34 @@ impl VLLMSink {
                 let prefix = prompts[0][..prefix_len].to_string();
 
                 let rb = sorted.slice(start_idx, end_idx)?;
-                tasks.push((prefix, prompts, rb));
+
+                if len >= min_bucket_size {
+                    // if the task is large enough, just submit it
+                    tasks.push((Some(prefix), prompts, rb));
+                } else {
+                    // otherwise, accumulate the task until it's large enough
+                    if let Some(task) = &mut curr_task {
+                        task.0.extend(prompts);
+                        task.1.push(rb);
+                    } else {
+                        curr_task = Some((prompts, vec![rb]));
+                    }
+
+                    if curr_task.as_ref().unwrap().0.len() >= min_bucket_size {
+                        let (prompts, rows) = curr_task.unwrap();
+                        let rows = RecordBatch::concat(&rows)?;
+                        tasks.push((None, prompts, rows));
+                        curr_task = None;
+                    }
+                }
+
                 state.buffer_size -= len;
+            }
+
+            if let Some(curr_task) = curr_task {
+                let prompts = curr_task.0;
+                let rows = RecordBatch::concat(&curr_task.1)?;
+                tasks.push((None, prompts, rows));
             }
 
             let mut remaining = Vec::with_capacity(splits.len());
@@ -339,7 +378,7 @@ impl StreamingSink for VLLMSink {
                             .unwrap();
                         let prompts = this.get_prompts_for_batch(&batch)?;
 
-                        vec![(String::new(), prompts, batch)]
+                        vec![(None, prompts, batch)]
                     };
 
                     for (prefix, prompts, rows) in tasks {
@@ -384,6 +423,8 @@ impl StreamingSink for VLLMSink {
                     if all_tasks_finished {
                         Ok(StreamingSinkFinalizeOutput::Finished(output))
                     } else {
+                        // Add a delay before polling again to avoid excessive polling
+                        tokio::time::sleep(Duration::from_millis(500)).await;
                         Ok(StreamingSinkFinalizeOutput::HasMoreOutput { states, output })
                     }
                 },

@@ -310,6 +310,7 @@ def prompt(
                 prompter_descriptor.gpus_per_actor,
                 prompter_descriptor.do_prefix_routing,
                 prompter_descriptor.max_buffer_size,
+                prompter_descriptor.min_bucket_size,
                 prompter_descriptor.prefix_match_threshold,
                 prompter_descriptor.load_balance_threshold,
                 prompter_descriptor.batch_size,

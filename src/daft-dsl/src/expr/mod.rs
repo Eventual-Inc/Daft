@@ -310,6 +310,7 @@ pub struct VLLMExpr {
     pub gpus_per_actor: usize,
     pub do_prefix_routing: bool,
     pub max_buffer_size: usize,
+    pub min_bucket_size: usize,
     pub prefix_match_threshold: FloatWrapper<f64>,
     pub load_balance_threshold: usize,
     pub batch_size: Option<usize>,
@@ -1362,13 +1363,14 @@ impl Expr {
                 gpus_per_actor,
                 do_prefix_routing,
                 max_buffer_size,
+                min_bucket_size,
                 prefix_match_threshold,
                 load_balance_threshold,
                 batch_size,
                 engine_args,
                 generate_args,
             }) => FieldID::new(format!(
-                "VLLM({model}, {input}, {concurrency}, {gpus_per_actor}, {do_prefix_routing}, {max_buffer_size}, {prefix_match_threshold:?}, {load_balance_threshold}, {batch_size:?}, {engine_args:?}, {generate_args:?})"
+                "VLLM({model}, {input}, {concurrency}, {gpus_per_actor}, {do_prefix_routing}, {max_buffer_size}, {min_bucket_size}, {prefix_match_threshold:?}, {load_balance_threshold}, {batch_size:?}, {engine_args:?}, {generate_args:?})"
             )),
         }
     }
@@ -1539,6 +1541,7 @@ impl Expr {
                 gpus_per_actor,
                 do_prefix_routing,
                 max_buffer_size,
+                min_bucket_size,
                 prefix_match_threshold,
                 load_balance_threshold,
                 batch_size,
@@ -1551,6 +1554,7 @@ impl Expr {
                 gpus_per_actor: *gpus_per_actor,
                 do_prefix_routing: *do_prefix_routing,
                 max_buffer_size: *max_buffer_size,
+                min_bucket_size: *min_bucket_size,
                 prefix_match_threshold: prefix_match_threshold.clone(),
                 load_balance_threshold: *load_balance_threshold,
                 batch_size: *batch_size,

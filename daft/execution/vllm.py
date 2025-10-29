@@ -91,6 +91,12 @@ class LocalVLLMExecutor(VLLMExecutor):
         asyncio.set_event_loop(self.loop)
         self.loop_ready.set()  # Signal that the loop is ready
         self.loop.run_forever()
+        self.loop.create_task(self._periodic_log())
+
+    async def _periodic_log(self) -> None:
+        while True:
+            await asyncio.sleep(5)
+            await self.llm.do_log_stats()
 
     async def _generate(self, prompt: str, row: RecordBatch) -> None:
         with self.counter_lock:
@@ -107,7 +113,7 @@ class LocalVLLMExecutor(VLLMExecutor):
         with self.task_count_lock:
             self.running_task_count -= 1
 
-    def submit(self, _prefix: str, prompts: list[str], rows: RecordBatch) -> None:
+    def submit(self, _prefix: str | None, prompts: list[str], rows: RecordBatch) -> None:
         """Submit a batch of prompts and rows to the executor, returning once all tasks are started."""
         assert len(prompts) == len(rows), "Number of prompts and rows must match"
 
@@ -166,7 +172,7 @@ class DistributedVLLMExecutor(VLLMExecutor):
             if actor_state["Address"]["NodeID"] == current_node_id:
                 self.local_llm_actors.append(llm_actor)
 
-    def submit(self, prefix: str, prompts: list[str], rows: RecordBatch) -> None:
+    def submit(self, prefix: str | None, prompts: list[str], rows: RecordBatch) -> None:
         import ray
 
         route_to = ray.get(self.router_actor.route.remote(prefix, len(prompts)))
@@ -206,29 +212,32 @@ class DistributedVLLMExecutor(VLLMExecutor):
 class PrefixRouter:
     def __init__(self, num_llm_actors: int, load_balance_threshold: int, max_recent_prefixes: int = 8):
         self.loads = [0] * num_llm_actors
-        self.recent_prefixes: list[list[str]] = [[] for _ in range(num_llm_actors)]
+        self.recent_prefixes: list[list[str | None]] = [[] for _ in range(num_llm_actors)]
         self.load_balance_threshold = load_balance_threshold
         self.max_recent_prefixes = max_recent_prefixes
         self.unfinished_actors = 0
 
-    def route(self, prefix: str, batch_size: int) -> int:
+    def route(self, prefix: str | None, batch_size: int) -> int:
         min_load = min(self.loads)
 
-        best_actor = None
-        best_actor_recency = None
-        for i in range(len(self.loads)):
-            if self.loads[i] < min_load + self.load_balance_threshold:
-                try:
-                    recency = self.recent_prefixes[i].index(prefix)
-                except ValueError:
-                    recency = None
+        if prefix is None:
+            best_actor = self.loads.index(min_load)
+        else:
+            best_actor = None
+            best_actor_recency = None
+            for i in range(len(self.loads)):
+                if self.loads[i] < min_load + self.load_balance_threshold:
+                    try:
+                        recency = self.recent_prefixes[i].index(prefix)
+                    except ValueError:
+                        recency = None
 
-                if best_actor_recency is None:
-                    best_actor = i
-                    best_actor_recency = recency
-                elif recency is not None and recency < best_actor_recency:
-                    best_actor = i
-                    best_actor_recency = recency
+                    if best_actor_recency is None:
+                        best_actor = i
+                        best_actor_recency = recency
+                    elif recency is not None and recency < best_actor_recency:
+                        best_actor = i
+                        best_actor_recency = recency
 
         assert best_actor is not None, "No actor found for prefix"
 

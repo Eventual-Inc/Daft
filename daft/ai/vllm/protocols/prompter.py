@@ -24,6 +24,7 @@ class VLLMPrefixCachedPrompterDescriptor(PrompterDescriptor):
     gpus_per_actor: int = 1
     do_prefix_routing: bool = True
     max_buffer_size: int = 5000
+    min_bucket_size: int = 16
     prefix_match_threshold: float = 0.5
     load_balance_threshold: int = 1000
     batch_size: int | None = None
@@ -43,6 +44,7 @@ class VLLMPrefixCachedPrompterDescriptor(PrompterDescriptor):
             "gpus_per_actor": self.gpus_per_actor,
             "do_prefix_routing": self.do_prefix_routing,
             "max_buffer_size": self.max_buffer_size,
+            "min_bucket_size": self.min_bucket_size,
             "prefix_match_threshold": self.prefix_match_threshold,
             "load_balance_threshold": self.load_balance_threshold,
             "batch_size": self.batch_size,
