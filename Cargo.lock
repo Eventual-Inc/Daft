@@ -2656,6 +2656,7 @@ dependencies = [
  "daft-schema",
  "futures",
  "itertools 0.14.0",
+ "opentelemetry-proto",
  "pyo3",
  "pyo3-async-runtimes",
  "rand 0.8.5",
@@ -2665,6 +2666,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
+ "tonic",
  "tracing",
  "uuid 1.18.1",
 ]
@@ -5847,10 +5849,14 @@ version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c40da242381435e18570d5b9d50aca2a4f4f4d8e146231adb4e7768023309b3"
 dependencies = [
+ "base64 0.22.1",
+ "hex",
  "opentelemetry",
  "opentelemetry_sdk",
  "prost 0.13.5",
+ "serde",
  "tonic",
+ "tracing",
 ]
 
 [[package]]

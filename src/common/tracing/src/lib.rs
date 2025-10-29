@@ -7,7 +7,8 @@ use common_runtime::get_io_runtime;
 use opentelemetry::{KeyValue, global, trace::TracerProvider};
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
-    metrics::Temporality, trace::{Sampler, SdkTracerProvider}, Resource
+    Resource,
+    trace::{Sampler, SdkTracerProvider},
 };
 use tracing_subscriber::{layer::SubscriberExt, prelude::*};
 
@@ -64,7 +65,7 @@ async fn init_otlp_metrics_provider(otlp_endpoint: &str) {
     // let stdout_exporter = opentelemetry_stdout::MetricExporter::builder()
     //     .with_temporality(Temporality::Cumulative)
     //     .build();
-        
+
     let metrics_provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
         .with_periodic_exporter(metrics_exporter) // To customize the export interval, set the **"OTEL_METRIC_EXPORT_INTERVAL"** environment variable (in milliseconds).
         // .with_periodic_exporter(stdout_exporter)

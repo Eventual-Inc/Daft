@@ -9,6 +9,7 @@ use crate::{
 };
 
 pub mod http_subscriber;
+pub mod otlp_server;
 pub use http_subscriber::HttpSubscriber;
 
 const STATISTICS_LOG_TARGET: &str = "DaftStatisticsManager";
@@ -134,13 +135,37 @@ pub type StatisticsManagerRef = Arc<StatisticsManager>;
 #[derive(Default)]
 pub struct StatisticsManager {
     subscribers: Mutex<Vec<Box<dyn StatisticsSubscriber>>>,
+    #[allow(dead_code)]
+    otlp_server_task: Option<common_runtime::RuntimeTask<()>>,
 }
 
 impl StatisticsManager {
     pub fn new(subscribers: Vec<Box<dyn StatisticsSubscriber>>) -> StatisticsManagerRef {
-        Arc::new(Self {
+        let mut manager = Self {
             subscribers: Mutex::new(subscribers),
-        })
+            otlp_server_task: None,
+        };
+
+        // Always start embedded OTLP Metrics gRPC server, binding to all interfaces
+        let addr: std::net::SocketAddr = "0.0.0.0:4317".parse().unwrap();
+        let rt = common_runtime::get_io_runtime(true);
+        let task = common_runtime::RuntimeTask::new(rt.runtime.handle(), async move {
+            if let Err(e) = crate::statistics::otlp_server::serve_otlp_metrics(addr).await {
+                tracing::error!(
+                    target = STATISTICS_LOG_TARGET,
+                    error = %e,
+                    "OTLP metrics server terminated with error"
+                );
+            }
+        });
+        tracing::info!(
+            target = STATISTICS_LOG_TARGET,
+            address = %addr,
+            "Started embedded OTLP metrics gRPC server"
+        );
+        manager.otlp_server_task = Some(task);
+
+        Arc::new(manager)
     }
 
     pub fn handle_event(&self, event: StatisticsEvent) -> DaftResult<()> {

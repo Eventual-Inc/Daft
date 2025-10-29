@@ -298,6 +298,7 @@ num-traits = "0.2"
 numpy = "0.26.0"
 opentelemetry = {version = "0.29", features = ["trace", "metrics"]}
 opentelemetry-otlp = {version = "0.29", features = ["grpc-tonic"]}
+opentelemetry-proto = {version = "0.29", features = ["gen-tonic"]}
 opentelemetry_sdk = "0.29"
 parking_lot = "0.12.3"
 path_macro = "1.0.0"
