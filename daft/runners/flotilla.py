@@ -19,6 +19,7 @@ from daft.daft import (
     RayTaskResult,
     set_compute_runtime_num_worker_threads,
 )
+from daft.event_loop import set_event_loop
 from daft.expressions import Expression, ExpressionsProjection
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.partitioning import (
@@ -52,6 +53,7 @@ class RaySwordfishActor:
             os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(num_gpus))
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
         set_compute_runtime_num_worker_threads(num_cpus)
+        set_event_loop(asyncio.get_running_loop())
 
     async def run_plan(
         self,
@@ -229,6 +231,7 @@ class RemoteFlotillaRunner:
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
         self.plan_runner = DistributedPhysicalPlanRunner()
         ray._private.worker.blocking_get_inside_async_warned = True
+        set_event_loop(asyncio.get_running_loop())
 
     def run_plan(
         self,

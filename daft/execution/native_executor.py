@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import asyncio
-import threading
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from daft.daft import (
     LocalPhysicalPlan,
@@ -14,10 +12,11 @@ from daft.daft import (
     NativeExecutor as _NativeExecutor,
 )
 from daft.dataframe.display import MermaidOptions
+from daft.event_loop import get_or_init_event_loop
 from daft.recordbatch import MicroPartition
 
 if TYPE_CHECKING:
-    from collections.abc import Coroutine, Iterator
+    from collections.abc import Iterator
 
     from daft.context import DaftContext
     from daft.logical.builder import LogicalPlanBuilder
@@ -26,30 +25,6 @@ if TYPE_CHECKING:
         MaterializedResult,
         PartitionT,
     )
-
-
-LOOP: asyncio.AbstractEventLoop | None = None
-
-
-def get_or_init_event_loop() -> asyncio.AbstractEventLoop:
-    global LOOP
-    try:
-        return asyncio.get_running_loop()
-    except RuntimeError:
-        if LOOP is None:
-            loop = asyncio.new_event_loop()
-            thread = threading.Thread(
-                target=loop.run_forever,
-                name="DaftBackgroundEventLoop",
-                daemon=True,
-            )
-            thread.start()
-            LOOP = loop
-        return LOOP
-
-
-def run_coroutine_threadsafe(loop: asyncio.AbstractEventLoop, coroutine: Coroutine[Any, Any, Any]) -> Any:
-    return asyncio.run_coroutine_threadsafe(coroutine, loop).result()
 
 
 class LocalPartitionStream:
@@ -90,10 +65,9 @@ class NativeExecutor:
                 context,
             )
 
-        loop = get_or_init_event_loop()
-        async_iter = LocalPartitionStream(run_coroutine_threadsafe(loop, run_executor()))
+        async_iter = LocalPartitionStream(get_or_init_event_loop().run(run_executor()))
         while True:
-            part = run_coroutine_threadsafe(loop, async_iter.__anext__())
+            part = get_or_init_event_loop().run(async_iter.__anext__())
             if part is None:
                 break
             yield LocalMaterializedResult(MicroPartition._from_pymicropartition(part))

@@ -14,14 +14,16 @@ static PYO3_ASYNC_RUNTIME_LOCALS: OnceLock<pyo3_async_runtimes::TaskLocals> = On
 /// Get or initialize the pyo3 async runtime task locals (which includes the asyncio event loop) from the current Python context.
 ///
 /// This function checks if there is already a running event loop, and if not, it initializes one on a background thread.
-pub fn get_or_init_task_locals(py: Python) -> &'static pyo3_async_runtimes::TaskLocals {
+fn get_or_init_task_locals(py: Python) -> &'static pyo3_async_runtimes::TaskLocals {
     PYO3_ASYNC_RUNTIME_LOCALS.get_or_init(|| {
         let event_loop_module = py
             .import(pyo3::intern!(py, "daft.execution.native_executor"))
             .expect("Failed to import native executor module");
         let event_loop = event_loop_module
             .call_method0(pyo3::intern!(py, "get_or_init_event_loop"))
-            .expect("Failed to call get_or_init_event_loop method");
+            .expect("Failed to call get_or_init_event_loop method")
+            .getattr(pyo3::intern!(py, "loop"))
+            .expect("Failed to get event loop attribute");
         pyo3_async_runtimes::TaskLocals::new(event_loop)
             .copy_context(py)
             .expect("Failed to copy context")
