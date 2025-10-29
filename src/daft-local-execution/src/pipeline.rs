@@ -63,8 +63,9 @@ use crate::{
     sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource, source::SourceNode},
     state_bridge::BroadcastStateBridge,
     streaming_sink::{
-        anti_semi_hash_join_probe::AntiSemiProbeSink, base::StreamingSinkNode, concat::ConcatSink,
-        limit::LimitSink, monotonically_increasing_id::MonotonicallyIncreasingIdSink,
+        anti_semi_hash_join_probe::AntiSemiProbeSink, async_udf::AsyncUdfSink,
+        base::StreamingSinkNode, concat::ConcatSink, limit::LimitSink,
+        monotonically_increasing_id::MonotonicallyIncreasingIdSink,
         outer_hash_join_probe::OuterHashJoinProbeSink, sort_merge_join_probe::SortMergeJoinProbe,
     },
 };
@@ -511,24 +512,43 @@ fn physical_plan_to_pipeline(
             stats_state,
             schema,
         }) => {
-            let proj_op = UdfOperator::try_new(
-                expr.clone(),
-                udf_properties.clone(),
-                passthrough_columns.clone(),
-                schema,
-                input.schema(),
-            )
-            .with_context(|_| PipelineCreationSnafu {
-                plan_name: physical_plan.name(),
-            })?;
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            IntermediateNode::new(
-                Arc::new(proj_op),
-                vec![child_node],
-                stats_state.clone(),
-                ctx,
-            )
-            .boxed()
+            if udf_properties.is_async
+                && udf_properties.concurrency.is_none()
+                && !udf_properties.use_process.unwrap_or(false)
+            {
+                let async_sink = AsyncUdfSink::new(
+                    expr.clone(),
+                    udf_properties.clone(),
+                    passthrough_columns.clone(),
+                    schema,
+                );
+                StreamingSinkNode::new(
+                    Arc::new(async_sink),
+                    vec![child_node],
+                    stats_state.clone(),
+                    ctx,
+                )
+                .boxed()
+            } else {
+                let proj_op = UdfOperator::try_new(
+                    expr.clone(),
+                    udf_properties.clone(),
+                    passthrough_columns.clone(),
+                    schema,
+                    input.schema(),
+                )
+                .with_context(|_| PipelineCreationSnafu {
+                    plan_name: physical_plan.name(),
+                })?;
+                IntermediateNode::new(
+                    Arc::new(proj_op),
+                    vec![child_node],
+                    stats_state.clone(),
+                    ctx,
+                )
+                .boxed()
+            }
         }
         #[cfg(feature = "python")]
         LocalPhysicalPlan::DistributedActorPoolProject(

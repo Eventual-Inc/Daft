@@ -1953,6 +1953,10 @@ class RaySwordfishWorker:
         total_memory_bytes: int,
     ) -> None: ...
 
+class PyLocalPartitionStream:
+    def __aiter__(self) -> PyLocalPartitionStream: ...
+    async def __anext__(self) -> PyMicroPartition: ...
+
 class NativeExecutor:
     def __init__(self) -> None: ...
     def run(
@@ -1960,18 +1964,9 @@ class NativeExecutor:
         plan: LocalPhysicalPlan,
         psets: dict[str, list[PyMicroPartition]],
         daft_ctx: PyDaftContext,
-        results_buffer_size: int | None,
-        context: dict[str, str] | None = None,
-    ) -> Iterator[PyMicroPartition]: ...
-    # Primarily used for Flotilla, so subscribers are unused
-    def run_async(
-        self,
-        plan: LocalPhysicalPlan,
-        psets: dict[str, list[PyMicroPartition]],
-        daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: int | None = None,
         context: dict[str, str] | None = None,
-    ) -> AsyncIterator[PyMicroPartition]: ...
+    ) -> PyLocalPartitionStream: ...
     @staticmethod
     def repr_ascii(builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, simple: bool) -> str: ...
     @staticmethod

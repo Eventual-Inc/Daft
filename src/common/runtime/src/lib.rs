@@ -19,6 +19,9 @@ use tokio::{
 #[cfg(feature = "python")]
 pub mod python;
 
+#[cfg(feature = "python")]
+pub use python::execute_python_coroutine;
+
 static NUM_CPUS: LazyLock<usize> =
     LazyLock::new(|| std::thread::available_parallelism().unwrap().get());
 static THREADED_IO_RUNTIME_NUM_WORKER_THREADS: LazyLock<usize> = LazyLock::new(|| 8.min(*NUM_CPUS));

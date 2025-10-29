@@ -2665,6 +2665,7 @@ dependencies = [
  "common-macros",
  "common-py-serde",
  "common-resource-request",
+ "common-runtime",
  "common-treenode",
  "daft-core",
  "daft-sketch",
@@ -2675,6 +2676,7 @@ dependencies = [
  "pyo3",
  "rstest",
  "serde",
+ "tokio",
  "typetag",
 ]
 
@@ -3195,6 +3197,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
  "arrow2",
+ "async-recursion",
  "comfy-table 7.1.4",
  "common-arrow-ffi",
  "common-display",

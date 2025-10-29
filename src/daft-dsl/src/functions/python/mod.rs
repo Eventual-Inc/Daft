@@ -297,6 +297,7 @@ pub struct UDFProperties {
     pub concurrency: Option<usize>,
     pub use_process: Option<bool>,
     pub max_retries: Option<usize>,
+    pub is_async: bool,
     pub on_error: Option<OnError>,
 }
 
@@ -327,6 +328,7 @@ impl UDFProperties {
                         concurrency: *concurrency,
                         use_process: *use_process,
                         max_retries: None,
+                        is_async: false,
                         on_error: None,
                     });
                 }
@@ -337,6 +339,7 @@ impl UDFProperties {
                     use_process,
                     max_retries,
                     on_error,
+                    is_async,
                     ..
                 }))) => {
                     num_udfs += 1;
@@ -351,6 +354,7 @@ impl UDFProperties {
                         concurrency: *max_concurrency,
                         use_process: *use_process,
                         max_retries: *max_retries,
+                        is_async: *is_async,
                         on_error: Some(*on_error),
                     });
                 }
@@ -376,6 +380,7 @@ impl UDFProperties {
                         concurrency: *max_concurrency,
                         use_process: *use_process,
                         max_retries: *max_retries,
+                        is_async: false,
                         on_error: Some(*on_error),
                     });
                 }
