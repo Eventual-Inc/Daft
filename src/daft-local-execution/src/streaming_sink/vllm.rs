@@ -77,11 +77,6 @@ impl VLLMExecutor {
         Ok(Self(executor))
     }
 
-    fn teardown(&self) -> DaftResult<()> {
-        Python::attach(|py| self.0.call_method0(py, intern!(py, "teardown")))?;
-        Ok(())
-    }
-
     fn submit(&self, prefix: String, prompts: Vec<String>, rows: RecordBatch) -> DaftResult<()> {
         use daft_recordbatch::python::PyRecordBatch;
 
@@ -171,10 +166,6 @@ impl VLLMExecutor {
         unimplemented!(
             "VLLMExecutor::all_tasks_finished is not supported without the Python feature."
         )
-    }
-
-    fn teardown(&self) -> DaftResult<()> {
-        unimplemented!("VLLMExecutor::teardown is not supported without the Python feature.")
     }
 }
 
@@ -391,7 +382,6 @@ impl StreamingSink for VLLMSink {
                     let output = this.poll_tasks(state)?;
 
                     if all_tasks_finished {
-                        state.executor.teardown()?;
                         Ok(StreamingSinkFinalizeOutput::Finished(output))
                     } else {
                         Ok(StreamingSinkFinalizeOutput::HasMoreOutput { states, output })

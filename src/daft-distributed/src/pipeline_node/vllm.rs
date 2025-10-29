@@ -132,12 +132,6 @@ impl VLLMNode {
             }
         }
 
-        Python::attach(|py| {
-            llm_actors
-                .as_ref()
-                .call_method0(py, intern!(py, "teardown"))
-        })?;
-
         Ok(())
     }
 

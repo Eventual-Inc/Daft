@@ -26,10 +26,6 @@ class VLLMExecutor(ABC):
     def all_tasks_finished(self) -> bool:
         pass
 
-    @abstractmethod
-    def teardown(self) -> None:
-        pass
-
 
 class DummyVLLMExecutor(VLLMExecutor):
     def __init__(self, _model: str, _engine_args: dict[str, Any], _generate_args: dict[str, Any]):
@@ -55,9 +51,6 @@ class DummyVLLMExecutor(VLLMExecutor):
 
     def all_tasks_finished(self) -> bool:
         return self._finished_submitting
-
-    def teardown(self) -> None:
-        pass
 
 
 class LocalVLLMExecutor(VLLMExecutor):
@@ -90,7 +83,6 @@ class LocalVLLMExecutor(VLLMExecutor):
         self.loop_thread.start()
         self.loop_ready.wait()
 
-        self._shutdown = False
         self._finished_submitting = False
 
     def _run_event_loop(self) -> None:
@@ -99,38 +91,6 @@ class LocalVLLMExecutor(VLLMExecutor):
         asyncio.set_event_loop(self.loop)
         self.loop_ready.set()  # Signal that the loop is ready
         self.loop.run_forever()
-
-    def teardown(self) -> None:
-        if self._shutdown:
-            return
-
-        self._shutdown = True
-
-        del self.llm
-
-        if self.loop is not None and self.loop.is_running():
-            # Cancel all tasks before stopping the loop
-            future = asyncio.run_coroutine_threadsafe(self._shutdown_loop(), self.loop)
-            try:
-                future.result(timeout=5.0)
-            except Exception:
-                # Force stop if shutdown takes too long
-                self.loop.call_soon_threadsafe(self.loop.stop)
-
-        if self.loop_thread.is_alive():
-            self.loop_thread.join(timeout=5.0)
-
-    async def _shutdown_loop(self) -> None:
-        """Cancel all pending tasks and stop the event loop."""
-        # Get all pending tasks (excluding the current task)
-        tasks = [task for task in asyncio.all_tasks(self.loop) if task is not asyncio.current_task()]
-
-        # Wait for all tasks to complete
-        for task in tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Now stop the loop
-        self.loop.stop()
 
     async def _generate(self, prompt: str, row: RecordBatch) -> None:
         with self.counter_lock:
@@ -149,9 +109,6 @@ class LocalVLLMExecutor(VLLMExecutor):
 
     def submit(self, _prefix: str, prompts: list[str], rows: RecordBatch) -> None:
         """Submit a batch of prompts and rows to the executor, returning once all tasks are started."""
-        if self._shutdown:
-            raise RuntimeError("Cannot submit tasks to a shutdown executor")
-
         assert len(prompts) == len(rows), "Number of prompts and rows must match"
 
         with self.task_count_lock:
@@ -208,11 +165,6 @@ class DistributedVLLMExecutor(VLLMExecutor):
             actor_state = actors(actor_id)
             if actor_state["Address"]["NodeID"] == current_node_id:
                 self.local_llm_actors.append(llm_actor)
-
-    def teardown(self) -> None:
-        for llm_actor in self.local_llm_actors:
-            llm_actor.teardown.remote()
-            llm_actor.__ray_terminate__.remote()
 
     def submit(self, prefix: str, prompts: list[str], rows: RecordBatch) -> None:
         import ray
@@ -315,6 +267,3 @@ class LLMActors:
 
         self.llm_actors = [LocalVLLMExecutorActor.remote(model, engine_args, generate_args) for _ in range(concurrency)]
         self.router_actor = PrefixRouterActor.remote(len(self.llm_actors), load_balance_threshold)
-
-    def teardown(self) -> None:
-        self.router_actor.__ray_terminate__.remote()
