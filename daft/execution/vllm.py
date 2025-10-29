@@ -72,7 +72,17 @@ class BlockingVLLMExecutor(VLLMExecutor):
         self.completed_tasks: list[tuple[list[str], RecordBatch]] = []
 
     def submit(self, prefix: str, prompts: list[str], rows: RecordBatch) -> None:
-        results = self.llm.generate(prompts, self.sampling_params, **self.generate_args)
+        import threading
+
+        results_container = {}
+
+        def run_generate() -> None:
+            results_container["results"] = self.llm.generate(prompts, self.sampling_params, **self.generate_args)
+
+        generate_thread = threading.Thread(target=run_generate)
+        generate_thread.start()
+        generate_thread.join()
+        results = results_container["results"]
         outputs = [r.outputs[0].text for r in results]
 
         self.completed_tasks.append((outputs, rows))
