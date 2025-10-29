@@ -16,7 +16,6 @@ use std::{
 use common_error::DaftResult;
 use common_metrics::NodeID;
 use common_runtime::RuntimeTask;
-use common_tracing::should_enable_opentelemetry;
 use daft_context::Subscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_micropartition::MicroPartition;
@@ -35,8 +34,7 @@ use crate::{
     channel::{Receiver, Sender},
     pipeline::PipelineNode,
     runtime_stats::subscribers::{
-        RuntimeStatsSubscriber, opentelemetry::OpenTelemetrySubscriber,
-        progress_bar::make_progress_bar_manager, query::SubscriberWrapper,
+        RuntimeStatsSubscriber, progress_bar::make_progress_bar_manager, query::SubscriberWrapper,
     },
 };
 
@@ -121,10 +119,6 @@ impl RuntimeStatsManager {
 
         if should_enable_progress_bar() {
             subscribers.push(make_progress_bar_manager(&node_infos));
-        }
-
-        if should_enable_opentelemetry() {
-            subscribers.push(Box::new(OpenTelemetrySubscriber::new(&node_infos)));
         }
 
         let throttle_interval = Duration::from_millis(200);

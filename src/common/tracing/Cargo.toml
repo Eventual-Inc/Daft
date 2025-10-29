@@ -3,6 +3,7 @@ common-runtime = {path = "../runtime", default-features = false}
 opentelemetry = {workspace = true}
 opentelemetry-otlp = {workspace = true}
 opentelemetry_sdk = {workspace = true}
+opentelemetry-stdout = "0.29"
 tracing = {workspace = true}
 tracing-opentelemetry = {version = "0.30", default-features = false, features = ["metrics"]}
 tracing-subscriber = {workspace = true}
