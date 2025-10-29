@@ -71,14 +71,12 @@ class BlockingVLLMExecutor(VLLMExecutor):
 
         self.completed_tasks: list[tuple[list[str], RecordBatch]] = []
 
-    @abstractmethod
     def submit(self, prefix: str, prompts: list[str], rows: RecordBatch) -> None:
         results = self.llm.generate(prompts, self.sampling_params, **self.generate_args)
         outputs = [r.outputs[0].text for r in results]
 
         self.completed_tasks.append((outputs, rows))
 
-    @abstractmethod
     def poll(self) -> tuple[list[str], RecordBatch] | None:
         completed_outputs = [output for outputs in (t[0] for t in self.completed_tasks) for output in outputs]
         completed_rows = [t[1] for t in self.completed_tasks]
@@ -87,11 +85,9 @@ class BlockingVLLMExecutor(VLLMExecutor):
         self.completed_tasks = []
         return completed_outputs, completed_rows_batch
 
-    @abstractmethod
     def finished_submitting(self) -> None:
         self._finished_submitting = True
 
-    @abstractmethod
     def all_tasks_finished(self) -> bool:
         return self._finished_submitting
 
