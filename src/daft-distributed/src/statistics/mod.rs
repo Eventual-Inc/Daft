@@ -7,7 +7,6 @@ use std::{
 
 use common_error::DaftResult;
 use daft_logical_plan::LogicalPlanRef;
-use opentelemetry::global;
 
 use crate::{
     pipeline_node::NodeID,
@@ -106,11 +105,6 @@ impl StatisticsManager {
         runtime_stats: HashMap<NodeID, Arc<dyn RuntimeStats>>,
         subscribers: Vec<Box<dyn StatisticsSubscriber>>,
     ) -> StatisticsManagerRef {
-        eprintln!("Checking something");
-        let meter = global::meter("FlotillaScheduler");
-        let counter = meter.u64_counter("StatisticsManagerTestCounter").build();
-        counter.add(100, &[]);
-
         Arc::new(Self {
             runtime_stats,
             subscribers: Mutex::new(subscribers),

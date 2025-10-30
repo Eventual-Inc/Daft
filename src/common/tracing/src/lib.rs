@@ -56,8 +56,6 @@ async fn init_otlp_metrics_provider(otlp_endpoint: &str) {
         .with_attribute(KeyValue::new("service.name", "daft"))
         .build();
 
-    let stdout_exporter = opentelemetry_stdout::MetricExporter::builder().build();
-
     let metrics_exporter = opentelemetry_otlp::MetricExporter::builder()
         .with_tonic()
         .with_endpoint(otlp_endpoint)
@@ -75,7 +73,6 @@ async fn init_otlp_metrics_provider(otlp_endpoint: &str) {
         .with_periodic_exporter(stdout_exporter)
         .build();
 
-    eprintln!("Setting global default for OTEL metrics");
     global::set_meter_provider(metrics_provider.clone());
 
     *mg = Some(metrics_provider);
@@ -116,7 +113,6 @@ async fn init_otlp_tracer_provider(otlp_endpoint: &str) {
         .with_tracer(tracer)
         .with_filter(tracing::level_filters::LevelFilter::INFO);
 
-    eprintln!("Setting global default for OTEL tracing");
     tracing::subscriber::set_global_default(tracing_subscriber::registry().with(telemetry_layer))
         .unwrap();
 
