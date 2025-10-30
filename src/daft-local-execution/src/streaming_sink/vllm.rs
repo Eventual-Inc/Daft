@@ -240,13 +240,13 @@ impl VLLMSink {
 
             for (i, (p1, p2)) in prompts_vec.iter().tuple_windows().enumerate() {
                 let common_prefix_len = p1
-                    .bytes()
-                    .zip(p2.bytes())
+                    .chars()
+                    .zip(p2.chars())
                     .take_while(|(c1, c2)| c1 == c2)
                     .count();
 
-                let p1_prefix_ratio = common_prefix_len as f64 / p1.len() as f64;
-                let p2_prefix_ratio = common_prefix_len as f64 / p2.len() as f64;
+                let p1_prefix_ratio = common_prefix_len as f64 / p1.chars().count() as f64;
+                let p2_prefix_ratio = common_prefix_len as f64 / p2.chars().count() as f64;
 
                 if p1_prefix_ratio < prefix_match_threshold
                     && p2_prefix_ratio < prefix_match_threshold
@@ -270,10 +270,10 @@ impl VLLMSink {
 
                 // find the longest common prefix in all prompts
                 let mut prefix_len = 0;
-                for i in 0..prompts[0].len() {
+                for i in 0..prompts[0].chars().count() {
                     if prompts
                         .iter()
-                        .all(|p| p.as_bytes().get(i) == prompts[0].as_bytes().get(i))
+                        .all(|p| p.chars().nth(i) == prompts[0].chars().nth(i))
                     {
                         prefix_len = i + 1;
                     } else {
@@ -281,7 +281,7 @@ impl VLLMSink {
                     }
                 }
 
-                let prefix = prompts[0][..prefix_len].to_string();
+                let prefix = prompts[0].chars().take(prefix_len).collect::<String>();
 
                 let rb = sorted.slice(start_idx, end_idx)?;
 
