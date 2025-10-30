@@ -1691,6 +1691,16 @@ class DataFrame:
 
         return df_to_write.write_sink(sink)
 
+    def write_sql(
+        self,
+        table_name: str,
+    ) -> "DataFrame":
+        """Write a DataFrame into a relational database table.
+
+        Currently only supports Postgres and Supabase.
+        """
+        raise NotImplementedError("write_sql is not implemented yet")
+
     ###
     # DataFrame operations
     ###
