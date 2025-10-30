@@ -75,8 +75,8 @@ pub(crate) trait StreamingSink: Send + Sync {
     fn make_state(&self) -> Self::State;
 
     /// Create a new RuntimeStats for this StreamingSink.
-    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::default())
+    fn make_runtime_stats(&self, name: &str) -> Arc<dyn RuntimeStats> {
+        Arc::new(DefaultRuntimeStats::new(name))
     }
 
     /// The maximum number of concurrent workers that can be spawned for this sink.
@@ -118,9 +118,9 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         plan_stats: StatsState,
         ctx: &RuntimeContext,
     ) -> Self {
-        let name = op.name().into();
-        let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::StreamingSink);
-        let runtime_stats = op.make_runtime_stats();
+        let name: Arc<str> = op.name().into();
+        let node_info = ctx.next_node_info(name.clone(), op.op_type(), NodeCategory::StreamingSink);
+        let runtime_stats = op.make_runtime_stats(name.as_ref());
         let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
             op,

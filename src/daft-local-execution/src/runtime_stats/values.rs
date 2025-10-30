@@ -7,6 +7,7 @@ use std::{
 };
 
 use common_metrics::{Stat, StatSnapshotSend, snapshot};
+use opentelemetry::{global, metrics::Counter};
 
 // Common statistic names
 pub const ROWS_IN_KEY: &str = "rows in";
@@ -34,11 +35,31 @@ pub trait RuntimeStats: Send + Sync + std::any::Any {
     fn add_cpu_us(&self, cpu_us: u64);
 }
 
-#[derive(Default)]
 pub struct DefaultRuntimeStats {
     cpu_us: AtomicU64,
     rows_in: AtomicU64,
     rows_out: AtomicU64,
+    cpu_us_otel: Counter<u64>,
+    rows_in_otel: Counter<u64>,
+    rows_out_otel: Counter<u64>,
+}
+
+impl DefaultRuntimeStats {
+    pub fn new(name: &str) -> Self {
+        let meter = global::meter("runtime_stats");
+        let cpu_us_otel = meter.u64_counter(format!("{name}.cpu_us")).build();
+        let rows_in_otel = meter.u64_counter(format!("{name}.rows_in")).build();
+        let rows_out_otel = meter.u64_counter(format!("{name}.rows_out")).build();
+
+        Self {
+            cpu_us: AtomicU64::new(0),
+            rows_in: AtomicU64::new(0),
+            rows_out: AtomicU64::new(0),
+            cpu_us_otel,
+            rows_in_otel,
+            rows_out_otel,
+        }
+    }
 }
 
 impl RuntimeStats for DefaultRuntimeStats {
@@ -56,13 +77,16 @@ impl RuntimeStats for DefaultRuntimeStats {
 
     fn add_rows_in(&self, rows: u64) {
         self.rows_in.fetch_add(rows, Ordering::Relaxed);
+        self.rows_in_otel.add(rows, &[]);
     }
 
     fn add_rows_out(&self, rows: u64) {
         self.rows_out.fetch_add(rows, Ordering::Relaxed);
+        self.rows_out_otel.add(rows, &[]);
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
         self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
+        self.cpu_us_otel.add(cpu_us, &[]);
     }
 }

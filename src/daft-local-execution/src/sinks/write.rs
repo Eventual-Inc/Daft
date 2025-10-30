@@ -14,6 +14,7 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_writers::{AsyncFileWriter, WriteResult, WriterFactory};
+use opentelemetry::{global, metrics::Counter};
 use tracing::{Span, instrument};
 
 use super::blocking_sink::{
@@ -27,12 +28,28 @@ use crate::{
     runtime_stats::{CPU_US_KEY, ROWS_IN_KEY, RuntimeStats},
 };
 
-#[derive(Default)]
 struct WriteStats {
     cpu_us: AtomicU64,
     rows_in: AtomicU64,
     rows_written: AtomicU64,
     bytes_written: AtomicU64,
+
+    cpu_us_otel: Counter<u64>,
+    rows_in_otel: Counter<u64>,
+    rows_written_otel: Counter<u64>,
+    bytes_written_otel: Counter<u64>,
+}
+
+impl WriteStats {
+    pub fn new(name: &str) -> Self {
+        let meter = global::meter("runtime_stats");
+        let cpu_us_otel = meter.u64_counter(format!("{name}.cpu_us")).build();
+        let rows_in_otel = meter.u64_counter(format!("{name}.rows_in")).build();
+        let rows_written_otel = meter.u64_counter(format!("{name}.rows_written")).build();
+        let bytes_written_otel = meter.u64_counter(format!("{name}.bytes_written")).build();
+
+        Self { cpu_us: AtomicU64::new(0), rows_in: AtomicU64::new(0), rows_written: AtomicU64::new(0), bytes_written: AtomicU64::new(0), cpu_us_otel, rows_in_otel, rows_written_otel, bytes_written_otel }
+    }
 }
 
 impl WriteStats {
@@ -41,6 +58,8 @@ impl WriteStats {
             .fetch_add(write_result.rows_written as u64, Ordering::Relaxed);
         self.bytes_written
             .fetch_add(write_result.bytes_written as u64, Ordering::Relaxed);
+        self.rows_written_otel.add(write_result.rows_written as u64, &[]);
+        self.bytes_written_otel.add(write_result.bytes_written as u64, &[]);
     }
 }
 
@@ -60,14 +79,18 @@ impl RuntimeStats for WriteStats {
 
     fn add_rows_in(&self, rows: u64) {
         self.rows_in.fetch_add(rows, Ordering::Relaxed);
+        self.rows_in_otel.add(rows, &[]);
     }
 
     // The 'rows_out' for a WriteSink is the number of files written, which we only know upon 'finalize',
     // so there's no benefit to adding it in runtime stats as it is not real time.
-    fn add_rows_out(&self, _rows: u64) {}
+    fn add_rows_out(&self, _rows: u64) {
+        unreachable!("WriteSink shouldn't emit rows")
+    }
 
     fn add_cpu_us(&self, cpu_us: u64) {
         self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
+        self.cpu_us_otel.add(cpu_us, &[]);
     }
 }
 
@@ -206,8 +229,8 @@ impl BlockingSink for WriteSink {
         Ok(WriteState::new(writer))
     }
 
-    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        Arc::new(WriteStats::default())
+    fn make_runtime_stats(&self, name: &str) -> Arc<dyn RuntimeStats> {
+        Arc::new(WriteStats::new(name))
     }
 
     fn dispatch_spawner(
