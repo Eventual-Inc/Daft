@@ -1,4 +1,5 @@
 [dependencies]
+arrow = {version = "52", features = ["ipc"]}
 async-recursion = "1.0.4"
 async-stream = {workspace = true}
 async-trait = {workspace = true}
@@ -21,6 +22,7 @@ futures = {workspace = true}
 globset = "0.4"
 google-cloud-storage = {version = "0.24.0", default-features = false, features = ["rustls-tls", "auth"]}
 google-cloud-token = {version = "0.1.2"}
+hex = "0.4"
 home = "0.5.9"
 itertools = {workspace = true}
 log = {workspace = true}
@@ -32,6 +34,7 @@ reqwest-retry = "0.7.0"
 retry-policies = "0.4.0"
 serde = {workspace = true}
 snafu = {workspace = true}
+sqlx = {version = "0.7", features = ["runtime-tokio-rustls", "postgres", "sqlite", "mysql", "any"]}
 thiserror = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}

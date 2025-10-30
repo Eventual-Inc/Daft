@@ -106,6 +106,9 @@ impl SinkNode {
                 file_schema,
                 StatsState::NotMaterialized,
             ),
+            SinkInfo::SqlSinkInfo(_) => {
+                panic!("SQL write operations should be handled directly by DataFrame.write_sql()")
+            }
         }
     }
 
@@ -179,6 +182,10 @@ impl PipelineNodeImpl for SinkNode {
             #[cfg(feature = "python")]
             SinkInfo::DataSinkInfo(data_sink_info) => {
                 res.push(format!("Sink: DataSink({})", data_sink_info.name));
+            }
+            SinkInfo::SqlSinkInfo(sql_sink_info) => {
+                res.push(format!("Sink: SQL({})", sql_sink_info.table_name));
+                res.extend(sql_sink_info.multiline_display());
             }
         }
         res.push(format!(

@@ -563,6 +563,10 @@ pub(super) fn translate_single_logical_node(
                     DataSink::new(schema.clone(), data_sink_info.clone(), input_physical),
                 )
                 .arced()),
+                SinkInfo::SqlSinkInfo(_sql_sink_info) => Err(DaftError::InternalError(
+                    "SQL write operations should be handled directly by DataFrame.write_sql()"
+                        .to_string(),
+                )),
             }
         }
         LogicalPlan::MonotonicallyIncreasingId(LogicalMonotonicallyIncreasingId {

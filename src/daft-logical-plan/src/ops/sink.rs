@@ -58,6 +58,13 @@ impl Sink {
             SinkInfo::DataSinkInfo(_) => {
                 vec![Field::new("write_results", DataType::Python)]
             }
+            SinkInfo::SqlSinkInfo(_) => {
+                vec![
+                    Field::new("rows_written", DataType::UInt64),
+                    Field::new("bytes_written", DataType::UInt64),
+                    Field::new("table_name", DataType::Utf8),
+                ]
+            }
         };
         let schema = Schema::new(fields).into();
         Ok(Self {
@@ -113,6 +120,10 @@ impl Sink {
             #[cfg(feature = "python")]
             SinkInfo::DataSinkInfo(data_sink_info) => {
                 res.push(format!("Sink: DataSink({})", data_sink_info.name));
+            }
+            SinkInfo::SqlSinkInfo(sql_sink_info) => {
+                res.push(format!("Sink: SQL({})", sql_sink_info.table_name));
+                res.extend(sql_sink_info.multiline_display());
             }
         }
         res.push(format!("Output schema = {}", self.schema.short_string()));

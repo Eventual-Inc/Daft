@@ -826,6 +826,24 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    pub fn write_sql(
+        &self,
+        table_name: String,
+        connection_string: String,
+        mode: String,
+    ) -> DaftResult<Self> {
+        use crate::sink_info::SqlSinkInfo;
+
+        let sink_info = SinkInfo::SqlSinkInfo(SqlSinkInfo {
+            table_name,
+            connection_string,
+            mode,
+        });
+        let logical_plan: LogicalPlan =
+            ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
     /// Async equivalent of `optimize`
     /// This is safe to call from a tokio runtime
     pub fn optimize_async(&self) -> impl Future<Output = DaftResult<Self>> {
@@ -1476,6 +1494,19 @@ impl PyLogicalPlanBuilder {
     #[pyo3(signature = (name, sink))]
     pub fn datasink_write(&self, name: String, sink: pyo3::Py<pyo3::PyAny>) -> PyResult<Self> {
         Ok(self.builder.datasink_write(name, Arc::new(sink))?.into())
+    }
+
+    #[pyo3(signature = (table_name, connection_string, mode))]
+    pub fn write_sql(
+        &self,
+        table_name: String,
+        connection_string: String,
+        mode: String,
+    ) -> PyResult<Self> {
+        Ok(self
+            .builder
+            .write_sql(table_name, connection_string, mode)?
+            .into())
     }
 
     pub fn schema(&self) -> PyResult<PySchema> {

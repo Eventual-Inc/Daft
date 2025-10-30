@@ -9,6 +9,7 @@ mod object_io;
 mod object_store_glob;
 mod retry;
 pub mod s3_like;
+pub mod sql;
 mod stats;
 mod stream_utils;
 #[cfg(feature = "python")]

@@ -7,7 +7,7 @@ mod py {
     use futures::TryStreamExt;
     use pyo3::{prelude::*, types::PyDict};
 
-    use crate::{get_io_client, parse_url, s3_like, stats::IOStatsContext};
+    use crate::{get_io_client, parse_url, s3_like, sql, stats::IOStatsContext};
 
     #[pyfunction(signature = (
         input,
@@ -81,6 +81,7 @@ mod py {
         common_io_config::python::register_modules(parent)?;
         parent.add_function(wrap_pyfunction!(io_glob, parent)?)?;
         parent.add_function(wrap_pyfunction!(s3_config_from_env, parent)?)?;
+        sql::register(parent)?;
         Ok(())
     }
 }

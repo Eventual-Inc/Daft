@@ -19,6 +19,7 @@ pub enum SinkInfo<E = ExprRef> {
     CatalogInfo(CatalogInfo<E>),
     #[cfg(feature = "python")]
     DataSinkInfo(DataSinkInfo),
+    SqlSinkInfo(SqlSinkInfo),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -172,6 +173,23 @@ impl DataSinkInfo {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct SqlSinkInfo {
+    pub table_name: String,
+    pub connection_string: String,
+    pub mode: String, // "create", "append", or "replace"
+}
+
+impl SqlSinkInfo {
+    pub fn multiline_display(&self) -> Vec<String> {
+        vec![
+            format!("Table Name = {}", self.table_name),
+            format!("Connection = {}", self.connection_string),
+            format!("Mode = {}", self.mode),
+        ]
+    }
+}
+
 impl<E> OutputFileInfo<E>
 where
     E: ToString,
@@ -228,6 +246,7 @@ impl SinkInfo {
             Self::DataSinkInfo(data_sink_info) => {
                 Ok(SinkInfo::DataSinkInfo(data_sink_info.clone()))
             }
+            Self::SqlSinkInfo(sql_sink_info) => Ok(SinkInfo::SqlSinkInfo(sql_sink_info.clone())),
         }
     }
 }

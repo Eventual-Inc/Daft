@@ -426,3 +426,7 @@ class LogicalPlanBuilder:
     def write_datasink(self, name: str, sink: DataSink[Any]) -> LogicalPlanBuilder:
         builder = self._builder.datasink_write(name, sink)
         return LogicalPlanBuilder(builder)
+
+    def write_sql(self, table_name: str, connection_string: str, mode: str) -> LogicalPlanBuilder:
+        builder = self._builder.write_sql(table_name, connection_string, mode)
+        return LogicalPlanBuilder(builder)

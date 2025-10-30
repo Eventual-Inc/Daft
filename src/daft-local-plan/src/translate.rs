@@ -440,6 +440,10 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     sink.schema.clone(),
                     sink.stats_state.clone(),
                 )),
+                SinkInfo::SqlSinkInfo(_sql_sink_info) => Err(DaftError::InternalError(
+                    "SQL write operations should be handled directly by DataFrame.write_sql()"
+                        .to_string(),
+                )),
             }
         }
         LogicalPlan::Explode(explode) => {
