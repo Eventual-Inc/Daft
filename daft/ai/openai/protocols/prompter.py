@@ -6,14 +6,14 @@ from typing import TYPE_CHECKING, Any
 from openai import AsyncOpenAI
 
 from daft.ai.protocols import Prompter, PrompterDescriptor
-from daft.ai.utils import get_http_udf_options
+from daft.ai.typing import UDFOptions
 from daft.file import File
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
 
     from daft.ai.openai.typing import OpenAIProviderOptions
-    from daft.ai.typing import Options, UDFOptions
+    from daft.ai.typing import Options
 
 
 @dataclass
@@ -35,7 +35,7 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
         return self.model_options
 
     def get_udf_options(self) -> UDFOptions:
-        return get_http_udf_options()
+        return UDFOptions(concurrency=None, num_gpus=None)
 
     def instantiate(self) -> Prompter:
         return OpenAIPrompter(
