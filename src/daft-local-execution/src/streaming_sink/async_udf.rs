@@ -33,10 +33,16 @@ pub struct AsyncUdfSink {
 
 const DEFAULT_MAX_INFLIGHT_TASKS: usize = 64;
 fn get_max_inflight_tasks() -> usize {
-    std::option_env!("DAFT_MAX_ASYNC_UDF_INFLIGHT_TASKS")
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(DEFAULT_MAX_INFLIGHT_TASKS)
-        .max(1)
+    let max_inflight_tasks = std::env::var("DAFT_MAX_ASYNC_UDF_INFLIGHT_TASKS");
+    if let Ok(max_inflight_tasks) = max_inflight_tasks {
+        if let Ok(max_inflight_tasks) = max_inflight_tasks.parse::<usize>() {
+            max_inflight_tasks.max(1)
+        } else {
+            DEFAULT_MAX_INFLIGHT_TASKS
+        }
+    } else {
+        DEFAULT_MAX_INFLIGHT_TASKS
+    }
 }
 
 impl AsyncUdfSink {
@@ -125,7 +131,8 @@ impl StreamingSink for AsyncUdfSink {
 
                         // Force drain tasks until the number of inflight tasks is less than the concurrency limit
                         let mut num_inflight_tasks = state.task_set.len();
-                        while num_inflight_tasks > get_max_inflight_tasks() {
+                        let max_inflight_tasks = get_max_inflight_tasks();
+                        while num_inflight_tasks > max_inflight_tasks {
                             if let Some(join_res) = state.task_set.join_next().await {
                                 let batch = join_res??;
                                 ready_batches.push(batch);

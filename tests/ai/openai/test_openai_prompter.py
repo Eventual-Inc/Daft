@@ -114,7 +114,7 @@ def test_openai_prompter_descriptor_get_udf_options():
     )
 
     udf_options = descriptor.get_udf_options()
-    assert udf_options.concurrency is not None
+    assert udf_options.concurrency is None
     # num_gpus is None for HTTP-based models
     assert udf_options.num_gpus in (0, None)
 

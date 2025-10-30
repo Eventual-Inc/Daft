@@ -3608,7 +3608,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
     def decode(
         self,
         on_error: Literal["raise", "null"] = "raise",
-        mode: str | ImageMode = ImageMode.RGB,
+        mode: str | ImageMode | None = None,
     ) -> Expression:
         """(DEPRECATED) Please use `daft.functions.decode_image` instead."""
         warnings.warn(
