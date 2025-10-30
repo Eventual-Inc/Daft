@@ -32,7 +32,8 @@ struct Cli {
 fn run_dashboard(py: Python, args: DashboardArgs) {
     println!("🚀 Launching the Daft Dashboard!");
 
-    let filter = Directive::from_str(if args.verbose { "INFO" } else { "ERROR" }).unwrap();
+    let filter = Directive::from_str(if args.verbose { "INFO" } else { "ERROR" })
+        .expect("Failed to parse tracing filter");
 
     // Set the subscriber for the detached run
     tracing_subscriber::registry()
@@ -52,9 +53,25 @@ fn run_dashboard(py: Python, args: DashboardArgs) {
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
     runtime.spawn(async move {
         println!(
-            "✨ View the dashboard at http://{}:{}. Press Ctrl+C to shutdown",
-            daft_dashboard::DEFAULT_SERVER_ADDR,
-            args.port
+            "{}  To get started, run your Daft script with env `{}`",
+            console::style("█").magenta(),
+            console::style(format!(
+                "DAFT_DASHBOARD_URL=\"http://{}:{}\" python ...",
+                daft_dashboard::DEFAULT_SERVER_ADDR,
+                args.port
+            ))
+            .bold(),
+        );
+        println!(
+            "✨ View the dashboard at {}. Press Ctrl+C to shutdown",
+            console::style(format!(
+                "http://{}:{}",
+                daft_dashboard::DEFAULT_SERVER_ADDR,
+                args.port
+            ))
+            .bold()
+            .magenta()
+            .underlined(),
         );
         daft_dashboard::launch_server(args.port, async move { shutdown_rx.await.unwrap() })
             .await
@@ -71,7 +88,7 @@ fn run_dashboard(py: Python, args: DashboardArgs) {
         }
         // Necessary to allow other threads to acquire the GIL
         // Such as for Python array deserialization
-        py.allow_threads(|| {
+        py.detach(|| {
             std::thread::sleep(std::time::Duration::from_millis(100));
         });
     }

@@ -232,8 +232,7 @@ impl Display for Literal {
             #[cfg(feature = "python")]
             Self::Python(pyobj) => write!(f, "PyObject({})", {
                 use pyo3::prelude::*;
-                Python::with_gil(|py| pyobj.0.call_method0(py, pyo3::intern!(py, "__str__")))
-                    .unwrap()
+                Python::attach(|py| pyobj.0.call_method0(py, pyo3::intern!(py, "__str__"))).unwrap()
             }),
             Self::Struct(entries) => {
                 write!(f, "Struct(")?;
@@ -543,6 +542,14 @@ impl Literal {
             _ => Ok(None),
         }
         .map_err(|e| DaftError::ValueError(format!("Failed to convert literal to usize: {}", e)))
+    }
+
+    /// If the literal is `Float32`, return it. Otherwise, return None.
+    pub fn as_f32(&self) -> Option<f32> {
+        match self {
+            Self::Float32(f) => Some(*f),
+            _ => None,
+        }
     }
 
     /// If the literal is `Float64`, return it. Otherwise, return None.

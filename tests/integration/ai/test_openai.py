@@ -33,7 +33,7 @@ def session(skip_no_credential):
     with daft.session() as session:
         # the key is not explicitly needed, but was added with angry lookup for clarity.
         session.set_provider("openai", api_key=os.environ["OPENAI_API_KEY"])
-        yield session
+        yield
 
 
 @pytest.mark.integration()
@@ -78,7 +78,7 @@ def test_prompt_plain_text(session):
         "answer",
         prompt(
             daft.col("question"),
-            model="gpt-4o-mini",
+            model="gpt-5-mini",
         ),
     )
 
@@ -119,7 +119,7 @@ def test_prompt_structured_output(session):
                 daft.col("anime"),
             ),
             return_format=MovieReview,
-            model="gpt-4o-mini",
+            model="gpt-5-mini",
         ),
     )
 

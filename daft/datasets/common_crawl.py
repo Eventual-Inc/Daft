@@ -109,9 +109,8 @@ def common_crawl(
         ╭────────────────┬─────────────────┬───────────┬────────────────────┬────────────┬────────────────────┬──────────────┬──────────────╮
         │ WARC-Record-ID ┆ WARC-Target-URI ┆ WARC-Type ┆ WARC-Date          ┆      …     ┆ WARC-Identified-Pa ┆ warc_content ┆ warc_headers │
         │ ---            ┆ ---             ┆ ---       ┆ ---                ┆            ┆ yload-Type         ┆ ---          ┆ ---          │
-        │ Utf8           ┆ Utf8            ┆ Utf8      ┆ Timestamp(Nanoseco ┆ (1 hidden) ┆ ---                ┆ Binary       ┆ Utf8         │
-        │                ┆                 ┆           ┆ nds,               ┆            ┆ Utf8               ┆              ┆              │
-        │                ┆                 ┆           ┆ Some("Etc/UTC"))   ┆            ┆                    ┆              ┆              │
+        │ String         ┆ String          ┆ String    ┆ Timestamp[ns,      ┆ (1 hidden) ┆ ---                ┆ Binary       ┆ String       │
+        │                ┆                 ┆           ┆ "Etc/UTC"]         ┆            ┆ String             ┆              ┆              │
         ╰────────────────┴─────────────────┴───────────┴────────────────────┴────────────┴────────────────────┴──────────────┴──────────────╯
         <BLANKLINE>
         (No data to display: Dataframe not materialized)
@@ -121,9 +120,8 @@ def common_crawl(
         ╭─────────────────┬─────────────────┬────────────┬─────────────────┬────────────┬─────────────────┬────────────────┬────────────────╮
         │ WARC-Record-ID  ┆ WARC-Target-URI ┆ WARC-Type  ┆ WARC-Date       ┆      …     ┆ WARC-Identified ┆ warc_content   ┆ warc_headers   │
         │ ---             ┆ ---             ┆ ---        ┆ ---             ┆            ┆ -Payload-Type   ┆ ---            ┆ ---            │
-        │ Utf8            ┆ Utf8            ┆ Utf8       ┆ Timestamp(Nanos ┆ (1 hidden) ┆ ---             ┆ Binary         ┆ Utf8           │
-        │                 ┆                 ┆            ┆ econds, Some("E ┆            ┆ Utf8            ┆                ┆                │
-        │                 ┆                 ┆            ┆ tc/UTC"))       ┆            ┆                 ┆                ┆                │
+        │ String          ┆ String          ┆ String     ┆ Timestamp[ns    ┆ (1 hidden) ┆ ---             ┆ Binary         ┆ String         │
+        │                 ┆                 ┆            ┆ "Etc/UTC"]      ┆            ┆ String          ┆                ┆                │
         ╞═════════════════╪═════════════════╪════════════╪═════════════════╪════════════╪═════════════════╪════════════════╪════════════════╡
         │ 0cb039e8-d357-4 ┆ None            ┆ warcinfo   ┆ 2025-08-16      ┆ …          ┆ None            ┆ b"Software-Inf ┆ {"Content-Type │
         │ 85f-95dd-cdfdb… ┆                 ┆            ┆ 01:03:20 UTC    ┆            ┆                 ┆ o:             ┆ ":"application │
@@ -145,9 +143,8 @@ def common_crawl(
         ╭─────────────────┬─────────────────┬───────────┬─────────────────┬────────────┬─────────────────┬─────────────────┬────────────────╮
         │ WARC-Record-ID  ┆ WARC-Target-URI ┆ WARC-Type ┆ WARC-Date       ┆      …     ┆ WARC-Identified ┆ warc_content    ┆ warc_headers   │
         │ ---             ┆ ---             ┆ ---       ┆ ---             ┆            ┆ -Payload-Type   ┆ ---             ┆ ---            │
-        │ Utf8            ┆ Utf8            ┆ Utf8      ┆ Timestamp(Nanos ┆ (1 hidden) ┆ ---             ┆ Binary          ┆ Utf8           │
-        │                 ┆                 ┆           ┆ econds, Some("E ┆            ┆ Utf8            ┆                 ┆                │
-        │                 ┆                 ┆           ┆ tc/UTC"))       ┆            ┆                 ┆                 ┆                │
+        │ String          ┆ String          ┆ String    ┆ Timestamp[ns    ┆ (1 hidden) ┆ ---             ┆ Binary          ┆ String         │
+        │                 ┆                 ┆           ┆ "Etc/UTC"]      ┆            ┆ String          ┆                 ┆                │
         ╞═════════════════╪═════════════════╪═══════════╪═════════════════╪════════════╪═════════════════╪═════════════════╪════════════════╡
         │ b6238b9c-8db0-4 ┆ None            ┆ warcinfo  ┆ 2025-08-15      ┆ …          ┆ None            ┆ b"isPartOf: CC- ┆ {"Content-Type │
         │ 5ac-a6ef-c3cb0… ┆                 ┆           ┆ 20:42:38 UTC    ┆            ┆                 ┆ MAIN-2025-33\r… ┆ ":"application │

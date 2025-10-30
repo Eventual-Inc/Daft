@@ -75,7 +75,7 @@ impl LegacyPythonUDF {
             )));
         }
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let func = match &self.func {
                 MaybeInitializedUDF::Initialized(func) => func.clone().unwrap().clone_ref(py),
                 MaybeInitializedUDF::Uninitialized { inner, init_args } => {

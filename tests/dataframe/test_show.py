@@ -126,23 +126,23 @@ def test_show_with_options():
     assert (
         show(df, format="markdown", verbose=True)
         == """
-| A (Int64) | B (Float64) | C (Boolean) | D (Null) |
-|-----------|-------------|-------------|----------|
-| 1         | 1.5         | true        | None     |
-| 2         | 2.5         | true        | None     |
-| 3         | 3.5         | false       | None     |
-| 4         | 4.5         | false       | None     |"""[1:]
+| A (Int64) | B (Float64) | C (Bool) | D (Null) |
+|-----------|-------------|----------|----------|
+| 1         | 1.5         | true     | None     |
+| 2         | 2.5         | true     | None     |
+| 3         | 3.5         | false    | None     |
+| 4         | 4.5         | false    | None     |"""[1:]
     )
 
     assert (
         show(df, format="markdown", verbose=True, columns=columns)
         == """
-| A (units) | B (kg) | C (Boolean) | D (Null) |
-|-----------|--------|-------------|----------|
-|         1 |    1.5 | true        | None     |
-|         2 |    2.5 | true        | None     |
-|         3 |    3.5 | false       | None     |
-|         4 |    4.5 | false       | None     |"""[1:]
+| A (units) | B (kg) | C (Bool) | D (Null) |
+|-----------|--------|----------|----------|
+|         1 |    1.5 | true     | None     |
+|         2 |    2.5 | true     | None     |
+|         3 |    3.5 | false    | None     |
+|         4 |    4.5 | false    | None     |"""[1:]
     )
 
 

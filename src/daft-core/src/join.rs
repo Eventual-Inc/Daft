@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use common_py_serde::impl_bincode_py_state_serialization;
 use derive_more::Display;
 #[cfg(feature = "python")]
-use pyo3::{PyObject, PyResult, Python, exceptions::PyValueError, pyclass, pymethods};
+use pyo3::{PyResult, Python, exceptions::PyValueError, pyclass, pymethods};
 use serde::{Deserialize, Serialize};
 
 /// Type of a join operation.

@@ -2,6 +2,7 @@
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
+    str::FromStr,
     sync::Arc,
 };
 
@@ -191,15 +192,15 @@ pub fn list_(items: Vec<PyExpr>) -> PyExpr {
     resource_request=None,
     batch_size=None,
     concurrency=None,
-    use_process=None
+    use_process=None,
 ))]
 pub fn udf(
     name: &str,
-    inner: PyObject,
-    bound_args: PyObject,
+    inner: Py<PyAny>,
+    bound_args: Py<PyAny>,
     expressions: Vec<PyExpr>,
     return_dtype: PyDataType,
-    init_args: PyObject,
+    init_args: Py<PyAny>,
     resource_request: Option<ResourceRequest>,
     batch_size: Option<usize>,
     concurrency: Option<usize>,
@@ -216,6 +217,7 @@ pub fn udf(
     }
 
     let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
+
     Ok(PyExpr {
         expr: udf(
             name,
@@ -237,19 +239,31 @@ pub fn udf(
 #[allow(clippy::too_many_arguments)]
 pub fn row_wise_udf(
     name: &str,
-    cls: PyObject,
-    method: PyObject,
+    cls: Py<PyAny>,
+    method: Py<PyAny>,
     is_async: bool,
     return_dtype: PyDataType,
     gpus: usize,
     use_process: Option<bool>,
     max_concurrency: Option<usize>,
-    original_args: PyObject,
+    max_retries: Option<usize>,
+    on_error: Option<String>,
+    original_args: Py<PyAny>,
     expr_args: Vec<PyExpr>,
-) -> PyExpr {
+) -> PyResult<PyExpr> {
     let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
 
-    PyExpr {
+    // Convert string on_error to OnError enum
+    let on_error_enum = on_error
+        .as_ref()
+        .and_then(|s| crate::functions::python::OnError::from_str(s).ok());
+
+    if on_error.is_some() && on_error_enum.is_none() {
+        return Err(PyValueError::new_err(
+            "Invalid on_error value. Must be one of: 'raise', 'log', or 'ignore'",
+        ));
+    }
+    Ok(PyExpr {
         expr: crate::python_udf::row_wise_udf(
             name,
             cls.into(),
@@ -259,29 +273,35 @@ pub fn row_wise_udf(
             gpus,
             use_process,
             max_concurrency,
+            max_retries,
+            on_error_enum.unwrap_or_default(),
             original_args.into(),
             args,
         )
         .into(),
-    }
+    })
 }
 
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 pub fn batch_udf(
     name: &str,
-    cls: PyObject,
-    method: PyObject,
+    cls: Py<PyAny>,
+    method: Py<PyAny>,
     return_dtype: PyDataType,
     gpus: usize,
     use_process: Option<bool>,
     max_concurrency: Option<usize>,
     batch_size: Option<usize>,
-    original_args: PyObject,
+    max_retries: Option<usize>,
+    on_error: Option<String>,
+    original_args: Py<PyAny>,
     expr_args: Vec<PyExpr>,
 ) -> PyExpr {
     let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
-
+    let on_error = on_error
+        .and_then(|v| crate::functions::python::OnError::from_str(&v).ok())
+        .unwrap_or_default();
     PyExpr {
         expr: crate::python_udf::batch_udf(
             name,
@@ -294,6 +314,8 @@ pub fn batch_udf(
             batch_size,
             original_args.into(),
             args,
+            max_retries,
+            on_error,
         )
         .into(),
     }
@@ -334,7 +356,7 @@ pub enum ApproxPercentileInput {
 impl PyExpr {
     /// converts the pyexpr into a `daft.Expression` python instance
     /// `daft.Expression._from_pyexpr(self)`
-    pub fn into_expr_cls(self, py: Python) -> PyResult<PyObject> {
+    pub fn into_expr_cls(self, py: Python) -> PyResult<Py<PyAny>> {
         let daft = py.import("daft")?;
         let expr_cls = daft.getattr("Expression")?;
         let expr = expr_cls.call_method1("_from_pyexpr", (self,))?;

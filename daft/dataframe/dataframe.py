@@ -352,13 +352,13 @@ class DataFrame:
             >>>
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
             >>> df.schema()
-            ╭─────────────┬───────╮
-            │ column_name ┆ type  │
-            ╞═════════════╪═══════╡
-            │ x           ┆ Int64 │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ y           ┆ Utf8  │
-            ╰─────────────┴───────╯
+            ╭─────────────┬────────╮
+            │ column_name ┆ type   │
+            ╞═════════════╪════════╡
+            │ x           ┆ Int64  │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ y           ┆ String │
+            ╰─────────────┴────────╯
             <BLANKLINE>
         """
         return self.__builder.schema()
@@ -585,17 +585,17 @@ class DataFrame:
             ...     print(part)  # doctest: +SKIP
             MicroPartition with 3 rows:
             TableState: Loaded. 1 tables
-            ╭───────┬──────╮
-            │ foo   ┆ bar  │
-            │ ---   ┆ ---  │
-            │ Int64 ┆ Utf8 │
-            ╞═══════╪══════╡
-            │ 1     ┆ a    │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-            │ 2     ┆ b    │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-            │ 3     ┆ c    │
-            ╰───────┴──────╯
+            ╭───────┬────────╮
+            │ foo   ┆ bar    │
+            │ ---   ┆ ---    │
+            │ Int64 ┆ String │
+            ╞═══════╪════════╡
+            │ 1     ┆ a      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ b      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ c      │
+            ╰───────┴────────╯
             <BLANKLINE>
             <BLANKLINE>
             Statistics: missing
@@ -1656,6 +1656,52 @@ class DataFrame:
         )
         return self.write_sink(sink)
 
+    def write_bigtable(
+        self,
+        project_id: str,
+        instance_id: str,
+        table_id: str,
+        row_key_column: str,
+        column_family_mappings: dict[str, str],
+        client_kwargs: Optional[dict[str, Any]] = None,
+        write_kwargs: Optional[dict[str, Any]] = None,
+        serialize_incompatible_types: bool = True,
+    ) -> "DataFrame":
+        """Write a DataFrame into a Google Cloud Bigtable table.
+
+        Bigtable only accepts datatypes that can be converted to bytes in cells (for more details, please consult the Bigtable documentation: https://cloud.google.com/bigtable/docs/overview#data-types).
+        By default, `write_bigtable` automatically serializes incompatible types to JSON. This can be disabled by setting `auto_convert=False`.
+
+        This data sink transforms each row of the dataframe into Bigtable rows.
+        A row key is always required. The `row_key_column` parameter can be used to specify the column name to use for the row key.
+
+        Every column must also belong to a column family. The `column_family_mappings` parameter can be used to specify the column family to use for each column.
+        For example, if you have a column "name" and a column "age", you can specify a "user_data" column family by passing a dictionary like {"name": "user_data", "age": "user_data"}.
+
+        EXPERIMENTAL: This features is early in development and will change.
+
+        Args:
+            project_id: The Google Cloud project ID.
+            instance_id: The Bigtable instance ID.
+            table_id: The table to write to.
+            row_key_column: Column name for the row key.
+            column_family_mappings: Mapping of column names to column families.
+            client_kwargs: Optional dictionary of arguments to pass to the Bigtable Client constructor.
+            write_kwargs: Optional dictionary of arguments to pass to the Bigtable MutationsBatcher.
+            serialize_incompatible_types: Whether to automatically convert non-bytes/int values to Bigtable-compatible formats.
+                                          If False, will raise an error for unsupported types. Defaults to True.
+        """
+        from daft.io.bigtable.bigtable_data_sink import BigtableDataSink
+
+        sink = BigtableDataSink(
+            project_id, instance_id, table_id, row_key_column, column_family_mappings, client_kwargs, write_kwargs
+        )
+
+        # Preprocess the DataFrame using the sink's validation and preprocessing logic
+        df_to_write = sink._preprocess_dataframe(self, serialize_incompatible_types)
+
+        return df_to_write.write_sink(sink)
+
     ###
     # DataFrame operations
     ###
@@ -1864,15 +1910,15 @@ class DataFrame:
             >>> import daft
             >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
             >>> df.describe().show()
-            ╭─────────────┬───────╮
-            │ column_name ┆ type  │
-            │ ---         ┆ ---   │
-            │ Utf8        ┆ Utf8  │
-            ╞═════════════╪═══════╡
-            │ a           ┆ Int64 │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ b           ┆ Utf8  │
-            ╰─────────────┴───────╯
+            ╭─────────────┬────────╮
+            │ column_name ┆ type   │
+            │ ---         ┆ ---    │
+            │ String      ┆ String │
+            ╞═════════════╪════════╡
+            │ a           ┆ Int64  │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ b           ┆ String │
+            ╰─────────────┴────────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
         """
@@ -1890,17 +1936,17 @@ class DataFrame:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> df.summarize().show()
-            ╭────────┬───────┬──────┬────────────┬────────┬─────────────┬───────────────────────╮
-            │ column ┆ type  ┆ min  ┆      …     ┆ count  ┆ count_nulls ┆ approx_count_distinct │
-            │ ---    ┆ ---   ┆ ---  ┆            ┆ ---    ┆ ---         ┆ ---                   │
-            │ Utf8   ┆ Utf8  ┆ Utf8 ┆ (1 hidden) ┆ UInt64 ┆ UInt64      ┆ UInt64                │
-            ╞════════╪═══════╪══════╪════════════╪════════╪═════════════╪═══════════════════════╡
-            │ x      ┆ Int64 ┆ 1    ┆ …          ┆ 3      ┆ 0           ┆ 3                     │
-            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ y      ┆ Int64 ┆ 4    ┆ …          ┆ 3      ┆ 0           ┆ 3                     │
-            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ z      ┆ Int64 ┆ 7    ┆ …          ┆ 3      ┆ 0           ┆ 3                     │
-            ╰────────┴───────┴──────┴────────────┴────────┴─────────────┴───────────────────────╯
+            ╭────────┬────────┬────────┬────────────┬────────┬─────────────┬───────────────────────╮
+            │ column ┆ type   ┆ min    ┆      …     ┆ count  ┆ count_nulls ┆ approx_count_distinct │
+            │ ---    ┆ ---    ┆ ---    ┆            ┆ ---    ┆ ---         ┆ ---                   │
+            │ String ┆ String ┆ String ┆ (1 hidden) ┆ UInt64 ┆ UInt64      ┆ UInt64                │
+            ╞════════╪════════╪════════╪════════════╪════════╪═════════════╪═══════════════════════╡
+            │ x      ┆ Int64  ┆ 1      ┆ …          ┆ 3      ┆ 0           ┆ 3                     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ y      ┆ Int64  ┆ 4      ┆ …          ┆ 3      ┆ 0           ┆ 3                     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ z      ┆ Int64  ┆ 7      ┆ …          ┆ 3      ┆ 0           ┆ 3                     │
+            ╰────────┴────────┴────────┴────────────┴────────┴─────────────┴───────────────────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
@@ -2690,15 +2736,15 @@ class DataFrame:
             >>> df2 = daft.from_pydict({"a": ["x", "y", "z"], "b": [20, 30, 40]})
             >>> joined_df = df1.join(df2, left_on=df1["a"], right_on=df2["a"])
             >>> joined_df.show()
-            ╭──────┬───────┬─────────╮
-            │ a    ┆ b     ┆ right.b │
-            │ ---  ┆ ---   ┆ ---     │
-            │ Utf8 ┆ Int64 ┆ Int64   │
-            ╞══════╪═══════╪═════════╡
-            │ x    ┆ 2     ┆ 20      │
-            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-            │ y    ┆ 3     ┆ 30      │
-            ╰──────┴───────┴─────────╯
+            ╭────────┬───────┬─────────╮
+            │ a      ┆ b     ┆ right.b │
+            │ ---    ┆ ---   ┆ ---     │
+            │ String ┆ Int64 ┆ Int64   │
+            ╞════════╪═══════╪═════════╡
+            │ x      ┆ 2     ┆ 20      │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ y      ┆ 3     ┆ 30      │
+            ╰────────┴───────┴─────────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
         """
@@ -2922,29 +2968,29 @@ class DataFrame:
             ...     }
             ... )
             >>> df.collect()
-            ╭─────────────┬────────────┬───────────────╮
-            │ x           ┆ y          ┆ z             │
-            │ ---         ┆ ---        ┆ ---           │
-            │ List[Int64] ┆ List[Utf8] ┆ List[Float64] │
-            ╞═════════════╪════════════╪═══════════════╡
-            │ [1]         ┆ [a]        ┆ [1]           │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ [2, 3]      ┆ [b, c]     ┆ [2, 2]        │
-            ╰─────────────┴────────────┴───────────────╯
+            ╭─────────────┬──────────────┬───────────────╮
+            │ x           ┆ y            ┆ z             │
+            │ ---         ┆ ---          ┆ ---           │
+            │ List[Int64] ┆ List[String] ┆ List[Float64] │
+            ╞═════════════╪══════════════╪═══════════════╡
+            │ [1]         ┆ [a]          ┆ [1]           │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [2, 3]      ┆ [b, c]       ┆ [2, 2]        │
+            ╰─────────────┴──────────────┴───────────────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
             >>> df.explode(df["x"], df["y"]).collect()
-            ╭───────┬──────┬───────────────╮
-            │ x     ┆ y    ┆ z             │
-            │ ---   ┆ ---  ┆ ---           │
-            │ Int64 ┆ Utf8 ┆ List[Float64] │
-            ╞═══════╪══════╪═══════════════╡
-            │ 1     ┆ a    ┆ [1]           │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2     ┆ b    ┆ [2, 2]        │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 3     ┆ c    ┆ [2, 2]        │
-            ╰───────┴──────┴───────────────╯
+            ╭───────┬────────┬───────────────╮
+            │ x     ┆ y      ┆ z             │
+            │ ---   ┆ ---    ┆ ---           │
+            │ Int64 ┆ String ┆ List[Float64] │
+            ╞═══════╪════════╪═══════════════╡
+            │ 1     ┆ a      ┆ [1]           │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ b      ┆ [2, 2]        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ c      ┆ [2, 2]        │
+            ╰───────┴────────┴───────────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
@@ -2954,26 +3000,26 @@ class DataFrame:
             ...     {"id": [1, 2, 3, 4], "values": [[1, 2], [], None, [3]], "labels": [["a", "b"], [], None, ["c"]]}
             ... )
             >>> df2.collect()
-            ╭───────┬─────────────┬────────────╮
-            │ id    ┆ values      ┆ labels     │
-            │ ---   ┆ ---         ┆ ---        │
-            │ Int64 ┆ List[Int64] ┆ List[Utf8] │
-            ╞═══════╪═════════════╪════════════╡
-            │ 1     ┆ [1, 2]      ┆ [a, b]     │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2     ┆ []          ┆ []         │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 3     ┆ None        ┆ None       │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 4     ┆ [3]         ┆ [c]        │
-            ╰───────┴─────────────┴────────────╯
+            ╭───────┬─────────────┬──────────────╮
+            │ id    ┆ values      ┆ labels       │
+            │ ---   ┆ ---         ┆ ---          │
+            │ Int64 ┆ List[Int64] ┆ List[String] │
+            ╞═══════╪═════════════╪══════════════╡
+            │ 1     ┆ [1, 2]      ┆ [a, b]       │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ []          ┆ []           │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ None        ┆ None         │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 4     ┆ [3]         ┆ [c]          │
+            ╰───────┴─────────────┴──────────────╯
             <BLANKLINE>
             (Showing first 4 of 4 rows)
             >>> df2.explode(df2["values"], df2["labels"]).collect()
             ╭───────┬────────┬────────╮
             │ id    ┆ values ┆ labels │
             │ ---   ┆ ---    ┆ ---    │
-            │ Int64 ┆ Int64  ┆ Utf8   │
+            │ Int64 ┆ Int64  ┆ String │
             ╞═══════╪════════╪════════╡
             │ 1     ┆ 1      ┆ a      │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
@@ -3027,23 +3073,23 @@ class DataFrame:
             >>> df = df.unpivot("year", ["Jan", "Feb"], variable_name="month", value_name="inventory")
             >>> df = df.sort("year")
             >>> df.show()
-            ╭───────┬───────┬───────────╮
-            │ year  ┆ month ┆ inventory │
-            │ ---   ┆ ---   ┆ ---       │
-            │ Int64 ┆ Utf8  ┆ Int64     │
-            ╞═══════╪═══════╪═══════════╡
-            │ 2020  ┆ Jan   ┆ 10        │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2020  ┆ Feb   ┆ 20        │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2021  ┆ Jan   ┆ 30        │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2021  ┆ Feb   ┆ 40        │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2022  ┆ Jan   ┆ 50        │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2022  ┆ Feb   ┆ 60        │
-            ╰───────┴───────┴───────────╯
+            ╭───────┬────────┬───────────╮
+            │ year  ┆ month  ┆ inventory │
+            │ ---   ┆ ---    ┆ ---       │
+            │ Int64 ┆ String ┆ Int64     │
+            ╞═══════╪════════╪═══════════╡
+            │ 2020  ┆ Jan    ┆ 10        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2020  ┆ Feb    ┆ 20        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021  ┆ Jan    ┆ 30        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021  ┆ Feb    ┆ 40        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2022  ┆ Jan    ┆ 50        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2022  ┆ Feb    ┆ 60        │
+            ╰───────┴────────┴───────────╯
             <BLANKLINE>
             (Showing first 6 of 6 rows)
 
@@ -3085,23 +3131,23 @@ class DataFrame:
             >>> df = df.melt("year", ["Jan", "Feb"], variable_name="month", value_name="inventory")
             >>> df = df.sort("year")
             >>> df.show()
-            ╭───────┬───────┬───────────╮
-            │ year  ┆ month ┆ inventory │
-            │ ---   ┆ ---   ┆ ---       │
-            │ Int64 ┆ Utf8  ┆ Int64     │
-            ╞═══════╪═══════╪═══════════╡
-            │ 2020  ┆ Jan   ┆ 10        │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2020  ┆ Feb   ┆ 20        │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2021  ┆ Jan   ┆ 30        │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2021  ┆ Feb   ┆ 40        │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2022  ┆ Jan   ┆ 50        │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-            │ 2022  ┆ Feb   ┆ 60        │
-            ╰───────┴───────┴───────────╯
+            ╭───────┬────────┬───────────╮
+            │ year  ┆ month  ┆ inventory │
+            │ ---   ┆ ---    ┆ ---       │
+            │ Int64 ┆ String ┆ Int64     │
+            ╞═══════╪════════╪═══════════╡
+            │ 2020  ┆ Jan    ┆ 10        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2020  ┆ Feb    ┆ 20        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021  ┆ Jan    ┆ 30        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2021  ┆ Feb    ┆ 40        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2022  ┆ Jan    ┆ 50        │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 2022  ┆ Feb    ┆ 60        │
+            ╰───────┴────────┴───────────╯
             <BLANKLINE>
             (Showing first 6 of 6 rows)
 
@@ -3597,15 +3643,15 @@ class DataFrame:
             ... )
             >>> grouped_df = grouped_df.sort("pet")
             >>> grouped_df.show()
-            ╭──────┬─────────┬─────────┬────────┬────────╮
-            │ pet  ┆ min_age ┆ max_age ┆ count  ┆ name   │
-            │ ---  ┆ ---     ┆ ---     ┆ ---    ┆ ---    │
-            │ Utf8 ┆ Int64   ┆ Int64   ┆ UInt64 ┆ Utf8   │
-            ╞══════╪═════════╪═════════╪════════╪════════╡
-            │ cat  ┆ 1       ┆ 4       ┆ 2      ┆ Alex   │
-            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-            │ dog  ┆ 2       ┆ 3       ┆ 2      ┆ Jordan │
-            ╰──────┴─────────┴─────────┴────────┴────────╯
+            ╭────────┬─────────┬─────────┬────────┬────────╮
+            │ pet    ┆ min_age ┆ max_age ┆ count  ┆ name   │
+            │ ---    ┆ ---     ┆ ---     ┆ ---    ┆ ---    │
+            │ String ┆ Int64   ┆ Int64   ┆ UInt64 ┆ String │
+            ╞════════╪═════════╪═════════╪════════╪════════╡
+            │ cat    ┆ 1       ┆ 4       ┆ 2      ┆ Alex   │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ dog    ┆ 2       ┆ 3       ┆ 2      ┆ Jordan │
+            ╰────────┴─────────┴─────────┴────────┴────────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
 
@@ -3654,7 +3700,7 @@ class DataFrame:
             ╭─────────┬─────────┬───────╮
             │ version ┆ windows ┆ macos │
             │ ---     ┆ ---     ┆ ---   │
-            │ Utf8    ┆ Int64   ┆ Int64 │
+            │ String  ┆ Int64   ┆ Int64 │
             ╞═════════╪═════════╪═══════╡
             │ 3.8     ┆ None    ┆ 300   │
             ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
@@ -3764,19 +3810,19 @@ class DataFrame:
             >>> df1 = daft.from_pydict({"x": [1, 2], "y": [4, 5], "w": [9, 10]})
             >>> df2 = daft.from_pydict({"y": [6, 7], "z": ["a", "b"]})
             >>> df1.union_by_name(df2).sort("y").show()
-            ╭───────┬───────┬───────┬──────╮
-            │ x     ┆ y     ┆ w     ┆ z    │
-            │ ---   ┆ ---   ┆ ---   ┆ ---  │
-            │ Int64 ┆ Int64 ┆ Int64 ┆ Utf8 │
-            ╞═══════╪═══════╪═══════╪══════╡
-            │ 1     ┆ 4     ┆ 9     ┆ None │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-            │ 2     ┆ 5     ┆ 10    ┆ None │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-            │ None  ┆ 6     ┆ None  ┆ a    │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-            │ None  ┆ 7     ┆ None  ┆ b    │
-            ╰───────┴───────┴───────┴──────╯
+            ╭───────┬───────┬───────┬────────╮
+            │ x     ┆ y     ┆ w     ┆ z      │
+            │ ---   ┆ ---   ┆ ---   ┆ ---    │
+            │ Int64 ┆ Int64 ┆ Int64 ┆ String │
+            ╞═══════╪═══════╪═══════╪════════╡
+            │ 1     ┆ 4     ┆ 9     ┆ None   │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     ┆ 10    ┆ None   │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ None  ┆ 6     ┆ None  ┆ a      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ None  ┆ 7     ┆ None  ┆ b      │
+            ╰───────┴───────┴───────┴────────╯
             <BLANKLINE>
             (Showing first 4 of 4 rows)
         """
@@ -3798,23 +3844,23 @@ class DataFrame:
             >>> df1 = daft.from_pydict({"x": [1, 2], "y": [4, 5], "w": [9, 10]})
             >>> df2 = daft.from_pydict({"y": [6, 6, 7, 7], "z": ["a", "a", "b", "b"]})
             >>> df1.union_all_by_name(df2).sort("y").show()
-            ╭───────┬───────┬───────┬──────╮
-            │ x     ┆ y     ┆ w     ┆ z    │
-            │ ---   ┆ ---   ┆ ---   ┆ ---  │
-            │ Int64 ┆ Int64 ┆ Int64 ┆ Utf8 │
-            ╞═══════╪═══════╪═══════╪══════╡
-            │ 1     ┆ 4     ┆ 9     ┆ None │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-            │ 2     ┆ 5     ┆ 10    ┆ None │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-            │ None  ┆ 6     ┆ None  ┆ a    │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-            │ None  ┆ 6     ┆ None  ┆ a    │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-            │ None  ┆ 7     ┆ None  ┆ b    │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-            │ None  ┆ 7     ┆ None  ┆ b    │
-            ╰───────┴───────┴───────┴──────╯
+            ╭───────┬───────┬───────┬────────╮
+            │ x     ┆ y     ┆ w     ┆ z      │
+            │ ---   ┆ ---   ┆ ---   ┆ ---    │
+            │ Int64 ┆ Int64 ┆ Int64 ┆ String │
+            ╞═══════╪═══════╪═══════╪════════╡
+            │ 1     ┆ 4     ┆ 9     ┆ None   │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     ┆ 10    ┆ None   │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ None  ┆ 6     ┆ None  ┆ a      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ None  ┆ 6     ┆ None  ┆ a      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ None  ┆ 7     ┆ None  ┆ b      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ None  ┆ 7     ┆ None  ┆ b      │
+            ╰───────┴───────┴───────┴────────╯
             <BLANKLINE>
             (Showing first 6 of 6 rows)
         """
@@ -4630,15 +4676,15 @@ class GroupedDataFrame:
             >>> df = df.groupby("keys").stddev()
             >>> df = df.sort("keys")
             >>> df.show()
-            ╭──────┬───────────────────╮
-            │ keys ┆ col_a             │
-            │ ---  ┆ ---               │
-            │ Utf8 ┆ Float64           │
-            ╞══════╪═══════════════════╡
-            │ a    ┆ 0.816496580927726 │
-            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ b    ┆ 0                 │
-            ╰──────┴───────────────────╯
+            ╭────────┬───────────────────╮
+            │ keys   ┆ col_a             │
+            │ ---    ┆ ---               │
+            │ String ┆ Float64           │
+            ╞════════╪═══════════════════╡
+            │ a      ┆ 0.816496580927726 │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b      ┆ 0                 │
+            ╰────────┴───────────────────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
 
@@ -4774,15 +4820,15 @@ class GroupedDataFrame:
             ... )
             >>> grouped_df = grouped_df.sort("pet")
             >>> grouped_df.show()
-            ╭──────┬─────────┬─────────┬────────┬────────╮
-            │ pet  ┆ min_age ┆ max_age ┆ count  ┆ name   │
-            │ ---  ┆ ---     ┆ ---     ┆ ---    ┆ ---    │
-            │ Utf8 ┆ Int64   ┆ Int64   ┆ UInt64 ┆ Utf8   │
-            ╞══════╪═════════╪═════════╪════════╪════════╡
-            │ cat  ┆ 1       ┆ 4       ┆ 2      ┆ Alex   │
-            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-            │ dog  ┆ 2       ┆ 3       ┆ 2      ┆ Jordan │
-            ╰──────┴─────────┴─────────┴────────┴────────╯
+            ╭────────┬─────────┬─────────┬────────┬────────╮
+            │ pet    ┆ min_age ┆ max_age ┆ count  ┆ name   │
+            │ ---    ┆ ---     ┆ ---     ┆ ---    ┆ ---    │
+            │ String ┆ Int64   ┆ Int64   ┆ UInt64 ┆ String │
+            ╞════════╪═════════╪═════════╪════════╪════════╡
+            │ cat    ┆ 1       ┆ 4       ┆ 2      ┆ Alex   │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ dog    ┆ 2       ┆ 3       ┆ 2      ┆ Jordan │
+            ╰────────┴─────────┴─────────┴────────┴────────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
 
@@ -4820,15 +4866,15 @@ class GroupedDataFrame:
             >>> df = df.groupby("group").map_groups(std_dev(df["data"]))
             >>> df = df.sort("group")
             >>> df.show()
-            ╭───────┬────────────────────╮
-            │ group ┆ data               │
-            │ ---   ┆ ---                │
-            │ Utf8  ┆ Float64            │
-            ╞═══════╪════════════════════╡
-            │ a     ┆ 14.730919862656235 │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ b     ┆ 331.62026476076517 │
-            ╰───────┴────────────────────╯
+            ╭────────┬────────────────────╮
+            │ group  ┆ data               │
+            │ ---    ┆ ---                │
+            │ String ┆ Float64            │
+            ╞════════╪════════════════════╡
+            │ a      ┆ 14.730919862656235 │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b      ┆ 331.62026476076517 │
+            ╰────────┴────────────────────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
 

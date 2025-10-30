@@ -2,13 +2,14 @@ use std::{
     collections::HashMap,
     fs::File,
     io::Write,
-    sync::Arc,
+    sync::{Arc, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayLevel, mermaid::MermaidDisplayOptions};
 use common_error::DaftResult;
+use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
 use daft_context::{DaftContext, Subscriber};
 use daft_local_plan::{LocalPhysicalPlanRef, translate};
@@ -18,7 +19,7 @@ use daft_micropartition::{
     partitioning::{InMemoryPartitionSetCache, MicroPartitionSet, PartitionSetCache},
 };
 use futures::{Stream, StreamExt, stream::BoxStream};
-use tokio::sync::Mutex;
+use tokio::{runtime::Handle, sync::Mutex};
 use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
 use {
@@ -26,9 +27,7 @@ use {
     daft_context::python::PyDaftContext,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    pyo3::{
-        Bound, IntoPyObject, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python, pyclass, pymethods,
-    },
+    pyo3::{Bound, IntoPyObject, Py, PyAny, PyRef, PyRefMut, PyResult, Python, pyclass, pymethods},
 };
 
 use crate::{
@@ -42,10 +41,32 @@ use crate::{
     runtime_stats::RuntimeStatsManager,
 };
 
+/// Global tokio runtime shared by all NativeExecutor instances
+static GLOBAL_RUNTIME: OnceLock<Handle> = OnceLock::new();
+
+/// Get or initialize the global tokio runtime
+#[cfg(feature = "python")]
+fn get_global_runtime() -> &'static Handle {
+    GLOBAL_RUNTIME.get_or_init(|| {
+        let mut builder = tokio::runtime::Builder::new_current_thread();
+        builder.enable_all();
+        pyo3_async_runtimes::tokio::init(builder);
+        std::thread::spawn(move || {
+            pyo3_async_runtimes::tokio::get_runtime().block_on(futures::future::pending::<()>());
+        });
+        pyo3_async_runtimes::tokio::get_runtime().handle().clone()
+    })
+}
+
+#[cfg(not(feature = "python"))]
+fn get_global_runtime() -> &'static Handle {
+    unimplemented!("get_global_runtime is not implemented without python feature");
+}
+
 #[cfg(feature = "python")]
 #[pyclass]
 struct LocalPartitionIterator {
-    iter: Box<dyn Iterator<Item = DaftResult<PyObject>> + Send + Sync>,
+    iter: Box<dyn Iterator<Item = DaftResult<Py<PyAny>>> + Send + Sync>,
 }
 
 #[cfg(feature = "python")]
@@ -54,16 +75,16 @@ impl LocalPartitionIterator {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
-    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python) -> PyResult<Option<PyObject>> {
+    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python) -> PyResult<Option<Py<PyAny>>> {
         let iter = &mut slf.iter;
-        Ok(py.allow_threads(|| iter.next().transpose())?)
+        Ok(py.detach(|| iter.next().transpose())?)
     }
 }
 
 #[cfg(feature = "python")]
 #[pyclass(frozen)]
 struct LocalPartitionStream {
-    stream: Arc<Mutex<BoxStream<'static, DaftResult<PyObject>>>>,
+    stream: Arc<Mutex<BoxStream<'static, DaftResult<Py<PyAny>>>>>,
 }
 
 #[cfg(feature = "python")]
@@ -134,7 +155,7 @@ impl PyNativeExecutor {
             .collect();
         let psets = InMemoryPartitionSetCache::new(&native_psets);
         let daft_ctx: &DaftContext = daft_ctx.into();
-        let out = py.allow_threads(|| {
+        let out = py.detach(|| {
             self.executor
                 .run(
                     &local_physical_plan.plan,
@@ -147,7 +168,7 @@ impl PyNativeExecutor {
                 .map(|res| res.into_iter())
         })?;
         let iter = Box::new(out.map(|part| {
-            pyo3::Python::with_gil(|py| {
+            pyo3::Python::attach(|py| {
                 Ok(PyMicroPartition::from(part?)
                     .into_pyobject(py)?
                     .unbind()
@@ -184,7 +205,7 @@ impl PyNativeExecutor {
             })
             .collect();
         let psets = InMemoryPartitionSetCache::new(&native_psets);
-        let res = py.allow_threads(|| {
+        let res = py.detach(|| {
             self.executor.run(
                 &local_physical_plan.plan,
                 &psets,
@@ -195,7 +216,7 @@ impl PyNativeExecutor {
             )
         })?;
         let stream = Box::pin(res.into_stream().map(|part| {
-            pyo3::Python::with_gil(|py| {
+            pyo3::Python::attach(|py| {
                 Ok(PyMicroPartition::from(part?)
                     .into_pyobject(py)?
                     .unbind()
@@ -249,7 +270,6 @@ impl PyNativeExecutor {
 #[derive(Debug, Clone)]
 pub struct NativeExecutor {
     cancel: CancellationToken,
-    runtime: Option<Arc<tokio::runtime::Runtime>>,
     enable_explain_analyze: bool,
 }
 
@@ -257,7 +277,6 @@ impl Default for NativeExecutor {
     fn default() -> Self {
         Self {
             cancel: CancellationToken::new(),
-            runtime: None,
             enable_explain_analyze: should_enable_explain_analyze(),
         }
     }
@@ -266,11 +285,6 @@ impl Default for NativeExecutor {
 impl NativeExecutor {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    pub fn with_runtime(mut self, runtime: Arc<tokio::runtime::Runtime>) -> Self {
-        self.runtime = Some(runtime);
-        self
     }
 
     pub fn enable_explain_analyze(mut self, b: bool) -> Self {
@@ -294,22 +308,12 @@ impl NativeExecutor {
 
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
 
-        let rt = self.runtime.clone();
+        let handle = get_global_runtime();
         let enable_explain_analyze = self.enable_explain_analyze;
-        // todo: split this into a run and run_async method
-        // the run_async should spawn a task instead of a thread like this
-        let handle = std::thread::spawn(move || {
-            let runtime = rt.unwrap_or_else(|| {
-                Arc::new(
-                    tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .expect("Failed to create tokio runtime"),
-                )
-            });
 
-            let stats_manager =
-                RuntimeStatsManager::try_new(runtime.handle(), &pipeline, subscribers)?;
+        // Spawn execution on the global runtime - returns immediately
+        let stats_manager = RuntimeStatsManager::try_new(handle, &pipeline, subscribers)?;
+        let task = async move {
             let stats_manager_handle = stats_manager.handle();
             let execution_task = async {
                 let memory_manager = get_or_init_memory_manager();
@@ -335,26 +339,21 @@ impl NativeExecutor {
                 Ok(())
             };
 
-            let local_set = tokio::task::LocalSet::new();
-            local_set.block_on(&runtime, async {
-                let result = tokio::select! {
-                    biased;
-                    () = cancel.cancelled() => {
-                        log::info!("Execution engine cancelled");
-                        Ok(())
-                    }
-                    _ = tokio::signal::ctrl_c() => {
-                        log::info!("Received Ctrl-C, shutting down execution engine");
-                        Ok(())
-                    }
-                    result = execution_task => result,
-                };
-
-                result
-            })?;
+            let result = tokio::select! {
+                biased;
+                () = cancel.cancelled() => {
+                    log::info!("Execution engine cancelled");
+                    Ok(())
+                }
+                _ = tokio::signal::ctrl_c() => {
+                    log::info!("Received Ctrl-C, shutting down execution engine");
+                    Ok(())
+                }
+                result = execution_task => result,
+            };
 
             // Finish the stats manager
-            stats_manager.finish(&runtime);
+            stats_manager.finish().await;
 
             if enable_explain_analyze {
                 let curr_ms = SystemTime::now()
@@ -375,12 +374,12 @@ impl NativeExecutor {
                 )?;
             }
             flush_opentelemetry_providers();
-            Ok(())
-        });
+            result
+        };
 
         Ok(ExecutionEngineResult {
-            handle,
             receiver: rx,
+            handle: RuntimeTask::new(handle, task),
         })
     }
 
@@ -468,7 +467,7 @@ fn should_enable_explain_analyze() -> bool {
 
 pub struct ExecutionEngineReceiverIterator {
     receiver: kanal::Receiver<Arc<MicroPartition>>,
-    handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
+    handle: Option<RuntimeTask<DaftResult<()>>>,
 }
 
 impl Iterator for ExecutionEngineReceiverIterator {
@@ -478,15 +477,12 @@ impl Iterator for ExecutionEngineReceiverIterator {
         match self.receiver.recv().ok() {
             Some(part) => Some(Ok(part)),
             None => {
-                if self.handle.is_some() {
-                    let join_result = self
-                        .handle
-                        .take()
-                        .unwrap()
-                        .join()
-                        .expect("Execution engine thread panicked");
+                if let Some(handle) = self.handle.take() {
+                    let runtime = get_global_runtime();
+                    let join_result = runtime.block_on(handle);
                     match join_result {
-                        Ok(()) => None,
+                        Ok(Ok(())) => None,
+                        Ok(Err(e)) => Some(Err(e)),
                         Err(e) => Some(Err(e)),
                     }
                 } else {
@@ -498,7 +494,7 @@ impl Iterator for ExecutionEngineReceiverIterator {
 }
 
 pub struct ExecutionEngineResult {
-    handle: std::thread::JoinHandle<DaftResult<()>>,
+    handle: RuntimeTask<DaftResult<()>>,
     receiver: Receiver<Arc<MicroPartition>>,
 }
 
@@ -506,7 +502,7 @@ impl ExecutionEngineResult {
     pub fn into_stream(self) -> impl Stream<Item = DaftResult<Arc<MicroPartition>>> {
         struct StreamState {
             receiver: Receiver<Arc<MicroPartition>>,
-            handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
+            handle: Option<RuntimeTask<DaftResult<()>>>,
         }
 
         let state = StreamState {
@@ -518,15 +514,11 @@ impl ExecutionEngineResult {
             match state.receiver.recv().await {
                 Some(part) => Some((Ok(part), state)),
                 None => {
-                    if state.handle.is_some() {
-                        let join_result = state
-                            .handle
-                            .take()
-                            .unwrap()
-                            .join()
-                            .expect("Execution engine thread panicked");
-                        match join_result {
-                            Ok(()) => None,
+                    if let Some(handle) = state.handle.take() {
+                        let result = handle.await;
+                        match result {
+                            Ok(Ok(())) => None,
+                            Ok(Err(e)) => Some((Err(e), state)),
                             Err(e) => Some((Err(e), state)),
                         }
                     } else {

@@ -37,3 +37,11 @@ where
         }
     }
 }
+impl<Arr> ExactSizeIterator for ImageBufferIter<'_, Arr>
+where
+    Arr: AsImageObj,
+{
+    fn len(&self) -> usize {
+        self.image_array.len()
+    }
+}

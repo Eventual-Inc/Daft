@@ -263,7 +263,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
             num_workers,
             &mut runtime_handle.handle(),
         );
-        runtime_handle.spawn_local(
+        runtime_handle.spawn(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },
             &self.name(),
         );
@@ -271,7 +271,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         let memory_manager = runtime_handle.memory_manager();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
-        runtime_handle.spawn_local(
+        runtime_handle.spawn(
             async move {
                 let mut task_set = TaskSet::new();
                 Self::spawn_workers(

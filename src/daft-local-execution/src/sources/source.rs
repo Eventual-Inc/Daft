@@ -196,7 +196,7 @@ impl PipelineNode for SourceNode {
             MorselSizeRequirement::Flexible(_, upper) => upper,
         };
 
-        runtime_handle.spawn_local(
+        runtime_handle.spawn(
             async move {
                 let mut has_data = false;
                 let mut source_stream = source

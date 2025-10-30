@@ -38,6 +38,7 @@ python = [
   "dep:pyo3-async-runtimes",
   "common-daft-config/python",
   "common-error/python",
+  "common-runtime/python",
   "common-treenode/python",
   "daft-logical-plan/python",
   "daft-local-plan/python"

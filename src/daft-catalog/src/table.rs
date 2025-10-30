@@ -62,7 +62,7 @@ pub trait Table: Sync + Send + std::fmt::Debug {
 
     /// Create/extract a Python object that subclasses the Table ABC
     #[cfg(feature = "python")]
-    fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject>;
+    fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>>;
 }
 
 /// View is an immutable Table backed by a DataFrame.
@@ -126,7 +126,7 @@ impl Table for View {
     }
 
     #[cfg(feature = "python")]
-    fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
+    fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
         use pyo3::{intern, types::PyAnyMethods};
 
         use crate::python::PyTable;

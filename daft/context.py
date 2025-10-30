@@ -307,7 +307,7 @@ def set_execution_config(
         native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
         use_legacy_ray_runner: Whether to use the legacy ray runner. Defaults to `False`.
         min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 0.5.
-        actor_udf_ready_timeout: Timeout for UDF actors to be ready. Defaults to 60 seconds.
+        actor_udf_ready_timeout: Timeout for UDF actors to be ready. Defaults to 120 seconds.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
