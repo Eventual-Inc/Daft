@@ -73,7 +73,7 @@ class ImageClassifierDescriptor(Descriptor[ImageClassifier]):
 class Prompter(Protocol):
     """Protocol for prompt/chat completion implementations."""
 
-    async def prompt(self, message: str) -> Any:
+    async def prompt(self, input_text: str, input_image: Image | None = None) -> Any:
         """Generates responses for a batch of message strings."""
         ...
 

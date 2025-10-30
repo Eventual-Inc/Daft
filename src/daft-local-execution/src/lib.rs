@@ -96,6 +96,10 @@ impl<T: Send + 'static> TaskSet<T> {
             .map(|r| r.map_err(|e| Error::JoinError { source: e }))
     }
 
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
     async fn shutdown(&mut self) {
         self.inner.shutdown().await;
     }

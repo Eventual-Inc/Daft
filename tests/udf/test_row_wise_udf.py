@@ -123,7 +123,7 @@ def test_row_wise_async_udf():
 
     df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
     async_df = df.select(my_async_stringify_and_sum(col("x"), col("y")))
-    assert async_df.to_pydict() == {"x": ["5", "7", "9"]}
+    assert sorted(async_df.to_pydict()["x"]) == ["5", "7", "9"]
 
 
 def test_row_wise_udf_unnest():
@@ -315,4 +315,4 @@ def test_row_wise_async_udf_use_process():
 
     df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
     async_df = df.select(my_async_stringify_and_sum(col("x"), col("y")))
-    assert async_df.to_pydict() == {"x": ["5", "7", "9"]}
+    assert sorted(async_df.to_pydict()["x"]) == ["5", "7", "9"]

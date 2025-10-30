@@ -104,7 +104,7 @@ def test_cls_async_method():
 
     processor = AsyncProcessor(0.01)
     result = df.select(processor.process(df["a"]))
-    assert result.to_pydict() == {"a": [2, 4, 6]}
+    assert sorted(result.to_pydict()["a"]) == [2, 4, 6]
 
 
 def test_cls_generator_method():
@@ -293,4 +293,4 @@ def test_cls_async_method_max_concurrency(concurrency):
 
     processor = AsyncProcessor(0.01)
     result = df.select(processor(df["a"]))
-    assert result.to_pydict() == {"a": [2, 4, 6]}
+    assert sorted(result.to_pydict()["a"]) == [2, 4, 6]

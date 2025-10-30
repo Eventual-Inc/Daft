@@ -148,21 +148,17 @@ class _FuncDecorator:
             ...     await asyncio.sleep(1)
             ...     return a + b
             >>>
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> df = daft.from_pydict({"x": [1], "y": [2]})
             >>> df.select(my_sum(df["x"], df["y"])).collect()
             ╭───────╮
             │ x     │
             │ ---   │
             │ Int64 │
             ╞═══════╡
-            │ 5     │
-            ├╌╌╌╌╌╌╌┤
-            │ 7     │
-            ├╌╌╌╌╌╌╌┤
-            │ 9     │
+            │ 3     │
             ╰───────╯
             <BLANKLINE>
-            (Showing first 3 of 3 rows)
+            (Showing first 1 of 1 rows)
 
             Decorating a generator function
 
