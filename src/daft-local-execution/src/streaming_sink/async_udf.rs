@@ -10,7 +10,8 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::base::{
-    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
+    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
+    StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
 use crate::{
     ExecutionTaskSpawner, TaskSet,
@@ -137,31 +138,27 @@ impl StreamingSink for AsyncUdfSink {
 
     fn finalize(
         &self,
-        states: Vec<Self::State>,
+        mut states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkFinalizeResult {
+    ) -> StreamingSinkFinalizeResult<Self> {
         debug_assert!(states.len() == 1, "AsyncUdfSink should only have one state");
         let params = self.params.clone();
         spawner
             .spawn(
                 async move {
-                    let mut ready_batches = Vec::new();
-                    let mut task_set = states.into_iter().next().unwrap().task_set;
-
-                    while let Some(join_res) = task_set.join_next().await {
+                    let state = states.first_mut().unwrap();
+                    if let Some(join_res) = state.task_set.join_next().await {
                         let batch = join_res??;
-                        ready_batches.push(batch);
-                    }
-
-                    if ready_batches.is_empty() {
-                        Ok(None)
+                        Ok(StreamingSinkFinalizeOutput::HasMoreOutput {
+                            states,
+                            output: Arc::new(MicroPartition::new_loaded(
+                                params.output_schema.clone(),
+                                Arc::new(vec![batch]),
+                                None,
+                            )),
+                        })
                     } else {
-                        let output = Arc::new(MicroPartition::new_loaded(
-                            params.output_schema.clone(),
-                            Arc::new(ready_batches),
-                            None,
-                        ));
-                        Ok(Some(output))
+                        Ok(StreamingSinkFinalizeOutput::Finished(None))
                     }
                 },
                 Span::current(),
