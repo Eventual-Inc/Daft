@@ -62,6 +62,7 @@ pub fn from_proto_function(message: proto::ScalarFn) -> ProtoResult<ir::Expr> {
                     function_name: batch_fn.name.into(),
                     cls: from_proto(batch_fn.cls)?,
                     method: from_proto(batch_fn.method)?,
+                    is_async: batch_fn.is_async,
                     return_dtype: from_proto(batch_fn.return_dtype)?,
                     gpus: batch_fn.gpus as usize,
                     use_process: batch_fn.use_process,
@@ -161,6 +162,7 @@ pub fn scalar_fn_to_proto(sf: &ir::functions::scalar::ScalarFn) -> ProtoResult<p
                     variant: Some(proto::scalar_fn::py_fn::Variant::Batch(
                         proto::scalar_fn::py_fn::BatchFn {
                             name: batch_fn.function_name.to_string(),
+                            is_async: batch_fn.is_async,
                             return_dtype: Some(batch_fn.return_dtype.to_proto()?),
                             cls: Some(batch_fn.cls.to_proto()?),
                             method: Some(batch_fn.method.to_proto()?),

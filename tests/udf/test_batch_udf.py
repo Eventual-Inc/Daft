@@ -247,3 +247,80 @@ def test_batch_max_retries():
     actual = df.select(raise_err_first_time_only(col("value"))).to_pydict()
     expected = {"value": [2, 4, 6]}
     assert actual == expected
+
+
+def test_async_batch_udf():
+    import asyncio
+
+    @daft.func.batch(return_dtype=DataType.int64())
+    async def async_batch_func(a: Series) -> Series:
+        await asyncio.sleep(0.1)
+        return a
+
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    actual = df.select(async_batch_func(col("x"))).to_pydict()
+
+    expected = {"x": [1, 2, 3]}
+
+    assert actual == expected
+
+
+def test_async_batch_on_error_ignore():
+    @daft.func.batch(on_error="ignore", return_dtype=int)
+    async def raise_err(x):
+        raise ValueError("batch failed")
+
+    df = daft.from_pydict({"value": [1, 2, 3]})
+
+    expected = {"value": [None, None, None]}
+
+    actual = df.select(raise_err(col("value"))).to_pydict()
+    assert actual == expected
+
+
+def test_async_batch_retry():
+    first_time = True
+
+    @daft.func.batch(on_error="ignore", max_retries=1, return_dtype=int)
+    async def raise_err_first_time_only(x: Series) -> list:
+        nonlocal first_time
+        if first_time:
+            first_time = False
+            raise ValueError("This is an error")
+        else:
+            return [val * 2 for val in x]
+
+    df = daft.from_pydict({"value": [1, 2, 3]})
+
+    expected = {"value": [2, 4, 6]}
+
+    actual = df.select(raise_err_first_time_only(col("value"))).to_pydict()
+    assert actual == expected
+
+
+def test_async_batch_retry_expected_to_fail_with_raise():
+    @daft.func.batch(on_error="raise", max_retries=0, return_dtype=int)
+    async def raise_err(x: Series):
+        raise ValueError("This is an error")
+
+    df = daft.from_pydict({"value": [1]})
+
+    try:
+        df.select(raise_err(col("value"))).to_pydict()
+        pytest.fail("Expected ValueError")
+    except ValueError:
+        pass
+
+
+def test_async_batch_retry_defaults_to_raise_and_zero_retries():
+    @daft.func.batch(return_dtype=int)
+    async def raise_err(x):
+        raise ValueError("This is an error")
+
+    df = daft.from_pydict({"value": [1]})
+
+    try:
+        df.select(raise_err(col("value"))).to_pydict()
+        pytest.fail("Expected ValueError")
+    except ValueError:
+        pass
