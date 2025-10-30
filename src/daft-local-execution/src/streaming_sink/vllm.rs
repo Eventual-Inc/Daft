@@ -216,125 +216,123 @@ impl VLLMSink {
     ///
     /// Pops them by bucketing based on prefix and submitting the largest buckets first.
     #[allow(clippy::type_complexity)]
-    fn pop_tasks(
+    fn pop_and_submit_tasks(
         &self,
         state: &mut VLLMState,
         max_buffer_size: usize,
-    ) -> DaftResult<Vec<(Option<String>, Vec<String>, RecordBatch)>> {
+    ) -> DaftResult<()> {
         let expr = self.expr.inner();
         let prefix_match_threshold = expr.prefix_match_threshold.0;
         let min_bucket_size = expr.min_bucket_size;
         let expr_input = BoundExpr::new_unchecked(expr.input.clone());
 
-        if state.buffer_size > max_buffer_size {
-            let concatted = MicroPartition::concat(&state.buffer)?
-                .concat_or_get_update(IOStatsContext::new("VLLMSink::pop_tasks"))?
-                .unwrap();
-
-            let sorted = concatted.sort(std::slice::from_ref(&expr_input), &[false], &[false])?;
-
-            let prompts_vec = self.get_prompts_for_batch(&sorted)?;
-
-            let mut splits = BinaryHeap::new();
-            let mut prev_split_idx = 0;
-
-            for (i, (p1, p2)) in prompts_vec.iter().tuple_windows().enumerate() {
-                let common_prefix_len = p1
-                    .bytes()
-                    .zip(p2.bytes())
-                    .take_while(|(c1, c2)| c1 == c2)
-                    .count();
-
-                let p1_prefix_ratio = common_prefix_len as f64 / p1.len() as f64;
-                let p2_prefix_ratio = common_prefix_len as f64 / p2.len() as f64;
-
-                if p1_prefix_ratio < prefix_match_threshold
-                    && p2_prefix_ratio < prefix_match_threshold
-                {
-                    let next_split_idx = i + 1;
-                    let split_len = next_split_idx - prev_split_idx;
-                    splits.push((split_len, prev_split_idx, next_split_idx));
-                    prev_split_idx = next_split_idx;
-                }
-            }
-
-            let end_idx = prompts_vec.len();
-            let split_len = end_idx - prev_split_idx;
-            splits.push((split_len, prev_split_idx, end_idx));
-
-            let mut curr_task: Option<(Vec<String>, Vec<RecordBatch>)> = None;
-            let mut tasks = Vec::new();
-            while state.buffer_size > max_buffer_size {
-                let (len, start_idx, end_idx) = splits.pop().unwrap();
-                let prompts = prompts_vec[start_idx..end_idx].to_vec();
-
-                // find the longest common prefix in all prompts
-                let mut prefix_len = 0;
-                for i in 0..prompts[0].len() {
-                    if prompts
-                        .iter()
-                        .all(|p| p.as_bytes().get(i) == prompts[0].as_bytes().get(i))
-                    {
-                        prefix_len = i + 1;
-                    } else {
-                        break;
-                    }
-                }
-
-                let mut prefix_len_to_char = 0;
-                for (i, _) in prompts[0].char_indices() {
-                    if i < prefix_len {
-                        prefix_len_to_char = i;
-                    } else {
-                        break;
-                    }
-                }
-
-                let prefix = prompts[0][..prefix_len_to_char].to_string();
-
-                let rb = sorted.slice(start_idx, end_idx)?;
-
-                if len >= min_bucket_size {
-                    // if the task is large enough, just submit it
-                    tasks.push((Some(prefix), prompts, rb));
-                } else {
-                    // otherwise, accumulate the task until it's large enough
-                    if let Some(task) = &mut curr_task {
-                        task.0.extend(prompts);
-                        task.1.push(rb);
-                    } else {
-                        curr_task = Some((prompts, vec![rb]));
-                    }
-
-                    if curr_task.as_ref().unwrap().0.len() >= min_bucket_size {
-                        let (prompts, rows) = curr_task.unwrap();
-                        let rows = RecordBatch::concat(&rows)?;
-                        tasks.push((None, prompts, rows));
-                        curr_task = None;
-                    }
-                }
-
-                state.buffer_size -= len;
-            }
-
-            if let Some(curr_task) = curr_task {
-                let prompts = curr_task.0;
-                let rows = RecordBatch::concat(&curr_task.1)?;
-                tasks.push((None, prompts, rows));
-            }
-
-            let mut remaining = Vec::with_capacity(splits.len());
-            for (_, start_idx, end_idx) in splits {
-                remaining.push(sorted.slice(start_idx, end_idx)?);
-            }
-
-            let mp = MicroPartition::new_loaded(sorted.schema, Arc::new(remaining), None);
-            state.buffer = vec![mp.into()];
-
-            Ok(tasks)
-        } else {
-            Ok(vec![])
+        if state.buffer_size <= max_buffer_size {
+            return Ok(());
         }
+
+        let concatted = MicroPartition::concat(&state.buffer)?
+            .concat_or_get_update(IOStatsContext::new("VLLMSink::pop_tasks"))?
+            .unwrap();
+
+        let sorted = concatted.sort(std::slice::from_ref(&expr_input), &[false], &[false])?;
+
+        let prompts_vec = self.get_prompts_for_batch(&sorted)?;
+
+        let mut splits = BinaryHeap::new();
+        let mut prev_split_idx = 0;
+
+        for (i, (p1, p2)) in prompts_vec.iter().tuple_windows().enumerate() {
+            let common_prefix_len = p1
+                .bytes()
+                .zip(p2.bytes())
+                .take_while(|(c1, c2)| c1 == c2)
+                .count();
+
+            let p1_prefix_ratio = common_prefix_len as f64 / p1.len() as f64;
+            let p2_prefix_ratio = common_prefix_len as f64 / p2.len() as f64;
+
+            if p1_prefix_ratio < prefix_match_threshold && p2_prefix_ratio < prefix_match_threshold
+            {
+                let next_split_idx = i + 1;
+                let split_len = next_split_idx - prev_split_idx;
+                splits.push((split_len, prev_split_idx, next_split_idx));
+                prev_split_idx = next_split_idx;
+            }
+        }
+
+        let end_idx = prompts_vec.len();
+        let split_len = end_idx - prev_split_idx;
+        splits.push((split_len, prev_split_idx, end_idx));
+
+        let mut curr_task: Option<(Vec<String>, Vec<RecordBatch>)> = None;
+        while state.buffer_size > max_buffer_size {
+            let (len, start_idx, end_idx) = splits.pop().unwrap();
+            let prompts = prompts_vec[start_idx..end_idx].to_vec();
+
+            // find the longest common prefix in all prompts
+            let mut prefix_len = 0;
+            for i in 0..prompts[0].len() {
+                if prompts
+                    .iter()
+                    .all(|p| p.as_bytes().get(i) == prompts[0].as_bytes().get(i))
+                {
+                    prefix_len = i + 1;
+                } else {
+                    break;
+                }
+            }
+
+            let mut prefix_len_to_char = 0;
+            for (i, _) in prompts[0].char_indices() {
+                if i < prefix_len {
+                    prefix_len_to_char = i;
+                } else {
+                    break;
+                }
+            }
+
+            let prefix = prompts[0][..prefix_len_to_char].to_string();
+
+            let rb = sorted.slice(start_idx, end_idx)?;
+
+            if len >= min_bucket_size {
+                // if the task is large enough, just submit it
+                state.executor.submit(Some(prefix), prompts, rb)?;
+            } else {
+                // otherwise, accumulate the task until it's large enough
+                if let Some(task) = &mut curr_task {
+                    task.0.extend(prompts);
+                    task.1.push(rb);
+                } else {
+                    curr_task = Some((prompts, vec![rb]));
+                }
+
+                if curr_task.as_ref().unwrap().0.len() >= min_bucket_size {
+                    let (prompts, rows) = curr_task.unwrap();
+                    let rows = RecordBatch::concat(&rows)?;
+                    state.executor.submit(None, prompts, rows)?;
+                    curr_task = None;
+                }
+            }
+
+            state.buffer_size -= len;
+        }
+
+        if let Some(curr_task) = curr_task {
+            let prompts = curr_task.0;
+            let rows = RecordBatch::concat(&curr_task.1)?;
+            state.executor.submit(None, prompts, rows)?;
+        }
+
+        let mut remaining = Vec::with_capacity(splits.len());
+        for (_, start_idx, end_idx) in splits {
+            remaining.push(sorted.slice(start_idx, end_idx)?);
+        }
+
+        let mp = MicroPartition::new_loaded(sorted.schema, Arc::new(remaining), None);
+        state.buffer = vec![mp.into()];
+
+        Ok(())
     }
 
     fn get_prompts_for_batch(&self, batch: &RecordBatch) -> DaftResult<Vec<String>> {
@@ -375,23 +373,17 @@ impl StreamingSink for VLLMSink {
         spawner
             .spawn(
                 async move {
-                    let tasks = if this.expr.inner().do_prefix_routing {
+                    if this.expr.inner().do_prefix_routing {
                         state.buffer_size += input.len();
                         state.buffer.push(input);
-                        this.pop_tasks(&mut state, this.expr.inner().max_buffer_size)?
-                    } else if input.is_empty() {
-                        vec![]
-                    } else {
+                        this.pop_and_submit_tasks(&mut state, this.expr.inner().max_buffer_size)?;
+                    } else if !input.is_empty() {
                         let batch = input
                             .concat_or_get_update(IOStatsContext::new("VLLMSink::execute"))?
                             .unwrap();
                         let prompts = this.get_prompts_for_batch(&batch)?;
 
-                        vec![(None, prompts, batch)]
-                    };
-
-                    for (prefix, prompts, rows) in tasks {
-                        state.executor.submit(prefix, prompts, rows)?;
+                        state.executor.submit(None, prompts, batch)?;
                     }
 
                     let output = this.poll_tasks(&state)?;
@@ -417,10 +409,7 @@ impl StreamingSink for VLLMSink {
                     };
 
                     if !state.finished_submitting {
-                        let tasks = this.pop_tasks(state, 0)?;
-                        for (prefix, prompts, rows) in tasks {
-                            state.executor.submit(prefix, prompts, rows)?;
-                        }
+                        this.pop_and_submit_tasks(state, 0)?;
                         state.finished_submitting = true;
                         state.executor.finished_submitting()?;
                     }
