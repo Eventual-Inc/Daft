@@ -1737,18 +1737,18 @@ class DataFrame:
             >>> df = daft.from_pydict({"id": [1, 2, 3], "name": ["Alice", "Bob", "Charlie"]})
             >>>
             >>> # Write to SQLite
-            >>> result_df = df.write_sql("users", connection="sqlite:///users.db", mode="create")  # doctest: +SKIP
+            >>> result_df = df.write_sql("users", conn="sqlite:///users.db", mode="create")  # doctest: +SKIP
             >>>
             >>> # Write to PostgreSQL
             >>> result_df = df.write_sql(
-            ...     "users", connection="postgresql://user:password@localhost:5432/mydb", mode="append"
+            ...     "users", conn="postgresql://user:password@localhost:5432/mydb", mode="append"
             ... )  # doctest: +SKIP
             >>>
             >>> result_df.show()  # doctest: +SKIP
             ╭──────────────┬──────────────┬────────────╮
             │ rows_written ┆ bytes_written┆ table_name │
             │ ---          ┆ ---          ┆ ---        │
-            │ Int64        ┆ Int64        ┆ String     │
+            │ UInt64       ┆ UInt64       ┆ String     │
             ╞══════════════╪══════════════╪════════════╡
             │ 3            ┆ 48           ┆ users      │
             ╰──────────────┴──────────────┴────────────╯
