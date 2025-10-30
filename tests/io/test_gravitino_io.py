@@ -243,7 +243,7 @@ class TestGravitinoIOLiveServer:
         try:
             # Attempt to read the file
             print(f"PYTHON DEBUG: About to call daft.read_parquet with gvfs_url: {gvfs_url}")
-            print(f"PYTHON DEBUG: Passing gravitino_only_config: {gravitino_only_config}")
+            # print(f"PYTHON DEBUG: Passing gravitino_only_config: {gravitino_only_config}")
             df = daft.read_parquet(gvfs_url, io_config=gravitino_only_config)
             result = df.collect()
 
@@ -270,7 +270,7 @@ class TestGravitinoIOLiveServer:
 
         try:
             print(f"PYTHON DEBUG: About to call daft.read_parquet with gvfs_url: {gvfs_dir}")
-            print(f"PYTHON DEBUG: Passing gravitino_only_config: {gravitino_only_config}")
+            # print(f"PYTHON DEBUG: Passing gravitino_only_config: {gravitino_only_config}")
             # Attempt to list files in the directory
             files = daft.from_glob_path(gvfs_dir + "**/*.parquet", io_config=gravitino_only_config)
             result = files.collect()

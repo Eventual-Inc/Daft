@@ -84,17 +84,11 @@ def _io_config_from_storage_location(storage_location: str, properties: dict[str
                 region_name = region_match.group(1)
 
         if access_key and secret_key:
-            # Fix endpoint URL format - ensure HTTPS for AWS S3
-            fixed_endpoint_url = endpoint_url
-            if endpoint_url and endpoint_url.startswith("http://s3.") and "amazonaws.com" in endpoint_url:
-                fixed_endpoint_url = endpoint_url.replace("http://", "https://")
-                print(f"PYTHON DEBUG: Fixed endpoint URL from {endpoint_url} to {fixed_endpoint_url}")
-
             s3_config = S3Config(
                 region_name=region_name,
                 key_id=access_key,
                 access_key=secret_key,
-                endpoint_url=fixed_endpoint_url,
+                endpoint_url=endpoint_url,
                 session_token=session_token,
             )
 
