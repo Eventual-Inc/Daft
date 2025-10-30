@@ -10,7 +10,8 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::base::{
-    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
+    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
+    StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
 use crate::{
     ExecutionTaskSpawner, TaskSet,
@@ -28,6 +29,20 @@ struct AsyncUdfParams {
 
 pub struct AsyncUdfSink {
     params: Arc<AsyncUdfParams>,
+}
+
+const DEFAULT_MAX_INFLIGHT_TASKS: usize = 64;
+fn get_max_inflight_tasks() -> usize {
+    let max_inflight_tasks = std::env::var("DAFT_MAX_ASYNC_UDF_INFLIGHT_TASKS");
+    if let Ok(max_inflight_tasks) = max_inflight_tasks {
+        if let Ok(max_inflight_tasks) = max_inflight_tasks.parse::<usize>() {
+            max_inflight_tasks.max(1)
+        } else {
+            DEFAULT_MAX_INFLIGHT_TASKS
+        }
+    } else {
+        DEFAULT_MAX_INFLIGHT_TASKS
+    }
 }
 
 impl AsyncUdfSink {
@@ -114,6 +129,17 @@ impl StreamingSink for AsyncUdfSink {
                             ready_batches.push(batch);
                         }
 
+                        // Force drain tasks until the number of inflight tasks is less than the concurrency limit
+                        let mut num_inflight_tasks = state.task_set.len();
+                        let max_inflight_tasks = get_max_inflight_tasks();
+                        while num_inflight_tasks > max_inflight_tasks {
+                            if let Some(join_res) = state.task_set.join_next().await {
+                                let batch = join_res??;
+                                ready_batches.push(batch);
+                            }
+                            num_inflight_tasks = state.task_set.len();
+                        }
+
                         if ready_batches.is_empty() {
                             Ok((state, StreamingSinkOutput::NeedMoreInput(None)))
                         } else {
@@ -137,31 +163,27 @@ impl StreamingSink for AsyncUdfSink {
 
     fn finalize(
         &self,
-        states: Vec<Self::State>,
+        mut states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkFinalizeResult {
+    ) -> StreamingSinkFinalizeResult<Self> {
         debug_assert!(states.len() == 1, "AsyncUdfSink should only have one state");
         let params = self.params.clone();
         spawner
             .spawn(
                 async move {
-                    let mut ready_batches = Vec::new();
-                    let mut task_set = states.into_iter().next().unwrap().task_set;
-
-                    while let Some(join_res) = task_set.join_next().await {
+                    let state = states.first_mut().unwrap();
+                    if let Some(join_res) = state.task_set.join_next().await {
                         let batch = join_res??;
-                        ready_batches.push(batch);
-                    }
-
-                    if ready_batches.is_empty() {
-                        Ok(None)
+                        Ok(StreamingSinkFinalizeOutput::HasMoreOutput {
+                            states,
+                            output: Arc::new(MicroPartition::new_loaded(
+                                params.output_schema.clone(),
+                                Arc::new(vec![batch]),
+                                None,
+                            )),
+                        })
                     } else {
-                        let output = Arc::new(MicroPartition::new_loaded(
-                            params.output_schema.clone(),
-                            Arc::new(ready_batches),
-                            None,
-                        ));
-                        Ok(Some(output))
+                        Ok(StreamingSinkFinalizeOutput::Finished(None))
                     }
                 },
                 Span::current(),
@@ -221,5 +243,13 @@ impl StreamingSink for AsyncUdfSink {
             .udf_properties
             .batch_size
             .map(MorselSizeRequirement::Strict)
+            .or_else(|| {
+                let is_scalar_udf = self.params.udf_properties.is_scalar;
+                if is_scalar_udf {
+                    Some(MorselSizeRequirement::Strict(1))
+                } else {
+                    None
+                }
+            })
     }
 }

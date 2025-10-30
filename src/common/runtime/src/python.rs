@@ -14,19 +14,21 @@ static PYO3_ASYNC_RUNTIME_LOCALS: OnceLock<pyo3_async_runtimes::TaskLocals> = On
 /// Get or initialize the pyo3 async runtime task locals (which includes the asyncio event loop) from the current Python context.
 ///
 /// This function checks if there is already a running event loop, and if not, it initializes one on a background thread.
-fn get_or_init_task_locals(py: Python) -> &'static pyo3_async_runtimes::TaskLocals {
+fn get_or_init_task_locals() -> &'static pyo3_async_runtimes::TaskLocals {
     PYO3_ASYNC_RUNTIME_LOCALS.get_or_init(|| {
-        let event_loop_module = py
-            .import(pyo3::intern!(py, "daft.event_loop"))
-            .expect("Failed to import event loop module");
-        let event_loop = event_loop_module
-            .call_method0(pyo3::intern!(py, "get_or_init_event_loop"))
-            .expect("Failed to call get_or_init_event_loop method")
-            .getattr(pyo3::intern!(py, "loop"))
-            .expect("Failed to get event loop attribute");
-        pyo3_async_runtimes::TaskLocals::new(event_loop)
-            .copy_context(py)
-            .expect("Failed to copy context")
+        Python::attach(|py| {
+            let event_loop_module = py
+                .import(pyo3::intern!(py, "daft.event_loop"))
+                .expect("Failed to import event loop module");
+            let event_loop = event_loop_module
+                .call_method0(pyo3::intern!(py, "get_or_init_event_loop"))
+                .expect("Failed to call get_or_init_event_loop method")
+                .getattr(pyo3::intern!(py, "loop"))
+                .expect("Failed to get event loop attribute");
+            pyo3_async_runtimes::TaskLocals::new(event_loop)
+                .copy_context(py)
+                .expect("Failed to copy context")
+        })
     })
 }
 
@@ -50,9 +52,9 @@ where
     R: for<'py> pyo3::FromPyObject<'py> + Send + 'static,
 {
     // Execute the coroutine with the task_locals
+    let task_locals = get_or_init_task_locals();
     let result = Python::attach(|py| {
         let coroutine: pyo3::Bound<'_, pyo3::PyAny> = coroutine_builder(py)?;
-        let task_locals = get_or_init_task_locals(py);
         pyo3_async_runtimes::into_future_with_locals(task_locals, coroutine)
     })?
     .await?;
