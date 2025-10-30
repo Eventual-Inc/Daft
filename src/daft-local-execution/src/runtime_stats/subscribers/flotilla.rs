@@ -5,11 +5,11 @@ use common_error::{DaftError, DaftResult};
 use common_metrics::{
     NodeID, Stat, StatSnapshotSend, opentelemetry::init_otlp_meter_provider, ops::NodeInfo,
 };
+use common_runtime::get_io_runtime;
 use opentelemetry::{
     KeyValue,
     metrics::{Counter, MeterProvider as _},
 };
-use tokio::runtime::Handle;
 
 use crate::runtime_stats::{
     CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, subscribers::RuntimeStatsSubscriber,
@@ -25,24 +25,25 @@ pub struct FlotillaSubscriber {
 }
 
 impl FlotillaSubscriber {
-    pub fn new(handle: &Handle, head_node_address: &str, node_infos: &[Arc<NodeInfo>]) -> Self {
+    pub fn new(head_node_address: &str, node_infos: &[Arc<NodeInfo>]) -> DaftResult<Self> {
         let id_to_info = node_infos
             .iter()
             .map(|node_info| (node_info.id, node_info.clone()))
             .collect();
 
         let endpoint = format!("grpc://{}:4317", head_node_address);
-        let meter_provider = handle.block_on(async {
-            init_otlp_meter_provider(&endpoint).expect("Failed to initialize OTLP meter provider")
-        });
+        let io_runtime = get_io_runtime(true);
+        let meter_provider = io_runtime
+            .block_on_current_thread(init_otlp_meter_provider(&endpoint))
+            .expect("Failed to initialize OTLP meter provider");
         let meter = meter_provider.meter("daft");
-        Self {
+        Ok(Self {
             rows_in: meter.u64_counter("daft.runtime_stats.rows_in").build(),
             rows_out: meter.u64_counter("daft.runtime_stats.rows_out").build(),
             cpu_us: meter.u64_counter("daft.runtime_stats.cpu_us").build(),
             id_to_info,
             meter_provider,
-        }
+        })
     }
 }
 

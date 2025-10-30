@@ -133,10 +133,9 @@ impl RuntimeStatsManager {
         {
             let head_node_address = Self::get_head_node_address()?;
             subscribers.push(Box::new(FlotillaSubscriber::new(
-                handle,
                 &head_node_address,
                 &node_infos,
-            )));
+            )?));
         }
 
         let throttle_interval = Duration::from_millis(200);
