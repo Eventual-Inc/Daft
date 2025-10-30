@@ -25,7 +25,7 @@ class VLLMPrefixCachedPrompterDescriptor(PrompterDescriptor):
     do_prefix_routing: bool = True
     max_buffer_size: int = 5000
     min_bucket_size: int = 16
-    prefix_match_threshold: float = 0.5
+    prefix_match_threshold: float = 0.33
     load_balance_threshold: int = 1000
     batch_size: int | None = None
     engine_args: dict[str, Any] = field(default_factory=dict)
