@@ -14,6 +14,7 @@ from daft import (
     current_provider,
 )
 from daft.ai.provider import Provider, ProviderType, load_provider, PROVIDERS
+from daft.functions.misc import when
 from daft.udf import cls as daft_cls, method
 
 if TYPE_CHECKING:
@@ -402,7 +403,8 @@ def classify_image(
 
 
 def prompt(
-    messages: Expression,
+    input_text: Expression,
+    input_image: Expression | None = None,
     return_format: BaseModel | None = None,
     *,
     system_message: str | None = None,
@@ -413,7 +415,8 @@ def prompt(
     """Returns an expression that prompts a large language model using the specified model and provider.
 
     Args:
-        messages (Expression): The input messages column expression.
+        input_text (Expression): The input text column expression.
+        input_image (Expression | None): The input image column expression.
         return_format (BaseModel | None): The return format for the prompt.
         system_message (str | None): The system message for the prompt.
         provider (str | Provider | None): The provider to use for the prompt.
@@ -556,4 +559,4 @@ def prompt(
     instance = wrapped_cls(prompter_descriptor)
 
     # Call the instance (which calls __call__ method) with the messages expression
-    return instance(messages)
+    return instance(input_text, input_image)
