@@ -5,35 +5,24 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import daft
+from daft.file.typing import VideoMetadata
 from daft.udf.udf_v2 import Func
 
 if TYPE_CHECKING:
     import PIL
 
     from daft import Expression
-    from daft.file.typing import VideoMetadata
 
 
 def get_metadata_impl(
     file: daft.VideoFile,
-    *,
-    probesize: str = "64k",
-    analyzeduration_us: int = 200_000,
 ) -> VideoMetadata:
-    return file.metadata(probesize=probesize, analyzeduration_us=analyzeduration_us)
+    return file.metadata()
 
 
 video_metadata_fn = Func._from_func(
     get_metadata_impl,
-    return_dtype=daft.DataType.struct(
-        {
-            "width": daft.DataType.int64(),
-            "height": daft.DataType.int64(),
-            "fps": daft.DataType.float64(),
-            "frame_count": daft.DataType.int64(),
-            "time_base": daft.DataType.float64(),
-        }
-    ),
+    return_dtype=daft.DataType._infer(VideoMetadata),
     unnest=False,
     use_process=None,
     is_batch=False,
@@ -43,23 +32,16 @@ video_metadata_fn = Func._from_func(
 )
 
 
-def video_metadata(
-    file_expr: Expression,
-    *,
-    probesize: str = "64k",
-    analyzeduration_us: int = 200_000,
-) -> Expression:
+def video_metadata(file_expr: Expression) -> Expression:
     """Get metadata for a video file.
 
     Args:
         file (VideoFile): The video file to get metadata for.
-        probesize (str, optional): The size of the probe buffer. Defaults to "64k".
-        analyzeduration_us (int, optional): The duration of the analysis. Defaults to 200_000.
 
     Returns:
         Expression (Struct Expression): A struct containing the metadata (width, height, fps, frame_count, time_base)
     """
-    return video_metadata_fn(file_expr, probesize=probesize, analyzeduration_us=analyzeduration_us)  # type: ignore
+    return video_metadata_fn(file_expr)
 
 
 def keyframes_impl(

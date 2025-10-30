@@ -34,25 +34,15 @@ class VideoFile(File):
         if not self.is_video():
             raise ValueError(f"File {self} is not a video file")
 
-    def metadata(
-        self,
-        *,
-        probesize: str = "64k",
-        analyzeduration_us: int = 200_000,
-    ) -> VideoMetadata:
+    def metadata(self) -> VideoMetadata:
         """Extract basic video metadata from container headers.
 
         Returns:
-        -------
-        dict
-            width, height, fps, frame_count, time_base, keyframe_pts, keyframe_indices
+            VideoMetadata: Video metadata object containing width, height, fps, frame_count, time_base, keyframe_pts, keyframe_indices
+
         """
-        options = {
-            "probesize": str(probesize),
-            "analyzeduration": str(analyzeduration_us),
-        }
         with self.open() as f:
-            with av.open(f, mode="r", options=options, metadata_encoding="utf-8") as container:
+            with av.open(f, mode="r", metadata_encoding="utf-8") as container:
                 video = next(
                     (stream for stream in container.streams if stream.type == "video"),
                     None,
@@ -108,29 +98,25 @@ class VideoFile(File):
     def keyframes(self, start_time: float = 0, end_time: float | None = None) -> Iterator[PIL.Image.Image]:
         """Lazy iterator of keyframes as PIL Images within time range."""
         with self.open() as f:
-            container = av.open(f)
-            video = next(
-                (stream for stream in container.streams if stream.type == "video"),
-                None,
-            )
-            if video is None:
-                raise ValueError("No video stream found")
+            with av.open(f) as container:
+                video = next(
+                    (stream for stream in container.streams if stream.type == "video"),
+                    None,
+                )
+                if video is None:
+                    raise ValueError("No video stream found")
+                # Seek to start time
+                if start_time > 0:
+                    seek_timestamp = int(start_time * video.time_base)
+                    container.seek(seek_timestamp)
 
-            # Seek to start time
-            if start_time > 0:
-                seek_timestamp = int(start_time * video.time_base)
-                container.seek(seek_timestamp)
+                # skip non keyframes
+                video.codec_context.skip_frame = "NONKEY"
+                for frame in container.decode(video):
+                    # Check end time if specified
+                    if end_time is not None:
+                        frame_time = frame.time
+                        if frame_time and frame_time > end_time:
+                            break
 
-            for frame in container.decode(video):
-                if not frame.key_frame:
-                    continue
-
-                # Check end time if specified
-                if end_time is not None:
-                    frame_time = frame.time
-                    if frame_time and frame_time > end_time:
-                        break
-
-                yield frame.to_image()
-
-            container.close()
+                    yield frame.to_image()

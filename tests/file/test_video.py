@@ -8,7 +8,7 @@ import daft
 from daft.schema import Field
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def sample_video_path():
     return "tests/assets/sample_video.mp4"
 
