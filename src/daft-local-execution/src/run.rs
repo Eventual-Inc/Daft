@@ -46,7 +46,7 @@ static GLOBAL_RUNTIME: OnceLock<Handle> = OnceLock::new();
 
 /// Get or initialize the global tokio runtime
 #[cfg(feature = "python")]
-fn get_global_runtime(py: Python) -> &'static Handle {
+fn get_global_runtime() -> &'static Handle {
     GLOBAL_RUNTIME.get_or_init(|| {
         let mut builder = tokio::runtime::Builder::new_current_thread();
         builder.enable_all();
@@ -54,7 +54,6 @@ fn get_global_runtime(py: Python) -> &'static Handle {
         std::thread::spawn(move || {
             pyo3_async_runtimes::tokio::get_runtime().block_on(futures::future::pending::<()>());
         });
-        common_runtime::init_task_locals(py);
         pyo3_async_runtimes::tokio::get_runtime().handle().clone()
     })
 }
@@ -138,7 +137,6 @@ impl PyNativeExecutor {
             .collect();
         let psets = InMemoryPartitionSetCache::new(&native_psets);
         let daft_ctx: &DaftContext = daft_ctx.into();
-        let handle = get_global_runtime(py);
         let res = py.detach(|| {
             self.executor.run(
                 &local_physical_plan.plan,
@@ -147,7 +145,6 @@ impl PyNativeExecutor {
                 daft_ctx.subscribers(),
                 results_buffer_size,
                 context,
-                handle,
             )
         })?;
         let stream = Box::pin(res.into_stream().map(|part| {
@@ -227,7 +224,6 @@ impl NativeExecutor {
         self
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn run(
         &self,
         local_physical_plan: &LocalPhysicalPlanRef,
@@ -236,7 +232,6 @@ impl NativeExecutor {
         subscribers: Vec<Arc<dyn Subscriber>>,
         results_buffer_size: Option<usize>,
         additional_context: Option<HashMap<String, String>>,
-        handle: &Handle,
     ) -> DaftResult<ExecutionEngineResult> {
         let cancel = self.cancel.clone();
         let ctx = RuntimeContext::new_with_context(additional_context.unwrap_or_default());
@@ -247,6 +242,7 @@ impl NativeExecutor {
         let enable_explain_analyze = self.enable_explain_analyze;
 
         // Spawn execution on the global runtime - returns immediately
+        let handle = get_global_runtime();
         let stats_manager = RuntimeStatsManager::try_new(handle, &pipeline, subscribers)?;
         let task = async move {
             let stats_manager_handle = stats_manager.handle();

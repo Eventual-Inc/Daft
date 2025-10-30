@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Iterator
 
+import pytest
+
 import daft
 from daft import DataType
 
@@ -274,3 +276,21 @@ def test_cls_batch_method_scalar_eval():
     # When called with a scalar, should execute eagerly
     a = daft.Series.from_pylist([1, 2, 3])
     assert multiplier.multiply(a).to_pylist() == [5, 10, 15]
+
+
+@pytest.mark.parametrize("concurrency", [1, 2])
+def test_cls_async_method_max_concurrency(concurrency):
+    df = daft.from_pydict({"a": [1, 2, 3]})
+
+    @daft.cls(max_concurrency=concurrency)
+    class AsyncProcessor:
+        def __init__(self, delay: float):
+            self.delay = delay
+
+        async def __call__(self, x: int) -> int:
+            await asyncio.sleep(self.delay)
+            return x * 2
+
+    processor = AsyncProcessor(0.01)
+    result = df.select(processor(df["a"]))
+    assert result.to_pydict() == {"a": [2, 4, 6]}
