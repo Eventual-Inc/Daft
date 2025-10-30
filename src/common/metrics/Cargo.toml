@@ -3,6 +3,12 @@ indicatif = "0.17"
 serde = {workspace = true}
 smallvec = {workspace = true, features = ["serde"]}
 pyo3 = {workspace = true, optional = true}
+common-runtime = {path = "../runtime", default-features = false}
+common-error = {path = "../error", default-features = false}
+opentelemetry = {workspace = true}
+opentelemetry-otlp = {workspace = true}
+opentelemetry-stdout = {version = "0.29.0", features = ["trace"]}
+opentelemetry_sdk = {workspace = true, features = ["metrics", "rt-tokio", "experimental_metrics_periodicreader_with_async_runtime"]}
 
 [features]
 python = ["dep:pyo3"]

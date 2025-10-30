@@ -1,4 +1,4 @@
-pub(crate) mod opentelemetry;
+pub(crate) mod flotilla;
 pub(crate) mod progress_bar;
 pub(crate) mod query;
 

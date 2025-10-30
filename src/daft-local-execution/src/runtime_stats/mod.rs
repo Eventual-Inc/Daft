@@ -16,7 +16,6 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use common_metrics::NodeID;
 use common_runtime::RuntimeTask;
-use common_tracing::init_opentelemetry_providers;
 use daft_context::Subscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_micropartition::MicroPartition;
@@ -37,7 +36,7 @@ use crate::{
     channel::{Receiver, Sender},
     pipeline::PipelineNode,
     runtime_stats::subscribers::{
-        RuntimeStatsSubscriber, opentelemetry::OpenTelemetrySubscriber,
+        RuntimeStatsSubscriber, flotilla::FlotillaSubscriber,
         progress_bar::make_progress_bar_manager, query::SubscriberWrapper,
     },
 };
@@ -127,18 +126,17 @@ impl RuntimeStatsManager {
 
         // Ensure OTEL metrics are configured to export to the distributed head node's embedded OTLP server.
         // If the endpoint is not already configured via env, derive it from the Ray head node address.
-        let otel_enabled = true;
         #[cfg(feature = "python")]
-        if otel_enabled {
-            if let Ok(head_node_address) = Self::get_head_node_address() {
-                let endpoint = format!("grpc://{}:4317", head_node_address);
-                init_opentelemetry_providers(&endpoint);
-            } else {
-                log::warn!(
-                    "Failed to determine head node address for OTEL metrics; metrics export disabled"
-                );
-            }
-            subscribers.push(Box::new(OpenTelemetrySubscriber::new(&node_infos)));
+        if std::env::var("DAFT_RUNNER")
+            .map(|v| v.eq_ignore_ascii_case("RAY"))
+            .unwrap_or(false)
+        {
+            let head_node_address = Self::get_head_node_address()?;
+            subscribers.push(Box::new(FlotillaSubscriber::new(
+                handle,
+                &head_node_address,
+                &node_infos,
+            )));
         }
 
         let throttle_interval = Duration::from_millis(200);

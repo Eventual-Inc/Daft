@@ -1885,7 +1885,13 @@ dependencies = [
 name = "common-metrics"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-error",
+ "common-runtime",
  "indicatif 0.17.11",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry-stdout",
+ "opentelemetry_sdk",
  "pyo3",
  "serde",
  "smallvec",
@@ -3020,6 +3026,7 @@ dependencies = [
  "kanal",
  "log",
  "opentelemetry",
+ "opentelemetry_sdk",
  "pin-project",
  "pyo3",
  "pyo3-async-runtimes",
@@ -5886,6 +5893,8 @@ dependencies = [
  "rand 0.9.1",
  "serde_json",
  "thiserror 2.0.16",
+ "tokio",
+ "tokio-stream",
  "tracing",
 ]
 

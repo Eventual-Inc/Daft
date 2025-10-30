@@ -1,3 +1,4 @@
+pub mod opentelemetry;
 pub mod ops;
 #[cfg(feature = "python")]
 pub mod python;
