@@ -54,9 +54,9 @@ impl PyScalarFunction {
         // today and covers name resolution in the DSL.
         let schema = Schema::empty();
         let inputs = FunctionArgs::try_new(inputs)?;
-        let udf = self.inner.get_function(inputs.clone(), &schema)?;
+        let func = self.inner.get_function(inputs.clone(), &schema)?;
 
-        let expr: ExprRef = ScalarFn::Builtin(BuiltinScalarFn { udf, inputs }).into();
+        let expr: ExprRef = ScalarFn::Builtin(BuiltinScalarFn { func, inputs }).into();
         Ok(expr.into())
     }
 }

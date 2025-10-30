@@ -1,4 +1,5 @@
 [dependencies]
+async-trait = {workspace = true}
 common-runtime = {path = "../common/runtime", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
