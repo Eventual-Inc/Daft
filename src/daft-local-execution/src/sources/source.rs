@@ -89,8 +89,18 @@ pub(crate) struct SourceNode {
 }
 
 impl SourceNode {
-    pub fn new(source: Arc<dyn Source>, plan_stats: StatsState, ctx: &RuntimeContext) -> Self {
-        let info = ctx.next_node_info(source.name().into(), source.op_type(), NodeCategory::Source);
+    pub fn new(
+        source: Arc<dyn Source>,
+        plan_stats: StatsState,
+        ctx: &RuntimeContext,
+        output_schema: SchemaRef,
+    ) -> Self {
+        let info = ctx.next_node_info(
+            source.name().into(),
+            source.op_type(),
+            NodeCategory::Source,
+            output_schema,
+        );
         let runtime_stats = source.make_runtime_stats();
         Self {
             source,
@@ -136,6 +146,14 @@ impl TreeDisplay for SourceNode {
         }
         display
     }
+
+    fn repr_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "id": self.id(),
+            "name": self.name(),
+        })
+    }
+
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
         self.children()
             .iter()

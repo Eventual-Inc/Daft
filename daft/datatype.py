@@ -186,6 +186,10 @@ class DataType:
             return cls.time(TimeUnit.us())
         elif check_type(datetime.timedelta):
             return cls.duration(TimeUnit.us())
+        elif check_type(daft.file.VideoFile):
+            return cls.file(MediaType.video())
+        elif check_type(daft.file.File):
+            return cls.file(MediaType.unknown())
         elif check_type(list):
             if len(args) == 0:
                 inner_dtype = cls.python()
@@ -229,6 +233,16 @@ class DataType:
                 # tuple[type0, type1, ...] -> Struct[_0: type0, _1: type1, ...]
                 field_dtypes = {f"_{i}": cls.infer_from_type(arg) for i, arg in enumerate(args)}
                 return cls.struct(field_dtypes)
+        elif check_type(decimal.Decimal):
+            warnings.warn(
+                "Cannot derive precision and scale from decimal.Decimal type, defaulting to DataType.python()"
+            )
+            return cls.python()
+        elif check_type(daft.series.Series):
+            warnings.warn(
+                "Cannot derive inner type from daft.Series type, defaulting to DataType.python() for Series inner type"
+            )
+            return cls.list(cls.python())
         elif check_type("pydantic.BaseModel"):
             import pydantic
 
@@ -265,11 +279,8 @@ class DataType:
                 field_dtypes[serialized_name] = cls.infer_from_type(field_info.return_type)
 
             return cls.struct(field_dtypes)
-        elif check_type(decimal.Decimal):
-            warnings.warn(
-                "Cannot derive precision and scale from decimal.Decimal type, defaulting to DataType.python()"
-            )
-            return cls.python()
+        elif check_type("PIL.Image.Image"):
+            return cls.image()
         elif check_type("jaxtyping.AbstractArray"):
             return cls._infer_from_jaxtyping(origin)
         elif check_type("numpy.ndarray"):
@@ -287,6 +298,7 @@ class DataType:
                 inner_dtype = cls.python()
 
             return cls.tensor(inner_dtype)
+
         elif check_type("torch.FloatTensor"):
             return cls.tensor(cls.float32())
         elif check_type("torch.DoubleTensor"):
@@ -317,17 +329,6 @@ class DataType:
                 "Cannot derive inner type from pandas.Series type, defaulting to DataType.python() for Series inner type"
             )
             return cls.list(cls.python())
-        elif check_type("PIL.Image.Image"):
-            return cls.image()
-        elif check_type(daft.series.Series):
-            warnings.warn(
-                "Cannot derive inner type from daft.Series type, defaulting to DataType.python() for Series inner type"
-            )
-            return cls.list(cls.python())
-        elif check_type(daft.file.VideoFile):
-            return cls.file(MediaType.video())
-        elif check_type(daft.file.File):
-            return cls.file(MediaType.unknown())
         else:
             return cls.python()
 
