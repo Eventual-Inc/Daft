@@ -84,11 +84,11 @@ pub struct LimitStats {
 
 impl LimitStats {
     fn new(node_id: NodeID) -> Self {
-        let meter = global::meter("FlotillaScheduler");
+        let meter = global::meter("DistributedNodeStats-Limit");
         Self {
-            default_stats: DefaultRuntimeStats::new(node_id),
+            default_stats: DefaultRuntimeStats::new_impl(&meter, node_id),
             active_rows_out: meter
-                .u64_counter(format!("{}.active_rows_out", node_id))
+                .u64_counter(format!("daft.{}.active_rows_out", node_id))
                 .build(),
         }
     }
