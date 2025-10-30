@@ -1,4 +1,5 @@
 pub mod anti_semi_hash_join_probe;
+pub mod async_udf;
 pub mod base;
 pub mod concat;
 pub mod limit;

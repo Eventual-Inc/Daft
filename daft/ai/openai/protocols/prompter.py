@@ -6,13 +6,14 @@ from typing import TYPE_CHECKING, Any
 from openai import AsyncOpenAI
 
 from daft.ai.protocols import Prompter, PrompterDescriptor
-from daft.ai.utils import get_http_udf_options
+from daft.ai.typing import UDFOptions
+from daft.file import File
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
 
     from daft.ai.openai.typing import OpenAIProviderOptions
-    from daft.ai.typing import Options, UDFOptions
+    from daft.ai.typing import Options
 
 
 @dataclass
@@ -23,6 +24,7 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
     model_options: Options
     system_message: str | None = None
     return_format: BaseModel | None = None
+    udf_options: UDFOptions | None = None
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -34,7 +36,7 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
         return self.model_options
 
     def get_udf_options(self) -> UDFOptions:
-        return get_http_udf_options()
+        return self.udf_options or UDFOptions(concurrency=None, num_gpus=None)
 
     def instantiate(self) -> Prompter:
         return OpenAIPrompter(
@@ -70,16 +72,62 @@ class OpenAIPrompter(Prompter):
         self.generation_config = {k: v for k, v in generation_config.items() if k not in client_params_keys}
         self.llm = AsyncOpenAI(**client_params)
 
-    async def prompt(self, user_message: str) -> Any:
+    def _encode_image(self, image: Any) -> str:
+        """Encodes an image into a base64 string."""
+        import base64
+
+        from daft.dependencies import np
+
+        # If the image is a numpy array, convert it to a PIL image and save it to a bytes buffer in PNG format, then encode it to a base64 string.
+        if isinstance(image, np.ndarray):
+            import io
+
+            from daft.dependencies import pil_image
+
+            pil_image = pil_image.fromarray(image)
+            bio = io.BytesIO()
+            pil_image.save(bio, "PNG")
+            base64_string = base64.b64encode(bio.getvalue()).decode("utf-8")
+            return f"data:image/png;base64,{base64_string}"
+        # If the image is a bytes object or a string, use the File class to get the mime type and read the file into a bytes object, then encode it to a base64 string.
+        elif isinstance(image, bytes) or isinstance(image, str):
+            daft_file = File(image)
+            mime_type = daft_file.mime_type()
+            with daft_file.open() as f:
+                base64_string = base64.b64encode(f.read()).decode("utf-8")
+                return f"data:{mime_type};base64,{base64_string}"
+        # If the image is already a File object, get the mime type and read the file into a bytes object, then encode it to a base64 string.
+        elif isinstance(image, File):
+            mime_type = image.mime_type()
+            with image.open() as f:
+                base64_string = base64.b64encode(f.read()).decode("utf-8")
+                return f"data:{mime_type};base64,{base64_string}"
+        # If the image is not a supported type, raise an error.
+        else:
+            raise ValueError(f"Unsupported image type in prompt: {type(image)}")
+
+    async def prompt(self, input_text: str, input_image: Any | None = None) -> Any:
         """Generate responses for a batch of message strings."""
         # Each message is a string prompt
+        messages_list = []
         if self.system_message is not None:
-            messages_list = [
-                {"role": "system", "content": self.system_message},
-                {"role": "user", "content": user_message},
-            ]
+            messages_list.append({"role": "system", "content": self.system_message})
+
+        if input_image is None:
+            messages_list.append({"role": "user", "content": input_text})
         else:
-            messages_list = [{"role": "user", "content": user_message}]
+            messages_list.append(
+                {
+                    "role": "user",
+                    "content": [  # type: ignore[dict-item]
+                        {"type": "input_text", "text": input_text},
+                        {
+                            "type": "input_image",
+                            "image_url": self._encode_image(input_image),
+                        },
+                    ],
+                }
+            )
 
         if self.return_format is not None:
             # Use structured outputs with Pydantic model

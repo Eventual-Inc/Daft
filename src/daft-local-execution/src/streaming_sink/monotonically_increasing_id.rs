@@ -6,7 +6,8 @@ use daft_micropartition::MicroPartition;
 use tracing::{Span, instrument};
 
 use super::base::{
-    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
+    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
+    StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
@@ -106,8 +107,8 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
         &self,
         _states: Vec<Self::State>,
         _spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkFinalizeResult {
-        Ok(None).into()
+    ) -> StreamingSinkFinalizeResult<Self> {
+        Ok(StreamingSinkFinalizeOutput::Finished(None)).into()
     }
 
     fn make_state(&self) -> Self::State {

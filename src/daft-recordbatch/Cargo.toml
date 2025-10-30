@@ -1,4 +1,5 @@
 [dependencies]
+async-recursion = "1.0.4"
 arrow-array = {version = "54.2.1"}
 arrow2 = {workspace = true, features = ["arrow"]}
 comfy-table = {workspace = true}

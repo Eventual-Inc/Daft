@@ -2,21 +2,23 @@
     * [Overview](index.md)
     * [Quickstart](quickstart.md)
     * [Installation](install.md)
-    * Common Use Cases
-        * [Batch Inference](use-case/batch-inference.md)
-    * Working with Modalities
+    * AI Functions
+        * [Functions](ai-functions/index.md)
+        * [Providers](ai-functions/providers.md)
+    * Modalities
         * [Modalities](modalities/index.md)
-        * [Custom Modalities](modalities/custom.md)
-        * [URLs and Files](modalities/urls.md)
         * [Text](modalities/text.md)
         * [Images](modalities/images.md)
+        * [Audio](modalities/audio.md)
         * [Videos](modalities/videos.md)
         * [JSON and Nested Data](modalities/json.md)
+        * [URLs and Files](modalities/urls.md)
+        * [Custom Modalities](modalities/custom.md)
     * Running Custom Python Code
         * [User-Defined Functions (UDFs)](custom-code/udfs.md)
         * [Next-Generation UDFs](custom-code/func.md)
-    * Models and Providers
-        * [Models and Providers](models/index.md)
+    * Common Use Cases
+        * [Batch Inference](use-case/batch-inference.md)
     * Datasets
         * [Common Crawl](datasets/common-crawl.md)
     * Data Connectors
@@ -44,10 +46,13 @@
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning and Batching](optimization/partitioning.md)
         * [Observability](optimization/observability.md)
+    * Contributing
+        * [Contributing](contributing-to-daft.md)
+        * [AI Functions](contributing/contributing-ai-functions.md)
+    * [Sessions](sessions-usage.md)
+    * [Roadmap](roadmap.md)
     * [Benchmarks](benchmarks/index.md)
     * [Community <sup>↗</sup>](http://www.daft.ai/slack)
-    * [Contributing](contributing-to-daft.md)
-    * [Roadmap](roadmap.md)
     * [Release Notes <sup>↗</sup>](https://github.com/Eventual-Inc/Daft/releases)
     * [Usage Telemetry](telemetry.md)
 * Examples
