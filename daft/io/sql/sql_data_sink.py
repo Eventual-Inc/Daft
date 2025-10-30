@@ -26,9 +26,10 @@ class SQLDataSink(DataSink[dict[str, Any]]):
 
     def __init__(
         self,
+        *,
         table_name: str,
         connection: Union[str, Callable[[], Connection]],  # noqa: UP007
-        mode: Literal["create", "append", "replace"] = "create",
+        mode: Literal["create", "append", "replace"],
     ) -> None:
         """Initialize SQLDataSink.
 
@@ -50,8 +51,8 @@ class SQLDataSink(DataSink[dict[str, Any]]):
         # Define the schema for the result of the write operation
         self._result_schema = Schema._from_field_name_and_types(
             [
-                ("rows_written", DataType.int64()),
-                ("bytes_written", DataType.int64()),
+                ("rows_written", DataType.uint64()),
+                ("bytes_written", DataType.uint64()),
                 ("table_name", DataType.string()),
             ]
         )
