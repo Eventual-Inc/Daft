@@ -277,8 +277,8 @@ class SQLDataSink(DataSink[dict[str, Any]]):
         # Create result micropartition
         tbl = MicroPartition.from_pydict(
             {
-                "rows_written": pa.array([total_rows], pa.int64()),
-                "bytes_written": pa.array([total_bytes], pa.int64()),
+                "rows_written": pa.array([total_rows], pa.uint64()),
+                "bytes_written": pa.array([total_bytes], pa.uint64()),
                 "table_name": pa.array([self._table_name], pa.string()),
             }
         )
