@@ -98,13 +98,6 @@ def _io_config_from_storage_location(storage_location: str, properties: dict[str
                 session_token=session_token,
             )
 
-            print("PYTHON DEBUG: Created S3Config:")
-            print(f"  region_name: {s3_config.region_name}")
-            print(f"  endpoint_url: {s3_config.endpoint_url}")
-            print(f"  key_id: {s3_config.key_id}")
-            print(f"  access_key: {'***' + (s3_config.access_key[-4:] if s3_config.access_key else 'None')}")
-            print(f"  session_token: {s3_config.session_token}")
-
             return IOConfig(s3=s3_config)
         return None
     elif scheme == "gcs" or scheme == "gs":
@@ -321,23 +314,14 @@ class GravitinoClient:
             if storage_location.startswith("file:/") and not storage_location.startswith("file:///"):
                 storage_location = storage_location.replace("file:/", "file:///", 1)
 
-            # Load catalog to get catalog-level properties
-            table_catalog = self.load_catalog(catalog_name)
-            catalog_properties = table_catalog.properties
-
-            # Merge catalog properties into table properties
-            # Table properties take precedence over catalog properties
-            merged_properties = catalog_properties.copy()
-            merged_properties.update(properties)
-
             table_info = GravitinoTableInfo(
                 name=table_data.get("name", table_name_only),
                 catalog=catalog_name,
                 schema=schema_name,
                 table_type=table_data.get("provider", ""),
                 storage_location=storage_location,
-                format=merged_properties.get("format", "ICEBERG"),
-                properties=merged_properties,
+                format=properties.get("format", "ICEBERG"),
+                properties=properties,
             )
 
         except requests.exceptions.HTTPError as e:
@@ -401,11 +385,6 @@ class GravitinoClient:
             # Gravitino returns "file:/path" but Daft expects "file:///path"
             if storage_location.startswith("file:/") and not storage_location.startswith("file:///"):
                 storage_location = storage_location.replace("file:/", "file:///", 1)
-
-            # Convert s3a:// (Hadoop/Spark format) to s3:// (AWS S3 format)
-            if storage_location.startswith("s3a://"):
-                storage_location = storage_location.replace("s3a://", "s3://", 1)
-                print(f"PYTHON DEBUG [load_fileset]: Converted s3a:// to s3:// -> {storage_location}")
 
             fileset_catalog = self.load_catalog(catalog_name)
             catalog_properties = fileset_catalog.properties
