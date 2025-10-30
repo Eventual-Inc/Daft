@@ -1785,6 +1785,7 @@ dependencies = [
  "comfy-table 7.1.4",
  "indexmap 2.11.4",
  "pyo3",
+ "serde_json",
  "terminal_size",
  "textwrap",
 ]
@@ -1885,6 +1886,7 @@ dependencies = [
 name = "common-metrics"
 version = "0.3.0-dev0"
 dependencies = [
+ "daft-schema",
  "indicatif 0.17.11",
  "pyo3",
  "serde",
@@ -2672,6 +2674,7 @@ dependencies = [
 name = "daft-dsl"
 version = "0.3.0-dev0"
 dependencies = [
+ "async-trait",
  "common-error",
  "common-hashable-float-wrapper",
  "common-macros",
@@ -2813,6 +2816,7 @@ dependencies = [
 name = "daft-functions-uri"
 version = "0.3.0-dev0"
 dependencies = [
+ "async-trait",
  "bytes",
  "common-error",
  "common-runtime",
@@ -3021,6 +3025,7 @@ dependencies = [
  "pyo3",
  "pyo3-async-runtimes",
  "rand 0.8.5",
+ "serde_json",
  "snafu",
  "tokio",
  "tokio-util",
@@ -3192,6 +3197,7 @@ dependencies = [
  "num-format",
  "rstest",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -3229,6 +3235,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
