@@ -7,7 +7,9 @@ use daft_core::prelude::Schema;
 use daft_dsl::{
     Expr, ExprRef, Operator, WindowExpr, WindowSpec, binary_op,
     expr::window::{WindowBoundary, WindowFrame},
-    functions::{BuiltinScalarFn, FUNCTION_REGISTRY, FunctionArgs, ScalarUDF},
+    functions::{
+        BuiltinScalarFn, BuiltinScalarFnVariant, FUNCTION_REGISTRY, FunctionArgs, ScalarUDF,
+    },
     unresolved_col,
 };
 use daft_session::Session;
@@ -100,13 +102,28 @@ impl SQLFunction for Arc<dyn ScalarUDF> {
             .map(|input| planner.plan_function_arg(input))
             .collect::<SQLPlannerResult<Vec<_>>>()?;
         Ok(BuiltinScalarFn {
-            udf: self.clone(),
+            func: BuiltinScalarFnVariant::Sync(self.clone()),
             inputs: daft_dsl::functions::FunctionArgs::try_new(inputs)?,
         }
         .into())
     }
     fn docstrings(&self, _alias: &str) -> String {
         ScalarUDF::docstring(self.as_ref()).to_string()
+    }
+}
+
+impl SQLFunction for BuiltinScalarFnVariant {
+    fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+        let inputs = inputs
+            .iter()
+            .map(|input| planner.plan_function_arg(input))
+            .collect::<SQLPlannerResult<Vec<_>>>()?;
+
+        Ok(BuiltinScalarFn {
+            func: self.clone(),
+            inputs: daft_dsl::functions::FunctionArgs::try_new(inputs)?,
+        }
+        .into())
     }
 }
 

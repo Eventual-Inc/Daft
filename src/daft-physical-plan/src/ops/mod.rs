@@ -85,6 +85,9 @@ macro_rules! impl_default_tree_display {
                 fn get_children(&self) -> Vec<&dyn common_display::tree::TreeDisplay> {
                     vec![self.input.as_ref()]
                 }
+                fn repr_json(&self) -> serde_json::Value {
+                    unimplemented!("repr_json for any PhysicalPlan node is not supported")
+                }
             }
         )+
     };

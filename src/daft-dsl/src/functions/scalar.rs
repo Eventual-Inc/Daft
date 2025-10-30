@@ -32,8 +32,45 @@ impl ScalarFn {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum BuiltinScalarFnVariant {
+    Sync(Arc<dyn ScalarUDF>),
+    Async(Arc<dyn AsyncScalarUDF>),
+}
+
+impl BuiltinScalarFnVariant {
+    pub fn sync(udf: Arc<dyn ScalarUDF>) -> Self {
+        Self::Sync(udf)
+    }
+
+    pub fn async_(udf: Arc<dyn AsyncScalarUDF>) -> Self {
+        Self::Async(udf)
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Sync(udf) => udf.name(),
+            Self::Async(udf) => udf.name(),
+        }
+    }
+
+    pub fn aliases(&self) -> &'static [&'static str] {
+        match self {
+            Self::Sync(udf) => udf.aliases(),
+            Self::Async(udf) => udf.aliases(),
+        }
+    }
+
+    pub fn type_id(&self) -> TypeId {
+        match self {
+            Self::Sync(udf) => udf.as_ref().type_id(),
+            Self::Async(udf) => udf.as_ref().type_id(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BuiltinScalarFn {
-    pub udf: Arc<dyn ScalarUDF>,
+    pub func: BuiltinScalarFnVariant,
     pub inputs: FunctionArgs<ExprRef>,
 }
 
@@ -42,27 +79,60 @@ impl BuiltinScalarFn {
     pub fn new<UDF: ScalarUDF + 'static>(udf: UDF, inputs: Vec<ExprRef>) -> Self {
         let inputs = inputs.into_iter().map(FunctionArg::unnamed).collect();
         Self {
-            udf: Arc::new(udf),
+            func: BuiltinScalarFnVariant::Sync(Arc::new(udf)),
+            inputs: FunctionArgs::new_unchecked(inputs),
+        }
+    }
+    pub fn new_async<UDF: AsyncScalarUDF + 'static>(udf: UDF, inputs: Vec<ExprRef>) -> Self {
+        let inputs = inputs.into_iter().map(FunctionArg::unnamed).collect();
+        Self {
+            func: BuiltinScalarFnVariant::Async(Arc::new(udf)),
             inputs: FunctionArgs::new_unchecked(inputs),
         }
     }
     pub fn name(&self) -> &str {
-        self.udf.name()
+        self.func.name()
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
-        self.udf.get_return_field(self.inputs.clone(), schema)
+        match &self.func {
+            BuiltinScalarFnVariant::Sync(scalar_udf) => {
+                scalar_udf.get_return_field(self.inputs.clone(), schema)
+            }
+            BuiltinScalarFnVariant::Async(async_scalar_udf) => {
+                async_scalar_udf.get_return_field(self.inputs.clone(), schema)
+            }
+        }
     }
 
     /// Returns true if `self.udf` is of type `F`
     pub fn is_function_type<F: ScalarUDF>(&self) -> bool {
-        self.udf.as_ref().type_id() == TypeId::of::<F>()
+        match &self.func {
+            BuiltinScalarFnVariant::Sync(scalar_udf) => {
+                scalar_udf.as_ref().type_id() == TypeId::of::<F>()
+            }
+            BuiltinScalarFnVariant::Async(async_scalar_udf) => {
+                async_scalar_udf.as_ref().type_id() == TypeId::of::<F>()
+            }
+        }
     }
 }
 
 impl From<ScalarFn> for ExprRef {
     fn from(func: ScalarFn) -> Self {
         Self::new(Expr::ScalarFn(func))
+    }
+}
+
+impl From<Arc<dyn ScalarUDF>> for BuiltinScalarFnVariant {
+    fn from(func: Arc<dyn ScalarUDF>) -> Self {
+        Self::Sync(func)
+    }
+}
+
+impl From<Arc<dyn AsyncScalarUDF>> for BuiltinScalarFnVariant {
+    fn from(func: Arc<dyn AsyncScalarUDF>) -> Self {
+        Self::Async(func)
     }
 }
 
@@ -103,7 +173,7 @@ pub trait ScalarFunctionFactory: Send + Sync {
         &self,
         args: FunctionArgs<ExprRef>,
         schema: &Schema,
-    ) -> DaftResult<Arc<dyn ScalarUDF>>;
+    ) -> DaftResult<BuiltinScalarFnVariant>;
 }
 
 /// This is a concrete implementation of a ScalarFunction.
@@ -162,6 +232,31 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
     }
 }
 
+/// This is a concrete implementation of a ScalarFunction.
+#[typetag::serde(tag = "type")]
+#[async_trait::async_trait]
+pub trait AsyncScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
+    fn preferred_batch_size(&self, _inputs: FunctionArgs<ExprRef>) -> DaftResult<Option<usize>> {
+        Ok(None)
+    }
+
+    /// The name of the function.
+    fn name(&self) -> &'static str;
+
+    /// Any additional aliases for this function.
+    fn aliases(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    async fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series>;
+
+    fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field>;
+
+    fn docstring(&self) -> &'static str {
+        "No documentation available"
+    }
+}
+
 pub fn scalar_function_semantic_id(func: &BuiltinScalarFn, schema: &Schema) -> FieldID {
     let inputs = func
         .inputs
@@ -203,11 +298,12 @@ impl Display for BuiltinScalarFn {
     }
 }
 
+/// Function factory
 /// Function factory which is backed by a single dynamic ScalarUDF.
-pub struct DynamicScalarFunction(Arc<dyn ScalarUDF>);
+pub struct DynamicScalarFunction(BuiltinScalarFnVariant);
 
-impl From<Arc<dyn ScalarUDF>> for DynamicScalarFunction {
-    fn from(value: Arc<dyn ScalarUDF>) -> Self {
+impl From<BuiltinScalarFnVariant> for DynamicScalarFunction {
+    fn from(value: BuiltinScalarFnVariant) -> Self {
         Self(value)
     }
 }
@@ -224,7 +320,11 @@ impl ScalarFunctionFactory for DynamicScalarFunction {
     }
 
     /// All typing for implementation variants is done during evaluation, hence dynamic.
-    fn get_function(&self, _: FunctionArgs<ExprRef>, _: &Schema) -> DaftResult<Arc<dyn ScalarUDF>> {
+    fn get_function(
+        &self,
+        _: FunctionArgs<ExprRef>,
+        _: &Schema,
+    ) -> DaftResult<BuiltinScalarFnVariant> {
         Ok(self.0.clone())
     }
 }
