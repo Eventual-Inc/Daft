@@ -466,6 +466,190 @@ class TestGravitinoIOLiveServer:
             traceback.print_exc()
             pytest.skip(f"Live server test failed (expected if no live server/data): {type(e).__name__}: {e}")
 
+    def test_read_all_files_from_fileset(self, gravitino_only_config):
+        """Test reading all files from a specific Gravitino fileset as a single dataframe.
+
+        This test reads all files in the gvfs://fileset/s3_fileset_catalog3/test_schema/test_fileset3/
+        directory as a unified dataframe and displays the results.
+        """
+        # Specific fileset path as requested
+        gvfs_fileset_url = "gvfs://fileset/s3_fileset_catalog3/test_schema/test_fileset3/"
+
+        try:
+            print(f"\n📂 Reading all files from fileset: {gvfs_fileset_url}")
+
+            # Read all files in the fileset as a single dataframe
+            # Using glob pattern to capture all supported file types
+            patterns_to_try = [
+                "**/*.parquet",  # Parquet files
+                "**/*.json",  # JSON files
+                "**/*.csv",  # CSV files
+                "**/*",  # All files (let Daft auto-detect format)
+            ]
+
+            df = None
+            files_found = False
+
+            for pattern in patterns_to_try:
+                try:
+                    full_pattern = gvfs_fileset_url + pattern
+                    print(f"   Trying pattern: {full_pattern}")
+
+                    # Try to read with this pattern
+                    temp_df = daft.from_glob_path(full_pattern, io_config=gravitino_only_config)
+
+                    # Check if any files were found
+                    file_list = temp_df.collect()
+                    if len(file_list) > 0:
+                        print(f"   ✓ Found {len(file_list)} files with pattern: {pattern}")
+                        files_found = True
+
+                        # Show the files found
+                        file_paths = file_list.to_pydict()["path"]
+                        for i, path in enumerate(file_paths[:10]):  # Show first 10 files
+                            print(f"     {i+1}. {path}")
+                        if len(file_paths) > 10:
+                            print(f"     ... and {len(file_paths) - 10} more files")
+
+                        # Now try to read the actual data from these files
+                        # Determine file type from first file
+                        first_file = file_paths[0]
+                        if first_file.endswith(".parquet"):
+                            print("   📊 Reading parquet files as dataframe...")
+                            df = daft.read_parquet(gvfs_fileset_url + "**/*.parquet", io_config=gravitino_only_config)
+                        elif first_file.endswith(".json"):
+                            print("   📊 Reading JSON files as dataframe...")
+                            df = daft.read_json(gvfs_fileset_url + "**/*.json", io_config=gravitino_only_config)
+                        elif first_file.endswith(".csv"):
+                            print("   📊 Reading CSV files as dataframe...")
+                            df = daft.read_csv(gvfs_fileset_url + "**/*.csv", io_config=gravitino_only_config)
+                        else:
+                            print("   ⚠️  Unknown file type, trying parquet reader...")
+                            df = daft.read_parquet(gvfs_fileset_url + "**/*", io_config=gravitino_only_config)
+
+                        break
+
+                except Exception as pattern_e:
+                    print(f"   ❌ Pattern {pattern} failed: {pattern_e}")
+                    continue
+
+            if not files_found:
+                print("   ℹ️  No files found in the fileset")
+                print("   This could mean:")
+                print("     - The fileset is empty")
+                print("     - The fileset doesn't exist")
+                print("     - Access permissions are insufficient")
+                print("     - The Gravitino server is not running")
+                return
+
+            if df is None:
+                print("   ❌ Could not create dataframe from files")
+                return
+
+            print("\n📊 Collecting dataframe from all files...")
+
+            # Collect the dataframe
+            result = df.collect()
+
+            print(f"   ✓ Successfully read {len(result)} total rows from all files")
+
+            if len(result) > 0:
+                print("\n📋 Dataframe Results:")
+                print("   " + "=" * 80)
+
+                # Get the data as a dictionary
+                result_dict = result.to_pydict()
+                columns = list(result_dict.keys())
+
+                print(f"   Columns ({len(columns)}): {', '.join(columns)}")
+                print(f"   Total Rows: {len(result)}")
+                print("   " + "-" * 80)
+
+                # Show column info
+                print("   Column Details:")
+                for col in columns:
+                    col_data = result_dict[col]
+                    col_type = type(col_data[0]).__name__ if col_data else "unknown"
+                    print(f"     - {col}: {col_type}")
+
+                print("   " + "-" * 80)
+
+                # Show first few rows
+                num_rows_to_show = min(10, len(result))
+                print(f"   Sample Data (first {num_rows_to_show} rows):")
+                print("   " + "-" * 80)
+
+                # Print header
+                header = " | ".join(
+                    f"{col[:12]:>12}" for col in columns[:6]
+                )  # Show first 6 columns, truncate long names
+                print(f"   {header}")
+                print("   " + "-" * 80)
+
+                # Print data rows
+                for i in range(num_rows_to_show):
+                    row_values = []
+                    for col in columns[:6]:  # Show first 6 columns
+                        value = result_dict[col][i]
+                        # Truncate long values
+                        str_value = str(value)
+                        if len(str_value) > 12:
+                            str_value = str_value[:9] + "..."
+                        row_values.append(f"{str_value:>12}")
+
+                    row = " | ".join(row_values)
+                    print(f"   {row}")
+
+                print("   " + "-" * 80)
+
+                if len(result) > num_rows_to_show:
+                    print(f"   ... and {len(result) - num_rows_to_show} more rows")
+
+                if len(columns) > 6:
+                    print(f"   ... and {len(columns) - 6} more columns")
+
+                print("   " + "=" * 80)
+
+                # Show some basic statistics if numeric columns exist
+                numeric_columns = []
+                for col in columns:
+                    col_data = result_dict[col]
+                    if col_data and isinstance(col_data[0], (int, float)):
+                        numeric_columns.append(col)
+
+                if numeric_columns:
+                    print("\n📈 Basic Statistics for Numeric Columns:")
+                    print("   " + "-" * 60)
+                    for col in numeric_columns[:3]:  # Show stats for first 3 numeric columns
+                        values = [x for x in result_dict[col] if x is not None]
+                        if values:
+                            print(f"   {col}:")
+                            print(f"     Min: {min(values)}")
+                            print(f"     Max: {max(values)}")
+                            print(f"     Avg: {sum(values) / len(values):.2f}")
+                            print(f"     Count: {len(values)}")
+                    print("   " + "-" * 60)
+
+            else:
+                print("   ℹ️  Dataframe is empty (0 rows)")
+
+            print("\n✅ Successfully read and displayed all files from fileset!")
+            print(f"   Fileset: {gvfs_fileset_url}")
+            print(f"   Total rows: {len(result) if df else 0}")
+            print(f"   Total columns: {len(columns) if df and len(result) > 0 else 0}")
+
+        except Exception as e:
+            import traceback
+
+            print("\n❌ Exception occurred while reading fileset:")
+            print(f"Exception type: {type(e).__name__}")
+            print(f"Exception message: {e!s}")
+            print(f"Fileset URL: {gvfs_fileset_url}")
+            print("Note: This is expected when no Gravitino server is running or fileset doesn't exist")
+            print("Full traceback:")
+            traceback.print_exc()
+            pytest.skip(f"Live server test failed (expected if no live server/data): {type(e).__name__}: {e}")
+
 
 if __name__ == "__main__":
     # Run basic tests
@@ -488,12 +672,17 @@ if __name__ == "__main__":
     print("✓ Error handling tests passed")
 
     print("\n🎉 All basic Gravitino I/O tests passed!")
-    print("\nTo run the comprehensive integration test:")
+    print("\nTo run the integration tests:")
     print("1. Start a Gravitino server on localhost:8090")
     print("2. Set GRAVITINO_TEST_SERVER=1")
     print("3. Optionally set GRAVITINO_TEST_DIR to your test fileset URL")
+    print("4. Run comprehensive test:")
     print(
-        "4. Run: pytest tests/io/test_gravitino_io_comprehensive.py::TestGravitinoIOLiveServer::test_comprehensive_fileset_operations -v -s"
+        "   pytest tests/io/test_gravitino_io_comprehensive.py::TestGravitinoIOLiveServer::test_comprehensive_fileset_operations -v -s"
+    )
+    print("5. Run read all files test:")
+    print(
+        "   pytest tests/io/test_gravitino_io_comprehensive.py::TestGravitinoIOLiveServer::test_read_all_files_from_fileset -v -s"
     )
     print("\nNote: gvfs:// write operations are currently limited due to PyArrow filesystem constraints.")
-    print("The test will demonstrate the workflow and focus on read operations with existing data.")
+    print("The tests will demonstrate the workflow and focus on read operations with existing data.")
