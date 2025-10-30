@@ -1695,7 +1695,7 @@ class DataFrame:
     def write_sql(
         self,
         table_name: str,
-        connection: Union[str, Callable[[], Any]],
+        conn: Union[str, Callable[[], Any]],
         mode: Literal["create", "append", "replace"] = "create",
     ) -> "DataFrame":
         """Write a DataFrame into a relational database table.
@@ -1704,7 +1704,7 @@ class DataFrame:
 
         Args:
             table_name: Name of the target SQL table to write to.
-            connection: Connection string (URL) or a callable that returns a SQLAlchemy connection.
+            conn: Connection string (URL) or a callable that returns a SQLAlchemy connection.
                 Examples of connection strings:
                 - PostgreSQL: "postgresql://user:password@localhost:5432/mydb"
                 - SQLite: "sqlite:///path/to/database.db"
@@ -1744,7 +1744,7 @@ class DataFrame:
         """
         from daft.io.sql import SQLDataSink
 
-        sink = SQLDataSink(table_name, connection, mode)
+        sink = SQLDataSink(table_name=table_name, connection=conn, mode=mode)
         return self.write_sink(sink)
 
     ###
