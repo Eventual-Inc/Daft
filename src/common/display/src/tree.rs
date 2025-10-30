@@ -11,6 +11,12 @@ pub trait TreeDisplay {
     /// **Important**. Implementers do not need to worry about the formatting of the output.
     fn display_as(&self, level: crate::DisplayLevel) -> String;
 
+    /// Describe the node in a JSON format.
+    /// This is useful for special visualization tools to parse the tree.
+    /// Generally expected to include an `id`, `type`, `name`, and `schema` field, but may vary.
+    /// Children will be auto-embedded.
+    fn repr_json(&self) -> serde_json::Value;
+
     /// Get a unique identifier for this node.
     /// No two nodes should have the same id.
     /// The default implementation uses the node's name and memory address.
@@ -34,6 +40,10 @@ pub trait TreeDisplay {
 impl TreeDisplay for Arc<dyn TreeDisplay> {
     fn display_as(&self, level: crate::DisplayLevel) -> String {
         self.as_ref().display_as(level)
+    }
+
+    fn repr_json(&self) -> serde_json::Value {
+        self.as_ref().repr_json()
     }
 
     fn get_name(&self) -> String {

@@ -90,6 +90,16 @@ impl<T: Send + 'static> TaskSet<T> {
             .map(|r| r.map_err(|e| Error::JoinError { source: e }))
     }
 
+    fn try_join_next(&mut self) -> Option<Result<T, Error>> {
+        self.inner
+            .try_join_next()
+            .map(|r| r.map_err(|e| Error::JoinError { source: e }))
+    }
+
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
     async fn shutdown(&mut self) {
         self.inner.shutdown().await;
     }
@@ -322,8 +332,9 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    use run::PyNativeExecutor;
+    use run::{LocalPartitionStream, PyNativeExecutor};
 
     parent.add_class::<PyNativeExecutor>()?;
+    parent.add_class::<LocalPartitionStream>()?;
     Ok(())
 }

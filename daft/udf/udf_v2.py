@@ -5,9 +5,19 @@ import inspect
 import sys
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import Generator, Iterator
+from collections.abc import Coroutine, Generator, Iterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, get_args, get_origin, get_type_hints, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Generic,
+    TypeVar,
+    get_args,
+    get_origin,
+    get_type_hints,
+    overload,
+)
 
 if TYPE_CHECKING:
     from typing import Literal
@@ -150,9 +160,6 @@ class Func(Generic[P, T, C]):
                 f"Expected Daft function `return_dtype` to be `DataType.struct(..)` when `unnest=True`, instead found: {self.return_dtype}"
             )
 
-        if self.is_batch and (self.is_async or self.is_generator):
-            raise ValueError("Daft batch functions do not yet support async or generator functions.")
-
         if not self.is_batch and self.batch_size is not None:
             raise ValueError("Non-batch Daft functions cannot have a batch size.")
 
@@ -253,6 +260,7 @@ class Func(Generic[P, T, C]):
                     self.name,
                     self._cls,
                     self._method,
+                    self.is_async,
                     self.return_dtype._dtype,
                     self.gpus,
                     self.use_process,
@@ -319,6 +327,17 @@ class ClsBase(ABC, Generic[C]):
             return method(local_instance, *args, **kwargs)
 
         return bound_method
+
+    def _daft_bind_coroutine_method(
+        self, method: Callable[Concatenate[C, P], Coroutine[Any, Any, T]]
+    ) -> Callable[P, Coroutine[Any, Any, T]]:
+        """Bind a method to the local instance of the Daft class."""
+        local_instance = self._daft_get_instance()
+
+        async def bound_coroutine(*args: P.args, **kwargs: P.kwargs) -> T:
+            return await method(local_instance, *args, **kwargs)
+
+        return bound_coroutine
 
 
 def wrap_cls(

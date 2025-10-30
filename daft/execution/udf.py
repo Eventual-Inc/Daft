@@ -122,7 +122,12 @@ class UdfHandle:
         shm_name, shm_size = self.transport.write_and_close(serialized)
         self.handle_conn.send((shm_name, shm_size))
 
-        response = self.handle_conn.recv()
+        try:
+            response = self.handle_conn.recv()
+        except EOFError:
+            stdout = self.trace_output()
+            raise RuntimeError(f"UDF process closed the connection unexpectedly (EOF reached), stdout: {stdout}")
+
         stdout = self.trace_output()
         if response[0] == _UDF_ERROR:
             try:

@@ -130,8 +130,8 @@ struct PyDistributedPhysicalPlanRunner {
 #[pymethods]
 impl PyDistributedPhysicalPlanRunner {
     #[new]
-    fn new(py: Python) -> PyResult<Self> {
-        let worker_manager = RayWorkerManager::try_new(py)?;
+    fn new() -> PyResult<Self> {
+        let worker_manager = RayWorkerManager::new();
         Ok(Self {
             runner: Arc::new(PlanRunner::new(Arc::new(worker_manager))),
         })

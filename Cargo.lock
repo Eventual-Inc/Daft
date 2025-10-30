@@ -1785,6 +1785,7 @@ dependencies = [
  "comfy-table 7.1.4",
  "indexmap 2.11.4",
  "pyo3",
+ "serde_json",
  "terminal_size",
  "textwrap",
 ]
@@ -1885,6 +1886,7 @@ dependencies = [
 name = "common-metrics"
 version = "0.3.0-dev0"
 dependencies = [
+ "daft-schema",
  "indicatif 0.17.11",
  "pyo3",
  "serde",
@@ -2653,32 +2655,31 @@ dependencies = [
  "daft-physical-plan",
  "daft-recordbatch",
  "daft-schema",
- "dashmap",
  "futures",
  "itertools 0.14.0",
  "opentelemetry",
  "pyo3",
  "pyo3-async-runtimes",
  "rand 0.8.5",
- "reqwest",
  "serde",
  "serde_json",
  "tokio",
  "tokio-stream",
  "tokio-util",
  "tracing",
- "uuid 1.18.1",
 ]
 
 [[package]]
 name = "daft-dsl"
 version = "0.3.0-dev0"
 dependencies = [
+ "async-trait",
  "common-error",
  "common-hashable-float-wrapper",
  "common-macros",
  "common-py-serde",
  "common-resource-request",
+ "common-runtime",
  "common-treenode",
  "daft-core",
  "daft-sketch",
@@ -2689,6 +2690,7 @@ dependencies = [
  "pyo3",
  "rstest",
  "serde",
+ "tokio",
  "typetag",
 ]
 
@@ -2813,6 +2815,7 @@ dependencies = [
 name = "daft-functions-uri"
 version = "0.3.0-dev0"
 dependencies = [
+ "async-trait",
  "bytes",
  "common-error",
  "common-runtime",
@@ -2978,7 +2981,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "arc-swap",
  "async-trait",
- "bincode",
  "capitalize",
  "common-daft-config",
  "common-display",
@@ -3017,13 +3019,11 @@ dependencies = [
  "itertools 0.14.0",
  "kanal",
  "log",
- "opentelemetry",
  "pin-project",
  "pyo3",
  "pyo3-async-runtimes",
  "rand 0.8.5",
- "reqwest",
- "serde",
+ "serde_json",
  "snafu",
  "tokio",
  "tokio-util",
@@ -3195,6 +3195,7 @@ dependencies = [
  "num-format",
  "rstest",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -3212,6 +3213,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
  "arrow2",
+ "async-recursion",
  "comfy-table 7.1.4",
  "common-arrow-ffi",
  "common-display",
@@ -3231,6 +3233,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
