@@ -1761,50 +1761,12 @@ class DataFrame:
 
         connection_string = str(conn)
 
-        # Collect the DataFrame to get all data
-        self.collect()
+        builder = self._builder.write_sql(table_name, connection_string, mode)
+        write_df = DataFrame(builder)
+        write_df.collect()
 
-        # Get the underlying Arrow data
-        arrow_table = self.to_arrow()
+        return write_df.to_pydict()
 
-        # Serialize the Arrow table to bytes using Arrow IPC format
-        sink_obj = pa.BufferOutputStream()
-        writer = pa.ipc.new_stream(sink_obj, arrow_table.schema)
-        writer.write_table(arrow_table)
-        writer.close()
-
-        arrow_bytes = sink_obj.getvalue().to_pybytes()
-
-        # Call the Rust implementation from daft native module
-        try:
-            from daft.daft import write_sql
-        except ImportError:
-            # Fallback for different module structure
-            import daft.daft as native_daft
-
-            write_sql = getattr(native_daft, "write_sql", None)
-            if write_sql is None:
-                raise RuntimeError("write_sql function not found in native module")
-
-        rows_written, bytes_written = write_sql(
-            connection_string,
-            table_name,
-            arrow_bytes,
-            mode,
-        )
-
-        # Return a DataFrame with the write results
-        from daft import from_pydict
-
-        result_df = from_pydict(
-            {
-                "rows_written": [rows_written],
-                "bytes_written": [bytes_written],
-                "table_name": [table_name],
-            }
-        )
-
-        return result_df
 
     ###
     # DataFrame operations
