@@ -951,7 +951,7 @@ impl RecordBatch {
                 let args = python_udf.args().iter().map(|expr| self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))).collect::<DaftResult<Vec<_>>>()?;
                 let is_async = match python_udf {
                     PyScalarFn::RowWise(func) => func.is_async,
-                    PyScalarFn::Batch(..) => false,
+                    PyScalarFn::Batch(func) => func.is_async,
                 };
                 if is_async {
                     #[cfg(feature = "python")] {

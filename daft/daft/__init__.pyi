@@ -1365,6 +1365,7 @@ def batch_udf(
     name: str,
     cls: ClsBase[Any],
     method: Callable[Concatenate[Any, ...], Any],
+    is_async: bool,
     return_dtype: PyDataType,
     gpus: int,
     use_process: bool | None,

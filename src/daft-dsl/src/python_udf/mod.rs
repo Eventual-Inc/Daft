@@ -33,7 +33,7 @@ impl PyScalarFn {
     pub async fn call_async(&self, args: &[Series]) -> DaftResult<Series> {
         match self {
             Self::RowWise(func) => func.call_async(args).await,
-            Self::Batch(..) => unimplemented!(),
+            Self::Batch(func) => func.call_async(args).await,
         }
     }
 
@@ -89,7 +89,7 @@ impl PyScalarFn {
     pub fn is_async(&self) -> bool {
         match self {
             Self::RowWise(RowWisePyFn { is_async, .. }) => *is_async,
-            Self::Batch(BatchPyFn { .. }) => false,
+            Self::Batch(BatchPyFn { is_async, .. }) => *is_async,
         }
     }
 }

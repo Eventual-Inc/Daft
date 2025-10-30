@@ -293,7 +293,7 @@ impl RowWisePyFn {
         common_runtime::python::execute_python_coroutine::<_, PySeries>(move |py| {
             let f = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
-                .getattr(pyo3::intern!(py, "call_async_batch"))?;
+                .getattr(pyo3::intern!(py, "call_async_func_batched"))?;
             let mut evaluated_args = Vec::with_capacity(num_rows);
             for i in 0..num_rows {
                 let py_args_for_row = args

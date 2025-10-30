@@ -298,6 +298,7 @@ pub struct UDFProperties {
     pub use_process: Option<bool>,
     pub max_retries: Option<usize>,
     pub is_async: bool,
+    pub is_scalar: bool,
     pub on_error: Option<OnError>,
 }
 
@@ -330,6 +331,7 @@ impl UDFProperties {
                         max_retries: None,
                         is_async: false,
                         on_error: None,
+                        is_scalar: false,
                     });
                 }
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
@@ -356,6 +358,7 @@ impl UDFProperties {
                         max_retries: *max_retries,
                         is_async: *is_async,
                         on_error: Some(*on_error),
+                        is_scalar: true,
                     });
                 }
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
@@ -366,6 +369,7 @@ impl UDFProperties {
                     batch_size,
                     max_retries,
                     on_error,
+                    is_async,
                     ..
                 }))) => {
                     num_udfs += 1;
@@ -380,8 +384,9 @@ impl UDFProperties {
                         concurrency: *max_concurrency,
                         use_process: *use_process,
                         max_retries: *max_retries,
-                        is_async: false,
+                        is_async: *is_async,
                         on_error: Some(*on_error),
+                        is_scalar: false,
                     });
                 }
                 _ => {}
