@@ -87,7 +87,7 @@ impl ScalarUDF for VideoFile {
             io_config,
         } = args.try_into()?;
 
-        // todo(universalmind303): can we use an async stream here instead so we're not blocking on each iteration
+        // TODO(universalmind303): can we use an async stream here instead so we're not blocking on each iteration
         fn verify_file(file_ref: FileReference) -> DaftResult<FileReference> {
             let mut daft_file = DaftFile::load_blocking(file_ref.clone(), false)?;
 
@@ -134,6 +134,7 @@ impl ScalarUDF for VideoFile {
             }
             DataType::Utf8 => {
                 let utf8 = input.utf8()?;
+                // TODO(universalmind303): refactor this to be async once we have async scalar fns.
                 let data = utf8.into_iter().map(|data| {
                     data.map(|data| {
                         let file_ref = FileReference::new_from_reference(
@@ -186,7 +187,7 @@ impl ScalarUDF for Size {
             let s = input.file::<$P>()?;
             let len = s.len();
             let mut out = Vec::with_capacity(len);
-            // todo(cory): can likely optimize this a lot more than a naive for loop.
+            // TODO(cory): can likely optimize this a lot more than a naive for loop.
             for i in 0..len {
                 let opt: Option<u64> = s
                     .get(i)
