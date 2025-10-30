@@ -31,6 +31,14 @@ pub struct AsyncUdfSink {
     params: Arc<AsyncUdfParams>,
 }
 
+const DEFAULT_MAX_INFLIGHT_TASKS: usize = 64;
+fn get_max_inflight_tasks() -> usize {
+    std::option_env!("DAFT_MAX_ASYNC_UDF_INFLIGHT_TASKS")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(DEFAULT_MAX_INFLIGHT_TASKS)
+        .max(1)
+}
+
 impl AsyncUdfSink {
     pub fn new(
         expr: BoundExpr,
@@ -113,6 +121,16 @@ impl StreamingSink for AsyncUdfSink {
                         while let Some(join_res) = state.task_set.try_join_next() {
                             let batch = join_res??;
                             ready_batches.push(batch);
+                        }
+
+                        // Force drain tasks until the number of inflight tasks is less than the concurrency limit
+                        let mut num_inflight_tasks = state.task_set.len();
+                        while num_inflight_tasks > get_max_inflight_tasks() {
+                            if let Some(join_res) = state.task_set.join_next().await {
+                                let batch = join_res??;
+                                ready_batches.push(batch);
+                            }
+                            num_inflight_tasks = state.task_set.len();
                         }
 
                         if ready_batches.is_empty() {
@@ -218,5 +236,13 @@ impl StreamingSink for AsyncUdfSink {
             .udf_properties
             .batch_size
             .map(MorselSizeRequirement::Strict)
+            .or_else(|| {
+                let is_scalar_udf = self.params.udf_properties.is_scalar;
+                if is_scalar_udf {
+                    Some(MorselSizeRequirement::Strict(1))
+                } else {
+                    None
+                }
+            })
     }
 }

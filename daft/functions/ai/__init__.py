@@ -544,7 +544,7 @@ def prompt(
     udf_options = prompter_descriptor.get_udf_options()
 
     # Decorate the __call__ method with @daft.method to specify return_dtype
-    _PrompterExpression.__call__ = method(method=_PrompterExpression.__call__, return_dtype=return_dtype)  # type: ignore[method-assign]
+    _PrompterExpression.__call__ = method(method=_PrompterExpression.prompt, return_dtype=return_dtype)  # type: ignore[method-assign]
 
     # Wrap the class with @daft.cls
     wrapped_cls = daft_cls(

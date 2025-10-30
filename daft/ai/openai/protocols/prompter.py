@@ -24,6 +24,7 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
     model_options: Options
     system_message: str | None = None
     return_format: BaseModel | None = None
+    udf_options: UDFOptions | None = None
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -35,7 +36,7 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
         return self.model_options
 
     def get_udf_options(self) -> UDFOptions:
-        return UDFOptions(concurrency=None, num_gpus=None)
+        return self.udf_options or UDFOptions(concurrency=None, num_gpus=None)
 
     def instantiate(self) -> Prompter:
         return OpenAIPrompter(
@@ -86,18 +87,21 @@ class OpenAIPrompter(Prompter):
             pil_image = pil_image.fromarray(image)
             bio = io.BytesIO()
             pil_image.save(bio, "PNG")
-            return f"data:image/png;base64,{base64.b64encode(bio.getvalue()).decode('utf-8')}"
+            base64_string = base64.b64encode(bio.getvalue()).decode("utf-8")
+            return f"data:image/png;base64,{base64_string}"
         # If the image is a bytes object or a string, use the File class to get the mime type and read the file into a bytes object, then encode it to a base64 string.
         elif isinstance(image, bytes) or isinstance(image, str):
             daft_file = File(image)
             mime_type = daft_file.mime_type()
             with daft_file.open() as f:
-                return f"data:{mime_type};base64,{base64.b64encode(f.read()).decode('utf-8')}"
+                base64_string = base64.b64encode(f.read()).decode("utf-8")
+                return f"data:{mime_type};base64,{base64_string}"
         # If the image is already a File object, get the mime type and read the file into a bytes object, then encode it to a base64 string.
         elif isinstance(image, File):
             mime_type = image.mime_type()
             with image.open() as f:
-                return f"data:{mime_type};base64,{base64.b64encode(f.read()).decode('utf-8')}"
+                base64_string = base64.b64encode(f.read()).decode("utf-8")
+                return f"data:{mime_type};base64,{base64_string}"
         # If the image is not a supported type, raise an error.
         else:
             raise ValueError(f"Unsupported image type in prompt: {type(image)}")
