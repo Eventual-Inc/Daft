@@ -33,6 +33,9 @@ import Link from "next/link";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { ClipboardIcon, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { dashboardUrl } from "@/components/server-provider";
+import { TooltipArrow } from "@radix-ui/react-tooltip";
 
 const STATUS: string = "state";
 
@@ -92,34 +95,56 @@ const Header = () => (
 );
 
 
-const EmptyState = () => (
-  <Empty>
-    <EmptyHeader>
-      <EmptyMedia variant="icon">
-        <Database />
-      </EmptyMedia>
-      <EmptyTitle>No Queries Run Yet!</EmptyTitle>
-      <EmptyDescription>
-        Please connect your Daft script to the Dashboard to get started.
-      </EmptyDescription>
-      <EmptyContent>
-        <div className="h-[5px]" />
-        <div className="border px-4 py-2 font-mono text-sm bg-zinc-800 w-[550px] flex justify-between items-center">
-          <span>
-            DAFT_DASHBOARD_URL=&quot;http://localhost:3238&quot; python ...
-          </span>
-          <Button
-            size="icon"
-            className="relative z-10 h-6 w-6 text-zinc-50 hover:bg-zinc-700 hover:text-zinc-50 [&_svg]:h-3 [&_svg]:w-3"
-          >
-            <span className="sr-only">Copy</span>
-            <ClipboardIcon />
-          </Button>
-        </div>
-      </EmptyContent>
-    </EmptyHeader>
-  </Empty>
-);
+const EmptyState = () => {
+  const copyText = `DAFT_DASHBOARD_URL="${dashboardUrl()}" python`;
+  const [copied, setCopied] = React.useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(copyText);
+      setCopied(true);
+    } catch {
+      // no-op: clipboard may be unavailable
+    }
+  };
+
+  return (
+    <Empty>
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Database />
+        </EmptyMedia>
+        <EmptyTitle>No Queries Run Yet!</EmptyTitle>
+        <EmptyDescription>
+          Please connect your Daft script to the Dashboard to get started.
+        </EmptyDescription>
+        <EmptyContent>
+          <div className="h-[5px]" />
+          <div className="border px-4 py-2 font-mono text-sm bg-zinc-800 w-[550px] flex justify-between items-center">
+            <span>
+              {copyText} ...
+            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon"
+                  className="relative z-10 h-6 w-6 text-zinc-50 hover:bg-zinc-700 hover:text-zinc-50 [&_svg]:h-3 [&_svg]:w-3 border border-zinc-500"
+                  onClick={handleCopy}
+                >
+                  <ClipboardIcon />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent className="bg-(--daft-accent) text-white font-bold">
+                {copied ? "Copied!" : "Copy to clipboard"}
+                <TooltipArrow className="fill-(--daft-accent)" />
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </EmptyContent>
+      </EmptyHeader>
+    </Empty>
+  );
+};
 
 /**
  *  Main Component to display the queries in a table
