@@ -275,15 +275,25 @@ FLOTILLA_RUNNER_NAMESPACE = "daft"
 FLOTILLA_RUNNER_NAME = "flotilla-plan-runner"
 
 
-def get_head_node_id() -> str | None:
+def get_head_node_info() -> dict[str, str] | None:
     for node in ray.nodes():
         if (
             "Resources" in node
             and "node:__internal_head__" in node["Resources"]
             and node["Resources"]["node:__internal_head__"] == 1
         ):
-            return node["NodeID"]
+            return node
     return None
+
+
+def get_head_node_id() -> str | None:
+    head_node = get_head_node_info()
+    return head_node["NodeID"] if head_node is not None else None
+
+
+def get_head_node_address() -> str | None:
+    head_node = get_head_node_info()
+    return head_node["NodeManagerAddress"] if head_node is not None else None
 
 
 class FlotillaRunner:

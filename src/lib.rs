@@ -38,7 +38,7 @@ pub mod pylib {
     use std::sync::LazyLock;
 
     use common_logging::GLOBAL_LOGGER;
-    use common_tracing::init_opentelemetry_providers;
+    use common_tracing::init_opentelemetry_providers_from_env;
     use pyo3::prelude::*;
 
     static LOG_RESET_HANDLE: LazyLock<pyo3_log::ResetHandle> = LazyLock::new(|| {
@@ -108,7 +108,7 @@ pub mod pylib {
     #[pymodule]
     fn daft(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         refresh_logger(py)?;
-        init_opentelemetry_providers();
+        init_opentelemetry_providers_from_env();
 
         common_daft_config::register_modules(m)?;
         common_system_info::register_modules(m)?;

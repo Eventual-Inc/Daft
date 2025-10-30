@@ -158,11 +158,6 @@ impl StatisticsManager {
                 );
             }
         });
-        tracing::info!(
-            target = STATISTICS_LOG_TARGET,
-            address = %addr,
-            "Started embedded OTLP metrics gRPC server"
-        );
         manager.otlp_server_task = Some(task);
 
         Arc::new(manager)

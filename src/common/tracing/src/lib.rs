@@ -26,7 +26,7 @@ pub fn should_enable_opentelemetry() -> bool {
     std::env::var(OTEL_EXPORTER_OTLP_ENDPOINT).is_ok()
 }
 
-pub fn init_opentelemetry_providers() {
+pub fn init_opentelemetry_providers_from_env() {
     if !should_enable_opentelemetry() {
         return;
     }
@@ -35,11 +35,14 @@ pub fn init_opentelemetry_providers() {
         Ok(endpoint) => endpoint,
         Err(_) => return,
     };
+    init_opentelemetry_providers(&otlp_endpoint);
+}
 
+pub fn init_opentelemetry_providers(otlp_endpoint: &str) {
     let ioruntime = get_io_runtime(true);
     ioruntime.block_on_current_thread(async {
-        init_otlp_metrics_provider(&otlp_endpoint).await;
-        init_otlp_tracer_provider(&otlp_endpoint).await;
+        init_otlp_metrics_provider(otlp_endpoint).await;
+        init_otlp_tracer_provider(otlp_endpoint).await;
     });
 }
 
@@ -49,7 +52,13 @@ pub fn flush_opentelemetry_providers() {
 
 async fn init_otlp_metrics_provider(otlp_endpoint: &str) {
     let mut mg = GLOBAL_METER_PROVIDER.lock().unwrap();
-    assert!(mg.is_none(), "Expected meter provider to be None on init");
+    if mg.is_some() {
+        println!(
+            "OHOH: println Meter provider already initialized, not initializing again at {:?}",
+            otlp_endpoint
+        );
+        return;
+    }
 
     let resource = Resource::builder()
         .with_attribute(KeyValue::new("service.name", "daft"))
@@ -80,7 +89,7 @@ async fn init_otlp_metrics_provider(otlp_endpoint: &str) {
 pub fn flush_oltp_metrics_provider() {
     let mg = GLOBAL_METER_PROVIDER.lock().unwrap();
     if let Some(meter_provider) = mg.as_ref()
-        && let Err(e) = meter_provider.shutdown()
+        && let Err(e) = meter_provider.force_flush()
     {
         println!("Failed to flush OTLP metrics provider: {}", e);
     }
@@ -88,7 +97,13 @@ pub fn flush_oltp_metrics_provider() {
 
 async fn init_otlp_tracer_provider(otlp_endpoint: &str) {
     let mut mg = GLOBAL_TRACER_PROVIDER.lock().unwrap();
-    assert!(mg.is_none(), "Expected tracer provider to be None on init");
+    if mg.is_some() {
+        println!(
+            "OHOH: println Tracer provider already initialized, not initializing again at {:?}",
+            otlp_endpoint
+        );
+        return;
+    }
 
     let resource = Resource::builder()
         .with_attribute(KeyValue::new("service.name", "daft"))

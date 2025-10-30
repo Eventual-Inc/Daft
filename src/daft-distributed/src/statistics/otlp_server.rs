@@ -65,12 +65,11 @@ impl MetricsService for OtlpMetricsServer {
                                 all_attrs.extend(dp_attrs);
 
                                 // Print a concise line for visibility
-                                tracing::info!(
-                                    target = "DaftOTLPServer",
-                                    metric = %metric_name,
-                                    value = %value,
-                                    attrs = %format_attributes(&all_attrs),
-                                    "metric"
+                                println!(
+                                    "OHOH: println metric: {}, value: {}, attrs: {}",
+                                    metric_name,
+                                    value,
+                                    format_attributes(&all_attrs)
                                 );
 
                                 // Update aggregation: prefer query_id if present, else ""; node id by key "id"
@@ -93,12 +92,11 @@ impl MetricsService for OtlpMetricsServer {
                                 let (value, dp_attrs) = extract_number_datapoint(dp);
                                 let mut all_attrs = resource_attrs.clone();
                                 all_attrs.extend(dp_attrs);
-                                tracing::info!(
-                                    target = "DaftOTLPServer",
-                                    metric = %metric_name,
-                                    value = %value,
-                                    attrs = %format_attributes(&all_attrs),
-                                    "metric"
+                                println!(
+                                    "OHOH: println metric: {}, value: {}, attrs: {}",
+                                    metric_name,
+                                    value,
+                                    format_attributes(&all_attrs)
                                 );
 
                                 let query_id = all_attrs

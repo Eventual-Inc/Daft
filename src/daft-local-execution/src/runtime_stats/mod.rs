@@ -13,16 +13,18 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_metrics::NodeID;
 use common_runtime::RuntimeTask;
-use common_tracing::should_enable_opentelemetry;
+use common_tracing::init_opentelemetry_providers;
 use daft_context::Subscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_micropartition::MicroPartition;
 use futures::future;
 use itertools::Itertools;
 use kanal::SendError;
+#[cfg(feature = "python")]
+use pyo3::{Python, types::PyAnyMethods};
 use tokio::{
     runtime::Handle,
     sync::{mpsc, oneshot},
@@ -123,7 +125,19 @@ impl RuntimeStatsManager {
             subscribers.push(make_progress_bar_manager(&node_infos));
         }
 
-        if should_enable_opentelemetry() {
+        // Ensure OTEL metrics are configured to export to the distributed head node's embedded OTLP server.
+        // If the endpoint is not already configured via env, derive it from the Ray head node address.
+        let otel_enabled = true;
+        #[cfg(feature = "python")]
+        if otel_enabled {
+            if let Ok(head_node_address) = Self::get_head_node_address() {
+                let endpoint = format!("grpc://{}:4317", head_node_address);
+                init_opentelemetry_providers(&endpoint);
+            } else {
+                log::warn!(
+                    "Failed to determine head node address for OTEL metrics; metrics export disabled"
+                );
+            }
             subscribers.push(Box::new(OpenTelemetrySubscriber::new(&node_infos)));
         }
 
@@ -134,6 +148,20 @@ impl RuntimeStatsManager {
             node_stats_map,
             throttle_interval,
         ))
+    }
+
+    #[cfg(feature = "python")]
+    fn get_head_node_address() -> DaftResult<String> {
+        Python::attach(|py| {
+            let m = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+            let obj = m.call_method0(pyo3::intern!(py, "get_head_node_address"))?;
+            obj.extract::<Option<String>>()
+        })?
+        .ok_or_else(|| {
+            DaftError::InternalError(
+                "Failed to obtain head node address (returned None from Python)".to_string(),
+            )
+        })
     }
 
     // Mostly used for testing purposes so we can inject our own subscribers and throttling interval
