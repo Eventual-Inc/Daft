@@ -47,13 +47,63 @@ impl PyScalarFn {
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         match self {
+            #[cfg(feature = "python")]
+            Self::RowWise(RowWisePyFn {
+                function_name,
+                args,
+                return_dtype,
+                input_dtypes: expected_inputs,
+                ..
+            }) => {
+                let expected_inputs: Vec<&DataType> = expected_inputs.iter().collect();
+
+                let actual_inputs = args
+                    .iter()
+                    .map(|arg| arg.to_field(schema).map(|f| f.dtype))
+                    .collect::<DaftResult<Vec<DataType>>>()?;
+                let actual_inputs: Vec<&DataType> = actual_inputs.iter().collect();
+
+                common_error::ensure!(
+                   expected_inputs.len() == actual_inputs.len(),
+                   TypeError: "Expected {} inputs, but got {}",
+                   expected_inputs.len(),
+                   actual_inputs.len()
+                );
+
+                for (expected, actual) in expected_inputs.iter().zip(actual_inputs.iter()) {
+                    // We use `Python` to represent on `Any` types, so we don't validate those
+                    // as it means that the user did not provide a type signature, or it's `Any`
+                    if !matches!(expected, DataType::Python) {
+                        common_error::ensure!(
+                            expected == actual,
+                            TypeError: "Expects input to '{function_name}' to be {expected}, but received {actual}",
+                        );
+                    }
+                }
+                let field_name = if let Some(first_child) = args.first() {
+                    first_child.get_name(schema)?
+                } else {
+                    function_name.to_string()
+                };
+
+                Ok(Field::new(field_name, return_dtype.clone()))
+            }
+            #[cfg(not(feature = "python"))]
             Self::RowWise(RowWisePyFn {
                 function_name,
                 args,
                 return_dtype,
                 ..
-            })
-            | Self::Batch(BatchPyFn {
+            }) => {
+                let field_name = if let Some(first_child) = args.first() {
+                    first_child.get_name(schema)?
+                } else {
+                    function_name.to_string()
+                };
+
+                Ok(Field::new(field_name, return_dtype.clone()))
+            }
+            Self::Batch(BatchPyFn {
                 function_name,
                 args,
                 return_dtype,

@@ -250,8 +250,13 @@ pub fn row_wise_udf(
     on_error: Option<String>,
     original_args: Py<PyAny>,
     expr_args: Vec<PyExpr>,
+    input_dtypes: Vec<PyDataType>,
 ) -> PyResult<PyExpr> {
     let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
+    let input_dtypes = input_dtypes
+        .into_iter()
+        .map(|pydtype| pydtype.dtype)
+        .collect();
 
     // Convert string on_error to OnError enum
     let on_error_enum = on_error
@@ -277,6 +282,7 @@ pub fn row_wise_udf(
             on_error_enum.unwrap_or_default(),
             original_args.into(),
             args,
+            input_dtypes,
         )
         .into(),
     })

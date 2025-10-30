@@ -54,6 +54,7 @@ pub fn from_proto_function(message: proto::ScalarFn) -> ProtoResult<ir::Expr> {
                         .on_error
                         .and_then(|s| OnError::from_str(&s).ok())
                         .unwrap_or_default(),
+                    input_dtypes: from_proto_vec(row_wise_fn.input_dtypes)?,
                 };
                 ir::rex::from_py_rowwise_func(func)
             }
@@ -142,6 +143,11 @@ pub fn scalar_fn_to_proto(sf: &ir::functions::scalar::ScalarFn) -> ProtoResult<p
                             max_concurrency: row_wise_fn.max_concurrency.map(|c| c as u64),
                             max_retries: row_wise_fn.max_retries.map(|c| c as u64),
                             on_error: Some(row_wise_fn.on_error.to_string()),
+                            input_dtypes: row_wise_fn
+                                .input_dtypes
+                                .iter()
+                                .map(|v| v.to_proto())
+                                .collect::<ProtoResult<Vec<_>>>()?,
                         },
                     )),
                 })),

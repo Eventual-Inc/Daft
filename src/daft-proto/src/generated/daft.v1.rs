@@ -547,6 +547,8 @@ pub mod scalar_fn {
             pub max_retries: ::core::option::Option<u64>,
             #[prost(string, optional, tag = "11")]
             pub on_error: ::core::option::Option<::prost::alloc::string::String>,
+            #[prost(message, repeated, tag = "12")]
+            pub input_dtypes: ::prost::alloc::vec::Vec<super::super::DataType>,
         }
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct BatchFn {
