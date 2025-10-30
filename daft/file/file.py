@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING
 from daft.daft import PyDaftFile, PyFileReference
 from daft.datatype import MediaType
 from daft.dependencies import av
-from daft.file import VideoFile
 
 if TYPE_CHECKING:
     from tempfile import _TemporaryFileWrapper
 
+    from daft.file.video import VideoFile
     from daft.io import IOConfig
 
 
@@ -130,6 +130,9 @@ class File:
         """Convert to VideoFile if this file contains video data."""
         if not av.module_available():
             raise ImportError("The 'av' module is required to convert files to video.")
+        # this is purposely inside the function, and after the `av` check
+        # because using VideoFile means that the user has `av` installed
+        from daft.file.video import VideoFile
 
         if not self.is_video():
             raise ValueError(f"File {self} is not a video file")
