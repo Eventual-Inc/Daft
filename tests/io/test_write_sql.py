@@ -232,7 +232,7 @@ def test_write_sql_with_connection_factory(sqlite_connection_factory, sqlite_db_
         }
     )
 
-    result_df = df.write_sql("factory_test", connection=sqlite_connection_factory, mode="create")
+    result_df = df.write_sql("factory_test", conn=sqlite_connection_factory, mode="create")
 
     # Verify data was written
     result_data = result_df.to_pydict()
