@@ -188,6 +188,23 @@ def test_sql_function_register_globals(set_global_df):
         daft.sql("SELECT * FROM GLOBAL_DF", register_globals=False)
 
 
+def test_sql_function_table_name_is_keyword(set_global_df):
+    with pytest.raises(Exception, match="is a SQL keyword, not a valid table name"):
+        daft.sql("SELECT * FROM TABLE")
+    with pytest.raises(Exception, match="is a SQL keyword, not a valid table name"):
+        daft.sql("SELECT * FROM              TABLE")
+    with pytest.raises(Exception, match="is a SQL keyword, not a valid table name"):
+        daft.sql("SELECT * FROM\nTABLE")
+    with pytest.raises(Exception, match="is a SQL keyword, not a valid table name"):
+        daft.sql("SELECT * FROM\n\n   \t\tTABLE")
+    with pytest.raises(Exception, match="is a SQL keyword, not a valid table name"):
+        daft.sql("SELECT * FROM UNNEST")
+    with pytest.raises(Exception, match="is a SQL keyword, not a valid table name"):
+        daft.sql("SELECT * FROM LATERAL")
+    with pytest.raises(Exception, match="failed to parse sql"):
+        daft.sql("SELECT * FROM")
+
+
 def test_sql_function_raises_when_cant_get_frame(monkeypatch):
     monkeypatch.setattr("inspect.currentframe", lambda: None)
     with pytest.raises(DaftCoreException, match="Cannot get caller environment"):
