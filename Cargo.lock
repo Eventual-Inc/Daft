@@ -2697,18 +2697,15 @@ dependencies = [
 name = "daft-file"
 version = "0.3.0-dev0"
 dependencies = [
- "async-trait",
  "common-error",
  "common-file",
  "common-runtime",
  "daft-core",
  "daft-dsl",
  "daft-io",
- "futures",
  "mime_guess",
  "pyo3",
  "serde",
- "tokio",
  "typetag",
  "url",
 ]
