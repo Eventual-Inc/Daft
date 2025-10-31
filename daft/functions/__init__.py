@@ -62,7 +62,7 @@ from .datetime import (
 )
 from .embedding import cosine_distance
 
-from .file import file, file_size, video_file
+from .file_ import file, file_size, video_file
 
 from .image import (
     resize,
@@ -236,6 +236,7 @@ __all__ = [
     "cbrt",
     "ceil",
     "chunk",
+    "classify_image",
     "classify_text",
     "clip",
     "coalesce",
