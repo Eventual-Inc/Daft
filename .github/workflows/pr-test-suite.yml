@@ -251,6 +251,7 @@ jobs:
     - name: Build dashboard with Bun
       working-directory: ./src/daft-dashboard/frontend
       run: |
+        node --version
         bun install
         bun run build
 
@@ -1050,6 +1051,7 @@ jobs:
     - name: Build dashboard with Bun
       working-directory: ./src/daft-dashboard/frontend
       run: |
+        node --version
         bun install
         bun run build
     - name: Build Rust Library
