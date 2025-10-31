@@ -3,11 +3,17 @@ clap = {version = "4.5", features = ["derive"], optional = true}
 daft-dashboard = {path = "../daft-dashboard", optional = true}
 console = "0.16"
 pyo3 = {workspace = true, optional = true}
-tokio = {workspace = true, optional = true}
+tokio = {workspace = true}
 tracing-subscriber = {workspace = true}
+tonic = {workspace = true}
+prost = {workspace = true}
+prost-types = {workspace = true}
+opentelemetry-proto = {version = "0.29", features = ["gen-tonic"]}
+tracing = {workspace = true}
+dashmap = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "dep:clap", "dep:tokio", "dep:daft-dashboard"]
+python = ["dep:pyo3", "dep:clap", "dep:daft-dashboard"]
 
 [package]
 name = "daft-cli"

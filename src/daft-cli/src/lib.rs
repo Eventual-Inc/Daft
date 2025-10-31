@@ -1,3 +1,5 @@
+mod monitor;
+
 #[cfg(feature = "python")]
 mod python;
 

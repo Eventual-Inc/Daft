@@ -22,7 +22,7 @@ impl DefaultRuntimeStats {
     pub fn new_impl(meter: &Meter, node_id: NodeID) -> Self {
         Self {
             active_tasks: meter
-                .i64_up_down_counter(format!("{}.active_tasks", node_id))
+                .i64_up_down_counter(format!("daft.{}.active_tasks", node_id))
                 .build(),
             completed_tasks: meter
                 .u64_counter(format!("daft.{}.completed_tasks", node_id))
@@ -55,9 +55,13 @@ impl RuntimeStats for DefaultRuntimeStats {
             TaskEvent::TaskScheduled { .. } => {
                 self.inc_active_tasks();
             }
-            TaskEvent::TaskCompleted { .. } => {
+            TaskEvent::TaskCompleted { final_stats, .. } => {
                 self.dec_active_tasks();
                 self.completed_tasks.add(1, &[]);
+                self.active_rows_in_map.remove(final_stats.context.task_id);
+                self.completed_rows_in.add(final_stats.rows_in, &[]);
+                self.completed_rows_out.add(final_stats.rows_out, &[]);
+                self.completed_cpu_us.add(final_stats.cpu_us, &[]);
             }
             TaskEvent::TaskFailed { .. } => {
                 self.dec_active_tasks();

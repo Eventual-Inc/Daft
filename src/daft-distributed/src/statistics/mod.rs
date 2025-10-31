@@ -113,8 +113,8 @@ impl StatisticsManager {
 
     pub fn handle_event(&self, event: TaskEvent) -> DaftResult<()> {
         for node_id in &event.context().node_ids {
-            if let Some(runtime_stats) = self.runtime_stats.get(node_id) {
-                runtime_stats.handle_task_event(&event)?;
+            if let Some(operator_stats) = self.runtime_stats.get(node_id) {
+                operator_stats.handle_task_event(&event)?;
             } else {
                 eprintln!("No runtime stats found for node: {:?}", node_id);
             }

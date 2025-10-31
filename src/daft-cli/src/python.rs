@@ -1,8 +1,11 @@
+use std::net::SocketAddr;
 use std::str::FromStr;
 
 use clap::{Args, Parser, Subcommand, arg};
 use pyo3::prelude::*;
 use tracing_subscriber::{self, filter::Directive, layer::SubscriberExt, util::SubscriberInitExt};
+
+use crate::monitor::{serve_otlp_metrics};
 
 #[derive(Debug, Args)]
 struct DashboardArgs {
@@ -18,6 +21,7 @@ struct DashboardArgs {
 enum Commands {
     /// Start the Daft dashboard server
     Dashboard(DashboardArgs),
+    Monitor,
 }
 
 #[derive(Parser, Debug)]
@@ -94,11 +98,35 @@ fn run_dashboard(py: Python, args: DashboardArgs) {
     }
 }
 
+fn run_monitor(py: Python) {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create tokio runtime");
+
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+    let addr = SocketAddr::from(([127, 0, 0, 1], 4317));
+    runtime.spawn(async move {
+        serve_otlp_metrics(addr, shutdown_rx).await.expect("Failed to start OTLP metrics gRPC collector");
+    });
+    
+    loop {
+        if py.check_signals().is_err() {
+            eprintln!("Shutting down Daft Monitor...");
+            shutdown_tx
+                .send(())
+                .expect("Failed to shutdown Daft Monitor");
+            return;
+        }
+    }
+}
+
 #[pyfunction]
 pub fn cli(py: Python, args: Vec<String>) {
     let cli = Cli::parse_from(args);
     match cli.command {
         Commands::Dashboard(args) => run_dashboard(py, args),
+        Commands::Monitor => run_monitor(py),
     }
 }
 
