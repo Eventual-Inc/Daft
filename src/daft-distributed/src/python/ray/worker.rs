@@ -56,7 +56,6 @@ impl RaySwordfishWorker {
         &mut self,
         tasks: Vec<SwordfishTask>,
         py: Python<'_>,
-        task_locals: &pyo3_async_runtimes::TaskLocals,
     ) -> DaftResult<Vec<RayTaskResultHandle>> {
         let mut task_handles = Vec::with_capacity(tasks.len());
         for task in tasks {
@@ -74,12 +73,10 @@ impl RaySwordfishWorker {
             self.active_task_details
                 .insert(task_context.clone(), task_details);
 
-            let task_locals = task_locals.clone_ref(py);
             let ray_task_result_handle = RayTaskResultHandle::new(
                 task_context,
                 py_task_handle,
                 coroutine,
-                task_locals,
                 self.worker_id.clone(),
             );
             task_handles.push(ray_task_result_handle);

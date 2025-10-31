@@ -34,7 +34,6 @@ impl SinkNode {
 
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         sink_info: Arc<SinkInfo<BoundExpr>>,
         file_schema: SchemaRef,
@@ -47,7 +46,6 @@ impl SinkNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             file_schema,

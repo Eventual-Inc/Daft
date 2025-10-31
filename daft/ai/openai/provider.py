@@ -42,6 +42,9 @@ class OpenAIProvider(Provider):
         return_format = options.pop("return_format", None)
         system_message = options.pop("system_message", None)
 
+        # Extract udf options from options if provided
+        udf_options = options.pop("udf_options", None)
+
         return OpenAIPrompterDescriptor(
             provider_name=self._name,
             provider_options=self._options,
@@ -49,4 +52,5 @@ class OpenAIProvider(Provider):
             model_options=options,
             system_message=system_message,
             return_format=return_format,
+            udf_options=udf_options,
         )

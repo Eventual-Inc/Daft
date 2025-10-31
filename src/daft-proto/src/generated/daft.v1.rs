@@ -572,6 +572,8 @@ pub mod scalar_fn {
             pub max_retries: ::core::option::Option<u64>,
             #[prost(string, optional, tag = "11")]
             pub on_error: ::core::option::Option<::prost::alloc::string::String>,
+            #[prost(bool, tag = "12")]
+            pub is_async: bool,
         }
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Variant {

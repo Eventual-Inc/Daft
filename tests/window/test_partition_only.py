@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import random
+from io import StringIO
 
 import pandas as pd
+import pytest
 
+import daft
 from daft import Window, col
-from tests.conftest import assert_df_equals
+from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 
 
 def test_single_partition_sum(make_df):
@@ -13,7 +16,12 @@ def test_single_partition_sum(make_df):
 
     Test sum over a single partition column.
     """
-    df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
+    df = make_df(
+        {
+            "category": ["B", "A", "C", "A", "B", "C", "A", "B"],
+            "value": [10, 5, 15, 8, 12, 6, 9, 7],
+        }
+    )
 
     window = Window().partition_by("category")
     result = df.select(
@@ -34,7 +42,12 @@ def test_single_partition_sum(make_df):
 
 def test_single_partition_min(make_df):
     """Test min over a single partition column."""
-    df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
+    df = make_df(
+        {
+            "category": ["B", "A", "C", "A", "B", "C", "A", "B"],
+            "value": [10, 5, 15, 8, 12, 6, 9, 7],
+        }
+    )
 
     window = Window().partition_by("category")
     result = df.select(
@@ -54,7 +67,12 @@ def test_single_partition_min(make_df):
 
 def test_single_partition_max(make_df):
     """Test max over a single partition column."""
-    df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
+    df = make_df(
+        {
+            "category": ["B", "A", "C", "A", "B", "C", "A", "B"],
+            "value": [10, 5, 15, 8, 12, 6, 9, 7],
+        }
+    )
 
     window = Window().partition_by("category")
     result = df.select(
@@ -74,7 +92,12 @@ def test_single_partition_max(make_df):
 
 def test_single_partition_mean(make_df):
     """Test mean over a single partition column."""
-    df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
+    df = make_df(
+        {
+            "category": ["B", "A", "C", "A", "B", "C", "A", "B"],
+            "value": [10, 5, 15, 8, 12, 6, 9, 7],
+        }
+    )
 
     window = Window().partition_by("category")
     result = df.select(
@@ -103,7 +126,12 @@ def test_single_partition_mean(make_df):
 
 def test_single_partition_count(make_df):
     """Test count over a single partition column."""
-    df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
+    df = make_df(
+        {
+            "category": ["B", "A", "C", "A", "B", "C", "A", "B"],
+            "value": [10, 5, 15, 8, 12, 6, 9, 7],
+        }
+    )
 
     window = Window().partition_by("category")
     result = df.select(
@@ -118,7 +146,12 @@ def test_single_partition_count(make_df):
         "count": [3, 3, 3, 3, 3, 3, 2, 2],
     }
 
-    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()), check_dtype=False)
+    assert_df_equals(
+        result.to_pandas(),
+        pd.DataFrame(expected),
+        sort_key=list(expected.keys()),
+        check_dtype=False,
+    )
 
 
 def test_multiple_partition_columns(make_df):
@@ -214,7 +247,12 @@ def test_null_partition_values(make_df):
 
 def test_multiple_window_functions(make_df):
     """Test multiple window functions in the same query."""
-    df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
+    df = make_df(
+        {
+            "category": ["B", "A", "C", "A", "B", "C", "A", "B"],
+            "value": [10, 5, 15, 8, 12, 6, 9, 7],
+        }
+    )
 
     window = Window().partition_by("category")
     result = df.select(
@@ -246,7 +284,12 @@ def test_multiple_window_functions(make_df):
         "count": [3, 3, 3, 3, 3, 3, 2, 2],
     }
 
-    assert_df_equals(result.to_pandas(), pd.DataFrame(expected), sort_key=list(expected.keys()), check_dtype=False)
+    assert_df_equals(
+        result.to_pandas(),
+        pd.DataFrame(expected),
+        sort_key=list(expected.keys()),
+        check_dtype=False,
+    )
 
 
 def test_many_partitions(make_df):
@@ -274,7 +317,12 @@ def test_many_partitions(make_df):
 
 def test_window_mean_minus_value(make_df):
     """Test arithmetic with window mean and value."""
-    df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
+    df = make_df(
+        {
+            "category": ["B", "A", "C", "A", "B", "C", "A", "B"],
+            "value": [10, 5, 15, 8, 12, 6, 9, 7],
+        }
+    )
 
     window = Window().partition_by("category")
     result = df.select(
@@ -303,7 +351,12 @@ def test_window_mean_minus_value(make_df):
 
 def test_window_value_over_sum(make_df):
     """Test division with value and window sum."""
-    df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
+    df = make_df(
+        {
+            "category": ["B", "A", "C", "A", "B", "C", "A", "B"],
+            "value": [10, 5, 15, 8, 12, 6, 9, 7],
+        }
+    )
 
     window = Window().partition_by("category")
     result = df.select(
@@ -332,7 +385,12 @@ def test_window_value_over_sum(make_df):
 
 def test_factor_window_expression(make_df):
     """Test factor window expression."""
-    df = make_df({"category": ["B", "A", "C", "A", "B", "C", "A", "B"], "value": [10, 5, 15, 8, 12, 6, 9, 7]})
+    df = make_df(
+        {
+            "category": ["B", "A", "C", "A", "B", "C", "A", "B"],
+            "value": [10, 5, 15, 8, 12, 6, 9, 7],
+        }
+    )
 
     window = Window().partition_by("category")
     result = df.select(
@@ -601,3 +659,97 @@ def test_without_source_columns_and_with_duplicate_window_functions(make_df):
             "store category max revenue diff",
         ],
     )
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="Tests Flotilla-specific behavior with repartition",
+)
+def test_window_on_hash_partitioned_df_does_not_shuffle():
+    """Test that window functions don't shuffle when input is already hash partitioned by partition_by columns."""
+    df = daft.from_pydict({"category": ["A", "B", "C", "A", "B", "C"], "value": [1, 2, 3, 4, 5, 6]})
+    df = df.repartition(2, "category")
+
+    window = Window().partition_by("category")
+    df = df.select(
+        col("category"),
+        col("value"),
+        col("value").sum().over(window).alias("sum"),
+    )
+
+    plan_io = StringIO()
+    df.explain(True, file=plan_io)
+    captured = plan_io.getvalue()
+
+    # Assert that "Repartition" only shows up 3 times in the explain output: logical + optimized + physical
+    # The window operation should NOT add an additional repartition since the input is already hash partitioned
+    assert (
+        captured.count("Repartition") == 3
+    ), f"Expected 'Repartition' to appear 3 times, got {captured.count('Repartition')}\n{captured}"
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="Tests Flotilla-specific behavior with repartition",
+)
+def test_window_on_hash_partitioned_df_multiple_columns_does_not_shuffle():
+    """Test window functions with multiple partition_by columns don't shuffle when already hash partitioned."""
+    df = daft.from_pydict(
+        {
+            "category": ["A", "B", "C", "A", "B", "C"],
+            "group": [1, 1, 2, 2, 1, 2],
+            "value": [10, 20, 30, 40, 50, 60],
+        }
+    )
+    df = df.repartition(2, col("category"), col("group"))
+
+    window = Window().partition_by(["category", "group"])
+    df = df.select(
+        col("category"),
+        col("group"),
+        col("value"),
+        col("value").sum().over(window).alias("sum"),
+    )
+
+    plan_io = StringIO()
+    df.explain(True, file=plan_io)
+    captured = plan_io.getvalue()
+
+    # Assert that "Repartition" only shows up 3 times in the explain output
+    assert (
+        captured.count("Repartition") == 3
+    ), f"Expected 'Repartition' to appear 3 times, got {captured.count('Repartition')}\n{captured}"
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="Tests Flotilla-specific behavior with repartition",
+)
+def test_window_on_hash_partitioned_df_with_different_partition_does_shuffle():
+    """Test that window functions DO shuffle when hash partitioned by different columns."""
+    df = daft.from_pydict(
+        {
+            "category": ["A", "B", "C", "A", "B", "C"],
+            "group": [1, 1, 2, 2, 1, 2],
+            "value": [10, 20, 30, 40, 50, 60],
+        }
+    )
+    # Partition by "category" but window by "group"
+    df = df.repartition(2, "category")
+
+    window = Window().partition_by("group")
+    df = df.select(
+        col("category"),
+        col("group"),
+        col("value"),
+        col("value").sum().over(window).alias("sum"),
+    )
+
+    plan_io = StringIO()
+    df.explain(True, file=plan_io)
+    captured = plan_io.getvalue()
+
+    # Assert that "Repartition" shows up MORE than 3 times because we need an additional shuffle
+    assert (
+        captured.count("Repartition") > 3
+    ), f"Expected 'Repartition' to appear more than 3 times (window requires additional shuffle), got {captured.count('Repartition')}\n{captured}"
