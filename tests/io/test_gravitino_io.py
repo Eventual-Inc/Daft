@@ -276,6 +276,7 @@ class TestGravitinoIOLiveServer:
             result = files.collect()
 
             print(f"✓ Found {len(result)} files in {gvfs_dir}")
+            print(f"PYTHON DEBUG: files collection: {result}")
 
         except Exception as e:
             import traceback

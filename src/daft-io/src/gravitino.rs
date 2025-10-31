@@ -255,7 +255,38 @@ impl ObjectSource for GravitinoSource {
         file_format: Option<FileFormat>,
     ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
         let (source, source_glob_path) = self.fileset_path_to_source_and_url(glob_path).await?;
-        source
+
+        // Extract the gvfs prefix and storage location for path transformation
+        // We need to extract the base path without the glob pattern
+        // For example: gvfs://fileset/catalog/schema/fileset/**/*.parquet -> gvfs://fileset/catalog/schema/fileset/
+        let gvfs_base_path = if glob_path.contains("**") {
+            // Find the position before the glob pattern
+            if let Some(pos) = glob_path.find("**") {
+                glob_path[..pos].to_string()
+            } else {
+                glob_path.to_string()
+            }
+        } else if let Some(pos) = glob_path.rfind('/') {
+            glob_path[..=pos].to_string() // Include the trailing slash
+        } else {
+            glob_path.to_string()
+        };
+
+        // Get the storage location base path to replace
+        let storage_base_path = if source_glob_path.contains("**") {
+            // Find the position before the glob pattern
+            if let Some(pos) = source_glob_path.find("**") {
+                source_glob_path[..pos].to_string()
+            } else {
+                source_glob_path.clone()
+            }
+        } else if let Some(pos) = source_glob_path.rfind('/') {
+            source_glob_path[..=pos].to_string() // Include the trailing slash
+        } else {
+            source_glob_path.clone()
+        };
+
+        let underlying_stream = source
             .glob(
                 &source_glob_path,
                 fanout_limit,
@@ -264,7 +295,22 @@ impl ObjectSource for GravitinoSource {
                 io_stats,
                 file_format,
             )
-            .await
+            .await?;
+
+        // Transform the file paths from storage format back to gvfs format
+        use futures::StreamExt;
+        let transformed_stream = underlying_stream.map(move |result| {
+            result.map(|mut file_metadata| {
+                // Replace the storage path prefix with the gvfs prefix
+                if file_metadata.filepath.starts_with(&storage_base_path) {
+                    let relative_path = &file_metadata.filepath[storage_base_path.len()..];
+                    file_metadata.filepath = format!("{}{}", gvfs_base_path, relative_path);
+                }
+                file_metadata
+            })
+        });
+
+        Ok(Box::pin(transformed_stream))
     }
 
     async fn ls(
