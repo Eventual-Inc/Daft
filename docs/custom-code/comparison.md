@@ -339,28 +339,24 @@ def tokens(text: str) -> Iterable[str]:
     ...
 ```
 
-([docs.daft.ai][1])
-
 **Legacy knobs you might be replacing**
 
 ```python
 # Legacy
 @daft.udf(return_dtype=..., num_cpus=2, num_gpus=1, memory_bytes=..., concurrency=4, use_process=True)
 def f(...): ...
-# Next-gen equivalents (subset)
+# New equivalents (subset)
 @daft.cls(gpus=1, max_concurrency=4, use_process=True)
 class C: ...
 ```
-
-([docs.daft.ai][2])
 
 ---
 
 ## See also
 
-* **[Next‑gen UDFs guide]()** — feature overview, row‑wise/async/generator/batch, struct + unnest, and the comparison table with legacy.
+* **[New UDFs guide]()** — feature overview, row‑wise/async/generator/batch, struct + unnest, and the comparison table with legacy.
 * **[Legacy UDFs guide]()** — resource request examples and class UDF patterns.
 * **[Python API](../api/udf.md)** — authoritative signatures for legacy `udf(...)` (shows `num_cpus/num_gpus/memory_bytes/...`) and for `@daft.cls` / `@daft.method` / `@daft.func`.
-* **[New UDFs roadmap](https://github.com/Eventual-Inc/Daft/discussions/4820)** — status updates (async support added in 0.5.18; CPU/memory not yet exposed). ([GitHub][8])
+* **[New UDFs roadmap](https://github.com/Eventual-Inc/Daft/discussions/4820)** — status updates (async support added in 0.5.18; CPU/memory not yet exposed).
 * **[Open issues to watch](https://github.com/Eventual-Inc/Daft/issues?q=is%3Aissue%20state%3Aopen%20%20UDF)** — type‑signature enforcement, Ray concurrency behavior, logging at concurrency > 1.
 * **[Recent PRs](https://github.com/Eventual-Inc/Daft/pulls?q=is%3Apr+is%3Aclosed+UDF)** — async batch support work in flight.

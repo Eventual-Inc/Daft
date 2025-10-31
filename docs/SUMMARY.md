@@ -18,7 +18,7 @@
         * [New UDF Overview](custom-code/index.md)
         * [Functions](custom-code/func.md)
         * [Classes & Methods](custom-code/cls.md)
-        * [Compare: Next-Gen vs Legacy](custom-code/comparison.md)
+        * [Comparison Guide](custom-code/comparison.md)
         * [Legacy UDFs](custom-code/udfs.md)
     * Common Use Cases
         * [Batch Inference](use-case/batch-inference.md)
