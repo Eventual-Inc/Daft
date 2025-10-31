@@ -73,7 +73,7 @@ fn default_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
     let status = cmd.current_dir("./frontend");
 
     let status = if cfg!(debug_assertions) {
-        status.args(["run", "build", "--no-lint", "--no-mangling"])
+        status.args(["run", "build", "--no-mangling"])
     } else {
         status.args(["run", "build"])
     };
