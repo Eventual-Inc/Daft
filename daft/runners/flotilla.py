@@ -287,7 +287,6 @@ class FlotillaRunner:
             name=FLOTILLA_RUNNER_NAME,
             namespace=FLOTILLA_RUNNER_NAMESPACE,
             get_if_exists=True,
-            lifetime="detached",
             scheduling_strategy=(
                 ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=head_node_id,
