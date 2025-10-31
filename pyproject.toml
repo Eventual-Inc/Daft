@@ -20,7 +20,7 @@ maintainers = [
 ]
 name = "daft"
 readme = "README.rst"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 
 [project.scripts]
 daft = "daft.cli:main"
@@ -142,7 +142,6 @@ dev = [
   "grpcio==1.68.1",
   "grpcio-status==1.67.0",
   # AI
-  "vllm; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
   "openai==1.100",
   # AV
   "av==15.0.0",
@@ -152,6 +151,73 @@ dev = [
   "mcap==1.3.0",
   "mcap-ros2-support==0.5.5",
   "mcap-protobuf-support==0.5.3",
+  # BigTable
+  "google-cloud-bigtable>=2.33.0"
+]
+dev-freethreaded = [
+  "ipdb",
+  "maturin",
+  "pre-commit",
+  "docker",
+  # Pinned aiohttp due to Ray connection issue in aiohttp==3.12.6
+  "aiohttp",
+  # Pinned httpx due to unitycatalog-python issue: https://github.com/unitycatalog/unitycatalog-python/issues/9
+  "httpx",
+  # Tracing
+  "py-spy>=0.3.14",
+  "viztracer>=0.15.6",
+  # Testing frameworks
+  "hypothesis>=6.79.2",
+  "pytest>=7.4.3",
+  "pytest-benchmark>=4.0.0",
+  "pytest-cov>=4.1.0",
+  "pytest-lazy-fixture>=0.6.3",
+  "pytest-codspeed>=2.2.1",
+  # Testing dependencies
+  "lxml",
+  "dask[dataframe]>=2024.4.1",
+  "numpy>=1.26.2",
+  "pandas>=2.1.3",
+  "pandas-stubs>=2.2.2.240807",
+  "xxhash>=3.0.0",
+  "Pillow>=10.4.0",
+  "tiktoken>=0.9.0",
+  "duckdb>=1.1.2",
+  "datasets>=4.0.0",
+  "torch>=2.5.1",
+  "torchvision>=0.20.1",
+  # Pyarrow
+  "pyarrow>=20.0.0",
+  "pyarrow-stubs>=19.4",
+  # Iceberg
+  "pyiceberg>=0.7.0",
+  "pydantic>=2.10.6",
+  "tenacity>=8.2.3",
+  # Databricks
+  "databricks-sdk>=0.12.0",
+  "unitycatalog>=0.1.1",
+  # SQL
+  "sqlalchemy>=2.0.36",
+  "PyMySQL>=1.1.0",
+  "sqlglot>=23.3.0",
+  "pyodbc>=5.1.0",
+  # AWS
+  "s3fs>=2023.12.0",
+  "boto3>=1.36.20",
+  "boto3-stubs[essential,glue,s3,s3tables]>=1.38.46",
+  "moto[glue,s3,s3tables,server]>=5.1.1",
+  # Azure
+  "adlfs>=2024.7.0",
+  "azure-storage-blob>=12.24.0",
+  # GCS
+  "gcsfs>=2023.12.0",
+  # Hugging Face
+  "huggingface-hub>=0.34.4",
+  "grpcio>=1.68.1",
+  "grpcio-status>=1.67.0",
+  "openai>=1.100",
+  # AV
+  "av>=15.0.0",
   # BigTable
   "google-cloud-bigtable>=2.33.0"
 ]
@@ -195,7 +261,7 @@ features = ["python"]
 [tool.mypy]
 exclude = ['daft/pickle/*.py$']
 files = ["daft/**/*.py", "daft/**/*.pyx", "tests/**/*.py"]
-python_version = "3.9"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 
@@ -236,6 +302,20 @@ addopts = "-m 'not (integration or benchmark or hypothesis)'"
 minversion = "6.0"
 testpaths = [
   "tests"
+]
+
+[tool.uv]
+conflicts = [
+  [
+    {group = "dev"},
+    {group = "dev-freethreaded"}
+  ],
+  [
+    {group = "dev-freethreaded"},
+    {extra = "all"},
+    {extra = "ray"},
+    {extra = "transformers"}
+  ]
 ]
 
 [tool.uv.sources.daft_dashboard]
