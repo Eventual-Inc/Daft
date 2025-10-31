@@ -1,6 +1,6 @@
 ## Stateful Class UDFs with `@daft.cls`
 
-When your UDF requires expensive initialization—such as loading a machine learning model, establishing database connections, or pre-computing lookup tables—use `@daft.cls` to amortize the cost across multiple rows. The class is initialized once per worker, and the same instance processes all rows on that worker.
+When your UDF requires expensive initialization such as loading a machine learning model, establishing database connections, or pre-computing lookup tables use `@daft.cls` to amortize the cost across multiple rows. The class is initialized once per worker, and the same instance processes all rows on that worker.
 
 ### Quick Example
 
