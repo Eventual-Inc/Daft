@@ -1,4 +1,4 @@
-# Daft Sessions
+# Daft Sessions, Catalogs, and Tables
 
 Sessions enable you to attach catalogs, tables, and create temporary objects which are accessible through both the Python and SQL APIs. Sessions hold configuration state such as `current_catalog` and `current_namespace` which are used in name resolution and can simplify your workflows.
 
@@ -261,7 +261,7 @@ sess.sql("SELECT * FROM example.tbl, temp LIMIT 1").show()
 
 ## Reference
 
-For complete documentation, please see the [Session API docs](api/sessions.md).
+For complete documentation, please see the [Session API docs](../api/sessions.md).
 
 | Method                                                                          | Description                                                        |
 |---------------------------------------------------------------------------------|--------------------------------------------------------------------|

@@ -118,7 +118,7 @@ Daft integrates with various catalog implementations using its `Catalog` and `Ta
 
 !!! note "Note"
 
-    These examples use the Iceberg Catalog from the [Daft Sessions](../sessions.md) tutorial.
+    These examples use the Iceberg Catalog from the [Daft Sessions](../configuration/sessions-usage.md) tutorial.
 
 ```python
 import daft
