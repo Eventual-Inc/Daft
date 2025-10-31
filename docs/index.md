@@ -514,6 +514,113 @@ If you're interested in hands-on learning about Daft internals and would like to
 
 Take a look at the many issues tagged with `good first issue` in our repo. If there are any that interest you, feel free to chime in on the issue itself or join us in our [Distributed Data Slack Community](https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg) and send us a message in #daft-dev. Daft team members will be happy to assign any issue to you and provide any guidance if needed!
 
+## Index
+
+* Guide
+    * [Overview](index.md)
+    * [Quickstart](quickstart.md)
+    * [Installation](install.md)
+    * AI Functions
+        * [Functions](ai-functions/index.md)
+        * [Providers](ai-functions/providers.md)
+    * Modalities
+        * [Modalities](modalities/index.md)
+        * [Text](modalities/text.md)
+        * [Images](modalities/images.md)
+        * [Audio](modalities/audio.md)
+        * [Videos](modalities/videos.md)
+        * [JSON and Nested Data](modalities/json.md)
+        * [URLs and Files](modalities/urls.md)
+        * [Custom Modalities](modalities/custom.md)
+    * User Defined Functions
+        * [Next Gen func/cls/method](custom-code/index.md)
+        * [Decorating Functions and Classes](custom-code/func.md)
+        * [Next Gen vs Legacy](custom-code/comparison.md)
+        * [Legacy UDFs](custom-code/udfs.md)
+    * Common Use Cases
+        * [Batch Inference](use-case/batch-inference.md)
+    * Datasets
+        * [Common Crawl](datasets/common-crawl.md)
+    * Data Connectors
+        * [Connectors](connectors/index.md)
+        * [Custom Connectors](connectors/custom.md)
+        * [AWS Glue](connectors/glue.md)
+        * [AWS S3 Tables](connectors/s3tables.md)
+        * [Apache Hudi](connectors/hudi.md)
+        * [Apache Iceberg](connectors/iceberg.md)
+        * [Azure Blob Store](connectors/azure.md)
+        * [Delta Lake](connectors/delta_lake.md)
+        * [Lance](connectors/lance.md)
+        * [Hugging Face Datasets](connectors/huggingface.md)
+        * [S3](connectors/aws.md)
+        * [SQL Databases](connectors/sql.md)
+        * [Turbopuffer](connectors/turbopuffer.md)
+        * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
+    * Architecture
+        * [Architecture](architecture/index.md)
+    * Configuration
+        * [Configuration](configuration/index.md)
+        * [Sessions](configuration/sessions-usage.md)
+        * [Storage Credentials](configuration/ioconfig.md)
+    * Optimization and Debugging
+        * [Managing Memory Usage](optimization/memory.md)
+        * [Partitioning and Batching](optimization/partitioning.md)
+        * [Observability](optimization/observability.md)
+    * Scaling Out and Deployment
+        * [Distributed Execution](distributed/index.md)
+        * [Running on Kubernetes](distributed/kubernetes.md)
+        * [Running on Ray](distributed/ray.md)
+    * Contributing
+        * [Contributing](contributing-to-daft.md)
+        * [AI Functions](contributing/contributing-ai-functions.md)
+    * [Roadmap](roadmap.md)
+    * [Benchmarks](benchmarks/index.md)
+    * [Community <sup>↗</sup>](http://www.daft.ai/slack)
+    * [Release Notes <sup>↗</sup>](https://github.com/Eventual-Inc/Daft/releases)
+    * [Usage Telemetry](telemetry.md)
+* Examples
+    * [Examples](examples/index.md)
+    * [Web Text Deduplication](examples/minhash-dedupe.md)
+    * [Document Processing](examples/document-processing.md)
+    * [Audio Transcription](examples/audio-transcription.md)
+    * [Generate Text Embeddings for Turbopuffer](examples/text-embeddings.md)
+    * [Running LLMs on the Red Pajamas Dataset](examples/llms-red-pajamas.md)
+    * [Generate Images from Text with Stable Diffusion](examples/image-generation.md)
+    * [Querying Image Data](examples/querying-images.md)
+    * [MNIST Digit Classification](examples/mnist.md)
+    * [Window Functions](examples/window-functions.md)
+* Python API
+    * [Python API](api/index.md)
+    * [AI](api/ai.md)
+    * [I/O](api/io.md)
+    * [DataFrame](api/dataframe.md)
+    * [Datasets](api/datasets.md)
+    * [Expressions](api/expressions.md)
+    * [Functions](api/functions/)
+    * [User-Defined Functions](api/udf.md)
+    * Data Types
+        * [DataType](api/datatypes/index.md)
+        * [Type Conversions](api/datatypes/type_conversions.md)
+        * [Casting](api/datatypes/casting.md)
+    * [Window](api/window.md)
+    * [Sessions](api/sessions.md)
+    * [Catalogs & Tables](api/catalogs_tables.md)
+    * [Schema](api/schema.md)
+    * [Aggregations](api/aggregations.md)
+    * [Series](api/series.md)
+    * [Spark Connect](api/spark_connect.md)
+    * [Configuration](api/config.md)
+    * [Miscellaneous](api/misc.md)
+* SQL Reference
+    * [SQL Reference](sql/index.md)
+    * Statements
+        * [SELECT](sql/statements/select.md)
+        * [SHOW](sql/statements/show.md)
+        * [USE](sql/statements/use.md)
+    * [Data Types](sql/datatypes.md)
+    * [Window Functions](sql/window_functions.md)
+
+
 <!-- ## Frequently Asked Questions
 
 todo(docs - jay): Add answers to each and more questions if necessary
