@@ -62,7 +62,7 @@ from .datetime import (
 )
 from .embedding import cosine_distance
 
-from .file_ import file, file_size
+from .file_ import file, file_size, video_file
 
 from .image import (
     resize,
@@ -202,6 +202,7 @@ from .str import (
 )
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
+from .video import video_metadata, video_keyframes
 from .window import (
     row_number,
     rank,
@@ -235,6 +236,7 @@ __all__ = [
     "cbrt",
     "ceil",
     "chunk",
+    "classify_image",
     "classify_text",
     "clip",
     "coalesce",
@@ -415,6 +417,9 @@ __all__ = [
     "upload",
     "upper",
     "value_counts",
+    "video_file",
+    "video_keyframes",
+    "video_metadata",
     "week_of_year",
     "when",
     "year",

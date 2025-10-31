@@ -1804,16 +1804,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "common-file"
-version = "0.3.0-dev0"
-dependencies = [
- "common-error",
- "common-io-config",
- "pyo3",
- "serde",
-]
-
-[[package]]
 name = "common-file-formats"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2343,7 +2333,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-daft-config",
  "common-display",
- "common-file",
  "common-file-formats",
  "common-hashable-float-wrapper",
  "common-logging",
@@ -2538,7 +2527,6 @@ dependencies = [
  "common-arrow-ffi",
  "common-display",
  "common-error",
- "common-file",
  "common-hashable-float-wrapper",
  "common-image",
  "common-io-config",
@@ -2699,11 +2687,11 @@ name = "daft-file"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
- "common-file",
  "common-runtime",
  "daft-core",
  "daft-dsl",
  "daft-io",
+ "daft-schema",
  "mime_guess",
  "pyo3",
  "serde",
