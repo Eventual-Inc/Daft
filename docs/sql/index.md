@@ -2,7 +2,7 @@
 
 # SQL Reference
 
-Welcome to Daft SQL Reference. For Daft User Guide, head to [User Guide](../index.md).
+Welcome to Daft SQL Reference.
 
 Daft's [SQL](https://en.wikipedia.org/wiki/SQL) dialect closely follows both DuckDB and PostgreSQL.
 

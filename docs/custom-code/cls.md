@@ -44,6 +44,18 @@ Similarly to `daft.func`, Daft supports the same variants for `daft.method` to o
 - **Generator**: Generator functions produce multiple output rows per input row
 - **Batch** (`@daft.method.batch`): Process entire batches of data with `daft.Series` for high performance
 
+```python
+@daft.cls
+class Something:
+    def __call__(self, x: float) -> float: ...
+    def my_method(self, x: float) -> float: ...
+    async def async_method(self, x: float) -> float: ...
+    @daft.method.batch()
+    def my_batch_method(self, s: Series) -> Series: ...
+    @daft.method.batch()
+    async def async_batch_method(self, s: Series) -> Series: ...
+```
+
 Daft automatically detects which variant to use for regular functions based on your function signature. For batch functions, you must use the `@daft.method.batch` decorator.
 
 
