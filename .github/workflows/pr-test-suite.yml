@@ -1027,9 +1027,6 @@ jobs:
         key: ${{ runner.os }}-benchmark-build
         cache-all-crates: 'true'
         cache-provider: buildjet
-    - uses: oven-sh/setup-bun@v2
-      with:
-        bun-version: latest
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v6
       with:
@@ -1047,11 +1044,6 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: uv sync --no-install-project --all-extras --all-groups
-    - name: Build dashboard with Bun
-      working-directory: ./src/daft-dashboard/frontend
-      run: |
-        bun install
-        bun run -b build
     - name: Build Rust Library
       run: |
         source .venv/bin/activate
