@@ -27,7 +27,6 @@ impl ConcatNode {
 
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         schema: SchemaRef,
         other: DistributedPipelineNode,
@@ -39,7 +38,6 @@ impl ConcatNode {
             Self::NODE_NAME,
             vec![child.node_id(), other.node_id()],
             vec![child.name(), other.name()],
-            logical_node_id,
         );
 
         let config = PipelineNodeConfig::new(

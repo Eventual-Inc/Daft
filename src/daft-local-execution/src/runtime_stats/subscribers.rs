@@ -1,4 +1,3 @@
-pub(crate) mod opentelemetry;
 pub(crate) mod progress_bar;
 pub(crate) mod query;
 
