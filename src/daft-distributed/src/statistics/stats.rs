@@ -1,6 +1,6 @@
 use common_error::DaftResult;
 use opentelemetry::{
-    global,
+    KeyValue, global,
     metrics::{Counter, Meter, UpDownCounter},
 };
 
@@ -12,6 +12,7 @@ pub trait RuntimeStats: Send + Sync + 'static {
 
 #[allow(clippy::struct_field_names)]
 pub struct DefaultRuntimeStats {
+    pub node_kv: Vec<KeyValue>,
     active_tasks: UpDownCounter<i64>,
     completed_tasks: Counter<u64>,
     failed_tasks: Counter<u64>,
@@ -20,32 +21,34 @@ pub struct DefaultRuntimeStats {
 
 impl DefaultRuntimeStats {
     pub fn new_impl(meter: &Meter, node_id: NodeID) -> Self {
+        let node_kv = KeyValue::new("node_id", node_id.to_string());
         Self {
+            node_kv: vec![node_kv],
             active_tasks: meter
-                .i64_up_down_counter(format!("{}.active_tasks", node_id))
+                .i64_up_down_counter("daft.distributed.node_stats.active_tasks")
                 .build(),
             completed_tasks: meter
-                .u64_counter(format!("daft.{}.completed_tasks", node_id))
+                .u64_counter("daft.distributed.node_stats.completed_tasks")
                 .build(),
             failed_tasks: meter
-                .u64_counter(format!("daft.{}.failed_tasks", node_id))
+                .u64_counter("daft.distributed.node_stats.failed_tasks")
                 .build(),
             cancelled_tasks: meter
-                .u64_counter(format!("daft.{}.cancelled_tasks", node_id))
+                .u64_counter("daft.distributed.node_stats.cancelled_tasks")
                 .build(),
         }
     }
 
     pub fn new(node_id: NodeID) -> Self {
-        Self::new_impl(&global::meter("DistributedNodeStats-Default"), node_id)
+        Self::new_impl(&global::meter("daft.distributed.node_stats"), node_id)
     }
 
     fn inc_active_tasks(&self) {
-        self.active_tasks.add(1, &[]);
+        self.active_tasks.add(1, self.node_kv.as_slice());
     }
 
     fn dec_active_tasks(&self) {
-        self.active_tasks.add(-1, &[]);
+        self.active_tasks.add(-1, self.node_kv.as_slice());
     }
 }
 
@@ -57,15 +60,15 @@ impl RuntimeStats for DefaultRuntimeStats {
             }
             TaskEvent::TaskCompleted { .. } => {
                 self.dec_active_tasks();
-                self.completed_tasks.add(1, &[]);
+                self.completed_tasks.add(1, self.node_kv.as_slice());
             }
             TaskEvent::TaskFailed { .. } => {
                 self.dec_active_tasks();
-                self.failed_tasks.add(1, &[]);
+                self.failed_tasks.add(1, self.node_kv.as_slice());
             }
             TaskEvent::TaskCancelled { .. } => {
                 self.dec_active_tasks();
-                self.cancelled_tasks.add(1, &[]);
+                self.cancelled_tasks.add(1, self.node_kv.as_slice());
             }
             TaskEvent::TaskSubmitted { .. } => (), // We don't track submitted tasks
         }
