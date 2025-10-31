@@ -4,7 +4,7 @@
 
 Daft’s new UDF system centers on two decorators:
 
-* **`@daft.func`** — stateless row‑wise UDFs (with async + generator variants anda batch variant).
+* **`@daft.func`** — stateless row‑wise UDFs (with async + generator variants and a batch variant).
 * **`@daft.cls`** (+ optional **`@daft.method`**) — stateful UDFs where you initialize once (e.g., load a model) and reuse across rows.
 * New UDFs support eager execution with scalars, type‑hint‑driven return type inference, generator UDFs, and batch UDFs.
 
