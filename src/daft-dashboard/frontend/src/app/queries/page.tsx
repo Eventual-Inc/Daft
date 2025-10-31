@@ -98,11 +98,35 @@ const Header = () => (
 const EmptyState = () => {
   const copyText = `DAFT_DASHBOARD_URL="${dashboardUrl()}" python`;
   const [copied, setCopied] = React.useState(false);
+  const [tooltipOpen, setTooltipOpen] = React.useState(false);
+  const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup timeout on unmount
+  React.useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(copyText);
       setCopied(true);
+      setTooltipOpen(true);
+
+      // Clear any existing timeout before setting a new one
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+
+      // Reset after 2 seconds
+      timeoutRef.current = setTimeout(() => {
+        setCopied(false);
+        setTooltipOpen(false);
+        timeoutRef.current = null;
+      }, 2000);
     } catch {
       // no-op: clipboard may be unavailable
     }
@@ -124,7 +148,7 @@ const EmptyState = () => {
             <span>
               {copyText} ...
             </span>
-            <Tooltip>
+            <Tooltip open={tooltipOpen} onOpenChange={setTooltipOpen}>
               <TooltipTrigger asChild className="hover:cursor-pointer">
                 <Button
                   size="icon"
