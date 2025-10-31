@@ -218,7 +218,7 @@ impl OptimizerBuilder {
     pub fn reorder_joins(mut self, cfg: Option<Arc<DaftExecutionConfig>>) -> Self {
         self.rule_batches.push(RuleBatch::new(
             vec![
-                Box::new(ReorderJoins::new()),
+                Box::new(ReorderJoins::new(cfg.clone())),
                 Box::new(PushDownFilter::new(self.config.strict_pushdown)),
                 Box::new(PushDownProjection::new()),
                 Box::new(EnrichWithStats::new(cfg)),

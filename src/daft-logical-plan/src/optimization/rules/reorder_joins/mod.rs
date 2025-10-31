@@ -21,22 +21,11 @@ pub struct ReorderJoins {
     cfg: Arc<DaftExecutionConfig>,
 }
 
-impl Default for ReorderJoins {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl ReorderJoins {
-    pub fn new() -> Self {
+    pub fn new(cfg: Option<Arc<DaftExecutionConfig>>) -> Self {
         Self {
-            cfg: Arc::new(DaftExecutionConfig::default()),
+            cfg: cfg.unwrap_or_default(),
         }
-    }
-
-    #[allow(dead_code)]
-    pub fn with_config(cfg: Arc<DaftExecutionConfig>) -> Self {
-        Self { cfg }
     }
 }
 
