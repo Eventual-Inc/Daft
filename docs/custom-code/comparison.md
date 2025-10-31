@@ -15,7 +15,7 @@ Daft’s new UDF system centers on two decorators:
 
 **Two caveats:**
 
-* **CPU/memory resource knobs** from legacy are **not** yet exposed in the next‑gen API (GPUs, `max_concurrency`, and `use_process` are). If you rely on explicit CPU memory limits, you may want to keep those calls on legacy a bit longer or re-tunewith `batch_size` and scheduling.
+* **CPU/memory resource knobs** from legacy are **not** yet exposed in the next‑gen API (GPUs, `max_concurrency`, and `use_process` are). If you rely on explicit CPU memory limits, you may want to keep those calls on legacy a bit longer or re-tune with `batch_size` and scheduling.
 * A few behaviors are still evolving (type enforcement on inputs, async‑batch).
 
 The newer `@daft.func` and `@daft.cls` decorators provide a cleaner interface for most use cases. The legacy `@daft.udf` decorator still has a few advanced features:
