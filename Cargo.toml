@@ -148,6 +148,7 @@ debug = 1  # include symbols
 inherits = "release"
 lto = 'thin'
 strip = "none"  # dont strip
+debug-assertions = true
 
 [profile.release-lto]
 codegen-units = 1
