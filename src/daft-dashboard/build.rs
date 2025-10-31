@@ -4,7 +4,7 @@ fn ci_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
     let frontend_dir = std::env::var("CARGO_MANIFEST_DIR")? + "/frontend/out";
 
     if !std::path::Path::new(&frontend_dir).is_dir() {
-        if cfg!(debug_assertions) {
+        if cfg!(debug_assertions) || std::env::var("DAFT_DASHBOARD_SKIP_BUILD").is_ok() {
             println!("Dashboard assets not found in {frontend_dir}, skipping dashboard build.");
             println!("To build dashboard assets: `bun run build` in src/daft-dashboard/frontend.");
             return Ok(());
@@ -73,7 +73,7 @@ fn default_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
     let status = cmd.current_dir("./frontend");
 
     let status = if cfg!(debug_assertions) {
-        status.args(["run", "build", "--no-lint", "--no-mangling"])
+        status.args(["run", "build", "--no-mangling"])
     } else {
         status.args(["run", "build"])
     };
