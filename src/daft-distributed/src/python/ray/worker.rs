@@ -17,9 +17,8 @@ type ActiveTaskDetails = HashMap<TaskContext, TaskDetails>;
 #[derive(Debug, Clone)]
 pub(crate) struct RaySwordfishWorker {
     worker_id: WorkerId,
-    ray_worker_handle: Arc<PyObject>,
+    ray_worker_handle: Arc<Py<PyAny>>,
     num_cpus: f64,
-    #[allow(dead_code)]
     total_memory_bytes: usize,
     num_gpus: f64,
     active_task_details: ActiveTaskDetails,
@@ -30,7 +29,7 @@ impl RaySwordfishWorker {
     #[new]
     pub fn new(
         worker_id: String,
-        ray_worker_handle: PyObject,
+        ray_worker_handle: pyo3::Py<pyo3::PyAny>,
         num_cpus: f64,
         num_gpus: f64,
         total_memory_bytes: usize,
@@ -47,6 +46,10 @@ impl RaySwordfishWorker {
 }
 
 impl RaySwordfishWorker {
+    pub fn total_memory_bytes(&self) -> usize {
+        self.total_memory_bytes
+    }
+
     pub fn mark_task_finished(&mut self, task_context: &TaskContext) {
         self.active_task_details.remove(task_context);
     }
@@ -55,7 +58,6 @@ impl RaySwordfishWorker {
         &mut self,
         tasks: Vec<SwordfishTask>,
         py: Python<'_>,
-        task_locals: &pyo3_async_runtimes::TaskLocals,
     ) -> DaftResult<Vec<RayTaskResultHandle>> {
         let mut task_handles = Vec::with_capacity(tasks.len());
         for task in tasks {
@@ -73,12 +75,10 @@ impl RaySwordfishWorker {
             self.active_task_details
                 .insert(task_context.clone(), task_details);
 
-            let task_locals = task_locals.clone_ref(py);
             let ray_task_result_handle = RayTaskResultHandle::new(
                 task_context,
                 py_task_handle,
                 coroutine,
-                task_locals,
                 self.worker_id.clone(),
             );
             task_handles.push(ray_task_result_handle);

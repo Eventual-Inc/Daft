@@ -32,7 +32,7 @@ use {
     daft_logical_plan::{OutputFileInfo, PyLogicalPlanBuilder},
     daft_scan::python::pylib::PyScanTask,
     pyo3::{
-        Bound, Py, PyAny, PyObject, PyRef, PyResult, Python, pyclass, pymethods,
+        Bound, Py, PyAny, PyRef, PyResult, Python, pyclass, pymethods,
         types::{PyAnyMethods, PyDict, PyList},
     },
 };
@@ -62,7 +62,7 @@ impl PhysicalPlanScheduler {
         py: Python,
         cfg: PyDaftExecutionConfig,
     ) -> PyResult<Self> {
-        py.allow_threads(|| {
+        py.detach(|| {
             let logical_plan = logical_plan_builder.builder.build();
             let physical_plan: PhysicalPlanRef =
                 logical_to_physical(logical_plan, cfg.config.clone())?;
@@ -92,8 +92,8 @@ impl PhysicalPlanScheduler {
         &self,
         py: Python,
         psets: Bound<PyDict>,
-        actor_pool_manager: PyObject,
-    ) -> PyResult<PyObject> {
+        actor_pool_manager: pyo3::Py<pyo3::PyAny>,
+    ) -> PyResult<pyo3::Py<pyo3::PyAny>> {
         physical_plan_to_partition_tasks(self.plan().as_ref(), py, &psets, &actor_pool_manager)
     }
 }
@@ -101,7 +101,8 @@ impl PhysicalPlanScheduler {
 #[cfg(feature = "python")]
 #[pyclass(frozen)]
 struct StreamingPartitionIterator {
-    iter: std::sync::Mutex<Box<dyn Iterator<Item = DaftResult<PyObject>> + Send + Sync>>,
+    iter:
+        std::sync::Mutex<Box<dyn Iterator<Item = DaftResult<pyo3::Py<pyo3::PyAny>>> + Send + Sync>>,
 }
 
 #[cfg(feature = "python")]
@@ -110,9 +111,9 @@ impl StreamingPartitionIterator {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
-    fn __next__(slf: PyRef<'_, Self>, py: Python) -> PyResult<Option<PyObject>> {
+    fn __next__(slf: PyRef<'_, Self>, py: Python) -> PyResult<Option<pyo3::Py<pyo3::PyAny>>> {
         let iter = &slf.iter;
-        Ok(py.allow_threads(|| {
+        Ok(py.detach(|| {
             iter.lock()
                 .expect("Failed to acquire lock for StreamingPartitionIterator")
                 .next()
@@ -161,7 +162,7 @@ fn exprs_to_pyexprs(exprs: &[ExprRef]) -> Vec<PyExpr> {
 #[cfg(feature = "python")]
 fn tabular_write(
     py: Python,
-    upstream_iter: PyObject,
+    upstream_iter: pyo3::Py<pyo3::PyAny>,
     write_mode: &WriteMode,
     file_format: &FileFormat,
     schema: &SchemaRef,
@@ -169,7 +170,7 @@ fn tabular_write(
     compression: Option<&String>,
     partition_cols: Option<&Vec<ExprRef>>,
     io_config: Option<&IOConfig>,
-) -> PyResult<PyObject> {
+) -> PyResult<pyo3::Py<pyo3::PyAny>> {
     let py_iter = py
         .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
         .getattr(pyo3::intern!(py, "write_file"))?
@@ -192,9 +193,9 @@ fn tabular_write(
 #[cfg(feature = "python")]
 fn iceberg_write(
     py: Python,
-    upstream_iter: PyObject,
+    upstream_iter: pyo3::Py<pyo3::PyAny>,
     iceberg_info: &IcebergCatalogInfo,
-) -> PyResult<PyObject> {
+) -> PyResult<pyo3::Py<pyo3::PyAny>> {
     let py_iter = py
         .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
         .getattr(pyo3::intern!(py, "write_iceberg"))?
@@ -219,9 +220,9 @@ fn iceberg_write(
 #[cfg(feature = "python")]
 fn deltalake_write(
     py: Python,
-    upstream_iter: PyObject,
+    upstream_iter: pyo3::Py<pyo3::PyAny>,
     delta_lake_info: &DeltaLakeCatalogInfo,
-) -> PyResult<PyObject> {
+) -> PyResult<pyo3::Py<pyo3::PyAny>> {
     let py_iter = py
         .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
         .getattr(pyo3::intern!(py, "write_deltalake"))?
@@ -249,9 +250,9 @@ fn deltalake_write(
 #[cfg(feature = "python")]
 fn lance_write(
     py: Python,
-    upstream_iter: PyObject,
+    upstream_iter: pyo3::Py<pyo3::PyAny>,
     lance_info: &LanceCatalogInfo,
-) -> PyResult<PyObject> {
+) -> PyResult<pyo3::Py<pyo3::PyAny>> {
     let py_iter = py
         .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
         .getattr(pyo3::intern!(py, "write_lance"))?
@@ -273,9 +274,9 @@ fn lance_write(
 #[cfg(feature = "python")]
 fn data_sink_write(
     py: Python,
-    upstream_iter: PyObject,
+    upstream_iter: pyo3::Py<pyo3::PyAny>,
     data_sink_info: &DataSinkInfo,
-) -> PyResult<PyObject> {
+) -> PyResult<pyo3::Py<pyo3::PyAny>> {
     let py_iter = py
         .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
         .getattr(pyo3::intern!(py, "write_data_sink"))?
@@ -288,8 +289,8 @@ fn physical_plan_to_partition_tasks(
     physical_plan: &PhysicalPlan,
     py: Python,
     psets: &Bound<PyDict>,
-    actor_pool_manager: &PyObject,
-) -> PyResult<PyObject> {
+    actor_pool_manager: &pyo3::Py<pyo3::PyAny>,
+) -> PyResult<pyo3::Py<pyo3::PyAny>> {
     use daft_dsl::Expr;
     use daft_physical_plan::ops::{CrossJoin, DataSink, ShuffleExchange, ShuffleExchangeStrategy};
     match physical_plan {

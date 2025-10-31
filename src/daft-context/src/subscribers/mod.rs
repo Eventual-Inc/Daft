@@ -8,11 +8,17 @@ use std::{collections::HashMap, sync::Arc};
 use async_trait::async_trait;
 use common_error::DaftResult;
 use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo};
+use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartitionRef;
+
+pub struct QueryMetadata {
+    pub output_schema: SchemaRef,
+    pub unoptimized_plan: QueryPlan,
+}
 
 #[async_trait]
 pub trait Subscriber: Send + Sync + std::fmt::Debug + 'static {
-    fn on_query_start(&self, query_id: QueryID, unoptimized_plan: QueryPlan) -> DaftResult<()>;
+    fn on_query_start(&self, query_id: QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()>;
     fn on_query_end(&self, query_id: QueryID) -> DaftResult<()>;
     fn on_result_out(&self, query_id: QueryID, result: MicroPartitionRef) -> DaftResult<()>;
     fn on_optimization_start(&self, query_id: QueryID) -> DaftResult<()>;

@@ -5,12 +5,16 @@ import warnings
 from types import GenericAlias
 from typing import TYPE_CHECKING, Any, Callable, Union
 
+from packaging.version import parse
+
 from daft.daft import ImageMode, PyDataType, PyTimeUnit, sql_datatype
 from daft.dependencies import np, pa
 from daft.runners import get_or_create_runner
 
 if TYPE_CHECKING:
     import builtins
+
+    import jaxtyping
 
 
 class TimeUnit:
@@ -159,6 +163,9 @@ class DataType:
             return cls.time(TimeUnit.us())
         elif check_type(datetime.timedelta):
             return cls.duration(TimeUnit.us())
+
+        elif check_type(daft.file.File):
+            return cls.file()
         elif check_type(list):
             if len(args) == 0:
                 inner_dtype = cls.python()
@@ -207,63 +214,184 @@ class DataType:
                 "Cannot derive precision and scale from decimal.Decimal type, defaulting to DataType.python()"
             )
             return cls.python()
-        elif check_type("numpy.ndarray"):
-            if len(args) == 2:
-                # https://numpy.org/doc/2.3/reference/typing.html#numpy.typing.NDArray
-                numpy_dtype_args = typing.get_args(args[1])
-                if len(numpy_dtype_args) == 1:
-                    inner_dtype = cls.infer_from_type(numpy_dtype_args[0])
-                else:
-                    warnings.warn(
-                        f"Cannot derive inner type from {t}, defaulting to DataType.python() for ndarray inner type"
-                    )
-                    inner_dtype = cls.python()
-            else:
-                inner_dtype = cls.python()
-            return cls.tensor(inner_dtype)
-        elif check_type("numpy.bool_"):
-            return cls.bool()
-        elif check_type("numpy.int8"):
-            return cls.int8()
-        elif check_type("numpy.uint8"):
-            return cls.uint8()
-        elif check_type("numpy.int16"):
-            return cls.int16()
-        elif check_type("numpy.uint16"):
-            return cls.uint16()
-        elif check_type("numpy.int32"):
-            return cls.int32()
-        elif check_type("numpy.uint32"):
-            return cls.uint32()
-        elif check_type("numpy.int64"):
-            return cls.int64()
-        elif check_type("numpy.uint64"):
-            return cls.uint64()
-        elif check_type("numpy.float32"):
-            return cls.float32()
-        elif check_type("numpy.float64"):
-            return cls.float64()
-        elif check_type("numpy.datetime64"):
-            warnings.warn(
-                "numpy.datetime64 may be converted to either timestamp or date based on the value, defaulting to DataType.timestamp(TimeUnit.us())"
-            )
-            return cls.timestamp(TimeUnit.us(), timezone=None)
-        elif check_type("pandas.Series"):
-            warnings.warn(
-                "Cannot derive inner type from pandas.Series type, defaulting to DataType.python() for Series inner type"
-            )
-            return cls.list(cls.python())
-        elif check_type("PIL.Image.Image"):
-            return cls.image()
         elif check_type(daft.series.Series):
             warnings.warn(
                 "Cannot derive inner type from daft.Series type, defaulting to DataType.python() for Series inner type"
             )
             return cls.list(cls.python())
-        elif check_type(daft.file.File):
-            return cls.file()
+        elif check_type("pydantic.BaseModel"):
+            import pydantic
+
+            if not (parse("2.0.0") <= parse(pydantic.__version__) < parse("3.0.0")):
+                raise ValueError(
+                    f"Daft only supports DataType inference for Pydantic V2, found Pydantic V{pydantic.__version__}"
+                )
+
+            model: pydantic.BaseModel = origin
+
+            serialize_by_alias = model.model_config.get("serialize_by_alias", False)
+
+            field_dtypes = {}
+            for attr_name, field_info in model.model_fields.items():
+                if serialize_by_alias:
+                    if field_info.serialization_alias is not None:
+                        serialized_name = field_info.serialization_alias
+                    elif field_info.alias is not None:
+                        serialized_name = field_info.alias
+                    else:
+                        serialized_name = attr_name
+                else:
+                    serialized_name = attr_name
+                field_dtypes[serialized_name] = cls.infer_from_type(field_info.annotation)
+
+            for attr_name, field_info in model.model_computed_fields.items():
+                if serialize_by_alias:
+                    if field_info.alias is not None:
+                        serialized_name = field_info.alias
+                    else:
+                        serialized_name = attr_name
+                else:
+                    serialized_name = attr_name
+                field_dtypes[serialized_name] = cls.infer_from_type(field_info.return_type)
+
+            return cls.struct(field_dtypes)
+        elif check_type("PIL.Image.Image"):
+            return cls.image()
+        elif check_type("jaxtyping.AbstractArray"):
+            return cls._infer_from_jaxtyping(origin)
+        elif check_type("numpy.ndarray"):
+            inner_dtype = None
+            if len(args) == 2:
+                # https://numpy.org/doc/2.3/reference/typing.html#numpy.typing.NDArray
+                numpy_dtype_args = typing.get_args(args[1])
+                if len(numpy_dtype_args) == 1:
+                    inner_dtype = cls.infer_from_type(numpy_dtype_args[0])
+
+            if inner_dtype is None:
+                warnings.warn(
+                    f"Cannot derive inner type from {t}, defaulting to DataType.python() for ndarray inner type"
+                )
+                inner_dtype = cls.python()
+
+            return cls.tensor(inner_dtype)
+
+        elif check_type("torch.FloatTensor"):
+            return cls.tensor(cls.float32())
+        elif check_type("torch.DoubleTensor"):
+            return cls.tensor(cls.float64())
+        elif check_type("torch.ByteTensor"):
+            return cls.tensor(cls.uint8())
+        elif check_type("torch.CharTensor"):
+            return cls.tensor(cls.int8())
+        elif check_type("torch.ShortTensor"):
+            return cls.tensor(cls.int16())
+        elif check_type("torch.IntTensor"):
+            return cls.tensor(cls.int32())
+        elif check_type("torch.LongTensor"):
+            return cls.tensor(cls.int64())
+        elif check_type("torch.BoolTensor"):
+            return cls.tensor(cls.bool())
+        elif (
+            check_type("torch.Tensor")
+            or check_type("tensorflow.Tensor")
+            or check_type("jax.Array")
+            or check_type("cupy.ndarray")
+        ):
+            return cls.tensor(cls.python())
+        elif check_type("numpy.generic"):
+            return cls._infer_from_numpy_scalar_dtype(origin)
+        elif check_type("pandas.Series"):
+            warnings.warn(
+                "Cannot derive inner type from pandas.Series type, defaulting to DataType.python() for Series inner type"
+            )
+            return cls.list(cls.python())
         else:
             return cls.python()
+
+    @classmethod
+    def _infer_from_numpy_scalar_dtype(cls, t: type) -> DataType:
+        import numpy as np
+
+        if t is np.bool_:
+            return cls.bool()
+        elif t is np.int8:
+            return cls.int8()
+        elif t is np.uint8:
+            return cls.uint8()
+        elif t is np.int16:
+            return cls.int16()
+        elif t is np.uint16:
+            return cls.uint16()
+        elif t is np.int32:
+            return cls.int32()
+        elif t is np.uint32:
+            return cls.uint32()
+        elif t is np.int64:
+            return cls.int64()
+        elif t is np.uint64:
+            return cls.uint64()
+        elif t is np.float32:
+            return cls.float32()
+        elif t is np.float64:
+            return cls.float64()
+        elif t is np.datetime64:
+            warnings.warn(
+                "numpy.datetime64 may be converted to either timestamp or date based on the value, defaulting to DataType.timestamp(TimeUnit.us())"
+            )
+            return cls.timestamp(TimeUnit.us(), timezone=None)
+        else:
+            return cls.python()
+
+    @classmethod
+    def _infer_from_jaxtyping(cls, t: jaxtyping.AbstractArray) -> DataType:
+        print("inferring jaxtyping", t)
+
+        import jaxtyping
+        from jaxtyping._array_types import _FixedDim
+
+        inferred_array_type = cls.infer_from_type(t.array_type)
+        if not inferred_array_type.is_tensor():
+            # if we do not support converting the array type to a tensor, do not infer an inner dtype or shape
+            return inferred_array_type
+
+        def is_dtype(dtype: jaxtyping.AbstractDtype) -> bool:
+            return t.dtypes == dtype[Any, "..."].dtypes
+
+        if is_dtype(jaxtyping.Bool):
+            inner_dtype = cls.bool()
+        elif is_dtype(jaxtyping.Int8):
+            inner_dtype = cls.int8()
+        elif is_dtype(jaxtyping.UInt8):
+            inner_dtype = cls.uint8()
+        elif is_dtype(jaxtyping.Int16):
+            inner_dtype = cls.int16()
+        elif is_dtype(jaxtyping.UInt16):
+            inner_dtype = cls.uint16()
+        elif is_dtype(jaxtyping.Int32):
+            inner_dtype = cls.int32()
+        elif is_dtype(jaxtyping.UInt32):
+            inner_dtype = cls.uint32()
+        elif is_dtype(jaxtyping.Int64) or is_dtype(jaxtyping.Int) or is_dtype(jaxtyping.Integer):
+            inner_dtype = cls.int64()
+        elif is_dtype(jaxtyping.UInt64) or is_dtype(jaxtyping.UInt):
+            inner_dtype = cls.uint64()
+        elif is_dtype(jaxtyping.Float32):
+            inner_dtype = cls.float32()
+        elif is_dtype(jaxtyping.Float64) or is_dtype(jaxtyping.Float) or is_dtype(jaxtyping.Real):
+            inner_dtype = cls.float64()
+        else:
+            inner_dtype = cls.python()
+
+        if len(t.dims) == 0:
+            shape = ()
+        else:
+            # only set shape if all dims are fixed
+            if all(isinstance(dim, _FixedDim) for dim in t.dims):
+                shape = tuple(dim.size for dim in t.dims)
+            else:
+                shape = None
+
+        return cls.tensor(inner_dtype, shape)
 
     @classmethod
     def infer_from_object(cls, obj: Any) -> DataType:
@@ -531,8 +659,8 @@ class DataType:
                 each tensor element to vary.
         """
         if shape is not None:
-            if not isinstance(shape, tuple) or not shape or any(not isinstance(n, int) for n in shape):
-                raise ValueError("Tensor shape must be a non-empty tuple of ints, but got: ", shape)
+            if not isinstance(shape, tuple) or any(not isinstance(n, int) for n in shape):
+                raise ValueError("Tensor shape must be a tuple of ints, but got: ", shape)
         return cls._from_pydatatype(PyDataType.tensor(dtype._dtype, shape))
 
     @classmethod

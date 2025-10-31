@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use {
     common_py_serde::{deserialize_py_object, serialize_py_object},
     daft_schema::python::{datatype::PyTimeUnit, field::PyField},
-    pyo3::{PyObject, PyResult, Python, pyclass, pymethods, types::PyAnyMethods},
+    pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods, types::PyAnyMethods},
 };
 
 use crate::FileFormat;
@@ -22,7 +22,11 @@ pub enum FileFormatConfig {
     #[cfg(feature = "python")]
     Database(DatabaseSourceConfig),
     #[cfg(feature = "python")]
-    PythonFunction,
+    PythonFunction {
+        source_type: Option<String>,
+        module_name: Option<String>,
+        function_name: Option<String>,
+    },
 }
 
 impl FileFormatConfig {
@@ -32,16 +36,29 @@ impl FileFormatConfig {
     }
 
     #[must_use]
-    pub fn var_name(&self) -> &'static str {
+    pub fn var_name(&self) -> String {
         match self {
-            Self::Parquet(_) => "Parquet",
-            Self::Csv(_) => "Csv",
-            Self::Json(_) => "Json",
-            Self::Warc(_) => "Warc",
+            Self::Parquet(_) => "Parquet".to_string(),
+            Self::Csv(_) => "Csv".to_string(),
+            Self::Json(_) => "Json".to_string(),
+            Self::Warc(_) => "Warc".to_string(),
             #[cfg(feature = "python")]
-            Self::Database(_) => "Database",
+            Self::Database(_) => "Database".to_string(),
             #[cfg(feature = "python")]
-            Self::PythonFunction => "PythonFunction",
+            Self::PythonFunction {
+                source_type,
+                module_name,
+                function_name: _,
+            } => {
+                if let Some(source_type) = source_type {
+                    format!("{}(Python)", source_type)
+                } else if let Some(module_name) = module_name {
+                    // Infer type from module name
+                    format!("{}(Python)", module_name)
+                } else {
+                    "PythonFunction".to_string()
+                }
+            }
         }
     }
 
@@ -55,7 +72,7 @@ impl FileFormatConfig {
             #[cfg(feature = "python")]
             Self::Database(source) => source.multiline_display(),
             #[cfg(feature = "python")]
-            Self::PythonFunction => vec![],
+            Self::PythonFunction { .. } => vec![],
         }
     }
 }
@@ -324,14 +341,14 @@ pub struct DatabaseSourceConfig {
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
     )]
-    pub conn: Arc<PyObject>,
+    pub conn: Arc<Py<PyAny>>,
 }
 
 #[cfg(feature = "python")]
 impl PartialEq for DatabaseSourceConfig {
     fn eq(&self, other: &Self) -> bool {
         self.sql == other.sql
-            && Python::with_gil(|py| self.conn.bind(py).eq(other.conn.bind(py)).unwrap())
+            && Python::attach(|py| self.conn.bind(py).eq(other.conn.bind(py)).unwrap())
     }
 }
 
@@ -342,7 +359,7 @@ impl Eq for DatabaseSourceConfig {}
 impl Hash for DatabaseSourceConfig {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.sql.hash(state);
-        let py_obj_hash = Python::with_gil(|py| self.conn.bind(py).hash());
+        let py_obj_hash = Python::attach(|py| self.conn.bind(py).hash());
         match py_obj_hash {
             Ok(hash) => hash.hash(state),
             Err(_) => serde_json::to_vec(self).unwrap().hash(state),
@@ -353,7 +370,7 @@ impl Hash for DatabaseSourceConfig {
 #[cfg(feature = "python")]
 impl DatabaseSourceConfig {
     #[must_use]
-    pub fn new_internal(sql: String, conn: Arc<PyObject>) -> Self {
+    pub fn new_internal(sql: String, conn: Arc<Py<PyAny>>) -> Self {
         Self { sql, conn }
     }
 
@@ -370,7 +387,7 @@ impl DatabaseSourceConfig {
 impl DatabaseSourceConfig {
     /// Create a config for a Database data source.
     #[new]
-    fn new(sql: &str, conn: PyObject) -> Self {
+    fn new(sql: &str, conn: Py<PyAny>) -> Self {
         Self::new_internal(sql.to_string(), Arc::new(conn))
     }
 }

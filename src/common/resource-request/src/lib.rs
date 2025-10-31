@@ -8,7 +8,7 @@ use common_hashable_float_wrapper::FloatWrapper;
 use common_py_serde::impl_bincode_py_state_serialization;
 #[cfg(feature = "python")]
 use pyo3::{
-    Bound, PyObject, PyResult, Python, pyclass,
+    Bound, PyResult, Python, pyclass,
     pyclass::CompareOp,
     pymethods,
     types::{PyModule, PyModuleMethods},

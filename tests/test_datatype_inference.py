@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import datetime
 import decimal
+from typing import NamedTuple
 
+import jax
+import jaxtyping
 import numpy as np
 import numpy.typing as npt
 import pandas
 import PIL.Image
 import pytest
+import tensorflow
+import torch
+from pydantic import BaseModel, Field, computed_field
 from typing_extensions import TypedDict
 
 from daft import DataType as dt
@@ -15,6 +21,56 @@ from daft import Series
 from daft.daft import ImageMode
 from daft.datatype import TimeUnit
 from daft.file import File
+
+
+# Pydantic test models
+class SimplePydanticModel(BaseModel):
+    name: str
+    age: int
+
+
+class NestedPydanticModel(BaseModel):
+    user: SimplePydanticModel
+    active: bool
+
+
+class PydanticWithAlias(BaseModel):
+    model_config = {"serialize_by_alias": True}
+    full_name: str = Field(alias="name", serialization_alias="fullName")
+    user_age: int = Field(alias="age")
+
+
+class PydanticWithAliasNoSerializeByAlias(BaseModel):
+    full_name: str = Field(alias="name", serialization_alias="fullName")
+    user_age: int = Field(alias="age")
+
+
+class PydanticWithComputedField(BaseModel):
+    first_name: str
+    last_name: str
+
+    @computed_field
+    @property
+    def full_name(self) -> str:
+        return f"{self.first_name} {self.last_name}"
+
+
+class PydanticWithMixedTypes(BaseModel):
+    numbers: list[int]
+    metadata: dict[str, str]
+
+
+class EmptyPydanticModel(BaseModel):
+    pass
+
+
+class SimpleNamedTuple(NamedTuple):
+    foo: str
+    bar: int
+
+
+class PydanticWithNamedTuple(BaseModel):
+    values: SimpleNamedTuple
 
 
 @pytest.mark.parametrize(
@@ -41,6 +97,17 @@ from daft.file import File
         (tuple[str, ...], dt.list(dt.string())),
         (tuple[str, int], dt.struct({"_0": dt.string(), "_1": dt.int64()})),
         (np.ndarray, dt.tensor(dt.python())),
+        (torch.Tensor, dt.tensor(dt.python())),
+        (torch.FloatTensor, dt.tensor(dt.float32())),
+        (torch.DoubleTensor, dt.tensor(dt.float64())),
+        (torch.ByteTensor, dt.tensor(dt.uint8())),
+        (torch.CharTensor, dt.tensor(dt.int8())),
+        (torch.ShortTensor, dt.tensor(dt.int16())),
+        (torch.IntTensor, dt.tensor(dt.int32())),
+        (torch.LongTensor, dt.tensor(dt.int64())),
+        (torch.BoolTensor, dt.tensor(dt.bool())),
+        (tensorflow.Tensor, dt.tensor(dt.python())),
+        (jax.Array, dt.tensor(dt.python())),
         (npt.NDArray[int], dt.tensor(dt.int64())),
         (np.bool_, dt.bool()),
         (np.int8, dt.int8()),
@@ -59,11 +126,91 @@ from daft.file import File
         (Series, dt.list(dt.python())),
         (File, dt.file()),
         (object, dt.python()),
+        # Pydantic models
+        (SimplePydanticModel, dt.struct({"name": dt.string(), "age": dt.int64()})),
+        (
+            NestedPydanticModel,
+            dt.struct({"user": dt.struct({"name": dt.string(), "age": dt.int64()}), "active": dt.bool()}),
+        ),
+        # TODO: Uncomment this when we update to pydantic>=2.11 which supports `serialize_by_alias`
+        # (PydanticWithAlias, dt.struct({"fullName": dt.string(), "age": dt.int64()})),
+        (PydanticWithAliasNoSerializeByAlias, dt.struct({"full_name": dt.string(), "user_age": dt.int64()})),
+        (
+            PydanticWithComputedField,
+            dt.struct({"first_name": dt.string(), "last_name": dt.string(), "full_name": dt.string()}),
+        ),
+        (
+            PydanticWithMixedTypes,
+            dt.struct(
+                {
+                    "numbers": dt.list(dt.int64()),
+                    "metadata": dt.map(dt.string(), dt.string()),
+                }
+            ),
+        ),
+        (EmptyPydanticModel, dt.struct({})),
+        # TODO: uncomment once we support named tuples
+        # (SimpleNamedTuple, dt.struct({"foo": dt.string(), "bar": dt.int64()})),
+        # (PydanticWithNamedTuple, dt.struct({"values": dt.struct({"foo": dt.string(), "bar": dt.int64()})})),
     ],
 )
 def test_infer_from_type(user_provided_type, expected_datatype):
     actual = dt.infer_from_type(user_provided_type)
     assert actual == expected_datatype
+
+
+@pytest.mark.parametrize(
+    "dtype_class, expected_dtype",
+    [
+        (jaxtyping.Bool, dt.bool()),
+        (jaxtyping.Int8, dt.int8()),
+        (jaxtyping.UInt8, dt.uint8()),
+        (jaxtyping.Int16, dt.int16()),
+        (jaxtyping.UInt16, dt.uint16()),
+        (jaxtyping.Int32, dt.int32()),
+        (jaxtyping.UInt32, dt.uint32()),
+        (jaxtyping.Int64, dt.int64()),
+        (jaxtyping.Int, dt.int64()),
+        (jaxtyping.Integer, dt.int64()),
+        (jaxtyping.UInt64, dt.uint64()),
+        (jaxtyping.UInt, dt.uint64()),
+        (jaxtyping.Float32, dt.float32()),
+        (jaxtyping.Float64, dt.float64()),
+        (jaxtyping.Float, dt.float64()),
+        (jaxtyping.Real, dt.float64()),
+        (jaxtyping.Shaped, dt.python()),
+        (jaxtyping.Complex, dt.python()),
+    ],
+)
+@pytest.mark.parametrize(
+    "shape_spec, expected_shape",
+    [
+        ("", ()),
+        ("10", (10,)),
+        ("10 20", (10, 20)),
+        ("3 224 224", (3, 224, 224)),
+        ("n", None),
+        ("n d", None),
+        ("n 512", None),
+        ("512 512 _", None),
+        ("... 1 2 3", None),
+    ],
+)
+@pytest.mark.parametrize(
+    "array_type",
+    [
+        jax.Array,
+        np.ndarray,
+        torch.Tensor,
+        tensorflow.Tensor,
+    ],
+)
+def test_infer_from_jaxtyping(dtype_class, expected_dtype, shape_spec, expected_shape, array_type):
+    jaxtyping_annotation = dtype_class[array_type, shape_spec]
+    actual_datatype = dt.infer_from_type(jaxtyping_annotation)
+
+    expected_datatype = dt.tensor(expected_dtype, shape=expected_shape)
+    assert actual_datatype == expected_datatype
 
 
 @pytest.mark.parametrize(
@@ -94,6 +241,9 @@ def test_infer_from_type(user_provided_type, expected_datatype):
         (decimal.Decimal("7.89E+3"), dt.decimal128(38, 0)),  # 7890
         (decimal.Decimal("1.2345e-4"), dt.decimal128(38, 8)),  # 0.00012345
         (np.array([1, 2, 3]), dt.tensor(dt.int64())),
+        (torch.tensor([1, 2, 3]), dt.tensor(dt.int64())),
+        (tensorflow.constant([1, 2, 3]), dt.tensor(dt.int32())),
+        (jax.numpy.array([1, 2, 3]), dt.tensor(dt.int32())),
         (np.bool_(False), dt.bool()),
         (np.int8(1), dt.int8()),
         (np.uint8(1), dt.uint8()),
@@ -124,16 +274,6 @@ def test_infer_from_type(user_provided_type, expected_datatype):
         (Series.from_pylist([1, 2, 3]), dt.list(dt.int64())),
         (File(b"1234"), dt.file()),
         (object(), dt.python()),
-    ],
-)
-def test_infer_from_object(user_provided_object, expected_datatype):
-    actual = dt.infer_from_object(user_provided_object)
-    assert actual == expected_datatype
-
-
-@pytest.mark.parametrize(
-    "user_provided_object, expected_datatype",
-    [
         # Nested lists
         ([[1, 2], [3, 4]], dt.list(dt.list(dt.int64()))),
         ([["a", "b"], ["c", "d"]], dt.list(dt.list(dt.string()))),
@@ -169,9 +309,47 @@ def test_infer_from_object(user_provided_object, expected_datatype):
         # Empty nested structures
         ([[], []], dt.list(dt.list(dt.null()))),
         ([{}, {}], dt.list(dt.struct({"": dt.null()}))),
+        # Pydantic model instances
+        (SimplePydanticModel(name="Alice", age=30), dt.struct({"name": dt.string(), "age": dt.int64()})),
+        (
+            NestedPydanticModel(user=SimplePydanticModel(name="Bob", age=25), active=True),
+            dt.struct({"user": dt.struct({"name": dt.string(), "age": dt.int64()}), "active": dt.bool()}),
+        ),
+        # TODO: Uncomment this when we update to pydantic>=2.11 which supports `serialize_by_alias`
+        # (PydanticWithAlias(name="Jane Doe", age=28), dt.struct({"fullName": dt.string(), "age": dt.int64()})),
+        (
+            PydanticWithAliasNoSerializeByAlias(name="Jane Doe", age=28),
+            dt.struct({"full_name": dt.string(), "user_age": dt.int64()}),
+        ),
+        (
+            PydanticWithComputedField(first_name="John", last_name="Smith"),
+            dt.struct({"first_name": dt.string(), "last_name": dt.string(), "full_name": dt.string()}),
+        ),
+        (
+            PydanticWithMixedTypes(numbers=[1, 2, 3], metadata={"key": "value"}),
+            dt.struct(
+                {
+                    "numbers": dt.list(dt.int64()),
+                    "metadata": dt.map(dt.string(), dt.string()),
+                }
+            ),
+        ),
+        (
+            PydanticWithMixedTypes(numbers=[1, 2, 3], metadata={"key": "value"}),
+            dt.struct(
+                {
+                    "numbers": dt.list(dt.int64()),
+                    "metadata": dt.map(dt.string(), dt.string()),
+                }
+            ),
+        ),
+        (EmptyPydanticModel(), dt.struct({"": dt.null()})),
+        # TODO: uncomment once we support named tuples
+        # (SimpleNamedTuple(foo="1", bar=2), dt.struct({"foo": dt.string(), "bar": dt.int64()})),
+        # (PydanticWithNamedTuple(values=SimpleNamedTuple(foo="1", bar=2)), dt.struct({"values": dt.struct({"foo": dt.string(), "bar": dt.int64()})})),
     ],
 )
-def test_infer_from_nested_object(user_provided_object, expected_datatype):
+def test_infer_from_object(user_provided_object, expected_datatype):
     actual = dt.infer_from_object(user_provided_object)
     assert actual == expected_datatype
 
@@ -289,3 +467,12 @@ def test_decimals_with_scientific_notation():
 
     # assert roundtrip equality
     assert daft.from_pydict({"col": decimals}).to_pydict()["col"] == decimals
+
+
+def test_cupy():
+    cupy = pytest.importorskip("cupy")
+
+    assert dt.infer_from_type(cupy.ndarray) == dt.tensor(dt.python())
+
+    arr = cupy.array([1, 2, 3])
+    assert dt.infer_from_object(arr) == dt.tensor(dt.int64())

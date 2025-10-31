@@ -15,7 +15,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub(crate) struct TaskResourceRequest {
-    resource_request: ResourceRequest,
+    pub resource_request: ResourceRequest,
 }
 
 impl TaskResourceRequest {
@@ -42,29 +42,28 @@ pub(crate) type TaskName = String;
 #[derive(Clone, PartialEq, Eq, Hash, Default)]
 #[allow(clippy::struct_field_names)]
 pub(crate) struct TaskContext {
+    /// The query / plan ID that the task belongs to.
     pub plan_id: PlanID,
-    pub node_id: NodeID,
+    /// The ID of the last operator / node in the task's pipeline.
+    /// This gives us a general indication of what portion of the query this task is related to.
+    pub last_node_id: NodeID,
+    /// The task ID
     pub task_id: TaskID,
-    pub logical_node_ids: Vec<NodeID>,
+    pub node_ids: Vec<NodeID>,
 }
 
 impl TaskContext {
-    pub fn new(
-        plan_id: PlanID,
-        node_id: NodeID,
-        task_id: TaskID,
-        logical_node_ids: Vec<NodeID>,
-    ) -> Self {
+    pub fn new(plan_id: PlanID, node_id: NodeID, task_id: TaskID, node_ids: Vec<NodeID>) -> Self {
         Self {
             plan_id,
-            node_id,
+            last_node_id: node_id,
             task_id,
-            logical_node_ids,
+            node_ids,
         }
     }
 
-    pub fn add_logical_node_id(&mut self, logical_node_id: NodeID) {
-        self.logical_node_ids.push(logical_node_id);
+    pub fn add_node_id(&mut self, node_id: NodeID) {
+        self.node_ids.push(node_id);
     }
 }
 
@@ -72,8 +71,8 @@ impl std::fmt::Debug for TaskContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "TaskContext(plan_id = {}, node_id = {}, task_id = {})",
-            self.plan_id, self.node_id, self.task_id
+            "TaskContext(plan_id = {}, last_node_id = {}, task_id = {})",
+            self.plan_id, self.last_node_id, self.task_id
         )
     }
 }
@@ -84,10 +83,7 @@ impl From<(&PipelineNodeContext, TaskID)> for TaskContext {
             node_context.plan_id,
             node_context.node_id,
             task_id,
-            node_context
-                .logical_node_id
-                .map(|id| vec![id])
-                .unwrap_or_default(),
+            vec![node_context.node_id],
         )
     }
 }
@@ -109,8 +105,8 @@ pub(crate) trait Task: Send + Sync + Clone + Debug + 'static {
     }
 
     #[allow(dead_code)]
-    fn node_id(&self) -> NodeID {
-        self.task_context().node_id
+    fn last_node_id(&self) -> NodeID {
+        self.task_context().last_node_id
     }
 
     fn task_name(&self) -> TaskName;
@@ -284,7 +280,7 @@ impl Task for SwordfishTask {
     fn priority(&self) -> impl TaskPriority {
         SwordfishTaskPriority {
             plan_id: self.task_context.plan_id,
-            node_id: self.task_context.node_id,
+            node_id: self.task_context.last_node_id,
             task_id: self.task_context.task_id,
         }
     }

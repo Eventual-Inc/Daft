@@ -714,7 +714,7 @@ pub struct PyS3CredentialsProvider {
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
     )]
-    pub provider: Arc<PyObject>,
+    pub provider: Arc<Py<PyAny>>,
     pub hash: isize,
 }
 
@@ -761,7 +761,7 @@ impl S3CredentialsProvider for PyS3CredentialsProvider {
     }
 
     fn provide_credentials(&self) -> DaftResult<crate::S3Credentials> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let py_creds = self.provider.call0(py)?;
             Ok(py_creds.extract::<S3Credentials>(py)?.credentials)
         })

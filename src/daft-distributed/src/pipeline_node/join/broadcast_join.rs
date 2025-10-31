@@ -42,7 +42,6 @@ impl BroadcastJoinNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         left_on: Vec<BoundExpr>,
         right_on: Vec<BoundExpr>,
@@ -59,7 +58,6 @@ impl BroadcastJoinNode {
             Self::NODE_NAME,
             vec![broadcaster.node_id(), receiver.node_id()],
             vec![broadcaster.name(), receiver.name()],
-            logical_node_id,
         );
 
         // For broadcast joins, we use the receiver's clustering spec since the broadcaster
@@ -104,7 +102,7 @@ impl BroadcastJoinNode {
         let materialized_broadcast_data_plan = make_in_memory_scan_from_materialized_outputs(
             &materialized_broadcast_data,
             self.broadcaster_schema.clone(),
-            self.node_id(),
+            self.node_id().to_string(),
         )?;
         let broadcast_psets = HashMap::from([(
             self.node_id().to_string(),

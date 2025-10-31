@@ -42,7 +42,7 @@ pub fn sql_exec(
     session: &PySession,
     ctes: HashMap<String, PyLogicalPlanBuilder>,
     config: PyDaftPlanningConfig,
-) -> PyResult<Option<PyObject>> {
+) -> PyResult<Option<pyo3::Py<pyo3::PyAny>>> {
     // Prepare any externally provided CTEs.
     let ctes = ctes
         .into_iter()

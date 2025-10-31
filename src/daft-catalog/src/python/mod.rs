@@ -34,7 +34,7 @@ impl PyCatalog {
         ident: PyIdentifier,
         schema: PySchema,
         py: Python,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         self.0.create_table(&ident.0, schema.schema)?.to_py(py)
     }
 
@@ -45,7 +45,7 @@ impl PyCatalog {
         Ok(self.0.drop_table(&ident.0)?)
     }
 
-    fn get_table(&self, ident: PyIdentifier, py: Python) -> PyResult<PyObject> {
+    fn get_table(&self, ident: PyIdentifier, py: Python) -> PyResult<Py<PyAny>> {
         self.0.get_table(&ident.0)?.to_py(py)
     }
 
@@ -78,7 +78,7 @@ impl PyCatalog {
     }
 
     #[staticmethod]
-    fn new_memory_catalog(name: String, py: Python) -> PyResult<PyObject> {
+    fn new_memory_catalog(name: String, py: Python) -> PyResult<Py<PyAny>> {
         MemoryCatalog::new(name).to_py(py)
     }
 }
@@ -138,7 +138,7 @@ impl PyTable {
     }
 
     #[staticmethod]
-    fn new_memory_table(name: String, schema: PySchema, py: Python) -> PyResult<PyObject> {
+    fn new_memory_table(name: String, schema: PySchema, py: Python) -> PyResult<Py<PyAny>> {
         MemoryTable::new(name, schema.schema)?.to_py(py)
     }
 }

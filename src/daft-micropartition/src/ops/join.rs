@@ -108,6 +108,7 @@ impl MicroPartition {
         right: &Self,
         left_on: &[BoundExpr],
         right_on: &[BoundExpr],
+        how: JoinType,
         is_sorted: bool,
     ) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::sort_merge_join");
@@ -119,14 +120,7 @@ impl MicroPartition {
             RecordBatch::sort_merge_join(lt, rt, lo, ro, is_sorted)
         };
 
-        self.join(
-            right,
-            io_stats,
-            left_on,
-            right_on,
-            JoinType::Inner,
-            table_join,
-        )
+        self.join(right, io_stats, left_on, right_on, how, table_join)
     }
 
     pub fn cross_join(&self, right: &Self, outer_loop_side: JoinSide) -> DaftResult<Self> {

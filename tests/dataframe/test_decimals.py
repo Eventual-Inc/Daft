@@ -8,7 +8,6 @@ import pyarrow as pa
 import pytest
 
 import daft
-from daft.context import get_context
 
 PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
 
@@ -59,8 +58,7 @@ def test_decimal_sum(prec, partitions) -> None:
     assert res.to_pydict()["decimal128"] == [decimal.Decimal("108.001")]
 
     schema = res.schema()
-    expected_prec = min(38, prec + 19)  # see agg_ops.rs
-    assert schema["decimal128"].dtype == daft.DataType.decimal128(expected_prec, 3)
+    assert schema["decimal128"].dtype == daft.DataType.decimal128(38, 3)
 
 
 @pytest.mark.parametrize("prec, partitions", itertools.product([5, 30], [1, 2]))
@@ -72,8 +70,7 @@ def test_decimal_mean(prec, partitions) -> None:
     assert res.to_pydict()["decimal128"] == [decimal.Decimal("36.0003333")]
 
     schema = res.schema()
-    expected_prec = min(38, prec + 19)  # see agg_ops.rs
-    assert schema["decimal128"].dtype == daft.DataType.decimal128(expected_prec, 7)
+    assert schema["decimal128"].dtype == daft.DataType.decimal128(38, 7)
 
 
 @pytest.mark.parametrize("prec, partitions", itertools.product([5, 30], [1, 2]))
@@ -89,10 +86,6 @@ def test_decimal_stddev(prec, partitions) -> None:
 
 
 @pytest.mark.parametrize("prec, partitions", itertools.product([5, 30], [1, 2]))
-@pytest.mark.skipif(
-    get_context().daft_execution_config.use_legacy_ray_runner is False,
-    reason="resource requests are not fully supported in Flotilla",
-)
 def test_decimal_grouped_sum(prec, partitions) -> None:
     python_decimals = [decimal.Decimal("-1.010"), decimal.Decimal("99.001"), decimal.Decimal("10.010"), None]
     group = [0, 1, 0, 1]
@@ -102,15 +95,10 @@ def test_decimal_grouped_sum(prec, partitions) -> None:
     res = df.groupby("group").sum().sort("group").collect()
     assert res.to_pydict() == {"group": [0, 1], "decimal128": [decimal.Decimal("9.000"), decimal.Decimal("99.001")]}
     schema = res.schema()
-    expected_prec = min(38, prec + 19)  # see agg_ops.rs
-    assert schema["decimal128"].dtype == daft.DataType.decimal128(expected_prec, 3)
+    assert schema["decimal128"].dtype == daft.DataType.decimal128(38, 3)
 
 
 @pytest.mark.parametrize("prec, partitions", itertools.product([5, 30], [1, 2]))
-@pytest.mark.skipif(
-    get_context().daft_execution_config.use_legacy_ray_runner is False,
-    reason="resource requests are not fully supported in Flotilla",
-)
 def test_decimal_grouped_mean(prec, partitions) -> None:
     python_decimals = [decimal.Decimal("-1.010"), decimal.Decimal("99.001"), decimal.Decimal("10.010"), None]
     group = [0, 1, 0, 1]
@@ -120,8 +108,7 @@ def test_decimal_grouped_mean(prec, partitions) -> None:
     res = df.groupby("group").mean().sort("group").collect()
     assert res.to_pydict() == {"group": [0, 1], "decimal128": [decimal.Decimal("4.500"), decimal.Decimal("99.001")]}
     schema = res.schema()
-    expected_prec = min(38, prec + 19)  # see agg_ops.rs
-    assert schema["decimal128"].dtype == daft.DataType.decimal128(expected_prec, 7)
+    assert schema["decimal128"].dtype == daft.DataType.decimal128(38, 7)
 
 
 @pytest.mark.parametrize("prec, partitions", itertools.product([5, 30], [1, 2]))

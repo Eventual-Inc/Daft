@@ -37,7 +37,6 @@ impl IntoPartitionsNode {
 
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         num_partitions: usize,
         schema: SchemaRef,
@@ -49,7 +48,6 @@ impl IntoPartitionsNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -129,6 +127,7 @@ impl IntoPartitionsNode {
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((&self.context, task_id_counter.next())),
                 materialized_outputs,
+                self_arc.config.schema.clone(),
                 &(self_arc as Arc<dyn PipelineNodeImpl>),
                 move |input| {
                     LocalPhysicalPlan::into_partitions(input, 1, StatsState::NotMaterialized)
@@ -202,6 +201,7 @@ impl IntoPartitionsNode {
                     let task = make_in_memory_task_from_materialized_outputs(
                         TaskContext::from((&self.context, task_id_counter.next())),
                         vec![output],
+                        self_arc.config.schema.clone(),
                         &(self_arc as Arc<dyn PipelineNodeImpl>),
                         None,
                     )?;

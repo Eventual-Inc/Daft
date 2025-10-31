@@ -1,4 +1,5 @@
 [dependencies]
+async-stream = {workspace = true}
 axum = "0.8"
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 common-metrics = {path = "../common/metrics", default-features = false}
@@ -12,6 +13,11 @@ tracing = {workspace = true}
 serde = {workspace = true}
 tokio = {workspace = true}
 uuid = {workspace = true}
+futures = {workspace = true}
+tokio-stream = {workspace = true, features = ["sync"]}
+# Ideally want to use the same versions as Axum
+mime = "*"
+mime_guess = "*"
 
 [features]
 python = ["dep:pyo3", "daft-recordbatch/python", "common-metrics/python"]

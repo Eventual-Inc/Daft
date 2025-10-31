@@ -50,11 +50,47 @@ impl Hasher for Sha1Hasher {
     }
 }
 
+pub struct XxHash32Hasher {
+    inner: xxhash_rust::xxh32::Xxh32,
+}
+
+impl Hasher for XxHash32Hasher {
+    fn write(&mut self, bytes: &[u8]) {
+        self.inner.update(bytes);
+    }
+
+    fn finish(&self) -> u64 {
+        self.inner.digest() as u64
+    }
+}
+
+pub struct XxHash32BuildHasher {
+    seed: u32,
+}
+
+impl XxHash32BuildHasher {
+    pub fn new(seed: u32) -> Self {
+        Self { seed }
+    }
+}
+
+impl BuildHasher for XxHash32BuildHasher {
+    type Hasher = XxHash32Hasher;
+
+    fn build_hasher(&self) -> Self::Hasher {
+        XxHash32Hasher {
+            inner: xxhash_rust::xxh32::Xxh32::new(self.seed),
+        }
+    }
+}
+
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum HashFunctionKind {
     #[default]
     MurmurHash3,
-    XxHash,
+    XxHash64,
+    XxHash32,
+    XxHash3_64,
     Sha1,
 }
 
@@ -64,7 +100,9 @@ impl FromStr for HashFunctionKind {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "murmurhash3" => Ok(Self::MurmurHash3),
-            "xxhash" => Ok(Self::XxHash),
+            "xxhash64" => Ok(Self::XxHash64),
+            "xxhash32" => Ok(Self::XxHash32),
+            "xxhash3_64" | "xxhash" => Ok(Self::XxHash3_64),
             "sha1" => Ok(Self::Sha1),
             _ => Err(DaftError::ValueError(format!(
                 "Invalid hash function: {}",

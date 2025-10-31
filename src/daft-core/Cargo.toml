@@ -54,10 +54,7 @@ pyo3 = {workspace = true, optional = true}
 rand = "0.9.1"
 serde = {workspace = true}
 sketches-ddsketch = {workspace = true}
-
-[dependencies.xxhash-rust]
-features = ["xxh3", "const_xxh3", "xxh64"]
-version = "0.8.5"
+xxhash-rust = {workspace = true}
 
 [dev-dependencies]
 rstest = {workspace = true}

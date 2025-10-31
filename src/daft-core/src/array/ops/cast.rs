@@ -45,7 +45,7 @@ use crate::{
 #[cfg(feature = "python")]
 impl Series {
     fn cast_to_python(&self) -> DaftResult<Self> {
-        let py_values = Python::with_gil(|py| {
+        let py_values = Python::attach(|py| {
             use pyo3::IntoPyObjectExt;
 
             self.to_literals()
@@ -601,7 +601,7 @@ impl PythonArray {
 
         // TODO: optimize this.
         // Currently this does PythonArray -> Vec<Literal> -> Series -> Series::cast
-        let literals = Python::with_gil(|py| {
+        let literals = Python::attach(|py| {
             self.values()
                 .iter()
                 .map(|ob| Literal::from_pyobj(ob.bind(py), Some(dtype)))

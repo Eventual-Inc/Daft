@@ -34,7 +34,7 @@ use sqlparser::{
     },
     dialect::GenericDialect,
     parser::{Parser, ParserOptions},
-    tokenizer::Tokenizer,
+    tokenizer::{Token, Tokenizer},
 };
 
 use crate::{
@@ -260,7 +260,37 @@ impl SQLPlanner<'_> {
     }
 
     pub fn plan(&mut self, input: &str) -> SQLPlannerResult<Statement> {
-        let tokens = Tokenizer::new(&GenericDialect {}, input).tokenize()?;
+        let tokens: Vec<sqlparser::tokenizer::Token> =
+            Tokenizer::new(&GenericDialect {}, input).tokenize()?;
+
+        let from_positions: Vec<usize> = tokens
+            .iter()
+            .enumerate()
+            .filter_map(|(i, token)| match token {
+                Token::Word(w) if w.keyword == sqlparser::keywords::Keyword::FROM => Some(i),
+                _ => None,
+            })
+            .collect();
+
+        for pos in from_positions {
+            let next_token = tokens
+                .iter()
+                .skip(pos + 1)
+                .find(|token| !matches!(token, Token::Whitespace(_)));
+            if let Some(Token::Word(w)) = next_token {
+                match w.keyword {
+                    sqlparser::keywords::Keyword::LATERAL
+                    | sqlparser::keywords::Keyword::TABLE
+                    | sqlparser::keywords::Keyword::UNNEST => {
+                        invalid_operation_err!(
+                            "{} is a SQL keyword, not a valid table name",
+                            w.value
+                        )
+                    }
+                    _ => (),
+                }
+            }
+        }
 
         let mut parser = Parser::new(&GenericDialect {})
             .with_options(ParserOptions {
@@ -2059,7 +2089,7 @@ fn singleton_plan() -> DaftResult<LogicalPlanBuilder> {
         prelude::*,
         types::{IntoPyDict, PyList},
     };
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         // df = DataFrame._from_pydict({"":[""]})
         let df = py
             .import(intern!(py, "daft.dataframe.dataframe"))?

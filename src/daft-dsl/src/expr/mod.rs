@@ -44,7 +44,7 @@ use crate::{
         struct_::StructExpr,
     },
     optimization::{get_required_columns, requires_computation},
-    python_udf::{PyScalarFn, RowWisePyFn},
+    python_udf::{BatchPyFn, PyScalarFn, RowWisePyFn},
 };
 
 pub trait SubqueryPlan: std::fmt::Debug + std::fmt::Display + Send + Sync {
@@ -1317,7 +1317,18 @@ impl Expr {
                     .iter()
                     .map(|expr| expr.semantic_id(schema).id)
                     .join(",");
-                FieldID::new(format!("ScalarPythonUDF_{name}({children_ids})"))
+                FieldID::new(format!("RowWisePythonUDF_{name}({children_ids})"))
+            }
+            Self::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
+                function_name: name,
+                args: children,
+                ..
+            }))) => {
+                let children_ids = children
+                    .iter()
+                    .map(|expr| expr.semantic_id(schema).id)
+                    .join(",");
+                FieldID::new(format!("BatchPythonUDF_{name}({children_ids})"))
             }
         }
     }
@@ -1359,10 +1370,7 @@ impl Expr {
             }
             Self::FillNull(expr, fill_value) => vec![expr.clone(), fill_value.clone()],
             Self::ScalarFn(ScalarFn::Builtin(sf)) => sf.inputs.clone().into_inner(),
-            Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
-                args: children,
-                ..
-            }))) => children.clone(),
+            Self::ScalarFn(ScalarFn::Python(udf)) => udf.args(),
         }
     }
 
@@ -1476,14 +1484,12 @@ impl Expr {
                     .collect();
 
                 Self::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn {
-                    udf: sf.udf.clone(),
+                    func: sf.func.clone(),
                     inputs: FunctionArgs::new_unchecked(new_children),
                 }))
             }
-            Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(row_wise_py_fn))) => {
-                Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(
-                    row_wise_py_fn.with_new_children(children),
-                )))
+            Self::ScalarFn(ScalarFn::Python(udf)) => {
+                Self::ScalarFn(ScalarFn::Python(udf.with_new_children(children)))
             }
         }
     }
@@ -1736,17 +1742,24 @@ impl Expr {
             Self::Exists(subquery) => subquery.name(),
             Self::Over(expr, ..) => expr.name(),
             Self::WindowFunction(expr) => expr.name(),
-            Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
-                function_name: name,
-                args: children,
-                ..
-            }))) => {
-                if let Some(first_child) = children.first() {
-                    first_child.name()
-                } else {
-                    name.as_ref()
+            Self::ScalarFn(ScalarFn::Python(udf)) => match udf {
+                PyScalarFn::RowWise(RowWisePyFn {
+                    function_name,
+                    args,
+                    ..
+                })
+                | PyScalarFn::Batch(BatchPyFn {
+                    function_name,
+                    args,
+                    ..
+                }) => {
+                    if let Some(first_child) = args.first() {
+                        first_child.name()
+                    } else {
+                        function_name.as_ref()
+                    }
                 }
-            }
+            },
         }
     }
 
@@ -1934,7 +1947,7 @@ impl Expr {
         let f = explode_fn.get_function(FunctionArgs::empty(), &Schema::empty())?;
 
         Ok(Self::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn {
-            udf: f,
+            func: f,
             inputs: FunctionArgs::new_unchecked(vec![FunctionArg::Unnamed(self)]),
         }))
         .arced())
@@ -2145,7 +2158,7 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         },
 
         // String contains
-        Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. }))
+        Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func: udf, .. }))
             if udf.name() == "contains" =>
         {
             0.1

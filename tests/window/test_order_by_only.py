@@ -6,14 +6,8 @@ import pandas as pd
 import pytest
 
 from daft import Window, col
-from daft.context import get_context
 from daft.functions import dense_rank, rank, row_number
-from tests.conftest import assert_df_equals, get_tests_daft_runner_name
-
-pytestmark = pytest.mark.skipif(
-    get_tests_daft_runner_name() == "ray" and get_context().daft_execution_config.use_legacy_ray_runner is True,
-    reason="requires Native Runner or Flotilla to be in use",
-)
+from tests.conftest import assert_df_equals
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 20, 50, 100])
@@ -290,10 +284,6 @@ def test_rank_with_1k_distinct_values(make_df, repartition_nparts, with_morsel_s
     assert_df_equals(result_df, expected_df, sort_key=["id", "value"], check_dtype=False)
 
 
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() == "ray",
-    reason="requires Native Runner, Flotilla doesn't support sort and Ray runner doesn't support window functions",
-)
 @pytest.mark.parametrize(
     "desc,nulls_first,expected",
     [

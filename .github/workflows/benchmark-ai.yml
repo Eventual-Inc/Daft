@@ -103,7 +103,13 @@ jobs:
         source .venv/bin/activate
         rm -rf daft
         uv pip install daft --pre --extra-index-url ${{ env.DAFT_INDEX_URL }}
-        uv pip install ray[default] boto3
+        uv pip install ray[default] boto3 gspread
+    - name: Write service account secret file
+      run: |
+        mkdir -p ~/.config/gspread
+        cat << EOF > ~/.config/gspread/service_account.json
+        ${{ secrets.GOOGLE_SHEETS_SERVICE_ACCOUNT }}
+        EOF
     - name: Generate Ray yaml
       run: |
         envsubst < ${{ matrix.cluster_file }} > ray.yaml
@@ -121,7 +127,7 @@ jobs:
     - name: Run AI benchmark
       run: |
         source .venv/bin/activate
-        PYTHONPATH=. python .github/ci-scripts/run_ai_benchmark_direct.py ${{ matrix.benchmark }}
+        PYTHONPATH=. python .github/ci-scripts/run_ai_benchmark.py ${{ matrix.benchmark }}
     - name: Spin down ray cluster
       if: always()
       run: |

@@ -15,10 +15,6 @@ impl<T> Receiver<T> {
         self.0.recv().await.ok()
     }
 
-    pub(crate) fn into_inner(self) -> kanal::AsyncReceiver<T> {
-        self.0
-    }
-
     pub(crate) fn into_stream(self) -> impl Stream<Item = T> {
         futures::stream::unfold(
             self,

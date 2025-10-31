@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from daft.ai.typing import Descriptor
 
@@ -54,3 +54,29 @@ class TextClassifier(Protocol):
 
 class TextClassifierDescriptor(Descriptor[TextClassifier]):
     """Descriptor for a TextClassifier implementation."""
+
+
+@runtime_checkable
+class ImageClassifier(Protocol):
+    """Protocol for image classification implementations."""
+
+    def classify_image(self, image: list[Image], labels: Label | list[Label]) -> list[Label]:
+        """Classifies a batch of images using the given label(s)."""
+        ...
+
+
+class ImageClassifierDescriptor(Descriptor[ImageClassifier]):
+    """Descriptor for a ImageClassifier implementation."""
+
+
+@runtime_checkable
+class Prompter(Protocol):
+    """Protocol for prompt/chat completion implementations."""
+
+    async def prompt(self, input_text: str, input_image: Image | None = None) -> Any:
+        """Generates responses for a batch of message strings."""
+        ...
+
+
+class PrompterDescriptor(Descriptor[Prompter]):
+    """Descriptor for a Prompter implementation."""

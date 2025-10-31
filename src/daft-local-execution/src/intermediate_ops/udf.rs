@@ -43,7 +43,7 @@ use crate::{
 ///
 /// Note that if there are no used columns, we just return the first
 /// because we can't execute UDFs on empty recordbatches.
-fn remap_used_cols(expr: BoundExpr) -> (BoundExpr, Vec<usize>) {
+pub(crate) fn remap_used_cols(expr: BoundExpr) -> (BoundExpr, Vec<usize>) {
     let mut count = 0;
     let mut cols_to_idx = HashMap::new();
     let new_expr = expr
@@ -101,7 +101,7 @@ pub(crate) struct UdfHandle {
     //   - If excessive GIL contention is detected, the UDF will be moved to an external worker
     // Second bool indicates if the UDF was initialized
     #[cfg(feature = "python")]
-    handle: Option<PyObject>,
+    handle: Option<Py<PyAny>>,
 }
 
 impl UdfHandle {
@@ -120,9 +120,9 @@ impl UdfHandle {
         {
             let py_expr = PyExpr::from(self.udf_expr.inner().clone());
 
-            let handle = Python::with_gil(|py| {
+            let handle = Python::attach(|py| {
                 // create python object
-                Ok::<PyObject, PyErr>(
+                Ok::<pyo3::Py<pyo3::PyAny>, PyErr>(
                     py.import(pyo3::intern!(py, "daft.execution.udf"))?
                         .getattr(pyo3::intern!(py, "UdfHandle"))?
                         .call1((py_expr,))?
@@ -142,12 +142,16 @@ impl UdfHandle {
     }
 
     #[cfg(feature = "python")]
-    fn eval_input_with_handle(&self, input: RecordBatch, handle: &PyObject) -> DaftResult<Series> {
+    fn eval_input_with_handle(
+        &self,
+        input: RecordBatch,
+        handle: &pyo3::Py<pyo3::PyAny>,
+    ) -> DaftResult<Series> {
         use daft_recordbatch::python::PyRecordBatch;
 
         use crate::STDOUT;
 
-        let (result, stdout_lines) = Python::with_gil(|py| {
+        let (result, stdout_lines) = Python::attach(|py| {
             handle
                 .bind(py)
                 .call_method1(
@@ -229,7 +233,7 @@ impl UdfHandle {
                 return Ok(());
             };
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 handle
                     .bind(py)
                     .call_method0(pyo3::intern!(py, "teardown"))?;
@@ -396,7 +400,7 @@ impl IntermediateOperator for UdfOperator {
         res
     }
 
-    async fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self) -> DaftResult<Self::State> {
         let worker_count = self.worker_count.fetch_add(1, Ordering::SeqCst);
 
         // Check if any inputs or the output are Python-dtype columns

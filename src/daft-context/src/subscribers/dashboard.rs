@@ -6,10 +6,11 @@ use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo
 use common_runtime::{RuntimeRef, get_io_runtime};
 use daft_io::IOStatsContext;
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
+use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;
 use reqwest::{Client, RequestBuilder};
 
-use crate::subscribers::Subscriber;
+use crate::subscribers::{QueryMetadata, Subscriber};
 
 /// Get the number of seconds from the current timesince the UNIX epoch
 fn secs_from_epoch() -> u64 {
@@ -90,35 +91,40 @@ const TOTAL_ROWS: usize = 10;
 
 #[async_trait]
 impl Subscriber for DashboardSubscriber {
-    fn on_query_start(&self, query_id: QueryID, unoptimized_plan: QueryPlan) -> DaftResult<()> {
+    fn on_query_start(&self, query_id: QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()> {
         self.runtime.block_on_current_thread(async {
             Self::handle_request(
                 self.client
                     .post(format!("{}/engine/query/{}/start", self.url, query_id))
                     .json(&daft_dashboard::engine::StartQueryArgs {
                         start_sec: secs_from_epoch(),
-                        unoptimized_plan,
+                        unoptimized_plan: metadata.unoptimized_plan.clone(),
                     }),
             )
             .await?;
             Ok::<_, DaftError>(())
-        })
+        })?;
+
+        self.preview_rows.insert(
+            query_id,
+            Arc::new(MicroPartition::empty(Some(metadata.output_schema.clone()))),
+        );
+        Ok(())
     }
 
     fn on_result_out(&self, query_id: QueryID, result: MicroPartitionRef) -> DaftResult<()> {
         // Limit to TOTAL_ROWS rows
         // TODO: Limit by X MB and # of rows
-        let entry = self.preview_rows.get_mut(&query_id);
-        if entry.is_none() {
-            let result = result.head(TOTAL_ROWS)?;
-            self.preview_rows.insert(query_id, Arc::new(result));
-            return Ok(());
-        }
+        let Some(mut entry) = self.preview_rows.get_mut(&query_id) else {
+            return Err(DaftError::ValueError(format!(
+                "Query `{}` not started or already ended in DashboardSubscriber",
+                query_id
+            )));
+        };
 
-        let mut entry = entry.unwrap();
         let all_results = entry.value_mut();
         let num_rows = all_results.len();
-        if num_rows < TOTAL_ROWS {
+        if num_rows < TOTAL_ROWS && !result.is_empty() {
             let result = result.head(TOTAL_ROWS - num_rows)?;
             *all_results = Arc::new(MicroPartition::concat(vec![
                 all_results.clone(),
@@ -129,29 +135,34 @@ impl Subscriber for DashboardSubscriber {
     }
 
     fn on_query_end(&self, query_id: QueryID) -> DaftResult<()> {
-        let result = self
-            .preview_rows
-            .view(&query_id, |_, v| v.clone())
-            .unwrap_or_else(|| Arc::new(MicroPartition::empty(None)));
-
-        debug_assert!(result.len() <= TOTAL_ROWS);
-        let ipc_buffer = if result.is_empty() {
-            vec![]
-        } else {
-            let result = result
-                .concat_or_get(IOStatsContext::new("DashboardSubscriber::on_query_end"))?
-                .expect("Results should not be empty");
-            result.to_ipc_stream()?
+        let io_stats = IOStatsContext::new("DashboardSubscriber::on_query_end");
+        let Some((_, results)) = self.preview_rows.remove(&query_id) else {
+            return Err(DaftError::ValueError(format!(
+                "Query `{}` not started or already ended in DashboardSubscriber",
+                query_id
+            )));
         };
+        debug_assert!(results.len() <= TOTAL_ROWS);
 
         let end_sec = secs_from_epoch();
+        let result = results
+            .concat_or_get(io_stats)?
+            .unwrap_or_else(|| RecordBatch::empty(Some(results.schema())));
+        let results_ipc = result.to_ipc_stream()?;
+        let results_ipc = if results_ipc.len() > 1024 * 1024 * 2 {
+            // 2MB, our dashboard cap
+            None
+        } else {
+            Some(results_ipc)
+        };
+
         self.runtime.block_on_current_thread(async {
             Self::handle_request(
                 self.client
                     .post(format!("{}/engine/query/{}/end", self.url, query_id))
                     .json(&daft_dashboard::engine::FinalizeArgs {
                         end_sec,
-                        results: ipc_buffer,
+                        results: results_ipc,
                     }),
             )
             .await?;

@@ -16,7 +16,6 @@ use std::{
 use common_error::DaftResult;
 use common_metrics::NodeID;
 use common_runtime::RuntimeTask;
-use common_tracing::should_enable_opentelemetry;
 use daft_context::Subscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_micropartition::MicroPartition;
@@ -24,7 +23,7 @@ use futures::future;
 use itertools::Itertools;
 use kanal::SendError;
 use tokio::{
-    runtime::{Handle, Runtime},
+    runtime::Handle,
     sync::{mpsc, oneshot},
     time::interval,
 };
@@ -35,8 +34,7 @@ use crate::{
     channel::{Receiver, Sender},
     pipeline::PipelineNode,
     runtime_stats::subscribers::{
-        RuntimeStatsSubscriber, opentelemetry::OpenTelemetrySubscriber,
-        progress_bar::make_progress_bar_manager, query::SubscriberWrapper,
+        RuntimeStatsSubscriber, progress_bar::make_progress_bar_manager, query::SubscriberWrapper,
     },
 };
 
@@ -123,10 +121,6 @@ impl RuntimeStatsManager {
             subscribers.push(make_progress_bar_manager(&node_infos));
         }
 
-        if should_enable_opentelemetry() {
-            subscribers.push(Box::new(OpenTelemetrySubscriber::new(&node_infos)));
-        }
-
         let throttle_interval = Duration::from_millis(200);
         Ok(Self::new_impl(
             handle,
@@ -156,16 +150,6 @@ impl RuntimeStatsManager {
             loop {
                 tokio::select! {
                     biased;
-                    _ = &mut finish_rx => {
-                        if !active_nodes.is_empty() {
-                            log::debug!(
-                                "RuntimeStatsManager finished with active nodes {{{}}}",
-                                active_nodes.iter().map(|id: &usize| id.to_string()).join(", ")
-                            );
-                        }
-                        break;
-                    }
-
                     Some((node_id, is_initialize)) = node_rx.recv() => {
                         if is_initialize && active_nodes.insert(node_id) {
                             for res in future::join_all(subscribers.iter().map(|subscriber| subscriber.initialize_node(node_id))).await {
@@ -189,6 +173,16 @@ impl RuntimeStatsManager {
                         }
                     }
 
+                    _ = &mut finish_rx => {
+                        if !active_nodes.is_empty() {
+                            log::error!(
+                                "RuntimeStatsManager finished with active nodes {{{}}}",
+                                active_nodes.iter().map(|id: &usize| id.to_string()).join(", ")
+                            );
+                        }
+                        break;
+                    }
+
                     _ = interval.tick() => {
                         if active_nodes.is_empty() {
                             continue;
@@ -199,6 +193,7 @@ impl RuntimeStatsManager {
                             let event = runtime_stats.snapshot();
                             snapshot_container.push((*node_id, event));
                         }
+
                         for res in future::join_all(subscribers.iter().map(|subscriber| {
                             subscriber.handle_event(snapshot_container.as_slice())
                         })).await {
@@ -230,15 +225,13 @@ impl RuntimeStatsManager {
         RuntimeStatsManagerHandle(self.node_tx.clone())
     }
 
-    pub fn finish(self, runtime: &Runtime) {
+    pub async fn finish(self) {
         self.finish_tx
             .send(())
             .expect("The finish_tx channel was closed");
-        runtime.block_on(async move {
-            self.stats_manager_task
-                .await
-                .expect("The finish_tx channel was closed");
-        });
+        self.stats_manager_task
+            .await
+            .expect("The finish_tx channel was closed");
     }
 }
 
@@ -346,7 +339,7 @@ mod tests {
 
     use async_trait::async_trait;
     use common_error::DaftResult;
-    use common_metrics::{Stat, StatSnapshotSend};
+    use common_metrics::{NodeID, Stat, StatSnapshotSend};
     use tokio::time::{Duration, sleep};
 
     use super::*;

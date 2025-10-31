@@ -34,7 +34,6 @@ impl RepartitionNode {
 
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         repartition_spec: RepartitionSpec,
         num_partitions: usize,
@@ -47,7 +46,6 @@ impl RepartitionNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -91,6 +89,7 @@ impl RepartitionNode {
             let task = make_in_memory_task_from_materialized_outputs(
                 TaskContext::from((&self_clone.context, task_id_counter.next())),
                 partition_group,
+                self_clone.config.schema.clone(),
                 &(self_clone as Arc<dyn PipelineNodeImpl>),
                 None,
             )?;

@@ -84,4 +84,8 @@ impl TreeDisplay for BroadcastJoin {
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
         vec![self.broadcaster.as_ref(), self.receiver.as_ref()]
     }
+
+    fn repr_json(&self) -> serde_json::Value {
+        unimplemented!("repr_json for any PhysicalPlan node is not supported")
+    }
 }

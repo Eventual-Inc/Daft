@@ -8,6 +8,7 @@ from pickle import PicklingError
 from traceback import TracebackException
 
 import daft.pickle
+from daft.daft import set_compute_runtime_num_worker_threads
 from daft.errors import UDFException
 from daft.execution.udf import (
     _ENTER,
@@ -36,6 +37,9 @@ def udf_event_loop(
         raise ValueError(f"Expected '{_ENTER}' but got {name}")
 
     transport = SharedMemoryTransport()
+
+    # Set the compute runtime num worker threads to 1 for the UDF worker
+    set_compute_runtime_num_worker_threads(1)
     try:
         conn.send(_READY)
 

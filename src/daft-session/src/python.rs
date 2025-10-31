@@ -58,13 +58,13 @@ impl PySession {
         source: &PyTableSource,
         replace: bool,
         py: Python,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<pyo3::Py<pyo3::PyAny>> {
         self.0
             .create_temp_table(name, source.as_ref(), replace)?
             .to_py(py)
     }
 
-    pub fn current_catalog(&self, py: Python<'_>) -> PyResult<Option<PyObject>> {
+    pub fn current_catalog(&self, py: Python<'_>) -> PyResult<Option<pyo3::Py<pyo3::PyAny>>> {
         self.0.current_catalog()?.map(|c| c.to_py(py)).transpose()
     }
 
@@ -77,7 +77,7 @@ impl PySession {
         Ok(None)
     }
 
-    pub fn current_provider(&self, py: Python<'_>) -> PyResult<Option<PyObject>> {
+    pub fn current_provider(&self, py: Python<'_>) -> PyResult<Option<pyo3::Py<pyo3::PyAny>>> {
         self.0.current_provider()?.map(|p| p.to_py(py)).transpose()
     }
 
@@ -85,15 +85,19 @@ impl PySession {
         Ok(self.0.current_model()?)
     }
 
-    pub fn get_catalog(&self, py: Python<'_>, name: &str) -> PyResult<PyObject> {
+    pub fn get_catalog(&self, py: Python<'_>, name: &str) -> PyResult<pyo3::Py<pyo3::PyAny>> {
         self.0.get_catalog(name)?.to_py(py)
     }
 
-    pub fn get_provider(&self, py: Python<'_>, name: &str) -> PyResult<PyObject> {
+    pub fn get_provider(&self, py: Python<'_>, name: &str) -> PyResult<pyo3::Py<pyo3::PyAny>> {
         self.0.get_provider(name)?.to_py(py)
     }
 
-    pub fn get_table(&self, py: Python<'_>, ident: &PyIdentifier) -> PyResult<PyObject> {
+    pub fn get_table(
+        &self,
+        py: Python<'_>,
+        ident: &PyIdentifier,
+    ) -> PyResult<pyo3::Py<pyo3::PyAny>> {
         self.0.get_table(ident.as_ref())?.to_py(py)
     }
 
@@ -140,7 +144,11 @@ impl PySession {
     }
 
     #[pyo3(signature = (function, alias = None))]
-    pub fn attach_function(&self, function: PyObject, alias: Option<String>) -> PyResult<()> {
+    pub fn attach_function(
+        &self,
+        function: pyo3::Py<pyo3::PyAny>,
+        alias: Option<String>,
+    ) -> PyResult<()> {
         let wrapped = WrappedUDFClass {
             inner: Arc::new(function),
         };

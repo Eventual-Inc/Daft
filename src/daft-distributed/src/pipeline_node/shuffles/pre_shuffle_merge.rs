@@ -31,7 +31,6 @@ impl PreShuffleMergeNode {
 
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         pre_shuffle_merge_threshold: usize,
         schema: SchemaRef,
@@ -43,7 +42,6 @@ impl PreShuffleMergeNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -142,6 +140,7 @@ impl PreShuffleMergeNode {
                     let task = make_in_memory_task_from_materialized_outputs(
                         TaskContext::from((self.context(), task_id_counter.next())),
                         materialized_outputs,
+                        self_clone.config.schema.clone(),
                         &(self_clone as Arc<dyn PipelineNodeImpl>),
                         Some(SchedulingStrategy::WorkerAffinity {
                             worker_id,
@@ -164,6 +163,7 @@ impl PreShuffleMergeNode {
                 let task = make_in_memory_task_from_materialized_outputs(
                     TaskContext::from((self.context(), task_id_counter.next())),
                     materialized_outputs,
+                    self_clone.config.schema.clone(),
                     &(self_clone as Arc<dyn PipelineNodeImpl>),
                     Some(SchedulingStrategy::WorkerAffinity {
                         worker_id,

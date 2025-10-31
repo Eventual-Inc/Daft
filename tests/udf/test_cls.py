@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Iterator
 
+import pytest
+
 import daft
 from daft import DataType
 
@@ -88,10 +90,11 @@ def test_cls_multiple_instances():
     }
 
 
-def test_cls_async_method():
+@pytest.mark.parametrize("concurrency", [None, 1, 2])
+def test_cls_async_method(concurrency):
     df = daft.from_pydict({"a": [1, 2, 3]})
 
-    @daft.cls
+    @daft.cls(max_concurrency=concurrency)
     class AsyncProcessor:
         def __init__(self, delay: float):
             self.delay = delay
@@ -102,7 +105,7 @@ def test_cls_async_method():
 
     processor = AsyncProcessor(0.01)
     result = df.select(processor.process(df["a"]))
-    assert result.to_pydict() == {"a": [2, 4, 6]}
+    assert sorted(result.to_pydict()["a"]) == [2, 4, 6]
 
 
 def test_cls_generator_method():
@@ -231,3 +234,65 @@ def test_cls_with_list_operations():
         "filtered": [[], [], [6, 7, 8, 9]],
         "count": [0, 0, 4],
     }
+
+
+def test_cls_batch_method():
+    df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+
+    @daft.cls
+    class BatchAdder:
+        def __init__(self, offset: int):
+            self.offset = offset
+
+        @daft.method.batch(return_dtype=DataType.int64())
+        def add(self, a: daft.Series, b: daft.Series) -> daft.Series:
+            import pyarrow.compute as pc
+
+            a_arrow = a.to_arrow()
+            b_arrow = b.to_arrow()
+            result = pc.add(a_arrow, b_arrow)
+            result = pc.add(result, self.offset)
+            return daft.Series.from_arrow(result)
+
+    adder = BatchAdder(10)
+    result = df.select(adder.add(df["a"], df["b"]))
+    assert result.to_pydict() == {"a": [15, 17, 19]}
+
+
+def test_cls_batch_method_scalar_eval():
+    @daft.cls
+    class BatchMultiplier:
+        def __init__(self, factor: int):
+            self.factor = factor
+
+        @daft.method.batch(return_dtype=DataType.int64())
+        def multiply(self, a: daft.Series) -> daft.Series:
+            import pyarrow.compute as pc
+
+            a_arrow = a.to_arrow()
+            result = pc.multiply(a_arrow, self.factor)
+            return daft.Series.from_arrow(result)
+
+    multiplier = BatchMultiplier(5)
+    # When called with a scalar, should execute eagerly
+    a = daft.Series.from_pylist([1, 2, 3])
+    assert multiplier.multiply(a).to_pylist() == [5, 10, 15]
+
+
+@pytest.mark.parametrize("concurrency", [None, 1, 2])
+def test_cls_async_batch_method(concurrency):
+    df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+
+    @daft.cls(max_concurrency=concurrency)
+    class AsyncBatchProcessor:
+        def __init__(self, delay: float):
+            self.delay = delay
+
+        @daft.method.batch(return_dtype=DataType.int64())
+        async def process(self, a: daft.Series) -> daft.Series:
+            await asyncio.sleep(self.delay)
+            return a
+
+    processor = AsyncBatchProcessor(delay=0.01)
+    result = df.select(processor.process(df["a"]))
+    assert sorted(result.to_pydict()["a"]) == [1, 2, 3]

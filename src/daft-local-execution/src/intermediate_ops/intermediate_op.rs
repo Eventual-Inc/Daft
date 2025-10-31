@@ -5,6 +5,7 @@ use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
+use daft_core::prelude::SchemaRef;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
@@ -47,7 +48,7 @@ pub(crate) trait IntermediateOperator: Send + Sync {
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
-    async fn make_state(&self) -> DaftResult<Self::State>;
+    fn make_state(&self) -> DaftResult<Self::State>;
     fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
         Arc::new(DefaultRuntimeStats::default())
     }
@@ -90,11 +91,13 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         children: Vec<Box<dyn PipelineNode>>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
+        output_schema: SchemaRef,
     ) -> Self {
         let info = ctx.next_node_info(
             Arc::from(intermediate_op.name()),
             intermediate_op.op_type(),
             NodeCategory::Intermediate,
+            output_schema,
         );
         let runtime_stats = intermediate_op.make_runtime_stats();
         let morsel_size_requirement = intermediate_op
@@ -126,7 +129,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         let compute_runtime = get_compute_runtime();
         let task_spawner =
             ExecutionTaskSpawner::new(compute_runtime, memory_manager, runtime_stats.clone(), span);
-        let mut state = op.make_state().await?;
+        let mut state = op.make_state()?;
         while let Some(morsel) = receiver.recv().await {
             loop {
                 let result = op.execute(morsel.clone(), state, &task_spawner).await??;
@@ -162,7 +165,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         let (output_sender, output_receiver) =
             create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
         for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_sender) {
-            runtime_handle.spawn_local(
+            runtime_handle.spawn(
                 Self::run_worker(
                     self.intermediate_op.clone(),
                     input_receiver,
@@ -204,6 +207,14 @@ impl<Op: IntermediateOperator + 'static> TreeDisplay for IntermediateNode<Op> {
             }
         }
         display
+    }
+
+    fn repr_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "id": self.id(),
+            "type": self.intermediate_op.op_type().to_string(),
+            "name": self.name(),
+        })
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
@@ -277,7 +288,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
             num_workers,
             &mut runtime_handle.handle(),
         );
-        runtime_handle.spawn_local(
+        runtime_handle.spawn(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },
             &self.name(),
         );
@@ -290,7 +301,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         );
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
-        runtime_handle.spawn_local(
+        runtime_handle.spawn(
             async move {
                 while let Some(morsel) = output_receiver.recv().await {
                     if counting_sender.send(morsel).await.is_err() {

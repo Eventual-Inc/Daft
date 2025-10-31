@@ -15,7 +15,7 @@ struct PyObjectSerializableWrapper(
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
     )]
-    pub Arc<PyObject>,
+    pub Arc<pyo3::Py<pyo3::PyAny>>,
 );
 
 /// Python arguments to a Python function that produces Tables
@@ -32,9 +32,9 @@ impl Hash for PythonTablesFactoryArgs {
 }
 
 impl PythonTablesFactoryArgs {
-    pub fn new(args: Vec<Arc<PyObject>>) -> Self {
+    pub fn new(args: Vec<Arc<pyo3::Py<pyo3::PyAny>>>) -> Self {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             for obj in &args {
                 // Only hash hashable PyObjects.
                 if let Ok(hash) = obj.bind(py).hash() {
@@ -111,7 +111,7 @@ pub mod pylib {
             file_format_config: PyFileFormatConfig,
             storage_config: StorageConfig,
         ) -> PyResult<Self> {
-            py.allow_threads(|| {
+            py.detach(|| {
                 let schema = schema.schema;
                 let operator = Arc::new(AnonymousScanOperator::new(
                     files,
@@ -149,7 +149,7 @@ pub mod pylib {
             file_path_column: Option<String>,
             skip_glob: bool,
         ) -> PyResult<Self> {
-            py.allow_threads(|| {
+            py.detach(|| {
                 let executor = common_runtime::get_io_runtime(true);
 
                 let task = GlobScanOperator::try_new(
@@ -173,7 +173,10 @@ pub mod pylib {
         }
 
         #[staticmethod]
-        pub fn from_python_scan_operator(py_scan: PyObject, py: Python) -> PyResult<Self> {
+        pub fn from_python_scan_operator(
+            py_scan: pyo3::Py<pyo3::PyAny>,
+            py: Python,
+        ) -> PyResult<Self> {
             let scan_op = ScanOperatorRef(Arc::new(PythonScanOperatorBridge::from_python_abc(
                 py_scan, py,
             )?));
@@ -185,7 +188,7 @@ pub mod pylib {
     #[derive(Debug)]
     pub struct PythonScanOperatorBridge {
         name: String,
-        operator: PyObject,
+        operator: pyo3::Py<pyo3::PyAny>,
         schema: SchemaRef,
         partitioning_keys: Vec<PartitionField>,
         can_absorb_filter: bool,
@@ -196,11 +199,14 @@ pub mod pylib {
     }
 
     impl PythonScanOperatorBridge {
-        fn _name(abc: &PyObject, py: Python) -> PyResult<String> {
+        fn _name(abc: &pyo3::Py<pyo3::PyAny>, py: Python) -> PyResult<String> {
             let result = abc.call_method0(py, pyo3::intern!(py, "name"))?;
             result.extract::<String>(py)
         }
-        fn _partitioning_keys(abc: &PyObject, py: Python) -> PyResult<Vec<PartitionField>> {
+        fn _partitioning_keys(
+            abc: &pyo3::Py<pyo3::PyAny>,
+            py: Python,
+        ) -> PyResult<Vec<PartitionField>> {
             let result = abc.call_method0(py, pyo3::intern!(py, "partitioning_keys"))?;
             result
                 .bind(py)
@@ -209,7 +215,7 @@ pub mod pylib {
                 .collect()
         }
 
-        fn _schema(abc: &PyObject, py: Python) -> PyResult<SchemaRef> {
+        fn _schema(abc: &pyo3::Py<pyo3::PyAny>, py: Python) -> PyResult<SchemaRef> {
             let python_schema = abc.call_method0(py, pyo3::intern!(py, "schema"))?;
             let pyschema = python_schema
                 .getattr(py, pyo3::intern!(py, "_schema"))?
@@ -217,27 +223,27 @@ pub mod pylib {
             Ok(pyschema.schema)
         }
 
-        fn _can_absorb_filter(abc: &PyObject, py: Python) -> PyResult<bool> {
+        fn _can_absorb_filter(abc: &pyo3::Py<pyo3::PyAny>, py: Python) -> PyResult<bool> {
             abc.call_method0(py, pyo3::intern!(py, "can_absorb_filter"))?
                 .extract::<bool>(py)
         }
 
-        fn _can_absorb_limit(abc: &PyObject, py: Python) -> PyResult<bool> {
+        fn _can_absorb_limit(abc: &pyo3::Py<pyo3::PyAny>, py: Python) -> PyResult<bool> {
             abc.call_method0(py, pyo3::intern!(py, "can_absorb_limit"))?
                 .extract::<bool>(py)
         }
 
-        fn _can_absorb_select(abc: &PyObject, py: Python) -> PyResult<bool> {
+        fn _can_absorb_select(abc: &pyo3::Py<pyo3::PyAny>, py: Python) -> PyResult<bool> {
             abc.call_method0(py, pyo3::intern!(py, "can_absorb_select"))?
                 .extract::<bool>(py)
         }
 
-        fn _display_name(abc: &PyObject, py: Python) -> PyResult<String> {
+        fn _display_name(abc: &pyo3::Py<pyo3::PyAny>, py: Python) -> PyResult<String> {
             abc.call_method0(py, pyo3::intern!(py, "display_name"))?
                 .extract::<String>(py)
         }
 
-        fn _supports_count_pushdown(abc: &PyObject, py: Python) -> PyResult<bool> {
+        fn _supports_count_pushdown(abc: &pyo3::Py<pyo3::PyAny>, py: Python) -> PyResult<bool> {
             abc.call_method0(py, pyo3::intern!(py, "supports_count_pushdown"))?
                 .extract::<bool>(py)
         }
@@ -246,7 +252,7 @@ pub mod pylib {
     #[pymethods]
     impl PythonScanOperatorBridge {
         #[staticmethod]
-        pub fn from_python_abc(abc: PyObject, py: Python) -> PyResult<Self> {
+        pub fn from_python_abc(abc: pyo3::Py<pyo3::PyAny>, py: Python) -> PyResult<Self> {
             let name = Self::_name(&abc, py)?;
             let partitioning_keys = Self::_partitioning_keys(&abc, py)?;
             let schema = Self::_schema(&abc, py)?;
@@ -272,8 +278,8 @@ pub mod pylib {
 
     impl SupportsPushdownFilters for PythonScanOperatorBridge {
         fn push_filters(&self, filters: &[ExprRef]) -> (Vec<ExprRef>, Vec<ExprRef>) {
-            Python::with_gil(|py| {
-                let py_filters: Vec<PyObject> = filters
+            Python::attach(|py| {
+                let py_filters: Vec<pyo3::Py<pyo3::PyAny>> = filters
                     .iter()
                     .map(|expr| Py::new(py, PyExpr::from(expr.clone())).unwrap().into())
                     .collect();
@@ -375,7 +381,7 @@ pub mod pylib {
         }
 
         fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>> {
-            let scan_tasks = Python::with_gil(|py| {
+            let scan_tasks = Python::attach(|py| {
                 let pypd = PyPushdowns(pushdowns.clone().into()).into_pyobject(py)?;
                 let pyiter =
                     self.operator
@@ -573,24 +579,26 @@ pub mod pylib {
             num_rows=None,
             size_bytes=None,
             pushdowns=None,
-            stats=None
+            stats=None,
+            source_type=None
         ))]
         pub fn python_factory_func_scan_task(
             module: String,
             func_name: String,
-            func_args: Vec<PyObject>,
+            func_args: Vec<pyo3::Py<pyo3::PyAny>>,
             schema: PySchema,
             num_rows: Option<i64>,
             size_bytes: Option<u64>,
             pushdowns: Option<PyPushdowns>,
             stats: Option<PyRecordBatch>,
+            source_type: Option<String>,
         ) -> PyResult<Self> {
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.record_batch))
                 .transpose()?;
             let data_source = DataSource::PythonFactoryFunction {
-                module,
-                func_name,
+                module: module.clone(),
+                func_name: func_name.clone(),
                 func_args: PythonTablesFactoryArgs::new(
                     func_args.into_iter().map(Arc::new).collect(),
                 ),
@@ -602,9 +610,16 @@ pub mod pylib {
                 partition_spec: None,
             };
 
+            // Create enhanced FileFormatConfig with context information
+            let file_format_config = Arc::new(FileFormatConfig::PythonFunction {
+                source_type,
+                module_name: Some(module),
+                function_name: Some(func_name),
+            });
+
             let scan_task = ScanTask::new(
                 vec![data_source],
-                Arc::new(FileFormatConfig::PythonFunction),
+                file_format_config,
                 schema.schema,
                 // HACK: StorageConfig isn't used when running the Python function but this is a non-optional arg for
                 // ScanTask creation, so we just put in a placeholder here

@@ -181,7 +181,7 @@ fn resolve_list_evals(expr: ExprRef) -> DaftResult<ExprRef> {
     expr.transform_down(|e| {
         let expr_ref = e.as_ref();
         if let Expr::ScalarFn(ScalarFn::Builtin(sf)) = expr_ref
-            && eval_functions.contains(&sf.udf.type_id())
+            && eval_functions.contains(&sf.func.type_id())
         {
             // the `list` type should always be the first element
             let inputs = sf.inputs.clone();
@@ -218,7 +218,7 @@ fn resolve_list_evals(expr: ExprRef) -> DaftResult<ExprRef> {
                 new_inputs.push(replaced);
             }
             let sf = BuiltinScalarFn {
-                udf: sf.udf.clone(),
+                func: sf.func.clone(),
                 inputs: FunctionArgs::new_unchecked(new_inputs),
             };
             Ok(Transformed::yes(sf.into()))

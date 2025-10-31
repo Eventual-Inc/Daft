@@ -7,6 +7,7 @@ import os
 import pathlib
 import shutil
 import sys
+import uuid
 from collections.abc import Generator
 from typing import TypeVar
 
@@ -109,6 +110,22 @@ def retry_server_s3_config(request) -> daft.io.IOConfig:
             retry_mode=retry_mode,
         )
     )
+
+
+###
+# Bigtable emulator fixtures
+###
+
+
+@pytest.fixture()
+def bigtable_emulator_config() -> dict[str, str]:
+    """Configuration for Bigtable emulator tests."""
+    return {
+        "project_id": "test-project",
+        "instance_id": "test-instance",
+        "table_id": f"table-{uuid.uuid4()}",
+        "emulator_host": os.environ.get("BIGTABLE_EMULATOR_HOST", "localhost:8086"),
+    }
 
 
 ###
@@ -251,6 +268,47 @@ def mount_data_nginx(nginx_config: tuple[str, pathlib.Path], folder: pathlib.Pat
                 shutil.rmtree(static_assets_tmpdir / item)
             else:
                 os.remove(static_assets_tmpdir / item)
+
+
+@contextlib.contextmanager
+def bigtable_emulator_setup(bigtable_emulator_config: dict[str, str]):
+    """Context manager to set up Bigtable emulator for testing."""
+    try:
+        from google.cloud import bigtable
+
+        # Set emulator host environment variable.
+        os.environ["BIGTABLE_EMULATOR_HOST"] = bigtable_emulator_config["emulator_host"]
+
+        # Create client and instance.
+        client = bigtable.Client(project=bigtable_emulator_config["project_id"], admin=True)
+
+        # Create instance (emulator allows any instance name).
+        # Skip existence check as emulator doesn't support admin operations
+        instance = client.instance(bigtable_emulator_config["instance_id"])
+
+        # Create table with column families.
+        # Skip existence check as emulator doesn't support admin operations
+        table = instance.table(bigtable_emulator_config["table_id"])
+        try:
+            from google.cloud.bigtable import column_family
+
+            # Create table with column families.
+            table.create(
+                column_families={
+                    "cf1": column_family.MaxVersionsGCRule(1),
+                    "cf2": column_family.MaxVersionsGCRule(1),
+                }
+            )
+        except Exception:
+            # Table might already exist, which is fine for emulator.
+            pass
+
+        yield {"client": client, "instance": instance, "table": table}
+
+    finally:
+        # Clean up - remove emulator host environment variable.
+        if "BIGTABLE_EMULATOR_HOST" in os.environ:
+            del os.environ["BIGTABLE_EMULATOR_HOST"]
 
 
 ###
