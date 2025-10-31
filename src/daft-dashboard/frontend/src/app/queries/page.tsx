@@ -125,7 +125,7 @@ const EmptyState = () => {
               {copyText} ...
             </span>
             <Tooltip>
-              <TooltipTrigger asChild>
+              <TooltipTrigger asChild className="hover:cursor-pointer">
                 <Button
                   size="icon"
                   className="relative z-10 h-6 w-6 text-zinc-50 hover:bg-zinc-700 hover:text-zinc-50 [&_svg]:h-3 [&_svg]:w-3 border border-zinc-500"
