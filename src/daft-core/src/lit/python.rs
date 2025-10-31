@@ -3,7 +3,6 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, TimeZone};
 use common_arrow_ffi as ffi;
 use common_error::DaftError;
-use common_file::FileReference;
 use common_ndarray::NumpyArray;
 use daft_schema::{
     dtype::DataType,
@@ -25,6 +24,7 @@ use pyo3::{
 
 use super::Literal;
 use crate::{
+    file::FileReference,
     python::PySeries,
     series::Series,
     utils::{arrow::cast_array_from_daft_if_needed, display::display_decimal128},
@@ -178,14 +178,17 @@ impl<'py> IntoPyObject<'py> for Literal {
                 .collect::<IndexMap<_, _>>()
                 .into_bound_py_any(py),
             Self::File(f) => {
+                let file_class = match f.media_type {
+                    daft_schema::media_type::MediaType::Unknown => intern!(py, "File"),
+                    daft_schema::media_type::MediaType::Video => intern!(py, "VideoFile"),
+                };
+
                 let pytuple = f.into_bound_py_any(py)?;
                 let py_file = py
                     .import(intern!(py, "daft.daft"))?
                     .getattr(intern!(py, "PyFileReference"))?;
                 let res = py_file.call_method1(pyo3::intern!(py, "_from_tuple"), (pytuple,))?;
-                let py_file = py
-                    .import(intern!(py, "daft.file"))?
-                    .getattr(intern!(py, "File"))?;
+                let py_file = py.import(intern!(py, "daft.file"))?.getattr(file_class)?;
                 py_file.call_method1(pyo3::intern!(py, "_from_file_reference"), (res,))
             }
             Self::Map { keys, values } => {

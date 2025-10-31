@@ -13,7 +13,12 @@ use common_image::CowImage;
 use indexmap::IndexMap;
 use itertools::Itertools;
 
-use crate::{array::ops::image::image_array_from_img_buffers, datatypes::FileArray, prelude::*};
+use crate::{
+    array::ops::image::image_array_from_img_buffers,
+    datatypes::FileArray,
+    file::{DataOrReference, MediaTypeUnknown},
+    prelude::*,
+};
 
 /// Downcasts a datatype to one that's compatible with literals.
 /// example:
@@ -342,10 +347,8 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
 
             PythonArray::from_iter("literal", iter).into_series()
         }
-        DataType::File => {
+        DataType::File(file_type) => {
             let values = values.collect::<Vec<_>>();
-
-            use common_file::FileReference;
 
             let discriminant = UInt8Array::from_iter(
                 Field::new("discriminant", DataType::UInt8),
@@ -363,8 +366,8 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                         return ((None, None), None);
                     };
 
-                    match f {
-                        FileReference::Reference(file, ioconfig) => {
+                    match f.inner {
+                        DataOrReference::Reference(file, ioconfig) => {
                             let io_conf = ioconfig.map(|c| {
                                 bincode::serialize(&c)
                                     .expect("Failed to serialize IO configuration")
@@ -372,13 +375,15 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
 
                             ((Some(file), io_conf), None)
                         }
-                        FileReference::Data(items) => ((None, None), Some(items.as_ref().clone())),
+                        DataOrReference::Data(items) => {
+                            ((None, None), Some(items.as_ref().clone()))
+                        }
                     }
                 })
                 .unzip();
             let (files, io_confs): (Vec<Option<String>>, Vec<_>) =
                 files_and_configs.into_iter().unzip();
-            let sa_field = Field::new("literal", DataType::File.to_physical());
+            let sa_field = Field::new("literal", DataType::File(file_type).to_physical());
             let io_configs = BinaryArray::from_iter("io_config", io_confs.into_iter());
             let urls = Utf8Array::from_iter("url", files.into_iter());
             let data = BinaryArray::from_iter("data", data.into_iter());
@@ -392,7 +397,8 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 ],
                 validity,
             );
-            FileArray::new(Field::new("literal", DataType::File), sa).into_series()
+            FileArray::<MediaTypeUnknown>::new(Field::new("literal", DataType::File(file_type)), sa)
+                .into_series()
         }
         DataType::Tensor(_) => {
             let (data, shapes) = values

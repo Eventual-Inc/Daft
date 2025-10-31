@@ -5,7 +5,8 @@ use common_error::DaftResult;
 use super::{Growable, GrowableArray};
 use crate::{
     array::prelude::*,
-    datatypes::{FileType, prelude::*},
+    datatypes::prelude::*,
+    file::{DaftMediaType, FileType},
     series::{IntoSeries, Series},
 };
 
@@ -85,4 +86,32 @@ impl_logical_growable!(
 impl_logical_growable!(LogicalImageGrowable, ImageType);
 impl_logical_growable!(LogicalTensorGrowable, TensorType);
 impl_logical_growable!(LogicalMapGrowable, MapType);
-impl_logical_growable!(LogicalFileGrowable, FileType);
+pub type LogicalFileGrowable<'a, T> = LogicalGrowable<FileType<T>, <<<FileType<T> as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType as GrowableArray>::GrowableType<'a>>;
+
+impl<'a, T> LogicalFileGrowable<'a, T>
+where
+    T: DaftMediaType,
+{
+    pub fn new(
+        name: &str,
+        dtype: &DataType,
+        arrays: Vec<&'a <FileType<T> as DaftDataType>::ArrayType>,
+        use_validity: bool,
+        capacity: usize,
+    ) -> Self {
+        let physical_growable =
+            <<FileType<T> as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::make_growable(
+                name,
+                &dtype.to_physical(),
+                arrays.iter().map(|a| &a.physical).collect(),
+                use_validity,
+                capacity,
+            );
+        Self {
+            name: name.to_string(),
+            dtype: dtype.clone(),
+            physical_growable,
+            _phantom: PhantomData,
+        }
+    }
+}

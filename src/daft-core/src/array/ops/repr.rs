@@ -15,6 +15,7 @@ use crate::{
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
     },
+    file::DaftMediaType,
     series::Series,
     utils::display::{
         display_date32, display_decimal128, display_duration, display_time64, display_timestamp,
@@ -460,7 +461,10 @@ impl StructArray {
         }
     }
 }
-impl FileArray {
+impl<T> FileArray<T>
+where
+    T: DaftMediaType,
+{
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         Ok(self.get_lit(idx).to_string())
     }
@@ -650,7 +654,10 @@ impl FixedShapeSparseTensorArray {
     }
 }
 
-impl FileArray {
+impl<T> FileArray<T>
+where
+    T: DaftMediaType,
+{
     pub fn html_value(&self, idx: usize, truncate: bool) -> String {
         let str_value = self.str_value(idx).unwrap();
         let truncated = if truncate {
