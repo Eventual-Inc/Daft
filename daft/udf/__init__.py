@@ -384,7 +384,7 @@ def cls(
         >>> import daft
         >>> from daft import DataType
         >>> @daft.cls
-        ... class MyModel:
+        >>> class MyModel:
         ...     def __init__(self, model_path: str):
         ...         self.model = some_slow_initialization_step(model_path)
         ...
@@ -401,12 +401,9 @@ def cls(
         ...     @daft.method.batch(return_dtype=DataType.list(DataType.string()))
         ...     def batch_classify(self, value: daft.Series):
         ...         return self.model.batch_classify(value)
-        >>>
         >>> # Specify the initialization arguments for the class. `__init__` will not be called yet.
         >>> my_model = MyModel("path/to/model")
-        >>>
         >>> df = daft.from_pydict({"prompt": ["hello", "world", "daft"]})
-        >>>
         >>> # Use class methods as Daft functions.
         >>> df = df.with_columns(
         ...     {
