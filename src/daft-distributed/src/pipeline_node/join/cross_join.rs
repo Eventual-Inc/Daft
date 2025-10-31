@@ -31,7 +31,6 @@ impl CrossJoinNode {
 
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         num_partitions: usize,
         left_node: DistributedPipelineNode,
@@ -44,7 +43,6 @@ impl CrossJoinNode {
             Self::NODE_NAME,
             vec![left_node.node_id(), right_node.node_id()],
             vec![left_node.name(), right_node.name()],
-            logical_node_id,
         );
 
         let config = PipelineNodeConfig::new(

@@ -293,9 +293,9 @@ num-derive = "0.4.2"
 num-format = "0.4.4"
 num-traits = "0.2"
 numpy = "0.26.0"
-opentelemetry = {version = "0.29", features = ["trace", "metrics"]}
-opentelemetry-otlp = {version = "0.29", features = ["grpc-tonic"]}
-opentelemetry_sdk = "0.29"
+opentelemetry = {version = "0.31", features = ["trace", "metrics"]}
+opentelemetry-otlp = {version = "0.31", features = ["grpc-tonic"]}
+opentelemetry_sdk = "0.31"
 parking_lot = "0.12.3"
 path_macro = "1.0.0"
 pretty_assertions = "1.4.1"

@@ -225,7 +225,6 @@ impl SortNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         sort_by: Vec<BoundExpr>,
         descending: Vec<bool>,
@@ -239,7 +238,6 @@ impl SortNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
-            logical_node_id,
         );
 
         let config = PipelineNodeConfig::new(

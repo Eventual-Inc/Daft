@@ -8,6 +8,7 @@ use opentelemetry::{KeyValue, global, trace::TracerProvider};
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
     Resource,
+    metrics::PeriodicReader,
     trace::{Sampler, SdkTracerProvider},
 };
 use tracing_subscriber::{layer::SubscriberExt, prelude::*};
@@ -62,8 +63,12 @@ async fn init_otlp_metrics_provider(otlp_endpoint: &str) {
         .build()
         .expect("Failed to build OTLP metric exporter for tracing");
 
+    let metrics_reader = PeriodicReader::builder(metrics_exporter)
+        .with_interval(Duration::from_millis(500))
+        .build();
+
     let metrics_provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
-        .with_periodic_exporter(metrics_exporter) // To customize the export interval, set the **"OTEL_METRIC_EXPORT_INTERVAL"** environment variable (in milliseconds).
+        .with_reader(metrics_reader)
         .with_resource(resource)
         .build();
 
@@ -107,7 +112,6 @@ async fn init_otlp_tracer_provider(otlp_endpoint: &str) {
         .with_tracer(tracer)
         .with_filter(tracing::level_filters::LevelFilter::INFO);
 
-    eprintln!("Setting global default for otel layer");
     tracing::subscriber::set_global_default(tracing_subscriber::registry().with(telemetry_layer))
         .unwrap();
 

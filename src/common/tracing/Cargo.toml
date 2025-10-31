@@ -4,7 +4,7 @@ opentelemetry = {workspace = true}
 opentelemetry-otlp = {workspace = true}
 opentelemetry_sdk = {workspace = true}
 tracing = {workspace = true}
-tracing-opentelemetry = {version = "0.30", default-features = false, features = ["metrics"]}
+tracing-opentelemetry = {version = "0.32", default-features = false, features = ["metrics"]}
 tracing-subscriber = {workspace = true}
 
 [lints]
