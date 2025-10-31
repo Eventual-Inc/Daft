@@ -138,9 +138,20 @@ impl ShuffleExchangeFactory {
         input_num_partitions: usize,
         target_num_partitions: usize,
     ) -> bool {
-        let total_num_partitions = input_num_partitions * target_num_partitions;
-        let geometric_mean = (total_num_partitions as f64).sqrt() as usize;
-        geometric_mean > Self::PARTITION_THRESHOLD_TO_USE_PRE_SHUFFLE_MERGE
+        match input_num_partitions.checked_mul(target_num_partitions) {
+            Some(total) => {
+                let geometric_mean = (total as f64).sqrt() as usize;
+                geometric_mean > Self::PARTITION_THRESHOLD_TO_USE_PRE_SHUFFLE_MERGE
+            }
+            None => {
+                log::warn!(
+                    "Partition count multiplication overflow: {} * {}, using pre-shuffle merge",
+                    input_num_partitions,
+                    target_num_partitions
+                );
+                true // Overflow means definitely should use merge
+            }
+        }
     }
 
     fn get_shuffle_strategy(
@@ -281,5 +292,68 @@ impl ShuffleExchangeFactory {
             input: self.input.clone(),
             strategy,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Helper to create a dummy PhysicalPlanRef for testing
+    fn create_dummy_plan() -> PhysicalPlanRef {
+        use crate::InMemoryScan;
+        use daft_schema::schema::Schema;
+        use std::sync::Arc;
+
+        let schema = Arc::new(Schema::empty());
+        Arc::new(
+            InMemoryScan::new(
+                schema,
+                vec![],
+                Arc::new(ClusteringSpec::Unknown(UnknownClusteringConfig::new(1))),
+                Default::default(),
+            )
+            .into(),
+        )
+    }
+
+    #[test]
+    fn test_should_use_pre_shuffle_merge_small_partitions() {
+        let factory = ShuffleExchangeFactory::new(create_dummy_plan());
+        // Small partition counts should not trigger pre-shuffle merge
+        assert!(!factory.should_use_pre_shuffle_merge(10, 10));
+    }
+
+    #[test]
+    fn test_should_use_pre_shuffle_merge_large_partitions() {
+        let factory = ShuffleExchangeFactory::new(create_dummy_plan());
+        // Large partition counts should trigger pre-shuffle merge
+        assert!(factory.should_use_pre_shuffle_merge(1000, 1000));
+    }
+
+    #[test]
+    fn test_should_use_pre_shuffle_merge_overflow() {
+        let factory = ShuffleExchangeFactory::new(create_dummy_plan());
+        // Test with partition counts that would overflow when multiplied
+        // usize::MAX / 2 * usize::MAX / 2 would overflow
+        let half_max = usize::MAX / 2;
+        assert!(factory.should_use_pre_shuffle_merge(half_max, half_max));
+    }
+
+    #[test]
+    fn test_should_use_pre_shuffle_merge_no_overflow_boundary() {
+        let factory = ShuffleExchangeFactory::new(create_dummy_plan());
+        // Test values near the overflow boundary
+        let sqrt_max = (usize::MAX as f64).sqrt() as usize;
+        // This should not overflow but should still trigger merge due to large geometric mean
+        assert!(factory.should_use_pre_shuffle_merge(sqrt_max, sqrt_max));
+    }
+
+    #[test]
+    fn test_should_use_pre_shuffle_merge_asymmetric() {
+        let factory = ShuffleExchangeFactory::new(create_dummy_plan());
+        // Test with asymmetric partition counts
+        assert!(!factory.should_use_pre_shuffle_merge(1, 100));
+        assert!(factory.should_use_pre_shuffle_merge(10000, 10000));
     }
 }

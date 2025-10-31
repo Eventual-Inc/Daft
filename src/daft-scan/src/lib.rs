@@ -830,8 +830,20 @@ impl ScanTask {
                 .map(|name| warc_column_sizes().get(name).copied().unwrap_or(8))
                 .sum();
 
-            let estimate = (approx_num_rows * row_size as f64) as usize;
-            Some(estimate)
+            // Guard against overflow
+            const MAX_ROWS: f64 = (usize::MAX / 100_000) as f64;
+            if approx_num_rows > MAX_ROWS {
+                log::warn!("Row count {} exceeds maximum, capping estimate", approx_num_rows);
+                return Some(usize::MAX / 2);
+            }
+
+            let estimate_f64 = approx_num_rows * row_size as f64;
+            if estimate_f64 > usize::MAX as f64 {
+                log::warn!("Memory estimate exceeds usize::MAX, capping");
+                return Some(usize::MAX / 2);
+            }
+
+            Some(estimate_f64 as usize)
         } else {
             let mat_schema = self.materialized_schema();
             self.statistics
@@ -848,10 +860,23 @@ impl ScanTask {
                 })
                 .or_else(|| {
                     // use approximate number of rows multiplied by an approximate bytes-per-row
-                    self.approx_num_rows(config).map(|approx_num_rows| {
+                    self.approx_num_rows(config).and_then(|approx_num_rows| {
                         let row_size = mat_schema.estimate_row_size_bytes();
-                        let estimate = approx_num_rows * row_size;
-                        estimate as usize
+
+                        // Guard against overflow
+                        const MAX_ROWS: f64 = (usize::MAX / 100_000) as f64;
+                        if approx_num_rows > MAX_ROWS {
+                            log::warn!("Row count {} exceeds maximum, capping estimate", approx_num_rows);
+                            return Some(usize::MAX / 2);
+                        }
+
+                        let estimate_f64 = approx_num_rows * row_size;
+                        if estimate_f64 > usize::MAX as f64 || estimate_f64.is_infinite() {
+                            log::warn!("Memory estimate exceeds usize::MAX or is infinite, capping");
+                            return Some(usize::MAX / 2);
+                        }
+
+                        Some(estimate_f64 as usize)
                     })
                 })
         }
@@ -1106,5 +1131,355 @@ mod test {
         let condensed = scan_task.display_as(DisplayLevel::Default);
         assert_eq!(condensed, "ScanTask:\nSources = [File {test0}, File {test1}, File {test2}, File {test3}, File {test4}, File {test5}]\nPushdowns = \n".to_string());
         Ok(())
+    }
+
+    // SECURITY: Overflow protection tests for P0 issues 1-2
+    mod overflow_protection_tests {
+        use super::*;
+        use common_file_formats::{FileFormatConfig, WarcSourceConfig};
+        use daft_schema::{
+            dtype::DataType,
+            field::Field,
+            schema::Schema,
+        };
+        use daft_stats::TableMetadata;
+
+        #[test]
+        fn test_warc_memory_estimation_with_extremely_large_row_count() {
+            // Test C-1: WARC memory estimation overflow protection
+            // Create a WARC scan task with extremely large row count
+            let sources = vec![DataSource::File {
+                path: "test.warc.gz".to_string(),
+                chunk_spec: None,
+                size_bytes: Some(1_000_000),
+                iceberg_delete_files: None,
+                metadata: Some(TableMetadata {
+                    length: usize::MAX, // Extremely large row count
+                }),
+                partition_spec: None,
+                statistics: None,
+                parquet_metadata: None,
+            }];
+
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("warc_content", DataType::Utf8),
+                Field::new("warc_headers", DataType::Utf8),
+            ]));
+
+            let scan_task = ScanTask::new(
+                sources,
+                Arc::new(FileFormatConfig::Warc(WarcSourceConfig::default())),
+                schema,
+                Arc::new(StorageConfig::new_internal(false, None)),
+                Pushdowns::default(),
+                None,
+            );
+
+            // Estimate should be capped, not overflow
+            let estimate = scan_task.estimate_in_memory_size_bytes(None);
+            assert!(estimate.is_some());
+            let estimate_val = estimate.unwrap();
+
+            // Should be capped at usize::MAX / 2
+            assert_eq!(estimate_val, usize::MAX / 2);
+            assert!(estimate_val < usize::MAX);
+        }
+
+        #[test]
+        fn test_warc_memory_estimation_with_large_row_count_f64() {
+            // Test C-1: WARC estimation with f64::MAX row count
+            let sources = vec![DataSource::File {
+                path: "test.warc.gz".to_string(),
+                chunk_spec: None,
+                size_bytes: Some(1_000_000_000_000), // 1TB file
+                iceberg_delete_files: None,
+                metadata: None, // No metadata, will use file size estimation
+                partition_spec: None,
+                statistics: None,
+                parquet_metadata: None,
+            }];
+
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("warc_content", DataType::Utf8),
+                Field::new("warc_headers", DataType::Utf8),
+                Field::new("WARC-Record-ID", DataType::Utf8),
+            ]));
+
+            let scan_task = ScanTask::new(
+                sources,
+                Arc::new(FileFormatConfig::Warc(WarcSourceConfig::default())),
+                schema,
+                Arc::new(StorageConfig::new_internal(false, None)),
+                Pushdowns::default(),
+                None,
+            );
+
+            // Should handle large file sizes gracefully
+            let estimate = scan_task.estimate_in_memory_size_bytes(None);
+            assert!(estimate.is_some());
+            let estimate_val = estimate.unwrap();
+
+            // Should be finite and reasonable
+            assert!(estimate_val > 0);
+            assert!(estimate_val <= usize::MAX / 2);
+        }
+
+        #[test]
+        fn test_warc_memory_estimation_valid_edge_case() {
+            // Test C-1: Valid edge case with reasonable values
+            let sources = vec![DataSource::File {
+                path: "test.warc.gz".to_string(),
+                chunk_spec: None,
+                size_bytes: Some(10_000_000), // 10MB
+                iceberg_delete_files: None,
+                metadata: Some(TableMetadata {
+                    length: 1000, // 1000 rows
+                }),
+                partition_spec: None,
+                statistics: None,
+                parquet_metadata: None,
+            }];
+
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("warc_content", DataType::Utf8),
+                Field::new("warc_headers", DataType::Utf8),
+            ]));
+
+            let scan_task = ScanTask::new(
+                sources,
+                Arc::new(FileFormatConfig::Warc(WarcSourceConfig::default())),
+                schema,
+                Arc::new(StorageConfig::new_internal(false, None)),
+                Pushdowns::default(),
+                None,
+            );
+
+            let estimate = scan_task.estimate_in_memory_size_bytes(None);
+            assert!(estimate.is_some());
+            let estimate_val = estimate.unwrap();
+
+            // For 1000 rows with warc_content (27282 bytes) + warc_headers (350 bytes)
+            // Expected: 1000 * (27282 + 350) = 27,632,000 bytes
+            let expected = 1000 * (27282 + 350);
+            assert_eq!(estimate_val, expected);
+        }
+
+        #[test]
+        fn test_schema_row_size_estimation_with_extremely_large_row_count() {
+            // Test C-2: Schema row size estimation overflow protection
+            let sources = vec![DataSource::File {
+                path: "test.parquet".to_string(),
+                chunk_spec: None,
+                size_bytes: Some(1_000_000),
+                iceberg_delete_files: None,
+                metadata: Some(TableMetadata {
+                    length: usize::MAX, // Extremely large row count
+                }),
+                partition_spec: None,
+                statistics: None,
+                parquet_metadata: None,
+            }];
+
+            // Create a schema with multiple fields
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("col1", DataType::Int64),
+                Field::new("col2", DataType::Float64),
+                Field::new("col3", DataType::Utf8),
+            ]));
+
+            let scan_task = ScanTask::new(
+                sources,
+                Arc::new(FileFormatConfig::Parquet(ParquetSourceConfig {
+                    coerce_int96_timestamp_unit: TimeUnit::Seconds,
+                    field_id_mapping: None,
+                    row_groups: None,
+                    chunk_size: None,
+                })),
+                schema,
+                Arc::new(StorageConfig::new_internal(false, None)),
+                Pushdowns::default(),
+                None,
+            );
+
+            let estimate = scan_task.estimate_in_memory_size_bytes(None);
+            assert!(estimate.is_some());
+            let estimate_val = estimate.unwrap();
+
+            // Should be capped at usize::MAX / 2
+            assert_eq!(estimate_val, usize::MAX / 2);
+        }
+
+        #[test]
+        fn test_schema_row_size_estimation_with_nested_schema() {
+            // Test C-2: Nested schema with large row counts
+            let sources = vec![DataSource::File {
+                path: "test.parquet".to_string(),
+                chunk_spec: None,
+                size_bytes: Some(100_000_000), // 100MB
+                iceberg_delete_files: None,
+                metadata: None, // Will use approx_num_rows
+                partition_spec: None,
+                statistics: None,
+                parquet_metadata: None,
+            }];
+
+            // Create a deeply nested schema
+            let schema = Arc::new(Schema::new(vec![
+                Field::new(
+                    "nested_list",
+                    DataType::List(Box::new(DataType::List(Box::new(
+                        DataType::List(Box::new(DataType::Int64)),
+                    )))),
+                ),
+                Field::new("col2", DataType::Utf8),
+            ]));
+
+            let scan_task = ScanTask::new(
+                sources,
+                Arc::new(FileFormatConfig::Parquet(ParquetSourceConfig {
+                    coerce_int96_timestamp_unit: TimeUnit::Seconds,
+                    field_id_mapping: None,
+                    row_groups: None,
+                    chunk_size: None,
+                })),
+                schema,
+                Arc::new(StorageConfig::new_internal(false, None)),
+                Pushdowns::default(),
+                None,
+            );
+
+            let estimate = scan_task.estimate_in_memory_size_bytes(None);
+            // Should handle nested schemas without panicking or overflowing
+            if let Some(estimate_val) = estimate {
+                assert!(estimate_val > 0);
+                assert!(estimate_val <= usize::MAX / 2);
+            }
+        }
+
+        #[test]
+        fn test_schema_row_size_estimation_with_large_file_no_metadata() {
+            // Test C-2: Large file with no metadata, using approx_num_rows fallback
+            let sources = vec![DataSource::File {
+                path: "test.parquet".to_string(),
+                chunk_spec: None,
+                size_bytes: Some(u64::MAX / 100), // Very large file
+                iceberg_delete_files: None,
+                metadata: None,
+                partition_spec: None,
+                statistics: None,
+                parquet_metadata: None,
+            }];
+
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("col1", DataType::Int64),
+                Field::new("col2", DataType::Float64),
+            ]));
+
+            let scan_task = ScanTask::new(
+                sources,
+                Arc::new(FileFormatConfig::Parquet(ParquetSourceConfig {
+                    coerce_int96_timestamp_unit: TimeUnit::Seconds,
+                    field_id_mapping: None,
+                    row_groups: None,
+                    chunk_size: None,
+                })),
+                schema,
+                Arc::new(StorageConfig::new_internal(false, None)),
+                Pushdowns::default(),
+                None,
+            );
+
+            let estimate = scan_task.estimate_in_memory_size_bytes(None);
+            assert!(estimate.is_some());
+            let estimate_val = estimate.unwrap();
+
+            // Should be capped, not overflow
+            assert!(estimate_val <= usize::MAX / 2);
+            assert!(estimate_val > 0);
+        }
+
+        #[test]
+        fn test_schema_row_size_estimation_valid_case() {
+            // Test C-2: Valid case with reasonable values
+            let sources = vec![DataSource::File {
+                path: "test.parquet".to_string(),
+                chunk_spec: None,
+                size_bytes: Some(1_000_000),
+                iceberg_delete_files: None,
+                metadata: Some(TableMetadata { length: 10_000 }),
+                partition_spec: None,
+                statistics: None,
+                parquet_metadata: None,
+            }];
+
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("col1", DataType::Int64),
+                Field::new("col2", DataType::Float64),
+            ]));
+
+            let scan_task = ScanTask::new(
+                sources,
+                Arc::new(FileFormatConfig::Parquet(ParquetSourceConfig {
+                    coerce_int96_timestamp_unit: TimeUnit::Seconds,
+                    field_id_mapping: None,
+                    row_groups: None,
+                    chunk_size: None,
+                })),
+                schema,
+                Arc::new(StorageConfig::new_internal(false, None)),
+                Pushdowns::default(),
+                None,
+            );
+
+            let estimate = scan_task.estimate_in_memory_size_bytes(None);
+            assert!(estimate.is_some());
+            let estimate_val = estimate.unwrap();
+
+            // Should be a reasonable value
+            // 10,000 rows * (8 bytes for Int64 + 8 bytes for Float64) = 160,000 bytes
+            assert!(estimate_val > 0);
+            assert!(estimate_val < 1_000_000_000); // Less than 1GB is reasonable
+        }
+
+        #[test]
+        fn test_overflow_protection_with_infinity() {
+            // Test C-2: Ensure infinity values are handled
+            let sources = vec![DataSource::File {
+                path: "test.parquet".to_string(),
+                chunk_spec: None,
+                size_bytes: Some(u64::MAX), // Maximum possible file size
+                iceberg_delete_files: None,
+                metadata: None,
+                partition_spec: None,
+                statistics: None,
+                parquet_metadata: None,
+            }];
+
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("col1", DataType::Int64),
+            ]));
+
+            let scan_task = ScanTask::new(
+                sources,
+                Arc::new(FileFormatConfig::Parquet(ParquetSourceConfig {
+                    coerce_int96_timestamp_unit: TimeUnit::Seconds,
+                    field_id_mapping: None,
+                    row_groups: None,
+                    chunk_size: None,
+                })),
+                schema,
+                Arc::new(StorageConfig::new_internal(false, None)),
+                Pushdowns::default(),
+                None,
+            );
+
+            let estimate = scan_task.estimate_in_memory_size_bytes(None);
+            if let Some(estimate_val) = estimate {
+                // Should not be infinity
+                assert!(estimate_val.is_finite() as usize == estimate_val);
+                // Should be capped
+                assert!(estimate_val <= usize::MAX / 2);
+            }
+        }
     }
 }
