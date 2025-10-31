@@ -341,7 +341,7 @@ class LLMActors:
     ):
         import ray
 
-        LocalVLLMExecutorActor = ray.remote(num_gpus=gpus_per_actor)(LocalVLLMExecutor)
+        LocalVLLMExecutorActor = ray.remote(num_gpus=gpus_per_actor, max_restarts=4)(LocalVLLMExecutor)
         PrefixRouterActor = ray.remote(PrefixRouter)
 
         self.llm_actors = [LocalVLLMExecutorActor.remote(model, engine_args, generate_args) for _ in range(concurrency)]
