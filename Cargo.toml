@@ -314,7 +314,8 @@ simdutf8 = "0.1.5"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 smallvec = {version = "1.15.1", features = ["serde", "impl_bincode"]}
 snafu = {version = "0.7.4", features = ["futures"]}
-sqlparser = "0.51.0"
+spark-connect = {path = "src/generated/spark-connect", default-features = false}
+sqlparser = "0.59.0"
 sysinfo = "0.35.2"
 tango-bench = "0.6.0"
 test-log = "0.2.19"

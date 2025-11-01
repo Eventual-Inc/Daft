@@ -68,13 +68,20 @@ impl SQLFunction for WrappedUDFClass {
                             operator: _,
                         } => {
                             let expr = planner.try_unwrap_function_arg_expr(arg)?;
-
+                            let pyany = lit_to_py_any(py, expr.as_ref())?;
+                            kwargs.set_item(name.to_string(), pyany)?;
+                        }
+                        sqlparser::ast::FunctionArg::ExprNamed {
+                            name,
+                            arg,
+                            operator: _,
+                        } => {
+                            let expr = planner.try_unwrap_function_arg_expr(arg)?;
                             let pyany = lit_to_py_any(py, expr.as_ref())?;
                             kwargs.set_item(name.to_string(), pyany)?;
                         }
                         sqlparser::ast::FunctionArg::Unnamed(arg) => {
                             let expr = planner.try_unwrap_function_arg_expr(arg)?;
-
                             let py_expr = PyExpr { expr };
                             args.push(py_expr.into_expr_cls(py)?);
                         }
