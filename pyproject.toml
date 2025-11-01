@@ -128,7 +128,7 @@ dev = [
   "PyMySQL==1.1.0",
   "psycopg2-binary==2.9.10",
   "sqlglot==23.3.0",
-  "pyodbc==5.1.0",
+  "pyodbc>=5.1.0",
   # AWS
   "s3fs==2023.12.1",
   "boto3==1.36.20",

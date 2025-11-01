@@ -1736,7 +1736,7 @@ dev = [
     { name = "pyiceberg", specifier = "==0.7.0" },
     { name = "pylance", specifier = ">=0.37.0" },
     { name = "pymysql", specifier = "==1.1.0" },
-    { name = "pyodbc", specifier = "==5.1.0" },
+    { name = "pyodbc", specifier = ">=5.1.0" },
     { name = "pyspark", specifier = "==3.5.5" },
     { name = "pytest", specifier = "==7.4.3" },
     { name = "pytest-benchmark", specifier = "==4.0.0" },
