@@ -286,7 +286,7 @@ jobs:
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v6
       with:
-        python-version: 3.10
+        python-version: '3.10'
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
@@ -561,7 +561,7 @@ jobs:
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v6
       with:
-        python-version: 3.10
+        python-version: '3.10'
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
@@ -672,7 +672,7 @@ jobs:
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v6
       with:
-        python-version: 3.10
+        python-version: '3.10'
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
@@ -949,7 +949,7 @@ jobs:
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v6
       with:
-        python-version: 3.10
+        python-version: '3.10'
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
