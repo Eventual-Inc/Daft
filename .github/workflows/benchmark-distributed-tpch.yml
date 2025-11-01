@@ -45,7 +45,7 @@ env:
   RAY_NUM_WORKERS: ${{ inputs.num_workers }}
 
   DAFT_ANALYTICS_ENABLED: "0"
-  PYTHON_VERSION: "3.9"
+  PYTHON_VERSION: "3.10"
 
 jobs:
   build:

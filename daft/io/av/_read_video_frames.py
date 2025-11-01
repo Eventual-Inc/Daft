@@ -4,11 +4,10 @@ import os
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeAlias
 from urllib.parse import urlparse
 
 import av
-from typing_extensions import TypeAlias
 
 from daft.daft import FileInfos, ImageMode
 from daft.datatype import DataType

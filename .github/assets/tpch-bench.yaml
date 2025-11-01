@@ -41,7 +41,7 @@ setup_commands:
 
 # install UV and dependencies
 - curl -LsSf https://astral.sh/uv/install.sh | sh
-- test -d ~/.venv || uv venv --python 3.9
+- test -d ~/.venv || uv venv --python 3.10
 - grep -qF 'source ~/.venv/bin/activate' ~/.bashrc || echo "source ~/.venv/bin/activate" >> ~/.bashrc
 - source ~/.venv/bin/activate
 - uv pip install pip ray[default] --no-progress

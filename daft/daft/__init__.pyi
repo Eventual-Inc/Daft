@@ -1,14 +1,8 @@
 import builtins
 import datetime
-import sys
 from collections.abc import AsyncIterator, Iterator
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar
-
-if sys.version_info < (3, 10):
-    from typing_extensions import Concatenate
-else:
-    from typing import Concatenate
+from typing import TYPE_CHECKING, Any, Callable, Concatenate, Literal, TypeVar
 
 from daft.dataframe.display import MermaidOptions
 from daft.execution import physical_plan

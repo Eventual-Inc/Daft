@@ -3,15 +3,7 @@ from __future__ import annotations
 import dataclasses
 import functools
 import inspect
-import sys
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
-
-from .udf_v2 import check_serializable
-
-if sys.version_info >= (3, 10):
-    from typing import TypeAlias
-else:
-    from typing_extensions import TypeAlias
+from typing import TYPE_CHECKING, Any, Callable, Optional, TypeAlias, Union, cast
 
 import daft
 from daft.daft import PyDataType, PySeries, ResourceRequest
@@ -20,6 +12,8 @@ from daft.dependencies import np, pa
 from daft.errors import UDFException
 from daft.expressions import Expression
 from daft.series import Series
+
+from .udf_v2 import check_serializable
 
 if TYPE_CHECKING:
     from collections.abc import Generator

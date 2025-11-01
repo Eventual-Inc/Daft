@@ -1,17 +1,11 @@
 from __future__ import annotations
 
-import sys
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Concatenate, TypeVar
 
 from daft import DataType
 from daft.dependencies import np, pa
 from daft.expressions.expressions import Expression
 from daft.series import Series
-
-if sys.version_info < (3, 10):
-    from typing_extensions import Concatenate
-else:
-    from typing import Concatenate
 
 if TYPE_CHECKING:
     from collections.abc import Coroutine

@@ -132,14 +132,23 @@ class UdfHandle:
         if response[0] == _UDF_ERROR:
             try:
                 base_exc: Exception | None = daft.pickle.loads(response[3])
-            except TypeError:
+            except Exception:
                 base_exc = None
 
+            tb_payload = response[2]
+            if isinstance(tb_payload, bytes):
+                try:
+                    tb_info = daft.pickle.loads(tb_payload)
+                except Exception:
+                    tb_info = None
+            else:
+                tb_info = tb_payload
+
             if base_exc is None and sys.version_info >= (3, 11):
-                raise UDFException(response[1], response[2])
-            if base_exc and sys.version_info >= (3, 11):
-                base_exc.add_note("\n".join(response[2].format()).rstrip())  # type: ignore[attr-defined]
-            raise UDFException(response[1]) from base_exc
+                raise UDFException(response[1], tb_info)
+            if base_exc and tb_info and sys.version_info >= (3, 11):
+                base_exc.add_note("\n".join(tb_info.format()).rstrip())  # type: ignore[attr-defined]
+            raise UDFException(response[1], tb_info if base_exc is None else None) from base_exc
         elif response[0] == _ERROR:
             raise RuntimeError("UDF unexpectedly failed with traceback:\n" + response[1])
         elif response[0] == _SUCCESS:

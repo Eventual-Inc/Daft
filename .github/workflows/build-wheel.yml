@@ -152,7 +152,7 @@ jobs:
       fail-fast: false
       matrix:
         runner: [native, ray]
-        python-version: ['3.9', '3.11']
+        python-version: ['3.10', '3.11']
     env:
       package-name: daft
     steps:

@@ -72,15 +72,19 @@ def udf_event_loop(
         assert exc is not None
         try:
             exc_bytes = daft.pickle.dumps(exc)
-        except (PicklingError, AttributeError):
+        except (PicklingError, AttributeError, TypeError):
             exc_bytes = None
-        conn.send((_UDF_ERROR, e.message, TracebackException.from_exception(exc), exc_bytes))
+        try:
+            tb_bytes = daft.pickle.dumps(TracebackException.from_exception(exc))
+        except (PicklingError, AttributeError, TypeError):
+            tb_bytes = None
+        conn.send((_UDF_ERROR, e.message, tb_bytes, exc_bytes))
     except Exception as e:
         try:
             tb = "\n".join(TracebackException.from_exception(e).format())
         except Exception:
             # If serialization fails, just send the exception's repr
-            # This sometimes happens on 3.9 & 3.10, but unclear why
+            # This sometimes happens on 3.10, but unclear why
             # The repr doesn't contain the full traceback
             tb = repr(e)
 
