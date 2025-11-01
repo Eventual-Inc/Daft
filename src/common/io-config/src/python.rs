@@ -331,7 +331,8 @@ impl S3Config {
         force_virtual_addressing=None,
         profile_name=None,
         multipart_size=None,
-        multipart_max_concurrency=None
+        multipart_max_concurrency=None,
+        custom_retry_msgs=None
     ))]
     pub fn new(
         region_name: Option<String>,
@@ -356,6 +357,7 @@ impl S3Config {
         profile_name: Option<String>,
         multipart_size: Option<u64>,
         multipart_max_concurrency: Option<u32>,
+        custom_retry_msgs: Option<Vec<String>>,
     ) -> PyResult<Self> {
         let def = crate::S3Config::default();
         Ok(Self {
@@ -395,6 +397,7 @@ impl S3Config {
                 multipart_size: multipart_size.unwrap_or(def.multipart_size),
                 multipart_max_concurrency: multipart_max_concurrency
                     .unwrap_or(def.multipart_max_concurrency),
+                custom_retry_msgs: custom_retry_msgs.unwrap_or(def.custom_retry_msgs),
             },
         })
     }
@@ -422,7 +425,8 @@ impl S3Config {
         force_virtual_addressing=None,
         profile_name=None,
         multipart_size=None,
-        multipart_max_concurrency=None
+        multipart_max_concurrency=None,
+        custom_retry_msgs=None
     ))]
     pub fn replace(
         &self,
@@ -448,6 +452,7 @@ impl S3Config {
         profile_name: Option<String>,
         multipart_size: Option<u64>,
         multipart_max_concurrency: Option<u32>,
+        custom_retry_msgs: Option<Vec<String>>,
     ) -> PyResult<Self> {
         Ok(Self {
             config: crate::S3Config {
@@ -488,6 +493,8 @@ impl S3Config {
                 multipart_size: multipart_size.unwrap_or(self.config.multipart_size),
                 multipart_max_concurrency: multipart_max_concurrency
                     .unwrap_or(self.config.multipart_max_concurrency),
+                custom_retry_msgs: custom_retry_msgs
+                    .unwrap_or_else(|| self.config.custom_retry_msgs.clone()),
             },
         })
     }
@@ -644,6 +651,12 @@ impl S3Config {
     #[getter]
     pub fn profile_name(&self) -> PyResult<Option<String>> {
         Ok(self.config.profile_name.clone())
+    }
+
+    /// Custom retry error messages that should trigger retry
+    #[getter]
+    pub fn custom_retry_msgs(&self) -> PyResult<Vec<String>> {
+        Ok(self.config.custom_retry_msgs.clone())
     }
 
     pub fn provide_cached_credentials(&self) -> PyResult<Option<S3Credentials>> {
