@@ -115,9 +115,9 @@ class LogicalPlanBuilder:
     def __repr__(self) -> str:
         return self._builder.repr_ascii(simple=False)
 
-    def optimize(self) -> LogicalPlanBuilder:
+    def optimize(self, execution_config: PyDaftExecutionConfig) -> LogicalPlanBuilder:
         """Optimize the underlying logical plan."""
-        builder = self._builder.optimize()
+        builder = self._builder.optimize(execution_config)
         return LogicalPlanBuilder(builder)
 
     @classmethod

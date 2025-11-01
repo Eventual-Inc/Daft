@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 
+use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::JoinType;
@@ -700,6 +701,7 @@ pub(super) struct JoinGraphBuilder {
     final_name_map: HashMap<String, ExprRef>,
     adj_list: JoinAdjList,
     final_projections_and_filters: Vec<ProjectionOrFilter>,
+    cfg: Arc<DaftExecutionConfig>,
 }
 
 impl JoinGraphBuilder {
@@ -708,7 +710,7 @@ impl JoinGraphBuilder {
         JoinGraph::new(self.adj_list, self.final_projections_and_filters)
     }
 
-    pub(super) fn from_logical_plan(plan: LogicalPlanRef) -> Self {
+    pub(super) fn from_logical_plan(plan: LogicalPlanRef, cfg: Arc<DaftExecutionConfig>) -> Self {
         let output_schema = plan.schema();
         // During join reordering, we might produce an output schema that differs from the initial output schema. For example,
         // columns might be rearranged, or columns that were not originally selected might now be in the output schema.
@@ -721,6 +723,7 @@ impl JoinGraphBuilder {
             final_name_map: HashMap::new(),
             adj_list: JoinAdjList::empty(),
             final_projections_and_filters: vec![ProjectionOrFilter::Projection(output_projection)],
+            cfg,
         }
     }
 
@@ -989,7 +992,7 @@ impl JoinGraphBuilder {
                 .select(projections)
                 .expect("Computed projections could not be applied to relation")
                 .build();
-            Arc::new(Arc::unwrap_or_clone(projected_plan).with_materialized_stats())
+            Arc::new(Arc::unwrap_or_clone(projected_plan).with_materialized_stats(&self.cfg))
         } else {
             plan.clone()
         };
@@ -1007,6 +1010,7 @@ impl JoinGraphBuilder {
 mod tests {
     use std::sync::Arc;
 
+    use common_daft_config::DaftExecutionConfig;
     use common_scan_info::Pushdowns;
     use common_treenode::TransformedResult;
     use daft_core::prelude::*;
@@ -1064,9 +1068,10 @@ mod tests {
             .try_optimize(original_plan)
             .data()
             .unwrap();
-        let stats_enricher = EnrichWithStats::new();
+        let cfg = Arc::new(DaftExecutionConfig::default());
+        let stats_enricher = EnrichWithStats::new(Some(cfg.clone()));
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
+        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone(), cfg).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
@@ -1130,9 +1135,11 @@ mod tests {
             .try_optimize(original_plan)
             .data()
             .unwrap();
-        let stats_enricher = EnrichWithStats::new();
+        let cfg = Arc::new(DaftExecutionConfig::default());
+        let stats_enricher = EnrichWithStats::new(Some(cfg.clone()));
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
+        let join_graph =
+            JoinGraphBuilder::from_logical_plan(original_plan.clone(), cfg.clone()).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
@@ -1198,9 +1205,11 @@ mod tests {
             .try_optimize(original_plan)
             .data()
             .unwrap();
-        let stats_enricher = EnrichWithStats::new();
+        let cfg = Arc::new(DaftExecutionConfig::default());
+        let stats_enricher = EnrichWithStats::new(Some(cfg.clone()));
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
+        let join_graph =
+            JoinGraphBuilder::from_logical_plan(original_plan.clone(), cfg.clone()).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a_beta <-> b
@@ -1264,9 +1273,11 @@ mod tests {
             .try_optimize(original_plan)
             .data()
             .unwrap();
-        let stats_enricher = EnrichWithStats::new();
+        let cfg = Arc::new(DaftExecutionConfig::default());
+        let stats_enricher = EnrichWithStats::new(Some(cfg.clone()));
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
+        let join_graph =
+            JoinGraphBuilder::from_logical_plan(original_plan.clone(), cfg.clone()).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
@@ -1358,9 +1369,10 @@ mod tests {
             .try_optimize(original_plan)
             .data()
             .unwrap();
-        let stats_enricher = EnrichWithStats::new();
+        let cfg = Arc::new(DaftExecutionConfig::default());
+        let stats_enricher = EnrichWithStats::new(Some(cfg.clone()));
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
+        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone(), cfg).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
@@ -1445,9 +1457,10 @@ mod tests {
             .try_optimize(original_plan)
             .data()
             .unwrap();
-        let stats_enricher = EnrichWithStats::new();
+        let cfg = Arc::new(DaftExecutionConfig::default());
+        let stats_enricher = EnrichWithStats::new(Some(cfg.clone()));
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
+        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone(), cfg).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b

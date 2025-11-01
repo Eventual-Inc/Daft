@@ -95,7 +95,7 @@ class NativeRunner(Runner[MicroPartition]):
         # Optimize the logical plan.
         ctx._notify_query_start(query_id, PyQueryMetadata(output_schema._schema, repr(builder)))
         ctx._notify_optimization_start(query_id)
-        builder = builder.optimize()
+        builder = builder.optimize(ctx.daft_execution_config)
         ctx._notify_optimization_end(query_id, repr(builder))
 
         # NOTE: ENABLE FOR DAFT-PROTO TESTING

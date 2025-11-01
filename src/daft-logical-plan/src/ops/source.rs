@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_scan_info::{PhysicalScanInfo, ScanState};
 use daft_schema::schema::SchemaRef;
@@ -68,7 +69,7 @@ impl Source {
         Ok(self)
     }
 
-    pub(crate) fn with_materialized_stats(mut self) -> Self {
+    pub(crate) fn with_materialized_stats(mut self, cfg: &DaftExecutionConfig) -> Self {
         let approx_stats = match &*self.source_info {
             SourceInfo::InMemory(InMemoryInfo {
                 size_bytes,
@@ -88,11 +89,11 @@ impl Source {
                     for st in scan_tasks.iter() {
                         if let Some(num_rows) = st.num_rows() {
                             approx_stats.num_rows += num_rows;
-                        } else if let Some(approx_num_rows) = st.approx_num_rows(None) {
+                        } else if let Some(approx_num_rows) = st.approx_num_rows(Some(cfg)) {
                             approx_stats.num_rows += approx_num_rows as usize;
                         }
                         approx_stats.size_bytes +=
-                            st.estimate_in_memory_size_bytes(None).unwrap_or(0);
+                            st.estimate_in_memory_size_bytes(Some(cfg)).unwrap_or(0);
                     }
                     approx_stats.acc_selectivity = physical_scan_info
                         .pushdowns

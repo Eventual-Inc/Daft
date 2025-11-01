@@ -6,7 +6,9 @@ use std::{
     sync::Arc,
 };
 
-use common_daft_config::DaftPlanningConfig;
+#[cfg(feature = "python")]
+use common_daft_config::PyDaftExecutionConfig;
+use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig};
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
@@ -828,7 +830,10 @@ impl LogicalPlanBuilder {
 
     /// Async equivalent of `optimize`
     /// This is safe to call from a tokio runtime
-    pub fn optimize_async(&self) -> impl Future<Output = DaftResult<Self>> {
+    pub fn optimize_async(
+        &self,
+        execution_config: Arc<DaftExecutionConfig>,
+    ) -> impl Future<Output = DaftResult<Self>> {
         let cfg = self.config.clone();
 
         // Run LogicalPlan optimizations
@@ -849,10 +854,11 @@ impl LogicalPlanBuilder {
                     },
                 )
                 .with_default_optimizations()
+                .enrich_with_stats(Some(execution_config.clone()))
                 .when(
                     !cfg.as_ref()
                         .is_some_and(|conf| conf.disable_join_reordering),
-                    |builder| builder.reorder_joins(),
+                    |builder| builder.reorder_joins(Some(execution_config.clone())),
                 )
                 .simplify_expressions()
                 .split_granular_projections()
@@ -896,7 +902,7 @@ impl LogicalPlanBuilder {
     ///
     /// **Important**: Do not call this method from the main thread as there is a `block_on` call deep within this method
     /// Calling will result in a runtime panic
-    pub fn optimize(&self) -> DaftResult<Self> {
+    pub fn optimize(&self, execution_config: Arc<DaftExecutionConfig>) -> DaftResult<Self> {
         // TODO: remove the `block_on` to make this method safe to call from the main thread
 
         let cfg = self.config.clone();
@@ -916,10 +922,11 @@ impl LogicalPlanBuilder {
                 },
             )
             .with_default_optimizations()
+            .enrich_with_stats(Some(execution_config.clone()))
             .when(
                 !cfg.as_ref()
                     .is_some_and(|conf| conf.disable_join_reordering),
-                |builder| builder.reorder_joins(),
+                |builder| builder.reorder_joins(Some(execution_config)),
             )
             .simplify_expressions()
             .split_granular_projections()
@@ -1483,8 +1490,8 @@ impl PyLogicalPlanBuilder {
     }
 
     /// Optimize the underlying logical plan, returning a new plan builder containing the optimized plan.
-    pub fn optimize(&self, py: Python) -> PyResult<Self> {
-        py.detach(|| Ok(self.builder.optimize()?.into()))
+    pub fn optimize(&self, py: Python, execution_config: PyDaftExecutionConfig) -> PyResult<Self> {
+        py.detach(|| Ok(self.builder.optimize(execution_config.config)?.into()))
     }
 
     pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {

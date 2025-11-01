@@ -728,9 +728,8 @@ impl ScanTask {
                         .map_or_else(|| Cow::Owned(DaftExecutionConfig::default()), Cow::Borrowed);
                     let inflation_factor = match self.file_format_config.as_ref() {
                         FileFormatConfig::Parquet(_) => config.parquet_inflation_factor,
-                        FileFormatConfig::Csv(_) | FileFormatConfig::Json(_) => {
-                            config.csv_inflation_factor
-                        }
+                        FileFormatConfig::Csv(_) => config.csv_inflation_factor,
+                        FileFormatConfig::Json(_) => config.json_inflation_factor,
                         FileFormatConfig::Warc(_) => {
                             if self.is_gzipped() {
                                 5.0
