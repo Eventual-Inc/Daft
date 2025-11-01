@@ -20,7 +20,7 @@ jobs:
     env:
       python-version: '3.10'
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -29,7 +29,7 @@ jobs:
         key: ${{ runner.os }}-build
         cache-all-crates: 'true'
     - name: Setup Python and uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ env.python-version }}
         enable-cache: true
@@ -54,7 +54,7 @@ jobs:
         maturin develop --uv
         mkdocs build
     - name: Upload built docs
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: html-docs
         path: site
@@ -72,7 +72,7 @@ jobs:
       contains(github.event.pull_request.labels.*.name, 'docs')
     steps:
     - name: Download built HTML docs
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v6
       with:
         name: html-docs
         path: ./built_html
