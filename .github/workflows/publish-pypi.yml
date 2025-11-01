@@ -25,12 +25,14 @@ jobs:
       lts: ${{ matrix.lts }}
       build_type: release
       run_tests: true
+      use_free_threaded: ${{ matrix.free_threaded }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu, macos, windows]
         arch: [x86_64, aarch64]
         lts: [false, true]
+        free_threaded: [false, true]
 
         exclude:
         - os: windows

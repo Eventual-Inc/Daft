@@ -79,7 +79,7 @@ impl FileFormatConfig {
 
 /// Configuration for a Parquet data source.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", frozen))]
 pub struct ParquetSourceConfig {
     pub coerce_int96_timestamp_unit: TimeUnit,
 
@@ -181,7 +181,7 @@ impl_bincode_py_state_serialization!(ParquetSourceConfig);
 
 /// Configuration for a CSV data source.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all, frozen))]
 pub struct CsvSourceConfig {
     pub delimiter: Option<char>,
     pub has_headers: bool,
@@ -279,7 +279,7 @@ impl_bincode_py_state_serialization!(CsvSourceConfig);
 
 /// Configuration for a JSON data source.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all, frozen))]
 pub struct JsonSourceConfig {
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
@@ -334,7 +334,7 @@ impl_bincode_py_state_serialization!(JsonSourceConfig);
 /// Configuration for a Database data source.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg(feature = "python")]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", frozen))]
 pub struct DatabaseSourceConfig {
     pub sql: String,
     #[serde(
@@ -396,7 +396,7 @@ impl_bincode_py_state_serialization!(DatabaseSourceConfig);
 
 /// Configuration for a Warc data source.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all, frozen))]
 pub struct WarcSourceConfig {}
 
 impl WarcSourceConfig {

@@ -20,7 +20,7 @@ use crate::{
     preview::{Preview, PreviewFormat, PreviewOptions},
 };
 
-#[pyclass]
+#[pyclass(frozen)]
 #[derive(Clone)]
 pub struct PyRecordBatch {
     pub record_batch: RecordBatch,

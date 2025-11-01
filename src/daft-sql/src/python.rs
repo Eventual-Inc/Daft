@@ -9,7 +9,7 @@ use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{exec::execute_statement, functions::SQL_FUNCTIONS, schema::try_parse_dtype};
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct SQLFunctionStub {
     name: String,
     docstring: String,

@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 /// Resource request for a query fragment task.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", frozen))]
 pub struct ResourceRequest {
     num_cpus: Option<f64>,
     num_gpus: Option<f64>,

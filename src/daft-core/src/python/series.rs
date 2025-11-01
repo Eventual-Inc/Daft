@@ -30,7 +30,7 @@ use crate::{
     },
 };
 
-#[pyclass]
+#[pyclass(frozen)]
 #[derive(Clone)]
 pub struct PySeries {
     pub series: series::Series,

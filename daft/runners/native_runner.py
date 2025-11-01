@@ -46,7 +46,7 @@ class NativeRunnerIO(runner_io.RunnerIO):
         for source_path in set(source_paths):
             try:
                 path_file_infos = glob_path_with_stats(source_path, file_format, io_config)
-                file_infos.merge(path_file_infos)
+                file_infos = file_infos.merge(path_file_infos)
             except FileNotFoundError:
                 logger.debug("%s is not found.", source_path)
 

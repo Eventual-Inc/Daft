@@ -105,7 +105,7 @@ pub mod pylib {
         Ok(())
     }
 
-    #[pymodule]
+    #[pymodule(gil_used = false)]
     fn daft(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         refresh_logger(py)?;
         init_opentelemetry_providers();

@@ -1,4 +1,7 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use common_daft_config::DaftExecutionConfig;
 use common_partitioning::PartitionCacheEntry;
@@ -13,16 +16,16 @@ use {
 
 use crate::PhysicalPlanScheduler;
 /// A work scheduler for physical plans.
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", frozen))]
 pub struct AdaptivePhysicalPlanScheduler {
-    planner: AdaptivePlanner,
+    planner: Mutex<AdaptivePlanner>,
 }
 
 impl AdaptivePhysicalPlanScheduler {
     #[must_use]
     pub fn new(logical_plan: Arc<LogicalPlan>, cfg: Arc<DaftExecutionConfig>) -> Self {
         Self {
-            planner: AdaptivePlanner::new(logical_plan, cfg),
+            planner: Mutex::new(AdaptivePlanner::new(logical_plan, cfg)),
         }
     }
 }
@@ -41,20 +44,28 @@ impl AdaptivePhysicalPlanScheduler {
             Ok(Self::new(logical_plan, cfg.config.clone()))
         })
     }
-    pub fn next(&mut self, py: Python) -> PyResult<(Option<usize>, PhysicalPlanScheduler)> {
+    pub fn next(&self, py: Python) -> PyResult<(Option<usize>, PhysicalPlanScheduler)> {
         py.detach(|| {
-            let output = self.planner.next_stage()?;
+            let mut planner = self
+                .planner
+                .lock()
+                .expect("Failed to acquire lock for AdaptivePlanner");
+            let output = planner.next_stage()?;
             let sid = output.stage_id();
             Ok((sid, output.into()))
         })
     }
 
     pub fn is_done(&self) -> PyResult<bool> {
-        Ok(self.planner.is_done())
+        let planner = self
+            .planner
+            .lock()
+            .expect("Failed to acquire lock for AdaptivePlanner");
+        Ok(planner.is_done())
     }
     #[allow(clippy::too_many_arguments)]
     pub fn update(
-        &mut self,
+        &self,
         stage_id: usize,
         partition_key: &str,
         cache_entry: pyo3::Py<pyo3::PyAny>,
@@ -75,7 +86,11 @@ impl AdaptivePhysicalPlanScheduler {
                 Some(stage_id),
             );
 
-            self.planner.update(MaterializedResults {
+            let mut planner = self
+                .planner
+                .lock()
+                .expect("Failed to acquire lock for AdaptivePlanner");
+            planner.update(MaterializedResults {
                 stage_id,
                 in_memory_info,
             })?;
@@ -85,7 +100,7 @@ impl AdaptivePhysicalPlanScheduler {
 
     #[pyo3(signature = (time_taken, size_bytes, num_rows, stage_id=None))]
     pub fn update_stats(
-        &mut self,
+        &self,
         time_taken: f64,
         size_bytes: Option<usize>,
         num_rows: Option<usize>,
@@ -96,12 +111,20 @@ impl AdaptivePhysicalPlanScheduler {
             size_bytes,
             num_rows,
         };
-        self.planner.update_stats(stats, stage_id)?;
+        let mut planner = self
+            .planner
+            .lock()
+            .expect("Failed to acquire lock for AdaptivePlanner");
+        planner.update_stats(stats, stage_id)?;
         Ok(())
     }
 
-    pub fn explain_analyze(&mut self, explain_analyze_dir: &str) -> PyResult<()> {
-        self.planner.explain_analyze(explain_analyze_dir)?;
+    pub fn explain_analyze(&self, explain_analyze_dir: &str) -> PyResult<()> {
+        let mut planner = self
+            .planner
+            .lock()
+            .expect("Failed to acquire lock for AdaptivePlanner");
+        planner.explain_analyze(explain_analyze_dir)?;
         Ok(())
     }
 }
