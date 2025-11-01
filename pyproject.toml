@@ -48,9 +48,8 @@ openai = ["openai"]
 pandas = ["pandas"]
 ray = [
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
-  # TODO: we temporarily limit ray<2.48.0 because https://github.com/Eventual-Inc/Daft/issues/5027
-  'ray[data, client]>=2.0.0, <2.48.0 ; platform_system != "Windows"',
-  'ray[data, client]>=2.10.0, <2.48.0 ; platform_system == "Windows"'  # ray 2.10 has the pyarrow upper pin removed
+  'ray[data, client]>=2.0.0; platform_system != "Windows"',
+  'ray[data, client]>=2.10.0; platform_system == "Windows"'  # ray 2.10 has the pyarrow upper pin removed
 ]
 transformers = ["transformers", "sentence-transformers", "torch", "torchvision", "tensorflow"]
 spark = ["googleapis-common-protos >= 1.56.4", "grpcio >= 1.48", "grpcio-status >= 1.48", "numpy >= 1.15", "pandas >= 1.0.5", "py4j >= 0.10.9.7", "pyspark == 3.5.5"]
@@ -101,10 +100,11 @@ dev = [
   "jax>=0.4.30",
   "jaxtyping>=0.2.36",
   # Pyarrow
-  "pyarrow==20.0.0",
-  "pyarrow-stubs==19.4",
+  "pyarrow==17.0.0",
+  "pyarrow-stubs==17.19",
   # Ray
-  "ray[data, client]==2.34.0",
+  "ray[data, client]==2.45.0; python_version >= '3.13'",
+  "ray[data, client]==2.34.0; python_version < '3.13'",
   # Lance
   "pylance>=0.37.0",
   # Iceberg
