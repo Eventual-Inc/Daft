@@ -6,6 +6,9 @@ use tracing_subscriber::{self, filter::Directive, layer::SubscriberExt, util::Su
 
 #[derive(Debug, Args)]
 struct DashboardArgs {
+    /// The address to launch the dashboard on
+    #[arg(short, long, default_value = "127.0.0.1")]
+    addr: String,
     #[arg(short, long, default_value_t = 80)]
     /// The port to launch the dashboard on
     port: u16,
@@ -57,25 +60,24 @@ fn run_dashboard(py: Python, args: DashboardArgs) {
             console::style("█").magenta(),
             console::style(format!(
                 "DAFT_DASHBOARD_URL=\"http://{}:{}\" python ...",
-                daft_dashboard::DEFAULT_SERVER_ADDR,
-                args.port
+                &args.addr, args.port
             ))
             .bold(),
         );
         println!(
             "✨ View the dashboard at {}. Press Ctrl+C to shutdown",
-            console::style(format!(
-                "http://{}:{}",
-                daft_dashboard::DEFAULT_SERVER_ADDR,
-                args.port
-            ))
-            .bold()
-            .magenta()
-            .underlined(),
+            console::style(format!("http://{}:{}", &args.addr, args.port))
+                .bold()
+                .magenta()
+                .underlined(),
         );
-        daft_dashboard::launch_server(args.port, async move { shutdown_rx.await.unwrap() })
-            .await
-            .expect("Failed to launch dashboard server");
+        daft_dashboard::launch_server(
+            &args.addr,
+            args.port,
+            async move { shutdown_rx.await.unwrap() },
+        )
+        .await
+        .expect("Failed to launch dashboard server");
     });
 
     loop {

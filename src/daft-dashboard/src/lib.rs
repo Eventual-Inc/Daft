@@ -5,7 +5,7 @@ pub mod engine;
 pub mod python;
 pub(crate) mod state;
 
-use std::{net::Ipv4Addr, sync::Arc};
+use std::{net::IpAddr, sync::Arc};
 
 use axum::{
     Json, Router,
@@ -28,7 +28,7 @@ use tracing::Level;
 
 use crate::state::{DashboardState, GLOBAL_DASHBOARD_STATE};
 
-pub const DEFAULT_SERVER_ADDR: Ipv4Addr = Ipv4Addr::UNSPECIFIED;
+pub const DEFAULT_SERVER_ADDR: &str = "::";
 pub const DEFAULT_SERVER_PORT: u16 = 3238;
 
 fn generate_interactive_html(
@@ -274,9 +274,15 @@ async fn ping() -> StatusCode {
 }
 
 pub async fn launch_server(
+    addr: &str,
     port: u16,
     shutdown_fn: impl Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
+    // parse the addr to either v4 or v6 address
+    let addr = addr
+        .parse::<IpAddr>()
+        .unwrap_or_else(|_| panic!("Failed to parse address: {}", addr));
+
     let app = Router::new()
         .nest("/engine", engine::routes())
         .nest("/client", client::routes())
@@ -303,7 +309,7 @@ pub async fn launch_server(
         .with_state(GLOBAL_DASHBOARD_STATE.clone());
 
     // Start the server
-    let listener = TcpListener::bind((DEFAULT_SERVER_ADDR, port)).await?;
+    let listener = TcpListener::bind((addr, port)).await?;
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_fn)
         .await
