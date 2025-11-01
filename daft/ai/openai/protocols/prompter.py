@@ -106,28 +106,21 @@ class OpenAIPrompter(Prompter):
         else:
             raise ValueError(f"Unsupported image type in prompt: {type(image)}")
 
-    async def prompt(self, input_text: str, input_image: Any | None = None) -> Any:
+    async def prompt(self, messages: tuple[Any, ...]) -> Any:
         """Generate responses for a batch of message strings."""
         # Each message is a string prompt
         messages_list = []
         if self.system_message is not None:
             messages_list.append({"role": "system", "content": self.system_message})
 
-        if input_image is None:
-            messages_list.append({"role": "user", "content": input_text})
-        else:
-            messages_list.append(
-                {
-                    "role": "user",
-                    "content": [  # type: ignore[dict-item]
-                        {"type": "input_text", "text": input_text},
-                        {
-                            "type": "input_image",
-                            "image_url": self._encode_image(input_image),
-                        },
-                    ],
-                }
-            )
+        content = []
+        for message in messages:
+            if isinstance(message, str):
+                content.append({"type": "input_text", "text": message})
+            else:
+                content.append({"type": "input_image", "image_url": self._encode_image(message)})
+
+        messages_list.append({"role": "user", "content": content})
 
         if self.return_format is not None:
             # Use structured outputs with Pydantic model

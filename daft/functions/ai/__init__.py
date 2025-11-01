@@ -403,8 +403,7 @@ def classify_image(
 
 
 def prompt(
-    input_text: Expression,
-    input_image: Expression | None = None,
+    messages: list[Expression],
     return_format: BaseModel | None = None,
     *,
     system_message: str | None = None,
@@ -415,8 +414,7 @@ def prompt(
     """Returns an expression that prompts a large language model using the specified model and provider.
 
     Args:
-        input_text (Expression): The input text column expression.
-        input_image (Expression | None): The input image column expression.
+        messages (list[Expression]): The list of messages to prompt the model with.
         return_format (BaseModel | None): The return format for the prompt.
         system_message (str | None): The system message for the prompt.
         provider (str | Provider | None): The provider to use for the prompt.
@@ -559,4 +557,4 @@ def prompt(
     instance = wrapped_cls(prompter_descriptor)
 
     # Call the instance (which calls __call__ method) with the messages expression
-    return instance(input_text, input_image)
+    return instance(*messages)

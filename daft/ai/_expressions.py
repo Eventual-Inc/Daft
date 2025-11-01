@@ -88,5 +88,5 @@ class _PrompterExpression:
     def __init__(self, prompter: PrompterDescriptor):
         self.prompter = prompter.instantiate()
 
-    async def prompt(self, input_text: str, input_image: Image | None = None) -> Any:
-        return await self.prompter.prompt(input_text, input_image)
+    async def prompt(self, *messages: Any) -> Any:
+        return await self.prompter.prompt(messages)
