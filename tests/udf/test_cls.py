@@ -296,3 +296,61 @@ def test_cls_async_batch_method(concurrency):
     processor = AsyncBatchProcessor(delay=0.01)
     result = df.select(processor.process(df["a"]))
     assert sorted(result.to_pydict()["a"]) == [1, 2, 3]
+
+
+def test_cls_input_dtype_validation():
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [4.0, 5.0, 6.0]})
+
+    @daft.cls
+    class Validation:
+        def __call__(self, a: int, b: float) -> float:
+            return float(a)
+
+        @daft.method
+        def all_typed(self, a: int, b: float) -> float:
+            return float(a)
+
+        @daft.method
+        def no_types(self, a, b) -> float:
+            return float(a)
+
+        @daft.method
+        def types_and_kwargs(self, a: int, b: float, *, c: int) -> float:
+            return float(a)
+
+        @daft.method
+        def kwargs_only(self, *, a: int, b: float) -> float:
+            return float(a)
+
+        @daft.method
+        def types_and_kwarg_defaults(self, a: int, *, b: float, c: int = 0) -> float:
+            return float(a)
+
+    v = Validation()
+    df.select(v(df["x"], df["y"])).collect()
+
+    df.select(v.all_typed(df["x"], df["y"])).collect()
+    df.select(v.no_types(df["x"], df["y"])).collect()
+    df.select(v.types_and_kwargs(df["x"], df["y"], c=1)).collect()
+    df.select(v.types_and_kwargs(df["x"], b=df["y"], c=1)).collect()
+    df.select(v.types_and_kwargs(a=df["x"], b=df["y"], c=1)).collect()
+    df.select(v.types_and_kwarg_defaults(a=df["x"], b=df["y"], c=1)).collect()
+    df.select(
+        v.types_and_kwarg_defaults(
+            a=df["x"],
+            b=df["y"],
+        )
+    ).collect()
+    df.select(v.kwargs_only(a=df["x"], b=df["y"])).collect()
+
+    with pytest.raises(daft.exceptions.DaftCoreException, match="to be Float64, but received Int64"):
+        df.select(v(df["x"], df["x"]))
+
+    with pytest.raises(daft.exceptions.DaftCoreException, match="to be Float64, but received Int64"):
+        df.select(v.all_typed(df["x"], df["x"]))
+
+    with pytest.raises(daft.exceptions.DaftCoreException, match="to be Float64, but received Int64"):
+        df.select(v.kwargs_only(a=df["x"], b=df["x"]))
+
+    with pytest.raises(daft.exceptions.DaftCoreException, match="to be Float64, but received Int64"):
+        df.select(v.types_and_kwarg_defaults(df["x"], b=df["x"]))

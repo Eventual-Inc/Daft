@@ -373,6 +373,7 @@ message ScalarFn {
       bool is_async = 9;
       optional uint64 max_retries = 10;
       optional string on_error = 11;
+      repeated DataType input_dtypes = 12;
     }
 
     message BatchFn {

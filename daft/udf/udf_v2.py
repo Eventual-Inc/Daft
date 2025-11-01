@@ -69,6 +69,7 @@ class Func(Generic[P, T, C]):
     max_retries: int | None
     on_error: str | None
     return_dtype: DataType
+    input_dtypes: dict[str, DataType]
     name: str = field(init=False)
 
     @classmethod
@@ -98,6 +99,7 @@ class Func(Generic[P, T, C]):
         is_async = inspect.iscoroutinefunction(fn)
 
         return_dtype = cls._get_return_dtype(fn, return_dtype, is_generator, is_batch)
+        input_dtypes = cls._get_input_dtypes(fn)
 
         return Func(
             NoopCls(),
@@ -113,6 +115,7 @@ class Func(Generic[P, T, C]):
             max_retries,
             on_error,
             return_dtype,
+            input_dtypes,
         )
 
     @classmethod
@@ -134,6 +137,7 @@ class Func(Generic[P, T, C]):
         batch_size = getattr(method, BATCH_SIZE_ATTR, None)
         return_dtype = getattr(method, RETURN_DTYPE_ATTR, None)
         return_dtype = cls._get_return_dtype(method, return_dtype, is_generator, is_batch)
+        input_dtypes = cls._get_input_dtypes(method)
         return cls(
             cls_,
             method,
@@ -148,6 +152,7 @@ class Func(Generic[P, T, C]):
             max_retries,
             on_error,
             return_dtype,
+            input_dtypes,
         )
 
     def __post_init__(self) -> None:
@@ -174,6 +179,20 @@ class Func(Generic[P, T, C]):
             return f"{module_name}.{qual_name}-{uuid.uuid4()}"
         else:
             return f"{qual_name}-{uuid.uuid4()}"
+
+    @staticmethod
+    def _get_input_dtypes(fn: Callable[..., Any]) -> dict[str, DataType]:
+        type_hints = get_type_hints(fn)
+        sig = inspect.signature(fn)
+        input_dtypes = {}
+        for param_name in sig.parameters:
+            if param_name == "self":
+                continue
+            if param_name not in type_hints:
+                input_dtypes[param_name] = DataType.python()
+            else:
+                input_dtypes[param_name] = DataType._infer(type_hints[param_name])
+        return input_dtypes
 
     @staticmethod
     def _get_return_dtype(
@@ -211,12 +230,19 @@ class Func(Generic[P, T, C]):
 
     def __call__(self, *args: Any, **kwargs: Any) -> Expression | T:
         expr_args = []
+        input_dtypes = []
+
+        tmp_dtypes_iter = iter(self.input_dtypes.values())
+
         for arg in args:
             if isinstance(arg, Expression):
                 expr_args.append(arg._expr)
-        for arg in kwargs.values():
+                input_dtypes.append(next(tmp_dtypes_iter)._dtype)
+
+        for key, arg in kwargs.items():
             if isinstance(arg, Expression):
                 expr_args.append(arg._expr)
+                input_dtypes.append(self.input_dtypes[key]._dtype)
 
         # evaluate the function eagerly if there are no expression arguments
         if len(expr_args) == 0:
@@ -252,6 +278,7 @@ class Func(Generic[P, T, C]):
                     self.on_error,
                     (args, kwargs),
                     expr_args,
+                    input_dtypes,
                 )
             ).explode()
         elif self.is_batch:
@@ -287,6 +314,7 @@ class Func(Generic[P, T, C]):
                     self.on_error,
                     (args, kwargs),
                     expr_args,
+                    input_dtypes,
                 )
             )
 

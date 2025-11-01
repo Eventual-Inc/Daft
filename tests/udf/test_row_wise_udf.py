@@ -316,3 +316,97 @@ def test_row_wise_async_udf_use_process():
     df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
     async_df = df.select(my_async_stringify_and_sum(col("x"), col("y")))
     assert sorted(async_df.to_pydict()["x"]) == ["5", "7", "9"]
+
+
+def test_rowwise_input_dtype_validation():
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [4.0, 5.0, 6.0]})
+
+    @daft.func
+    def all_typed(a: int, b: float) -> float:
+        return float(a)
+
+    @daft.func
+    def no_types(a, b) -> float:
+        return float(a)
+
+    @daft.func
+    def types_and_kwargs(a: int, b: float, *, c: int) -> float:
+        return float(a)
+
+    @daft.func
+    def kwargs_only(*, a: int, b: float) -> float:
+        return float(a)
+
+    @daft.func
+    def types_and_kwarg_defaults(a: int, *, b: float, c: int = 0) -> float:
+        return float(a)
+
+    df.select(all_typed(df["x"], df["y"])).collect()
+    df.select(no_types(df["x"], df["y"])).collect()
+    df.select(types_and_kwargs(df["x"], df["y"], c=1)).collect()
+    df.select(types_and_kwargs(df["x"], b=df["y"], c=1)).collect()
+    df.select(types_and_kwargs(a=df["x"], b=df["y"], c=1)).collect()
+    df.select(types_and_kwarg_defaults(a=df["x"], b=df["y"], c=1)).collect()
+    df.select(
+        types_and_kwarg_defaults(
+            a=df["x"],
+            b=df["y"],
+        )
+    ).collect()
+    df.select(kwargs_only(a=df["x"], b=df["y"])).collect()
+
+    with pytest.raises(daft.exceptions.DaftCoreException, match="to be Float64, but received Int64"):
+        df.select(all_typed(df["x"], df["x"]))
+
+    with pytest.raises(daft.exceptions.DaftCoreException, match="to be Float64, but received Int64"):
+        df.select(kwargs_only(a=df["x"], b=df["x"]))
+
+    with pytest.raises(daft.exceptions.DaftCoreException, match="to be Float64, but received Int64"):
+        df.select(types_and_kwarg_defaults(df["x"], b=df["x"]))
+
+
+def test_rowwise_async_input_dtype_validation():
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [4.0, 5.0, 6.0]})
+
+    @daft.func
+    async def all_typed(a: int, b: float) -> float:
+        return float(a)
+
+    @daft.func
+    async def no_types(a, b) -> float:
+        return float(a)
+
+    @daft.func
+    async def types_and_kwargs(a: int, b: float, *, c: int) -> float:
+        return float(a)
+
+    @daft.func
+    async def kwargs_only(*, a: int, b: float) -> float:
+        return float(a)
+
+    @daft.func
+    async def types_and_kwarg_defaults(a: int, *, b: float, c: int = 0) -> float:
+        return float(a)
+
+    df.select(all_typed(df["x"], df["y"])).collect()
+    df.select(no_types(df["x"], df["y"])).collect()
+    df.select(types_and_kwargs(df["x"], df["y"], c=1)).collect()
+    df.select(types_and_kwargs(df["x"], b=df["y"], c=1)).collect()
+    df.select(types_and_kwargs(a=df["x"], b=df["y"], c=1)).collect()
+    df.select(types_and_kwarg_defaults(a=df["x"], b=df["y"], c=1)).collect()
+    df.select(
+        types_and_kwarg_defaults(
+            a=df["x"],
+            b=df["y"],
+        )
+    ).collect()
+    df.select(kwargs_only(a=df["x"], b=df["y"])).collect()
+
+    with pytest.raises(daft.exceptions.DaftCoreException, match="to be Float64, but received Int64"):
+        df.select(all_typed(df["x"], df["x"]))
+
+    with pytest.raises(daft.exceptions.DaftCoreException, match="to be Float64, but received Int64"):
+        df.select(kwargs_only(a=df["x"], b=df["x"]))
+
+    with pytest.raises(daft.exceptions.DaftCoreException, match="to be Float64, but received Int64"):
+        df.select(types_and_kwarg_defaults(df["x"], b=df["x"]))
