@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime
 import decimal
-from typing import NamedTuple
+from typing import NamedTuple, TypedDict
 
 import jax
 import jaxtyping
@@ -14,7 +14,6 @@ import pytest
 import tensorflow
 import torch
 from pydantic import BaseModel, Field, computed_field
-from typing_extensions import TypedDict
 
 from daft import DataType as dt
 from daft import Series

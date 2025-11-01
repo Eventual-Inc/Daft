@@ -80,7 +80,7 @@ def udf_event_loop(
             tb = "\n".join(TracebackException.from_exception(e).format())
         except Exception:
             # If serialization fails, just send the exception's repr
-            # This sometimes happens on 3.9 & 3.10, but unclear why
+            # This sometimes happens on 3.10, but unclear why
             # The repr doesn't contain the full traceback
             tb = repr(e)
 
