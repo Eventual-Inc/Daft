@@ -73,6 +73,7 @@ impl ConnectSession {
             mut http,
             unity,
             hf,
+            disable_suffix_range,
         } = get_context().io_config();
 
         self.s3_config_helper(&mut s3)?;
@@ -87,6 +88,7 @@ impl ConnectSession {
             http,
             unity,
             hf,
+            disable_suffix_range,
         })
     }
 
