@@ -344,14 +344,13 @@ impl SQLPlanner<'_> {
                         with: None,
                         body: Box::new(expr.clone()),
                         order_by: None,
-                        limit: None,
-                        limit_by: vec![],
-                        offset: None,
+                        limit_clause: None,
                         fetch: None,
                         locks: vec![],
                         for_clause: None,
                         settings: None,
                         format_clause: None,
+                        pipe_operators: vec![],
                     }
                 }
 
@@ -393,6 +392,8 @@ impl SQLPlanner<'_> {
             SetExpr::Insert(..) => unsupported_sql_err!("INSERT is not supported"),
             SetExpr::Update(..) => unsupported_sql_err!("UPDATE is not supported"),
             SetExpr::Table(..) => unsupported_sql_err!("TABLE is not supported"),
+            SetExpr::Delete(..) => unsupported_sql_err!("DELETE is not supported"),
+            SetExpr::Merge(..) => unsupported_sql_err!("MERGE is not supported"),
         };
         check_select_features(selection)?;
 
@@ -455,7 +456,12 @@ impl SQLPlanner<'_> {
                     unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
                 }
 
-                self.plan_order_by_exprs(&order_by.exprs)
+                match &order_by.kind {
+                    ast::OrderByKind::Expressions(exprs) => self.plan_order_by_exprs(exprs),
+                    ast::OrderByKind::All(_) => {
+                        unsupported_sql_err!("ORDER BY ALL is not supported")
+                    }
+                }
             })
             .transpose()?;
 
@@ -490,34 +496,40 @@ impl SQLPlanner<'_> {
         // Daft's SQL dialect closely follows both DuckDB and PostgreSQL, So unlike DataFrame, when
         // LIMIT and OFFSET appear at the same time, we need to ignore the order of LIMIT and OFFSET
         // and ensure that OFFSET is a child node of LIMIT.
-        if let Some(offset) = &query.offset {
-            let offset_expr = self.plan_expr(&offset.value)?;
-            match offset_expr.as_ref() {
-                Expr::Literal(Literal::Int64(offset)) if *offset >= 0 => {
-                    self.update_plan(|plan| plan.offset(*offset as u64))?;
+        if let Some(limit_clause) = &query.limit_clause {
+            match limit_clause {
+                ast::LimitClause::LimitOffset { offset, limit, .. } => {
+                    if let Some(offset) = offset {
+                        let offset_expr = self.plan_expr(&offset.value)?;
+                        match offset_expr.as_ref() {
+                            Expr::Literal(Literal::Int64(offset)) if *offset >= 0 => {
+                                self.update_plan(|plan| plan.offset(*offset as u64))?;
+                            }
+                            Expr::Literal(Literal::Int64(offset)) => invalid_operation_err!(
+                                "OFFSET <n> must be greater than or equal to 0, instead got: {offset}"
+                            ),
+                            _ => invalid_operation_err!(
+                                "OFFSET <n> must be a constant integer, instead got: {offset_expr}"
+                            ),
+                        }
+                    }
+                    if let Some(limit) = limit {
+                        let limit_expr = self.plan_expr(limit)?;
+                        match limit_expr.as_ref() {
+                            Expr::Literal(Literal::Int64(limit)) if *limit >= 0 => {
+                                // TODO: Should this be eager or not?
+                                self.update_plan(|plan| plan.limit(*limit as u64, true))?;
+                            }
+                            Expr::Literal(Literal::Int64(limit)) => invalid_operation_err!(
+                                "LIMIT <n> must be greater than or equal to 0, instead got: {limit}"
+                            ),
+                            _ => invalid_operation_err!(
+                                "LIMIT <n> must be a constant integer, instead got: {limit_expr}"
+                            ),
+                        }
+                    }
                 }
-                Expr::Literal(Literal::Int64(offset)) => invalid_operation_err!(
-                    "OFFSET <n> must be greater than or equal to 0, instead got: {offset}"
-                ),
-                _ => invalid_operation_err!(
-                    "OFFSET <n> must be a constant integer, instead got: {offset_expr}"
-                ),
-            }
-        }
-
-        if let Some(limit) = &query.limit {
-            let limit_expr = self.plan_expr(limit)?;
-            match limit_expr.as_ref() {
-                Expr::Literal(Literal::Int64(limit)) if *limit >= 0 => {
-                    // TODO: Should this be eager or not?
-                    self.update_plan(|plan| plan.limit(*limit as u64, true))?;
-                }
-                Expr::Literal(Literal::Int64(limit)) => invalid_operation_err!(
-                    "LIMIT <n> must be greater than or equal to 0, instead got: {limit}"
-                ),
-                _ => invalid_operation_err!(
-                    "LIMIT <n> must be a constant integer, instead got: {limit_expr}"
-                ),
+                _ => unsupported_sql_err!("Unsupported LIMIT clause syntax"),
             }
         }
 
@@ -531,7 +543,11 @@ impl SQLPlanner<'_> {
     ) -> SQLPlannerResult<Vec<ExprRef>> {
         let mut group_by_items = vec![];
         for expr in exprs {
-            if let ast::Expr::Value(ast::Value::Number(number, _)) = expr {
+            if let ast::Expr::Value(ast::ValueWithSpan {
+                value: ast::Value::Number(number, _),
+                ..
+            }) = expr
+            {
                 let pos: usize = match number.parse() {
                     Ok(p) => p,
                     Err(_) => invalid_argument_err!(
@@ -724,7 +740,7 @@ impl SQLPlanner<'_> {
         let mut descending = Vec::with_capacity(expr.len());
         let mut nulls_first = Vec::with_capacity(expr.len());
         for order_by_expr in expr {
-            match (order_by_expr.asc, order_by_expr.nulls_first) {
+            match (order_by_expr.options.asc, order_by_expr.options.nulls_first) {
                 // ---------------------------
                 // all of these are equivalent
                 // ---------------------------
@@ -791,7 +807,9 @@ impl SQLPlanner<'_> {
         for join in &from.joins {
             use sqlparser::ast::{
                 JoinConstraint,
-                JoinOperator::{FullOuter, Inner, LeftAnti, LeftOuter, LeftSemi, RightOuter},
+                JoinOperator::{
+                    FullOuter, Inner, Join, Left, LeftAnti, LeftOuter, LeftSemi, Right, RightOuter,
+                },
             };
 
             let right_plan = self.plan_relation(&join.relation)?;
@@ -802,13 +820,15 @@ impl SQLPlanner<'_> {
             }
 
             let (join_type, constraint) = match &join.join_operator {
+                Join(constraint) => (JoinType::Inner, constraint),
                 Inner(constraint) => (JoinType::Inner, constraint),
+                Left(constraint) => (JoinType::Left, constraint),
                 LeftOuter(constraint) => (JoinType::Left, constraint),
+                Right(constraint) => (JoinType::Right, constraint),
                 RightOuter(constraint) => (JoinType::Right, constraint),
                 FullOuter(constraint) => (JoinType::Outer, constraint),
                 LeftSemi(constraint) => (JoinType::Semi, constraint),
                 LeftAnti(constraint) => (JoinType::Anti, constraint),
-
                 _ => unsupported_sql_err!("Unsupported join type: {:?}", join.join_operator),
             };
 
@@ -821,7 +841,15 @@ impl SQLPlanner<'_> {
                     (Some(on_expr), vec![])
                 }
                 JoinConstraint::Using(idents) => {
-                    let using = idents.iter().map(|i| i.value.clone()).collect::<Vec<_>>();
+                    let using = idents
+                        .iter()
+                        .flat_map(|object_name| {
+                            object_name.0.iter().map(|part| match part {
+                                ast::ObjectNamePart::Identifier(ident) => ident.value.clone(),
+                                ast::ObjectNamePart::Function(func) => func.name.value.clone(),
+                            })
+                        })
+                        .collect::<Vec<_>>();
 
                     (None, using)
                 }
@@ -894,7 +922,10 @@ impl SQLPlanner<'_> {
                 alias,
                 ..
             } => {
-                let tbl_fn = name.0.first().unwrap().value.as_str();
+                let tbl_fn = match name.0.first().unwrap() {
+                    ast::ObjectNamePart::Identifier(ident) => ident.value.as_str(),
+                    ast::ObjectNamePart::Function(func) => func.name.value.as_str(),
+                };
                 (self.plan_table_function(tbl_fn, args)?, alias)
             }
             sqlparser::ast::TableFactor::Table {
@@ -904,7 +935,11 @@ impl SQLPlanner<'_> {
                 ..
             } => {
                 let plan = if is_table_path(name) {
-                    self.plan_relation_path(name.0[0].value.as_str())?
+                    let path = match &name.0[0] {
+                        ast::ObjectNamePart::Identifier(ident) => ident.value.as_str(),
+                        ast::ObjectNamePart::Function(func) => func.name.value.as_str(),
+                    };
+                    self.plan_relation_path(path)?
                 } else {
                     self.plan_relation_table(name)?
                 };
@@ -946,6 +981,15 @@ impl SQLPlanner<'_> {
             sqlparser::ast::TableFactor::MatchRecognize { .. } => {
                 unsupported_sql_err!("Unsupported table factor: MatchRecognize")
             }
+            sqlparser::ast::TableFactor::OpenJsonTable { .. } => {
+                unsupported_sql_err!("Unsupported table factor: OpenJsonTable")
+            }
+            sqlparser::ast::TableFactor::XmlTable { .. } => {
+                unsupported_sql_err!("Unsupported table factor: XmlTable")
+            }
+            sqlparser::ast::TableFactor::SemanticView { .. } => {
+                unsupported_sql_err!("Unsupported table factor: SemanticView")
+            }
         };
         if let Some(alias) = alias {
             apply_table_alias(plan, alias)
@@ -966,7 +1010,7 @@ impl SQLPlanner<'_> {
         };
         let args = TableFunctionArgs {
             args: vec![FunctionArg::Unnamed(FunctionArgExpr::Expr(
-                ast::Expr::Value(Value::SingleQuotedString(path.to_string())),
+                ast::Expr::Value(Value::SingleQuotedString(path.to_string()).into()),
             ))],
             settings: None,
         };
@@ -978,9 +1022,13 @@ impl SQLPlanner<'_> {
         let normalizer = self.session().normalizer();
         let mut path = vec![];
         for part in &name.0 {
-            let part = match part.quote_style {
-                Some('"') => part.value.clone(),
-                None => normalizer(&part.value),
+            let ident = match part {
+                ast::ObjectNamePart::Identifier(ident) => ident,
+                ast::ObjectNamePart::Function(func) => &func.name,
+            };
+            let part = match ident.quote_style {
+                Some('"') => ident.value.clone(),
+                None => normalizer(&ident.value),
                 Some(c) => unsupported_sql_err!(
                     "Daft only supports delimited identifiers with double-quotes, found {}",
                     c
@@ -1168,8 +1216,14 @@ impl SQLPlanner<'_> {
                 }
             }
             // TODO: support wildcard struct gets
-            SelectItem::QualifiedWildcard(object_name, wildcard_opts) => {
+            SelectItem::QualifiedWildcard(kind, wildcard_opts) => {
                 check_wildcard_options(wildcard_opts)?;
+                let object_name = match kind {
+                    ast::SelectItemQualifiedWildcardKind::ObjectName(name) => name,
+                    ast::SelectItemQualifiedWildcardKind::Expr(_) => {
+                        unsupported_sql_err!("Qualified wildcard with expression is not supported");
+                    }
+                };
                 let ident = object_name_to_identifier(object_name);
                 let ident_name = ident.to_string();
                 let Some(current_plan) = self.current_plan.as_ref() else {
@@ -1218,13 +1272,8 @@ impl SQLPlanner<'_> {
         let ColumnDef {
             name,
             data_type,
-            collation,
             options,
         } = column_def;
-
-        if let Some(collation) = collation {
-            unsupported_sql_err!("collation operation ({collation:?}) is not supported")
-        }
 
         if !options.is_empty() {
             unsupported_sql_err!("unsupported options: {options:?}")
@@ -1261,7 +1310,7 @@ impl SQLPlanner<'_> {
         use sqlparser::ast::Expr as SQLExpr;
         match expr {
             SQLExpr::Identifier(ident) => self.plan_identifier(std::slice::from_ref(ident)),
-            SQLExpr::Value(v) => self.value_to_lit(v).map(Expr::Literal).map(Arc::new),
+            SQLExpr::Value(v) => self.value_to_lit(&v.value).map(Expr::Literal).map(Arc::new),
             SQLExpr::BinaryOp { left, op, right } => {
                 let left = self.plan_expr(left)?;
                 let right = self.plan_expr(right)?;
@@ -1286,9 +1335,6 @@ impl SQLPlanner<'_> {
             SQLExpr::IsNotNull(expr) => Ok(self.plan_expr(expr)?.is_null().not()),
             SQLExpr::UnaryOp { op, expr } => self.plan_unary_op(op, expr),
             SQLExpr::CompoundIdentifier(idents) => self.plan_identifier(idents),
-            SQLExpr::CompositeAccess { .. } => {
-                unsupported_sql_err!("composite access")
-            }
             SQLExpr::IsUnknown(_) => unsupported_sql_err!("IS UNKNOWN"),
             SQLExpr::IsNotUnknown(_) => {
                 unsupported_sql_err!("IS NOT UNKNOWN")
@@ -1347,6 +1393,7 @@ impl SQLPlanner<'_> {
                 expr,
                 pattern,
                 escape_char,
+                any: _,
             } => {
                 if escape_char.is_some() {
                     unsupported_sql_err!("LIKE with escape char")
@@ -1361,6 +1408,7 @@ impl SQLPlanner<'_> {
                 expr,
                 pattern,
                 escape_char,
+                any: _,
             } => {
                 if escape_char.is_some() {
                     unsupported_sql_err!("ILIKE with escape char")
@@ -1437,6 +1485,7 @@ impl SQLPlanner<'_> {
                 substring_from,
                 substring_for,
                 special: true, // We only support SUBSTRING(expr, start, length) syntax
+                shorthand,
             } => {
                 let (Some(substring_from), Some(substring_for)) = (substring_from, substring_for)
                 else {
@@ -1447,8 +1496,7 @@ impl SQLPlanner<'_> {
                 let start = self.plan_expr(substring_from)?;
                 let length = self.plan_expr(substring_for)?;
 
-                // SQL substring is one indexed
-                let start = start.sub(lit(1));
+                let start = if *shorthand { start } else { start.sub(lit(1)) };
 
                 Ok(daft_functions_utf8::substr(expr, start, length))
             }
@@ -1459,31 +1507,41 @@ impl SQLPlanner<'_> {
             SQLExpr::Overlay { .. } => unsupported_sql_err!("OVERLAY"),
             SQLExpr::Collate { .. } => unsupported_sql_err!("COLLATE"),
             SQLExpr::Nested(e) => self.plan_expr(e),
-            SQLExpr::IntroducedString { .. } => unsupported_sql_err!("INTRODUCED STRING"),
-            SQLExpr::TypedString { data_type, value } => match data_type {
-                sqlparser::ast::DataType::Date => Ok(to_date(lit(value.as_str()), lit("%Y-%m-%d"))),
-                sqlparser::ast::DataType::Timestamp(None, TimezoneInfo::None)
-                | sqlparser::ast::DataType::Datetime(None) => Ok(to_datetime(
-                    lit(value.as_str()),
-                    "%Y-%m-%d %H:%M:%S %z",
-                    None,
-                )),
-                dtype => {
-                    unsupported_sql_err!("TypedString with data type {:?}", dtype)
+            SQLExpr::Prefixed { .. } => unsupported_sql_err!("PREFIXED"),
+            SQLExpr::TypedString(typed_string) => {
+                let value = typed_string
+                    .value
+                    .value
+                    .clone()
+                    .into_string()
+                    .ok_or_else(|| {
+                        PlannerError::invalid_operation("TypedString value must be a string")
+                    })?;
+                match &typed_string.data_type {
+                    sqlparser::ast::DataType::Date => {
+                        Ok(to_date(lit(value.as_str()), lit("%Y-%m-%d")))
+                    }
+                    sqlparser::ast::DataType::Timestamp(None, TimezoneInfo::None)
+                    | sqlparser::ast::DataType::Datetime(None) => Ok(to_datetime(
+                        lit(value.as_str()),
+                        "%Y-%m-%d %H:%M:%S %z",
+                        None,
+                    )),
+                    dtype => {
+                        unsupported_sql_err!("TypedString with data type {:?}", dtype)
+                    }
                 }
-            },
+            }
             SQLExpr::Function(func) => self.plan_function(func),
             SQLExpr::Case {
                 operand,
                 conditions,
-                results,
                 else_result,
+                case_token: _,
+                end_token: _,
             } => {
                 if operand.is_some() {
                     unsupported_sql_err!("CASE with operand not yet supported");
-                }
-                if results.len() != conditions.len() {
-                    unsupported_sql_err!("CASE with different number of conditions and results");
                 }
 
                 let else_expr = match else_result {
@@ -1493,14 +1551,14 @@ impl SQLPlanner<'_> {
 
                 // we need to traverse from back to front to build the if else chain
                 // because we need to start with the else expression
-                conditions.iter().zip(results.iter()).rev().try_fold(
-                    else_expr,
-                    |else_expr, (condition, result)| {
-                        let cond = self.plan_expr(condition)?;
-                        let res = self.plan_expr(result)?;
+                conditions
+                    .iter()
+                    .rev()
+                    .try_fold(else_expr, |else_expr, when| {
+                        let cond = self.plan_expr(&when.condition)?;
+                        let res = self.plan_expr(&when.result)?;
                         Ok(cond.if_else(res, else_expr))
-                    },
-                )
+                    })
             }
             SQLExpr::Exists { subquery, negated } => {
                 let mut child_planner = self.new_child();
@@ -1571,7 +1629,24 @@ impl SQLPlanner<'_> {
                 Ok(Expr::Literal(Literal::Struct(entries)).arced())
             }
             SQLExpr::Map(_) => unsupported_sql_err!("MAP"),
-            SQLExpr::Subscript { expr, subscript } => self.plan_subscript(expr, subscript.as_ref()),
+            SQLExpr::CompoundFieldAccess { root, access_chain } => {
+                if access_chain.len() == 1 {
+                    match &access_chain[0] {
+                        ast::AccessExpr::Subscript(subscript) => {
+                            self.plan_subscript(root, subscript)
+                        }
+                        ast::AccessExpr::Dot(_) => {
+                            unsupported_sql_err!(
+                                "Compound field access with dot notation not yet supported"
+                            )
+                        }
+                    }
+                } else {
+                    unsupported_sql_err!(
+                        "Compound field access with multiple operations not yet supported"
+                    )
+                }
+            }
             SQLExpr::Array(array) => {
                 if array.elem.is_empty() {
                     invalid_operation_err!("List constructor requires at least one item")
@@ -1754,14 +1829,16 @@ impl SQLPlanner<'_> {
                 }
             }
             SQLExpr::MatchAgainst { .. } => unsupported_sql_err!("MATCH AGAINST"),
-            SQLExpr::Wildcard => unsupported_sql_err!("WILDCARD"),
-            SQLExpr::QualifiedWildcard(_) => unsupported_sql_err!("QUALIFIED WILDCARD"),
+            SQLExpr::Wildcard(_) => unsupported_sql_err!("WILDCARD"),
+            SQLExpr::QualifiedWildcard { .. } => unsupported_sql_err!("QUALIFIED WILDCARD"),
             SQLExpr::OuterJoin(_) => unsupported_sql_err!("OUTER JOIN"),
             SQLExpr::Prior(_) => unsupported_sql_err!("PRIOR"),
             SQLExpr::Lambda(_) => unsupported_sql_err!("LAMBDA"),
-            SQLExpr::JsonAccess { .. } | SQLExpr::MapAccess { .. } => {
-                unreachable!("Not reachable in our dialect, should always be parsed as subscript")
+            SQLExpr::JsonAccess { .. } => {
+                unsupported_sql_err!("JSON access not supported")
             }
+            SQLExpr::IsNormalized { .. } => unsupported_sql_err!("IS NORMALIZED"),
+            SQLExpr::MemberOf(_) => unsupported_sql_err!("MEMBER OF"),
         }
     }
 
@@ -1808,6 +1885,7 @@ impl SQLPlanner<'_> {
             other => unsupported_sql_err!("unary operator {:?}", other),
         })
     }
+
     fn plan_subscript(
         &self,
         expr: &sqlparser::ast::Expr,
@@ -1870,9 +1948,13 @@ impl SQLPlanner<'_> {
 /// This function examines various clauses and options in the provided [sqlparser::ast::Query]
 /// and returns an error if any unsupported features are encountered.
 fn check_query_features(query: &Query) -> SQLPlannerResult<()> {
-    if !query.limit_by.is_empty() {
+    if let Some(limit_clause) = &query.limit_clause
+        && let ast::LimitClause::LimitOffset { limit_by, .. } = limit_clause
+        && !limit_by.is_empty()
+    {
         unsupported_sql_err!("LIMIT BY");
     }
+
     if query.fetch.is_some() {
         unsupported_sql_err!("FETCH");
     }
@@ -1942,6 +2024,7 @@ fn check_select_features(selection: &sqlparser::ast::Select) -> SQLPlannerResult
 
 fn check_wildcard_options(
     WildcardAdditionalOptions {
+        wildcard_token: _,
         opt_ilike,
         opt_except,
         opt_replace,
@@ -2031,7 +2114,10 @@ fn compound_ident_to_str(idents: &[Ident]) -> String {
 
 /// TODO remove me once columns use case-normalized names
 pub(crate) fn object_name_to_identifier(name: &ObjectName) -> Identifier {
-    Identifier::new(name.0.iter().map(|i| i.value.clone()))
+    Identifier::new(name.0.iter().map(|part| match part {
+        ast::ObjectNamePart::Identifier(ident) => ident.value.clone(),
+        ast::ObjectNamePart::Function(func) => func.name.value.clone(),
+    }))
 }
 
 /// Returns true iff the ObjectName is a string literal (single-quoted identifier e.g. 'path/to/file.extension').
@@ -2047,7 +2133,11 @@ fn is_table_path(name: &ObjectName) -> bool {
     if name.0.len() != 1 {
         return false;
     }
-    matches!(name.0[0].quote_style, Some('\''))
+    let quote_style = match &name.0[0] {
+        ast::ObjectNamePart::Identifier(ident) => ident.quote_style,
+        ast::ObjectNamePart::Function(func) => func.name.quote_style,
+    };
+    matches!(quote_style, Some('\''))
 }
 
 /// Add the relevant projection and alias plan nodes to reflect the TableAlias
@@ -2068,7 +2158,7 @@ fn apply_table_alias(
         let projection = columns
             .into_iter()
             .zip(&alias.columns)
-            .map(|(name, ident)| unresolved_col(name).alias(ident.value.clone()))
+            .map(|(name, col_def)| unresolved_col(name).alias(col_def.name.value.clone()))
             .collect::<Vec<_>>();
 
         plan = plan.select(projection)?;
@@ -2118,7 +2208,7 @@ fn singleton_plan() -> DaftResult<LogicalPlanBuilder> {
 #[cfg(test)]
 mod tests {
     use daft_core::prelude::*;
-    use sqlparser::ast::{Ident, ObjectName};
+    use sqlparser::ast::{Ident, ObjectName, ObjectNamePart};
 
     use crate::{planner::is_table_path, sql_schema};
 
@@ -2154,23 +2244,21 @@ mod tests {
     #[test]
     fn test_is_table_path() {
         // single-quoted path should return true
-        assert!(is_table_path(&ObjectName(vec![Ident {
-            value: "path/to/file.ext".to_string(),
-            quote_style: Some('\'')
-        }])));
+        assert!(is_table_path(&ObjectName(vec![
+            ObjectNamePart::Identifier(Ident::with_quote('\'', "path/to/file.ext"))
+        ])));
         // multiple identifiers should return false
         assert!(!is_table_path(&ObjectName(vec![
-            Ident::new("a"),
-            Ident::new("b")
+            ObjectNamePart::Identifier(Ident::new("a")),
+            ObjectNamePart::Identifier(Ident::new("b")),
         ])));
         // double-quoted identifier should return false
-        assert!(!is_table_path(&ObjectName(vec![Ident {
-            value: "path/to/file.ext".to_string(),
-            quote_style: Some('"')
-        }])));
+        assert!(!is_table_path(&ObjectName(vec![
+            ObjectNamePart::Identifier(Ident::with_quote('"', "path/to/file.ext"))
+        ])));
         // unquoted identifier should return false
-        assert!(!is_table_path(&ObjectName(vec![Ident::new(
-            "path/to/file.ext"
-        )])));
+        assert!(!is_table_path(&ObjectName(vec![
+            ObjectNamePart::Identifier(Ident::new("path/to/file.ext"))
+        ])));
     }
 }
