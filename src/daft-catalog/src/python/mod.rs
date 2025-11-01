@@ -67,11 +67,16 @@ impl PyCatalog {
             .collect())
     }
 
-    #[pyo3(signature = (pattern=None))]
-    fn list_tables(&self, pattern: Option<&str>) -> PyResult<Vec<PyIdentifier>> {
+    #[pyo3(signature = (namespace=None, pattern=None))]
+    fn list_tables(
+        &self,
+        namespace: Option<&PyIdentifier>,
+        pattern: Option<&str>,
+    ) -> PyResult<Vec<PyIdentifier>> {
+        let ns = namespace.map(|ident| ident.as_ref());
         Ok(self
             .0
-            .list_tables(pattern)?
+            .list_tables(ns, pattern)?
             .into_iter()
             .map(PyIdentifier)
             .collect())

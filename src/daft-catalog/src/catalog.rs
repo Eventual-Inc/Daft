@@ -28,8 +28,12 @@ pub trait Catalog: Sync + Send + std::fmt::Debug {
     fn has_table(&self, ident: &Identifier) -> CatalogResult<bool>;
     /// List all namespaces in the catalog. When a prefix is specified, list only nested namespaces with the prefix.
     fn list_namespaces(&self, pattern: Option<&str>) -> CatalogResult<Vec<Identifier>>;
-    /// List all tables in the catalog. When a prefix is specified, list only nested namespaces with the prefix.
-    fn list_tables(&self, pattern: Option<&str>) -> CatalogResult<Vec<Identifier>>;
+    /// List all tables in the catalog. When a namespace is specified, list only tables in the namespace.
+    fn list_tables(
+        &self,
+        namespace: Option<&Identifier>,
+        pattern: Option<&str>,
+    ) -> CatalogResult<Vec<Identifier>>;
 
     /// Create/extract a Python object that subclasses the Catalog ABC
     #[cfg(feature = "python")]
