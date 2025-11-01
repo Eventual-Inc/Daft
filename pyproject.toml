@@ -51,7 +51,7 @@ ray = [
   'ray[data, client]>=2.0.0; platform_system != "Windows"',
   'ray[data, client]>=2.10.0; platform_system == "Windows"'  # ray 2.10 has the pyarrow upper pin removed
 ]
-transformers = ["transformers", "sentence-transformers", "torch", "torchvision", "tensorflow"]
+transformers = ["transformers", "sentence-transformers", "torch", "torchvision"]
 spark = ["googleapis-common-protos >= 1.56.4", "grpcio >= 1.48", "grpcio-status >= 1.48", "numpy >= 1.15", "pandas >= 1.0.5", "py4j >= 0.10.9.7", "pyspark == 3.5.5"]
 sql = ["connectorx", "sqlalchemy", "sqlglot"]
 turbopuffer = ["turbopuffer"]
@@ -97,9 +97,8 @@ dev = [
   "datasets==4.0.0",
   "torch>=2.5.1",
   "torchvision>=0.20.1",
-  "tensorflow==2.20.0; python_version >= '3.13'",
   "tensorflow>=2.18.1; python_version < '3.13'",
-  "tf-keras>=2.18.0",
+  "tf-keras>=2.18.0; python_version < '3.13'",
   "jax>=0.4.30",
   "jaxtyping>=0.2.36",
   # Pyarrow
