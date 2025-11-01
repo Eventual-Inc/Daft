@@ -2,6 +2,7 @@ mod bindings;
 mod catalog;
 mod identifier;
 mod impls;
+mod pattern;
 mod table;
 
 pub use bindings::*;

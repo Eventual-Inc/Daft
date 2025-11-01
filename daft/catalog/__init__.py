@@ -133,7 +133,7 @@ class Catalog(ABC):
         """List all namespaces in the catalog. When a pattern is specified, list only namespaces matching the pattern."""
 
     @abstractmethod
-    def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
+    def _list_tables(self, namespace: Identifier | None = None, pattern: str | None = None) -> list[Identifier]:
         """List all tables in the catalog. When a pattern is specified, list only tables matching the pattern."""
 
     @staticmethod
@@ -463,16 +463,23 @@ class Catalog(ABC):
         """
         return self._list_namespaces(pattern)
 
-    def list_tables(self, pattern: str | None = None) -> list[Identifier]:
-        """List tables in the catalog which match the given pattern.
+    def list_tables(
+        self,
+        namespace: Identifier | str | None = None,
+        pattern: str | None = None,
+    ) -> list[Identifier]:
+        """List tables in the catalog which match the given namespace and/or pattern.
 
         Args:
-            pattern (str): pattern to match such as a namespace prefix
+            namespace (Identifier | str | None): namespace to filter by.
+            pattern (str | None): pattern to match table names.
 
         Returns:
-            list[str]: list of table identifiers matching the pattern.
+            list[Identifier]: list of table identifiers matching the namespace and/or pattern.
         """
-        return self._list_tables(pattern)
+        if namespace is not None and isinstance(namespace, str):
+            namespace = Identifier.from_str(namespace)
+        return self._list_tables(namespace, pattern)
 
     ###
     # read_*
