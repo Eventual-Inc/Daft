@@ -184,13 +184,13 @@ class IcebergCatalog(Catalog):
         prefix = () if pattern is None else _to_pyiceberg_ident(pattern)
         return [Identifier(*tup) for tup in self._inner.list_namespaces(prefix)]
 
-    def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
-        if pattern is None:
+    def _list_tables(self, namespace: Identifier | None = None, pattern: str | None = None) -> list[Identifier]:
+        if namespace:
+            tables = self._inner.list_tables(str(namespace))
+        else:
             tables = []
             for ns in self.list_namespaces():
                 tables.extend(self._inner.list_tables(str(ns)))
-        else:
-            tables = self._inner.list_tables(pattern)
         return [Identifier(*tup) for tup in tables]
 
 

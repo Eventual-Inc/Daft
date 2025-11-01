@@ -231,17 +231,15 @@ class GlueCatalog(Catalog):
         except ClientError as e:
             raise ValueError("Failed to list namespaces.") from e
 
-    def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
-        if pattern is None:
-            raise ValueError("GlueCatalog requires the pattern to contain a namespace.")
+    def _list_tables(self, namespace: Identifier | None = None, pattern: str | None = None) -> list[Identifier]:
+        if namespace is None:
+            raise ValueError("GlueCatalog requires a namespace parameter to list tables.")
+        if len(namespace) != 1:
+            raise ValueError(f"GlueCatalog namespace must be a single identifier (database name), got: {namespace}")
 
-        req = {}
-        if "." in pattern:
-            database_name, expression = pattern.split(".", 1)
-            req["DatabaseName"] = database_name
-            req["Expression"] = expression
-        else:
-            req["DatabaseName"] = pattern
+        req = {"DatabaseName": namespace[0]}
+        if pattern is not None:
+            req["Expression"] = pattern
 
         try:
             tables = []
@@ -445,7 +443,7 @@ class GlueIcebergTable(GlueTable):
         # verify we have table_type = "ICEBERG"
         table_type = parameters.get("table_type")
         if table_type is None:
-            raise ValueError("GlueIcebegTable is missing the required 'table_type' parameter.")
+            raise ValueError("GlueIcebergTable is missing the required 'table_type' parameter.")
         if table_type.lower() != "iceberg":
             raise ValueError(f"GlueIcebergTable had table_type {table_type}, but expected 'ICEBERG'")
 

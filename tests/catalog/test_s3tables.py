@@ -160,7 +160,7 @@ def test_list_tables(catalog: Catalog):
         catalog.create_table(table, schema({}))
     #
     # list one
-    res = catalog.list_tables(f"{ns1}.tbl1_1")
+    res = catalog.list_tables(ns1, "tbl1_1")
     assert len(res) == 1
     assert Identifier(ns1, "tbl1_1") == res[0]
     #

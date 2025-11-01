@@ -541,7 +541,7 @@ class Session:
         Returns:
             list[Identifier]: list of available tables
         """
-        return [Identifier._from_pyidentifier(i) for i in self._session.list_tables(pattern)]
+        return [Identifier._from_pyidentifier(i) for i in self._session.list_tables(pattern=pattern)]
 
     ###
     # read_*
