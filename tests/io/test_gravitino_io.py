@@ -278,6 +278,31 @@ class TestGravitinoIOLiveServer:
             print(f"✓ Found {len(result)} files in {gvfs_dir}")
             print(f"PYTHON DEBUG: files collection: {result}")
 
+            # Use Daft's URL function to read the files from the "path" column
+            if len(result) > 0:
+                print("\n📖 Reading files using Daft's URL function from path column...")
+
+                # Add a column that reads the parquet files from the path column
+                files_with_data = files.with_column(
+                    "data", daft.functions.download(files["path"], io_config=gravitino_only_config)
+                )
+
+                print(f"PYTHON DEBUG: files_with_data schema: {files_with_data.schema()}")
+
+                # Collect the result to see the data
+                files_data_result = files_with_data.collect()
+                print(f"✓ Successfully read data from {len(files_data_result)} files using URL function")
+
+                # Show some info about the downloaded data
+                files_data_dict = files_data_result.to_pydict()
+                for i, (path, data) in enumerate(zip(files_data_dict["path"], files_data_dict["data"])):
+                    print(f"  File {i+1}: {path}")
+                    print(f"    Data size: {len(data) if data else 0} bytes")
+                    if data and len(data) > 0:
+                        print(f"    First 50 bytes: {data[:50]}")
+            else:
+                print("No files found to read with URL function")
+
         except Exception as e:
             import traceback
 
