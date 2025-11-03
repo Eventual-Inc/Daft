@@ -83,7 +83,7 @@ dev = [
   "pytest-codspeed==2.2.1",
   # Testing dependencies
   "lxml==5.3.0",
-  "dask[dataframe]==2024.4.1",
+  "dask[dataframe]>=2025.10.0",
   "numpy==2.2.0; python_version >= '3.13'",
   "numpy==1.26.2; python_version < '3.13'",
   "pandas==2.2.3; python_version >= '3.13'",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import decimal
+import sys
 from typing import NamedTuple, TypedDict
 
 import jax
@@ -524,10 +525,16 @@ def test_decimals_with_scientific_notation():
     assert daft.from_pydict({"col": decimals}).to_pydict()["col"] == decimals
 
 
+@pytest.mark.skipif(
+    sys.version_info >= (3, 13),
+    reason="Skipping cupy test due to: cupy_backends.cuda.api.runtime.CUDARuntimeError: cudaErrorInsufficientDriver: CUDA driver version is insufficient for CUDA runtime version and incompatibility with Python 3.13",
+)
 def test_cupy():
     cupy = pytest.importorskip("cupy")
+    if cupy.cuda.is_available():
+        assert dt.infer_from_type(cupy.ndarray) == dt.tensor(dt.python())
 
-    assert dt.infer_from_type(cupy.ndarray) == dt.tensor(dt.python())
-
-    arr = cupy.array([1, 2, 3])
-    assert dt.infer_from_object(arr) == dt.tensor(dt.int64())
+        arr = cupy.array([1, 2, 3])
+        assert dt.infer_from_object(arr) == dt.tensor(dt.int64())
+    else:
+        pytest.skip("CUDA is not available")

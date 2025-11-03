@@ -1687,7 +1687,7 @@ dev = [
     { name = "clickhouse-connect" },
     { name = "connectorx", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'", specifier = "==0.4.0" },
     { name = "connectorx", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'", specifier = "==0.2.4" },
-    { name = "dask", extras = ["dataframe"], specifier = "==2024.4.1" },
+    { name = "dask", extras = ["dataframe"], specifier = ">=2025.10.0" },
     { name = "databricks-sdk", specifier = "==0.12.0" },
     { name = "datasets", specifier = "==4.0.0" },
     { name = "deltalake", marker = "sys_platform != 'win32'", specifier = "==1.0.2" },
@@ -1779,7 +1779,7 @@ lint = [
 
 [[package]]
 name = "dask"
-version = "2024.4.1"
+version = "2025.10.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -1791,33 +1791,18 @@ dependencies = [
     { name = "pyyaml" },
     { name = "toolz" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a2/e0/81035c16ba8a77d6e8083d832864bc733c83e0be98ca7351903f9e5f38e7/dask-2024.4.1.tar.gz", hash = "sha256:6cd8eb03ddc8dc08d6ca5b167b8de559872bc51cc2b6587d0e9dc754ab19cdf0", size = 9337972, upload-time = "2024-04-04T16:15:41.175Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/49/f0/d747f9517f2a50b835513da36a6da0cffa7d1f0a8b33f60e642ff78879a8/dask-2025.10.0.tar.gz", hash = "sha256:fd3159c319c27cea39b891c0f22d60056a33575fb4906618eab0aeeb5dcd0cbc", size = 10974677, upload-time = "2025-10-14T19:50:36.556Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fd/59/f2623ab0ec44237539a7fb4956b5963d20a60dd6155769fd9271091996ce/dask-2024.4.1-py3-none-any.whl", hash = "sha256:cac5d28b9de7a7cfde46d6fbd8fa81f5654980d010b44d1dbe04dd13b5b63126", size = 1230890, upload-time = "2024-04-04T16:15:28.337Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/2b/36b8753d881ff8fcf9c57eadd2b9379815cbe08fde7ded4e52c4cbb4b227/dask-2025.10.0-py3-none-any.whl", hash = "sha256:86c0a4aecbed3eae938f13a52bcc3fdc35852cce34d7d701590c15850b92506e", size = 1481586, upload-time = "2025-10-14T19:50:21.983Z" },
 ]
 
 [package.optional-dependencies]
 dataframe = [
-    { name = "dask-expr" },
     { name = "numpy", version = "1.26.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
     { name = "numpy", version = "2.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
     { name = "pandas", version = "2.1.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
     { name = "pandas", version = "2.2.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
-]
-
-[[package]]
-name = "dask-expr"
-version = "1.0.11"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "dask" },
-    { name = "pandas", version = "2.1.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
-    { name = "pandas", version = "2.2.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
     { name = "pyarrow" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/c0/1a/203ce0455c5ba5dc4b5fda526b2a54a95c05badff3510f5a4272e506dbee/dask-expr-1.0.11.tar.gz", hash = "sha256:556e13dfa081cacb0fd14b026bde18703884c12bc4659531e440507eaaee6822", size = 187894, upload-time = "2024-04-09T16:04:38.396Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b9/f2/68744a1629463ef3c1022558f0d45a8cd09ed0e6176d91a741a355263242/dask_expr-1.0.11-py3-none-any.whl", hash = "sha256:66e1f35252875fe1875ae371bc84ab4f7f6c35692835ed545d41fac61cd0759b", size = 184991, upload-time = "2024-04-09T16:04:34.915Z" },
 ]
 
 [[package]]
