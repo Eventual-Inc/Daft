@@ -11,6 +11,9 @@ import daft
 from daft import DataType
 from tests.conftest import get_tests_daft_runner_name
 
+# Skip all tests in this module if pyarrow < 14.0.1
+pytest.importorskip("pyarrow", minversion="14.0.1")
+
 
 class MyObj:
     def __init__(self, x: int):
