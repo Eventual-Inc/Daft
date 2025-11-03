@@ -414,11 +414,9 @@ impl StreamingSink for VLLMSink {
                         state.executor.finished_submitting()?;
                     }
 
-                    let all_tasks_finished = state.executor.all_tasks_finished()?;
-
                     let output = this.poll_tasks(state)?;
 
-                    if all_tasks_finished {
+                    if state.executor.all_tasks_finished()? {
                         Ok(StreamingSinkFinalizeOutput::Finished(output))
                     } else {
                         // Add a delay before polling again to avoid excessive polling

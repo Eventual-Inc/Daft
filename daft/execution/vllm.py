@@ -4,7 +4,10 @@ import asyncio
 import threading
 from abc import ABC, abstractmethod
 from collections import deque
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ray import ObjectRef
 
 from daft.recordbatch import RecordBatch
 
@@ -50,7 +53,7 @@ class DummyVLLMExecutor(VLLMExecutor):
         self._finished_submitting = True
 
     def all_tasks_finished(self) -> bool:
-        return self._finished_submitting
+        return self._finished_submitting and len(self.prompts) == 0
 
 
 class BlockingVLLMExecutor(VLLMExecutor):
@@ -102,7 +105,7 @@ class BlockingVLLMExecutor(VLLMExecutor):
         self._finished_submitting = True
 
     def all_tasks_finished(self) -> bool:
-        return self._finished_submitting
+        return self._finished_submitting and len(self.completed_tasks) == 0
 
 
 class LocalVLLMExecutor(VLLMExecutor):
@@ -220,7 +223,7 @@ class LocalVLLMExecutor(VLLMExecutor):
 
     def all_tasks_finished(self) -> bool:
         with self.task_count_lock:
-            return self._finished_submitting and self.running_task_count == 0
+            return self._finished_submitting and self.running_task_count == 0 and len(self.completed_tasks) == 0
 
 
 class DistributedVLLMExecutor(VLLMExecutor):
@@ -251,41 +254,32 @@ class DistributedVLLMExecutor(VLLMExecutor):
     def poll(self) -> tuple[list[str], RecordBatch] | None:
         import ray
 
-        all_outputs = []
-        all_rows = []
-
-        for llm_actor in self.local_llm_actors:
-            result = ray.get(llm_actor.poll.remote())
-            if result is not None:
-                outputs, rows = result
-                all_outputs.extend(outputs)
-                all_rows.append(rows)
-
-        if len(all_outputs) == 0:
-            return None
+        next_llm_to_poll = ray.get(self.router_actor.get_next_llm_to_poll.remote())
+        if next_llm_to_poll is not None:
+            return ray.get(self.llm_actors[next_llm_to_poll].poll.remote())
         else:
-            return all_outputs, RecordBatch.concat(all_rows)
+            return None
 
     def finished_submitting(self) -> None:
         self.router_actor.report_completion.remote()
-        for llm_actor in self.local_llm_actors:
-            llm_actor.finished_submitting.remote()
 
     def all_tasks_finished(self) -> bool:
         import ray
 
-        return ray.get(self.router_actor.all_actors_finished.remote()) and all(
-            ray.get(llm_actor.all_tasks_finished.remote()) for llm_actor in self.local_llm_actors
-        )
+        return ray.get(self.router_actor.all_tasks_finished.remote())
 
 
 class PrefixRouter:
-    def __init__(self, num_llm_actors: int, load_balance_threshold: int, max_recent_prefixes: int = 8):
-        self.loads = [0] * num_llm_actors
-        self.recent_prefixes: list[list[str | None]] = [[] for _ in range(num_llm_actors)]
+    def __init__(
+        self, llm_actors: list[ObjectRef[LocalVLLMExecutor]], load_balance_threshold: int, max_recent_prefixes: int = 8
+    ):
+        self.llm_actors = llm_actors
+        self.loads = [0] * len(self.llm_actors)
+        self.recent_prefixes: list[list[str | None]] = [[] for _ in range(len(self.llm_actors))]
         self.load_balance_threshold = load_balance_threshold
         self.max_recent_prefixes = max_recent_prefixes
         self.unfinished_actors = 0
+        self.next_llm_to_poll = list(range(len(self.llm_actors)))
 
     def route(self, prefix: str | None, batch_size: int) -> int:
         min_load = min(self.loads)
@@ -325,8 +319,24 @@ class PrefixRouter:
     def report_completion(self) -> None:
         self.unfinished_actors -= 1
 
-    def all_actors_finished(self) -> bool:
-        return self.unfinished_actors == 0
+        if self.unfinished_actors == 0:
+            for actor in self.llm_actors:
+                actor.finished_submitting.remote()
+
+    def get_next_llm_to_poll(self) -> int | None:
+        import ray
+
+        while len(self.next_llm_to_poll) > 0:
+            next_llm = self.next_llm_to_poll.pop(0)
+
+            if not ray.get(self.llm_actors[next_llm].all_tasks_finished.remote()):
+                self.next_llm_to_poll.append(next_llm)
+                return next_llm
+
+        return None
+
+    def all_tasks_finished(self) -> bool:
+        return len(self.next_llm_to_poll) == 0
 
 
 class LLMActors:
@@ -345,4 +355,4 @@ class LLMActors:
         PrefixRouterActor = ray.remote(PrefixRouter)
 
         self.llm_actors = [LocalVLLMExecutorActor.remote(model, engine_args, generate_args) for _ in range(concurrency)]
-        self.router_actor = PrefixRouterActor.remote(len(self.llm_actors), load_balance_threshold)
+        self.router_actor = PrefixRouterActor.remote(self.llm_actors, load_balance_threshold)
