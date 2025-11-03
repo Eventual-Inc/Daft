@@ -39,8 +39,19 @@ where
     _phantom: PhantomData<T>,
 }
 
+#[derive(Clone, Debug)]
+pub struct BlobType<T>
+where
+    T: DaftMediaType,
+{
+    _phantom: PhantomData<T>,
+}
+
 pub type UnknownFileType = FileType<MediaTypeUnknown>;
 pub type VideoFileType = FileType<MediaTypeVideo>;
+
+pub type UnknownBlobType = BlobType<MediaTypeUnknown>;
+pub type VideoBlobType = BlobType<MediaTypeVideo>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct FileReference {

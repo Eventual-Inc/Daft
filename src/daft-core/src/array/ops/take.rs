@@ -4,8 +4,7 @@ use common_error::DaftResult;
 use super::as_arrow::AsArrow;
 use crate::{
     array::{
-        growable::{Growable, GrowableArray},
-        prelude::*,
+        blob_array::BlobArray, growable::{Growable, GrowableArray}, prelude::*
     },
     datatypes::{FileArray, IntervalArray, prelude::*},
     file::DaftMediaType,
@@ -89,6 +88,20 @@ where
         Ok(Self::new(self.field.clone(), new_array))
     }
 }
+impl<T> BlobArray<T>
+where
+    T: DaftMediaType,
+{
+    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let new_array = self.physical.take(idx)?;
+        Ok(Self::new(self.field.clone(), new_array))
+    }
+}
+
 
 impl FixedSizeBinaryArray {
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>

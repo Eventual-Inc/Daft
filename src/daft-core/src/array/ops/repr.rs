@@ -4,7 +4,7 @@ use common_error::DaftResult;
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray, blob_array::BlobArray},
     datatypes::{
         BinaryArray, BooleanArray, DaftNumericType, DataType, Decimal128Array, ExtensionArray,
         FileArray, FixedSizeBinaryArray, IntervalArray, IntervalValue, NullArray, UInt64Array,
@@ -469,6 +469,14 @@ where
         Ok(self.get_lit(idx).to_string())
     }
 }
+impl<T> BlobArray<T>
+where
+    T: DaftMediaType,
+{
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        Ok(self.get_lit(idx).to_string())
+    }
+}
 
 // Truncate strings so they do not crash the browser when rendering HTML
 fn truncate_for_html(s: &str) -> String {
@@ -670,3 +678,22 @@ where
             .replace('\n', "<br />")
     }
 }
+
+
+impl<T> BlobArray<T>
+where
+    T: DaftMediaType,
+{
+    pub fn html_value(&self, idx: usize, truncate: bool) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        let truncated = if truncate {
+            truncate_for_html(&str_value)
+        } else {
+            str_value
+        };
+        html_escape::encode_text(&truncated)
+            .into_owned()
+            .replace('\n', "<br />")
+    }
+}
+

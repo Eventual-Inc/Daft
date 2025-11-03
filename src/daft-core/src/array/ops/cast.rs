@@ -23,6 +23,7 @@ use crate::prelude::PythonArray;
 use crate::{
     array::{
         DataArray, FixedSizeListArray, ListArray, StructArray,
+        blob_array::BlobArray,
         growable::make_growable,
         image_array::ImageArraySidecarData,
         ops::{DaftCompare, full::FullNull},
@@ -553,7 +554,7 @@ where
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         use daft_schema::media_type::MediaType::*;
         match dtype {
-            DataType::File(media_type) => match (media_type, T::get_type()) {
+            DataType::File(media_type, false) => match (media_type, T::get_type()) {
                 (Unknown, Unknown) | (Video, Video) => Ok(self.clone().into_series()),
                 (Unknown, Video) => Ok(self.clone().change_type::<MediaTypeVideo>().into_series()),
                 (Video, Unknown) => {
@@ -566,6 +567,14 @@ where
             dtype if dtype == self.data_type() => Ok(self.clone().into_series()),
             dtype => todo!("cast {dtype} for FileArray"),
         }
+    }
+}
+impl<T> BlobArray<T>
+where
+    T: DaftMediaType,
+{
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        todo!()
     }
 }
 

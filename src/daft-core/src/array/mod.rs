@@ -1,3 +1,4 @@
+pub mod blob_array;
 pub mod file_array;
 mod fixed_size_list_array;
 pub mod from;

@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 
 use crate::{
-    array::{FixedSizeListArray, ListArray, StructArray, prelude::*},
+    array::{FixedSizeListArray, ListArray, StructArray, blob_array::BlobArray, prelude::*},
     datatypes::{FileArray, prelude::*},
     file::DaftMediaType,
     series::Series,
@@ -214,6 +214,22 @@ where
     T: DaftMediaType,
 {
     type GrowableType<'a> = logical_growable::LogicalFileGrowable<'a, T>;
+    fn make_growable<'a>(
+        name: &str,
+        dtype: &DataType,
+        arrays: Vec<&'a Self>,
+        use_validity: bool,
+        capacity: usize,
+    ) -> Self::GrowableType<'a> {
+        Self::GrowableType::new(name, dtype, arrays, use_validity, capacity)
+    }
+}
+
+impl<T> GrowableArray for BlobArray<T>
+where
+    T: DaftMediaType,
+{
+    type GrowableType<'a> = logical_growable::LogicalBlobGrowable<'a, T>;
     fn make_growable<'a>(
         name: &str,
         dtype: &DataType,

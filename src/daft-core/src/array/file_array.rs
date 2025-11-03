@@ -1,15 +1,13 @@
 use std::sync::Arc;
 
-use arrow2::array::{MutableArray, MutableBinaryArray, MutablePrimitiveArray, MutableUtf8Array};
-use common_error::DaftResult;
 use common_io_config::IOConfig;
 use daft_schema::{dtype::DataType, field::Field, media_type::MediaType};
 
 use crate::{
     array::prelude::*,
     datatypes::logical::LogicalArrayImpl,
-    file::{DaftMediaType, DataOrReference, FileReference, FileReferenceType, FileType},
-    series::{IntoSeries, Series},
+    file::{DaftMediaType, FileReference, FileReferenceType, FileType},
+    series::IntoSeries,
 };
 
 /// FileArray is a logical array that represents a collection of files.
@@ -40,15 +38,9 @@ where
             mut physical,
             ..
         } = self;
-        physical.field = Arc::new(Field::new(
-            "literal",
-            DataType::File(T::get_type()).to_physical(),
-        ));
+        physical.field = Arc::new(Field::new("literal", Self::dtype().to_physical()));
 
-        FileArray::new(
-            Field::new(&field.name, DataType::File(T::get_type())),
-            physical,
-        )
+        FileArray::new(Field::new(&field.name, Self::dtype()), physical)
     }
 }
 
@@ -56,88 +48,22 @@ impl<T> FileArray<T>
 where
     T: DaftMediaType,
 {
+    fn dtype() -> DataType {
+        DataType::File(T::get_type(), true)
+    }
+
     pub fn media_type(&self) -> MediaType {
         T::get_type()
     }
-    pub fn new_from_file_references<I: Iterator<Item = DaftResult<Option<FileReference>>>>(
-        name: &str,
-        iter: I,
-    ) -> DaftResult<Self> {
-        let mut discriminant_arr = MutablePrimitiveArray::<u8>::new();
-        let mut io_conf_arr = MutableBinaryArray::<i64>::new();
-        let mut data_arr = MutableBinaryArray::<i64>::new();
-        let mut urls_arr = MutableUtf8Array::<i64>::new();
 
-        for value in iter {
-            let value = value?;
-            match value {
-                Some(value) => {
-                    discriminant_arr.push(Some(value.get_type() as u8));
-                    match value.inner {
-                        DataOrReference::Reference(url, ioconfig) => {
-                            urls_arr.push(Some(url));
-                            let io_config = ioconfig.map(|c| {
-                                bincode::serialize(&c).expect("Failed to serialize IOConfig")
-                            });
-                            io_conf_arr.push(io_config);
-                            data_arr.push_null();
-                        }
-                        DataOrReference::Data(items) => {
-                            urls_arr.push_null();
-                            io_conf_arr.push_null();
-                            data_arr.push(Some(items.as_ref()));
-                        }
-                    }
-                }
-                None => {
-                    discriminant_arr.push_null();
-                    urls_arr.push_null();
-                    io_conf_arr.push_null();
-                    data_arr.push_null();
-                }
-            }
-        }
-        let sa_field = Field::new("literal", DataType::File(T::get_type()).to_physical());
-        let discriminant = Series::from_arrow(
-            Arc::new(Field::new("discriminant", DataType::UInt8)),
-            discriminant_arr.as_box(),
-        )?;
-        let data = Series::from_arrow(
-            Arc::new(Field::new("data", DataType::Binary)),
-            data_arr.as_box(),
-        )?;
-        let urls = Series::from_arrow(
-            Arc::new(Field::new("url", DataType::Utf8)),
-            urls_arr.as_box(),
-        )?;
-        let io_config = Series::from_arrow(
-            Arc::new(Field::new("io_config", DataType::Binary)),
-            io_conf_arr.as_box(),
-        )?;
-        let validity = discriminant.validity().cloned();
-        let sa = StructArray::new(
-            sa_field,
-            vec![discriminant, data, urls, io_config],
-            validity,
-        );
-
-        Ok(FileArray::new(
-            Field::new(name, DataType::File(T::get_type())),
-            sa,
-        ))
-    }
-    pub fn new_from_reference_array(
-        name: &str,
-        urls: &Utf8Array,
-        io_config: Option<IOConfig>,
-    ) -> Self {
+    pub fn from_values(name: &str, urls: &Utf8Array, io_config: Option<IOConfig>) -> Self {
         let discriminant = UInt8Array::from_values(
             "discriminant",
             std::iter::repeat_n(FileReferenceType::Reference as u8, urls.len()),
         )
         .into_series();
 
-        let sa_field = Field::new("literal", DataType::File(T::get_type()).to_physical());
+        let sa_field = Field::new("literal", Self::dtype().to_physical());
         let io_conf: Option<Vec<u8>> =
             io_config.map(|c| bincode::serialize(&c).expect("Failed to serialize IOConfig"));
         let io_conf = BinaryArray::from_iter("io_config", std::iter::repeat_n(io_conf, urls.len()));
@@ -157,32 +83,9 @@ where
             ],
             urls.validity().cloned(),
         );
-        FileArray::new(Field::new(name, DataType::File(T::get_type())), sa)
+        FileArray::new(Field::new(name, Self::dtype()), sa)
     }
 
-    pub fn new_from_data_array(name: &str, values: &BinaryArray) -> Self {
-        let discriminant = UInt8Array::from_values(
-            "discriminant",
-            std::iter::repeat_n(FileReferenceType::Data as u8, values.len()),
-        )
-        .into_series();
-
-        let fld = Field::new("literal", DataType::File(T::get_type()).to_physical());
-        let urls = Utf8Array::full_null("url", &DataType::Utf8, values.len()).into_series();
-        let io_configs =
-            BinaryArray::full_null("io_config", &DataType::Binary, values.len()).into_series();
-        let sa = StructArray::new(
-            fld,
-            vec![
-                discriminant,
-                values.clone().into_series().rename("data"),
-                urls,
-                io_configs,
-            ],
-            values.validity().cloned(),
-        );
-        FileArray::new(Field::new(name, DataType::File(T::get_type())), sa)
-    }
     pub fn iter(&self) -> FileArrayIter<'_, T> {
         FileArrayIter {
             array: self,
@@ -241,24 +144,25 @@ mod tests {
         datatypes::FileArray,
         file::{DataOrReference, FileReference, MediaTypeUnknown},
         lit::Literal,
-        prelude::{BinaryArray, FromArrow},
+        prelude::FromArrow,
         series::Series,
     };
 
     #[test]
     fn test_arrow_roundtrip_data_variant() {
-        let data = vec![1, 2, 3];
-        let bin_arr = BinaryArray::from_iter("data", std::iter::once(Some(data.clone())));
+        todo!()
+        // let data = vec![1, 2, 3];
+        // let bin_arr = BinaryArray::from_iter("data", std::iter::once(Some(data.clone())));
 
-        let arr = FileArray::<MediaTypeUnknown>::new_from_data_array("data", &bin_arr);
-        let arrow_data = arr.to_arrow();
+        // let arr = FileArray::<MediaTypeUnknown>::new_from_data_array("data", &bin_arr);
+        // let arrow_data = arr.to_arrow();
 
-        let new_arr = FileArray::<MediaTypeUnknown>::from_arrow(arr.field.clone(), arrow_data)
-            .expect("Failed to create FileArray from arrow data");
-        let new_arr = new_arr.data_array();
+        // let new_arr = FileArray::<MediaTypeUnknown>::from_arrow(arr.field.clone(), arrow_data)
+        //     .expect("Failed to create FileArray from arrow data");
+        // let new_arr = new_arr.data_array();
 
-        let new_data = new_arr.get(0).expect("Failed to get data");
-        assert_eq!(new_data, &data);
+        // let new_data = new_arr.get(0).expect("Failed to get data");
+        // assert_eq!(new_data, &data);
     }
 
     #[test]
@@ -269,8 +173,7 @@ mod tests {
         let urls: Series = Literal::Utf8(url.to_string()).into();
         let urls = urls.utf8().unwrap();
 
-        let arr =
-            FileArray::<MediaTypeUnknown>::new_from_reference_array("urls", urls, io_conf.clone());
+        let arr = FileArray::<MediaTypeUnknown>::from_values("urls", urls, io_conf.clone());
         let arrow_data = arr.to_arrow();
 
         let new_arr = FileArray::<MediaTypeUnknown>::from_arrow(arr.field.clone(), arrow_data)

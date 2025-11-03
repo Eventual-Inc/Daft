@@ -6,7 +6,7 @@ use super::{Growable, GrowableArray};
 use crate::{
     array::prelude::*,
     datatypes::prelude::*,
-    file::{DaftMediaType, FileType},
+    file::{BlobType, DaftMediaType, FileType},
     series::{IntoSeries, Series},
 };
 
@@ -101,6 +101,36 @@ where
     ) -> Self {
         let physical_growable =
             <<FileType<T> as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::make_growable(
+                name,
+                &dtype.to_physical(),
+                arrays.iter().map(|a| &a.physical).collect(),
+                use_validity,
+                capacity,
+            );
+        Self {
+            name: name.to_string(),
+            dtype: dtype.clone(),
+            physical_growable,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+pub type LogicalBlobGrowable<'a, T> = LogicalGrowable<BlobType<T>, <<<BlobType<T> as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType as GrowableArray>::GrowableType<'a>>;
+
+impl<'a, T> LogicalBlobGrowable<'a, T>
+where
+    T: DaftMediaType,
+{
+    pub fn new(
+        name: &str,
+        dtype: &DataType,
+        arrays: Vec<&'a <BlobType<T> as DaftDataType>::ArrayType>,
+        use_validity: bool,
+        capacity: usize,
+    ) -> Self {
+        let physical_growable =
+            <<BlobType<T> as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::make_growable(
                 name,
                 &dtype.to_physical(),
                 arrays.iter().map(|a| &a.physical).collect(),

@@ -7,7 +7,7 @@ use rand::{SeedableRng, rngs::StdRng};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray, blob_array::BlobArray},
     datatypes::{DaftArrowBackedType, FileArray},
     file::DaftMediaType,
 };
@@ -114,6 +114,15 @@ impl StructArray {
 }
 
 impl<T> FileArray<T>
+where
+    T: DaftMediaType,
+{
+    pub fn size_bytes(&self) -> usize {
+        self.physical.size_bytes()
+    }
+}
+
+impl<T> BlobArray<T>
 where
     T: DaftMediaType,
 {

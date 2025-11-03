@@ -142,7 +142,7 @@ pub fn html_value(s: &Series, idx: usize, truncate: bool) -> String {
             let arr = s.python().unwrap();
             arr.html_value(idx, truncate)
         }
-        DataType::File(_) => {
+        DataType::File(..) => {
             with_match_file_types!(s.data_type(), |$P| {
                 let arr = s.file::<$P>().unwrap();
                 arr.html_value(idx, truncate)

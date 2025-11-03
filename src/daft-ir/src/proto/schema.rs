@@ -276,7 +276,7 @@ impl ToFromProto for ir::DataType {
                     .into(),
                 )
             }
-            Self::File(_) => todo!(),
+            Self::File(..) => todo!(),
             Self::Unknown => proto::DataTypeVariant::Unknown(UNIT),
             #[cfg(feature = "python")]
             Self::Python => proto::DataTypeVariant::Python(UNIT),

@@ -8,7 +8,7 @@ use super::{arrow2::sort::primitive::common::multi_column_idx_sort, as_arrow::As
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray, blob_array::BlobArray},
     datatypes::{
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, Decimal128Array,
         ExtensionArray, FileArray, FixedSizeBinaryArray, Float32Array, Float64Array, IntervalArray,
@@ -818,6 +818,15 @@ impl FixedShapeTensorArray {
 }
 
 impl<T> FileArray<T>
+where
+    T: DaftMediaType,
+{
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
+        todo!("impl sort for FileArray")
+    }
+}
+
+impl<T> BlobArray<T>
 where
     T: DaftMediaType,
 {

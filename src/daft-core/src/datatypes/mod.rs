@@ -31,7 +31,7 @@ pub use crate::array::{DataArray, FixedSizeListArray, file_array::FileArray};
 use crate::prelude::PythonArray;
 use crate::{
     array::{ListArray, StructArray, ops::as_arrow::AsArrow},
-    file::{DaftMediaType, FileType},
+    file::{BlobType, DaftMediaType, FileType},
 };
 
 pub mod interval;
@@ -62,20 +62,6 @@ pub trait DaftDataType: Sync + Send + Clone + 'static {
     fn get_dtype() -> DataType
     where
         Self: Sized;
-}
-
-impl<T> DaftDataType for T
-where
-    T: DaftMediaType,
-{
-    type ArrayType = FileArray<T>;
-
-    fn get_dtype() -> DataType
-    where
-        Self: Sized,
-    {
-        DataType::File(T::get_type())
-    }
 }
 
 pub trait DaftPhysicalType: Send + Sync + DaftDataType {}
@@ -260,7 +246,7 @@ where
 {
     #[inline]
     fn get_dtype() -> DataType {
-        DataType::File(T::get_type())
+        DataType::File(T::get_type(), false)
     }
     #[allow(clippy::use_self)]
     type ArrayType = logical::LogicalArray<FileType<T>>;
@@ -271,6 +257,25 @@ where
     T: DaftMediaType,
 {
     type PhysicalType = StructType;
+}
+
+impl<T> DaftDataType for BlobType<T>
+where
+    T: DaftMediaType,
+{
+    #[inline]
+    fn get_dtype() -> DataType {
+        DataType::File(T::get_type(), true)
+    }
+    #[allow(clippy::use_self)]
+    type ArrayType = logical::LogicalArray<BlobType<T>>;
+}
+
+impl<T> DaftLogicalType for BlobType<T>
+where
+    T: DaftMediaType,
+{
+    type PhysicalType = BinaryType;
 }
 
 #[cfg(feature = "python")]

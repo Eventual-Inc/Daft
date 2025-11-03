@@ -329,7 +329,10 @@ impl Literal {
                     .map(|(k, v)| Field::new(k, v.get_type()))
                     .collect(),
             ),
-            Self::File(f) => DataType::File(f.media_type),
+            Self::File(f) => match f.get_type() {
+                crate::file::FileReferenceType::Reference => DataType::File(f.media_type, false),
+                crate::file::FileReferenceType::Data => DataType::File(f.media_type, true),
+            },
             Self::Tensor { data, .. } => DataType::Tensor(Box::new(data.data_type().clone())),
             Self::SparseTensor {
                 values,

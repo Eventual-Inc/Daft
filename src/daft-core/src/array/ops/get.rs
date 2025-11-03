@@ -6,7 +6,7 @@ use super::as_arrow::AsArrow;
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray},
+    array::{DataArray, FixedSizeListArray, ListArray, blob_array::BlobArray},
     datatypes::{
         BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, ExtensionArray, FileArray,
         FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array,
@@ -14,7 +14,7 @@ use crate::{
             DateArray, DurationArray, LogicalArrayImpl, MapArray, TimeArray, TimestampArray,
         },
     },
-    file::{DaftMediaType, FileReference, FileReferenceType},
+    file::{DaftMediaType, FileReference},
     series::Series,
 };
 
@@ -193,43 +193,37 @@ where
 {
     #[inline]
     pub fn get(&self, idx: usize) -> Option<FileReference> {
-        let discriminant_array = self.discriminant_array();
-        let discriminant = discriminant_array.get(idx)?;
+        let url_array = self.physical.get("url").expect("url exists");
+        let io_config_array = self.physical.get("io_config").expect("io_config exists");
+        let url_array = url_array.utf8().expect("url is utf8");
+        let io_config_array = io_config_array.binary().expect("io_config is binary");
 
-        let discriminant: FileReferenceType =
-            discriminant.try_into().expect("Invalid discriminant");
-        match discriminant {
-            // it's a path, we know its valid utf8
-            FileReferenceType::Reference => {
-                let url_array = self.physical.get("url").expect("url exists");
-                let io_config_array = self.physical.get("io_config").expect("io_config exists");
-                let url_array = url_array.utf8().expect("url is utf8");
-                let io_config_array = io_config_array.binary().expect("io_config is binary");
+        let data = url_array.get(idx)?;
+        let io_config = io_config_array.get(idx);
+        let io_config: Option<common_io_config::IOConfig> = {
+            io_config
+                .map(bincode::deserialize)
+                .transpose()
+                .ok()
+                .flatten()
+        };
 
-                let data = url_array.get(idx)?;
-                let io_config = io_config_array.get(idx);
-                let io_config: Option<common_io_config::IOConfig> = {
-                    io_config
-                        .map(bincode::deserialize)
-                        .transpose()
-                        .ok()
-                        .flatten()
-                };
+        Some(FileReference::new_from_reference(
+            T::get_type(),
+            data.to_string(),
+            io_config,
+        ))
+    }
+}
 
-                Some(FileReference::new_from_reference(
-                    T::get_type(),
-                    data.to_string(),
-                    io_config,
-                ))
-            }
-            FileReferenceType::Data => {
-                let data_array = self.physical.get("data").expect("data exists");
-                let data_array = data_array.binary().expect("data is binary");
-                let data = data_array.get(idx)?;
-                let data = data.to_vec();
-                Some(FileReference::new_from_data(T::get_type(), data))
-            }
-        }
+impl<T> BlobArray<T>
+where
+    T: DaftMediaType,
+{
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<FileReference> {
+        let data = self.physical.get(idx)?;
+        Some(FileReference::new_from_data(T::get_type(), data.to_vec()))
     }
 }
 

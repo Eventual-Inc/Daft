@@ -135,7 +135,7 @@ pub enum DataType {
     Python,
 
     Unknown,
-    File(MediaType),
+    File(MediaType, bool),
 }
 
 impl Display for DataType {
@@ -210,7 +210,13 @@ impl Display for DataType {
             #[cfg(feature = "python")]
             Self::Python => write!(f, "Python"),
             Self::Unknown => write!(f, "Unknown"),
-            Self::File(format) => write!(f, "File[{format}]"),
+            Self::File(format, in_memory) => {
+                if *in_memory {
+                    write!(f, "File[{format}]")
+                } else {
+                    write!(f, "File[{format}; on disk]")
+                }
+            }
         }
     }
 }
