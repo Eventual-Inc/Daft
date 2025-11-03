@@ -31,7 +31,6 @@ impl PreShuffleMergeNode {
 
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         pre_shuffle_merge_threshold: usize,
         schema: SchemaRef,
@@ -43,7 +42,6 @@ impl PreShuffleMergeNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,

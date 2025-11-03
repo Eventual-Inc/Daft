@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable, Union
 
 from packaging.version import parse
 
-from daft.daft import ImageMode, PyDataType, PyTimeUnit, sql_datatype
+from daft.daft import ImageMode, PyDataType, PyMediaType, PyTimeUnit, sql_datatype
 from daft.dependencies import np, pa
 from daft.runners import get_or_create_runner
 
@@ -15,6 +15,29 @@ if TYPE_CHECKING:
     import builtins
 
     import jaxtyping
+
+
+class MediaType:
+    _media_type: PyMediaType
+
+    def __init__(self) -> None:
+        raise NotImplementedError("Please use MediaType.unknown() or .video() instead.")
+
+    @classmethod
+    def _from_pyfileformat(cls, mt: PyMediaType) -> MediaType:
+        fileformat = MediaType.__new__(MediaType)
+        fileformat._media_type = mt
+        return fileformat
+
+    @classmethod
+    def unknown(cls) -> MediaType:
+        """Represents an unknown media type."""
+        return cls._from_pyfileformat(PyMediaType.unknown())
+
+    @classmethod
+    def video(cls) -> MediaType:
+        """Represents a video media type."""
+        return cls._from_pyfileformat(PyMediaType.video())
 
 
 class TimeUnit:
@@ -163,9 +186,10 @@ class DataType:
             return cls.time(TimeUnit.us())
         elif check_type(datetime.timedelta):
             return cls.duration(TimeUnit.us())
-
+        elif check_type(daft.file.VideoFile):
+            return cls.file(MediaType.video())
         elif check_type(daft.file.File):
-            return cls.file()
+            return cls.file(MediaType.unknown())
         elif check_type(list):
             if len(args) == 0:
                 inner_dtype = cls.python()
@@ -823,9 +847,9 @@ class DataType:
         return cls._from_pydatatype(PyDataType.python())
 
     @classmethod
-    def file(cls) -> DataType:
+    def file(cls, media_type: MediaType = MediaType.unknown()) -> DataType:
         """Create a File DataType: a type which refers to a file object."""
-        return cls._from_pydatatype(PyDataType.file())
+        return cls._from_pydatatype(PyDataType.file(media_type._media_type))
 
     def is_null(self) -> builtins.bool:
         """Check if this is a null type.

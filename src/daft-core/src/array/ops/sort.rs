@@ -19,6 +19,7 @@ use crate::{
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
     },
+    file::DaftMediaType,
     kernels::search_sorted::{build_nulls_first_compare_with_nulls, cmp_float},
     series::Series,
 };
@@ -816,7 +817,10 @@ impl FixedShapeTensorArray {
     }
 }
 
-impl FileArray {
+impl<T> FileArray<T>
+where
+    T: DaftMediaType,
+{
     pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         todo!("impl sort for FileArray")
     }

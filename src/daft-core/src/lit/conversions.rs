@@ -1,5 +1,4 @@
 use common_error::{DaftError, DaftResult};
-use common_file::FileReference;
 use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use pyo3::{Py, PyAny, PyClass, Python};
@@ -9,6 +8,7 @@ use super::{FromLiteral, Literal, deserializer::LiteralDeserializer};
 use crate::python::{PyDataType, PyTimeUnit};
 use crate::{
     datatypes::IntervalValue,
+    file::FileReference,
     prelude::{CountMode, DataType, ImageFormat, ImageMode, ImageProperty, TimeUnit},
     series::Series,
 };

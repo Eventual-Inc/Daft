@@ -9,6 +9,7 @@ use crate::prelude::PythonArray;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{DaftArrowBackedType, FileArray},
+    file::DaftMediaType,
 };
 
 impl<T> DataArray<T>
@@ -112,7 +113,10 @@ impl StructArray {
     }
 }
 
-impl FileArray {
+impl<T> FileArray<T>
+where
+    T: DaftMediaType,
+{
     pub fn size_bytes(&self) -> usize {
         self.physical.size_bytes()
     }
