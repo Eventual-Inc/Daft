@@ -19,25 +19,29 @@ pub struct DefaultRuntimeStats {
 }
 
 impl DefaultRuntimeStats {
-    pub fn new_impl(meter: &Meter, node_id: NodeID) -> Self {
+    pub fn new_impl(meter: &Meter, node_id: NodeID, node_name: &str) -> Self {
         Self {
             active_tasks: meter
-                .i64_up_down_counter(format!("daft.{}.active_tasks", node_id))
+                .i64_up_down_counter(format!("daft.{}.{}.active_tasks", node_id, node_name))
                 .build(),
             completed_tasks: meter
-                .u64_counter(format!("daft.{}.completed_tasks", node_id))
+                .u64_counter(format!("daft.{}.{}.completed_tasks", node_id, node_name))
                 .build(),
             failed_tasks: meter
-                .u64_counter(format!("daft.{}.failed_tasks", node_id))
+                .u64_counter(format!("daft.{}.{}.failed_tasks", node_id, node_name))
                 .build(),
             cancelled_tasks: meter
-                .u64_counter(format!("daft.{}.cancelled_tasks", node_id))
+                .u64_counter(format!("daft.{}.{}.cancelled_tasks", node_id, node_name))
                 .build(),
         }
     }
 
-    pub fn new(node_id: NodeID) -> Self {
-        Self::new_impl(&global::meter("DistributedNodeStats-Default"), node_id)
+    pub fn new(node_id: NodeID, node_name: &str) -> Self {
+        Self::new_impl(
+            &global::meter("DistributedNodeStats-Default"),
+            node_id,
+            node_name,
+        )
     }
 
     fn inc_active_tasks(&self) {
@@ -55,13 +59,9 @@ impl RuntimeStats for DefaultRuntimeStats {
             TaskEvent::TaskScheduled { .. } => {
                 self.inc_active_tasks();
             }
-            TaskEvent::TaskCompleted { final_stats, .. } => {
+            TaskEvent::TaskCompleted { .. } => {
                 self.dec_active_tasks();
                 self.completed_tasks.add(1, &[]);
-                self.active_rows_in_map.remove(final_stats.context.task_id);
-                self.completed_rows_in.add(final_stats.rows_in, &[]);
-                self.completed_rows_out.add(final_stats.rows_out, &[]);
-                self.completed_cpu_us.add(final_stats.cpu_us, &[]);
             }
             TaskEvent::TaskFailed { .. } => {
                 self.dec_active_tasks();

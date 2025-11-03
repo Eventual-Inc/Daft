@@ -70,7 +70,6 @@ async fn init_otlp_metrics_provider(otlp_endpoint: &str) {
     let metrics_provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
         .with_reader(metrics_reader)
         .with_resource(resource)
-        .with_periodic_exporter(stdout_exporter)
         .build();
 
     global::set_meter_provider(metrics_provider.clone());

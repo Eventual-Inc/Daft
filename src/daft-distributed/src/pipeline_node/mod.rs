@@ -180,7 +180,7 @@ pub(crate) trait PipelineNodeImpl: Send + Sync {
     fn context(&self) -> &PipelineNodeContext;
     fn config(&self) -> &PipelineNodeConfig;
     fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::new(self.node_id()))
+        Arc::new(DefaultRuntimeStats::new(self.node_id(), self.name()))
     }
 
     fn children(&self) -> Vec<DistributedPipelineNode>;

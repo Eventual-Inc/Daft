@@ -51,6 +51,7 @@ uuid = {workspace = true}
 reqwest = {workspace = true, default-features = false}
 bincode = {workspace = true}
 serde = {workspace = true}
+serde_json = {workspace = true}
 
 [features]
 python = [
