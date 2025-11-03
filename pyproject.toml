@@ -30,7 +30,7 @@ homepage = "https://www.daft.ai"
 repository = "https://github.com/Eventual-Inc/Daft"
 
 [project.optional-dependencies]
-all = ["daft[aws, azure, clickhouse, deltalake, gcp, hudi, huggingface, iceberg, lance, numpy, openai, pandas, ray, sentence-transformers, spark, sql, transformers, turbopuffer, unity]"]
+all = ["daft[aws, azure, clickhouse, deltalake, gcp, hudi, huggingface, iceberg, lance, numpy, openai, pandas, ray, sentence-transformers, spark, sql, transformers, turbopuffer, unity, video]"]
 aws = ["boto3"]
 azure = []
 clickhouse = ["clickhouse_connect"]
@@ -52,11 +52,12 @@ ray = [
   'ray[data, client]>=2.0.0, <2.48.0 ; platform_system != "Windows"',
   'ray[data, client]>=2.10.0, <2.48.0 ; platform_system == "Windows"'  # ray 2.10 has the pyarrow upper pin removed
 ]
-transformers = ["transformers", "sentence-transformers", "torch", "torchvision"]
+transformers = ["transformers", "sentence-transformers", "torch", "torchvision", "tensorflow"]
 spark = ["googleapis-common-protos >= 1.56.4", "grpcio >= 1.48", "grpcio-status >= 1.48", "numpy >= 1.15", "pandas >= 1.0.5", "py4j >= 0.10.9.7", "pyspark == 3.5.5"]
 sql = ["connectorx", "sqlalchemy", "sqlglot"]
 turbopuffer = ["turbopuffer"]
 unity = ["httpx <= 0.27.2", "unitycatalog"]
+video = ["av >= 15.0.0"]
 viz = []
 
 [dependency-groups]
@@ -151,7 +152,9 @@ dev = [
   # mcap
   "mcap==1.3.0",
   "mcap-ros2-support==0.5.5",
-  "mcap-protobuf-support==0.5.3"
+  "mcap-protobuf-support==0.5.3",
+  # BigTable
+  "google-cloud-bigtable>=2.33.0"
 ]
 docs = [
   "markdown-exec",

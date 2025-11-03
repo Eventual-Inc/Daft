@@ -1138,7 +1138,7 @@ class PyDataType:
     @staticmethod
     def python() -> PyDataType: ...
     @staticmethod
-    def file() -> PyDataType: ...
+    def file(media_type: PyMediaType) -> PyDataType: ...
     def to_arrow(self, cast_tensor_type_for_ray: builtins.bool | None = None) -> pa.DataType: ...
     def is_null(self) -> builtins.bool: ...
     def is_boolean(self) -> builtins.bool: ...
@@ -1356,6 +1356,8 @@ def row_wise_udf(
     gpus: int,
     use_process: bool | None,
     max_concurrency: int | None,
+    max_retries: int | None,
+    on_error: str | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
 ) -> PyExpr: ...
@@ -1363,11 +1365,14 @@ def batch_udf(
     name: str,
     cls: ClsBase[Any],
     method: Callable[Concatenate[Any, ...], Any],
+    is_async: bool,
     return_dtype: PyDataType,
     gpus: int,
     use_process: bool | None,
     max_concurrency: int | None,
     batch_size: int | None,
+    max_retries: int | None,
+    on_error: str | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
 ) -> PyExpr: ...
@@ -1949,6 +1954,10 @@ class RaySwordfishWorker:
         total_memory_bytes: int,
     ) -> None: ...
 
+class PyLocalPartitionStream:
+    def __aiter__(self) -> PyLocalPartitionStream: ...
+    async def __anext__(self) -> PyMicroPartition: ...
+
 class NativeExecutor:
     def __init__(self) -> None: ...
     def run(
@@ -1956,18 +1965,9 @@ class NativeExecutor:
         plan: LocalPhysicalPlan,
         psets: dict[str, list[PyMicroPartition]],
         daft_ctx: PyDaftContext,
-        results_buffer_size: int | None,
-        context: dict[str, str] | None = None,
-    ) -> Iterator[PyMicroPartition]: ...
-    # Primarily used for Flotilla, so subscribers are unused
-    def run_async(
-        self,
-        plan: LocalPhysicalPlan,
-        psets: dict[str, list[PyMicroPartition]],
-        daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: int | None = None,
         context: dict[str, str] | None = None,
-    ) -> AsyncIterator[PyMicroPartition]: ...
+    ) -> PyLocalPartitionStream: ...
     @staticmethod
     def repr_ascii(builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, simple: bool) -> str: ...
     @staticmethod
@@ -2307,3 +2307,9 @@ class PyDaftFile:
     def _from_file_reference(ref: PyFileReference) -> PyDaftFile: ...
     def __enter__(self) -> PyDaftFile: ...
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None: ...
+
+class PyMediaType:
+    @staticmethod
+    def unknown() -> PyMediaType: ...
+    @staticmethod
+    def video() -> PyMediaType: ...

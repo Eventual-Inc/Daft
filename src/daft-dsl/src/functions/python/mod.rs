@@ -1,7 +1,7 @@
 mod runtime_py_object;
 mod udf;
 
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
@@ -12,6 +12,49 @@ use itertools::Itertools;
 use pyo3::{Bound, Py, PyAny, PyResult, Python, call::PyCallArgs, types::PyDict};
 pub use runtime_py_object::RuntimePyObject;
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
+pub enum OnError {
+    #[default]
+    Raise,
+    Log,
+    Ignore,
+}
+impl std::fmt::Display for OnError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Raise => write!(f, "raise"),
+            Self::Log => write!(f, "log"),
+            Self::Ignore => write!(f, "ignore"),
+        }
+    }
+}
+
+impl OnError {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Raise => "raise",
+            Self::Log => "log",
+            Self::Ignore => "ignore",
+        }
+    }
+}
+
+impl FromStr for OnError {
+    type Err = DaftError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "raise" => Ok(Self::Raise),
+            "log" => Ok(Self::Log),
+            "ignore" => Ok(Self::Ignore),
+            _ => Err(DaftError::ValueError(format!(
+                "Invalid on_error value: {}",
+                s
+            ))),
+        }
+    }
+}
 
 use super::FunctionExpr;
 #[cfg(feature = "python")]
@@ -253,6 +296,10 @@ pub struct UDFProperties {
     pub batch_size: Option<usize>,
     pub concurrency: Option<usize>,
     pub use_process: Option<bool>,
+    pub max_retries: Option<usize>,
+    pub is_async: bool,
+    pub is_scalar: bool,
+    pub on_error: Option<OnError>,
 }
 
 impl UDFProperties {
@@ -281,6 +328,10 @@ impl UDFProperties {
                         batch_size: *batch_size,
                         concurrency: *concurrency,
                         use_process: *use_process,
+                        max_retries: None,
+                        is_async: false,
+                        on_error: None,
+                        is_scalar: false,
                     });
                 }
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
@@ -288,6 +339,9 @@ impl UDFProperties {
                     gpus,
                     max_concurrency,
                     use_process,
+                    max_retries,
+                    on_error,
+                    is_async,
                     ..
                 }))) => {
                     num_udfs += 1;
@@ -301,6 +355,10 @@ impl UDFProperties {
                         batch_size: None,
                         concurrency: *max_concurrency,
                         use_process: *use_process,
+                        max_retries: *max_retries,
+                        is_async: *is_async,
+                        on_error: Some(*on_error),
+                        is_scalar: true,
                     });
                 }
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
@@ -309,6 +367,9 @@ impl UDFProperties {
                     max_concurrency,
                     use_process,
                     batch_size,
+                    max_retries,
+                    on_error,
+                    is_async,
                     ..
                 }))) => {
                     num_udfs += 1;
@@ -322,6 +383,10 @@ impl UDFProperties {
                         batch_size: *batch_size,
                         concurrency: *max_concurrency,
                         use_process: *use_process,
+                        max_retries: *max_retries,
+                        is_async: *is_async,
+                        on_error: Some(*on_error),
+                        is_scalar: false,
                     });
                 }
                 _ => {}

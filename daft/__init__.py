@@ -77,7 +77,7 @@ from daft.convert import (
 from daft.daft import ImageFormat, ImageMode, ImageProperty, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.schema import Schema
-from daft.datatype import DataType, TimeUnit
+from daft.datatype import DataType, TimeUnit, MediaType
 from daft.expressions import Expression, col, element, list_, lit, interval, struct, coalesce
 from daft.series import Series
 from daft.session import (
@@ -145,7 +145,7 @@ from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_run
 from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
-from daft.file import File
+from daft.file import File, VideoFile
 
 import daft.context as context
 import daft.io as io
@@ -166,12 +166,14 @@ __all__ = [
     "ImageFormat",
     "ImageMode",
     "ImageProperty",
+    "MediaType",
     "ResourceRequest",
     "Schema",
     "Series",
     "Session",
     "Table",
     "TimeUnit",
+    "VideoFile",
     "Window",
     "attach",
     "attach_catalog",

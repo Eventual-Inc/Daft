@@ -4,6 +4,10 @@
 
 Daft provides a simple, performant, and responsible way to access Common Crawl data.
 
+!!! warning "Warning"
+
+    These APIs are in beta and may be subject to change as the Common Crawl dataset continues to be developed.
+
 ## Prerequisites for access within the AWS Cloud
 
 Common Crawl data is hosted by [Amazon Web Services' Open Data Sets Sponsorships program](https://aws.amazon.com/opendata/) which makes it freely accessible.

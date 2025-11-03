@@ -1532,6 +1532,7 @@ dependencies = [
 
 [package.optional-dependencies]
 all = [
+    { name = "av" },
     { name = "boto3" },
     { name = "clickhouse-connect" },
     { name = "connectorx", version = "0.2.3", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
@@ -1555,6 +1556,7 @@ all = [
     { name = "sentence-transformers" },
     { name = "sqlalchemy" },
     { name = "sqlglot" },
+    { name = "tensorflow" },
     { name = "torch" },
     { name = "torchvision" },
     { name = "transformers" },
@@ -1612,6 +1614,7 @@ sql = [
 ]
 transformers = [
     { name = "sentence-transformers" },
+    { name = "tensorflow" },
     { name = "torch" },
     { name = "torchvision" },
     { name = "transformers" },
@@ -1622,6 +1625,9 @@ turbopuffer = [
 unity = [
     { name = "httpx" },
     { name = "unitycatalog" },
+]
+video = [
+    { name = "av" },
 ]
 
 [package.dev-dependencies]
@@ -1643,6 +1649,7 @@ dev = [
     { name = "docker" },
     { name = "duckdb" },
     { name = "gcsfs" },
+    { name = "google-cloud-bigtable" },
     { name = "grpcio" },
     { name = "grpcio-status" },
     { name = "httpx" },
@@ -1723,10 +1730,11 @@ lint = [
 
 [package.metadata]
 requires-dist = [
+    { name = "av", marker = "extra == 'video'", specifier = ">=15.0.0" },
     { name = "boto3", marker = "extra == 'aws'" },
     { name = "clickhouse-connect", marker = "extra == 'clickhouse'" },
     { name = "connectorx", marker = "extra == 'sql'" },
-    { name = "daft", extras = ["aws", "azure", "clickhouse", "deltalake", "gcp", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "ray", "sentence-transformers", "spark", "sql", "transformers", "turbopuffer", "unity"], marker = "extra == 'all'" },
+    { name = "daft", extras = ["aws", "azure", "clickhouse", "deltalake", "gcp", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "ray", "sentence-transformers", "spark", "sql", "transformers", "turbopuffer", "unity", "video"], marker = "extra == 'all'" },
     { name = "deltalake", marker = "extra == 'deltalake'" },
     { name = "fsspec" },
     { name = "googleapis-common-protos", marker = "extra == 'spark'", specifier = ">=1.56.4" },
@@ -1751,6 +1759,7 @@ requires-dist = [
     { name = "sentence-transformers", marker = "extra == 'transformers'" },
     { name = "sqlalchemy", marker = "extra == 'sql'" },
     { name = "sqlglot", marker = "extra == 'sql'" },
+    { name = "tensorflow", marker = "extra == 'transformers'" },
     { name = "torch", marker = "extra == 'transformers'" },
     { name = "torchvision", marker = "extra == 'transformers'" },
     { name = "tqdm" },
@@ -1759,7 +1768,7 @@ requires-dist = [
     { name = "typing-extensions", specifier = ">=4.0.0" },
     { name = "unitycatalog", marker = "extra == 'unity'" },
 ]
-provides-extras = ["all", "aws", "azure", "clickhouse", "deltalake", "gcp", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "ray", "transformers", "spark", "sql", "turbopuffer", "unity", "viz"]
+provides-extras = ["all", "aws", "azure", "clickhouse", "deltalake", "gcp", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "ray", "transformers", "spark", "sql", "turbopuffer", "unity", "video", "viz"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1780,6 +1789,7 @@ dev = [
     { name = "docker" },
     { name = "duckdb", specifier = "==1.1.2" },
     { name = "gcsfs", specifier = "==2023.12.0" },
+    { name = "google-cloud-bigtable", specifier = ">=2.33.0" },
     { name = "grpcio", specifier = "==1.68.1" },
     { name = "grpcio-status", specifier = "==1.67.0" },
     { name = "httpx", specifier = "==0.27.2" },
@@ -2457,6 +2467,12 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/14/4b/ead00905132820b623732b175d66354e9d3e69fcf2a5dcdab780664e7896/google_api_core-2.25.1-py3-none-any.whl", hash = "sha256:8a2a56c1fef82987a524371f99f3bd0143702fecc670c72e600c1cda6bf8dbb7", size = 160807, upload-time = "2025-06-12T20:52:19.334Z" },
 ]
 
+[package.optional-dependencies]
+grpc = [
+    { name = "grpcio" },
+    { name = "grpcio-status" },
+]
+
 [[package]]
 name = "google-auth"
 version = "2.40.3"
@@ -2482,6 +2498,24 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/fb/87/e10bf24f7bcffc1421b84d6f9c3377c30ec305d082cd737ddaa6d8f77f7c/google_auth_oauthlib-1.2.2.tar.gz", hash = "sha256:11046fb8d3348b296302dd939ace8af0a724042e8029c1b872d87fabc9f41684", size = 20955, upload-time = "2025-04-22T16:40:29.172Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ac/84/40ee070be95771acd2f4418981edb834979424565c3eec3cd88b6aa09d24/google_auth_oauthlib-1.2.2-py3-none-any.whl", hash = "sha256:fd619506f4b3908b5df17b65f39ca8d66ea56986e5472eb5978fd8f3786f00a2", size = 19072, upload-time = "2025-04-22T16:40:28.174Z" },
+]
+
+[[package]]
+name = "google-cloud-bigtable"
+version = "2.34.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "google-api-core", extra = ["grpc"] },
+    { name = "google-auth" },
+    { name = "google-cloud-core" },
+    { name = "google-crc32c" },
+    { name = "grpc-google-iam-v1" },
+    { name = "proto-plus" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/29/20/8a29e1d5858ba76f443dc527a223e769347b915cb060a9f19250241aa38a/google_cloud_bigtable-2.34.0.tar.gz", hash = "sha256:773258b00cd3f9a3a35639cc38bd711f4f1418aaa0c8d70cb028978ed98dc2c2", size = 766606, upload-time = "2025-10-22T19:04:53.645Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/55/6d/aa44110504b4b9d125f1cc9715b72a178ebbe5cb79698e7a95893c391e56/google_cloud_bigtable-2.34.0-py3-none-any.whl", hash = "sha256:a4a8db4903840cd3f89fb19c060eea2e7c09c1265cb0538cfc11288dbc6000e4", size = 537041, upload-time = "2025-10-22T19:04:52.014Z" },
 ]
 
 [[package]]
@@ -2591,6 +2625,11 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/86/f1/62a193f0227cf15a920390abe675f386dec35f7ae3ffe6da582d3ade42c7/googleapis_common_protos-1.70.0-py3-none-any.whl", hash = "sha256:b8bfcca8c25a2bb253e0e0b0adaf8c00773e5e6af6fd92397576680b807e0fd8", size = 294530, upload-time = "2025-04-14T10:17:01.271Z" },
 ]
 
+[package.optional-dependencies]
+grpc = [
+    { name = "grpcio" },
+]
+
 [[package]]
 name = "graphql-core"
 version = "3.2.6"
@@ -2674,6 +2713,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c6/b5/23b91f22b7b3a7f8f62223f6664946271c0f5cb4179605a3e6bbae863920/griffe-1.13.0.tar.gz", hash = "sha256:246ea436a5e78f7fbf5f24ca8a727bb4d2a4b442a2959052eea3d0bfe9a076e0", size = 412759, upload-time = "2025-08-26T13:27:11.422Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/aa/8c/b7cfdd8dfe48f6b09f7353323732e1a290c388bd14f216947928dc85f904/griffe-1.13.0-py3-none-any.whl", hash = "sha256:470fde5b735625ac0a36296cd194617f039e9e83e301fcbd493e2b58382d0559", size = 139365, upload-time = "2025-08-26T13:27:09.882Z" },
+]
+
+[[package]]
+name = "grpc-google-iam-v1"
+version = "0.14.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "googleapis-common-protos", extra = ["grpc"] },
+    { name = "grpcio" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/76/1e/1011451679a983f2f5c6771a1682542ecb027776762ad031fd0d7129164b/grpc_google_iam_v1-0.14.3.tar.gz", hash = "sha256:879ac4ef33136c5491a6300e27575a9ec760f6cdf9a2518798c1b8977a5dc389", size = 23745, upload-time = "2025-10-15T21:14:53.318Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4a/bd/330a1bbdb1afe0b96311249e699b6dc9cfc17916394fd4503ac5aca2514b/grpc_google_iam_v1-0.14.3-py3-none-any.whl", hash = "sha256:7a7f697e017a067206a3dfef44e4c634a34d3dee135fe7d7a4613fe3e59217e6", size = 32690, upload-time = "2025-10-15T21:14:51.72Z" },
 ]
 
 [[package]]

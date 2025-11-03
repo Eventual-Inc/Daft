@@ -1,4 +1,6 @@
 [dependencies]
+async-trait = {workspace = true}
+common-runtime = {path = "../common/runtime", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
 common-macros = {path = "../common/macros"}
@@ -10,8 +12,10 @@ daft-sketch = {path = "../daft-sketch", default-features = false}
 derive_more = {workspace = true}
 indexmap = {workspace = true}
 itertools = {workspace = true}
+log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
+tokio = {workspace = true, optional = true}
 typetag = {workspace = true}
 
 [dev-dependencies]
@@ -20,7 +24,9 @@ rstest = {workspace = true}
 [features]
 python = [
   "dep:pyo3",
+  "dep:tokio",
   "common-error/python",
+  "common-runtime/python",
   "daft-core/python",
   "common-treenode/python",
   "common-py-serde/python",

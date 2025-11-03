@@ -10,7 +10,6 @@ use std::{
 
 use common_display::table_display::StrValue;
 use common_error::{DaftError, DaftResult, ensure};
-use common_file::FileReference;
 use common_hashable_float_wrapper::FloatWrapper;
 use common_image::{CowImage, Image};
 #[cfg(feature = "python")]
@@ -21,6 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     datatypes::IntervalValue,
+    file::FileReference,
     prelude::*,
     series::from_lit::combine_lit_types,
     utils::display::{
@@ -329,7 +329,7 @@ impl Literal {
                     .map(|(k, v)| Field::new(k, v.get_type()))
                     .collect(),
             ),
-            Self::File(_) => DataType::File,
+            Self::File(f) => DataType::File(f.media_type),
             Self::Tensor { data, .. } => DataType::Tensor(Box::new(data.data_type().clone())),
             Self::SparseTensor {
                 values,
@@ -542,6 +542,14 @@ impl Literal {
             _ => Ok(None),
         }
         .map_err(|e| DaftError::ValueError(format!("Failed to convert literal to usize: {}", e)))
+    }
+
+    /// If the literal is `Float32`, return it. Otherwise, return None.
+    pub fn as_f32(&self) -> Option<f32> {
+        match self {
+            Self::Float32(f) => Some(*f),
+            _ => None,
+        }
     }
 
     /// If the literal is `Float64`, return it. Otherwise, return None.

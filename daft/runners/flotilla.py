@@ -19,6 +19,7 @@ from daft.daft import (
     RayTaskResult,
     set_compute_runtime_num_worker_threads,
 )
+from daft.event_loop import set_event_loop
 from daft.expressions import Expression, ExpressionsProjection
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.partitioning import (
@@ -52,6 +53,7 @@ class RaySwordfishActor:
             os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(num_gpus))
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
         set_compute_runtime_num_worker_threads(num_cpus)
+        set_event_loop(asyncio.get_running_loop())
 
     async def run_plan(
         self,
@@ -61,13 +63,18 @@ class RaySwordfishActor:
         context: dict[str, str] | None,
     ) -> AsyncGenerator[MicroPartition | list[PartitionMetadata], None]:
         """Run a plan on swordfish and yield partitions."""
+        # We import PyDaftContext inside the function because PyDaftContext is not serializable.
+        from daft.daft import PyDaftContext
+
         with profile():
             psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
             psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
 
             metas = []
             native_executor = NativeExecutor()
-            async for partition in native_executor.run_async(plan, psets_mp, exec_cfg, None, context):
+            ctx = PyDaftContext()
+            ctx._daft_execution_config = exec_cfg
+            async for partition in native_executor.run(plan, psets_mp, ctx, None, context):
                 if partition is None:
                     break
                 mp = MicroPartition._from_pymicropartition(partition)
@@ -224,6 +231,7 @@ class RemoteFlotillaRunner:
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
         self.plan_runner = DistributedPhysicalPlanRunner()
         ray._private.worker.blocking_get_inside_async_warned = True
+        set_event_loop(asyncio.get_running_loop())
 
     def run_plan(
         self,
@@ -287,7 +295,6 @@ class FlotillaRunner:
             name=FLOTILLA_RUNNER_NAME,
             namespace=FLOTILLA_RUNNER_NAMESPACE,
             get_if_exists=True,
-            lifetime="detached",
             scheduling_strategy=(
                 ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=head_node_id,

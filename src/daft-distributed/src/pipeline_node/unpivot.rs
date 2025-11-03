@@ -29,7 +29,6 @@ impl UnpivotNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         ids: Vec<BoundExpr>,
         values: Vec<BoundExpr>,
@@ -44,7 +43,6 @@ impl UnpivotNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,

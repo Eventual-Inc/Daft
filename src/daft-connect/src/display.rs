@@ -122,7 +122,7 @@ fn type_to_string(dtype: &DataType) -> String {
         DataType::UInt16 => "arrow.uint16",
         DataType::UInt32 => "arrow.uint32",
         DataType::UInt64 => "arrow.uint64",
-        DataType::File => "daft.file",
+        DataType::File(_) => "daft.file",
     }
     .to_string()
 }

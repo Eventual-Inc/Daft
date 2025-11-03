@@ -1,4 +1,5 @@
 [dependencies]
+async-recursion = "1.0.4"
 arrow-array = {version = "54.2.1"}
 arrow2 = {workspace = true, features = ["arrow"]}
 comfy-table = {workspace = true}
@@ -20,6 +21,7 @@ pyo3 = {workspace = true, optional = true}
 rand = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
+tokio = {workspace = true}
 
 [features]
 arrow = ["arrow2/arrow"]
