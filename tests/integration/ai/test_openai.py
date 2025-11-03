@@ -378,3 +378,179 @@ def test_prompt_with_image_structured_output(session):
         assert "#0000ff" in analysis["dominant_color"].lower()
 
     time.sleep(1)  # self limit to ~1 tps.
+
+
+@pytest.mark.integration()
+def test_prompt_with_pdf_document(session):
+    """Test prompt function with PDF document input."""
+    import tempfile
+
+    # Create a simple test PDF (mock content for testing)
+    pdf_content = b"""%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 44 >>
+stream
+BT
+/F1 12 Tf
+100 700 Td
+(Hello from PDF!) Tj
+ET
+endstream
+endobj
+xref
+0 5
+0000000000 65535 f
+0000000009 00000 n
+0000000058 00000 n
+0000000115 00000 n
+0000000214 00000 n
+trailer
+<< /Size 5 /Root 1 0 R >>
+startxref
+306
+%%EOF"""
+
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False, mode="wb") as tmp:
+        tmp.write(pdf_content)
+        temp_path = tmp.name
+
+    try:
+        df = daft.from_pydict(
+            {
+                "question": [
+                    "What does this document contain?",
+                ],
+                "document_path": [temp_path],
+            }
+        )
+
+        df = df.with_column(
+            "answer",
+            prompt(
+                daft.col("question"),
+                daft.col("document_path"),
+                model="gpt-5-mini",
+            ),
+        )
+
+        answers = df.to_pydict()["answer"]
+
+        # Basic sanity checks - responses should be non-empty strings
+        assert len(answers) == 1
+        for answer in answers:
+            assert isinstance(answer, str)
+            assert len(answer) > 0
+
+    finally:
+        import os
+
+        os.unlink(temp_path)
+
+    time.sleep(1)  # self limit to ~1 tps.
+
+
+@pytest.mark.integration()
+def test_prompt_with_text_document(session):
+    """Test prompt function with text file input."""
+    import tempfile
+
+    # Create a simple text file
+    with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w") as tmp:
+        tmp.write("This is a test document about artificial intelligence and machine learning.")
+        temp_path = tmp.name
+
+    try:
+        df = daft.from_pydict(
+            {
+                "question": [
+                    "Summarize this document in one sentence.",
+                ],
+                "document_path": [temp_path],
+            }
+        )
+
+        df = df.with_column(
+            "answer",
+            prompt(
+                daft.col("question"),
+                daft.col("document_path"),
+                model="gpt-5-mini",
+            ),
+        )
+
+        answers = df.to_pydict()["answer"]
+
+        # Basic sanity checks
+        assert len(answers) == 1
+        for answer in answers:
+            assert isinstance(answer, str)
+            assert len(answer) > 0
+
+    finally:
+        import os
+
+        os.unlink(temp_path)
+
+    time.sleep(1)  # self limit to ~1 tps.
+
+
+@pytest.mark.integration()
+def test_prompt_with_mixed_image_and_document(session):
+    """Test prompt function with both image and document inputs."""
+    import tempfile
+
+    import numpy as np
+
+    # Create a red square image
+    red_square = np.zeros((100, 100, 3), dtype=np.uint8)
+    red_square[:, :, 0] = 255  # Red channel
+
+    # Create a simple text file
+    with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w") as tmp:
+        tmp.write("This document describes a red colored object.")
+        temp_path = tmp.name
+
+    try:
+        df = daft.from_pydict(
+            {
+                "question": [
+                    "Does the image match the description in the document?",
+                ],
+                "image": [red_square],
+                "document_path": [temp_path],
+            }
+        )
+
+        df = df.with_column(
+            "answer",
+            prompt(
+                daft.col("question"),
+                daft.col("image"),
+                daft.col("document_path"),
+                model="gpt-5-mini",
+            ),
+        )
+
+        answers = df.to_pydict()["answer"]
+
+        # Basic sanity checks
+        assert len(answers) == 1
+        for answer in answers:
+            assert isinstance(answer, str)
+            assert len(answer) > 0
+
+    finally:
+        import os
+
+        os.unlink(temp_path)
+
+    time.sleep(1)  # self limit to ~1 tps.

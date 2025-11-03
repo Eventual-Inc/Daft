@@ -413,11 +413,27 @@ def prompt(
 ) -> Expression:
     """Returns an expression that prompts a large language model using the specified model and provider.
 
+    Supports multi-modal inputs including text, images, and files (PDFs, documents, audio, video, etc.).
+
+    Per OpenAI Responses API, there are three input types:
+        - input_text: Plain text strings (str)
+        - input_image: Images (detected by MIME type - anything starting with "image/")
+        - input_file: All other files (PDFs, documents, audio, video, etc.)
+
+    Messages can contain:
+        - Plain text strings (always treated as input_text)
+        - Image data (numpy arrays, bytes, or File objects - detected by MIME type)
+        - Files (PDF, TXT, HTML, audio, video, etc.) as bytes or File objects (detected by MIME type)
+
     Args:
-        messages (list[Expression]): The list of messages to prompt the model with.
-        return_format (BaseModel | None): The return format for the prompt.
+        messages (list[Expression]): The list of messages to prompt the model with. Each expression can contain:
+            - str: Plain text (always input_text)
+            - numpy arrays: Images (input_image)
+            - bytes: Binary content - images or files (detected by MIME type)
+            - File objects: Images or files (detected by MIME type)
+        return_format (BaseModel | None): The return format for the prompt. Use a Pydantic model for structured outputs.
         system_message (str | None): The system message for the prompt.
-        provider (str | Provider | None): The provider to use for the prompt.
+        provider (str | Provider | None): The provider to use for the prompt (default: "openai").
         model (str | None): The model to use for the prompt.
         **options: Any additional options to pass for the prompt.
 
