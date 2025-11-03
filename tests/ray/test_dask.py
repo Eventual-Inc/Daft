@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 import pytest
+
+# Skip all tests in this module if Python < 3.12
+if sys.version_info < (3, 12):
+    pytest.skip("Requires Python 3.12+", allow_module_level=True)
 
 # Skip all tests in this module if pyarrow < 14.0.1
 pytest.importorskip("pyarrow", minversion="14.0.1")
