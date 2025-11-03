@@ -4,8 +4,10 @@ use pyo3::{intern, prelude::*};
 
 use crate::Image;
 
-impl FromPyObject<'_> for Image {
-    fn extract_bound(ob: &Bound<PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'_, 'py> for Image {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, 'py, PyAny>) -> Result<Self, Self::Error> {
         let py = ob.py();
         let mode: String = ob.getattr(intern!(py, "mode"))?.extract()?;
         let width: u32 = ob.getattr(intern!(py, "width"))?.extract()?;

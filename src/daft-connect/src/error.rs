@@ -121,6 +121,14 @@ impl From<pyo3::PyErr> for ConnectError {
     }
 }
 
+impl<'py> From<pyo3::pyclass::PyClassGuardError<'_, 'py>> for ConnectError {
+    fn from(value: pyo3::pyclass::PyClassGuardError<'_, 'py>) -> Self {
+        Self::InternalError {
+            msg: value.to_string(),
+        }
+    }
+}
+
 impl ConnectError {
     pub fn invalid_relation<S: Into<String>>(relation: S) -> Self {
         Self::InvalidRelation {

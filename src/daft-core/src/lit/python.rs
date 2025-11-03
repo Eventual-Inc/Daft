@@ -270,8 +270,8 @@ impl Literal {
             ob.is_instance(&ty_obj)
         }
 
-        fn extract_numpy_scalar<'py, T: FromPyObject<'py>>(ob: &'py Bound<PyAny>) -> PyResult<T> {
-            ob.call_method0(intern!(ob.py(), "item"))?.extract()
+        fn get_numpy_scalar<'py>(ob: &'py Bound<PyAny>) -> PyResult<Bound<'py, PyAny>> {
+            ob.call_method0(intern!(ob.py(), "item"))
         }
 
         macro_rules! isinstance {
@@ -315,7 +315,7 @@ impl Literal {
         } else if PyList::type_check(ob) {
             pylist_to_list_lit(ob, dtype)?
         } else if PyDict::type_check(ob) {
-            let dict = ob.downcast::<PyDict>()?;
+            let dict = ob.cast::<PyDict>()?;
 
             // if the data type was explicitly specified, respect that
             // otherwise, infer based on key types
@@ -346,27 +346,27 @@ impl Literal {
         {
             numpy_array_like_to_tensor_lit(ob)?
         } else if isinstance!(ob, "numpy", "bool_") {
-            Self::Boolean(extract_numpy_scalar(ob)?)
+            Self::Boolean(get_numpy_scalar(ob)?.extract()?)
         } else if isinstance!(ob, "numpy", "int8") {
-            Self::Int8(extract_numpy_scalar(ob)?)
+            Self::Int8(get_numpy_scalar(ob)?.extract()?)
         } else if isinstance!(ob, "numpy", "uint8") {
-            Self::UInt8(extract_numpy_scalar(ob)?)
+            Self::UInt8(get_numpy_scalar(ob)?.extract()?)
         } else if isinstance!(ob, "numpy", "int16") {
-            Self::Int16(extract_numpy_scalar(ob)?)
+            Self::Int16(get_numpy_scalar(ob)?.extract()?)
         } else if isinstance!(ob, "numpy", "uint16") {
-            Self::UInt16(extract_numpy_scalar(ob)?)
+            Self::UInt16(get_numpy_scalar(ob)?.extract()?)
         } else if isinstance!(ob, "numpy", "int32") {
-            Self::Int32(extract_numpy_scalar(ob)?)
+            Self::Int32(get_numpy_scalar(ob)?.extract()?)
         } else if isinstance!(ob, "numpy", "uint32") {
-            Self::UInt32(extract_numpy_scalar(ob)?)
+            Self::UInt32(get_numpy_scalar(ob)?.extract()?)
         } else if isinstance!(ob, "numpy", "int64") {
-            Self::Int64(extract_numpy_scalar(ob)?)
+            Self::Int64(get_numpy_scalar(ob)?.extract()?)
         } else if isinstance!(ob, "numpy", "uint64") {
-            Self::UInt64(extract_numpy_scalar(ob)?)
+            Self::UInt64(get_numpy_scalar(ob)?.extract()?)
         } else if isinstance!(ob, "numpy", "float32") {
-            Self::Float32(extract_numpy_scalar(ob)?)
+            Self::Float32(get_numpy_scalar(ob)?.extract()?)
         } else if isinstance!(ob, "numpy", "float64") {
-            Self::Float64(extract_numpy_scalar(ob)?)
+            Self::Float64(get_numpy_scalar(ob)?.extract()?)
         } else if isinstance!(ob, "numpy", "datetime64") {
             numpy_datetime64_to_date_or_timestamp_lit(ob)?
         } else if isinstance!(ob, "pandas", "Series") {
@@ -405,8 +405,10 @@ fn pydatetime_to_timestamp_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
     #[derive(Clone)]
     struct PyTz(chrono_tz::Tz);
 
-    impl FromPyObject<'_> for PyTz {
-        fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
+    impl<'py> FromPyObject<'_, 'py> for PyTz {
+        type Error = PyErr;
+
+        fn extract(ob: Borrowed<'_, 'py, PyAny>) -> Result<Self, Self::Error> {
             chrono_tz::Tz::from_str(
                 &ob.getattr(intern!(ob.py(), "zone"))?
                     .extract::<PyBackedStr>()?,
@@ -499,7 +501,7 @@ fn pydelta_to_duration_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
 }
 
 fn pylist_to_list_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResult<Literal> {
-    let list = ob.downcast::<PyList>()?;
+    let list = ob.cast::<PyList>()?;
     let child_dtype = dtype.and_then(|t| match t {
         DataType::List(child) | DataType::FixedSizeList(child, _) => {
             Some(child.as_ref().clone().into())
@@ -548,7 +550,7 @@ fn pydict_to_map_lit(dict: &Bound<PyDict>, dtype: Option<&DataType>) -> PyResult
 }
 
 fn pytuple_to_struct_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResult<Literal> {
-    let tuple = ob.downcast::<PyTuple>()?;
+    let tuple = ob.cast::<PyTuple>()?;
 
     let field_mapping: IndexMap<_, _> = if let Some(DataType::Struct(fields)) = dtype
         && tuple.len() == fields.len()
@@ -601,7 +603,7 @@ fn pydantic_model_to_struct_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> 
     };
 
     let dict = ob.call_method0(intern!(py, "model_dump"))?;
-    let dict = dict.downcast::<PyDict>()?;
+    let dict = dict.cast::<PyDict>()?;
 
     pydict_to_struct_lit(dict, Some(&dtype))
 }
