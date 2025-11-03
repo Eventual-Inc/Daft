@@ -2,17 +2,18 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
+# Skip all tests in this module if pyarrow < 14.0.1
+pytest.importorskip("pyarrow", minversion="14.0.1")
+
 import dask.dataframe as dd
 import numpy as np
 import pandas as pd
-import pytest
 
 import daft
 from daft import DataType
 from tests.conftest import get_tests_daft_runner_name
-
-# Skip all tests in this module if pyarrow < 14.0.1
-pytest.importorskip("pyarrow", minversion="14.0.1")
 
 
 class MyObj:
