@@ -81,6 +81,9 @@ class RaySwordfishActor:
                 metas.append(PartitionMetadata.from_table(mp))
                 yield mp
             yield metas
+            import coverage
+
+            coverage.coverage.current().save()
 
 
 @ray.remote  # type: ignore[misc]
@@ -258,6 +261,9 @@ class RemoteFlotillaRunner:
         if next_partition_ref is None:
             self.curr_plans.pop(plan_id)
             self.curr_result_gens.pop(plan_id)
+            import coverage
+
+            coverage.coverage.current().save()
             return None
 
         metadata_accessor = PartitionMetadataAccessor.from_metadata_list(
