@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import time
 from abc import ABC, abstractmethod
 from collections import deque
 from typing import TYPE_CHECKING, Any
@@ -58,8 +59,6 @@ class DummyVLLMExecutor(VLLMExecutor):
 
 class BlockingVLLMExecutor(VLLMExecutor):
     def __init__(self, model: str, engine_args: dict[str, Any], generate_args: dict[str, Any]):
-        import time
-
         from vllm import LLM, SamplingParams
 
         start_time = time.perf_counter()
@@ -112,8 +111,6 @@ class LocalVLLMExecutor(VLLMExecutor):
     def __init__(
         self, model: str, engine_args: dict[str, Any], generate_args: dict[str, Any], use_threading: bool = True
     ):
-        import time
-
         from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
 
         args = AsyncEngineArgs(model=model, **engine_args)
@@ -133,6 +130,9 @@ class LocalVLLMExecutor(VLLMExecutor):
         self.task_count_lock = threading.Lock()
 
         self.completed_tasks: deque[tuple[str, RecordBatch]] = deque()
+
+        self.last_log_time = time.perf_counter()
+        self.last_log_lock = threading.Lock()
 
         self.use_threading = use_threading
         if self.use_threading:
@@ -171,6 +171,14 @@ class LocalVLLMExecutor(VLLMExecutor):
 
         with self.task_count_lock:
             self.running_task_count -= 1
+
+        # Check if we need to log (in case periodic log isn't running in distributed mode)
+        current_time = time.perf_counter()
+        with self.last_log_lock:
+            time_since_last_log = current_time - self.last_log_time
+            if time_since_last_log >= 5.0:
+                await self.llm.do_log_stats()
+                self.last_log_time = time.perf_counter()
 
     def submit(self, _prefix: str | None, prompts: list[str], rows: RecordBatch) -> None:
         """Submit a batch of prompts and rows to the executor, returning once all tasks are started."""
