@@ -17,7 +17,7 @@ def test_vllm_prompter():
         "response",
         prompt(
             df["prompt"],
-            provider="vllm-prefix-cached",
+            provider="vllm-prefix-caching",
             model="facebook/opt-125m",
         ),
     )

@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class VLLMPrefixCachedPrompterDescriptor(PrompterDescriptor):
+class VLLMPrefixCachingPrompterDescriptor(PrompterDescriptor):
     """Descriptor for vLLM prompter.
 
     Note: This descriptor is not actually used to instantiate a Prompter.

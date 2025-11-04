@@ -532,9 +532,9 @@ def prompt(
     prompter_descriptor = _resolve_provider(provider, "openai").get_prompter(model, **options)
 
     # Check if this is a vLLM provider - if so, use PyExpr.vllm directly
-    from daft.ai.vllm.protocols.prompter import VLLMPrefixCachedPrompterDescriptor
+    from daft.ai.vllm.protocols.prompter import VLLMPrefixCachingPrompterDescriptor
 
-    if isinstance(prompter_descriptor, VLLMPrefixCachedPrompterDescriptor):
+    if isinstance(prompter_descriptor, VLLMPrefixCachingPrompterDescriptor):
         if return_format is not None:
             raise ValueError("return_format is not supported for vLLM provider")
 

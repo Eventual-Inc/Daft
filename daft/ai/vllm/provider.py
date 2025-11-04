@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from daft.ai.typing import Options
 
 
-class VLLMPrefixCachedProvider(Provider):
+class VLLMPrefixCachingProvider(Provider):
     """vLLM provider for optimized LLM inference with prefix caching.
 
     Note:
@@ -20,7 +20,7 @@ class VLLMPrefixCachedProvider(Provider):
     _options: Options
 
     def __init__(self, name: str | None = None, **options: Any):
-        self._name = name if name else "vllm-prefix-cached"
+        self._name = name if name else "vllm-prefix-caching"
         self._options = options
 
     @property
@@ -28,7 +28,7 @@ class VLLMPrefixCachedProvider(Provider):
         return self._name
 
     def get_prompter(self, model: str | None = None, **options: Any) -> PrompterDescriptor:
-        from daft.ai.vllm.protocols.prompter import VLLMPrefixCachedPrompterDescriptor
+        from daft.ai.vllm.protocols.prompter import VLLMPrefixCachingPrompterDescriptor
 
         descriptor_kwargs = {
             "provider_name": self._name,
@@ -39,4 +39,4 @@ class VLLMPrefixCachedProvider(Provider):
         if model is not None:
             descriptor_kwargs["model_name"] = model
 
-        return VLLMPrefixCachedPrompterDescriptor(**descriptor_kwargs)
+        return VLLMPrefixCachingPrompterDescriptor(**descriptor_kwargs)
