@@ -115,7 +115,7 @@ def test_write_sql_replace_table(sqlite_db_path):
 
     # Replace with new data
     df2 = daft.from_pydict({"id": [100, 200], "name": ["New1", "New2"]})
-    result_df = df2.write_sql("users", conn=url, mode="replace")
+    result_df = df2.write_sql("users", conn=url, mode="overwrite")
 
     # Verify replacement worked
     result_data = result_df.to_pydict()
