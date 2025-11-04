@@ -47,13 +47,22 @@ impl PyScalarFn {
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         match self {
-            Self::RowWise(RowWisePyFn {
-                function_name,
-                args,
-                return_dtype,
-                ..
-            })
-            | Self::Batch(BatchPyFn {
+            Self::RowWise(
+                pyfn @ RowWisePyFn {
+                    function_name,
+                    args,
+                    ..
+                },
+            ) => {
+                let field_name = if let Some(first_child) = args.first() {
+                    first_child.get_name(schema)?
+                } else {
+                    function_name.to_string()
+                };
+
+                Ok(Field::new(field_name, pyfn.get_return_dtype(schema)?))
+            }
+            Self::Batch(BatchPyFn {
                 function_name,
                 args,
                 return_dtype,

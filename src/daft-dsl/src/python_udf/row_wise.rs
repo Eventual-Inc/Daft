@@ -56,7 +56,6 @@ pub struct RowWisePyFn {
     pub max_concurrency: Option<usize>,
     pub max_retries: Option<usize>,
     pub on_error: crate::functions::python::OnError,
-    pub return_dtype_fn: RuntimePyObject,
 }
 
 impl Display for RowWisePyFn {
@@ -68,6 +67,36 @@ impl Display for RowWisePyFn {
 }
 
 impl RowWisePyFn {
+    // honestly not sure if this is the best approach, but since a daft.File can be backed by either Blob or File datatype
+    // we need some special handling.
+    // We can't (easily) do this on the python side as there's no way we can infer if its a blob or file backed file from the signature alone
+    // ex `def process_file(file: daft.File) -> daft.File: ...`
+    // The type signature does not provide enough information to determine the return type.
+    // So we actually need to infer the return type based on the arguments passed to the function.
+    // We assume the input dtype matches the output dtype.
+    pub fn get_return_dtype(&self, schema: &Schema) -> DaftResult<DataType> {
+        if matches!(self.return_dtype, DataType::File(_)) {
+            let args = self
+                .args
+                .iter()
+                .map(|arg| arg.to_field(schema))
+                .filter(|field| {
+                    field
+                        .as_ref()
+                        .is_ok_and(|f| f.dtype.is_file() || f.dtype.is_blob())
+                })
+                .collect::<DaftResult<Vec<Field>>>()?;
+
+            Ok(args
+                .first()
+                .expect("No file or blob arguments found")
+                .dtype
+                .clone())
+        } else {
+            Ok(self.return_dtype.clone())
+        }
+    }
+
     pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
         assert_eq!(
             children.len(),
@@ -123,6 +152,8 @@ impl RowWisePyFn {
     #[cfg(feature = "python")]
     pub async fn call_async(&self, args: &[Series]) -> DaftResult<Series> {
         use common_error::DaftError;
+        let schema = Schema::new(args.iter().map(|s| s.field().clone()));
+        let return_dtype = self.get_return_dtype(&schema)?;
 
         use crate::functions::python::OnError;
         let num_rows = args
@@ -164,7 +195,7 @@ impl RowWisePyFn {
 
         let result_series = result_series
             .map_err(DaftError::from)
-            .and_then(|s| Ok(s.cast(&self.return_dtype)?.rename(name)));
+            .and_then(|s| Ok(s.cast(&return_dtype)?.rename(name)));
 
         match (result_series, self.on_error) {
             (Ok(result_series), _) => Ok(result_series),
@@ -173,11 +204,11 @@ impl RowWisePyFn {
                 log::warn!("Python UDF error: {}", err);
                 let num_rows = args.iter().map(Series::len).max().unwrap();
 
-                Ok(Series::full_null(name, &self.return_dtype, num_rows))
+                Ok(Series::full_null(name, &return_dtype, num_rows))
             }
             (Err(_), OnError::Ignore) => {
                 let num_rows = args.iter().map(Series::len).max().unwrap();
-                Ok(Series::full_null(name, &self.return_dtype, num_rows))
+                Ok(Series::full_null(name, &return_dtype, num_rows))
             }
         }
     }
@@ -193,6 +224,8 @@ impl RowWisePyFn {
         let cls_ref = self.cls.as_ref();
         let method_ref = self.method.as_ref();
         let args_ref = self.original_args.as_ref();
+        let schema = Schema::new(args.iter().map(|s| s.field().clone()));
+        let return_dtype = self.get_return_dtype(&schema)?;
 
         let name = args[0].name();
         let on_error = self.on_error;
@@ -261,14 +294,14 @@ impl RowWisePyFn {
 
                 let f = || {
                     func.call1((cls_ref, method_ref, args_ref, &py_args))
-                        .and_then(|res| Literal::from_pyobj(&res, Some(&self.return_dtype)))
+                        .and_then(|res| Literal::from_pyobj(&res, Some(&return_dtype)))
                         .map_err(DaftError::from)
                 };
                 let res = retry(py, f, max_retries, on_error, delay_ms);
                 py_args.clear();
                 res
             });
-            series_from_literals_iter(iter, Some(self.return_dtype.clone()))
+            series_from_literals_iter(iter, Some(return_dtype.clone()))
         })?
         .rename(name);
 
@@ -289,7 +322,9 @@ impl RowWisePyFn {
         let method = self.method.clone();
         let original_args = self.original_args.clone();
         let args = args.to_vec();
-        let py_return_type = daft_core::python::PyDataType::from(self.return_dtype.clone());
+        let schema = Schema::new(args.iter().map(|s| s.field().clone()));
+        let return_dtype = self.get_return_dtype(&schema)?;
+        let py_return_type = daft_core::python::PyDataType::from(return_dtype);
 
         common_runtime::python::execute_python_coroutine::<_, PySeries>(move |py| {
             let f = py
