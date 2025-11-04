@@ -86,12 +86,13 @@ def test_write_sql_create_simple_table(sqlite_db_path: Path):
 def test_write_sql_append_to_existing_table(sqlite_db_path):
     """Test appending data to an existing table."""
     url = sqlite_connection_url(sqlite_db_path)
+
     # First write
-    df1 = daft.from_pydict({"id": [1, 2], "name": ["Alice", "Bob"]})
+    df1 = daft.from_pydict({"id": [1, 2], "name": ["Charlie", "David"]})
     df1.write_sql("users", conn=url, mode="create")
 
     # Append more data
-    df2 = daft.from_pydict({"id": [3, 4], "name": ["Charlie", "David"]})
+    df2 = daft.from_pydict({"id": [3, 4], "name": ["Alice", "Bob"]})
     result_df = df2.write_sql("users", conn=url, mode="append")
 
     # Verify append worked
