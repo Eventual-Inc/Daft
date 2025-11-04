@@ -70,6 +70,7 @@ class SQLDataSink(DataSink[WriteSqlResult]):
         table_name: str,
         connection: Union[str, Callable[[], Connection]],  # noqa: UP007
         mode: SQL_SINK_MODES,
+        schema: Schema,
     ) -> None:
         """Initialize SQLDataSink.
 
@@ -77,10 +78,12 @@ class SQLDataSink(DataSink[WriteSqlResult]):
             table_name: Name of the target SQL table.
             connection: Connection string (URL) or factory callable that returns a connection.
             mode: How this sink should write into the database.
+            schema: The schema for the Daft DataFrame that we're writing.
         """
         self._table_name = table_name
         self._connection = connection
         self._mode = mode
+        self._df_schema = schema
 
         # Create SQLConnection for dialect detection and schema handling
         if isinstance(connection, str):
@@ -110,12 +113,12 @@ class SQLDataSink(DataSink[WriteSqlResult]):
         conn = self._get_connection()
         try:
             if self._mode == "create":
-                create_table(self._table_name, conn)
+                create_table(self._table_name, conn, self._df_schema)
             elif self._mode == "append":
-                ensure_table_exists(self._table_name, conn)
+                ensure_table_exists(self._table_name, conn, self._df_schema)
             elif self._mode == "replace":
                 drop_table_if_exists(self._table_name, conn)
-                create_table(self._table_name, conn)
+                create_table(self._table_name, conn, self._df_schema)
             else:
                 raise ValueError(f"Unrecognized mode: '{self._mode}'. Expecting one of {SQL_SINK_MODES}")
         finally:
@@ -131,40 +134,30 @@ class SQLDataSink(DataSink[WriteSqlResult]):
             WriteResult: Result containing rows/bytes written metadata
         """
         conn = self._get_connection()
-        try:
-            metadata = MetaData()
-            table_exists = False
-            table = None
 
-            for i, micropartition in enumerate(micropartitions):
+        metadata = MetaData()
+        metadata.reflect(bind=conn)
+
+        result = WriteSqlResult(table_name=self._table_name)
+
+        try:
+            for micropartition in micropartitions:
                 # Convert MicroPartition to PyArrow table
                 arrow_table = micropartition.to_arrow()
                 rows_written = arrow_table.num_rows
                 bytes_written = arrow_table.nbytes
 
-                # On first write, create the table schema if needed
-                if i == 0 and self._mode in ("create", "replace"):
-                    table = create_table_from_arrow(conn, arrow_table, metadata)
-                    table_exists = True
-                elif i == 0 and self._mode == "append":
-                    # Load existing table metadata
-                    metadata.reflect(bind=conn)
-                    if self._table_name not in metadata.tables:
-                        raise ValueError(f"Table '{self._table_name}' does not exist. Use mode='create'")
-                    table = metadata.tables[self._table_name]
-                    table_exists = True
+                table = create_table_from_arrow(self._table_name, conn, arrow_table, metadata)
 
-                # Insert rows into table using executemany with pylist
-                if table_exists and table is not None:
-                    insert_arrow_table(conn, table, arrow_table)
+                insert_arrow_table(conn, table, arrow_table)
 
                 yield WriteResult(
-                    result=WriteSqlResult(table_name=self._table_name),
+                    result=result,
                     bytes_written=bytes_written,
                     rows_written=rows_written,
                 )
 
-            # Commit the transaction
+            # Commit the transaction, writing all micropartition updates into the database
             conn.commit()
 
         except Exception as e:
@@ -207,7 +200,7 @@ class SQLDataSink(DataSink[WriteSqlResult]):
         return tbl
 
 
-def create_table(table_name: str, conn: Connection) -> None:
+def create_table(table_name: str, conn: Connection, df_schema: Schema) -> None:
     """Create a new table in the database."""
     inspector = inspect(conn)
     if table_name in inspector.get_table_names():
@@ -215,29 +208,50 @@ def create_table(table_name: str, conn: Connection) -> None:
             f"Table '{table_name}' already exists! Use mode='append' or mode='replace' instead of mode='create'"
         )
 
-    raise NotImplementedError("Create the table!")
+    # Create the table
+    create_table_sql = f"CREATE TABLE {table_name} ({', '.join([f'{col.name} {col.type}' for col in df_schema])})"
+    conn.execute(text(create_table_sql))
+    conn.commit()
 
 
-def ensure_table_exists(table_name: str, conn: Connection) -> None:
+def ensure_table_exists(table_name: str, conn: Connection, df_schema: Schema) -> None:
     """Ensure that a table exists in the database."""
     inspector = inspect(conn)
     if table_name not in inspector.get_table_names():
         raise ValueError(f"Table '{table_name}' does not exist!")
 
+    # The table must have the exact same columns (name + type) of the DataFrame that we're writing.
+    existing_columns = inspector.get_columns(table_name)
 
-def drop_table_if_exists(table_name: str, conn: Connection) -> None:
-    """Drop the table if it exists."""
-    inspector = inspect(conn)
-    if table_name in inspector.get_table_names():
-        conn.execute(text(f"DROP TABLE {table_name}"))
-        conn.commit()
+    # First, we check that all existing table columns match the DataFrame schema.
+    for existing_column in existing_columns:
+        name = existing_column["name"]
+        if name not in df_schema.names:
+            raise ValueError(
+                f"Extra column '{name}' exists in the table but it does not does not exist in DataFrame schema!"
+            )
+
+        df_col = df_schema[name]
+        df_type_sql = arrow_type_to_sqlalchemy_type(df_col.dtype.to_arrow_type())
+
+        col_type_sql = existing_column["type"]
+
+        if df_type_sql != col_type_sql:
+            raise ValueError(
+                f"Column '{name}' type mismatch! DataFrame has {df_type_sql} (Daft: {df_col.dtype}) but "
+                f"existing table's ({table_name}) column type is {col_type_sql}."
+            )
+
+    # Second, we check that we have the same number of columns.
+    if len(existing_columns) != len(df_schema.names):
+        raise ValueError(
+            f"DataFrame has {len(df_schema.names)} columns but table {table_name} has {len(existing_columns)} columns."
+        )
+
+    # All columns match and there are no missing columns!
 
 
-def insert_arrow_table(conn: Connection, table: Table, arrow_table: pa.Table) -> None:
-    """Insert Arrow table data into SQL table.
-
-    Uses PyArrow's to_pylist() to convert to Python objects for SQLAlchemy insertion.
-    """
+def drop_table_if_exists(table_name: str, conn: Connection, arrow_table: pa.Table) -> None:
     if arrow_table.num_rows == 0:
         return
 
@@ -249,20 +263,11 @@ def insert_arrow_table(conn: Connection, table: Table, arrow_table: pa.Table) ->
     conn.execute(insert_stmt, data)
 
 
-def create_table_from_arrow(
-    mode: SQL_SINK_MODES, table_name: str, conn: Connection, arrow_table: pa.Table, metadata: MetaData
-) -> Table:
+def create_table_from_arrow(table_name: str, conn: Connection, arrow_table: pa.Table, metadata: MetaData) -> Table:
     """Create a SQL table from an Arrow table schema."""
-    # Drop table if mode is replace
-    if mode == "replace":
-        drop_table_if_exists(table_name, conn)
-
-    # Create table from Arrow schema
     columns = arrow_schema_to_sqlalchemy_columns(arrow_table.schema)
-
     table = Table(table_name, metadata, *columns)
     metadata.create_all(conn)
-
     return table
 
 

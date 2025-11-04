@@ -1744,7 +1744,7 @@ class DataFrame:
         """
         from daft.io.sql import SQLDataSink
 
-        sink = SQLDataSink(table_name=table_name, connection=conn, mode=mode)
+        sink = SQLDataSink(table_name=table_name, connection=conn, mode=mode, schema=self.schema)
         return self.write_sink(sink)
 
     ###
