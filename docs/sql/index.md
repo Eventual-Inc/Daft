@@ -193,12 +193,6 @@ SQL also has access to all of Daft's powerful [`daft.Expression`][daft.Expressio
 
 However, unlike the Python Expression API which encourages method-chaining (e.g. `col("a").url.download().image.decode()`), in SQL you have to do function nesting instead (e.g. `"image_decode(url_download(a))"`).
 
-!!! note "Note"
-
-    A full catalog of the available SQL Functions in Daft is available in [`SQL Reference`](sql/index.md).
-
-    Note that it closely mirrors the Python API, with some function naming differences vs the available Python methods. We also have some aliased functions for ANSI SQL-compliance or familiarity to users coming from other common SQL dialects such as PostgreSQL and SparkSQL to easily find their functionality.
-
 Here is an example of an equivalent function call in SQL vs Python:
 
 === "⚙️ SQL"
