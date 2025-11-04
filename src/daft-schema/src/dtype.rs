@@ -135,7 +135,9 @@ pub enum DataType {
     Python,
 
     Unknown,
-    File(MediaType, bool),
+    File(MediaType),
+    /// Same as file, but for binary data.
+    Blob(MediaType),
 }
 
 impl Display for DataType {
@@ -210,13 +212,8 @@ impl Display for DataType {
             #[cfg(feature = "python")]
             Self::Python => write!(f, "Python"),
             Self::Unknown => write!(f, "Unknown"),
-            Self::File(format, in_memory) => {
-                if *in_memory {
-                    write!(f, "File[{format}]")
-                } else {
-                    write!(f, "File[{format}; on disk]")
-                }
-            }
+            Self::File(format) => write!(f, "File[{format}]"),
+            Self::Blob(format) => write!(f, "Blob[{format}]"),
         }
     }
 }
@@ -322,7 +319,8 @@ impl DataType {
             | Self::FixedShapeTensor(..)
             | Self::SparseTensor(..)
             | Self::FixedShapeSparseTensor(..)
-            | Self::File(..) => {
+            | Self::File(..)
+            | Self::Blob(..) => {
                 let physical = Box::new(self.to_physical());
                 let logical_extension = Self::Extension(
                     DAFT_SUPER_EXTENSION_NAME.into(),
@@ -409,11 +407,10 @@ impl DataType {
                 },
             ]),
             File(..) => Struct(vec![
-                Field::new("discriminant", UInt8),
-                Field::new("data", Binary),
                 Field::new("url", Utf8),
                 Field::new("io_config", Binary),
             ]),
+            Blob(..) => Binary,
             _ => {
                 assert!(self.is_physical());
                 self.clone()
@@ -721,6 +718,15 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_blob(&self) -> bool {
+        match self {
+            Self::Blob(..) => true,
+            Self::Extension(_, inner, _) => inner.is_blob(),
+            _ => false,
+        }
+    }
+
+    #[inline]
     pub fn to_floating_representation(&self) -> DaftResult<Self> {
         let data_type = match self {
             // All numeric types that coerce to `f32`
@@ -802,6 +808,7 @@ impl DataType {
                 | Self::FixedShapeSparseTensor(..)
                 | Self::Map { .. }
                 | Self::File(..)
+                | Self::Blob(..)
         )
     }
 

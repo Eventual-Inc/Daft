@@ -38,15 +38,9 @@ where
             mut physical,
             ..
         } = self;
-        physical.field = Arc::new(Field::new(
-            "literal",
-            DataType::File(U::get_type(), true).to_physical(),
-        ));
+        physical.field = Arc::new(Field::new("literal", Self::dtype().to_physical()));
 
-        BlobArray::new(
-            Field::new(&field.name, DataType::File(U::get_type(), true)),
-            physical,
-        )
+        BlobArray::new(Field::new(&field.name, Self::dtype()), physical)
     }
 
     pub fn media_type(&self) -> MediaType {
@@ -56,6 +50,7 @@ where
     pub fn from_values(name: &str, values: &BinaryArray) -> Self {
         BlobArray::new(Field::new(name, Self::dtype()), values.clone())
     }
+
     pub fn iter(&self) -> BlobArrayIter<'_, T> {
         BlobArrayIter {
             array: self,
@@ -64,7 +59,7 @@ where
     }
 
     fn dtype() -> DataType {
-        DataType::File(T::get_type(), true)
+        DataType::Blob(T::get_type())
     }
 }
 

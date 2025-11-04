@@ -330,8 +330,8 @@ impl Literal {
                     .collect(),
             ),
             Self::File(f) => match f.get_type() {
-                crate::file::FileReferenceType::Reference => DataType::File(f.media_type, false),
-                crate::file::FileReferenceType::Data => DataType::File(f.media_type, true),
+                crate::file::FileReferenceType::Reference => DataType::File(f.media_type),
+                crate::file::FileReferenceType::Data => DataType::Blob(f.media_type),
             },
             Self::Tensor { data, .. } => DataType::Tensor(Box::new(data.data_type().clone())),
             Self::SparseTensor {

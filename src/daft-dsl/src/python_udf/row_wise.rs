@@ -56,6 +56,7 @@ pub struct RowWisePyFn {
     pub max_concurrency: Option<usize>,
     pub max_retries: Option<usize>,
     pub on_error: crate::functions::python::OnError,
+    pub return_dtype_fn: RuntimePyObject,
 }
 
 impl Display for RowWisePyFn {

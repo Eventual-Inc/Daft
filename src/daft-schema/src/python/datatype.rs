@@ -337,8 +337,13 @@ impl PyDataType {
     }
 
     #[staticmethod]
-    pub fn file(ff: MediaType) -> PyResult<Self> {
-        Ok(DataType::File(ff, false).into())
+    pub fn file(ty: MediaType) -> PyResult<Self> {
+        Ok(DataType::File(ty).into())
+    }
+
+    #[staticmethod]
+    pub fn blob(ty: MediaType) -> PyResult<Self> {
+        Ok(DataType::Blob(ty).into())
     }
 
     pub fn to_arrow<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -523,6 +528,9 @@ impl PyDataType {
 
     pub fn is_file(&self) -> bool {
         self.dtype.is_file()
+    }
+    pub fn is_blob(&self) -> bool {
+        self.dtype.is_blob()
     }
 
     pub fn fixed_size(&self) -> PyResult<usize> {

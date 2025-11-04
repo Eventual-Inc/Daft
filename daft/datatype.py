@@ -851,6 +851,11 @@ class DataType:
         """Create a File DataType: a type which refers to a file object."""
         return cls._from_pydatatype(PyDataType.file(media_type._media_type))
 
+    @classmethod
+    def blob(cls, media_type: MediaType = MediaType.unknown()) -> DataType:
+        """Create a Blob DataType: a type which is similar in functionality to File, but for in memory data."""
+        return cls._from_pydatatype(PyDataType.blob(media_type._media_type))
+
     def is_null(self) -> builtins.bool:
         """Check if this is a null type.
 
@@ -1241,6 +1246,16 @@ class DataType:
             >>> assert dtype.is_file()
         """
         return self._dtype.is_file()
+
+    def is_blob(self) -> builtins.bool:
+        """Check if this is a blob type.
+
+        Examples:
+            >>> import daft
+            >>> dtype = daft.DataType.blob()
+            >>> assert dtype.is_blob()
+        """
+        return self._dtype.is_blob()
 
     @property
     def size(self) -> int:

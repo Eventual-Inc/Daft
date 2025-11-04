@@ -75,7 +75,7 @@ def test_can_convert_bytes_to_file_type():
     assert df.schema() == daft.Schema.from_pydict({"data": dt.binary()})
 
     df = df.select(file(df["data"]))
-    assert df.schema() == daft.Schema.from_pydict({"data": dt.file()})
+    assert df.schema() == daft.Schema.from_pydict({"data": dt.blob()})
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")

@@ -7,7 +7,11 @@ use common_io_config::IOConfig;
 pub use daft_schema::media_type::MediaType;
 use serde::{Deserialize, Serialize};
 
+use crate::prelude::DaftDataType;
+
 pub trait DaftMediaType: Sync + Send + Clone + 'static + std::fmt::Debug {
+    type DataType: DaftDataType;
+
     fn get_type() -> MediaType
     where
         Self: Sized;
@@ -20,6 +24,8 @@ impl DaftMediaType for MediaTypeUnknown {
     fn get_type() -> MediaType {
         MediaType::Unknown
     }
+
+    type DataType = FileType<MediaTypeUnknown>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -29,6 +35,7 @@ impl DaftMediaType for MediaTypeVideo {
     fn get_type() -> MediaType {
         MediaType::Video
     }
+    type DataType = FileType<MediaTypeVideo>;
 }
 
 #[derive(Clone, Debug)]

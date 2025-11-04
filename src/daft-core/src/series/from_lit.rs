@@ -10,10 +10,16 @@ use arrow2::{
 };
 use common_error::{DaftError, DaftResult};
 use common_image::CowImage;
+use daft_schema::media_type::MediaType;
 use indexmap::IndexMap;
 use itertools::Itertools;
 
-use crate::{array::ops::image::image_array_from_img_buffers, prelude::*};
+use crate::{
+    array::{blob_array::BlobArray, ops::image::image_array_from_img_buffers},
+    datatypes::FileArray,
+    file::{DataOrReference, MediaTypeUnknown, MediaTypeVideo},
+    prelude::*,
+};
 
 /// Downcasts a datatype to one that's compatible with literals.
 /// example:
@@ -342,60 +348,70 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
 
             PythonArray::from_iter("literal", iter).into_series()
         }
-        DataType::File(file_type, _) => {
-            todo!()
-            // let values = values.collect::<Vec<_>>();
+        DataType::File(media_type) => {
+            let (files, io_confs): (Vec<Option<String>>, Vec<_>) = values
+                .map(|(i, lit)| {
+                    let Some(f) = unwrap_inner!(lit, i, File) else {
+                        return (None, None);
+                    };
 
-            // let discriminant = UInt8Array::from_iter(
-            //     Field::new("discriminant", DataType::UInt8),
-            //     values
-            //         .iter()
-            //         .map(|(i, lit)| unwrap_inner!(lit, *i, File).map(|f| f.get_type() as u8)),
-            // )
-            // .into_series();
-            // let validity = discriminant.validity().cloned();
+                    match f.inner {
+                        DataOrReference::Reference(file, ioconfig) => {
+                            let io_conf = ioconfig.map(|c| {
+                                bincode::serialize(&c)
+                                    .expect("Failed to serialize IO configuration")
+                            });
 
-            // let (files_and_configs, data): (Vec<_>, Vec<Option<Vec<u8>>>) = values
-            //     .into_iter()
-            //     .map(|(i, lit)| {
-            //         let Some(f) = unwrap_inner!(lit, i, File) else {
-            //             return ((None, None), None);
-            //         };
+                            (Some(file), io_conf)
+                        }
+                        DataOrReference::Data(_) => {
+                            unreachable!("DataOrReference::Data should not be used for File type")
+                        }
+                    }
+                })
+                .unzip();
 
-            //         match f.inner {
-            //             DataOrReference::Reference(file, ioconfig) => {
-            //                 let io_conf = ioconfig.map(|c| {
-            //                     bincode::serialize(&c)
-            //                         .expect("Failed to serialize IO configuration")
-            //                 });
-
-            //                 ((Some(file), io_conf), None)
-            //             }
-            //             DataOrReference::Data(items) => {
-            //                 ((None, None), Some(items.as_ref().clone()))
-            //             }
-            //         }
-            //     })
-            //     .unzip();
-            // let (files, io_confs): (Vec<Option<String>>, Vec<_>) =
-            //     files_and_configs.into_iter().unzip();
-            // let sa_field = Field::new("literal", DataType::File(file_type).to_physical());
-            // let io_configs = BinaryArray::from_iter("io_config", io_confs.into_iter());
-            // let urls = Utf8Array::from_iter("url", files.into_iter());
-            // let data = BinaryArray::from_iter("data", data.into_iter());
-            // let sa = StructArray::new(
-            //     sa_field,
-            //     vec![
-            //         discriminant,
-            //         data.into_series(),
-            //         urls.into_series(),
-            //         io_configs.into_series(),
-            //     ],
-            //     validity,
-            // );
-            // FileArray::<MediaTypeUnknown>::new(Field::new("literal", DataType::File(file_type)), sa)
-            //     .into_series()
+            let sa_field = Field::new("literal", DataType::File(media_type).to_physical());
+            let io_configs = BinaryArray::from_iter("io_config", io_confs.into_iter());
+            let urls = Utf8Array::from_iter("url", files.into_iter());
+            let validity = urls.validity().cloned();
+            let sa = StructArray::new(
+                sa_field,
+                vec![urls.into_series(), io_configs.into_series()],
+                validity,
+            );
+            let field = Field::new("literal", DataType::File(media_type.clone()));
+            match media_type {
+                MediaType::Unknown => FileArray::<MediaTypeUnknown>::new(field, sa).into_series(),
+                MediaType::Video => FileArray::<MediaTypeVideo>::new(field, sa).into_series(),
+            }
         }
+        DataType::Blob(media_type) => {
+            let data: Vec<Option<Vec<u8>>> = values
+                .map(|(i, lit)| {
+                    let Some(f) = unwrap_inner!(lit, i, File) else {
+                        return None;
+                    };
+
+                    match f.inner {
+                        DataOrReference::Reference(..) => {
+                            unreachable!(
+                                "DataOrReference::Reference should not be used for Blob type"
+                            )
+                        }
+                        DataOrReference::Data(data) => Some(data.as_ref().clone()),
+                    }
+                })
+                .collect();
+
+            let arr = BinaryArray::from_iter("literal", data.into_iter());
+
+            match media_type {
+                MediaType::Unknown => BlobArray::<MediaTypeUnknown>::new(field, arr).into_series(),
+                MediaType::Video => BlobArray::<MediaTypeVideo>::new(field, arr).into_series(),
+            }
+        }
+
         DataType::Tensor(_) => {
             let (data, shapes) = values
                 .map(|(i, v)| {

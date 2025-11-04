@@ -20,7 +20,6 @@ mod concat;
 mod concat_agg;
 mod count;
 mod exp;
-pub mod file;
 mod filter;
 mod float;
 mod floor;

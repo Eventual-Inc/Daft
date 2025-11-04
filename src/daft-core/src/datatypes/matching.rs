@@ -48,10 +48,10 @@ macro_rules! with_match_daft_types {
             DataType::Utf8 => __with_ty__! { Utf8Type },
             #[cfg(feature = "python")]
             DataType::Python => __with_ty__! { PythonType },
-            DataType::File(MediaType::Unknown, false) => __with_ty__! { UnknownFileType },
-            DataType::File(MediaType::Video, false) => __with_ty__! { VideoFileType },
-            DataType::File(MediaType::Unknown, true) => __with_ty__! { UnknownBlobType },
-            DataType::File(MediaType::Video, true) => __with_ty__! { VideoBlobType },
+            DataType::File(MediaType::Unknown) => __with_ty__! { UnknownFileType },
+            DataType::File(MediaType::Video) => __with_ty__! { VideoFileType },
+            DataType::Blob(MediaType::Unknown) => __with_ty__! { UnknownBlobType },
+            DataType::Blob(MediaType::Video) => __with_ty__! { VideoBlobType },
 
             // NOTE: We should not implement a default for match here, because this is meant to be
             // an exhaustive match across **all** Daft types.
@@ -379,8 +379,27 @@ macro_rules! with_match_file_types {
         use $crate::file::{MediaType, MediaTypeUnknown, MediaTypeVideo};
 
         match $key_type {
-            DataType::File(MediaType::Unknown, _) => __with_ty__! { MediaTypeUnknown },
-            DataType::File(MediaType::Video, _) => __with_ty__! { MediaTypeVideo },
+            DataType::File(MediaType::Unknown) => __with_ty__! { MediaTypeUnknown },
+            DataType::File(MediaType::Video) => __with_ty__! { MediaTypeVideo },
+            _ => panic!("Only File Types are supported, {:?} not implemented", $key_type)
+        }
+    }};
+}
+#[macro_export]
+macro_rules! with_match_blob_types {
+    (
+        $key_type:expr
+        , |$_:tt $T:ident| $($body:tt)*
+        $(,)?
+    ) => {{
+        macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+        use $crate::datatypes::*;
+        use $crate::datatypes::DataType;
+        use $crate::file::{MediaType, MediaTypeUnknown, MediaTypeVideo};
+
+        match $key_type {
+            DataType::Blob(MediaType::Unknown) => __with_ty__! { MediaTypeUnknown },
+            DataType::Blob(MediaType::Video) => __with_ty__! { MediaTypeVideo },
             _ => panic!("Only File Types are supported, {:?} not implemented", $key_type)
         }
     }};

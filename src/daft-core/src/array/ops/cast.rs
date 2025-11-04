@@ -554,7 +554,8 @@ where
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         use daft_schema::media_type::MediaType::*;
         match dtype {
-            DataType::File(media_type, false) => match (media_type, T::get_type()) {
+            DataType::Utf8 => self.physical.get(Self::URLS_KEY),
+            DataType::File(media_type) => match (media_type, T::get_type()) {
                 (Unknown, Unknown) | (Video, Video) => Ok(self.clone().into_series()),
                 (Unknown, Video) => Ok(self.clone().change_type::<MediaTypeVideo>().into_series()),
                 (Video, Unknown) => {
@@ -574,7 +575,22 @@ where
     T: DaftMediaType,
 {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        todo!()
+        use daft_schema::media_type::MediaType::*;
+        match dtype {
+            DataType::Binary => Ok(self.physical.clone().into_series()),
+            DataType::Blob(media_type) => match (media_type, T::get_type()) {
+                (Unknown, Unknown) | (Video, Video) => Ok(self.clone().into_series()),
+                (Unknown, Video) => Ok(self.clone().change_type::<MediaTypeVideo>().into_series()),
+                (Video, Unknown) => {
+                    Ok(self.clone().change_type::<MediaTypeUnknown>().into_series())
+                }
+            },
+            DataType::Null => {
+                Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
+            }
+            dtype if dtype == self.data_type() => Ok(self.clone().into_series()),
+            dtype => todo!("cast {dtype} for BlobArray"),
+        }
     }
 }
 

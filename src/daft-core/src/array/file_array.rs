@@ -6,7 +6,7 @@ use daft_schema::{dtype::DataType, field::Field, media_type::MediaType};
 use crate::{
     array::prelude::*,
     datatypes::logical::LogicalArrayImpl,
-    file::{DaftMediaType, FileReference, FileReferenceType, FileType},
+    file::{DaftMediaType, FileReference, FileType},
     series::IntoSeries,
 };
 
@@ -48,8 +48,10 @@ impl<T> FileArray<T>
 where
     T: DaftMediaType,
 {
+    pub const URLS_KEY: &'static str = "url";
+    pub const IO_CONFIG_KEY: &'static str = "io_config";
     fn dtype() -> DataType {
-        DataType::File(T::get_type(), true)
+        DataType::File(T::get_type())
     }
 
     pub fn media_type(&self) -> MediaType {
@@ -57,18 +59,15 @@ where
     }
 
     pub fn from_values(name: &str, urls: &Utf8Array, io_config: Option<IOConfig>) -> Self {
-        let discriminant = UInt8Array::from_values(
-            "discriminant",
-            std::iter::repeat_n(FileReferenceType::Reference as u8, urls.len()),
-        )
-        .into_series();
-
         let sa_field = Field::new("literal", Self::dtype().to_physical());
+
         let io_conf: Option<Vec<u8>> =
             io_config.map(|c| bincode::serialize(&c).expect("Failed to serialize IOConfig"));
-        let io_conf = BinaryArray::from_iter("io_config", std::iter::repeat_n(io_conf, urls.len()));
+        let io_conf = BinaryArray::from_iter(
+            Self::IO_CONFIG_KEY,
+            std::iter::repeat_n(io_conf, urls.len()),
+        );
 
-        let data = BinaryArray::full_null("data", &DataType::Binary, urls.len()).into_series();
         let io_conf = io_conf
             .with_validity(urls.validity().cloned())
             .expect("Failed to set validity");
@@ -76,9 +75,7 @@ where
         let sa = StructArray::new(
             sa_field,
             vec![
-                discriminant,
-                data,
-                urls.clone().into_series().rename("url"),
+                urls.clone().into_series().rename(Self::URLS_KEY),
                 io_conf.into_series(),
             ],
             urls.validity().cloned(),

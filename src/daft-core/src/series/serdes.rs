@@ -338,6 +338,9 @@ impl<'d> serde::Deserialize<'d> for Series {
                     DataType::File(..) => {
                         panic!("Unable to deserialize File DataType");
                     }
+                    DataType::Blob(..) => {
+                        panic!("Unable to deserialize Blob DataType");
+                    }
                 }
             }
         }
