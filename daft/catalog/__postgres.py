@@ -437,7 +437,7 @@ class PostgresTable(Table):
         query = psycopg.sql.SQL("SELECT * FROM {}").format(quoted_full_table)
 
         return read_sql(
-            str(query),
+            query.as_string(),
             connection_string,
             **options,
         )
@@ -450,11 +450,11 @@ class PostgresTable(Table):
             # When no schema is specified, PostgreSQL uses the schema search path to select the schema to use.
             # Since this is user-configurable, we simply pass along the single identifier to PostgreSQL.
             # See: https://www.postgresql.org/docs/current/ddl-schemas.html#DDL-SCHEMAS-PATH
-            table_name = psycopg.sql.Identifier(identifier[0]).as_string()
+            table_name = identifier[0]
             db_schema_name = None
         elif len(identifier) == 2:
-            db_schema_name = psycopg.sql.Identifier(identifier[0]).as_string()
-            table_name = psycopg.sql.Identifier(identifier[1]).as_string()
+            db_schema_name = identifier[0]
+            table_name = identifier[1]
         else:
             raise ValueError(f"Invalid table identifier: {identifier}")
 
@@ -464,6 +464,7 @@ class PostgresTable(Table):
             with conn.cursor() as cur:
                 for record_batch in df.to_arrow_iter():
                     cur.adbc_ingest(table_name, record_batch, mode="create_append", db_schema_name=db_schema_name)
+            conn.commit()
 
     def overwrite(self, df: DataFrame, **options: Any) -> None:
         """Overwrite the table with the DataFrame."""
@@ -473,11 +474,11 @@ class PostgresTable(Table):
             # When no schema is specified, PostgreSQL uses the schema search path to select the schema to use.
             # Since this is user-configurable, we simply pass along the single identifier to PostgreSQL.
             # See: https://www.postgresql.org/docs/current/ddl-schemas.html#DDL-SCHEMAS-PATH
-            table_name = psycopg.sql.Identifier(identifier[0]).as_string()
+            table_name = identifier[0]
             db_schema_name = None
         elif len(identifier) == 2:
-            db_schema_name = psycopg.sql.Identifier(identifier[0]).as_string()
-            table_name = psycopg.sql.Identifier(identifier[1]).as_string()
+            db_schema_name = identifier[0]
+            table_name = identifier[1]
         else:
             raise ValueError(f"Invalid table identifier: {identifier}")
 
@@ -487,6 +488,7 @@ class PostgresTable(Table):
             with conn.cursor() as cur:
                 first_batch = True
                 for record_batch in df.to_arrow_iter():
-                    mode = "replace" if first_batch else "create_append"
+                    mode = "replace" if first_batch else "append"
                     cur.adbc_ingest(table_name, record_batch, mode=mode, db_schema_name=db_schema_name)
                     first_batch = False
+            conn.commit()

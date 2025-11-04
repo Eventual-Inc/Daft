@@ -832,6 +832,8 @@ class Table(ABC):
         """
         if mode == "append":
             return self.append(df, **options)
+        else:
+            return self.overwrite(df, **options)
 
     @abstractmethod
     def append(self, df: DataFrame, **options: Any) -> None:
