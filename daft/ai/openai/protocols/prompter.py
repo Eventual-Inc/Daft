@@ -100,15 +100,14 @@ class OpenAIPrompter(Prompter):
             mime_type = daft_file.mime_type()
             with daft_file.open() as f:
                 base64_string = base64.b64encode(f.read()).decode("utf-8")
-                encoded_content = f"data:{mime_type};base64,{base64_string}"
+            encoded_content = f"data:{mime_type};base64,{base64_string}"
         elif isinstance(msg, File):
             mime_type = msg.mime_type()
             with msg.open() as f:
                 base64_string = base64.b64encode(f.read()).decode("utf-8")
-                encoded_content = f"data:{mime_type};base64,{base64_string}"
+            encoded_content = f"data:{mime_type};base64,{base64_string}"
         else:
             raise ValueError(f"Unsupported content type in prompt: {type(msg)}")
-
         # Determine if it's an image or generic file based on MIME type
         if mime_type.startswith("image/"):
             return {"type": "input_image", "image_url": encoded_content}
