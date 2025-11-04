@@ -209,9 +209,23 @@ def create_table(table_name: str, conn: Connection, df_schema: Schema) -> None:
         )
 
     # Create the table
-    create_table_sql = f"CREATE TABLE {table_name} ({', '.join([f'{col.name} {col.dtype}' for col in df_schema])})"
-    conn.execute(text(create_table_sql))
+    conn.execute(text(query_create_table(table_name, df_schema)))
     conn.commit()
+
+
+def query_create_table(table_name: str, df_schema: Schema) -> str:
+    """The SQL query to create a table with the given name and schema."""
+    columns = [c for c in df_schema]
+    if len(columns) == 0:
+        raise ValueError("DataFrame schema is empty!")
+
+    q: str = f"CREATE TABLE {table_name} "
+
+    column_spec: list[str] = [
+        f"{col.name} {arrow_type_to_sqlalchemy_type(col.dtype.to_arrow_dtype())}" for col in columns
+    ]
+
+    return f"{q} ({', '.join(column_spec)})"
 
 
 def ensure_table_exists(table_name: str, conn: Connection, df_schema: Schema) -> None:
