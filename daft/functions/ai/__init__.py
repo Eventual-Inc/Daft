@@ -403,8 +403,7 @@ def classify_image(
 
 
 def prompt(
-    input_text: Expression,
-    input_image: Expression | None = None,
+    messages: list[Expression] | Expression,
     return_format: BaseModel | None = None,
     *,
     system_message: str | None = None,
@@ -415,11 +414,13 @@ def prompt(
     """Returns an expression that prompts a large language model using the specified model and provider.
 
     Args:
-        input_text (Expression): The input text column expression.
-        input_image (Expression | None): The input image column expression.
-        return_format (BaseModel | None): The return format for the prompt.
+        messages (list[Expression] | Expression): The list of messages to prompt the model with. Each expression can be either:
+            - Plain text strings (always treated as input_text)
+            - Image data (numpy arrays, bytes, or File objects - detected by MIME type)
+            - Files (PDF, TXT, HTML, audio, video, etc.) as bytes or File objects (detected by MIME type)
+        return_format (BaseModel | None): The return format for the prompt. Use a Pydantic model for structured outputs.
         system_message (str | None): The system message for the prompt.
-        provider (str | Provider | None): The provider to use for the prompt.
+        provider (str | Provider | None): The provider to use for the prompt (default: "openai").
         model (str | None): The model to use for the prompt.
         **options: Any additional options to pass for the prompt.
 
@@ -541,8 +542,11 @@ def prompt(
         if system_message is not None:
             raise ValueError("system_message is not supported for vLLM provider")
 
+        if isinstance(messages, list):
+            raise ValueError("vLLM provider does not support multiple messages")
+
         return Expression._from_pyexpr(
-            input_text._expr.vllm(
+            messages._expr.vllm(
                 prompter_descriptor.model_name,
                 prompter_descriptor.concurrency,
                 prompter_descriptor.gpus_per_actor,
@@ -588,4 +592,7 @@ def prompt(
     instance = wrapped_cls(prompter_descriptor)
 
     # Call the instance (which calls __call__ method) with the messages expression
-    return instance(input_text, input_image)
+    if isinstance(messages, list):
+        return instance(*messages)
+    else:
+        return instance(messages)
