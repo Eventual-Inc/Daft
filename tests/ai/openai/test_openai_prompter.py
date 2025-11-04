@@ -114,7 +114,7 @@ def test_openai_prompter_descriptor_get_udf_options():
     )
 
     udf_options = descriptor.get_udf_options()
-    assert udf_options.concurrency is not None
+    assert udf_options.concurrency is None
     # num_gpus is None for HTTP-based models
     assert udf_options.num_gpus in (0, None)
 
@@ -150,12 +150,12 @@ def test_openai_prompter_plain_text_response():
         )
         prompter.llm = mock_client
 
-        result = await prompter.prompt("Hello, world!")
+        result = await prompter.prompt(("Hello, world!",))
 
         assert result == "This is a test response."
         mock_client.responses.create.assert_called_once_with(
             model="gpt-4o-mini",
-            input=[{"role": "user", "content": "Hello, world!"}],
+            input=[{"role": "user", "content": [{"type": "input_text", "text": "Hello, world!"}]}],
         )
 
     run_async(_test())
@@ -178,14 +178,14 @@ def test_openai_prompter_structured_output():
         )
         prompter.llm = mock_client
 
-        result = await prompter.prompt("Is this a test?")
+        result = await prompter.prompt(("Is this a test?",))
 
         assert isinstance(result, SimpleResponse)
         assert result.answer == "Yes"
         assert result.confidence == 0.95
         mock_client.responses.parse.assert_called_once_with(
             model="gpt-4o-mini",
-            input=[{"role": "user", "content": "Is this a test?"}],
+            input=[{"role": "user", "content": [{"type": "input_text", "text": "Is this a test?"}]}],
             text_format=SimpleResponse,
         )
 
@@ -208,12 +208,12 @@ def test_openai_prompter_with_generation_config():
         )
         prompter.llm = mock_client
 
-        result = await prompter.prompt("Tell me a story")
+        result = await prompter.prompt(("Tell me a story",))
 
         assert result == "Response with custom config."
         mock_client.responses.create.assert_called_once_with(
             model="gpt-4o-mini",
-            input=[{"role": "user", "content": "Tell me a story"}],
+            input=[{"role": "user", "content": [{"type": "input_text", "text": "Tell me a story"}]}],
             temperature=0.8,
             max_tokens=50,
         )
@@ -242,7 +242,7 @@ def test_openai_prompter_complex_structured_output():
         )
         prompter.llm = mock_client
 
-        result = await prompter.prompt("Summarize this text")
+        result = await prompter.prompt(("Summarize this text",))
 
         assert isinstance(result, ComplexResponse)
         assert result.summary == "Test summary"
@@ -274,8 +274,8 @@ def test_openai_prompter_multiple_messages():
         )
         prompter.llm = mock_client
 
-        result1 = await prompter.prompt("First message")
-        result2 = await prompter.prompt("Second message")
+        result1 = await prompter.prompt(("First message",))
+        result2 = await prompter.prompt(("Second message",))
 
         assert result1 == "First response"
         assert result2 == "Second response"
@@ -329,7 +329,7 @@ def test_openai_prompter_error_handling():
         prompter.llm = mock_client
 
         with pytest.raises(Exception, match="API Error"):
-            await prompter.prompt("This will fail")
+            await prompter.prompt(("This will fail",))
 
     run_async(_test())
 
@@ -359,3 +359,432 @@ def test_openai_prompter_attributes():
     assert prompter.return_format == SimpleResponse
     assert prompter.generation_config == {"temperature": 0.5}
     assert hasattr(prompter, "llm")
+
+
+def test_openai_prompter_with_image_numpy():
+    """Test prompting with text and image (numpy array)."""
+
+    async def _test():
+        from daft.dependencies import np
+
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.output_text = "This image shows a cat."
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
+
+        prompter = OpenAIPrompter(
+            provider_options={"api_key": "test-key"},
+            model="gpt-4o-mini",
+        )
+        prompter.llm = mock_client
+
+        # Create a dummy numpy array image
+        image = np.zeros((100, 100, 3), dtype=np.uint8)
+
+        result = await prompter.prompt(("What is in this image?", image))
+
+        assert result == "This image shows a cat."
+
+        # Verify that the call was made with both text and image
+        call_args = mock_client.responses.create.call_args
+        assert call_args.kwargs["model"] == "gpt-4o-mini"
+        messages = call_args.kwargs["input"]
+        assert len(messages) == 1
+        assert messages[0]["role"] == "user"
+        assert isinstance(messages[0]["content"], list)
+        assert messages[0]["content"][0]["type"] == "input_text"
+        assert messages[0]["content"][0]["text"] == "What is in this image?"
+        assert messages[0]["content"][1]["type"] == "input_image"
+        assert "image_url" in messages[0]["content"][1]
+        assert messages[0]["content"][1]["image_url"].startswith("data:image/png;base64,")
+
+    run_async(_test())
+
+
+def test_openai_prompter_with_image_structured_output():
+    """Test prompting with image and structured output."""
+
+    async def _test():
+        from daft.dependencies import np
+
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        expected_output = ComplexResponse(
+            summary="Image of a cat",
+            key_points=["fluffy", "orange", "sleeping"],
+            sentiment="positive",
+        )
+        mock_response.output_parsed = expected_output
+        mock_client.responses.parse = AsyncMock(return_value=mock_response)
+
+        prompter = OpenAIPrompter(
+            provider_options={"api_key": "test-key"},
+            model="gpt-4o-mini",
+            return_format=ComplexResponse,
+        )
+        prompter.llm = mock_client
+
+        # Create a dummy numpy array image
+        image = np.zeros((100, 100, 3), dtype=np.uint8)
+
+        result = await prompter.prompt(("Describe this image", image))
+
+        assert isinstance(result, ComplexResponse)
+        assert result.summary == "Image of a cat"
+        assert len(result.key_points) == 3
+        assert result.sentiment == "positive"
+
+        # Verify the call was made with image
+        call_args = mock_client.responses.parse.call_args
+        messages = call_args.kwargs["input"]
+        assert len(messages) == 1
+        assert isinstance(messages[0]["content"], list)
+        assert messages[0]["content"][0]["type"] == "input_text"
+        assert messages[0]["content"][1]["type"] == "input_image"
+
+    run_async(_test())
+
+
+def test_openai_prompter_text_only():
+    """Test that text-only prompts still work (no image)."""
+
+    async def _test():
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.output_text = "Paris is the capital."
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
+
+        prompter = OpenAIPrompter(
+            provider_options={"api_key": "test-key"},
+            model="gpt-4o-mini",
+        )
+        prompter.llm = mock_client
+
+        result = await prompter.prompt(("What is the capital of France?",))
+
+        assert result == "Paris is the capital."
+
+        # Verify that content is a list with input_text
+        call_args = mock_client.responses.create.call_args
+        messages = call_args.kwargs["input"]
+        assert len(messages) == 1
+        assert messages[0]["role"] == "user"
+        assert isinstance(messages[0]["content"], list)
+        assert messages[0]["content"][0]["type"] == "input_text"
+        assert messages[0]["content"][0]["text"] == "What is the capital of France?"
+
+    run_async(_test())
+
+
+def test_openai_prompter_with_system_message():
+    """Test prompting with system message."""
+
+    async def _test():
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.output_text = "Response with system context."
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
+
+        prompter = OpenAIPrompter(
+            provider_options={"api_key": "test-key"},
+            model="gpt-4o-mini",
+            system_message="You are a helpful assistant.",
+        )
+        prompter.llm = mock_client
+
+        result = await prompter.prompt(("Hello!",))
+
+        assert result == "Response with system context."
+
+        # Verify system message was included
+        call_args = mock_client.responses.create.call_args
+        messages = call_args.kwargs["input"]
+        assert len(messages) == 2
+        assert messages[0]["role"] == "system"
+        assert messages[0]["content"] == "You are a helpful assistant."
+        assert messages[1]["role"] == "user"
+
+    run_async(_test())
+
+
+def test_openai_prompter_with_system_message_and_image():
+    """Test prompting with system message and image."""
+
+    async def _test():
+        from daft.dependencies import np
+
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.output_text = "I see a cat in the image."
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
+
+        prompter = OpenAIPrompter(
+            provider_options={"api_key": "test-key"},
+            model="gpt-4o-mini",
+            system_message="You are an image recognition expert.",
+        )
+        prompter.llm = mock_client
+
+        image = np.zeros((50, 50, 3), dtype=np.uint8)
+        result = await prompter.prompt(("What do you see?", image))
+
+        assert result == "I see a cat in the image."
+
+        # Verify both system message and image were included
+        call_args = mock_client.responses.create.call_args
+        messages = call_args.kwargs["input"]
+        assert len(messages) == 2
+        assert messages[0]["role"] == "system"
+        assert messages[0]["content"] == "You are an image recognition expert."
+        assert messages[1]["role"] == "user"
+        assert isinstance(messages[1]["content"], list)
+        assert messages[1]["content"][0]["type"] == "input_text"
+        assert messages[1]["content"][1]["type"] == "input_image"
+
+    run_async(_test())
+
+
+def test_openai_prompter_with_image_from_bytes():
+    """Test prompting with image from bytes."""
+
+    async def _test():
+        import io
+
+        from PIL import Image as PILImage
+
+        from daft.dependencies import np
+
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.output_text = "This image contains test data."
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
+
+        prompter = OpenAIPrompter(
+            provider_options={"api_key": "test-key"},
+            model="gpt-4o-mini",
+        )
+        prompter.llm = mock_client
+
+        # Create a simple image and convert to PNG bytes
+        img_array = np.zeros((50, 50, 3), dtype=np.uint8)
+        img_array[:, :, 0] = 255  # Red
+        img = PILImage.fromarray(img_array)
+        bio = io.BytesIO()
+        img.save(bio, format="PNG")
+        image_bytes = bio.getvalue()
+
+        result = await prompter.prompt(("What is this?", image_bytes))
+
+        assert result == "This image contains test data."
+
+        # Verify that the image was encoded
+        call_args = mock_client.responses.create.call_args
+        messages = call_args.kwargs["input"]
+        assert len(messages) == 1
+        assert isinstance(messages[0]["content"], list)
+        assert messages[0]["content"][1]["type"] == "input_image"
+        # Should start with data URI for PNG
+        assert messages[0]["content"][1]["image_url"].startswith("data:image/")
+
+    run_async(_test())
+
+
+def test_openai_prompter_with_image_from_file_path():
+    """Test prompting with image from file path string."""
+
+    async def _test():
+        import tempfile
+
+        from PIL import Image as PILImage
+
+        from daft.dependencies import np
+
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.output_text = "I see a file-based image."
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
+
+        prompter = OpenAIPrompter(
+            provider_options={"api_key": "test-key"},
+            model="gpt-4o-mini",
+        )
+        prompter.llm = mock_client
+
+        # Create a temporary image file
+        img_array = np.zeros((50, 50, 3), dtype=np.uint8)
+        img_array[:, :, 2] = 255  # Blue
+        img = PILImage.fromarray(img_array)
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            img.save(tmp.name)
+            temp_path = tmp.name
+
+        try:
+            from daft.file import File
+
+            result = await prompter.prompt(("Describe this", File(temp_path)))
+
+            assert result == "I see a file-based image."
+
+            # Verify that the image was encoded
+            call_args = mock_client.responses.create.call_args
+            messages = call_args.kwargs["input"]
+            assert len(messages) == 1
+            assert isinstance(messages[0]["content"], list)
+            assert messages[0]["content"][1]["type"] == "input_image"
+            assert messages[0]["content"][1]["image_url"].startswith("data:image/")
+        finally:
+            import os
+
+            os.unlink(temp_path)
+
+    run_async(_test())
+
+
+def test_openai_prompter_with_image_from_file_object():
+    """Test prompting with image from daft.File object."""
+
+    async def _test():
+        import tempfile
+
+        from PIL import Image as PILImage
+
+        from daft.dependencies import np
+        from daft.file import File
+
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.output_text = "File object image processed."
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
+
+        prompter = OpenAIPrompter(
+            provider_options={"api_key": "test-key"},
+            model="gpt-4o-mini",
+        )
+        prompter.llm = mock_client
+
+        # Create a temporary image file
+        img_array = np.zeros((50, 50, 3), dtype=np.uint8)
+        img_array[:, :, 1] = 255  # Green
+        img = PILImage.fromarray(img_array)
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            img.save(tmp.name)
+            temp_path = tmp.name
+
+        try:
+            # Create a File object
+            file_obj = File(temp_path)
+            result = await prompter.prompt(("What color?", file_obj))
+
+            assert result == "File object image processed."
+
+            # Verify that the image was encoded
+            call_args = mock_client.responses.create.call_args
+            messages = call_args.kwargs["input"]
+            assert len(messages) == 1
+            assert isinstance(messages[0]["content"], list)
+            assert messages[0]["content"][1]["type"] == "input_image"
+            assert messages[0]["content"][1]["image_url"].startswith("data:image/")
+        finally:
+            import os
+
+            os.unlink(temp_path)
+
+    run_async(_test())
+
+
+def test_openai_prompter_with_file():
+    """Test prompting with a file (e.g., audio/video)."""
+
+    async def _test():
+        import tempfile
+
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.output_text = "This appears to be an audio file."
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
+
+        prompter = OpenAIPrompter(
+            provider_options={"api_key": "test-key"},
+            model="gpt-4o-mini",
+        )
+        prompter.llm = mock_client
+
+        # Create a temporary file with .mp3 extension (mock audio)
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False, mode="wb") as tmp:
+            tmp.write(b"mock audio data")
+            temp_path = tmp.name
+
+        try:
+            from daft.file import File
+
+            result = await prompter.prompt(("What type of file is this?", File(temp_path)))
+
+            assert result == "This appears to be an audio file."
+
+            # Verify that the file was encoded
+            call_args = mock_client.responses.create.call_args
+            messages = call_args.kwargs["input"]
+            assert len(messages) == 1
+            assert isinstance(messages[0]["content"], list)
+            assert messages[0]["content"][1]["type"] == "input_file"
+            assert "file_url" in messages[0]["content"][1]
+            assert messages[0]["content"][1]["file_url"].startswith("data:")
+        finally:
+            import os
+
+            os.unlink(temp_path)
+
+    run_async(_test())
+
+
+def test_openai_prompter_with_mixed_modalities():
+    """Test prompting with mixed modalities (text, image, and document)."""
+
+    async def _test():
+        import tempfile
+
+        from daft.dependencies import np
+
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.output_text = "Mixed modality response."
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
+
+        prompter = OpenAIPrompter(
+            provider_options={"api_key": "test-key"},
+            model="gpt-4o-mini",
+        )
+        prompter.llm = mock_client
+
+        # Create image
+        image = np.zeros((50, 50, 3), dtype=np.uint8)
+
+        # Create a temporary PDF
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False, mode="wb") as tmp:
+            tmp.write(b"%PDF-1.4 test")
+            temp_path = tmp.name
+
+        try:
+            from daft.file import File
+
+            result = await prompter.prompt(("Compare these", image, File(temp_path)))
+
+            assert result == "Mixed modality response."
+
+            # Verify that both image and document were included
+            call_args = mock_client.responses.create.call_args
+            messages = call_args.kwargs["input"]
+            assert len(messages) == 1
+            assert isinstance(messages[0]["content"], list)
+            assert len(messages[0]["content"]) == 3  # text + image + document
+            assert messages[0]["content"][0]["type"] == "input_text"
+            assert messages[0]["content"][1]["type"] == "input_image"
+            assert messages[0]["content"][2]["type"] == "input_file"
+        finally:
+            import os
+
+            os.unlink(temp_path)
+
+    run_async(_test())

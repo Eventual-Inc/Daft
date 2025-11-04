@@ -6,13 +6,14 @@ from typing import TYPE_CHECKING, Any
 from openai import AsyncOpenAI
 
 from daft.ai.protocols import Prompter, PrompterDescriptor
-from daft.ai.utils import get_http_udf_options
+from daft.ai.typing import UDFOptions
+from daft.file import File
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
 
     from daft.ai.openai.typing import OpenAIProviderOptions
-    from daft.ai.typing import Options, UDFOptions
+    from daft.ai.typing import Options
 
 
 @dataclass
@@ -23,6 +24,7 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
     model_options: Options
     system_message: str | None = None
     return_format: BaseModel | None = None
+    udf_options: UDFOptions | None = None
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -34,7 +36,7 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
         return self.model_options
 
     def get_udf_options(self) -> UDFOptions:
-        return get_http_udf_options()
+        return self.udf_options or UDFOptions(concurrency=None, num_gpus=None)
 
     def instantiate(self) -> Prompter:
         return OpenAIPrompter(
@@ -70,16 +72,55 @@ class OpenAIPrompter(Prompter):
         self.generation_config = {k: v for k, v in generation_config.items() if k not in client_params_keys}
         self.llm = AsyncOpenAI(**client_params)
 
-    async def prompt(self, user_message: str) -> Any:
-        """Generate responses for a batch of message strings."""
-        # Each message is a string prompt
-        if self.system_message is not None:
-            messages_list = [
-                {"role": "system", "content": self.system_message},
-                {"role": "user", "content": user_message},
-            ]
+    def _process_message_content(self, msg: Any) -> dict[str, str]:
+        import base64
+
+        from daft.dependencies import np
+
+        # Strings are always treated as plain text
+        if isinstance(msg, str):
+            return {"type": "input_text", "text": msg}
+
+        # Handle numpy arrays (images)
+        if isinstance(msg, np.ndarray):
+            import io
+
+            from daft.dependencies import pil_image
+
+            pil_image = pil_image.fromarray(msg)
+            bio = io.BytesIO()
+            pil_image.save(bio, "PNG")
+            base64_string = base64.b64encode(bio.getvalue()).decode("utf-8")
+            encoded_content = f"data:image/png;base64,{base64_string}"
+            return {"type": "input_image", "image_url": encoded_content}
+
+        # Handle bytes and File objects
+        if isinstance(msg, bytes):
+            daft_file = File(msg)
+            mime_type = daft_file.mime_type()
+            with daft_file.open() as f:
+                base64_string = base64.b64encode(f.read()).decode("utf-8")
+            encoded_content = f"data:{mime_type};base64,{base64_string}"
+        elif isinstance(msg, File):
+            mime_type = msg.mime_type()
+            with msg.open() as f:
+                base64_string = base64.b64encode(f.read()).decode("utf-8")
+            encoded_content = f"data:{mime_type};base64,{base64_string}"
         else:
-            messages_list = [{"role": "user", "content": user_message}]
+            raise ValueError(f"Unsupported content type in prompt: {type(msg)}")
+        # Determine if it's an image or generic file based on MIME type
+        if mime_type.startswith("image/"):
+            return {"type": "input_image", "image_url": encoded_content}
+        else:
+            return {"type": "input_file", "file_url": encoded_content}
+
+    async def prompt(self, messages: tuple[Any, ...]) -> Any:
+        messages_list = []
+        if self.system_message is not None:
+            messages_list.append({"role": "system", "content": self.system_message})
+
+        content = [self._process_message_content(msg) for msg in messages]
+        messages_list.append({"role": "user", "content": content})  # type: ignore [dict-item]
 
         if self.return_format is not None:
             # Use structured outputs with Pydantic model

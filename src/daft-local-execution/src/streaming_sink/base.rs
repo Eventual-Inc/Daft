@@ -5,6 +5,7 @@ use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
+use daft_core::prelude::SchemaRef;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
@@ -26,14 +27,22 @@ use crate::{
 pub enum StreamingSinkOutput {
     NeedMoreInput(Option<Arc<MicroPartition>>),
     #[allow(dead_code)]
-    HasMoreOutput(Arc<MicroPartition>),
+    HasMoreOutput(Option<Arc<MicroPartition>>),
+    Finished(Option<Arc<MicroPartition>>),
+}
+
+pub enum StreamingSinkFinalizeOutput<Op: StreamingSink> {
+    HasMoreOutput {
+        states: Vec<Op::State>,
+        output: Option<Arc<MicroPartition>>,
+    },
     Finished(Option<Arc<MicroPartition>>),
 }
 
 pub(crate) type StreamingSinkExecuteResult<Op> =
     OperatorOutput<DaftResult<(<Op as StreamingSink>::State, StreamingSinkOutput)>>;
-pub(crate) type StreamingSinkFinalizeResult =
-    OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>>;
+pub(crate) type StreamingSinkFinalizeResult<Op> =
+    OperatorOutput<DaftResult<StreamingSinkFinalizeOutput<Op>>>;
 pub(crate) trait StreamingSink: Send + Sync {
     type State: Send + Sync + Unpin;
     /// Execute the StreamingSink operator on the morsel of input data,
@@ -51,7 +60,9 @@ pub(crate) trait StreamingSink: Send + Sync {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkFinalizeResult;
+    ) -> StreamingSinkFinalizeResult<Self>
+    where
+        Self: Sized;
 
     /// The name of the StreamingSink operator. Used for display purposes.
     fn name(&self) -> NodeName;
@@ -62,7 +73,7 @@ pub(crate) trait StreamingSink: Send + Sync {
     fn multiline_display(&self) -> Vec<String>;
 
     /// Create a new worker-local state for this StreamingSink.
-    fn make_state(&self) -> Self::State;
+    fn make_state(&self) -> DaftResult<Self::State>;
 
     /// Create a new RuntimeStats for this StreamingSink.
     fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
@@ -107,9 +118,15 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         children: Vec<Box<dyn PipelineNode>>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
+        output_schema: SchemaRef,
     ) -> Self {
         let name = op.name().into();
-        let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::StreamingSink);
+        let node_info = ctx.next_node_info(
+            name,
+            op.op_type(),
+            NodeCategory::StreamingSink,
+            output_schema,
+        );
         let runtime_stats = op.make_runtime_stats();
         let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
@@ -138,7 +155,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         let compute_runtime = get_compute_runtime();
         let spawner =
             ExecutionTaskSpawner::new(compute_runtime, memory_manager, runtime_stats, span);
-        let mut state = op.make_state();
+        let mut state = op.make_state()?;
         while let Some(morsel) = input_receiver.recv().await {
             loop {
                 let result = op.execute(morsel.clone(), state, &spawner).await??;
@@ -153,7 +170,9 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                         break;
                     }
                     StreamingSinkOutput::HasMoreOutput(mp) => {
-                        if output_sender.send(mp).await.is_err() {
+                        if let Some(mp) = mp
+                            && output_sender.send(mp).await.is_err()
+                        {
                             return Ok(state);
                         }
                     }
@@ -220,6 +239,15 @@ impl<Op: StreamingSink + 'static> TreeDisplay for StreamingSinkNode<Op> {
         }
         display
     }
+
+    fn repr_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "id": self.id(),
+            "type": self.op.op_type().to_string(),
+            "name": self.name(),
+        })
+    }
+
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
         self.children()
             .iter()
@@ -331,10 +359,24 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                     runtime_stats.clone(),
                     info_span!("StreamingSink::Finalize"),
                 );
-                let finalized_result = op.finalize(finished_states, &spawner).await??;
-                if let Some(res) = finalized_result {
-                    let _ = counting_sender.send(res).await;
+                loop {
+                    let finalized_result = op.finalize(finished_states, &spawner).await??;
+                    match finalized_result {
+                        StreamingSinkFinalizeOutput::HasMoreOutput { states, output } => {
+                            if let Some(mp) = output {
+                                let _ = counting_sender.send(mp).await;
+                            }
+                            finished_states = states;
+                        }
+                        StreamingSinkFinalizeOutput::Finished(output) => {
+                            if let Some(mp) = output {
+                                let _ = counting_sender.send(mp).await;
+                            }
+                            break;
+                        }
+                    }
                 }
+
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },

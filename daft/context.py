@@ -245,6 +245,7 @@ def set_execution_config(
     parquet_inflation_factor: float | None = None,
     csv_target_filesize: int | None = None,
     csv_inflation_factor: float | None = None,
+    json_inflation_factor: float | None = None,
     shuffle_aggregation_default_partitions: int | None = None,
     partial_aggregation_threshold: int | None = None,
     high_cardinality_aggregation_threshold: float | None = None,
@@ -292,6 +293,7 @@ def set_execution_config(
         parquet_inflation_factor: Inflation Factor of parquet files (In-Memory-Size / File-Size) ratio. Defaults to 3.0
         csv_target_filesize: Target File Size when writing out CSV Files. Defaults to 512MB
         csv_inflation_factor: Inflation Factor of CSV files (In-Memory-Size / File-Size) ratio. Defaults to 0.5
+        json_inflation_factor: Inflation Factor of JSON files (In-Memory-Size / File-Size) ratio. Defaults to 0.25
         shuffle_aggregation_default_partitions: Maximum number of partitions to create when performing aggregations on the Ray Runner. Defaults to 200, unless the number of input partitions is less than 200.
         partial_aggregation_threshold: Threshold for performing partial aggregations on the Native Runner. Defaults to 10000 rows.
         high_cardinality_aggregation_threshold: Threshold selectivity for performing high cardinality aggregations on the Native Runner. Defaults to 0.8.
@@ -307,7 +309,7 @@ def set_execution_config(
         native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
         use_legacy_ray_runner: Whether to use the legacy ray runner. Defaults to `False`.
         min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 0.5.
-        actor_udf_ready_timeout: Timeout for UDF actors to be ready. Defaults to 60 seconds.
+        actor_udf_ready_timeout: Timeout for UDF actors to be ready. Defaults to 120 seconds.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -328,6 +330,7 @@ def set_execution_config(
             parquet_inflation_factor=parquet_inflation_factor,
             csv_target_filesize=csv_target_filesize,
             csv_inflation_factor=csv_inflation_factor,
+            json_inflation_factor=json_inflation_factor,
             shuffle_aggregation_default_partitions=shuffle_aggregation_default_partitions,
             partial_aggregation_threshold=partial_aggregation_threshold,
             high_cardinality_aggregation_threshold=high_cardinality_aggregation_threshold,

@@ -594,7 +594,9 @@ impl AdaptivePlanner {
 
             assert!(result.transformed);
 
-            let optimizer = OptimizerBuilder::new().enrich_with_stats().build();
+            let optimizer = OptimizerBuilder::new()
+                .enrich_with_stats(Some(self.cfg.clone()))
+                .build();
 
             let optimized_logical_plan = optimizer.optimize(
                 result.data,

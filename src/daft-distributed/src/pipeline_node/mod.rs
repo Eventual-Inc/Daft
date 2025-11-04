@@ -14,6 +14,7 @@ use common_display::{
 };
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
+use common_treenode::ConcreteTreeNode;
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{InMemoryInfo, partitioning::ClusteringSpecRef, stats::StatsState};
 use daft_schema::schema::SchemaRef;
@@ -28,6 +29,7 @@ use crate::{
         task::{SchedulingStrategy, SwordfishTask, Task, TaskContext},
         worker::WorkerId,
     },
+    statistics::stats::{DefaultRuntimeStats, RuntimeStats},
     utils::channel::{Receiver, ReceiverStream},
 };
 
@@ -57,6 +59,7 @@ mod top_n;
 mod translate;
 mod udf;
 mod unpivot;
+mod vllm;
 mod window;
 
 pub(crate) use translate::logical_plan_to_pipeline_node;
@@ -144,7 +147,6 @@ pub(super) struct PipelineNodeContext {
     pub node_name: NodeName,
     pub child_ids: Vec<NodeID>,
     pub child_names: Vec<NodeName>,
-    pub logical_node_id: Option<NodeID>,
 }
 
 impl PipelineNodeContext {
@@ -154,7 +156,6 @@ impl PipelineNodeContext {
         node_name: NodeName,
         child_ids: Vec<NodeID>,
         child_names: Vec<NodeName>,
-        logical_node_id: Option<NodeID>,
     ) -> Self {
         Self {
             plan_id,
@@ -162,7 +163,6 @@ impl PipelineNodeContext {
             node_name,
             child_ids,
             child_names,
-            logical_node_id,
         }
     }
 
@@ -173,10 +173,6 @@ impl PipelineNodeContext {
             ("node_name".to_string(), self.node_name.to_string()),
             ("child_ids".to_string(), self.child_ids.iter().join(",")),
             ("child_names".to_string(), self.child_names.iter().join(",")),
-            (
-                "logical_node_id".to_string(),
-                self.logical_node_id.unwrap_or(0).to_string(),
-            ),
         ])
     }
 }
@@ -184,6 +180,9 @@ impl PipelineNodeContext {
 pub(crate) trait PipelineNodeImpl: Send + Sync {
     fn context(&self) -> &PipelineNodeContext;
     fn config(&self) -> &PipelineNodeConfig;
+    fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
+        Arc::new(DefaultRuntimeStats::new(self.node_id()))
+    }
 
     fn children(&self) -> Vec<DistributedPipelineNode>;
     fn produce_tasks(
@@ -227,11 +226,32 @@ impl DistributedPipelineNode {
     pub fn name(&self) -> NodeName {
         self.op.name()
     }
+    pub fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
+        self.op.runtime_stats()
+    }
     pub fn produce_tasks(self, plan_context: &mut PlanExecutionContext) -> SubmittableTaskStream {
         self.op.produce_tasks(plan_context)
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
+    }
+}
+
+impl ConcreteTreeNode for DistributedPipelineNode {
+    fn children(&self) -> Vec<&Self> {
+        self.children.iter().collect()
+    }
+
+    fn take_children(mut self) -> (Self, Vec<Self>) {
+        let children = std::mem::take(&mut self.children);
+        (self, children)
+    }
+
+    fn with_new_children(self, children: Vec<Self>) -> DaftResult<Self> {
+        Ok(Self {
+            op: self.op.clone(),
+            children,
+        })
     }
 }
 
@@ -242,6 +262,14 @@ impl TreeDisplay for DistributedPipelineNode {
             DisplayLevel::Default => self.op.multiline_display(false).join("\n"),
             DisplayLevel::Verbose => self.op.multiline_display(true).join("\n"),
         }
+    }
+
+    fn repr_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "id": self.id(),
+            "type": self.op.name(),
+            "name": self.name(),
+        })
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
@@ -419,9 +447,7 @@ where
     let psets = submittable_task.task().psets().clone();
     let config = submittable_task.task().config().clone();
     let mut task_context = submittable_task.task().task_context();
-    if let Some(logical_node_id) = node.context().logical_node_id {
-        task_context.add_logical_node_id(logical_node_id);
-    }
+    task_context.add_node_id(node.node_id());
 
     submittable_task.with_new_task(SwordfishTask::new(
         task_context,
