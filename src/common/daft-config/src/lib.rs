@@ -146,7 +146,7 @@ impl Default for DaftExecutionConfig {
             csv_target_filesize: 512 * 1024 * 1024, // 512MB
             csv_inflation_factor: 0.5,
             json_target_filesize: 512 * 1024 * 1024, // 512MB
-            json_inflation_factor: 0.5, // TODO(desmond): This can be tuned with more real world datasets.
+            json_inflation_factor: 0.25, // TODO(desmond): This can be tuned with more real world datasets.
             shuffle_aggregation_default_partitions: 200,
             partial_aggregation_threshold: 10000,
             high_cardinality_aggregation_threshold: 0.8,
@@ -177,6 +177,9 @@ impl DaftExecutionConfig {
     const ENV_DAFT_FLOTILLA: &'static str = "DAFT_FLOTILLA";
     const ENV_DAFT_MIN_CPU_PER_TASK: &'static str = "DAFT_MIN_CPU_PER_TASK";
     const ENV_DAFT_ACTOR_UDF_READY_TIMEOUT: &'static str = "DAFT_ACTOR_UDF_READY_TIMEOUT";
+    const ENV_PARQUET_INFLATION_FACTOR: &'static str = "DAFT_PARQUET_INFLATION_FACTOR";
+    const ENV_CSV_INFLATION_FACTOR: &'static str = "DAFT_CSV_INFLATION_FACTOR";
+    const ENV_JSON_INFLATION_FACTOR: &'static str = "DAFT_JSON_INFLATION_FACTOR";
 
     #[must_use]
     pub fn from_env() -> Self {
@@ -227,6 +230,25 @@ impl DaftExecutionConfig {
             cfg.actor_udf_ready_timeout,
         ) {
             cfg.actor_udf_ready_timeout = val;
+        }
+
+        if let Some(val) = parse_number_from_env(
+            Self::ENV_PARQUET_INFLATION_FACTOR,
+            cfg.parquet_inflation_factor,
+        ) {
+            cfg.parquet_inflation_factor = val;
+        }
+
+        if let Some(val) =
+            parse_number_from_env(Self::ENV_CSV_INFLATION_FACTOR, cfg.csv_inflation_factor)
+        {
+            cfg.csv_inflation_factor = val;
+        }
+
+        if let Some(val) =
+            parse_number_from_env(Self::ENV_JSON_INFLATION_FACTOR, cfg.json_inflation_factor)
+        {
+            cfg.json_inflation_factor = val;
         }
 
         cfg
