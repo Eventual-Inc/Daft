@@ -116,7 +116,6 @@ class OpenAIPrompter(Prompter):
             return {"type": "input_file", "file_url": encoded_content}
 
     async def prompt(self, messages: tuple[Any, ...]) -> Any:
-        print(messages)
         messages_list = []
         if self.system_message is not None:
             messages_list.append({"role": "system", "content": self.system_message})
@@ -124,7 +123,6 @@ class OpenAIPrompter(Prompter):
         content = [self._process_message_content(msg) for msg in messages]
         messages_list.append({"role": "user", "content": content})  # type: ignore [dict-item]
 
-        print(messages_list)
         if self.return_format is not None:
             # Use structured outputs with Pydantic model
             response = await self.llm.responses.parse(

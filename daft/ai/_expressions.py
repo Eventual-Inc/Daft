@@ -89,5 +89,4 @@ class _PrompterExpression:
         self.prompter = prompter.instantiate()
 
     async def prompt(self, *messages: Any) -> Any:
-        print(messages)
         return await self.prompter.prompt(messages)

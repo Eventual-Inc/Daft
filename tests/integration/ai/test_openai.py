@@ -18,18 +18,17 @@ from pydantic import BaseModel, Field
 import daft
 from daft.functions.ai import embed_text, prompt
 
-# @pytest.fixture(scope="module", autouse=True)
-# def skip_no_credential(pytestconfig):
-#     if not pytestconfig.getoption("--credentials"):
-#         pytest.skip(reason="OpenAI integration tests require the `--credentials` flag.")
-#     if os.environ.get("OPENAI_API_KEY") is None:
-#         pytest.skip(
-#             reason="OpenAI integration tests require the OPENAI_API_KEY environment variable."
-#         )
+
+@pytest.fixture(scope="module", autouse=True)
+def skip_no_credential(pytestconfig):
+    if not pytestconfig.getoption("--credentials"):
+        pytest.skip(reason="OpenAI integration tests require the `--credentials` flag.")
+    if os.environ.get("OPENAI_API_KEY") is None:
+        pytest.skip(reason="OpenAI integration tests require the OPENAI_API_KEY environment variable.")
 
 
 @pytest.fixture(scope="module", autouse=True)
-def session():
+def session(skip_no_credential):
     """Configures the session to be used for all tests."""
     with daft.session() as session:
         # the key is not explicitly needed, but was added with angry lookup for clarity.
