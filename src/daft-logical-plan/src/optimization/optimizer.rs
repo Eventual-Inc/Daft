@@ -1,5 +1,6 @@
 use std::{ops::ControlFlow, sync::Arc};
 
+use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_treenode::Transformed;
 
@@ -211,31 +212,26 @@ impl OptimizerBuilder {
                 vec![Box::new(ShardScans::new())],
                 RuleExecutionStrategy::Once,
             ),
-            // --- Enrich logical plan with stats ---
-            RuleBatch::new(
-                vec![Box::new(EnrichWithStats::new())],
-                RuleExecutionStrategy::Once,
-            ),
         ]);
         self
     }
 
-    pub fn reorder_joins(mut self) -> Self {
+    pub fn reorder_joins(mut self, cfg: Option<Arc<DaftExecutionConfig>>) -> Self {
         self.rule_batches.push(RuleBatch::new(
             vec![
-                Box::new(ReorderJoins::new()),
+                Box::new(ReorderJoins::new(cfg.clone())),
                 Box::new(PushDownFilter::new(self.config.strict_pushdown)),
                 Box::new(PushDownProjection::new()),
-                Box::new(EnrichWithStats::new()),
+                Box::new(EnrichWithStats::new(cfg)),
             ],
             RuleExecutionStrategy::Once,
         ));
         self
     }
 
-    pub fn enrich_with_stats(mut self) -> Self {
+    pub fn enrich_with_stats(mut self, cfg: Option<Arc<DaftExecutionConfig>>) -> Self {
         self.rule_batches.push(RuleBatch::new(
-            vec![Box::new(EnrichWithStats::new())],
+            vec![Box::new(EnrichWithStats::new(cfg))],
             RuleExecutionStrategy::Once,
         ));
         self
@@ -682,7 +678,7 @@ mod tests {
             vec![RuleBatch::new(
                 vec![
                     Box::new(MaterializeScans::new()),
-                    Box::new(EnrichWithStats::new()),
+                    Box::new(EnrichWithStats::new(None)),
                 ],
                 RuleExecutionStrategy::Once,
             )],
@@ -739,6 +735,7 @@ mod tests {
         // Check that the limit commutes with the actor pool project.
         let optimizer = OptimizerBuilder::default()
             .with_default_optimizations()
+            .enrich_with_stats(None)
             .build();
         let opt_plan = optimizer.optimize(plan, |_, _, _, _, _| {})?;
         assert_eq!(
@@ -800,6 +797,7 @@ mod tests {
         // Check that the filter commutes with the actor pool project.
         let optimizer = OptimizerBuilder::default()
             .with_default_optimizations()
+            .enrich_with_stats(None)
             .build();
         let opt_plan = optimizer.optimize(plan, |_, _, _, _, _| {})?;
         assert_eq!(
@@ -856,6 +854,7 @@ mod tests {
 
         let optimizer = OptimizerBuilder::default()
             .with_default_optimizations()
+            .enrich_with_stats(None)
             .build();
         let opt_plan = optimizer.optimize(plan, |_, _, _, _, _| {})?;
 
