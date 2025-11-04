@@ -316,3 +316,19 @@ def arrow_type_to_sqlalchemy_type(arrow_type: pa.DataType) -> TypeEngine[Any]:
     else:
         # Default to String for unknown types
         return String()
+
+
+def insert_arrow_table(conn: Connection, table: Table, arrow_table: pa.Table) -> None:
+    """Insert Arrow table data into SQL table.
+
+    Uses PyArrow's to_pylist() to convert to Python objects for SQLAlchemy insertion.
+    """
+    if arrow_table.num_rows == 0:
+        return
+
+    # Convert Arrow table to list of dicts for insertion
+    data = arrow_table.to_pylist()
+
+    # Insert using SQLAlchemy insert statement
+    insert_stmt = table.insert()
+    conn.execute(insert_stmt, data)
