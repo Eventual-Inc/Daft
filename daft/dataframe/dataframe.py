@@ -27,7 +27,6 @@ from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
-from daft.io.sql import SQL_SINK_MODES
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition
 from daft.runners import get_or_create_runner
@@ -1698,7 +1697,8 @@ class DataFrame:
         table_name: str,
         conn: Union[str, Callable[[], Any]],
         *,
-        mode: SQL_SINK_MODES,
+        mode: Literal["append", "overwrite"],  # NOTE: keep this aligned with daft.io.sql.SQL_SINK_MODES.
+        # NOTE:                                        Must do so manually because Python doesn't support circular imports.
     ) -> "DataFrame":
         """Write a DataFrame into a relational database table.
 
