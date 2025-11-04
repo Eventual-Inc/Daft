@@ -16,18 +16,22 @@ from daft.recordbatch import RecordBatch
 class VLLMExecutor(ABC):
     @abstractmethod
     def submit(self, prefix: str, prompts: list[str], rows: RecordBatch) -> None:
+        """Submit a batch of prompts and their corresponding rows to the executor, returning once all tasks are started."""
         pass
 
     @abstractmethod
     def poll(self) -> tuple[list[str], RecordBatch] | None:
+        """Poll the executor for completed tasks. Returns a tuple of completed outputs and their corresponding rows, or None if no tasks are completed."""
         pass
 
     @abstractmethod
     def finished_submitting(self) -> None:
+        """Call this when all tasks have been submitted."""
         pass
 
     @abstractmethod
     def all_tasks_finished(self) -> bool:
+        """Check if all tasks have been completed and all results have been polled."""
         pass
 
 
@@ -61,10 +65,7 @@ class BlockingVLLMExecutor(VLLMExecutor):
     def __init__(self, model: str, engine_args: dict[str, Any], generate_args: dict[str, Any]):
         from vllm import LLM, SamplingParams
 
-        start_time = time.perf_counter()
         self.llm = LLM(model=model, **engine_args)
-        end_time = time.perf_counter()
-        print(f"LLM initialized in {end_time - start_time:.2f} seconds.")
 
         self.sampling_params = generate_args.pop("sampling_params", SamplingParams())
         self.generate_args = generate_args
@@ -115,10 +116,7 @@ class LocalVLLMExecutor(VLLMExecutor):
 
         args = AsyncEngineArgs(model=model, **engine_args)
 
-        start_time = time.perf_counter()
         self.llm = AsyncLLMEngine.from_engine_args(args)
-        end_time = time.perf_counter()
-        print(f"LLM initialized in {end_time - start_time:.2f} seconds.")
 
         self.sampling_params = generate_args.pop("sampling_params", SamplingParams())
         self.generate_args = generate_args
@@ -234,24 +232,12 @@ class LocalVLLMExecutor(VLLMExecutor):
             return self._finished_submitting and self.running_task_count == 0 and len(self.completed_tasks) == 0
 
 
-class DistributedVLLMExecutor(VLLMExecutor):
+class RemoteVLLMExecutor(VLLMExecutor):
     def __init__(self, llm_actors: LLMActors):
-        import ray
-        from ray._private.state import actors
-
         self.router_actor = llm_actors.router_actor
         self.router_actor.report_start.remote()
 
         self.llm_actors = llm_actors.llm_actors
-
-        current_node_id = ray.get_runtime_context().get_node_id()
-
-        self.local_llm_actors = []
-        for llm_actor in self.llm_actors:
-            actor_id = llm_actor._actor_id.hex()
-            actor_state = actors(actor_id)
-            if actor_state["Address"]["NodeID"] == current_node_id:
-                self.local_llm_actors.append(llm_actor)
 
     def submit(self, prefix: str | None, prompts: list[str], rows: RecordBatch) -> None:
         import ray

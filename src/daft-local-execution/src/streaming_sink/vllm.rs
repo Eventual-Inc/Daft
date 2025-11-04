@@ -70,7 +70,7 @@ impl VLLMExecutor {
     fn new_distributed(llm_actors: &RuntimePyObject) -> DaftResult<Self> {
         let executor = Python::attach(|py| {
             py.import(intern!(py, "daft.execution.vllm"))?
-                .getattr(intern!(py, "DistributedVLLMExecutor"))?
+                .getattr(intern!(py, "RemoteVLLMExecutor"))?
                 .call1((llm_actors.as_ref(),))
                 .map(Bound::unbind)
         })?;
@@ -282,6 +282,8 @@ impl VLLMSink {
                 }
             }
 
+            // find the closest character boundary for the prefix length
+            // this is to avoid slicing a string in the middle of a multibyte character, which creates invalid UTF-8 strings and causes a panic
             let mut prefix_len_to_char = 0;
             for (i, _) in prompts[0].char_indices() {
                 if i < prefix_len {
@@ -442,6 +444,7 @@ impl StreamingSink for VLLMSink {
     }
 
     fn make_state(&self) -> DaftResult<Self::State> {
+        // TODO: lazy initialization because make_state is synchronous.
         let executor = if let Some(llm_actors) = &self.llm_actors {
             VLLMExecutor::new_distributed(llm_actors)?
         } else {
