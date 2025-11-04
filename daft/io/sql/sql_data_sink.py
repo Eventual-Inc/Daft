@@ -251,16 +251,12 @@ def ensure_table_exists(table_name: str, conn: Connection, df_schema: Schema) ->
     # All columns match and there are no missing columns!
 
 
-def drop_table_if_exists(table_name: str, conn: Connection, arrow_table: pa.Table) -> None:
-    if arrow_table.num_rows == 0:
-        return
-
-    # Convert Arrow table to list of dicts for insertion
-    data = arrow_table.to_pylist()
-
-    # Insert using SQLAlchemy insert statement
-    insert_stmt = table.insert()
-    conn.execute(insert_stmt, data)
+def drop_table_if_exists(table_name: str, conn: Connection) -> None:
+    """Drop the table if it exists."""
+    inspector = inspect(conn)
+    if table_name in inspector.get_table_names():
+        conn.execute(text(f"DROP TABLE {table_name}"))
+        conn.commit()
 
 
 def create_table_from_arrow(table_name: str, conn: Connection, arrow_table: pa.Table, metadata: MetaData) -> Table:
