@@ -10,7 +10,6 @@ from daft.functions.ai import embed_text
 
 
 def manually_embed_text(text: list[str]):
-    # Let SentenceTransformer handle device selection automatically.
     model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", trust_remote_code=True, backend="torch")
     model.eval()
     for value in text:
@@ -24,7 +23,6 @@ def test_embed_text():
     df = daft.from_pydict({"text": ["hello", "world", "goodbye", "universe"]})
 
     text = df.to_pydict()["text"]
-    # Embed Text with Defaults
     df = df.with_column(
         "embeddings",
         embed_text(
