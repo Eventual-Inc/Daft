@@ -231,7 +231,7 @@ impl VLLMSink {
         }
 
         let concatted = MicroPartition::concat(&state.buffer)?
-            .concat_or_get_update(IOStatsContext::new("VLLMSink::pop_tasks"))?
+            .concat_or_get(IOStatsContext::new("VLLMSink::pop_tasks"))?
             .unwrap();
 
         let sorted = concatted.sort(std::slice::from_ref(&expr_input), &[false], &[false])?;
@@ -381,7 +381,7 @@ impl StreamingSink for VLLMSink {
                         this.pop_and_submit_tasks(&mut state, this.expr.inner().max_buffer_size)?;
                     } else if !input.is_empty() {
                         let batch = input
-                            .concat_or_get_update(IOStatsContext::new("VLLMSink::execute"))?
+                            .concat_or_get(IOStatsContext::new("VLLMSink::execute"))?
                             .unwrap();
                         let prompts = this.get_prompts_for_batch(&batch)?;
 
