@@ -65,7 +65,7 @@ def test_write_sql_create_simple_table(sqlite_db_path: Path):
     url = sqlite_connection_url(sqlite_db_path)
     df = daft.from_pydict({"id": [1, 2, 3], "name": ["Alice", "Bob", "Charlie"], "age": [25, 30, 35]})
 
-    result_df = df.write_sql("users", conn=url, mode="create")
+    result_df = df.write_sql("users", conn=url, mode="overwrite")
 
     # Verify result DataFrame has expected schema
     assert result_df.column_names == ["rows_written", "bytes_written", "table_name"]
@@ -89,7 +89,7 @@ def test_write_sql_append_to_existing_table(sqlite_db_path):
 
     # First write
     df1 = daft.from_pydict({"id": [1, 2], "name": ["Charlie", "David"]})
-    df1.write_sql("users", conn=url, mode="create")
+    df1.write_sql("users", conn=url, mode="overwrite")
 
     # Append more data
     df2 = daft.from_pydict({"id": [3, 4], "name": ["Alice", "Bob"]})
@@ -111,7 +111,7 @@ def test_write_sql_replace_table(sqlite_db_path):
     url = sqlite_connection_url(sqlite_db_path)
     # First write
     df1 = daft.from_pydict({"id": [1, 2], "name": ["Alice", "Bob"]})
-    df1.write_sql("users", conn=url, mode="create")
+    df1.write_sql("users", conn=url, mode="overwrite")
 
     # Replace with new data
     df2 = daft.from_pydict({"id": [100, 200], "name": ["New1", "New2"]})
@@ -138,7 +138,7 @@ def test_write_sql_empty_dataframe(sqlite_db_path):
         }
     )
 
-    result_df = df.write_sql("empty_table", conn=url, mode="create")
+    result_df = df.write_sql("empty_table", conn=url, mode="overwrite")
 
     # Verify result indicates 0 rows written
     result_data = result_df.to_pydict()
@@ -160,7 +160,7 @@ def test_write_sql_various_types(sqlite_db_path):
         }
     )
 
-    df.write_sql("mixed_types", conn=url, mode="create")
+    df.write_sql("mixed_types", conn=url, mode="overwrite")
 
     # Verify data types are preserved
     rows = sqlite_table_data(sqlite_db_path, "mixed_types")
@@ -181,7 +181,7 @@ def test_write_sql_with_nulls(sqlite_db_path):
         }
     )
 
-    df.write_sql("with_nulls", conn=url, mode="create")
+    df.write_sql("with_nulls", conn=url, mode="overwrite")
 
     # Verify NULL values are preserved
     rows = sqlite_table_data(sqlite_db_path, "with_nulls")
@@ -211,7 +211,7 @@ def test_write_sql_multiple_partitions(sqlite_db_path):
         # If partitioning not supported, continue with single partition
         pass
 
-    result_df = df.write_sql("large_table", conn=url, mode="create")
+    result_df = df.write_sql("large_table", conn=url, mode="overwrite")
 
     # Verify all data was written
     result_data = result_df.to_pydict()
@@ -233,7 +233,7 @@ def test_write_sql_with_connection_factory(sqlite_connection_factory, sqlite_db_
         }
     )
 
-    result_df = df.write_sql("factory_test", conn=sqlite_connection_factory, mode="create")
+    result_df = df.write_sql("factory_test", conn=sqlite_connection_factory, mode="overwrite")
 
     # Verify data was written
     result_data = result_df.to_pydict()
@@ -258,12 +258,12 @@ def test_write_sql_create_table_exists_error(sqlite_db_path):
     )
 
     # Create table
-    df.write_sql("existing_table", conn=url, mode="create")
+    df.write_sql("existing_table", conn=url, mode="overwrite")
 
     # Try to create again - should fail or be handled gracefully
     # (The exact behavior may vary based on implementation)
     try:
-        df.write_sql("existing_table", conn=url, mode="create")
+        df.write_sql("existing_table", conn=url, mode="overwrite")
         # If it doesn't raise, that's also acceptable
     except Exception:
         # Expected to fail
@@ -298,7 +298,7 @@ def test_write_sql_roundtrip(sqlite_db_path):
 
     # Write data
     df_write = daft.from_pydict(original_data)
-    df_write.write_sql("roundtrip_test", conn=url, mode="create")
+    df_write.write_sql("roundtrip_test", conn=url, mode="overwrite")
 
     # Read data back using read_sql
     df_read = daft.read_sql("SELECT * FROM roundtrip_test", conn=url)
@@ -321,7 +321,7 @@ def test_write_sql_result_schema(sqlite_db_path):
         }
     )
 
-    result_df = df.write_sql("schema_test", conn=url, mode="create")
+    result_df = df.write_sql("schema_test", conn=url, mode="overwrite")
 
     # Check schema
     schema = result_df.schema()

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Literal, TypedDict, Union
+from typing import TYPE_CHECKING, Any, Callable, Literal, TypedDict
 
 from sqlalchemy import (
     JSON,
@@ -29,7 +29,8 @@ from daft.io import DataSink
 from daft.io.sink import WriteResult
 from daft.recordbatch.micropartition import MicroPartition
 from daft.schema import Schema
-from daft.sql.sql_connection import SQLConnection
+
+# from daft.sql.sql_connection import SQLConnection
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -44,13 +45,12 @@ __all__: tuple[str, ...] = (
     "WriteSqlResult",
 )
 
-SQL_SINK_MODES = Literal["create", "append", "replace"]
+SQL_SINK_MODES = Literal["append", "overwrite"]
 """The supported write modes for the SQLDataSink.
 
 The supported modes are:
-    - "create": This creates a new table in the database. It's an error if the table already exists.
     - "append": Inserts new rows into an existing table. It's an error if the table does not exist.
-    - "replace": Like "create", but it deletes the table if it already exists.
+    - "overwrite": Drops the table if it already exists. Always creates a new table.
 """
 
 
@@ -68,7 +68,7 @@ class SQLDataSink(DataSink[WriteSqlResult]):
         self,
         *,
         table_name: str,
-        connection: Union[str, Callable[[], Connection]],  # noqa: UP007
+        connection: str | Callable[[], Connection],
         mode: SQL_SINK_MODES,
         schema: Schema,
     ) -> None:
@@ -84,12 +84,6 @@ class SQLDataSink(DataSink[WriteSqlResult]):
         self._connection = connection
         self._mode = mode
         self._df_schema = schema
-
-        # Create SQLConnection for dialect detection and schema handling
-        if isinstance(connection, str):
-            self._sql_connection = SQLConnection.from_url(connection)
-        else:
-            self._sql_connection = SQLConnection.from_connection_factory(connection)
 
         # Define the schema for the result of the write operation
         self._result_schema = Schema._from_field_name_and_types(
@@ -110,19 +104,25 @@ class SQLDataSink(DataSink[WriteSqlResult]):
 
     def start(self) -> None:
         """Prepare the database table for writing."""
-        conn = self._get_connection()
+        conn = self._create_connection()
         try:
-            if self._mode == "create":
+            if self._mode == "overwrite":
+                drop_table_if_exists(self._table_name, conn)
                 create_table(self._table_name, conn, self._df_schema)
             elif self._mode == "append":
                 ensure_table_exists(self._table_name, conn, self._df_schema)
-            elif self._mode == "replace":
-                drop_table_if_exists(self._table_name, conn)
-                create_table(self._table_name, conn, self._df_schema)
             else:
-                raise ValueError(f"Unrecognized mode: '{self._mode}'. Expecting one of {SQL_SINK_MODES}")
+                raise ValueError(f"Unrecognized mode: '{self._mode}'. Expecting one of: {SQL_SINK_MODES}")
         finally:
             conn.close()
+
+    def _create_connection(self) -> Connection:
+        """Create a new database connection."""
+        if isinstance(self._connection, str):
+            # https://supabase.com/docs/guides/troubleshooting/using-sqlalchemy-with-supabase-FUqebT
+            return create_engine(self._connection).connect()
+        else:
+            return self._connection()
 
     def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[WriteSqlResult]]:
         """Write micropartitions to the SQL database using PyArrow tables.
@@ -133,7 +133,7 @@ class SQLDataSink(DataSink[WriteSqlResult]):
         Yields:
             WriteResult: Result containing rows/bytes written metadata
         """
-        conn = self._get_connection()
+        conn = self._create_connection()
 
         metadata = MetaData()
         metadata.reflect(bind=conn)
@@ -166,13 +166,6 @@ class SQLDataSink(DataSink[WriteSqlResult]):
         finally:
             conn.close()
 
-    def _get_connection(self) -> Connection:
-        """Get a database connection."""
-        if isinstance(self._connection, str):
-            return create_engine(self._connection).connect()
-        else:
-            return self._connection()
-
     def finalize(self, write_results: list[WriteResult[WriteSqlResult]]) -> MicroPartition:
         """Finalize the write operation and return summary statistics.
 
@@ -204,9 +197,7 @@ def create_table(table_name: str, conn: Connection, df_schema: Schema) -> None:
     """Create a new table in the database."""
     inspector = inspect(conn)
     if table_name in inspector.get_table_names():
-        raise ValueError(
-            f"Table '{table_name}' already exists! Use mode='append' or mode='replace' instead of mode='create'"
-        )
+        raise ValueError(f"Table '{table_name}' already exists! Use mode='append' instead of mode='overwrite'")
 
     # Create the table
     conn.execute(text(query_create_table(table_name, df_schema)))
@@ -259,14 +250,14 @@ def ensure_table_exists(table_name: str, conn: Connection, df_schema: Schema) ->
                 f"existing table's ({table_name}) column type is {col_type_sql}."
             )
 
-    # Second, we check that we have the same number of columns.
+    # Next, we check that we have the same number of columns.
     df_column_names = df_schema.column_names()
     if len(existing_columns) != len(df_column_names):
         raise ValueError(
             f"DataFrame has {len(df_column_names)} columns but table {table_name} has {len(existing_columns)} columns."
         )
 
-    # All columns match and there are no missing columns!
+    # Invariant: All columns match and there are no missing columns!
 
 
 def drop_table_if_exists(table_name: str, conn: Connection) -> None:

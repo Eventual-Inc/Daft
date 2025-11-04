@@ -27,6 +27,7 @@ from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
+from daft.io.sql import SQL_SINK_MODES
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition
 from daft.runners import get_or_create_runner
@@ -1696,7 +1697,8 @@ class DataFrame:
         self,
         table_name: str,
         conn: Union[str, Callable[[], Any]],
-        mode: Literal["create", "append", "replace"] = "create",
+        *,
+        mode: SQL_SINK_MODES,
     ) -> "DataFrame":
         """Write a DataFrame into a relational database table.
 
@@ -1710,9 +1712,8 @@ class DataFrame:
                 - SQLite: "sqlite:///path/to/database.db"
                 - MySQL: "mysql+pymysql://user:password@localhost:3306/mydb"
             mode: Write mode for the operation. One of:
-                - "create": Create a new table (raises error if table exists). Default.
                 - "append": Append data to an existing table.
-                - "replace": Drop and recreate the table with new data.
+                - "overwrite": Drop the table, if it exists, and create a new table with new data.
 
         Returns:
             DataFrame: A new DataFrame containing metadata about the write operation
@@ -1726,7 +1727,7 @@ class DataFrame:
             >>> df = daft.from_pydict({"id": [1, 2, 3], "name": ["Alice", "Bob", "Charlie"]})
             >>>
             >>> # Write to SQLite
-            >>> result_df = df.write_sql("users", conn="sqlite:///users.db", mode="create")  # doctest: +SKIP
+            >>> result_df = df.write_sql("users", conn="sqlite:///users.db", mode="overwrite")  # doctest: +SKIP
             >>>
             >>> # Write to PostgreSQL
             >>> result_df = df.write_sql(
