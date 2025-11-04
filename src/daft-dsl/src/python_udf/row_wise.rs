@@ -67,13 +67,16 @@ impl Display for RowWisePyFn {
 }
 
 impl RowWisePyFn {
-    // honestly not sure if this is the best approach, but since a daft.File can be backed by either Blob or File datatype
-    // we need some special handling.
+    // since a daft.File can be backed by either Blob or File datatype we need some special handling.
     // We can't (easily) do this on the python side as there's no way we can infer if its a blob or file backed file from the signature alone
     // ex `def process_file(file: daft.File) -> daft.File: ...`
     // The type signature does not provide enough information to determine the return type.
     // So we actually need to infer the return type based on the arguments passed to the function.
     // We assume the input dtype matches the output dtype.
+    //
+    // but this gets funky if you are returning a daft.File from a function
+    // such as `def create_file(s: str) -> daft.File: ...`
+    // We have no idea if its a blob file or a file backed file.
     pub fn get_return_dtype(&self, schema: &Schema) -> DaftResult<DataType> {
         if matches!(self.return_dtype, DataType::File(_)) {
             let args = self
@@ -87,11 +90,11 @@ impl RowWisePyFn {
                 })
                 .collect::<DaftResult<Vec<Field>>>()?;
 
-            Ok(args
-                .first()
-                .expect("No file or blob arguments found")
-                .dtype
-                .clone())
+            let Some(first) = args.first() else {
+                return Ok(self.return_dtype.clone());
+            };
+
+            Ok(first.dtype.clone())
         } else {
             Ok(self.return_dtype.clone())
         }

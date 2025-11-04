@@ -380,7 +380,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 vec![urls.into_series(), io_configs.into_series()],
                 validity,
             );
-            let field = Field::new("literal", DataType::File(media_type.clone()));
+            let field = Field::new("literal", DataType::File(media_type));
             match media_type {
                 MediaType::Unknown => FileArray::<MediaTypeUnknown>::new(field, sa).into_series(),
                 MediaType::Video => FileArray::<MediaTypeVideo>::new(field, sa).into_series(),
@@ -389,9 +389,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
         DataType::Blob(media_type) => {
             let data: Vec<Option<Vec<u8>>> = values
                 .map(|(i, lit)| {
-                    let Some(f) = unwrap_inner!(lit, i, File) else {
-                        return None;
-                    };
+                    let f = unwrap_inner!(lit, i, File)?;
 
                     match f.inner {
                         DataOrReference::Reference(..) => {
