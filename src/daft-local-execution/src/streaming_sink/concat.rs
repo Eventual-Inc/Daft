@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use common_runtime::get_compute_pool_num_threads;
 use daft_micropartition::MicroPartition;
@@ -48,7 +49,9 @@ impl StreamingSink for ConcatSink {
         Ok(StreamingSinkFinalizeOutput::Finished(None)).into()
     }
 
-    fn make_state(&self) -> Self::State {}
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(())
+    }
 
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()

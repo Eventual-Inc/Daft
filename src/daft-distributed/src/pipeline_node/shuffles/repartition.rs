@@ -34,7 +34,6 @@ impl RepartitionNode {
 
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         repartition_spec: RepartitionSpec,
         num_partitions: usize,
@@ -47,7 +46,6 @@ impl RepartitionNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,

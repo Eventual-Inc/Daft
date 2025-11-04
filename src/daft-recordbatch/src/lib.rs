@@ -24,14 +24,17 @@ use daft_dsl::{
         BoundColumn,
         bound_expr::{BoundAggExpr, BoundExpr},
     },
-    functions::{FunctionArg, FunctionArgs, FunctionEvaluator, scalar::ScalarFn},
+    functions::{
+        BuiltinScalarFn, BuiltinScalarFnVariant, FunctionArg, FunctionArgs, FunctionEvaluator,
+        scalar::ScalarFn,
+    },
     null_lit,
     python_udf::PyScalarFn,
     resolved_col,
 };
 use daft_functions_list::SeriesListExtension;
 use file_info::FileInfos;
-use futures::{StreamExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt, future::try_join_all};
 use num_traits::ToPrimitive;
 #[cfg(feature = "python")]
 pub mod ffi;
@@ -773,7 +776,12 @@ impl RecordBatch {
                     evaluated_args.push(evaluated);
                 }
                 let args = FunctionArgs::new_unchecked(evaluated_args);
-                func.udf.call(args)
+
+                match &func.func {
+                  BuiltinScalarFnVariant::Sync(func) => func.call(args),
+                  BuiltinScalarFnVariant::Async(func) => func.call(args).await,
+                }
+
             }
             Expr::Literal(lit_value) => Ok(lit_value.clone().into()),
             Expr::IfElse {
@@ -814,6 +822,7 @@ impl RecordBatch {
                 "EXISTS <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
             )),
             Expr::Column(_) => unreachable!("bound expressions should not have unbound columns"),
+            Expr::VLLM(..) => unreachable!("VLLM expressions should not be evaluated directly. This indicates a bug in the query optimizer."),
         }?;
 
         if expected_field.name != series.field().name {
@@ -918,8 +927,8 @@ impl RecordBatch {
                     .collect::<DaftResult<Vec<_>>>()?;
                 func.evaluate(evaluated_inputs.as_slice(), func)
             }
-            Expr::ScalarFn(ScalarFn::Builtin(func)) => {
-                let args = func.inputs
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn {func, inputs})) => {
+                let args = inputs
                     .iter()
                     .map(|e| {
                         e.map(|e| self.eval_expression(&BoundExpr::new_unchecked(e.clone())))
@@ -927,7 +936,16 @@ impl RecordBatch {
                     .collect::<DaftResult<FunctionArgs<Series>>>()?;
 
 
-                func.udf.call(args)
+                match func {
+                  BuiltinScalarFnVariant::Sync(func) => func.call(args),
+                  BuiltinScalarFnVariant::Async(func) => {
+                    let fut = func.call(args);
+                    // TODO(universalmind303): avoid just blocking here.
+                    tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(fut)
+                    })
+                  },
+                }
             }
             Expr::Literal(lit_value) => Ok(lit_value.clone().into()),
             Expr::IfElse {
@@ -974,6 +992,7 @@ impl RecordBatch {
                 "EXISTS <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
             )),
             Expr::Column(_) => unreachable!("bound expressions should not have unbound columns"),
+            Expr::VLLM(..) => unreachable!("VLLM expressions should not be evaluated directly. This indicates a bug in the query optimizer."),
         }?;
 
         if expected_field.name != series.field().name {
@@ -998,6 +1017,8 @@ impl RecordBatch {
         Ok(series)
     }
 
+    // TODO(universalmind303): since we now have async expressions, the entire evaluation should happen async
+    // Refactor all eval_expression's to async and remove the sync version.
     pub fn eval_expression_list(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
         let result_series: Vec<_> = exprs
             .iter()
@@ -1005,6 +1026,17 @@ impl RecordBatch {
             .try_collect()?;
 
         self.process_eval_results(exprs, result_series)
+    }
+
+    pub async fn eval_expression_list_async(&self, exprs: Vec<BoundExpr>) -> DaftResult<Self> {
+        let futs = exprs
+            .clone()
+            .into_iter()
+            .map(|e| self.eval_expression_async(e));
+
+        let result_series = try_join_all(futs).await?;
+
+        self.process_eval_results(exprs.as_ref(), result_series)
     }
 
     pub async fn par_eval_expression_list(
@@ -1025,11 +1057,11 @@ impl RecordBatch {
             .map(|(i, e)| (i, self.eval_expression(&e)))
             .collect::<Vec<_>>();
 
-        // Spawn tasks for the compute expressions
         let compute_runtime = get_compute_runtime();
+
         let compute_futures = compute_exprs.into_iter().map(|(i, e)| {
             let table = self.clone();
-            compute_runtime.spawn(async move { (i, table.eval_expression(&e)) })
+            compute_runtime.spawn(async move { (i, table.eval_expression_async(e).await) })
         });
 
         // Collect the results of the compute expressions

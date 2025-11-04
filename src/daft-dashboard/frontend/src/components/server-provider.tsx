@@ -13,20 +13,23 @@ import { toHumanReadableDuration } from "@/lib/utils";
 // ---------------------- Utils ---------------------- //
 
 /**
+ * Get the dashboard server's URL
+ */
+export function dashboardUrl(): string {
+  // For same-port deployment (Axum serving both frontend and API)
+  if (process.env.NODE_ENV !== "development" && typeof window !== "undefined") {
+    return window.location.origin;
+  } else {
+    // Default fallback for development
+    return "http://localhost:3238";
+  }
+}
+
+/**
  * Get the API base URL from environment variables or use default
  */
 export function genApiUrl(path: string): string {
-  let base;
-
-  // For same-port deployment (Axum serving both frontend and API)
-  if (process.env.NODE_ENV !== "development" && typeof window !== "undefined") {
-    base = window.location.origin; // Uses current host and port
-  } else {
-    // Default fallback for development
-    base = "http://localhost:3238";
-  }
-
-  return new URL(path, base).toString();
+  return new URL(path, dashboardUrl()).toString();
 }
 
 /**

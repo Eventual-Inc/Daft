@@ -79,4 +79,8 @@ impl TreeDisplay for HashJoin {
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
         vec![self.left.as_ref(), self.right.as_ref()]
     }
+
+    fn repr_json(&self) -> serde_json::Value {
+        unimplemented!("repr_json for any PhysicalPlan node is not supported")
+    }
 }

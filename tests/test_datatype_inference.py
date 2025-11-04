@@ -19,8 +19,8 @@ from typing_extensions import TypedDict
 from daft import DataType as dt
 from daft import Series
 from daft.daft import ImageMode
-from daft.datatype import TimeUnit
-from daft.file import File
+from daft.datatype import MediaType, TimeUnit
+from daft.file import File, VideoFile
 
 
 # Pydantic test models
@@ -124,7 +124,8 @@ class PydanticWithNamedTuple(BaseModel):
         (pandas.Series, dt.list(dt.python())),
         (PIL.Image.Image, dt.image()),
         (Series, dt.list(dt.python())),
-        (File, dt.file()),
+        (File, dt.file(MediaType.unknown())),
+        (VideoFile, dt.file(MediaType.video())),
         (object, dt.python()),
         # Pydantic models
         (SimplePydanticModel, dt.struct({"name": dt.string(), "age": dt.int64()})),
@@ -272,7 +273,8 @@ def test_infer_from_jaxtyping(dtype_class, expected_dtype, shape_spec, expected_
         (PIL.Image.new("RGB", (10, 20)), dt.image(ImageMode.RGB)),
         (PIL.Image.new("RGBA", (10, 20)), dt.image(ImageMode.RGBA)),
         (Series.from_pylist([1, 2, 3]), dt.list(dt.int64())),
-        (File(b"1234"), dt.file()),
+        (File(b"1234"), dt.file(MediaType.unknown())),
+        (VideoFile(b"1234"), dt.file(MediaType.video())),
         (object(), dt.python()),
         # Nested lists
         ([[1, 2], [3, 4]], dt.list(dt.list(dt.int64()))),

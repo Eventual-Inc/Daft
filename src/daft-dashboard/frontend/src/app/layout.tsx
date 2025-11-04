@@ -7,6 +7,7 @@ import { ServerProvider } from "@/components/server-provider";
 import { NotificationsProvider } from "@/components/notifications-provider";
 import { main } from "@/lib/utils";
 import React from "react";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 export default function RootLayout({
   children,
@@ -20,12 +21,14 @@ export default function RootLayout({
       >
         <NotificationsProvider>
           <ServerProvider>
-            <div className="flex flex-col h-full">
-              <AppNavbar />
-              <main className="flex-1 overflow-auto">
-                <div className="p-[20px]">{children}</div>
-              </main>
-            </div>
+            <TooltipProvider delayDuration={250}>
+              <div className="flex flex-col h-full">
+                <AppNavbar />
+                <main className="flex-1 overflow-auto">
+                  <div className="p-[20px]">{children}</div>
+                </main>
+              </div>
+            </TooltipProvider>
           </ServerProvider>
         </NotificationsProvider>
       </body>

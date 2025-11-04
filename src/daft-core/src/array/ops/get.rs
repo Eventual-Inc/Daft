@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use arrow2::types::months_days_ns;
-use common_file::{DaftFileType, FileReference};
 
 use super::as_arrow::AsArrow;
 #[cfg(feature = "python")]
@@ -15,6 +14,7 @@ use crate::{
             DateArray, DurationArray, LogicalArrayImpl, MapArray, TimeArray, TimestampArray,
         },
     },
+    file::{DaftMediaType, FileReference, FileReferenceType},
     series::Series,
 };
 
@@ -187,16 +187,20 @@ impl MapArray {
     }
 }
 
-impl FileArray {
+impl<T> FileArray<T>
+where
+    T: DaftMediaType,
+{
     #[inline]
     pub fn get(&self, idx: usize) -> Option<FileReference> {
         let discriminant_array = self.discriminant_array();
         let discriminant = discriminant_array.get(idx)?;
 
-        let discriminant: DaftFileType = discriminant.try_into().expect("Invalid discriminant");
+        let discriminant: FileReferenceType =
+            discriminant.try_into().expect("Invalid discriminant");
         match discriminant {
             // it's a path, we know its valid utf8
-            DaftFileType::Reference => {
+            FileReferenceType::Reference => {
                 let url_array = self.physical.get("url").expect("url exists");
                 let io_config_array = self.physical.get("io_config").expect("io_config exists");
                 let url_array = url_array.utf8().expect("url is utf8");
@@ -213,16 +217,17 @@ impl FileArray {
                 };
 
                 Some(FileReference::new_from_reference(
+                    T::get_type(),
                     data.to_string(),
                     io_config,
                 ))
             }
-            DaftFileType::Data => {
+            FileReferenceType::Data => {
                 let data_array = self.physical.get("data").expect("data exists");
                 let data_array = data_array.binary().expect("data is binary");
                 let data = data_array.get(idx)?;
                 let data = data.to_vec();
-                Some(FileReference::new_from_data(data))
+                Some(FileReference::new_from_data(T::get_type(), data))
             }
         }
     }

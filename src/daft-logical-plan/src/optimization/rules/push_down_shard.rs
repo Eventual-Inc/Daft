@@ -56,7 +56,8 @@ impl PushDownShard {
                     | LogicalPlan::Sample(_)
                     | LogicalPlan::MonotonicallyIncreasingId(_)
                     | LogicalPlan::Window(_)
-                    | LogicalPlan::TopN(_) => {
+                    | LogicalPlan::TopN(_)
+                    | LogicalPlan::VLLMProject(..) => {
                         let new_shard = plan
                             .with_new_children(&[input.arc_children()[0].clone()])
                             .into();
