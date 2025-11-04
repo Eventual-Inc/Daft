@@ -66,6 +66,11 @@ jobs:
       with:
         bun-version: latest
 
+    - name: Setup Node.js for Next.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
     - name: Patch package version
       run: |
         VERSION="$(python -m setuptools_scm | sed 's/\.dev/-dev/'g)" # replace ".dev" with "-dev" to comply with Cargo SemVer rules
