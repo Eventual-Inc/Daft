@@ -263,7 +263,7 @@ def drop_table_if_exists(table_name: str, conn: Connection) -> None:
 def create_table_from_arrow(table_name: str, conn: Connection, arrow_table: pa.Table, metadata: MetaData) -> Table:
     """Create a SQL table from an Arrow table schema."""
     columns = arrow_schema_to_sqlalchemy_columns(arrow_table.schema)
-    table = Table(table_name, metadata, *columns)
+    table = Table(table_name, metadata, *columns, extend_existing=True)
     metadata.create_all(conn)
     return table
 
