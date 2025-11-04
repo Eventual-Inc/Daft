@@ -21,8 +21,12 @@ class VLLMPrefixCachedPrompterDescriptor(PrompterDescriptor):
     provider_name: str
     model_name: str = "facebook/opt-125m"
     concurrency: int = 1
-    max_buffer_size: int = 1024
-    max_running_tasks: int = 512
+    gpus_per_actor: int = 1
+    do_prefix_routing: bool = True
+    max_buffer_size: int = 5000
+    min_bucket_size: int = 16
+    prefix_match_threshold: float = 0.33
+    load_balance_threshold: int = 1000
     batch_size: int | None = None
     engine_args: dict[str, Any] = field(default_factory=dict)
     generate_args: dict[str, Any] = field(default_factory=dict)
@@ -37,8 +41,12 @@ class VLLMPrefixCachedPrompterDescriptor(PrompterDescriptor):
     def get_options(self) -> Options:
         return {
             "concurrency": self.concurrency,
+            "gpus_per_actor": self.gpus_per_actor,
+            "do_prefix_routing": self.do_prefix_routing,
             "max_buffer_size": self.max_buffer_size,
-            "max_running_tasks": self.max_running_tasks,
+            "min_bucket_size": self.min_bucket_size,
+            "prefix_match_threshold": self.prefix_match_threshold,
+            "load_balance_threshold": self.load_balance_threshold,
             "batch_size": self.batch_size,
             "engine_args": self.engine_args,
             "generate_args": self.generate_args,

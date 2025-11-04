@@ -784,6 +784,7 @@ impl LocalPhysicalPlan {
     pub fn vllm_project(
         input: LocalPhysicalPlanRef,
         expr: BoundVLLMExpr,
+        llm_actors: Option<RuntimePyObject>,
         output_column_name: Arc<str>,
         schema: SchemaRef,
         stats_state: StatsState,
@@ -791,6 +792,7 @@ impl LocalPhysicalPlan {
         Self::VLLMProject(VLLMProject {
             input,
             expr,
+            llm_actors,
             output_column_name,
             schema,
             stats_state,
@@ -1292,12 +1294,14 @@ impl LocalPhysicalPlan {
                 Self::VLLMProject(VLLMProject {
                     input,
                     expr,
+                    llm_actors,
                     output_column_name,
                     schema,
                     stats_state,
                 }) => Self::vllm_project(
                     new_child.clone(),
                     expr.clone(),
+                    llm_actors.clone(),
                     output_column_name.clone(),
                     schema.clone(),
                     stats_state.clone(),
@@ -1767,6 +1771,7 @@ pub struct IntoPartitions {
 pub struct VLLMProject {
     pub input: LocalPhysicalPlanRef,
     pub expr: BoundVLLMExpr,
+    pub llm_actors: Option<RuntimePyObject>,
     pub output_column_name: Arc<str>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,

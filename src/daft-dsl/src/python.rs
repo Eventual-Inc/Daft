@@ -7,6 +7,7 @@ use std::{
 };
 
 use common_error::DaftError;
+use common_hashable_float_wrapper::FloatWrapper;
 use common_py_serde::impl_bincode_py_state_serialization;
 use common_resource_request::ResourceRequest;
 use daft_core::{
@@ -674,8 +675,12 @@ impl PyExpr {
         &self,
         model: String,
         concurrency: usize,
+        gpus_per_actor: usize,
+        do_prefix_routing: bool,
         max_buffer_size: usize,
-        max_running_tasks: usize,
+        min_bucket_size: usize,
+        prefix_match_threshold: f64,
+        load_balance_threshold: usize,
         batch_size: Option<usize>,
         engine_args: Py<PyAny>,
         generate_args: Py<PyAny>,
@@ -684,8 +689,12 @@ impl PyExpr {
             input: self.expr.clone(),
             model,
             concurrency,
+            gpus_per_actor,
+            do_prefix_routing,
             max_buffer_size,
-            max_running_tasks,
+            min_bucket_size,
+            prefix_match_threshold: FloatWrapper(prefix_match_threshold),
+            load_balance_threshold,
             batch_size,
             engine_args: engine_args.into(),
             generate_args: generate_args.into(),
