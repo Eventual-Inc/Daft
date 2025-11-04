@@ -18,6 +18,7 @@ from sqlalchemy import (
     String,
     Table,
     Time,
+    create_engine,
     inspect,
     text,
 )
@@ -36,6 +37,12 @@ if TYPE_CHECKING:
 
     from sqlalchemy.engine import Connection
 
+
+__all__: tuple[str, ...] = (
+    "SQL_SINK_MODES",
+    "SQLDataSink",
+    "WriteSqlResult",
+)
 
 SQL_SINK_MODES = Literal["create", "append", "replace"]
 """The supported write modes for the SQLDataSink.
@@ -67,9 +74,9 @@ class SQLDataSink(DataSink[dict[str, Any]]):
         """Initialize SQLDataSink.
 
         Args:
-            table_name: Name of the target SQL table
-            connection: Connection string (URL) or factory callable that returns SQLAlchemy connection
-            mode: Write mode - "create" (new table), "append" (insert rows), "replace" (drop and recreate)
+            table_name: Name of the target SQL table.
+            connection: Connection string (URL) or factory callable that returns a connection.
+            mode: How this sink should write into the database.
         """
         self._table_name = table_name
         self._connection = connection
@@ -100,49 +107,19 @@ class SQLDataSink(DataSink[dict[str, Any]]):
 
     def start(self) -> None:
         """Prepare the database table for writing."""
-        if self._mode == "create":
-            self._create_table()
-
-        # On first write, create the table schema if needed
-        if self._mode in ("create", "replace"):
-            table = self._create_table_from_arrow(conn, arrow_table, metadata)
-
-        elif self._mode == "append":
-            # Load existing table metadata
-            metadata.reflect(bind=conn)
-            if self._table_name not in metadata.tables:
-                raise ValueError(f"Table '{self._table_name}' does not exist. Use mode='create'")
-            table = metadata.tables[self._table_name]
-
-        else:
-            raise ValueError(f"Unrecognized mode: '{self._mode}'. Expecting one of {SQL_SINK_MODES}")
-
-    def _get_connection(self) -> Any:
-        """Get a database connection."""
-        from sqlalchemy import create_engine
-
-        if isinstance(self._connection, str):
-            return create_engine(self._connection).connect()
-        else:
-            return self._connection()
-
-    def _create_table(self) -> None:
-        """Create a new table in the database."""
+        conn = self._get_connection()
         try:
-            conn = self._get_connection()
-            try:
-                # Check if table already exists
-                inspector = inspect(conn)
-                if self._table_name in inspector.get_table_names():
-                    if self._mode == "create":
-                        raise ValueError(
-                            f"Table '{self._table_name}' already exists. Use mode='append' or mode='replace'"
-                        )
-            finally:
-                conn.close()
-        except Exception:
-            # If we can't check, we'll let the write fail if needed
-            pass
+            if self._mode == "create":
+                create_table(self._table_name, conn)
+            elif self._mode == "append":
+                ensure_table_exists(self._table_name, conn)
+            elif self._mode == "replace":
+                drop_table_if_exists(self._table_name, conn)
+                create_table(self._table_name, conn)
+            else:
+                raise ValueError(f"Unrecognized mode: '{self._mode}'. Expecting one of {SQL_SINK_MODES}")
+        finally:
+            conn.close()
 
     def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[WriteSqlResult]]:
         """Write micropartitions to the SQL database using PyArrow tables.
@@ -196,6 +173,13 @@ class SQLDataSink(DataSink[dict[str, Any]]):
         finally:
             conn.close()
 
+    def _get_connection(self) -> Connection:
+        """Get a database connection."""
+        if isinstance(self._connection, str):
+            return create_engine(self._connection).connect()
+        else:
+            return self._connection()
+
     def finalize(self, write_results: list[WriteResult[WriteSqlResult]]) -> MicroPartition:
         """Finalize the write operation and return summary statistics.
 
@@ -221,6 +205,32 @@ class SQLDataSink(DataSink[dict[str, Any]]):
             }
         )
         return tbl
+
+
+def create_table(table_name: str, conn: Connection) -> None:
+    """Create a new table in the database."""
+    inspector = inspect(conn)
+    if table_name in inspector.get_table_names():
+        raise ValueError(
+            f"Table '{table_name}' already exists! Use mode='append' or mode='replace' instead of mode='create'"
+        )
+
+    raise NotImplementedError("Create the table!")
+
+
+def ensure_table_exists(table_name: str, conn: Connection) -> None:
+    """Ensure that a table exists in the database."""
+    inspector = inspect(conn)
+    if table_name not in inspector.get_table_names():
+        raise ValueError(f"Table '{table_name}' does not exist!")
+
+
+def drop_table_if_exists(table_name: str, conn: Connection) -> None:
+    """Drop the table if it exists."""
+    inspector = inspect(conn)
+    if table_name in inspector.get_table_names():
+        conn.execute(text(f"DROP TABLE {table_name}"))
+        conn.commit()
 
 
 def insert_arrow_table(conn: Connection, table: Table, arrow_table: pa.Table) -> None:
@@ -254,14 +264,6 @@ def create_table_from_arrow(
     metadata.create_all(conn)
 
     return table
-
-
-def drop_table_if_exists(table_name: str, conn: Connection) -> None:
-    """Drop the table if it exists."""
-    inspector = inspect(conn)
-    if table_name in inspector.get_table_names():
-        conn.execute(text(f"DROP TABLE {table_name}"))
-        conn.commit()
 
 
 def arrow_schema_to_sqlalchemy_columns(arrow_schema: pa.Schema) -> list[Column]:
