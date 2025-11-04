@@ -209,7 +209,7 @@ def create_table(table_name: str, conn: Connection, df_schema: Schema) -> None:
         )
 
     # Create the table
-    create_table_sql = f"CREATE TABLE {table_name} ({', '.join([f'{col.name} {col.type}' for col in df_schema])})"
+    create_table_sql = f"CREATE TABLE {table_name} ({', '.join([f'{col.name} {col.dtype}' for col in df_schema])})"
     conn.execute(text(create_table_sql))
     conn.commit()
 
@@ -226,13 +226,13 @@ def ensure_table_exists(table_name: str, conn: Connection, df_schema: Schema) ->
     # First, we check that all existing table columns match the DataFrame schema.
     for existing_column in existing_columns:
         name = existing_column["name"]
-        if name not in df_schema.names:
+        if name not in df_schema:
             raise ValueError(
                 f"Extra column '{name}' exists in the table but it does not does not exist in DataFrame schema!"
             )
 
         df_col = df_schema[name]
-        df_type_sql = arrow_type_to_sqlalchemy_type(df_col.dtype.to_arrow_type())
+        df_type_sql = arrow_type_to_sqlalchemy_type(df_col.dtype.to_arrow_dtype())
 
         col_type_sql = existing_column["type"]
 
@@ -243,9 +243,10 @@ def ensure_table_exists(table_name: str, conn: Connection, df_schema: Schema) ->
             )
 
     # Second, we check that we have the same number of columns.
-    if len(existing_columns) != len(df_schema.names):
+    df_column_names = df_schema.column_names()
+    if len(existing_columns) != len(df_column_names):
         raise ValueError(
-            f"DataFrame has {len(df_schema.names)} columns but table {table_name} has {len(existing_columns)} columns."
+            f"DataFrame has {len(df_column_names)} columns but table {table_name} has {len(existing_columns)} columns."
         )
 
     # All columns match and there are no missing columns!
