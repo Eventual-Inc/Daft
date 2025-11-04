@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from daft import (
     DataType,
@@ -530,6 +530,35 @@ def prompt(
 
     # Load a PrompterDescriptor from the resolved provider
     prompter_descriptor = _resolve_provider(provider, "openai").get_prompter(model, **options)
+
+    # Check if this is a vLLM provider - if so, use PyExpr.vllm directly
+    from daft.ai.vllm.protocols.prompter import VLLMPrefixCachingPrompterDescriptor
+
+    if isinstance(prompter_descriptor, VLLMPrefixCachingPrompterDescriptor):
+        if return_format is not None:
+            raise ValueError("return_format is not supported for vLLM provider")
+
+        if system_message is not None:
+            raise ValueError("system_message is not supported for vLLM provider")
+
+        return Expression._from_pyexpr(
+            input_text._expr.vllm(
+                prompter_descriptor.model_name,
+                prompter_descriptor.concurrency,
+                prompter_descriptor.gpus_per_actor,
+                prompter_descriptor.do_prefix_routing,
+                prompter_descriptor.max_buffer_size,
+                prompter_descriptor.min_bucket_size,
+                prompter_descriptor.prefix_match_threshold,
+                prompter_descriptor.load_balance_threshold,
+                prompter_descriptor.batch_size,
+                prompter_descriptor.engine_args,
+                prompter_descriptor.generate_args,
+            )
+        )
+
+    # For non-vLLM providers, use the standard UDF-based execution path
+    from daft.udf import method
 
     # Determine return dtype
     if return_format is not None:

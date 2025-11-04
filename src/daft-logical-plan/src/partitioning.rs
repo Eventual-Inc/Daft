@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use daft_dsl::{
     Column, ExprRef, ResolvedColumn,
-    expr::bound_expr::BoundExpr,
+    expr::{VLLMExpr, bound_expr::BoundExpr},
     functions::{FunctionArgs, scalar::ScalarFn},
 };
 use daft_recordbatch::RecordBatch;
@@ -401,6 +401,12 @@ fn translate_clustering_spec_expr(
             Ok(Arc::new(Expr::ScalarFn(ScalarFn::Python(
                 udf.with_new_children(new_children),
             ))))
+        }
+        Expr::VLLM(VLLMExpr { input, .. }) => {
+            let new_input = translate_clustering_spec_expr(input, old_colname_to_new_colname)?;
+            Ok(Arc::new(
+                clustering_spec_expr.with_new_children(vec![new_input]),
+            ))
         }
         // Cannot have agg exprs or references to other tables in clustering specs.
         Expr::Agg(_) | Expr::Column(..) | Expr::Over(..) | Expr::WindowFunction(_) => Err(()),

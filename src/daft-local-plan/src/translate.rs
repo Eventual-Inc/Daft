@@ -5,7 +5,7 @@ use common_file_formats::WriteMode;
 use common_scan_info::ScanState;
 use daft_core::join::JoinStrategy;
 use daft_dsl::{
-    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundVLLMExpr, BoundWindowExpr},
     join::normalize_join_keys,
     resolved_col, window_to_agg_exprs,
 };
@@ -452,6 +452,18 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 to_explode,
                 explode.exploded_schema.clone(),
                 explode.stats_state.clone(),
+            ))
+        }
+        LogicalPlan::VLLMProject(vllm_project) => {
+            let input = translate(&vllm_project.input)?;
+            let expr = BoundVLLMExpr::try_new(vllm_project.expr.clone(), input.schema())?;
+            Ok(LocalPhysicalPlan::vllm_project(
+                input,
+                expr,
+                None,
+                vllm_project.output_column_name.clone(),
+                vllm_project.output_schema.clone(),
+                vllm_project.stats_state.clone(),
             ))
         }
         LogicalPlan::Intersect(_)

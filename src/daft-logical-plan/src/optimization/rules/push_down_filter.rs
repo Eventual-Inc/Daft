@@ -429,7 +429,8 @@ impl PushDownFilter {
             | LogicalPlan::MonotonicallyIncreasingId(..)
             | LogicalPlan::SubqueryAlias(..)
             | LogicalPlan::Window(..)
-            | LogicalPlan::Distinct(..) => {
+            | LogicalPlan::Distinct(..)
+            | LogicalPlan::VLLMProject(..) => {
                 return Ok(Transformed::no(plan));
             }
         };

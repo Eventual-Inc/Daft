@@ -176,11 +176,11 @@ impl StreamingSink for AsyncUdfSink {
                         let batch = join_res??;
                         Ok(StreamingSinkFinalizeOutput::HasMoreOutput {
                             states,
-                            output: Arc::new(MicroPartition::new_loaded(
+                            output: Some(Arc::new(MicroPartition::new_loaded(
                                 params.output_schema.clone(),
                                 Arc::new(vec![batch]),
                                 None,
-                            )),
+                            ))),
                         })
                     } else {
                         Ok(StreamingSinkFinalizeOutput::Finished(None))
@@ -226,12 +226,12 @@ impl StreamingSink for AsyncUdfSink {
         res
     }
 
-    fn make_state(&self) -> Self::State {
-        AsyncUdfState {
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(AsyncUdfState {
             udf_expr: self.params.expr.clone(),
             task_set: TaskSet::new(),
             udf_initialized: false,
-        }
+        })
     }
 
     fn max_concurrency(&self) -> usize {
