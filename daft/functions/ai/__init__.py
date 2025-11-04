@@ -122,7 +122,7 @@ def embed_text(
 
     # Decorate the __call__ method with @daft.method to specify return_dtype
     _TextEmbedderExpression.__call__ = method.batch(  # type: ignore[method-assign]
-        method=_TextEmbedderExpression.__call__, return_dtype=text_embedder.get_dimensions().dtype
+        method=_TextEmbedderExpression.__call__, return_dtype=text_embedder.get_dimensions().as_dtype()
     )
     wrapped_cls = daft_cls(
         _TextEmbedderExpression,
@@ -203,7 +203,7 @@ def embed_image(
 
     # Decorate the __call__ method with @daft.method to specify return_dtype
     _ImageEmbedderExpression.__call__ = method.batch(  # type: ignore[method-assign] # type: ignore[method-assign] # type: ignore[method-assign]
-        method=_ImageEmbedderExpression.__call__, return_dtype=image_embedder.get_dimensions().dtype
+        method=_ImageEmbedderExpression.__call__, return_dtype=image_embedder.get_dimensions().as_dtype()
     )
 
     wrapped_cls = daft_cls(
