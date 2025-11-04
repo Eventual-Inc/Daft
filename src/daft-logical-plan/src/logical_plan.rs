@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use common_daft_config::DaftExecutionConfig;
 use common_display::ascii::AsciiTreeDisplay;
 use common_error::{DaftError, DaftResult};
 use common_treenode::{TreeNode, TreeNodeRecursion};
@@ -395,9 +396,9 @@ impl LogicalPlan {
 
     // Materializes stats over logical plans. If stats are already materialized, this function recomputes stats, which might be
     // useful if stats become stale during query planning.
-    pub fn with_materialized_stats(self) -> Self {
+    pub fn with_materialized_stats(self, cfg: &DaftExecutionConfig) -> Self {
         match self {
-            Self::Source(plan) => Self::Source(plan.with_materialized_stats()),
+            Self::Source(plan) => Self::Source(plan.with_materialized_stats(cfg)),
             Self::Shard(plan) => Self::Shard(plan.with_materialized_stats()),
             Self::Project(plan) => Self::Project(plan.with_materialized_stats()),
             Self::UDFProject(plan) => Self::UDFProject(plan.with_materialized_stats()),
