@@ -30,7 +30,7 @@ homepage = "https://www.daft.ai"
 repository = "https://github.com/Eventual-Inc/Daft"
 
 [project.optional-dependencies]
-all = ["daft[aws, azure, clickhouse, deltalake, gcp, hudi, huggingface, iceberg, lance, numpy, openai, pandas, ray, sentence-transformers, spark, sql, transformers, turbopuffer, unity, video]"]
+all = ["daft[aws, azure, clickhouse, deltalake, gcp, hudi, huggingface, iceberg, lance, numpy, openai, pandas, postgres, ray, sentence-transformers, spark, sql, transformers, turbopuffer, unity, video]"]
 aws = ["boto3"]
 azure = []
 clickhouse = ["clickhouse_connect"]
@@ -46,6 +46,7 @@ lance = ["pylance"]
 numpy = ["numpy"]
 openai = ["openai"]
 pandas = ["pandas"]
+postgres = ["psycopg", "adbc-driver-manager", "adbc-driver-postgresql"]
 ray = [
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
   # TODO: we temporarily limit ray<2.48.0 because https://github.com/Eventual-Inc/Daft/issues/5027
