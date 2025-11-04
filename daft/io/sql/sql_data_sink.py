@@ -250,7 +250,10 @@ def ensure_table_exists(table_name: str, conn: Connection, df_schema: Schema) ->
 
         col_type_sql = existing_column["type"]
 
-        if df_type_sql != col_type_sql:
+        # It's OK so long as one of the following holds:
+        # - the column's type is the DF schema type
+        # - the column's type is a subtype of the DF schema type
+        if df_type_sql != col_type_sql and not issubclass(type(col_type_sql), type(df_type_sql)):
             raise ValueError(
                 f"Column '{name}' type mismatch! DataFrame has {df_type_sql} (Daft: {df_col.dtype}) but "
                 f"existing table's ({table_name}) column type is {col_type_sql}."
