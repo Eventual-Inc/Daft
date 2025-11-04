@@ -39,7 +39,6 @@ indicatif = {workspace = true}
 itertools = {workspace = true}
 kanal = "0.1"
 log = {workspace = true}
-opentelemetry = {workspace = true}
 pin-project = "1"
 pyo3 = {workspace = true, optional = true}
 pyo3-async-runtimes = {workspace = true, optional = true}
@@ -48,7 +47,8 @@ snafu = {workspace = true}
 tokio = {workspace = true, features = ["test-util"]}
 tokio-util = {workspace = true}
 tracing = {workspace = true}
-uuid.workspace = true
+uuid = {workspace = true}
+serde_json = {workspace = true}
 
 [features]
 python = [

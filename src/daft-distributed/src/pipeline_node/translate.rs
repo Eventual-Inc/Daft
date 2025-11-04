@@ -61,6 +61,35 @@ impl LogicalPlanToPipelineNodeTranslator {
         self.pipeline_node_id_counter += 1;
         self.pipeline_node_id_counter
     }
+
+    pub(crate) fn needs_hash_repartition(
+        input_node: &DistributedPipelineNode,
+        partition_columns: &[BoundExpr],
+    ) -> DaftResult<bool> {
+        let input_clustering_spec = &input_node.config().clustering_spec;
+        // If there is only one partition, we can skip the shuffle
+        if input_clustering_spec.num_partitions() == 1 {
+            return Ok(true);
+        }
+
+        // Check if input is hash partitioned
+        if !matches!(input_clustering_spec.as_ref(), ClusteringSpec::Hash(_)) {
+            return Ok(false);
+        }
+
+        // Check if the partition columns are compatible
+        let is_compatible = is_partition_compatible(
+            BoundExpr::bind_all(
+                &input_clustering_spec.partition_by(),
+                &input_node.config().schema,
+            )?
+            .iter()
+            .map(|e| e.inner()),
+            partition_columns.iter().map(|e| e.inner()),
+        );
+
+        Ok(is_compatible)
+    }
 }
 
 impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
@@ -71,7 +100,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
     }
 
     fn f_up(&mut self, node: &LogicalPlanRef) -> DaftResult<TreeNodeRecursion> {
-        let logical_node_id = node.node_id().map(|id| id as NodeID);
         let output = match node.as_ref() {
             LogicalPlan::Source(source) => {
                 match source.source_info.as_ref() {
@@ -80,7 +108,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         &self.plan_config,
                         info.clone(),
                         self.psets.clone(),
-                        logical_node_id,
                     )
                     .into_node(),
                     SourceInfo::Physical(info) => {
@@ -97,7 +124,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                             info.pushdowns.clone(),
                             scan_tasks,
                             source.output_schema.clone(),
-                            logical_node_id,
                         )
                         .into_node()
                     }
@@ -107,7 +133,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         info.glob_paths.clone(),
                         info.pushdowns.clone(),
                         source.output_schema.clone(),
-                        logical_node_id,
                         info.io_config.clone().map(|c| *c),
                     )
                     .into_node(),
@@ -129,7 +154,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         BoundExpr::bind_all(projection.as_slice(), &udf.input.schema())?;
                     crate::pipeline_node::actor_udf::ActorUDF::new(
                         self.get_next_pipeline_node_id(),
-                        logical_node_id,
                         &self.plan_config,
                         projection,
                         udf.udf_properties.clone(),
@@ -150,7 +174,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
 
                 UDFNode::new(
                     self.get_next_pipeline_node_id(),
-                    logical_node_id,
                     &self.plan_config,
                     expr,
                     udf.udf_properties.clone(),
@@ -165,7 +188,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     BoundExpr::try_new(filter.predicate.clone(), &filter.input.schema())?;
                 FilterNode::new(
                     self.get_next_pipeline_node_id(),
-                    logical_node_id,
                     &self.plan_config,
                     predicate,
                     node.schema(),
@@ -175,7 +197,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             }
             LogicalPlan::IntoBatches(into_batches) => IntoBatchesNode::new(
                 self.get_next_pipeline_node_id(),
-                logical_node_id,
                 &self.plan_config,
                 into_batches.batch_size,
                 node.schema(),
@@ -184,7 +205,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             .into_node(),
             LogicalPlan::Limit(limit) => LimitNode::new(
                 self.get_next_pipeline_node_id(),
-                logical_node_id,
                 &self.plan_config,
                 limit.limit as usize,
                 limit.offset.map(|x| x as usize),
@@ -196,7 +216,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let projection = BoundExpr::bind_all(&project.projection, &project.input.schema())?;
                 ProjectNode::new(
                     self.get_next_pipeline_node_id(),
-                    logical_node_id,
                     &self.plan_config,
                     projection,
                     node.schema(),
@@ -208,7 +227,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let to_explode = BoundExpr::bind_all(&explode.to_explode, &explode.input.schema())?;
                 ExplodeNode::new(
                     self.get_next_pipeline_node_id(),
-                    logical_node_id,
                     &self.plan_config,
                     to_explode,
                     node.schema(),
@@ -221,7 +239,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let values = BoundExpr::bind_all(&unpivot.values, &unpivot.input.schema())?;
                 UnpivotNode::new(
                     self.get_next_pipeline_node_id(),
-                    logical_node_id,
                     &self.plan_config,
                     ids,
                     values,
@@ -234,7 +251,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             }
             LogicalPlan::Sample(sample) => SampleNode::new(
                 self.get_next_pipeline_node_id(),
-                logical_node_id,
                 &self.plan_config,
                 sample.fraction,
                 sample.with_replacement,
@@ -247,7 +263,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let sink_info = sink.sink_info.bind(&sink.input.schema())?;
                 SinkNode::new(
                     self.get_next_pipeline_node_id(),
-                    logical_node_id,
                     &self.plan_config,
                     sink_info.into(),
                     sink.schema.clone(),
@@ -259,7 +274,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 MonotonicallyIncreasingIdNode::new(
                     self.get_next_pipeline_node_id(),
-                    logical_node_id,
                     &self.plan_config,
                     monotonically_increasing_id.column_name.clone(),
                     node.schema(),
@@ -269,7 +283,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             }
             LogicalPlan::Concat(_) => ConcatNode::new(
                 self.get_next_pipeline_node_id(),
-                logical_node_id,
                 &self.plan_config,
                 node.schema(),
                 self.curr_node.pop().unwrap(), // Other
@@ -282,7 +295,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 | RepartitionSpec::Range(_) => {
                     let child = self.curr_node.pop().unwrap();
                     self.gen_shuffle_node(
-                        logical_node_id,
                         repartition.repartition_spec.clone(),
                         node.schema(),
                         child,
@@ -290,7 +302,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 }
                 RepartitionSpec::IntoPartitions(into_partitions_spec) => IntoPartitionsNode::new(
                     self.get_next_pipeline_node_id(),
-                    logical_node_id,
                     &self.plan_config,
                     into_partitions_spec.num_partitions,
                     node.schema(),
@@ -313,7 +324,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let input_node = self.curr_node.pop().unwrap();
                 self.gen_agg_nodes(
                     input_node,
-                    logical_node_id,
                     group_by.clone(),
                     aggregations,
                     aggregate.output_schema.clone(),
@@ -333,27 +343,9 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let input_node = self.curr_node.pop().unwrap();
 
                 // Check if we can elide the repartition
-                let input_clustering_spec = &input_node.config().clustering_spec;
-                // If there is only one partition, or the input is already partitioned by the distinct columns,
-                // then we can just do a single stage distinct and skip the shuffle.
-                let is_hash_partitioned_by_columns =
-                    matches!(input_clustering_spec.as_ref(), ClusteringSpec::Hash(_))
-                        && !columns.is_empty()
-                        && is_partition_compatible(
-                            BoundExpr::bind_all(
-                                &input_clustering_spec.partition_by(),
-                                &input_node.config().schema,
-                            )?
-                            .iter()
-                            .map(|e| e.inner()),
-                            columns.iter().map(|e| e.inner()),
-                        );
-
-                if input_clustering_spec.num_partitions() == 1 || is_hash_partitioned_by_columns {
-                    // Single partition or already properly partitioned - skip shuffle
+                if Self::needs_hash_repartition(&input_node, &columns)? {
                     DistinctNode::new(
                         self.get_next_pipeline_node_id(),
-                        logical_node_id,
                         &self.plan_config,
                         columns,
                         distinct.input.schema(),
@@ -365,7 +357,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     // First stage: Initial local distinct to reduce the dataset
                     let initial_distinct = DistinctNode::new(
                         self.get_next_pipeline_node_id(),
-                        logical_node_id,
                         &self.plan_config,
                         columns.clone(),
                         distinct.input.schema(),
@@ -375,7 +366,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
 
                     // Second stage: Repartition to distribute the dataset
                     let repartition = self.gen_shuffle_node(
-                        logical_node_id,
                         RepartitionSpec::Hash(HashRepartitionConfig::new(
                             None,
                             columns.clone().into_iter().map(|e| e.into()).collect(),
@@ -387,7 +377,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     // Last stage: Redo the distinct to get the final result
                     DistinctNode::new(
                         self.get_next_pipeline_node_id(),
-                        logical_node_id,
                         &self.plan_config,
                         columns,
                         distinct.input.schema(),
@@ -407,10 +396,11 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 // First stage: Shuffle by the partition_by columns to colocate rows
                 let input_node = self.curr_node.pop().unwrap();
                 let repartition = if partition_by.is_empty() {
-                    self.gen_gather_node(logical_node_id, input_node)
+                    self.gen_gather_node(input_node)
+                } else if Self::needs_hash_repartition(&input_node, &partition_by)? {
+                    input_node
                 } else {
                     self.gen_shuffle_node(
-                        logical_node_id,
                         RepartitionSpec::Hash(HashRepartitionConfig::new(
                             None,
                             partition_by.clone().into_iter().map(|e| e.into()).collect(),
@@ -423,7 +413,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 // Final stage: The actual window op
                 WindowNode::new(
                     self.get_next_pipeline_node_id(),
-                    logical_node_id,
                     &self.plan_config,
                     partition_by,
                     order_by,
@@ -444,14 +433,13 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let right_node = self.curr_node.pop().unwrap();
                 let left_node = self.curr_node.pop().unwrap();
 
-                self.translate_join(logical_node_id, join, left_node, right_node)?
+                self.translate_join(join, left_node, right_node)?
             }
             LogicalPlan::Sort(sort) => {
                 let sort_by = BoundExpr::bind_all(&sort.sort_by, &sort.input.schema())?;
 
                 SortNode::new(
                     self.get_next_pipeline_node_id(),
-                    logical_node_id,
                     &self.plan_config,
                     sort_by,
                     sort.descending.clone(),
@@ -467,7 +455,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 // First stage: Perform a local topN
                 let local_topn = TopNNode::new(
                     self.get_next_pipeline_node_id(),
-                    logical_node_id,
                     &self.plan_config,
                     sort_by.clone(),
                     top_n.descending.clone(),
@@ -480,12 +467,11 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 .into_node();
 
                 // Second stage: Gather all data to a single node
-                let gather = self.gen_gather_node(logical_node_id, local_topn);
+                let gather = self.gen_gather_node(local_topn);
 
                 // Final stage: Do another topN to get the final result
                 TopNNode::new(
                     self.get_next_pipeline_node_id(),
-                    logical_node_id,
                     &self.plan_config,
                     sort_by,
                     top_n.descending.clone(),
@@ -524,7 +510,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 // First stage: Local aggregation with group_by + pivot_column
                 let agg = self.gen_agg_nodes(
                     input_node,
-                    logical_node_id,
                     group_by_with_pivot,
                     vec![aggregation.clone()],
                     output_schema,
@@ -534,7 +519,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 // Final stage: Pivot transformation
                 PivotNode::new(
                     self.get_next_pipeline_node_id(),
-                    logical_node_id,
                     &self.plan_config,
                     group_by,
                     pivot_column,
@@ -552,7 +536,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
 
                 VLLMNode::new(
                     self.get_next_pipeline_node_id(),
-                    logical_node_id,
                     &self.plan_config,
                     expr,
                     vllm_project.output_column_name.clone(),

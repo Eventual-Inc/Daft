@@ -8,7 +8,7 @@ use std::{
 };
 
 use common_error::DaftError;
-use common_file::FileReference;
+use daft_core::file::FileReference;
 use pyo3::{
     exceptions::{PyIOError, PyRuntimeError, PyValueError},
     prelude::*,
@@ -31,7 +31,7 @@ impl PyFileReference {
     }
 
     pub fn __enter__(&self) -> PyResult<PyDaftFile> {
-        Ok(DaftFile::try_from(self.inner.as_ref().clone())?.into())
+        Ok(DaftFile::load_blocking(self.inner.as_ref().clone(), true)?.into())
     }
 
     pub fn _get_file(&self) -> FileReference {
@@ -102,11 +102,11 @@ impl PyDaftFile {
     }
 }
 
-#[cfg_attr(feature = "python", pymethods)]
+#[pymethods]
 impl PyDaftFile {
     #[staticmethod]
     fn _from_file_reference(f: PyFileReference) -> PyResult<Self> {
-        Ok(DaftFile::try_from(f.inner.as_ref().clone())?.into())
+        Ok(DaftFile::load_blocking(f.inner.as_ref().clone(), false)?.into())
     }
 
     #[pyo3(signature=(size=-1))]

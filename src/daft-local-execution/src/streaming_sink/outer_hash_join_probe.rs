@@ -18,12 +18,10 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::base::{
-    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
+    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
+    StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
-use crate::{
-    ExecutionTaskSpawner, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef,
-    streaming_sink::base::StreamingSinkFinalizeOutput,
-};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef};
 
 pub(crate) struct IndexBitmapBuilder {
     mutable_bitmap: MutableBitmap,
@@ -673,7 +671,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
             spawner
                 .spawn(
                     async move {
-                        let output = match params.join_type {
+                        let res = match params.join_type {
                             JoinType::Left => Self::finalize_left(
                                 states,
                                 &params.common_join_cols,
@@ -701,8 +699,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
                                 "Only Left, Right, and Outer joins are supported in OuterHashJoinProbeSink"
                             ),
                         }?;
-
-                        Ok(StreamingSinkFinalizeOutput::Finished(output))
+                    Ok(StreamingSinkFinalizeOutput::Finished(res))
                     },
                     Span::current(),
                 )

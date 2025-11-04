@@ -30,7 +30,6 @@ impl PivotNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         group_by: Vec<BoundExpr>,
         pivot_column: BoundExpr,
@@ -46,7 +45,6 @@ impl PivotNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,

@@ -5,6 +5,7 @@ use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
+use daft_core::prelude::SchemaRef;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
@@ -117,9 +118,15 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         children: Vec<Box<dyn PipelineNode>>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
+        output_schema: SchemaRef,
     ) -> Self {
         let name = op.name().into();
-        let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::StreamingSink);
+        let node_info = ctx.next_node_info(
+            name,
+            op.op_type(),
+            NodeCategory::StreamingSink,
+            output_schema,
+        );
         let runtime_stats = op.make_runtime_stats();
         let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
@@ -232,6 +239,15 @@ impl<Op: StreamingSink + 'static> TreeDisplay for StreamingSinkNode<Op> {
         }
         display
     }
+
+    fn repr_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "id": self.id(),
+            "type": self.op.op_type().to_string(),
+            "name": self.name(),
+        })
+    }
+
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
         self.children()
             .iter()
@@ -343,7 +359,6 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                     runtime_stats.clone(),
                     info_span!("StreamingSink::Finalize"),
                 );
-
                 loop {
                     let finalized_result = op.finalize(finished_states, &spawner).await??;
                     match finalized_result {

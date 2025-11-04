@@ -1527,7 +1527,7 @@ impl Expr {
                     .collect();
 
                 Self::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn {
-                    udf: sf.udf.clone(),
+                    func: sf.func.clone(),
                     inputs: FunctionArgs::new_unchecked(new_children),
                 }))
             }
@@ -2021,7 +2021,7 @@ impl Expr {
         let f = explode_fn.get_function(FunctionArgs::empty(), &Schema::empty())?;
 
         Ok(Self::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn {
-            udf: f,
+            func: f,
             inputs: FunctionArgs::new_unchecked(vec![FunctionArg::Unnamed(self)]),
         }))
         .arced())
@@ -2232,7 +2232,7 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         },
 
         // String contains
-        Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. }))
+        Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func: udf, .. }))
             if udf.name() == "contains" =>
         {
             0.1

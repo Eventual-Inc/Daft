@@ -23,7 +23,6 @@ impl ExplodeNode {
 
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         to_explode: Vec<BoundExpr>,
         schema: SchemaRef,
@@ -35,7 +34,6 @@ impl ExplodeNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,

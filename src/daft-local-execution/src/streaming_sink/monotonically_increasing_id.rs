@@ -7,11 +7,10 @@ use daft_micropartition::MicroPartition;
 use tracing::{Span, instrument};
 
 use super::base::{
-    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
+    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
+    StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
-use crate::{
-    ExecutionTaskSpawner, pipeline::NodeName, streaming_sink::base::StreamingSinkFinalizeOutput,
-};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) struct MonotonicallyIncreasingIdState {
     id_offset: u64,

@@ -23,7 +23,6 @@ impl FilterNode {
 
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         predicate: BoundExpr,
         schema: SchemaRef,
@@ -35,7 +34,6 @@ impl FilterNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,

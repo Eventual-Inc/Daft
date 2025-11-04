@@ -29,7 +29,6 @@ impl VLLMNode {
 
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         expr: BoundVLLMExpr,
         output_column_name: Arc<str>,
@@ -42,7 +41,6 @@ impl VLLMNode {
             Self::NODE_NAME,
             vec![child.node_id()],
             vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema.clone(),
