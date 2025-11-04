@@ -22,7 +22,6 @@ from sqlalchemy import (
     inspect,
     text,
 )
-from sqlalchemy.types import TypeEngine
 
 from daft.datatype import DataType
 from daft.dependencies import pa
@@ -36,6 +35,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from sqlalchemy.engine import Connection
+    from sqlalchemy.types import TypeEngine
 
 
 __all__: tuple[str, ...] = (
@@ -58,7 +58,7 @@ class WriteSqlResult(TypedDict):
     table_name: str
 
 
-class SQLDataSink(DataSink[dict[str, Any]]):
+class SQLDataSink(DataSink[WriteSqlResult]):
     """DataSink for writing data to SQL databases.
 
     Supports PostgreSQL, SQLite, MySQL, and other SQLAlchemy-compatible databases.
@@ -144,7 +144,7 @@ class SQLDataSink(DataSink[dict[str, Any]]):
 
                 # On first write, create the table schema if needed
                 if i == 0 and self._mode in ("create", "replace"):
-                    table = self._create_table_from_arrow(conn, arrow_table, metadata)
+                    table = create_table_from_arrow(conn, arrow_table, metadata)
                     table_exists = True
                 elif i == 0 and self._mode == "append":
                     # Load existing table metadata
@@ -156,7 +156,7 @@ class SQLDataSink(DataSink[dict[str, Any]]):
 
                 # Insert rows into table using executemany with pylist
                 if table_exists and table is not None:
-                    self._insert_arrow_table(conn, table, arrow_table)
+                    insert_arrow_table(conn, table, arrow_table)
 
                 yield WriteResult(
                     result=WriteSqlResult(table_name=self._table_name),
