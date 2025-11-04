@@ -18,7 +18,7 @@ if TYPE_CHECKING:
         TextEmbedder,
         TextEmbedderDescriptor,
     )
-    from daft.ai.typing import Embedding, Image, Label
+    from daft.ai.typing import Embedding, Label
 
 
 class _TextEmbedderExpression:
@@ -89,4 +89,5 @@ class _PrompterExpression:
         self.prompter = prompter.instantiate()
 
     async def prompt(self, *messages: Any) -> Any:
+        print(messages)
         return await self.prompter.prompt(messages)

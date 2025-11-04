@@ -403,7 +403,7 @@ def classify_image(
 
 
 def prompt(
-    messages: list[Expression],
+    messages: list[Expression] | Expression,
     return_format: BaseModel | None = None,
     *,
     system_message: str | None = None,
@@ -573,4 +573,7 @@ def prompt(
     instance = wrapped_cls(prompter_descriptor)
 
     # Call the instance (which calls __call__ method) with the messages expression
-    return instance(*messages)
+    if isinstance(messages, list):
+        return instance(*messages)
+    else:
+        return instance(messages)

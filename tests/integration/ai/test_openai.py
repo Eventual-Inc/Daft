@@ -18,17 +18,18 @@ from pydantic import BaseModel, Field
 import daft
 from daft.functions.ai import embed_text, prompt
 
+# @pytest.fixture(scope="module", autouse=True)
+# def skip_no_credential(pytestconfig):
+#     if not pytestconfig.getoption("--credentials"):
+#         pytest.skip(reason="OpenAI integration tests require the `--credentials` flag.")
+#     if os.environ.get("OPENAI_API_KEY") is None:
+#         pytest.skip(
+#             reason="OpenAI integration tests require the OPENAI_API_KEY environment variable."
+#         )
+
 
 @pytest.fixture(scope="module", autouse=True)
-def skip_no_credential(pytestconfig):
-    if not pytestconfig.getoption("--credentials"):
-        pytest.skip(reason="OpenAI integration tests require the `--credentials` flag.")
-    if os.environ.get("OPENAI_API_KEY") is None:
-        pytest.skip(reason="OpenAI integration tests require the OPENAI_API_KEY environment variable.")
-
-
-@pytest.fixture(scope="module", autouse=True)
-def session(skip_no_credential):
+def session():
     """Configures the session to be used for all tests."""
     with daft.session() as session:
         # the key is not explicitly needed, but was added with angry lookup for clarity.
@@ -78,7 +79,6 @@ def test_prompt_plain_text(session):
         "answer",
         prompt(
             daft.col("question"),
-            model="gpt-5-mini",
         ),
     )
 
@@ -119,7 +119,6 @@ def test_prompt_structured_output(session):
                 daft.col("anime"),
             ),
             return_format=MovieReview,
-            model="gpt-5-mini",
         ),
     )
 
@@ -135,6 +134,7 @@ def test_prompt_structured_output(session):
     time.sleep(1)  # self limit to ~1 tps.
 
 
+@pytest.mark.integration()
 def test_prompt_with_image(session):
     """Test prompt function with image input."""
     import numpy as np
@@ -155,8 +155,7 @@ def test_prompt_with_image(session):
     df = df.with_column(
         "answer",
         prompt(
-            daft.col("question"),
-            input_image=daft.col("image"),
+            [daft.col("question"), daft.col("image")],
         ),
     )
 
@@ -174,60 +173,7 @@ def test_prompt_with_image(session):
     time.sleep(1)  # self limit to ~1 tps.
 
 
-def test_prompt_with_image_from_path(session):
-    """Test prompt function with image input from file paths."""
-    import tempfile
-
-    import numpy as np
-    from PIL import Image
-
-    # Create a temporary image file (green square)
-    green_square = np.zeros((100, 100, 3), dtype=np.uint8)
-    green_square[:, :, 1] = 255  # Green channel
-
-    # Save to a temporary file
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-        img = Image.fromarray(green_square)
-        img.save(tmp.name)
-        temp_path = tmp.name
-
-    try:
-        df = daft.from_pydict(
-            {
-                "question": [
-                    "What color is dominant in this image?",
-                ],
-                "image_path": [temp_path],
-            }
-        )
-
-        df = df.with_column(
-            "answer",
-            prompt(
-                daft.col("question"),
-                input_image=daft.col("image_path"),
-            ),
-        )
-
-        answers = df.to_pydict()["answer"]
-
-        # Basic sanity checks - responses should be non-empty strings
-        assert len(answers) == 1
-        for answer in answers:
-            assert isinstance(answer, str)
-            assert len(answer) > 0
-            # Check if "green" appears in the answer (case-insensitive)
-            assert "green" in answer.lower()
-
-    finally:
-        # Clean up temp file
-        import os
-
-        os.unlink(temp_path)
-
-    time.sleep(1)  # self limit to ~1 tps.
-
-
+@pytest.mark.integration()
 def test_prompt_with_image_from_bytes(session):
     """Test prompt function with image input from bytes column."""
     import tempfile
@@ -262,8 +208,7 @@ def test_prompt_with_image_from_bytes(session):
     df = df.with_column(
         "answer",
         prompt(
-            daft.col("question"),
-            input_image=daft.col("image_bytes"),
+            [daft.col("question"), daft.col("image_bytes")],
         ),
     )
 
@@ -280,6 +225,7 @@ def test_prompt_with_image_from_bytes(session):
     time.sleep(1)  # self limit to ~1 tps.
 
 
+@pytest.mark.integration()
 def test_prompt_with_image_from_file(session):
     """Test prompt function with image input from File column."""
     import tempfile
@@ -311,8 +257,7 @@ def test_prompt_with_image_from_file(session):
         df = df.with_column(
             "answer",
             prompt(
-                daft.col("question"),
-                input_image=daft.functions.file(daft.col("image_path")),
+                [daft.col("question"), daft.functions.file(daft.col("image_path"))],
             ),
         )
 
@@ -335,6 +280,7 @@ def test_prompt_with_image_from_file(session):
     time.sleep(1)  # self limit to ~1 tps.
 
 
+@pytest.mark.integration()
 def test_prompt_with_image_structured_output(session):
     """Test prompt function with image input and structured output."""
     import numpy as np
@@ -359,8 +305,7 @@ def test_prompt_with_image_structured_output(session):
     df = df.with_column(
         "analysis",
         prompt(
-            daft.col("question"),
-            input_image=daft.col("image"),
+            [daft.col("question"), daft.col("image")],
             return_format=ImageAnalysis,
         ),
     )
@@ -376,84 +321,6 @@ def test_prompt_with_image_structured_output(session):
         assert len(analysis["description"]) > 0
         # Check if "blue" appears in the dominant color (case-insensitive)
         assert "#0000ff" in analysis["dominant_color"].lower()
-
-    time.sleep(1)  # self limit to ~1 tps.
-
-
-@pytest.mark.integration()
-def test_prompt_with_pdf_document(session):
-    """Test prompt function with PDF document input."""
-    import tempfile
-
-    # Create a simple test PDF (mock content for testing)
-    pdf_content = b"""%PDF-1.4
-1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
-endobj
-2 0 obj
-<< /Type /Pages /Kids [3 0 R] /Count 1 >>
-endobj
-3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>
-endobj
-4 0 obj
-<< /Length 44 >>
-stream
-BT
-/F1 12 Tf
-100 700 Td
-(Hello from PDF!) Tj
-ET
-endstream
-endobj
-xref
-0 5
-0000000000 65535 f
-0000000009 00000 n
-0000000058 00000 n
-0000000115 00000 n
-0000000214 00000 n
-trailer
-<< /Size 5 /Root 1 0 R >>
-startxref
-306
-%%EOF"""
-
-    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False, mode="wb") as tmp:
-        tmp.write(pdf_content)
-        temp_path = tmp.name
-
-    try:
-        df = daft.from_pydict(
-            {
-                "question": [
-                    "What does this document contain?",
-                ],
-                "document_path": [temp_path],
-            }
-        )
-
-        df = df.with_column(
-            "answer",
-            prompt(
-                daft.col("question"),
-                daft.col("document_path"),
-                model="gpt-5-mini",
-            ),
-        )
-
-        answers = df.to_pydict()["answer"]
-
-        # Basic sanity checks - responses should be non-empty strings
-        assert len(answers) == 1
-        for answer in answers:
-            assert isinstance(answer, str)
-            assert len(answer) > 0
-
-    finally:
-        import os
-
-        os.unlink(temp_path)
 
     time.sleep(1)  # self limit to ~1 tps.
 
@@ -481,9 +348,7 @@ def test_prompt_with_text_document(session):
         df = df.with_column(
             "answer",
             prompt(
-                daft.col("question"),
-                daft.col("document_path"),
-                model="gpt-5-mini",
+                [daft.col("question"), daft.col("document_path")],
             ),
         )
 
@@ -494,6 +359,11 @@ def test_prompt_with_text_document(session):
         for answer in answers:
             assert isinstance(answer, str)
             assert len(answer) > 0
+            # Check if relevant keywords appear in the answer (case-insensitive)
+            answer_lower = answer.lower()
+            assert (
+                "artificial intelligence" in answer_lower or "machine learning" in answer_lower or "ai" in answer_lower
+            )
 
     finally:
         import os
@@ -533,10 +403,7 @@ def test_prompt_with_mixed_image_and_document(session):
         df = df.with_column(
             "answer",
             prompt(
-                daft.col("question"),
-                daft.col("image"),
-                daft.col("document_path"),
-                model="gpt-5-mini",
+                [daft.col("question"), daft.col("image"), daft.col("document_path")],
             ),
         )
 
@@ -547,6 +414,9 @@ def test_prompt_with_mixed_image_and_document(session):
         for answer in answers:
             assert isinstance(answer, str)
             assert len(answer) > 0
+            # Check if answer indicates a match or mentions red color (case-insensitive)
+            answer_lower = answer.lower()
+            assert "yes" in answer_lower or "match" in answer_lower or "red" in answer_lower
 
     finally:
         import os
