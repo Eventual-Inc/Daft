@@ -1,7 +1,7 @@
 #[cfg(feature = "python")]
 pub mod python;
 
-use std::{marker::PhantomData, sync::Arc};
+use std::{fmt, marker::PhantomData, sync::Arc};
 
 use common_io_config::IOConfig;
 pub use daft_schema::media_type::MediaType;
@@ -75,9 +75,26 @@ impl FileReference {
     }
 }
 
-impl std::fmt::Display for FileReference {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "File({:?})", self)
+impl fmt::Display for FileReference {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.inner {
+            DataOrReference::Reference(path, config) => {
+                write!(
+                    f,
+                    "{}(path: {}{})",
+                    self.media_type,
+                    path,
+                    if config.is_some() {
+                        " [with config]"
+                    } else {
+                        ""
+                    }
+                )
+            }
+            DataOrReference::Data(data) => {
+                write!(f, "{}(in-memory: {} bytes)", self.media_type, data.len())
+            }
+        }
     }
 }
 

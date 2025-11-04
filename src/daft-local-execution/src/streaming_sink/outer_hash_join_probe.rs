@@ -653,8 +653,11 @@ impl StreamingSink for OuterHashJoinProbeSink {
         res
     }
 
-    fn make_state(&self) -> Self::State {
-        OuterHashJoinState::Building(self.probe_state_bridge.clone(), self.needs_bitmap)
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(OuterHashJoinState::Building(
+            self.probe_state_bridge.clone(),
+            self.needs_bitmap,
+        ))
     }
 
     #[instrument(skip_all, name = "OuterHashJoinProbeSink::finalize")]

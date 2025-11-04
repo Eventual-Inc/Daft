@@ -88,6 +88,11 @@ jobs:
           echo "CFLAGS=-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16 -mavx -mavx2 -mfma -mbmi -mbmi2 -mlzcnt -mpclmul -mmovbe -mtune=skylake" >> $GITHUB_ENV
         fi
 
+    - name: Setup Node
+      uses: actions/setup-node@v6
+      with:
+        node-version: 20
+
     - name: Build dashboard with Bun
       working-directory: ./src/daft-dashboard/frontend
       run: |
