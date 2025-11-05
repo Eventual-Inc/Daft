@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import sys
 import threading
+import typing
 import warnings
 from types import GenericAlias
 from typing import TYPE_CHECKING, Any, Callable, Union
+
+if sys.version_info >= (3, 10):
+    from types import NoneType, UnionType
 
 from packaging.version import parse
 
@@ -436,12 +441,43 @@ class DataType:
 
         Internal use only.
         """
+
+        def extract_non_none_type(tp: Any) -> Any:
+            if sys.version_info >= (3, 10):
+                args = None
+
+                if isinstance(tp, UnionType):
+                    args = typing.get_args(tp)
+                elif typing.get_origin(tp) is Union:
+                    args = typing.get_args(tp)
+
+                if args and len(args) == 2 and (NoneType in args or type(None) in args):
+                    return next(arg for arg in args if arg is not NoneType and arg is not type(None))
+                return tp
+
+        def is_optional(tp: Any) -> bool:
+            args = None
+            if sys.version_info >= (3, 10):
+                if isinstance(tp, UnionType):
+                    args = typing.get_args(tp)
+                    return len(args) == 2 and NoneType in args
+
+            if typing.get_origin(tp) is Union:
+                args = typing.get_args(tp)
+                return len(args) == 2 and type(None) in args
+
+            return False
+
         if isinstance(user_provided_type, cls):
             return user_provided_type
         elif isinstance(user_provided_type, str):
             return cls.from_sql(user_provided_type)
         elif isinstance(user_provided_type, (type, GenericAlias)):
             return cls.infer_from_type(user_provided_type)
+        # since all of our types are nullable, we can infer the type from anything that is T | None
+        elif is_optional(user_provided_type):
+            return cls.infer_from_type(extract_non_none_type(user_provided_type))
+
         else:
             raise TypeError("DataType._infer expects a DataType, string, or type")
 

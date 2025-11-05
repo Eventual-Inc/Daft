@@ -5,13 +5,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import daft
+from daft.dependencies import pil_image as Image
+from daft.file.typing import VideoMetadata
 from daft.udf.udf_v2 import Func
 
 if TYPE_CHECKING:
-    import PIL
-
     from daft import Expression
-    from daft.file.typing import VideoMetadata
 
 
 def get_metadata_impl(
@@ -22,15 +21,7 @@ def get_metadata_impl(
 
 video_metadata_fn = Func._from_func(
     get_metadata_impl,
-    return_dtype=daft.DataType.struct(
-        {
-            "width": daft.DataType.int64(),
-            "height": daft.DataType.int64(),
-            "fps": daft.DataType.float64(),
-            "frame_count": daft.DataType.int64(),
-            "time_base": daft.DataType.float64(),
-        }
-    ),
+    return_dtype=daft.DataType._infer(VideoMetadata),
     unnest=False,
     use_process=None,
     is_batch=False,
@@ -54,15 +45,13 @@ def video_metadata(
     return video_metadata_fn(file_expr)
 
 
-def keyframes_impl(
-    file: daft.VideoFile, *, start_time: float = 0, end_time: float | None = None
-) -> list[PIL.Image.Image]:
+def keyframes_impl(file: daft.VideoFile, *, start_time: float = 0, end_time: float | None = None) -> list[Image.Image]:
     return list(file.keyframes(start_time, end_time))
 
 
 video_keyframes_fn = Func._from_func(
     keyframes_impl,
-    return_dtype=daft.DataType.list(daft.DataType.image()),
+    return_dtype=daft.DataType._infer(list[Image.Image]),
     unnest=False,
     use_process=None,
     is_batch=False,
