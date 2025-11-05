@@ -138,6 +138,8 @@ class SQLDataSink(DataSink[WriteSqlResult]):
         metadata = MetaData()
         metadata.reflect(bind=conn)
 
+        table = create_table_metadata(self._table_name, conn, self._df_schema.to_pyarrow_schema(), metadata)
+
         result = WriteSqlResult(table_name=self._table_name)
 
         try:
@@ -146,8 +148,6 @@ class SQLDataSink(DataSink[WriteSqlResult]):
                 arrow_table = micropartition.to_arrow()
                 rows_written = arrow_table.num_rows
                 bytes_written = arrow_table.nbytes
-
-                table = create_table_from_arrow(self._table_name, conn, arrow_table, metadata)
 
                 insert_arrow_table(conn, table, arrow_table)
 
@@ -268,9 +268,9 @@ def drop_table_if_exists(table_name: str, conn: Connection) -> None:
         conn.commit()
 
 
-def create_table_from_arrow(table_name: str, conn: Connection, arrow_table: pa.Table, metadata: MetaData) -> Table:
-    """Create a SQL table from an Arrow table schema."""
-    columns = arrow_schema_to_sqlalchemy_columns(arrow_table.schema)
+def create_table_metadata(table_name: str, conn: Connection, arrow_schema: pa.Schema, metadata: MetaData) -> Table:
+    """Create the SQL table construct: columns + types + metadata."""
+    columns = arrow_schema_to_sqlalchemy_columns(arrow_schema)
     table = Table(table_name, metadata, *columns, extend_existing=True)
     metadata.create_all(conn)
     return table
