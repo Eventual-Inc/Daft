@@ -4,9 +4,8 @@ use daft_core::prelude::{DataType, Field, Schema, TimeUnit};
 use sqlparser::{
     ast::{ArrayElemTypeDef, ExactNumberInfo, StructField, TimezoneInfo},
     dialect::GenericDialect,
-    keywords::Keyword,
     parser::{Parser, ParserOptions},
-    tokenizer::{Token, Tokenizer},
+    tokenizer::Tokenizer,
 };
 
 use crate::{
@@ -16,15 +15,7 @@ use crate::{
 
 /// Parses a SQL string as a daft DataType
 pub fn try_parse_dtype<S: AsRef<str>>(s: S) -> SQLPlannerResult<DataType> {
-    let s_str = s.as_ref();
-
-    let final_str = if let Some(modified_str) = check_and_modify_struct(s_str)? {
-        modified_str
-    } else {
-        s_str.to_string()
-    };
-
-    let tokens = Tokenizer::new(&GenericDialect {}, &final_str).tokenize()?;
+    let tokens = Tokenizer::new(&GenericDialect {}, s.as_ref()).tokenize()?;
     let mut parser = Parser::new(&GenericDialect {})
         .with_options(ParserOptions {
             trailing_commas: true,
@@ -33,96 +24,6 @@ pub fn try_parse_dtype<S: AsRef<str>>(s: S) -> SQLPlannerResult<DataType> {
         .with_tokens(tokens);
     let dtype = parser.parse_data_type()?;
     sql_dtype_to_dtype(&dtype)
-}
-
-fn check_and_modify_struct(s: &str) -> SQLPlannerResult<Option<String>> {
-    let tokens = Tokenizer::new(&GenericDialect {}, s).tokenize()?;
-
-    let non_whitespace_tokens: Vec<&Token> = tokens
-        .iter()
-        .filter(|token| !matches!(token, Token::Whitespace(_)))
-        .collect();
-
-    if non_whitespace_tokens.windows(2).any(|window| {
-        matches!(
-            (window[0], window[1]),
-            (Token::Word(word), Token::LParen) if word.keyword == Keyword::STRUCT
-        )
-    }) {
-        return Err(PlannerError::unsupported_sql(
-            "STRUCT with parentheses is not supported. Use angle brackets instead: STRUCT<...>"
-                .to_string(),
-        ));
-    }
-
-    if let Some(start) = non_whitespace_tokens.windows(2).position(|window| {
-        matches!(
-            (window[0], window[1]),
-            (Token::Word(word), Token::Lt) if word.keyword == Keyword::STRUCT
-        )
-    }) {
-        let mut depth = 1;
-        let mut end = start + 2;
-
-        while end < non_whitespace_tokens.len() {
-            match non_whitespace_tokens[end] {
-                Token::Lt => depth += 1,
-                Token::Gt => {
-                    depth -= 1;
-                    if depth == 0 {
-                        let inner_tokens = &non_whitespace_tokens[start + 2..end];
-                        validate_colons(inner_tokens)?;
-                        return Ok(Some(s.replace(':', " ")));
-                    }
-                }
-                _ => {}
-            }
-            end += 1;
-        }
-    }
-    Ok(None)
-}
-
-fn validate_colons(tokens: &[&Token]) -> SQLPlannerResult<()> {
-    let colon_count = tokens
-        .iter()
-        .filter(|&&t| matches!(t, Token::Colon))
-        .count();
-    let comma_count = tokens
-        .iter()
-        .filter(|&&t| matches!(t, Token::Comma))
-        .count();
-    let field_count = comma_count + 1;
-
-    if colon_count != 0 && colon_count != field_count {
-        return Err(PlannerError::unsupported_sql(format!(
-            "Invalid colon usage: expected 0 or {} colons for {} fields, found {}",
-            field_count, field_count, colon_count
-        )));
-    }
-
-    for (i, token) in tokens.iter().enumerate() {
-        if matches!(token, Token::Colon) {
-            if i == 0 || i == tokens.len() - 1 {
-                return Err(PlannerError::unsupported_sql(
-                    "Colon cannot be at the beginning or end of a field".to_string(),
-                ));
-            }
-
-            if !matches!(tokens[i - 1], Token::Word(_)) {
-                return Err(PlannerError::unsupported_sql(
-                    "Field name must be before colon".to_string(),
-                ));
-            }
-
-            if !matches!(tokens[i + 1], Token::Word(_)) {
-                return Err(PlannerError::unsupported_sql(
-                    "Field type must be after colon".to_string(),
-                ));
-            }
-        }
-    }
-    Ok(())
 }
 
 /// Parses a SQL map of name-type pairs into a new Schema
@@ -374,7 +275,7 @@ pub(crate) fn timeunit_from_precision(prec: Option<u64>) -> SQLPlannerResult<Tim
 
 #[cfg(test)]
 mod test {
-    use daft_core::prelude::{DataType, Field, ImageMode};
+    use daft_core::prelude::{DataType, ImageMode};
     use rstest::rstest;
 
     #[rstest]
@@ -453,23 +354,6 @@ mod test {
     //         Field::new("c", DataType::Utf8),
     //     ])
     // )]
-    #[case(
-        "struct<a bool, b int, c string>",
-        DataType::Struct(vec![
-            Field::new("a", DataType::Boolean),
-            Field::new("b", DataType::Int32),
-            Field::new("c", DataType::Utf8),
-        ])
-    )]
-    #[case(
-        "struct<a : bool, b : int, c : string>",
-        DataType::Struct(vec![
-            Field::new("a", DataType::Boolean),
-            Field::new("b", DataType::Int32),
-            Field::new("c", DataType::Utf8),
-        ])
-    )]
-
     fn test_sql_datatype(#[case] sql: &str, #[case] expected: DataType) {
         let result = super::try_parse_dtype(sql).unwrap();
         assert_eq!(result, expected);
