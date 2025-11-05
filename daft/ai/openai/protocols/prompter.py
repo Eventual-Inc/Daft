@@ -25,6 +25,7 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
     system_message: str | None = None
     return_format: BaseModel | None = None
     udf_options: UDFOptions | None = None
+    use_chat_completions: bool = False
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -45,6 +46,7 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
             system_message=self.system_message,
             return_format=self.return_format,
             generation_config=self.model_options,
+            use_chat_completions=self.use_chat_completions,
         )
 
 
@@ -58,10 +60,12 @@ class OpenAIPrompter(Prompter):
         system_message: str | None = None,
         return_format: BaseModel | None = None,
         generation_config: dict[str, Any] = {},
+        use_chat_completions: bool = False,
     ) -> None:
         self.model = model
         self.return_format = return_format
         self.system_message = system_message
+        self.use_chat_completions = use_chat_completions
         # Separate client params from generation params
         client_params_keys = ["base_url", "api_key", "timeout", "max_retries"]
         client_params = {**provider_options}
@@ -79,7 +83,10 @@ class OpenAIPrompter(Prompter):
 
         # Strings are always treated as plain text
         if isinstance(msg, str):
-            return {"type": "input_text", "text": msg}
+            if self.use_chat_completions:
+                return {"type": "text", "text": msg}
+            else:
+                return {"type": "input_text", "text": msg}
 
         # Handle numpy arrays (images)
         if isinstance(msg, np.ndarray):
@@ -92,7 +99,10 @@ class OpenAIPrompter(Prompter):
             pil_image.save(bio, "PNG")
             base64_string = base64.b64encode(bio.getvalue()).decode("utf-8")
             encoded_content = f"data:image/png;base64,{base64_string}"
-            return {"type": "input_image", "image_url": encoded_content}
+            if self.use_chat_completions:
+                return {"type": "image_url", "image_url": {"url": encoded_content}}  # type: ignore[dict-item]
+            else:
+                return {"type": "input_image", "image_url": encoded_content}
 
         # Handle bytes and File objects
         if isinstance(msg, bytes):
@@ -108,20 +118,52 @@ class OpenAIPrompter(Prompter):
             encoded_content = f"data:{mime_type};base64,{base64_string}"
         else:
             raise ValueError(f"Unsupported content type in prompt: {type(msg)}")
+
         # Determine if it's an image or generic file based on MIME type
         if mime_type.startswith("image/"):
-            return {"type": "input_image", "image_url": encoded_content}
+            if self.use_chat_completions:
+                return {"type": "image_url", "image_url": {"url": encoded_content}}  # type: ignore[dict-item]
+            else:
+                return {"type": "input_image", "image_url": encoded_content}
         else:
-            return {"type": "input_file", "file_url": encoded_content}
+            if self.use_chat_completions:
+                # Chat completions doesn't have a specific file type, treat as text
+                return {
+                    "type": "file",
+                    "file": {  # type: ignore[dict-item]
+                        "filename": "file",
+                        "file_data": encoded_content,
+                    },
+                }
+            else:
+                return {
+                    "type": "input_file",
+                    "filename": "file",
+                    "file_data": encoded_content,
+                }
 
-    async def prompt(self, messages: tuple[Any, ...]) -> Any:
-        messages_list = []
-        if self.system_message is not None:
-            messages_list.append({"role": "system", "content": self.system_message})
+    async def _prompt_with_chat_completions(self, messages_list: list[dict[str, Any]]) -> Any:
+        """Generate responses using the Chat Completions API."""
+        if self.return_format is not None:
+            # Use structured outputs with Pydantic model
+            response = await self.llm.chat.completions.parse(
+                model=self.model,
+                messages=messages_list,
+                response_format=self.return_format,
+                **self.generation_config,
+            )
+            return response.choices[0].message.parsed
+        else:
+            # Return plain text
+            response = await self.llm.chat.completions.create(
+                model=self.model,
+                messages=messages_list,
+                **self.generation_config,
+            )
+            return response.choices[0].message.content
 
-        content = [self._process_message_content(msg) for msg in messages]
-        messages_list.append({"role": "user", "content": content})  # type: ignore [dict-item]
-
+    async def _prompt_with_responses(self, messages_list: list[dict[str, Any]]) -> Any:
+        """Generate responses using the Responses API."""
         if self.return_format is not None:
             # Use structured outputs with Pydantic model
             response = await self.llm.responses.parse(
@@ -139,3 +181,17 @@ class OpenAIPrompter(Prompter):
                 **self.generation_config,
             )
             return response.output_text
+
+    async def prompt(self, messages: tuple[Any, ...]) -> Any:
+        """Generate responses for a batch of message strings."""
+        messages_list = []
+        if self.system_message is not None:
+            messages_list.append({"role": "system", "content": self.system_message})
+
+        content = [self._process_message_content(msg) for msg in messages]
+        messages_list.append({"role": "user", "content": content})  # type: ignore [dict-item]
+
+        if self.use_chat_completions:
+            return await self._prompt_with_chat_completions(messages_list)
+        else:
+            return await self._prompt_with_responses(messages_list)

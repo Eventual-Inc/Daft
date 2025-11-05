@@ -409,6 +409,7 @@ def prompt(
     system_message: str | None = None,
     provider: str | Provider | None = None,
     model: str | None = None,
+    use_chat_completions: bool = False,
     **options: str,
 ) -> Expression:
     """Returns an expression that prompts a large language model using the specified model and provider.
@@ -422,6 +423,7 @@ def prompt(
         system_message (str | None): The system message for the prompt.
         provider (str | Provider | None): The provider to use for the prompt (default: "openai").
         model (str | None): The model to use for the prompt.
+        use_chat_completions (bool): Whether to use the Chat Completions API instead of the Responses API (OpenAI only, default: False).
         **options: Any additional options to pass for the prompt.
 
     Returns:
@@ -528,6 +530,8 @@ def prompt(
         options = {**options, "return_format": return_format}
     if system_message is not None:
         options = {**options, "system_message": system_message}
+    if use_chat_completions:
+        options = {**options, "use_chat_completions": use_chat_completions}  # type: ignore[dict-item]
 
     # Load a PrompterDescriptor from the resolved provider
     prompter_descriptor = _resolve_provider(provider, "openai").get_prompter(model, **options)

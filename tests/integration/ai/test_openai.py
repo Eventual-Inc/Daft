@@ -18,17 +18,16 @@ from pydantic import BaseModel, Field
 import daft
 from daft.functions.ai import embed_text, prompt
 
+# @pytest.fixture(scope="module", autouse=True)
+# def skip_no_credential(pytestconfig):
+#     if not pytestconfig.getoption("--credentials"):
+#         pytest.skip(reason="OpenAI integration tests require the `--credentials` flag.")
+#     if os.environ.get("OPENAI_API_KEY") is None:
+#         pytest.skip(reason="OpenAI integration tests require the OPENAI_API_KEY environment variable.")
+
 
 @pytest.fixture(scope="module", autouse=True)
-def skip_no_credential(pytestconfig):
-    if not pytestconfig.getoption("--credentials"):
-        pytest.skip(reason="OpenAI integration tests require the `--credentials` flag.")
-    if os.environ.get("OPENAI_API_KEY") is None:
-        pytest.skip(reason="OpenAI integration tests require the OPENAI_API_KEY environment variable.")
-
-
-@pytest.fixture(scope="module", autouse=True)
-def session(skip_no_credential):
+def session():
     """Configures the session to be used for all tests."""
     with daft.session() as session:
         # the key is not explicitly needed, but was added with angry lookup for clarity.
@@ -62,7 +61,8 @@ def test_embed_text_sanity_all_models(session):
 
 
 @pytest.mark.integration()
-def test_prompt_plain_text(session):
+@pytest.mark.parametrize("use_chat_completions", [False, True])
+def test_prompt_plain_text(session, use_chat_completions):
     """Test prompt function with plain text response."""
     df = daft.from_pydict(
         {
@@ -78,6 +78,7 @@ def test_prompt_plain_text(session):
         "answer",
         prompt(
             daft.col("question"),
+            use_chat_completions=use_chat_completions,
         ),
     )
 
@@ -93,7 +94,8 @@ def test_prompt_plain_text(session):
 
 
 @pytest.mark.integration()
-def test_prompt_structured_output(session):
+@pytest.mark.parametrize("use_chat_completions", [False, True])
+def test_prompt_structured_output(session, use_chat_completions):
     """Test prompt function with structured output (Pydantic model)."""
 
     class MovieReview(BaseModel):
@@ -118,6 +120,7 @@ def test_prompt_structured_output(session):
                 daft.col("anime"),
             ),
             return_format=MovieReview,
+            use_chat_completions=use_chat_completions,
         ),
     )
 
@@ -134,7 +137,8 @@ def test_prompt_structured_output(session):
 
 
 @pytest.mark.integration()
-def test_prompt_with_image(session):
+@pytest.mark.parametrize("use_chat_completions", [False, True])
+def test_prompt_with_image(session, use_chat_completions):
     """Test prompt function with image input."""
     import numpy as np
 
@@ -155,6 +159,7 @@ def test_prompt_with_image(session):
         "answer",
         prompt(
             [daft.col("question"), daft.col("image")],
+            use_chat_completions=use_chat_completions,
         ),
     )
 
@@ -280,7 +285,8 @@ def test_prompt_with_image_from_file(session):
 
 
 @pytest.mark.integration()
-def test_prompt_with_image_structured_output(session):
+@pytest.mark.parametrize("use_chat_completions", [False, True])
+def test_prompt_with_image_structured_output(session, use_chat_completions):
     """Test prompt function with image input and structured output."""
     import numpy as np
 
@@ -306,6 +312,7 @@ def test_prompt_with_image_structured_output(session):
         prompt(
             [daft.col("question"), daft.col("image")],
             return_format=ImageAnalysis,
+            use_chat_completions=use_chat_completions,
         ),
     )
 
@@ -325,16 +332,26 @@ def test_prompt_with_image_structured_output(session):
 
 
 @pytest.mark.integration()
-def test_prompt_with_text_document(session):
-    """Test prompt function with text file input."""
+@pytest.mark.parametrize("use_chat_completions", [False, True])
+def test_prompt_with_pdf_document(session, use_chat_completions):
+    """Test prompt function with PDF file input."""
     import tempfile
 
-    # Create a simple text file
-    with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w") as tmp:
-        tmp.write("This is a test document about artificial intelligence and machine learning.")
+    pytest.importorskip("reportlab")
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    # Create a simple PDF file
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         temp_path = tmp.name
 
     try:
+        # Create PDF with content
+        c = canvas.Canvas(temp_path, pagesize=letter)
+        c.drawString(100, 750, "This is a test document about artificial intelligence and machine learning.")
+        c.drawString(100, 730, "AI and ML are transforming technology and business.")
+        c.save()
+
         df = daft.from_pydict(
             {
                 "question": [
@@ -347,7 +364,8 @@ def test_prompt_with_text_document(session):
         df = df.with_column(
             "answer",
             prompt(
-                [daft.col("question"), daft.col("document_path")],
+                [daft.col("question"), daft.functions.file(daft.col("document_path"))],
+                use_chat_completions=use_chat_completions,
             ),
         )
 
@@ -374,21 +392,29 @@ def test_prompt_with_text_document(session):
 
 @pytest.mark.integration()
 def test_prompt_with_mixed_image_and_document(session):
-    """Test prompt function with both image and document inputs."""
+    """Test prompt function with both image and PDF document inputs."""
     import tempfile
 
     import numpy as np
+
+    pytest.importorskip("reportlab")
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
 
     # Create a red square image
     red_square = np.zeros((100, 100, 3), dtype=np.uint8)
     red_square[:, :, 0] = 255  # Red channel
 
-    # Create a simple text file
-    with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w") as tmp:
-        tmp.write("This document describes a red colored object.")
+    # Create a simple PDF file
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         temp_path = tmp.name
 
     try:
+        # Create PDF with content
+        c = canvas.Canvas(temp_path, pagesize=letter)
+        c.drawString(100, 750, "This document describes a red colored object.")
+        c.save()
+
         df = daft.from_pydict(
             {
                 "question": [
@@ -402,7 +428,7 @@ def test_prompt_with_mixed_image_and_document(session):
         df = df.with_column(
             "answer",
             prompt(
-                [daft.col("question"), daft.col("image"), daft.col("document_path")],
+                [daft.col("question"), daft.col("image"), daft.functions.file(daft.col("document_path"))],
             ),
         )
 
