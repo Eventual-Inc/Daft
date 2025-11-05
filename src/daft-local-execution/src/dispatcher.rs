@@ -4,6 +4,7 @@ use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 
+pub use crate::adaptive_dispatcher::AdaptiveDispatcher;
 use crate::{
     RuntimeHandle, SpawnedTask,
     buffer::RowBasedBuffer,

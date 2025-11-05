@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
@@ -17,7 +17,7 @@ use crate::{
         OrderingAwareReceiver, Receiver, Sender, create_channel,
         create_ordering_aware_receiver_channel,
     },
-    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    dispatcher::{AdaptiveDispatcher, DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
@@ -63,12 +63,22 @@ pub(crate) trait IntermediateOperator: Send + Sync {
         None
     }
 
+    fn use_adaptive_balancer(&self) -> bool {
+        false
+    }
+
+    fn maintain_order(&self) -> bool {
+        true
+    }
+
     fn dispatch_spawner(
         &self,
         morsel_size_requirement: MorselSizeRequirement,
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
-        if maintain_order {
+        if self.use_adaptive_balancer() {
+            Arc::new(AdaptiveDispatcher::new(morsel_size_requirement))
+        } else if maintain_order {
             Arc::new(RoundRobinDispatcher::new(morsel_size_requirement))
         } else {
             Arc::new(UnorderedDispatcher::new(morsel_size_requirement))
@@ -119,6 +129,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
 
     #[instrument(level = "info", skip_all, name = "IntermediateOperator::run_worker")]
     pub async fn run_worker(
+        worker_idx: usize,
         op: Arc<Op>,
         receiver: Receiver<Arc<MicroPartition>>,
         sender: Sender<Arc<MicroPartition>>,
@@ -131,13 +142,30 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
             ExecutionTaskSpawner::new(compute_runtime, memory_manager, runtime_stats.clone(), span);
         let mut state = op.make_state()?;
         while let Some(morsel) = receiver.recv().await {
+            let start_time = Instant::now();
+            log::debug!("Worker {} fetch a morsel from receiver", worker_idx);
             loop {
                 let result = op.execute(morsel.clone(), state, &task_spawner).await??;
+                let cur_time = Instant::now();
+                let processing_time = cur_time.duration_since(start_time);
+                log::debug!(
+                    "Worker {} successfully execute morsel, cost: {:?}",
+                    worker_idx,
+                    processing_time
+                );
                 state = result.0;
                 match result.1 {
                     IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
                         if sender.send(mp).await.is_err() {
                             return Ok(());
+                        } else {
+                            let cur_time = Instant::now();
+                            let send_time = cur_time.duration_since(start_time);
+                            log::debug!(
+                                "Worker {} successfully send morsel to downstream  [NeedMoreInput], cost: {:?}",
+                                worker_idx,
+                                send_time
+                            );
                         }
                         break;
                     }
@@ -147,6 +175,14 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                     IntermediateOperatorResult::HasMoreOutput(mp) => {
                         if sender.send(mp).await.is_err() {
                             return Ok(());
+                        } else {
+                            let cur_time = Instant::now();
+                            let send_time = cur_time.duration_since(start_time);
+                            log::debug!(
+                                "Worker {} successfully send morsel to downstream [HasMoreOutput], cost: {:?}",
+                                worker_idx,
+                                send_time
+                            );
                         }
                     }
                 }
@@ -164,9 +200,12 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
     ) -> OrderingAwareReceiver<Arc<MicroPartition>> {
         let (output_sender, output_receiver) =
             create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
-        for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_sender) {
+        for (worker_idx, (input_receiver, output_sender)) in
+            input_receivers.into_iter().zip(output_sender).enumerate()
+        {
             runtime_handle.spawn(
                 Self::run_worker(
+                    worker_idx,
                     self.intermediate_op.clone(),
                     input_receiver,
                     output_sender,
@@ -280,6 +319,11 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         let (destination_sender, destination_receiver) = create_channel(0);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
 
+        // TODO retrieve the maintain order from execution config in NativeExecutor#run, it's not need maintain order in most cases,
+        // There are some drawbacks of maintain_order/RoundRobinDispatcher/RoundRobinReceiver, which consume data for each receiver in sequential order,
+        // the former receiver might block consuming data from latter receiver.
+
+        let maintain_order = self.intermediate_op.maintain_order();
         let dispatch_spawner = self
             .intermediate_op
             .dispatch_spawner(self.morsel_size_requirement, maintain_order);

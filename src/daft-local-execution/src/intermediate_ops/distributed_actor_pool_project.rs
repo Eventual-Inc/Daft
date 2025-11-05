@@ -1,4 +1,5 @@
 use std::{
+    env,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -211,6 +212,20 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         // We set the max concurrency to be the number of actor handles * 2 to such that each actor handle has 2 workers submitting to it.
         // This allows inputs to be queued up concurrently with UDF execution.
         Ok(self.actor_handles.len() * 2)
+    }
+
+    fn use_adaptive_balancer(&self) -> bool {
+        // TODO consider use a udf config to enable/disable adaptive balancer
+        env::var("DAFT_USE_ADAPTIVE_BALANCER")
+            .map(|val| val.to_lowercase() == "true" || val == "1")
+            .unwrap_or(false)
+    }
+
+    fn maintain_order(&self) -> bool {
+        // TODO consider how to define the maintain order or intermediate operator, from execution config?
+        env::var("DAFT_MAINTAIN_ORDER")
+            .map(|val| val.to_lowercase() == "true" || val == "1")
+            .unwrap_or(true)
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
