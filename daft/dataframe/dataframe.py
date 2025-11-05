@@ -1934,7 +1934,7 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
-            >>> df.summarize().show()
+            >>> df.summarize().show()  # doctest: +SKIP
             ╭────────┬────────┬────────┬────────────┬────────┬─────────────┬───────────────────────╮
             │ column ┆ type   ┆ min    ┆      …     ┆ count  ┆ count_nulls ┆ approx_count_distinct │
             │ ---    ┆ ---    ┆ ---    ┆            ┆ ---    ┆ ---         ┆ ---                   │

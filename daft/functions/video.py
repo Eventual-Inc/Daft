@@ -37,7 +37,7 @@ def video_metadata(
     """Get metadata for a video file.
 
     Args:
-        file (VideoFile): The video file to get metadata for.
+        file_expr (VideoFile Expression): The video file to get metadata for.
 
     Returns:
         Expression (Struct Expression): A struct containing the metadata (width, height, fps, frame_count, time_base)

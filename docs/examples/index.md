@@ -1,5 +1,7 @@
 # Examples
 
+For more examples, check out our new [daft-examples](https://www.github.com/Eventual-Inc/daft-examples) repository!
+
 <div class="examples-grid">
   <div class="example-card">
    <a href="./common-crawl-daft-tutorial" class="example-image-link">
