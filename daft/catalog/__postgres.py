@@ -2,88 +2,177 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
-import adbc_driver_postgresql.dbapi as adbc_dbapi
 import psycopg
+from pgvector.psycopg import register_vector
 
 from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
+from daft.datatype import DataType
+from daft.expressions import col
 from daft.io._sql import read_sql
+
+
+@contextmanager
+def postgres_connection_with_vector(connection_string: str) -> psycopg.Connection.connect:
+    """Context manager that provides a PostgreSQL connection with vector extension setup."""
+    with psycopg.connect(connection_string) as conn:
+        conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        register_vector(conn)
+        yield conn
+
 
 if TYPE_CHECKING:
     from daft.dataframe import DataFrame
-    from daft.datatype import DataType
     from daft.io.partitioning import PartitionField
 
 
-def _daft_dtype_to_postgres_type(dtype: DataType) -> str:
+def _convert_embeddings_to_lists(df: DataFrame) -> DataFrame:
+    """Convert any embedding columns to list format for PostgreSQL compatibility."""
+    schema = df.schema()
+    columns_to_convert = []
+
+    for field in schema:
+        if field.dtype.is_embedding():
+            columns_to_convert.append(field.name)
+
+    if not columns_to_convert:
+        return df
+
+    # Convert embedding columns to lists
+    result_df = df
+    for col_name in columns_to_convert:
+        # Get the embedding's inner dtype and convert to list
+        embedding_dtype = schema[col_name].dtype
+        inner_dtype = embedding_dtype.dtype  # The element type (e.g., float32)
+        result_df = result_df.with_column(col_name, df[col_name].cast(DataType.list(inner_dtype)))
+
+    return result_df
+
+
+def _daft_dtype_to_postgres_type(dtype: DataType, set_dimensions: bool = True) -> str:
     """Convert a Daft DataType to a PostgreSQL type string."""
     if dtype.is_int8():
-        return "SMALLINT"  # PostgreSQL doesn't have TINYINT, use SMALLINT
+        return "smallint"  # PostgreSQL doesn't have TINYINT, use SMALLINT
     elif dtype.is_int16():
-        return "SMALLINT"
+        return "smallint"
     elif dtype.is_int32():
-        return "INTEGER"
+        return "integer"
     elif dtype.is_int64():
-        return "BIGINT"
+        return "bigint"
     elif dtype.is_uint8():
-        return "SMALLINT"  # PostgreSQL doesn't have unsigned types
+        return "smallint"  # PostgreSQL doesn't have unsigned types
     elif dtype.is_uint16():
-        return "INTEGER"  # PostgreSQL doesn't have unsigned types
+        return "integer"  # PostgreSQL doesn't have unsigned types
     elif dtype.is_uint32():
-        return "BIGINT"  # PostgreSQL doesn't have unsigned types
+        return "bigint"  # PostgreSQL doesn't have unsigned types
     elif dtype.is_uint64():
-        return "BIGINT"  # PostgreSQL doesn't have unsigned types, may overflow
+        return "bigint"  # PostgreSQL doesn't have unsigned types, may overflow
     elif dtype.is_float32():
-        return "REAL"
+        return "real"
     elif dtype.is_float64():
-        return "DOUBLE PRECISION"
+        return "double precision"
     elif dtype.is_boolean():
-        return "BOOLEAN"
+        return "boolean"
     elif dtype.is_string():
-        return "TEXT"
+        return "text"
     elif dtype.is_binary() or dtype.is_fixed_size_binary():
-        return "BYTEA"
+        return "bytea"
     elif dtype.is_date():
-        return "DATE"
+        return "date"
     elif dtype.is_timestamp():
         # PostgreSQL timestamps support timezone
         try:
             timezone = dtype.timezone
             if timezone:
-                return "TIMESTAMPTZ"
+                return "timestamptz"
         except AttributeError:
             pass
-        return "TIMESTAMP"
+        return "timestamp"
     elif dtype.is_time():
-        return "TIME"
-    # TODO(desmond): Add support for the following types:
-    # is_duration
-    # is_interval
-    # is_list
-    # is_fixed_size_list
-    # is_struct
-    # is_map
-    # is_extension
-    # is_image
-    # is_fixed_shape_image
-    # is_embedding
-    # is_tensor
-    # is_fixed_shape_tensor
-    # is_sparse_tensor
-    # is_fixed_shape_sparse_tensor
-    # is_python
+        return "time"
+    elif dtype.is_duration():
+        return "interval"
+    elif dtype.is_interval():
+        return "interval"
+    elif dtype.is_list():
+        # PostgreSQL supports multi-dimensional arrays, but ADBC has issues with deeply nested types
+        # Use JSONB for nested lists to avoid ADBC compatibility issues
+        try:
+            inner_dtype = dtype.dtype
+            inner_type = _daft_dtype_to_postgres_type(inner_dtype)
+            # If inner type contains arrays (multi-dimensional) or is JSONB, use JSONB
+            if "[]" in inner_type or inner_type == "JSONB":
+                return "jsonb"
+            else:
+                return f"{inner_type}[]"
+        except AttributeError:
+            pass
+        return "jsonb"  # Fallback for unknown inner types
+    elif dtype.is_fixed_size_list():
+        # PostgreSQL supports multi-dimensional arrays, but ADBC has issues with deeply nested types
+        # Use JSONB for nested lists to avoid ADBC compatibility issues
+        try:
+            inner_dtype = dtype.dtype
+            inner_type = _daft_dtype_to_postgres_type(inner_dtype)
+            # If inner type contains arrays (multi-dimensional) or is JSONB, use JSONB
+            if "[]" in inner_type or inner_type == "JSONB":
+                return "jsonb"
+            else:
+                return f"{inner_type}[]"
+        except AttributeError:
+            pass
+        return "jsonb"  # Fallback for unknown inner types
+    elif dtype.is_struct():
+        # Use PostgreSQL composite types (ROW syntax) for structs
+        try:
+            fields = dtype.fields
+            if fields:
+                field_defs = []
+                for field_name, field_dtype in fields.items():
+                    field_type = _daft_dtype_to_postgres_type(field_dtype)
+                    # Quote field names to handle special characters and reserved words
+                    field_defs.append(f'"{field_name}" {field_type}')
+                return f"ROW({', '.join(field_defs)})"
+        except (AttributeError, TypeError):
+            pass
+        return "jsonb"  # Fallback
+    elif dtype.is_map():
+        return "jsonb"
+    elif dtype.is_extension():
+        return "jsonb"
+    elif dtype.is_image():
+        return "bytea"  # Images are binary data
+    elif dtype.is_fixed_shape_image():
+        return "bytea"  # Fixed shape images are also binary data
+    elif dtype.is_embedding():
+        # Use pgvector VECTOR type for embeddings.
+        if set_dimensions:
+            return f"vector({dtype.size})"
+        else:
+            return "vector"
+    elif dtype.is_tensor():
+        return "jsonb"  # Tensors are multi-dimensional arrays, JSONB can represent them
+    elif dtype.is_fixed_shape_tensor():
+        return "jsonb"  # Fixed shape tensors also map to JSONB
+    elif dtype.is_sparse_tensor():
+        return "jsonb"  # Sparse tensors have complex structure, JSONB is appropriate
+    elif dtype.is_fixed_shape_sparse_tensor():
+        return "jsonb"  # Fixed shape sparse tensors also use JSONB
+    elif dtype.is_python():
+        return "jsonb"  # Python objects are typically serialized
     elif dtype.is_decimal128():
         try:
             precision = dtype.precision
             scale = dtype.scale
-            return f"DECIMAL({precision},{scale})"
+            return f"decimal({precision},{scale})"
         except AttributeError:
-            return "DECIMAL(38,18)"  # Default precision and scale
+            return "decimal(38,18)"  # Default precision and scale
     elif dtype.is_null():
-        return "TEXT"  # Default to TEXT for null type
+        return "text"  # Default to TEXT for null type
     else:
-        return "JSONB"
+        return "jsonb"
 
 
 def validate_connection_string(conn_string: str) -> None:
@@ -145,7 +234,7 @@ class PostgresCatalog(Catalog):
 
         quoted_schema = psycopg.sql.Identifier(identifier[0])
 
-        with psycopg.connect(self._inner) as conn:
+        with postgres_connection_with_vector(self._inner) as conn:
             with conn.cursor() as cur:
                 try:
                     cur.execute(psycopg.sql.SQL("CREATE SCHEMA {}").format(quoted_schema))
@@ -199,7 +288,7 @@ class PostgresCatalog(Catalog):
         quoted_table = psycopg.sql.Identifier(table_name)
         quoted_full_table = psycopg.sql.SQL(".").join([quoted_schema, quoted_table]) if schema_name else quoted_table
 
-        with psycopg.connect(self._inner) as conn:
+        with postgres_connection_with_vector(self._inner) as conn:
             with conn.cursor() as cur:
                 try:
                     if quoted_schema:
@@ -237,7 +326,7 @@ class PostgresCatalog(Catalog):
 
         quoted_schema = psycopg.sql.Identifier(identifier[0])
 
-        with psycopg.connect(self._inner) as conn:
+        with postgres_connection_with_vector(self._inner) as conn:
             with conn.cursor() as cur:
                 try:
                     cur.execute(psycopg.sql.SQL("DROP SCHEMA {}").format(quoted_schema))
@@ -450,20 +539,34 @@ class PostgresTable(Table):
             # When no schema is specified, PostgreSQL uses the schema search path to select the schema to use.
             # Since this is user-configurable, we simply pass along the single identifier to PostgreSQL.
             # See: https://www.postgresql.org/docs/current/ddl-schemas.html#DDL-SCHEMAS-PATH
-            table_name = identifier[0]
-            db_schema_name = None
+            full_table_name = psycopg.sql.Identifier(identifier[0])
         elif len(identifier) == 2:
-            db_schema_name = identifier[0]
-            table_name = identifier[1]
+            quoted_schema = psycopg.sql.Identifier(identifier[0])
+            quoted_table = psycopg.sql.Identifier(identifier[1])
+            full_table_name = psycopg.sql.SQL(".").join([quoted_schema, quoted_table])
         else:
             raise ValueError(f"Invalid table identifier: {identifier}")
 
+        # Build column list for COPY statement.
+        columns_str = psycopg.sql.SQL(", ").join(psycopg.sql.Identifier(field.name) for field in df.schema())
+
+        # Build types to pass into the COPY statement.
+        types_to_set = [_daft_dtype_to_postgres_type(field.dtype, set_dimensions=False) for field in df.schema()]
+
+        copy_sql = psycopg.sql.SQL("COPY {} ({}) FROM STDIN WITH (FORMAT BINARY)").format(full_table_name, columns_str)
+
         # TODO(desmond): This writes results sequentially on a single node. We should replace
         # this with DataFrame.write_sql() once we merge pull request #5471.
-        with adbc_dbapi.connect(connection_string) as conn:
+        # Additionally, although ADBC currently has limited type support, it might be worth
+        # exploring for bulk loading.
+        with postgres_connection_with_vector(connection_string) as conn:
             with conn.cursor() as cur:
-                for record_batch in df.to_arrow_iter():
-                    cur.adbc_ingest(table_name, record_batch, mode="create_append", db_schema_name=db_schema_name)
+                with cur.copy(copy_sql) as copy:
+                    copy.set_types(types_to_set)
+
+                    for batch in df.to_arrow_iter():
+                        for row in batch.to_pylist():
+                            copy.write_row(list(row.values()))
             conn.commit()
 
     def overwrite(self, df: DataFrame, **options: Any) -> None:
@@ -474,21 +577,74 @@ class PostgresTable(Table):
             # When no schema is specified, PostgreSQL uses the schema search path to select the schema to use.
             # Since this is user-configurable, we simply pass along the single identifier to PostgreSQL.
             # See: https://www.postgresql.org/docs/current/ddl-schemas.html#DDL-SCHEMAS-PATH
+            schema_name = None
             table_name = identifier[0]
-            db_schema_name = None
+            quoted_full_table = psycopg.sql.Identifier(table_name)
         elif len(identifier) == 2:
-            db_schema_name = identifier[0]
+            schema_name = identifier[0]
             table_name = identifier[1]
+            quoted_schema = psycopg.sql.Identifier(schema_name)
+            quoted_table = psycopg.sql.Identifier(table_name)
+            quoted_full_table = psycopg.sql.SQL(".").join([quoted_schema, quoted_table])
         else:
             raise ValueError(f"Invalid table identifier: {identifier}")
 
+        # Cast embedding columns to proper vector type before writing
+        select_exprs = []
+        for field in df.schema():
+            if field.dtype.is_embedding():
+                # Cast embedding columns to list type so they materialize as Python lists
+                # This allows pgvector to properly adapt them in binary COPY
+                inner_dtype = field.dtype.dtype
+                select_exprs.append(col(field.name).cast(DataType.list(inner_dtype)))
+            else:
+                select_exprs.append(col(field.name))
+
+        if select_exprs:
+            df = df.select(*select_exprs)
+
+        # Build column definitions from Daft schema.
+        column_defs = []
+        for field in df.schema():
+            field_name = field.name
+            field_type = _daft_dtype_to_postgres_type(field.dtype)
+            quoted_name = psycopg.sql.Identifier(field_name)
+            column_defs.append(psycopg.sql.SQL("{} {}").format(quoted_name, psycopg.sql.SQL(field_type)))
+
+        # Build column list for COPY statement.
+        columns_str = psycopg.sql.SQL(", ").join(psycopg.sql.Identifier(field.name) for field in df.schema())
+
+        # Build types to pass into the COPY statement.
+        types_to_set = [_daft_dtype_to_postgres_type(field.dtype, set_dimensions=False) for field in df.schema()]
+
+        copy_sql = psycopg.sql.SQL("COPY {} ({}) FROM STDIN WITH (FORMAT BINARY)").format(
+            quoted_full_table, columns_str
+        )
+
         # TODO(desmond): This writes results sequentially on a single node. We should replace
         # this with DataFrame.write_sql() once we merge pull request #5471.
-        with adbc_dbapi.connect(connection_string) as conn:
+        # Additionally, although ADBC currently has limited type support, it might be worth
+        # exploring for bulk loading.
+        with postgres_connection_with_vector(connection_string) as conn:
             with conn.cursor() as cur:
-                first_batch = True
-                for record_batch in df.to_arrow_iter():
-                    mode = "replace" if first_batch else "append"
-                    cur.adbc_ingest(table_name, record_batch, mode=mode, db_schema_name=db_schema_name)
-                    first_batch = False
+                # Drop and recreate the table to overwrite.
+                drop_sql = psycopg.sql.SQL("DROP TABLE IF EXISTS {}").format(quoted_full_table)
+                cur.execute(drop_sql)
+
+                if schema_name:
+                    cur.execute(
+                        psycopg.sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(psycopg.sql.Identifier(schema_name))
+                    )
+
+                create_sql = psycopg.sql.SQL("CREATE TABLE {} ({})").format(
+                    quoted_full_table, psycopg.sql.SQL(", ").join(column_defs)
+                )
+                cur.execute(create_sql)
+
+                with cur.copy(copy_sql) as copy:
+                    copy.set_types(types_to_set)
+
+                    for batch in df.to_arrow_iter():
+                        for row in batch.to_pylist():
+                            copy.write_row(list(row.values()))
             conn.commit()

@@ -46,7 +46,7 @@ lance = ["pylance"]
 numpy = ["numpy"]
 openai = ["openai"]
 pandas = ["pandas"]
-postgres = ["psycopg", "adbc-driver-manager", "adbc-driver-postgresql"]
+postgres = ["psycopg", "adbc-driver-manager", "adbc-driver-postgresql", "pgvector"]
 ray = [
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
   # TODO: we temporarily limit ray<2.48.0 because https://github.com/Eventual-Inc/Daft/issues/5027
@@ -55,7 +55,7 @@ ray = [
 ]
 transformers = ["transformers", "sentence-transformers", "torch", "torchvision", "tensorflow"]
 spark = ["googleapis-common-protos >= 1.56.4", "grpcio >= 1.48", "grpcio-status >= 1.48", "numpy >= 1.15", "pandas >= 1.0.5", "py4j >= 0.10.9.7", "pyspark == 3.5.5"]
-sql = ["connectorx", "sqlalchemy", "sqlglot"]
+sql = ["connectorx>=0.4.4", "sqlalchemy", "sqlglot"]
 turbopuffer = ["turbopuffer"]
 unity = ["httpx <= 0.27.2", "unitycatalog"]
 video = ["av >= 15.0.0"]
