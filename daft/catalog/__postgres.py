@@ -15,11 +15,23 @@ from daft.io._sql import read_sql
 
 
 @contextmanager
-def postgres_connection_with_vector(connection_string: str) -> psycopg.Connection.connect:
-    """Context manager that provides a PostgreSQL connection with vector extension setup."""
+def postgres_connection(connection_string: str, extensions: list[str] | None = None) -> psycopg.Connection.connect:
+    """Context manager that provides a PostgreSQL connection with specified extensions setup.
+
+    Args:
+        connection_string: PostgreSQL connection string
+        extensions: List of extension names to create if they don't exist. For each extension,
+                   "CREATE EXTENSION IF NOT EXISTS <extension>" will be executed.
+    """
     with psycopg.connect(connection_string) as conn:
-        conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
-        register_vector(conn)
+        if extensions:
+            for extension in extensions:
+                conn.execute(
+                    psycopg.sql.SQL("CREATE EXTENSION IF NOT EXISTS {}").format(psycopg.sql.Identifier(extension))
+                )
+            # Special handling for vector extension - register pgvector types.
+            if "vector" in extensions:
+                register_vector(conn)
         yield conn
 
 
@@ -190,6 +202,7 @@ class PostgresCatalog(Catalog):
     # TODO(desmond): For now we can create connections as needed, but in the future we can create lazy connections
     # and connection pools as an optimization.
     _inner: str  # connection string
+    _extensions: list[str] | None  # extensions to create
     _create_table_options = {
         "enable_rls",
     }
@@ -198,22 +211,13 @@ class PostgresCatalog(Catalog):
         raise RuntimeError("PostgresCatalog.__init__ is not supported, please use `Catalog.from_postgres` instead.")
 
     @staticmethod
-    def _from_obj(obj: object) -> PostgresCatalog:
-        """Returns a PostgresCatalog instance if the given object can be adapted so."""
-        if isinstance(obj, str):
-            # Connection string
-            validate_connection_string(obj)
-            c = PostgresCatalog.__new__(PostgresCatalog)
-            c._inner = obj
-            return c
-        # TODO(desmond): We could also potentially support psycopg connection objects here.
-        raise ValueError(f"Unsupported postgres catalog type: {type(obj)}")
-
-    @staticmethod
-    def _load_catalog(name: str, **options: str | None) -> PostgresCatalog:
-        """Load a PostgresCatalog from a connection string."""
-        c = PostgresCatalog._from_obj(name)
-        # TODO(desmond): Handle options.
+    def from_uri(uri: str, extensions: list[str] | None = None, **options: str | None) -> PostgresCatalog:
+        """Create a PostgresCatalog from a connection string."""
+        validate_connection_string(uri)
+        c = PostgresCatalog.__new__(PostgresCatalog)
+        c._inner = uri
+        c._extensions = extensions
+        # TODO(desmond): Handle options.s
         return c
 
     @property
@@ -234,7 +238,7 @@ class PostgresCatalog(Catalog):
 
         quoted_schema = psycopg.sql.Identifier(identifier[0])
 
-        with postgres_connection_with_vector(self._inner) as conn:
+        with postgres_connection(self._inner, self._extensions) as conn:
             with conn.cursor() as cur:
                 try:
                     cur.execute(psycopg.sql.SQL("CREATE SCHEMA {}").format(quoted_schema))
@@ -288,7 +292,7 @@ class PostgresCatalog(Catalog):
         quoted_table = psycopg.sql.Identifier(table_name)
         quoted_full_table = psycopg.sql.SQL(".").join([quoted_schema, quoted_table]) if schema_name else quoted_table
 
-        with postgres_connection_with_vector(self._inner) as conn:
+        with postgres_connection(self._inner, self._extensions) as conn:
             with conn.cursor() as cur:
                 try:
                     if quoted_schema:
@@ -311,9 +315,7 @@ class PostgresCatalog(Catalog):
                 except psycopg.Error as e:
                     raise ValueError(f"Failed to create table {identifier}: {e}") from e
 
-        t = PostgresTable.__new__(PostgresTable)
-        t._inner = (self._inner, identifier)
-        return t
+        return PostgresTable._from_catalog(self._inner, identifier, self._extensions)
 
     ###
     # drop_*
@@ -326,7 +328,7 @@ class PostgresCatalog(Catalog):
 
         quoted_schema = psycopg.sql.Identifier(identifier[0])
 
-        with postgres_connection_with_vector(self._inner) as conn:
+        with postgres_connection(self._inner, self._extensions) as conn:
             with conn.cursor() as cur:
                 try:
                     cur.execute(psycopg.sql.SQL("DROP SCHEMA {}").format(quoted_schema))
@@ -371,9 +373,7 @@ class PostgresCatalog(Catalog):
         if not self._has_table(identifier):
             raise NotFoundError(f"Table {identifier} not found")
 
-        t = PostgresTable.__new__(PostgresTable)
-        t._inner = (self._inner, identifier)
-        return t
+        return PostgresTable._from_catalog(self._inner, identifier, self._extensions)
 
     ###
     # has_*
@@ -464,6 +464,7 @@ class PostgresCatalog(Catalog):
 
 class PostgresTable(Table):
     _inner: tuple[str, Identifier]  # (connection_string, identifier)
+    _extensions: list[str] | None
     _read_options = {
         "partition_col",
         "num_partitions",
@@ -476,6 +477,16 @@ class PostgresTable(Table):
 
     def __init__(self) -> None:
         raise RuntimeError("PostgresTable.__init__ is not supported, please use `Table.from_postgres` instead.")
+
+    @classmethod
+    def _from_catalog(
+        cls, connection_string: str, identifier: Identifier, extensions: list[str] | None
+    ) -> PostgresTable:
+        """Create a PostgresTable from catalog connection details."""
+        t = cls.__new__(cls)
+        t._inner = (connection_string, identifier)
+        t._extensions = extensions
+        return t
 
     @property
     def name(self) -> str:
@@ -557,7 +568,7 @@ class PostgresTable(Table):
         # this with DataFrame.write_sql() once we merge pull request #5471.
         # Additionally, although ADBC currently has limited type support, it might be worth
         # exploring for bulk loading.
-        with postgres_connection_with_vector(connection_string) as conn:
+        with postgres_connection(connection_string, self._extensions) as conn:
             with conn.cursor() as cur:
                 with cur.copy(copy_sql) as copy:
                     copy.set_types(types_to_set)
@@ -623,7 +634,7 @@ class PostgresTable(Table):
         # this with DataFrame.write_sql() once we merge pull request #5471.
         # Additionally, although ADBC currently has limited type support, it might be worth
         # exploring for bulk loading.
-        with postgres_connection_with_vector(connection_string) as conn:
+        with postgres_connection(connection_string, self._extensions) as conn:
             with conn.cursor() as cur:
                 # Drop and recreate the table to overwrite.
                 drop_sql = psycopg.sql.SQL("DROP TABLE IF EXISTS {}").format(quoted_full_table)
