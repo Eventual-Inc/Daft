@@ -17,6 +17,7 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
+    TextClause,
     Time,
     create_engine,
     inspect,
@@ -33,7 +34,7 @@ from daft.schema import Schema
 # from daft.sql.sql_connection import SQLConnection
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterator, Mapping
 
     from sqlalchemy.engine import Connection
     from sqlalchemy.types import TypeEngine
@@ -200,23 +201,26 @@ def create_table(table_name: str, conn: Connection, df_schema: Schema) -> None:
         raise ValueError(f"Table '{table_name}' already exists! Use mode='append' instead of mode='overwrite'")
 
     # Create the table
-    conn.execute(text(query_create_table(table_name, df_schema)))
+    clause, params = query_create_table(table_name, df_schema)
+    conn.execute(clause, params)
     conn.commit()
 
 
-def query_create_table(table_name: str, df_schema: Schema) -> str:
-    """The SQL query to create a table with the given name and schema."""
+def query_create_table(table_name: str, df_schema: Schema) -> tuple[TextClause, Mapping[str, Any]]:
+    """The SQLAlchemy query to create a table with the given name and schema."""
     columns = [c for c in df_schema]
     if len(columns) == 0:
         raise ValueError("DataFrame schema is empty!")
 
-    q: str = f"CREATE TABLE {table_name} "
+    clause = text("CREATE TABLE :table_name (:column_spec)")
 
     column_spec: list[str] = [
         f"{col.name} {arrow_type_to_sqlalchemy_type(col.dtype.to_arrow_dtype())}" for col in columns
     ]
 
-    return f"{q} ({', '.join(column_spec)})"
+    params = {"table_name": table_name, "column_spec": ", ".join(column_spec)}
+
+    return clause, params
 
 
 def ensure_table_exists(table_name: str, conn: Connection, df_schema: Schema) -> None:
