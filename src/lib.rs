@@ -35,7 +35,7 @@ pub static malloc_conf: Option<&'static libc::c_char> = Some(unsafe {
 
 #[cfg(coverage)]
 unsafe extern "C" {
-    fn __llvm_profile_write_file() -> libc::c_int;
+    fn __llvm_profile_write_file() -> i32;
 }
 
 #[cfg(feature = "python")]
