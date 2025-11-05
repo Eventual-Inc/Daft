@@ -1,3 +1,4 @@
+mod adaptive_dispatcher;
 mod buffer;
 mod channel;
 mod dispatcher;
