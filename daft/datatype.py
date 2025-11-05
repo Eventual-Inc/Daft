@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-import sys
 import threading
 import typing
 import warnings
-from types import GenericAlias
+from types import GenericAlias, NoneType, UnionType
 from typing import TYPE_CHECKING, Any, Callable, Union
-
-if sys.version_info >= (3, 10):
-    from types import NoneType, UnionType
 
 from packaging.version import parse
 
@@ -442,24 +438,22 @@ class DataType:
         """
 
         def extract_non_none_type(tp: Any) -> Any:
-            if sys.version_info >= (3, 10):
-                args = None
+            args = None
 
-                if isinstance(tp, UnionType):
-                    args = typing.get_args(tp)
-                elif typing.get_origin(tp) is Union:
-                    args = typing.get_args(tp)
+            if isinstance(tp, UnionType):
+                args = typing.get_args(tp)
+            elif typing.get_origin(tp) is Union:
+                args = typing.get_args(tp)
 
-                if args and len(args) == 2 and (NoneType in args or type(None) in args):
-                    return next(arg for arg in args if arg is not NoneType and arg is not type(None))
-                return tp
+            if args and len(args) == 2 and (NoneType in args or type(None) in args):
+                return next(arg for arg in args if arg is not NoneType and arg is not type(None))
+            return tp
 
         def is_optional(tp: Any) -> bool:
             args = None
-            if sys.version_info >= (3, 10):
-                if isinstance(tp, UnionType):
-                    args = typing.get_args(tp)
-                    return len(args) == 2 and NoneType in args
+            if isinstance(tp, UnionType):
+                args = typing.get_args(tp)
+                return len(args) == 2 and NoneType in args
 
             if typing.get_origin(tp) is Union:
                 args = typing.get_args(tp)
