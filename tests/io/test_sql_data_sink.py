@@ -43,7 +43,7 @@ def sqlite_table_data(sqlite_db_path: str | Path, table_name: str) -> list[dict[
     with sqlite3.connect(str(sqlite_db_path)) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute(f"SELECT * FROM {table_name}")
+        cursor.execute("SELECT * FROM %s", table_name)
         rows = [dict(row) for row in cursor.fetchall()]
     return rows
 
@@ -52,7 +52,7 @@ def sqlite_table_schema(sqlite_db_path: str, table_name: str) -> dict[str, str]:
     """Helper to get table schema from SQLite."""
     with sqlite3.connect(sqlite_db_path) as conn:
         cursor = conn.cursor()
-        cursor.execute(f"PRAGMA table_info({table_name})")
+        cursor.execute("PRAGMA table_info(%s)", table_name)
         schema = {row[1]: row[2] for row in cursor.fetchall()}
     return schema
 
