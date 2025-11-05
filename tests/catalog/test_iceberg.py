@@ -18,7 +18,7 @@ PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.
 pytestmark = pytest.mark.skipif(PYARROW_LOWER_BOUND_SKIP, reason="iceberg not supported on old versions of pyarrow")
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def iceberg_catalog(tmp_path_factory):
     from pyiceberg.catalog.sql import SqlCatalog
 
@@ -40,14 +40,14 @@ def iceberg_catalog(tmp_path_factory):
     return catalog
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def global_sess(iceberg_catalog):
     daft.attach_catalog(iceberg_catalog, alias=CATALOG_ALIAS)
     yield daft.current_session()
     daft.detach_catalog(alias=CATALOG_ALIAS)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def sess(iceberg_catalog):
     sess = Session()
     sess.attach_catalog(iceberg_catalog, alias=CATALOG_ALIAS)
@@ -55,7 +55,7 @@ def sess(iceberg_catalog):
     sess.detach_catalog(alias=CATALOG_ALIAS)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def catalog(iceberg_catalog):
     return Catalog.from_iceberg(iceberg_catalog)
 

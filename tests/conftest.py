@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import uuid
 from collections.abc import Generator
 from typing import Any, Literal, Protocol
@@ -237,3 +238,45 @@ def with_morsel_size(request):
     morsel_size = request.param
     with daft.context.execution_config_ctx(default_morsel_size=morsel_size):
         yield morsel_size
+
+
+@pytest.fixture(scope="session", autouse=True)
+def flush_ray_coverage():
+    """Inject flush_coverage_data method into Ray actors and call it after tests complete."""
+    # Only inject and flush coverage if using Ray runner
+    if get_tests_daft_runner_name() != "ray":
+        yield
+        return
+
+    try:
+        import ray
+    except ImportError:
+        yield
+        return
+
+    yield  # Run all tests
+
+    # Cleanup: Flush coverage from RemoteFlotillaRunner
+    try:
+        flotilla_runner = ray.get_actor(name="flotilla-plan-runner", namespace="daft")
+        ray.get(flotilla_runner.flush_coverage_data.remote())
+    except ValueError:
+        # Actor doesn't exist, which is fine
+        pass
+    except Exception as e:
+        # Log but don't fail tests
+        print(f"Warning: Failed to flush coverage from flotilla runner: {e}")
+
+    # Cleanup: Flush coverage from all RaySwordfishActors
+    for node in ray.nodes():
+        if "NodeID" in node:
+            actor_name = f"daft-swordfish-actor-{node['NodeID']}"
+            try:
+                swordfish_actor = ray.get_actor(name=actor_name)
+                ray.get(swordfish_actor.flush_coverage_data.remote())
+            except ValueError:
+                # Actor doesn't exist, which is fine
+                pass
+            except Exception as e:
+                # Log but don't fail tests
+                print(f"Warning: Failed to flush coverage from {actor_name}: {e}")

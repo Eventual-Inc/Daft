@@ -125,6 +125,9 @@ version = "0.3.0-dev0"
 [package.metadata.cargo-machete]
 ignored = ["lzma-sys"]
 
+[lints]
+workspace = true
+
 [patch.crates-io]
 arrow2 = {path = "src/arrow2"}
 parquet-format-safe = {path = "src/parquet-format-safe"}
@@ -380,6 +383,9 @@ version = "0.13.1"
 [workspace.dependencies.serde]
 features = ["derive", "rc"]
 version = "1.0.200"
+
+[workspace.lints.rust]
+unexpected_cfgs = {level = "warn", check-cfg = ['cfg(coverage)']}
 
 [workspace.lints.clippy]
 as_conversions = "allow"

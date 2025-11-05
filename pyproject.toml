@@ -76,12 +76,12 @@ dev = [
   "viztracer==0.15.6",
   # Testing frameworks
   "hypothesis==6.79.2",
-  "pytest==7.4.3",
-  "pytest-benchmark==4.0.0",
-  "pytest-cov==4.1.0",
-  "pytest-lazy-fixture==0.6.3",
+  "pytest==8.4.2",
+  "pytest-benchmark==5.1.0",
+  "pytest-cov==7.0.0",
+  "pytest-lazy-fixtures==1.4.0",
   "memray==1.17.2; platform_system != \"Windows\"",
-  "pytest-codspeed==2.2.1",
+  "pytest-codspeed==4.1.1",
   # Testing dependencies
   "lxml==5.3.0",
   "dask[dataframe]==2024.4.1",
