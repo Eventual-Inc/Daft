@@ -729,8 +729,8 @@ def test_openai_prompter_with_file():
             assert len(messages) == 1
             assert isinstance(messages[0]["content"], list)
             assert messages[0]["content"][1]["type"] == "input_file"
-            assert "file_url" in messages[0]["content"][1]
-            assert messages[0]["content"][1]["file_url"].startswith("data:")
+            assert "file_data" in messages[0]["content"][1]
+            assert messages[0]["content"][1]["file_data"].startswith("data:")
         finally:
             import os
 
