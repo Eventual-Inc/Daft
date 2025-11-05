@@ -14,9 +14,12 @@
         * [JSON and Nested Data](modalities/json.md)
         * [URLs and Files](modalities/urls.md)
         * [Custom Modalities](modalities/custom.md)
-    * Running Custom Python Code
-        * [User-Defined Functions (UDFs)](custom-code/udfs.md)
-        * [Next-Generation UDFs](custom-code/func.md)
+    * Scale Custom Python Code
+        * [New UDF Overview](custom-code/index.md)
+        * [Functions](custom-code/func.md)
+        * [Classes & Methods](custom-code/cls.md)
+        * [Comparison Guide](custom-code/comparison.md)
+        * [Legacy UDFs](custom-code/udfs.md)
     * Common Use Cases
         * [Batch Inference](use-case/batch-inference.md)
     * Datasets
@@ -49,7 +52,7 @@
     * Contributing
         * [Contributing](contributing-to-daft.md)
         * [AI Functions](contributing/contributing-ai-functions.md)
-    * [Sessions](sessions-usage.md)
+    * [Sessions, Catalogs, and Tables](configuration/sessions-usage.md)
     * [Roadmap](roadmap.md)
     * [Benchmarks](benchmarks/index.md)
     * [Community <sup>↗</sup>](http://www.daft.ai/slack)
@@ -66,6 +69,7 @@
     * [Querying Image Data](examples/querying-images.md)
     * [MNIST Digit Classification](examples/mnist.md)
     * [Window Functions](examples/window-functions.md)
+    * [Working with Common Crawl Data](examples/common-crawl-daft-tutorial.md)
 * Python API
     * [Python API](api/index.md)
     * [AI](api/ai.md)
@@ -96,6 +100,7 @@
         * [USE](sql/statements/use.md)
     * [Data Types](sql/datatypes.md)
     * [Window Functions](sql/window_functions.md)
+* [Try Daft Cloud](https://www.eventual.ai/early-access)
 
 <!--
 TODO

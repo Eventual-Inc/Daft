@@ -49,11 +49,21 @@ def load_transformers(name: str | None = None, **options: Any) -> Provider:
         raise ProviderImportError(["torch", "torchvision", "transformers", "sentence-transformers", "Pillow"]) from e
 
 
-ProviderType = Literal["lm_studio", "openai", "transformers"]
+def load_vllm_prefix_caching(name: str | None = None, **options: Any) -> Provider:
+    try:
+        from daft.ai.vllm.provider import VLLMPrefixCachingProvider
+
+        return VLLMPrefixCachingProvider(name, **options)
+    except ImportError as e:
+        raise ProviderImportError(["vllm"]) from e
+
+
+ProviderType = Literal["lm_studio", "openai", "transformers", "vllm-prefix-caching"]
 PROVIDERS: dict[ProviderType, Callable[..., Provider]] = {
     "lm_studio": load_lm_studio,
     "openai": load_openai,
     "transformers": load_transformers,
+    "vllm-prefix-caching": load_vllm_prefix_caching,
 }
 
 

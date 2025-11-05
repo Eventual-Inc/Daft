@@ -383,32 +383,29 @@ def cls(
 
         >>> import daft
         >>> from daft import DataType
-        >>> @daft.cls
-        ... class MyModel:
-        ...     def __init__(self, model_path: str):
-        ...         self.model = some_slow_initialization_step(model_path)
+        >>> @daft.cls # doctest: +SKIP
+        >>> class MyModel:  # doctest: +SKIP
+        ...     def __init__(self, model_path: str):  # doctest: +SKIP
+        ...         self.model = some_slow_initialization_step(model_path)  # doctest: +SKIP
         ...
         ...     # no decoration is equivalent to `@daft.method` (default arguments)
-        ...     def generate(self, prompt: str) -> str:
-        ...         return self.model(prompt)
+        ...     def generate(self, prompt: str) -> str:  # doctest: +SKIP
+        ...         return self.model(prompt)  # doctest: +SKIP
         ...
         ...     # decorate with `@daft.method` to override default arguments
-        ...     @daft.method(return_dtype=DataType.list(DataType.string()))
-        ...     def classify(self, value: str):
-        ...         return self.model.classify(value)
+        ...     @daft.method(return_dtype=DataType.list(DataType.string()))  # doctest: +SKIP
+        ...     def classify(self, value: str):  # doctest: +SKIP
+        ...         return self.model.classify(value)  # doctest: +SKIP
         ...
         ...     # batch method
-        ...     @daft.method.batch(return_dtype=DataType.list(DataType.string()))
-        ...     def batch_classify(self, value: daft.Series):
-        ...         return self.model.batch_classify(value)
-        >>>
+        ...     @daft.method.batch(return_dtype=DataType.list(DataType.string()))  # doctest: +SKIP
+        ...     def batch_classify(self, value: daft.Series):  # doctest: +SKIP
+        ...         return self.model.batch_classify(value)  # doctest: +SKIP
         >>> # Specify the initialization arguments for the class. `__init__` will not be called yet.
-        >>> my_model = MyModel("path/to/model")
-        >>>
-        >>> df = daft.from_pydict({"prompt": ["hello", "world", "daft"]})
-        >>>
+        >>> my_model = MyModel("path/to/model")  # doctest: +SKIP
+        >>> df = daft.from_pydict({"prompt": ["hello", "world", "daft"]})  # doctest: +SKIP
         >>> # Use class methods as Daft functions.
-        >>> df = df.with_columns(
+        >>> df = df.with_columns(  # doctest: +SKIP
         ...     {
         ...         "generated": my_model.generate(df["prompt"]),
         ...         "classified": my_model.classify(df["prompt"]),

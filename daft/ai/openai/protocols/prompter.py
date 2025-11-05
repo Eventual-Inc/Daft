@@ -72,62 +72,55 @@ class OpenAIPrompter(Prompter):
         self.generation_config = {k: v for k, v in generation_config.items() if k not in client_params_keys}
         self.llm = AsyncOpenAI(**client_params)
 
-    def _encode_image(self, image: Any) -> str:
-        """Encodes an image into a base64 string."""
+    def _process_message_content(self, msg: Any) -> dict[str, str]:
         import base64
 
         from daft.dependencies import np
 
-        # If the image is a numpy array, convert it to a PIL image and save it to a bytes buffer in PNG format, then encode it to a base64 string.
-        if isinstance(image, np.ndarray):
+        # Strings are always treated as plain text
+        if isinstance(msg, str):
+            return {"type": "input_text", "text": msg}
+
+        # Handle numpy arrays (images)
+        if isinstance(msg, np.ndarray):
             import io
 
             from daft.dependencies import pil_image
 
-            pil_image = pil_image.fromarray(image)
+            pil_image = pil_image.fromarray(msg)
             bio = io.BytesIO()
             pil_image.save(bio, "PNG")
             base64_string = base64.b64encode(bio.getvalue()).decode("utf-8")
-            return f"data:image/png;base64,{base64_string}"
-        # If the image is a bytes object or a string, use the File class to get the mime type and read the file into a bytes object, then encode it to a base64 string.
-        elif isinstance(image, bytes) or isinstance(image, str):
-            daft_file = File(image)
+            encoded_content = f"data:image/png;base64,{base64_string}"
+            return {"type": "input_image", "image_url": encoded_content}
+
+        # Handle bytes and File objects
+        if isinstance(msg, bytes):
+            daft_file = File(msg)
             mime_type = daft_file.mime_type()
             with daft_file.open() as f:
                 base64_string = base64.b64encode(f.read()).decode("utf-8")
-                return f"data:{mime_type};base64,{base64_string}"
-        # If the image is already a File object, get the mime type and read the file into a bytes object, then encode it to a base64 string.
-        elif isinstance(image, File):
-            mime_type = image.mime_type()
-            with image.open() as f:
+            encoded_content = f"data:{mime_type};base64,{base64_string}"
+        elif isinstance(msg, File):
+            mime_type = msg.mime_type()
+            with msg.open() as f:
                 base64_string = base64.b64encode(f.read()).decode("utf-8")
-                return f"data:{mime_type};base64,{base64_string}"
-        # If the image is not a supported type, raise an error.
+            encoded_content = f"data:{mime_type};base64,{base64_string}"
         else:
-            raise ValueError(f"Unsupported image type in prompt: {type(image)}")
+            raise ValueError(f"Unsupported content type in prompt: {type(msg)}")
+        # Determine if it's an image or generic file based on MIME type
+        if mime_type.startswith("image/"):
+            return {"type": "input_image", "image_url": encoded_content}
+        else:
+            return {"type": "input_file", "file_url": encoded_content}
 
-    async def prompt(self, input_text: str, input_image: Any | None = None) -> Any:
-        """Generate responses for a batch of message strings."""
-        # Each message is a string prompt
+    async def prompt(self, messages: tuple[Any, ...]) -> Any:
         messages_list = []
         if self.system_message is not None:
             messages_list.append({"role": "system", "content": self.system_message})
 
-        if input_image is None:
-            messages_list.append({"role": "user", "content": input_text})
-        else:
-            messages_list.append(
-                {
-                    "role": "user",
-                    "content": [  # type: ignore[dict-item]
-                        {"type": "input_text", "text": input_text},
-                        {
-                            "type": "input_image",
-                            "image_url": self._encode_image(input_image),
-                        },
-                    ],
-                }
-            )
+        content = [self._process_message_content(msg) for msg in messages]
+        messages_list.append({"role": "user", "content": content})  # type: ignore [dict-item]
 
         if self.return_format is not None:
             # Use structured outputs with Pydantic model

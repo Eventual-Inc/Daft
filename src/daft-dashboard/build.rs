@@ -57,7 +57,7 @@ fn default_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
     // Install dependencies
     let install_status = Command::new("bun")
         .current_dir("./frontend")
-        .args(["install"])
+        .args(["install", "--frozen-lockfile"])
         .status()?;
 
     if cfg!(debug_assertions) {

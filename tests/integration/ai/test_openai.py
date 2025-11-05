@@ -78,7 +78,6 @@ def test_prompt_plain_text(session):
         "answer",
         prompt(
             daft.col("question"),
-            model="gpt-5-mini",
         ),
     )
 
@@ -119,7 +118,6 @@ def test_prompt_structured_output(session):
                 daft.col("anime"),
             ),
             return_format=MovieReview,
-            model="gpt-5-mini",
         ),
     )
 
@@ -135,6 +133,7 @@ def test_prompt_structured_output(session):
     time.sleep(1)  # self limit to ~1 tps.
 
 
+@pytest.mark.integration()
 def test_prompt_with_image(session):
     """Test prompt function with image input."""
     import numpy as np
@@ -155,8 +154,7 @@ def test_prompt_with_image(session):
     df = df.with_column(
         "answer",
         prompt(
-            daft.col("question"),
-            input_image=daft.col("image"),
+            [daft.col("question"), daft.col("image")],
         ),
     )
 
@@ -174,60 +172,7 @@ def test_prompt_with_image(session):
     time.sleep(1)  # self limit to ~1 tps.
 
 
-def test_prompt_with_image_from_path(session):
-    """Test prompt function with image input from file paths."""
-    import tempfile
-
-    import numpy as np
-    from PIL import Image
-
-    # Create a temporary image file (green square)
-    green_square = np.zeros((100, 100, 3), dtype=np.uint8)
-    green_square[:, :, 1] = 255  # Green channel
-
-    # Save to a temporary file
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-        img = Image.fromarray(green_square)
-        img.save(tmp.name)
-        temp_path = tmp.name
-
-    try:
-        df = daft.from_pydict(
-            {
-                "question": [
-                    "What color is dominant in this image?",
-                ],
-                "image_path": [temp_path],
-            }
-        )
-
-        df = df.with_column(
-            "answer",
-            prompt(
-                daft.col("question"),
-                input_image=daft.col("image_path"),
-            ),
-        )
-
-        answers = df.to_pydict()["answer"]
-
-        # Basic sanity checks - responses should be non-empty strings
-        assert len(answers) == 1
-        for answer in answers:
-            assert isinstance(answer, str)
-            assert len(answer) > 0
-            # Check if "green" appears in the answer (case-insensitive)
-            assert "green" in answer.lower()
-
-    finally:
-        # Clean up temp file
-        import os
-
-        os.unlink(temp_path)
-
-    time.sleep(1)  # self limit to ~1 tps.
-
-
+@pytest.mark.integration()
 def test_prompt_with_image_from_bytes(session):
     """Test prompt function with image input from bytes column."""
     import tempfile
@@ -262,8 +207,7 @@ def test_prompt_with_image_from_bytes(session):
     df = df.with_column(
         "answer",
         prompt(
-            daft.col("question"),
-            input_image=daft.col("image_bytes"),
+            [daft.col("question"), daft.col("image_bytes")],
         ),
     )
 
@@ -280,6 +224,7 @@ def test_prompt_with_image_from_bytes(session):
     time.sleep(1)  # self limit to ~1 tps.
 
 
+@pytest.mark.integration()
 def test_prompt_with_image_from_file(session):
     """Test prompt function with image input from File column."""
     import tempfile
@@ -311,8 +256,7 @@ def test_prompt_with_image_from_file(session):
         df = df.with_column(
             "answer",
             prompt(
-                daft.col("question"),
-                input_image=daft.functions.file(daft.col("image_path")),
+                [daft.col("question"), daft.functions.file(daft.col("image_path"))],
             ),
         )
 
@@ -335,6 +279,7 @@ def test_prompt_with_image_from_file(session):
     time.sleep(1)  # self limit to ~1 tps.
 
 
+@pytest.mark.integration()
 def test_prompt_with_image_structured_output(session):
     """Test prompt function with image input and structured output."""
     import numpy as np
@@ -359,8 +304,7 @@ def test_prompt_with_image_structured_output(session):
     df = df.with_column(
         "analysis",
         prompt(
-            daft.col("question"),
-            input_image=daft.col("image"),
+            [daft.col("question"), daft.col("image")],
             return_format=ImageAnalysis,
         ),
     )
@@ -376,5 +320,106 @@ def test_prompt_with_image_structured_output(session):
         assert len(analysis["description"]) > 0
         # Check if "blue" appears in the dominant color (case-insensitive)
         assert "#0000ff" in analysis["dominant_color"].lower()
+
+    time.sleep(1)  # self limit to ~1 tps.
+
+
+@pytest.mark.integration()
+def test_prompt_with_text_document(session):
+    """Test prompt function with text file input."""
+    import tempfile
+
+    # Create a simple text file
+    with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w") as tmp:
+        tmp.write("This is a test document about artificial intelligence and machine learning.")
+        temp_path = tmp.name
+
+    try:
+        df = daft.from_pydict(
+            {
+                "question": [
+                    "Summarize this document in one sentence.",
+                ],
+                "document_path": [temp_path],
+            }
+        )
+
+        df = df.with_column(
+            "answer",
+            prompt(
+                [daft.col("question"), daft.col("document_path")],
+            ),
+        )
+
+        answers = df.to_pydict()["answer"]
+
+        # Basic sanity checks
+        assert len(answers) == 1
+        for answer in answers:
+            assert isinstance(answer, str)
+            assert len(answer) > 0
+            # Check if relevant keywords appear in the answer (case-insensitive)
+            answer_lower = answer.lower()
+            assert (
+                "artificial intelligence" in answer_lower or "machine learning" in answer_lower or "ai" in answer_lower
+            )
+
+    finally:
+        import os
+
+        os.unlink(temp_path)
+
+    time.sleep(1)  # self limit to ~1 tps.
+
+
+@pytest.mark.integration()
+def test_prompt_with_mixed_image_and_document(session):
+    """Test prompt function with both image and document inputs."""
+    import tempfile
+
+    import numpy as np
+
+    # Create a red square image
+    red_square = np.zeros((100, 100, 3), dtype=np.uint8)
+    red_square[:, :, 0] = 255  # Red channel
+
+    # Create a simple text file
+    with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w") as tmp:
+        tmp.write("This document describes a red colored object.")
+        temp_path = tmp.name
+
+    try:
+        df = daft.from_pydict(
+            {
+                "question": [
+                    "Does the image match the description in the document?",
+                ],
+                "image": [red_square],
+                "document_path": [temp_path],
+            }
+        )
+
+        df = df.with_column(
+            "answer",
+            prompt(
+                [daft.col("question"), daft.col("image"), daft.col("document_path")],
+            ),
+        )
+
+        answers = df.to_pydict()["answer"]
+
+        # Basic sanity checks
+        assert len(answers) == 1
+        for answer in answers:
+            assert isinstance(answer, str)
+            assert len(answer) > 0
+            # Check if answer indicates a match or mentions red color (case-insensitive)
+            answer_lower = answer.lower()
+            assert "yes" in answer_lower or "match" in answer_lower or "red" in answer_lower
+
+    finally:
+        import os
+
+        os.unlink(temp_path)
 
     time.sleep(1)  # self limit to ~1 tps.

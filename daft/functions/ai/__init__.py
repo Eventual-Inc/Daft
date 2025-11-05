@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from daft import (
     DataType,
@@ -122,7 +122,7 @@ def embed_text(
 
     # Decorate the __call__ method with @daft.method to specify return_dtype
     _TextEmbedderExpression.__call__ = method.batch(  # type: ignore[method-assign]
-        method=_TextEmbedderExpression.__call__, return_dtype=text_embedder.get_dimensions().dtype
+        method=_TextEmbedderExpression.__call__, return_dtype=text_embedder.get_dimensions().as_dtype()
     )
     wrapped_cls = daft_cls(
         _TextEmbedderExpression,
@@ -203,7 +203,7 @@ def embed_image(
 
     # Decorate the __call__ method with @daft.method to specify return_dtype
     _ImageEmbedderExpression.__call__ = method.batch(  # type: ignore[method-assign] # type: ignore[method-assign] # type: ignore[method-assign]
-        method=_ImageEmbedderExpression.__call__, return_dtype=image_embedder.get_dimensions().dtype
+        method=_ImageEmbedderExpression.__call__, return_dtype=image_embedder.get_dimensions().as_dtype()
     )
 
     wrapped_cls = daft_cls(
@@ -403,8 +403,7 @@ def classify_image(
 
 
 def prompt(
-    input_text: Expression,
-    input_image: Expression | None = None,
+    messages: list[Expression] | Expression,
     return_format: BaseModel | None = None,
     *,
     system_message: str | None = None,
@@ -415,11 +414,13 @@ def prompt(
     """Returns an expression that prompts a large language model using the specified model and provider.
 
     Args:
-        input_text (Expression): The input text column expression.
-        input_image (Expression | None): The input image column expression.
-        return_format (BaseModel | None): The return format for the prompt.
+        messages (list[Expression] | Expression): The list of messages to prompt the model with. Each expression can be either:
+            - Plain text strings (always treated as input_text)
+            - Image data (numpy arrays, bytes, or File objects - detected by MIME type)
+            - Files (PDF, TXT, HTML, audio, video, etc.) as bytes or File objects (detected by MIME type)
+        return_format (BaseModel | None): The return format for the prompt. Use a Pydantic model for structured outputs.
         system_message (str | None): The system message for the prompt.
-        provider (str | Provider | None): The provider to use for the prompt.
+        provider (str | Provider | None): The provider to use for the prompt (default: "openai").
         model (str | None): The model to use for the prompt.
         **options: Any additional options to pass for the prompt.
 
@@ -531,6 +532,38 @@ def prompt(
     # Load a PrompterDescriptor from the resolved provider
     prompter_descriptor = _resolve_provider(provider, "openai").get_prompter(model, **options)
 
+    # Check if this is a vLLM provider - if so, use PyExpr.vllm directly
+    from daft.ai.vllm.protocols.prompter import VLLMPrefixCachingPrompterDescriptor
+
+    if isinstance(prompter_descriptor, VLLMPrefixCachingPrompterDescriptor):
+        if return_format is not None:
+            raise ValueError("return_format is not supported for vLLM provider")
+
+        if system_message is not None:
+            raise ValueError("system_message is not supported for vLLM provider")
+
+        if isinstance(messages, list):
+            raise ValueError("vLLM provider does not support multiple messages")
+
+        return Expression._from_pyexpr(
+            messages._expr.vllm(
+                prompter_descriptor.model_name,
+                prompter_descriptor.concurrency,
+                prompter_descriptor.gpus_per_actor,
+                prompter_descriptor.do_prefix_routing,
+                prompter_descriptor.max_buffer_size,
+                prompter_descriptor.min_bucket_size,
+                prompter_descriptor.prefix_match_threshold,
+                prompter_descriptor.load_balance_threshold,
+                prompter_descriptor.batch_size,
+                prompter_descriptor.engine_args,
+                prompter_descriptor.generate_args,
+            )
+        )
+
+    # For non-vLLM providers, use the standard UDF-based execution path
+    from daft.udf import method
+
     # Determine return dtype
     if return_format is not None:
         try:
@@ -559,4 +592,7 @@ def prompt(
     instance = wrapped_cls(prompter_descriptor)
 
     # Call the instance (which calls __call__ method) with the messages expression
-    return instance(input_text, input_image)
+    if isinstance(messages, list):
+        return instance(*messages)
+    else:
+        return instance(messages)
