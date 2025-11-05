@@ -141,8 +141,7 @@ class DataType:
         import decimal
         import importlib
         import typing
-
-        from typing_extensions import is_typeddict
+        from typing import is_typeddict
 
         import daft.file
         import daft.series

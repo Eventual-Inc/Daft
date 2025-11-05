@@ -4,6 +4,8 @@ use std::sync::OnceLock;
 #[cfg(feature = "python")]
 use common_error::DaftResult;
 #[cfg(feature = "python")]
+use pyo3::PyErr;
+#[cfg(feature = "python")]
 use pyo3::{Python, types::PyAnyMethods};
 
 /// Global storage for Python async runtime task locals
@@ -49,7 +51,8 @@ fn get_or_init_task_locals() -> &'static pyo3_async_runtimes::TaskLocals {
 pub async fn execute_python_coroutine<F, R>(coroutine_builder: F) -> DaftResult<R>
 where
     F: FnOnce(Python) -> pyo3::PyResult<pyo3::Bound<'_, pyo3::PyAny>> + Send + 'static,
-    R: for<'py> pyo3::FromPyObject<'py> + Send + 'static,
+    R: for<'a, 'py> pyo3::FromPyObject<'a, 'py> + Send + 'static,
+    PyErr: for<'a, 'py> From<<R as pyo3::FromPyObject<'a, 'py>>::Error>,
 {
     // Execute the coroutine with the task_locals
     let task_locals = get_or_init_task_locals();
@@ -60,6 +63,6 @@ where
     .await?;
 
     // Extract the result
-    let extracted = Python::attach(|py| result.extract::<R>(py))?;
+    let extracted = Python::attach(|py| result.extract::<R>(py).map_err(PyErr::from))?;
     Ok(extracted)
 }

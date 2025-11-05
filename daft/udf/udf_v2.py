@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import functools
 import inspect
-import sys
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Coroutine, Generator, Iterator
@@ -12,6 +11,7 @@ from typing import (
     Any,
     Callable,
     Generic,
+    ParamSpec,
     TypeVar,
     get_args,
     get_origin,
@@ -20,12 +20,7 @@ from typing import (
 )
 
 if TYPE_CHECKING:
-    from typing import Literal
-
-if sys.version_info < (3, 10):
-    from typing_extensions import Concatenate, ParamSpec
-else:
-    from typing import Concatenate, ParamSpec
+    from typing import Concatenate, Literal
 
 from daft.daft import batch_udf, row_wise_udf
 from daft.datatype import DataType, DataTypeLike

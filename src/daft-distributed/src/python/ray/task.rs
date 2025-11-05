@@ -79,10 +79,9 @@ impl TaskResultHandle for RayTaskResultHandle {
         let coroutine = self.coroutine.take().unwrap();
         let worker_id = self.worker_id.clone();
 
-        let fut =
-            common_runtime::python::execute_python_coroutine(
-                move |py| Ok(coroutine.into_bound(py)),
-            );
+        let fut = common_runtime::python::execute_python_coroutine::<_, RayTaskResult>(move |py| {
+            Ok(coroutine.into_bound(py))
+        });
         async move {
             let ray_task_result = fut.await;
 

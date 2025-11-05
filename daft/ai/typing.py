@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
-
-from typing_extensions import TypeAlias
+from typing import TYPE_CHECKING, Any, Generic, TypeAlias, TypeVar
 
 from daft.datatype import DataType
 

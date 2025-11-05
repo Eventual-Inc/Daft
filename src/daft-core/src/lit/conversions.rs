@@ -1,7 +1,7 @@
 use common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
 #[cfg(feature = "python")]
-use pyo3::{Py, PyAny, PyClass, Python};
+use pyo3::{FromPyObject, Py, PyAny, PyClass, Python};
 
 use super::{FromLiteral, Literal, deserializer::LiteralDeserializer};
 #[cfg(feature = "python")]
@@ -166,7 +166,7 @@ macro_rules! impl_float_fromliteral {
 #[cfg(feature = "python")]
 fn try_extract_py_lit<T>(value: &Literal) -> Option<T>
 where
-    T: Clone + PyClass,
+    T: Clone + PyClass + for<'a, 'py> FromPyObject<'a, 'py>,
 {
     if let Literal::Python(py_value) = value {
         Python::attach(|py| py_value.0.extract::<T>(py).ok())

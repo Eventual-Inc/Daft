@@ -55,22 +55,23 @@ impl UDFActors {
             None => (0.0, 1.0, 0),
         };
 
-        let result: Vec<Py<PyAny>> = common_runtime::python::execute_python_coroutine(move |py| {
-            let ray_actor_pool_udf_module =
-                py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
-            ray_actor_pool_udf_module.call_method1(
-                pyo3::intern!(py, "start_udf_actors"),
-                (
-                    py_exprs,
-                    num_actors,
-                    gpu_request,
-                    cpu_request,
-                    memory_request,
-                    actor_ready_timeout,
-                ),
-            )
-        })
-        .await?;
+        let result =
+            common_runtime::python::execute_python_coroutine::<_, Vec<Py<PyAny>>>(move |py| {
+                let ray_actor_pool_udf_module =
+                    py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
+                ray_actor_pool_udf_module.call_method1(
+                    pyo3::intern!(py, "start_udf_actors"),
+                    (
+                        py_exprs,
+                        num_actors,
+                        gpu_request,
+                        cpu_request,
+                        memory_request,
+                        actor_ready_timeout,
+                    ),
+                )
+            })
+            .await?;
 
         let actors = result
             .into_iter()
