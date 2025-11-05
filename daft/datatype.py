@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import typing
 import warnings
-from types import GenericAlias, NoneType, UnionType
+from types import GenericAlias, UnionType
 from typing import TYPE_CHECKING, Any, Callable, Union
 
 from packaging.version import parse
@@ -127,16 +127,18 @@ class DataType:
         )
 
     @classmethod
-    def infer_from_type(cls, t: type | GenericAlias) -> DataType:
+    def infer_from_type(cls, t: type | GenericAlias | UnionType) -> DataType:
         """Infer Daft DataType from a Python type."""
         # NOTE: Make sure this matches the logic in `Literal::from_pyobj` in Rust
 
-        assert isinstance(t, (type, GenericAlias)), f"Input to DataType.infer_from_type must be a type, found: {t}"
+        assert isinstance(
+            t, (type, GenericAlias, UnionType)
+        ), f"Input to DataType.infer_from_type must be a type, found: {t}"
 
         import datetime
         import decimal
         import importlib
-        import typing
+        from types import NoneType
         from typing import is_typeddict
 
         import daft.file
@@ -145,6 +147,18 @@ class DataType:
         origin_or_none = typing.get_origin(t)
         origin: type = origin_or_none if origin_or_none is not None else t  # type: ignore
         args = typing.get_args(t)
+
+        def extract_non_none_type(tp: type | GenericAlias | UnionType) -> Any:
+            args = None
+
+            if isinstance(tp, UnionType):
+                args = typing.get_args(tp)
+            elif typing.get_origin(tp) is Union:
+                args = typing.get_args(tp)
+
+            if args and len(args) == 2 and (NoneType in args or type(None) in args):
+                return next(arg for arg in args if arg is not NoneType and arg is not type(None))
+            return tp
 
         def check_type(type_or_path: type | str) -> bool:
             """Check if `origin` is a subclass of `type_or_path`.
@@ -165,6 +179,8 @@ class DataType:
 
             return issubclass(origin, type_obj)
 
+        if isinstance(t, UnionType):
+            return cls.infer_from_type(extract_non_none_type(t))
         if check_type(type(None)):
             return cls.null()
         elif check_type(bool):
@@ -436,40 +452,12 @@ class DataType:
 
         Internal use only.
         """
-
-        def extract_non_none_type(tp: Any) -> Any:
-            args = None
-
-            if isinstance(tp, UnionType):
-                args = typing.get_args(tp)
-            elif typing.get_origin(tp) is Union:
-                args = typing.get_args(tp)
-
-            if args and len(args) == 2 and (NoneType in args or type(None) in args):
-                return next(arg for arg in args if arg is not NoneType and arg is not type(None))
-            return tp
-
-        def is_optional(tp: Any) -> bool:
-            args = None
-            if isinstance(tp, UnionType):
-                args = typing.get_args(tp)
-                return len(args) == 2 and NoneType in args
-
-            if typing.get_origin(tp) is Union:
-                args = typing.get_args(tp)
-                return len(args) == 2 and type(None) in args
-
-            return False
-
         if isinstance(user_provided_type, cls):
             return user_provided_type
         elif isinstance(user_provided_type, str):
             return cls.from_sql(user_provided_type)
-        elif isinstance(user_provided_type, (type, GenericAlias)):
+        elif isinstance(user_provided_type, (type, GenericAlias, UnionType)):
             return cls.infer_from_type(user_provided_type)
-        # since all of our types are nullable, we can infer the type from anything that is T | None
-        elif is_optional(user_provided_type):
-            return cls.infer_from_type(extract_non_none_type(user_provided_type))
 
         else:
             raise TypeError("DataType._infer expects a DataType, string, or type")
