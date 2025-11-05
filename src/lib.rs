@@ -33,6 +33,11 @@ pub static malloc_conf: Option<&'static libc::c_char> = Some(unsafe {
     .y
 });
 
+#[cfg(coverage)]
+unsafe extern "C" {
+    fn __llvm_profile_write_file() -> libc::c_int;
+}
+
 #[cfg(feature = "python")]
 pub mod pylib {
     use std::sync::LazyLock;
@@ -40,6 +45,9 @@ pub mod pylib {
     use common_logging::GLOBAL_LOGGER;
     use common_tracing::init_opentelemetry_providers;
     use pyo3::prelude::*;
+
+    #[cfg(coverage)]
+    use crate::__llvm_profile_write_file;
 
     static LOG_RESET_HANDLE: LazyLock<pyo3_log::ResetHandle> = LazyLock::new(|| {
         let py_logger = Box::new(pyo3_log::Logger::default());
@@ -49,6 +57,21 @@ pub mod pylib {
         log::set_boxed_logger(Box::new(GLOBAL_LOGGER.clone())).unwrap();
         handle
     });
+
+    /// A Python-callable function that flushes LLVM coverage data.
+    /// Call this from Python to force writing the current process's .profraw file.
+    ///
+    /// ```python
+    /// import my_pyo3_lib
+    /// my_pyo3_lib.flush_coverage()
+    /// ``
+    #[cfg(coverage)]
+    #[pyfunction]
+    pub fn flush_coverage() {
+        unsafe {
+            __llvm_profile_write_file();
+        }
+    }
 
     #[pyfunction]
     pub fn version() -> &'static str {
@@ -152,6 +175,8 @@ pub mod pylib {
         m.add_wrapped(wrap_pyfunction!(refresh_logger))?;
         m.add_wrapped(wrap_pyfunction!(get_max_log_level))?;
         m.add_wrapped(wrap_pyfunction!(set_compute_runtime_num_worker_threads))?;
+        #[cfg(coverage)]
+        m.add_wrapped(wrap_pyfunction!(flush_coverage))?;
 
         daft_dashboard::register_modules(m)?;
         daft_cli::register_modules(m)?;

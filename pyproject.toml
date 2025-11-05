@@ -244,6 +244,3 @@ workspace = true
 
 [tool.uv.workspace]
 members = ["daft_dashboard"]
-
-[tool.coverage.run]
-patch = ["subprocess"]

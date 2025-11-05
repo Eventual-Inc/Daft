@@ -81,14 +81,24 @@ class RaySwordfishActor:
                 metas.append(PartitionMetadata.from_table(mp))
                 yield mp
             yield metas
-            try:
-                import coverage
 
-                current_coverage = coverage.coverage.current()
-                if current_coverage is not None:
-                    current_coverage.save()
-            except ImportError:
-                pass
+    def flush_coverage_data(self) -> None:
+        """Flush both Python and Rust coverage data."""
+        try:
+            import coverage
+
+            current_coverage = coverage.coverage.current()
+            if current_coverage is not None:
+                current_coverage.save()
+        except ImportError:
+            pass
+
+        try:
+            from daft.daft import flush_coverage
+
+            flush_coverage()
+        except ImportError:
+            pass
 
 
 @ray.remote  # type: ignore[misc]
@@ -103,7 +113,11 @@ def get_boundaries_remote(
 
     mp = MicroPartition.concat(list(samples))
     nulls_first = nulls_first if nulls_first is not None else descending
-    merged_sorted = mp.sort(sort_by_exprs.to_column_expressions(), descending=descending, nulls_first=nulls_first)
+    merged_sorted = mp.sort(
+        sort_by_exprs.to_column_expressions(),
+        descending=descending,
+        nulls_first=nulls_first,
+    )
 
     result = merged_sorted.quantiles(num_quantiles)
     return result._micropartition
@@ -200,6 +214,7 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
             and node["NodeID"] not in existing_worker_ids
         ):
             actor = RaySwordfishActor.options(  # type: ignore
+                name=f"daft-swordfish-actor-{node['NodeID']}",
                 scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=node["NodeID"],
                     soft=False,
@@ -266,14 +281,6 @@ class RemoteFlotillaRunner:
         if next_partition_ref is None:
             self.curr_plans.pop(plan_id)
             self.curr_result_gens.pop(plan_id)
-            try:
-                import coverage
-
-                current_coverage = coverage.coverage.current()
-                if current_coverage is not None:
-                    current_coverage.save()
-            except ImportError:
-                pass
             return None
 
         metadata_accessor = PartitionMetadataAccessor.from_metadata_list(
@@ -285,6 +292,23 @@ class RemoteFlotillaRunner:
             metadata_idx=0,
         )
         return materialized_result
+
+    def flush_coverage_data(self) -> None:
+        """Flush both Python and Rust coverage data."""
+        try:
+            import coverage
+
+            current_coverage = coverage.coverage.current()
+            if current_coverage is not None:
+                current_coverage.save()
+        except ImportError:
+            pass
+        try:
+            from daft.daft import flush_coverage
+
+            flush_coverage()
+        except ImportError:
+            pass
 
 
 FLOTILLA_RUNNER_NAMESPACE = "daft"
