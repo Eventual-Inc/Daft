@@ -331,8 +331,6 @@ class PostgresCatalog(Catalog):
                 try:
                     cur.execute(psycopg.sql.SQL("DROP SCHEMA {}").format(quoted_schema))
                     conn.commit()
-                except psycopg.errors.UndefinedObject:
-                    raise NotFoundError(f"Namespace {identifier} not found")
                 except psycopg.Error as e:
                     raise ValueError(f"Failed to drop namespace {identifier}: {e}") from e
 
@@ -396,7 +394,7 @@ class PostgresCatalog(Catalog):
                     ).format(quoted_schema)
                 )
                 result = cur.fetchone()
-                return result is not None
+                return result[0] if result else False
 
     def _has_table(self, identifier: Identifier) -> bool:
         """Check if a table exists in PostgreSQL."""
@@ -427,7 +425,7 @@ class PostgresCatalog(Catalog):
                         ).format(psycopg.sql.Literal(table_name))
                     )
                 result = cur.fetchone()
-                return result is not None
+                return result[0] if result else False
 
     ###
     # list_*
