@@ -83,7 +83,7 @@ pub fn launch(noop_if_initialized: bool) -> PyResult<ConnectionHandle> {
         }
     }
 
-    let port = super::DEFAULT_SERVER_PORT; // TODO: Make configurable
+    let port = super::DEFAULT_SERVER_PORT;
     let (send, recv) = oneshot::channel::<()>();
 
     let handle = ConnectionHandle {
@@ -93,7 +93,12 @@ pub fn launch(noop_if_initialized: bool) -> PyResult<ConnectionHandle> {
     let _ = std::thread::spawn(move || {
         DASHBOARD_ENABLED.store(true, Ordering::SeqCst);
         let res = tokio_runtime().block_on(async {
-            super::launch_server(port, async move { recv.await.unwrap() }).await
+            super::launch_server(
+                std::net::IpAddr::V4(super::DEFAULT_SERVER_ADDR),
+                port,
+                async move { recv.await.unwrap() },
+            )
+            .await
         });
         DASHBOARD_ENABLED.store(false, Ordering::SeqCst);
         res
