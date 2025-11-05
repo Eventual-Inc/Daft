@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypedDict
 
 import transformers
 from transformers import pipeline
-from typing_extensions import Unpack
+
+if sys.version_info < (3, 11):
+    from typing_extensions import Unpack
+else:
+    from typing import Unpack
 
 from daft.ai.protocols import TextClassifier, TextClassifierDescriptor
 from daft.ai.utils import get_gpu_udf_options, get_torch_device

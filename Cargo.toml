@@ -292,7 +292,7 @@ ndarray = "0.16.1"
 num-derive = "0.4.2"
 num-format = "0.4.4"
 num-traits = "0.2"
-numpy = "0.26.0"
+numpy = "0.27"
 opentelemetry = {version = "0.31", features = ["trace", "metrics"]}
 opentelemetry-otlp = {version = "0.31", features = ["grpc-tonic"]}
 opentelemetry_sdk = "0.31"
@@ -367,15 +367,15 @@ features = ['async']
 path = "src/parquet2"
 
 [workspace.dependencies.pyo3]
-features = ["extension-module", "multiple-pymethods", "abi3-py39", "indexmap", "chrono", "chrono-tz"]
-version = "0.26"
+features = ["extension-module", "multiple-pymethods", "abi3-py310", "indexmap", "chrono", "chrono-tz"]
+version = "0.27.1"
 
 [workspace.dependencies.pyo3-async-runtimes]
 features = ["attributes", "tokio-runtime"]
-version = "0.26"
+version = "0.27"
 
 [workspace.dependencies.pyo3-log]
-version = "0.13.1"
+version = "0.13"
 
 [workspace.dependencies.serde]
 features = ["derive", "rc"]

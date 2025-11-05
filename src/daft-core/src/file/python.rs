@@ -27,8 +27,10 @@ impl<'py> IntoPyObject<'py> for FileReference {
     }
 }
 
-impl<'py> FromPyObject<'py> for FileReference {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'_, 'py> for FileReference {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, 'py, PyAny>) -> Result<Self, Self::Error> {
         let tuple = ob.extract::<Bound<'py, PyTuple>>()?;
         let media_type = tuple.get_item(0)?.extract::<MediaType>()?;
         let first = tuple.get_item(1)?;

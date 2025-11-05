@@ -78,7 +78,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.9', '3.12']
+        python-version: ['3.10', '3.13']
         daft-runner: [ray, native]
         pyarrow-version: [8.0.0, 19.0.1]
         os: [ubuntu-latest, macos-latest]
@@ -87,11 +87,11 @@ jobs:
         exclude:
         - daft-runner: ray
           pyarrow-version: 8.0.0
-        - python-version: '3.9'
+        - python-version: '3.10'
           os: macos-latest
         - pyarrow-version: 8.0.0
           os: macos-latest
-        - python-version: '3.12'
+        - python-version: '3.13'
           pyarrow-version: 8.0.0
         # don't run mac unit tests in PRs
         - os: macos-latest
@@ -220,7 +220,7 @@ jobs:
       package-name: daft
     strategy:
       matrix:
-        python-version: ['3.9']
+        python-version: ['3.10']
     steps:
     - uses: actions/checkout@v4
       with:
@@ -286,7 +286,7 @@ jobs:
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v6
       with:
-        python-version: 3.9
+        python-version: '3.10'
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
@@ -357,7 +357,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.9']
+        python-version: ['3.10']
         daft-runner: [ray, native]
     steps:
     - name: Free Disk Space (Ubuntu) # only run on ubuntu
@@ -450,7 +450,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.9']
+        python-version: ['3.10']
         daft-runner: [ray, native]
     # These permissions are needed to interact with GitHub's OIDC Token endpoint.
     # This is used in the step "Assume GitHub Actions AWS Credentials"
@@ -561,7 +561,7 @@ jobs:
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v6
       with:
-        python-version: 3.9
+        python-version: '3.10'
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
@@ -672,7 +672,7 @@ jobs:
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v6
       with:
-        python-version: 3.9
+        python-version: '3.10'
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
@@ -794,7 +794,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.9']
+        python-version: ['3.10']
         daft-runner: [ray, native]
     steps:
     - uses: actions/checkout@v4
@@ -866,7 +866,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.9']
+        python-version: ['3.10']
         daft-runner: [ray, native]
     steps:
     - uses: actions/checkout@v4
@@ -949,7 +949,7 @@ jobs:
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v6
       with:
-        python-version: 3.9
+        python-version: '3.10'
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
@@ -1255,7 +1255,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu, Windows]
-        python-version: ['3.9']
+        python-version: ['3.10']
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
@@ -1348,7 +1348,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      python-version: '3.9'
+      python-version: '3.10'
     steps:
     - uses: actions/checkout@v4
     - name: Setup Python and uv

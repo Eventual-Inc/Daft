@@ -3,10 +3,7 @@ from __future__ import annotations
 from typing import Any, overload, Callable, TypeVar, TYPE_CHECKING
 import sys
 
-if sys.version_info < (3, 10):
-    from typing_extensions import ParamSpec
-else:
-    from typing import ParamSpec
+from typing import ParamSpec
 
 from .legacy import udf, UDF
 from .udf_v2 import Func, mark_cls_method, wrap_cls

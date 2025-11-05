@@ -27,7 +27,7 @@ pub fn record_batch_from_arrow(
     for rb in batches {
         let pycolumns = rb.getattr(pyo3::intern!(py, "columns"))?;
         let columns = pycolumns
-            .downcast::<PyList>()?
+            .cast::<PyList>()?
             .into_iter()
             .map(|col| common_arrow_ffi::array_to_rust(py, col))
             .collect::<PyResult<Vec<_>>>()?;
