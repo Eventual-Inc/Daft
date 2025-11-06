@@ -1,2 +1,17 @@
 # CODEOWNERS for Daft
-* @Eventual-Inc/daft-maintainers
+
+# Default owners for everything in the repo
+* @Eventual-Inc/daft-punqs
+
+# ============================================================================
+# Custom I/O Modules
+# ============================================================================
+/daft/io/clickhouse/ @stayrascal @jay-ju @plotor @Eventual-Inc/daft-punqs
+/daft/io/lance/ @stayrascal @jay-ju @plotor @Eventual-Inc/daft-punqs
+/daft/io/mcap/ @stayrascal @jay-ju @plotor @Eventual-Inc/daft-punqs
+
+# ============================================================================
+# Execution
+# ============================================================================
+/src/daft-distributed/ @colin-ho @slade
+/src/daft-local-execution/ @colin-ho @slade
