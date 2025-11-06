@@ -17,7 +17,6 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
-    TextClause,
     Time,
     create_engine,
     inspect,
@@ -34,7 +33,7 @@ from daft.schema import Schema
 # from daft.sql.sql_connection import SQLConnection
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Iterator
 
     from sqlalchemy.engine import Connection
     from sqlalchemy.types import TypeEngine
@@ -146,11 +145,11 @@ class SQLDataSink(DataSink[WriteSqlResult]):
         try:
             for micropartition in micropartitions:
                 # Convert MicroPartition to PyArrow table
-                arrow_table = micropartition.to_arrow()
-                rows_written = arrow_table.num_rows
-                bytes_written = arrow_table.nbytes
+                micropartition_arrow_table = micropartition.to_arrow()
+                rows_written = micropartition_arrow_table.num_rows
+                bytes_written = micropartition_arrow_table.nbytes
 
-                insert_arrow_table(conn, table, arrow_table)
+                insert_arrow_table(conn, table, micropartition_arrow_table)
 
                 yield WriteResult(
                     result=result,
@@ -201,26 +200,20 @@ def create_table(table_name: str, conn: Connection, df_schema: Schema) -> None:
         raise ValueError(f"Table '{table_name}' already exists! Use mode='append' instead of mode='overwrite'")
 
     # Create the table
-    clause, params = query_create_table(table_name, df_schema)
-    conn.execute(clause, params)
+    table = query_create_table(table_name, df_schema)
+    table.create(bind=conn)
     conn.commit()
 
 
-def query_create_table(table_name: str, df_schema: Schema) -> tuple[TextClause, Mapping[str, Any]]:
-    """The SQLAlchemy query to create a table with the given name and schema."""
+def query_create_table(table_name: str, df_schema: Schema) -> Table:
+    """Build a SQLAlchemy Table definition for the given name and schema."""
     columns = [c for c in df_schema]
     if len(columns) == 0:
         raise ValueError("DataFrame schema is empty!")
 
-    clause = text("CREATE TABLE :table_name (:column_spec)")
-
-    column_spec: list[str] = [
-        f"{col.name} {arrow_type_to_sqlalchemy_type(col.dtype.to_arrow_dtype())}" for col in columns
-    ]
-
-    params = {"table_name": table_name, "column_spec": ", ".join(column_spec)}
-
-    return clause, params
+    arrow_schema = df_schema.to_pyarrow_schema()
+    metadata = MetaData()
+    return Table(table_name, metadata, *arrow_schema_to_sqlalchemy_columns(arrow_schema))
 
 
 def ensure_table_exists(table_name: str, conn: Connection, df_schema: Schema) -> None:
