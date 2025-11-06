@@ -127,6 +127,7 @@ pub struct DaftExecutionConfig {
     pub use_legacy_ray_runner: bool,
     pub min_cpu_per_task: f64,
     pub actor_udf_ready_timeout: usize,
+    pub maintain_order: bool,
 }
 
 impl Default for DaftExecutionConfig {
@@ -163,6 +164,7 @@ impl Default for DaftExecutionConfig {
             use_legacy_ray_runner: false,
             min_cpu_per_task: 0.5,
             actor_udf_ready_timeout: 120,
+            maintain_order: true,
         }
     }
 }
@@ -180,6 +182,7 @@ impl DaftExecutionConfig {
     const ENV_PARQUET_INFLATION_FACTOR: &'static str = "DAFT_PARQUET_INFLATION_FACTOR";
     const ENV_CSV_INFLATION_FACTOR: &'static str = "DAFT_CSV_INFLATION_FACTOR";
     const ENV_JSON_INFLATION_FACTOR: &'static str = "DAFT_JSON_INFLATION_FACTOR";
+    const ENV_DAFT_MAINTAIN_ORDER: &'static str = "DAFT_MAINTAIN_ORDER";
 
     #[must_use]
     pub fn from_env() -> Self {
@@ -230,6 +233,10 @@ impl DaftExecutionConfig {
             cfg.actor_udf_ready_timeout,
         ) {
             cfg.actor_udf_ready_timeout = val;
+        }
+
+        if let Some(val) = parse_bool_from_env(Self::ENV_DAFT_MAINTAIN_ORDER) {
+            cfg.maintain_order = val;
         }
 
         if let Some(val) = parse_number_from_env(
@@ -556,6 +563,28 @@ mod tests {
 
             unsafe {
                 std::env::remove_var(DaftExecutionConfig::ENV_DAFT_ACTOR_UDF_READY_TIMEOUT);
+            }
+        }
+
+        // ENV_DAFT_MAINTAIN_ORDER
+        {
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.maintain_order, true);
+
+            unsafe {
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_MAINTAIN_ORDER, "false");
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.maintain_order, false);
+
+            unsafe {
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_MAINTAIN_ORDER, "1");
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.maintain_order, true);
+
+            unsafe {
+                std::env::remove_var(DaftExecutionConfig::ENV_DAFT_MAINTAIN_ORDER);
             }
         }
     }
