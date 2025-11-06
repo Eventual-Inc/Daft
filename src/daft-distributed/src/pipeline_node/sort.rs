@@ -64,25 +64,27 @@ pub(crate) async fn get_partition_boundaries_from_samples(
         })
         .collect::<Vec<_>>();
 
-    let boundaries: daft_micropartition::python::PyMicroPartition =
-        common_runtime::python::execute_python_coroutine(move |py| {
-            let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
-            let py_object_refs = ray_partition_refs
-                .into_iter()
-                .map(|pr| pr.get_object_ref(py))
-                .collect::<Vec<_>>();
-            flotilla_module.call_method1(
-                pyo3::intern!(py, "get_boundaries"),
-                (
-                    py_object_refs,
-                    py_sort_by,
-                    descending,
-                    nulls_first,
-                    num_partitions,
-                ),
-            )
-        })
-        .await?;
+    let boundaries = common_runtime::python::execute_python_coroutine::<
+        _,
+        daft_micropartition::python::PyMicroPartition,
+    >(move |py| {
+        let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+        let py_object_refs = ray_partition_refs
+            .into_iter()
+            .map(|pr| pr.get_object_ref(py))
+            .collect::<Vec<_>>();
+        flotilla_module.call_method1(
+            pyo3::intern!(py, "get_boundaries"),
+            (
+                py_object_refs,
+                py_sort_by,
+                descending,
+                nulls_first,
+                num_partitions,
+            ),
+        )
+    })
+    .await?;
 
     let boundaries = boundaries
         .inner

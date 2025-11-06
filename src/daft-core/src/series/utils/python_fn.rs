@@ -50,7 +50,7 @@ fn python_binary_op_with_utilfn(
             .getattr(util_fn)?
             .call1((py_operator, left_pylist, right_pylist))?;
 
-        PyModule::import(py, pyo3::intern!(py, "daft.series"))?
+        Ok(PyModule::import(py, pyo3::intern!(py, "daft.series"))?
             .getattr(pyo3::intern!(py, "Series"))?
             .getattr(pyo3::intern!(py, "from_pylist"))?
             .call1((
@@ -60,7 +60,7 @@ fn python_binary_op_with_utilfn(
                 pyo3::intern!(py, "disallow"),
             ))?
             .getattr(pyo3::intern!(py, "_series"))?
-            .extract()
+            .extract::<PySeries>()?)
     })?
     .into();
     Ok(result_series)
@@ -82,7 +82,7 @@ pub fn py_membership_op_utilfn(lhs: &Series, rhs: &Series) -> DaftResult<Series>
             .getattr(pyo3::intern!(py, "python_list_membership_check"))?
             .call1((left_pylist, right_pylist))?;
 
-        PyModule::import(py, pyo3::intern!(py, "daft.series"))?
+        Ok(PyModule::import(py, pyo3::intern!(py, "daft.series"))?
             .getattr(pyo3::intern!(py, "Series"))?
             .getattr(pyo3::intern!(py, "from_pylist"))?
             .call1((
@@ -92,7 +92,7 @@ pub fn py_membership_op_utilfn(lhs: &Series, rhs: &Series) -> DaftResult<Series>
                 pyo3::intern!(py, "disallow"),
             ))?
             .getattr(pyo3::intern!(py, "_series"))?
-            .extract()
+            .extract::<PySeries>()?)
     })?
     .into();
 
@@ -143,7 +143,7 @@ pub fn py_between_op_utilfn(value: &Series, lower: &Series, upper: &Series) -> D
             .getattr(pyo3::intern!(py, "python_list_between_check"))?
             .call1((value_pylist, lower_pylist, upper_pylist))?;
 
-        PyModule::import(py, pyo3::intern!(py, "daft.series"))?
+        Ok(PyModule::import(py, pyo3::intern!(py, "daft.series"))?
             .getattr(pyo3::intern!(py, "Series"))?
             .getattr(pyo3::intern!(py, "from_pylist"))?
             .call1((
@@ -153,7 +153,7 @@ pub fn py_between_op_utilfn(value: &Series, lower: &Series, upper: &Series) -> D
                 pyo3::intern!(py, "disallow"),
             ))?
             .getattr(pyo3::intern!(py, "_series"))?
-            .extract()
+            .extract::<PySeries>()?)
     })?
     .into();
 

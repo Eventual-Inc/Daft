@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING, Any
 
-from typing_extensions import Unpack
+if sys.version_info < (3, 11):
+    from typing_extensions import Unpack
+else:
+    from typing import Unpack
 
 from daft.ai.provider import Provider
 
@@ -41,6 +45,7 @@ class OpenAIProvider(Provider):
         # Extract return_format from options if provided
         return_format = options.pop("return_format", None)
         system_message = options.pop("system_message", None)
+        use_chat_completions = options.pop("use_chat_completions", False)
 
         # Extract udf options from options if provided
         udf_options = options.pop("udf_options", None)
@@ -53,4 +58,5 @@ class OpenAIProvider(Provider):
             system_message=system_message,
             return_format=return_format,
             udf_options=udf_options,
+            use_chat_completions=use_chat_completions,
         )

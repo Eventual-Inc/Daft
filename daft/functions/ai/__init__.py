@@ -427,6 +427,10 @@ def prompt(
     Returns:
         Expression (String Expression): An expression representing the prompt result.
 
+    Note:
+        For OpenAI providers, you can pass `use_chat_completions=True` as an option to use the Chat Completions API
+        instead of the new Responses API.
+
     Examples:
         Basic Usage:
         >>> import daft

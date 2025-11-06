@@ -2,6 +2,7 @@
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
+    num::NonZeroUsize,
     str::FromStr,
     sync::Arc,
 };
@@ -219,6 +220,12 @@ pub fn udf(
 
     let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
 
+    let concurrency = concurrency
+        .map(|c| {
+            NonZeroUsize::new(c)
+                .ok_or_else(|| PyValueError::new_err("concurrency for udf must be non-zero"))
+        })
+        .transpose()?;
     Ok(PyExpr {
         expr: udf(
             name,
@@ -264,6 +271,14 @@ pub fn row_wise_udf(
             "Invalid on_error value. Must be one of: 'raise', 'log', or 'ignore'",
         ));
     }
+
+    let max_concurrency = max_concurrency
+        .map(|c| {
+            NonZeroUsize::new(c)
+                .ok_or_else(|| PyValueError::new_err("max_concurrency for udf must be non-zero"))
+        })
+        .transpose()?;
+
     Ok(PyExpr {
         expr: crate::python_udf::row_wise_udf(
             name,
@@ -299,12 +314,20 @@ pub fn batch_udf(
     on_error: Option<String>,
     original_args: Py<PyAny>,
     expr_args: Vec<PyExpr>,
-) -> PyExpr {
+) -> PyResult<PyExpr> {
     let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
     let on_error = on_error
         .and_then(|v| crate::functions::python::OnError::from_str(&v).ok())
         .unwrap_or_default();
-    PyExpr {
+
+    let max_concurrency = max_concurrency
+        .map(|c| {
+            NonZeroUsize::new(c)
+                .ok_or_else(|| PyValueError::new_err("max_concurrency for udf must be non-zero"))
+        })
+        .transpose()?;
+
+    Ok(PyExpr {
         expr: crate::python_udf::batch_udf(
             name,
             cls.into(),
@@ -321,7 +344,7 @@ pub fn batch_udf(
             on_error,
         )
         .into(),
-    }
+    })
 }
 
 /// Initializes all uninitialized UDFs in the expression
