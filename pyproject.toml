@@ -121,8 +121,8 @@ dev = [
   "unitycatalog==0.1.1",
   # SQL
   "sqlalchemy==2.0.36",
-  "connectorx==0.2.3; platform_system == \"Linux\" and platform_machine == \"aarch64\"",
-  "connectorx==0.3.3; platform_system != \"Linux\" or platform_machine != \"aarch64\"",
+  "connectorx>=0.4.4; platform_system == \"Linux\" and platform_machine == \"aarch64\"",
+  "connectorx>=0.4.4; platform_system != \"Linux\" or platform_machine != \"aarch64\"",
   "trino[sqlalchemy]==0.328.0",
   "PyMySQL==1.1.0",
   "psycopg2-binary==2.9.10",

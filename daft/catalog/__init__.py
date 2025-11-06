@@ -316,7 +316,7 @@ class Catalog(ABC):
     def from_postgres(connection_string: str, extensions: list[str] | None = None) -> Catalog:
         """Create a Daft Catalog from a PostgreSQL connection string.
 
-        .. note::
+        Note::
             This is an experimental feature and the API may change in the future.
 
         Args:
