@@ -422,10 +422,14 @@ def prompt(
         system_message (str | None): The system message for the prompt.
         provider (str | Provider | None): The provider to use for the prompt (default: "openai").
         model (str | None): The model to use for the prompt.
-        **options: Any additional options to pass for the prompt. These are prov
+        **options: Any additional options to pass for the prompt.
 
     Returns:
         Expression (String Expression): An expression representing the prompt result.
+
+    Note:
+        For OpenAI providers, you can pass `use_chat_completions=True` as an option to use the Chat Completions API
+        instead of the new Responses API.
 
     Examples:
         Basic Usage:
