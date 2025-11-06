@@ -59,7 +59,7 @@ if TYPE_CHECKING:
     from daft.dependencies import np
 
     Embedding: TypeAlias = np.typing.NDArray[Any]
-    Image: TypeAlias = np.ndarray[Any, Any]
+    Image: TypeAlias = np.typing.NDArray[Any]
 else:
     Embedding: TypeAlias = Any
     Image: TypeAlias = Any
