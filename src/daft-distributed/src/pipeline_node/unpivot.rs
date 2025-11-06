@@ -109,6 +109,7 @@ impl PipelineNodeImpl for UnpivotNode {
                 self_clone.value_name.clone(),
                 self_clone.config.schema.clone(),
                 StatsState::NotMaterialized,
+                hash_map! { "distributed_node_id".to_string() => self_clone.context.node_id.to_string() },
             )
         };
 

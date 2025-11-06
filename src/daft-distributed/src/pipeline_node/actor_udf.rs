@@ -199,6 +199,7 @@ impl ActorUDF {
 
         let batch_size = self.udf_properties.batch_size;
         let schema = self.config.schema.clone();
+        let node_id = self.node_id();
         append_plan_to_existing_task(
             submittable_task,
             &(self.clone() as Arc<dyn PipelineNodeImpl>),
@@ -210,6 +211,7 @@ impl ActorUDF {
                     memory_request,
                     schema.clone(),
                     StatsState::NotMaterialized,
+                    hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
                 )
             },
         )

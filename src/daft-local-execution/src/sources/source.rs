@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -94,12 +95,14 @@ impl SourceNode {
         plan_stats: StatsState,
         ctx: &RuntimeContext,
         output_schema: SchemaRef,
+        context: HashMap<String, String>,
     ) -> Self {
         let info = ctx.next_node_info(
             source.name().into(),
             source.op_type(),
             NodeCategory::Source,
             output_schema,
+            context,
         );
         let runtime_stats = source.make_runtime_stats();
         Self {

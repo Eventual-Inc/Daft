@@ -87,6 +87,7 @@ impl PipelineNodeImpl for MonotonicallyIncreasingIdNode {
         let schema = self.config.schema.clone();
 
         let next_starting_offset = AtomicU64::new(0);
+        let node_id = self.node_id();
 
         input_node.pipeline_instruction(self, move |input| {
             LocalPhysicalPlan::monotonically_increasing_id(
@@ -98,6 +99,7 @@ impl PipelineNodeImpl for MonotonicallyIncreasingIdNode {
                 ),
                 schema.clone(),
                 StatsState::NotMaterialized,
+                hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
             )
         })
     }

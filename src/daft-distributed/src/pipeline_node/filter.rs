@@ -76,8 +76,14 @@ impl PipelineNodeImpl for FilterNode {
         let input_node = self.child.clone().produce_tasks(plan_context);
 
         let predicate = self.predicate.clone();
+        let node_id = self.node_id();
         input_node.pipeline_instruction(self, move |input| {
-            LocalPhysicalPlan::filter(input, predicate.clone(), StatsState::NotMaterialized)
+            LocalPhysicalPlan::filter(
+                input,
+                predicate.clone(),
+                StatsState::NotMaterialized,
+                hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+            )
         })
     }
 }

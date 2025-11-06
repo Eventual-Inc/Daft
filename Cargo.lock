@@ -2624,6 +2624,7 @@ dependencies = [
 name = "daft-distributed"
 version = "0.3.0-dev0"
 dependencies = [
+ "bincode",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -2970,6 +2971,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "arc-swap",
  "async-trait",
+ "bincode",
  "capitalize",
  "common-daft-config",
  "common-display",

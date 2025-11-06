@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
@@ -99,6 +99,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         plan_stats: StatsState,
         ctx: &RuntimeContext,
         output_schema: SchemaRef,
+        context: HashMap<String, String>,
     ) -> Self {
         let name = op.name().into();
         let node_info = ctx.next_node_info(
@@ -106,6 +107,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
             op.op_type(),
             NodeCategory::BlockingSink,
             output_schema,
+            context,
         );
         let runtime_stats = op.make_runtime_stats();
 

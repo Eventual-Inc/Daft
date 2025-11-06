@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
@@ -92,12 +92,14 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         plan_stats: StatsState,
         ctx: &RuntimeContext,
         output_schema: SchemaRef,
+        context: HashMap<String, String>,
     ) -> Self {
         let info = ctx.next_node_info(
             Arc::from(intermediate_op.name()),
             intermediate_op.op_type(),
             NodeCategory::Intermediate,
             output_schema,
+            context,
         );
         let runtime_stats = intermediate_op.make_runtime_stats();
         let morsel_size_requirement = intermediate_op

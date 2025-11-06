@@ -97,6 +97,7 @@ impl VLLMNode {
             let output_column_name = self.output_column_name.clone();
             let schema = self.schema.clone();
             let llm_actors = llm_actors.clone();
+            let node_id = self.node_id();
 
             let modified_task = append_plan_to_existing_task(
                 task,
@@ -112,6 +113,7 @@ impl VLLMNode {
                         output_column_name.clone(),
                         schema.clone(),
                         StatsState::NotMaterialized,
+                        hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
                     )
                 },
             );

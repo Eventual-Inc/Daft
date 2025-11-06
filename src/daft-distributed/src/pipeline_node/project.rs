@@ -101,12 +101,14 @@ impl PipelineNodeImpl for ProjectNode {
 
         let projection = self.projection.clone();
         let schema = self.config.schema.clone();
+        let node_id = self.node_id();
         let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
             LocalPhysicalPlan::project(
                 input,
                 projection.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,
+                hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
             )
         };
 

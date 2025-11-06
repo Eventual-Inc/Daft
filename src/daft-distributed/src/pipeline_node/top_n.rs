@@ -123,6 +123,7 @@ impl PipelineNodeImpl for TopNNode {
                 self_clone.limit,
                 self_clone.offset,
                 StatsState::NotMaterialized,
+                hash_map! { "distributed_node_id".to_string() => self_clone.context.node_id.to_string() },
             )
         })
     }

@@ -82,6 +82,7 @@ impl GlobScanSourceNode {
             self.config.schema.clone(),
             StatsState::NotMaterialized,
             self.io_config.clone(),
+            hash_map! { "distributed_node_id".to_string() => self.node_id().to_string() },
         );
 
         let task = SwordfishTask::new(

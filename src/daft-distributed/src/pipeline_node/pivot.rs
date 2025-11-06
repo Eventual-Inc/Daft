@@ -114,6 +114,7 @@ impl PipelineNodeImpl for PivotNode {
                 false,
                 self_clone.config.schema.clone(),
                 StatsState::NotMaterialized,
+                hash_map! { "distributed_node_id".to_string() => self_clone.node_id().to_string() },
             )
         };
 

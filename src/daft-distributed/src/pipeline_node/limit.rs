@@ -158,6 +158,7 @@ impl LimitNode {
         limit_state: &mut LimitState,
         task_id_counter: &TaskIDCounter,
     ) -> DaftResult<Vec<SubmittableTask<SwordfishTask>>> {
+        let node_id = self.node_id();
         let mut downstream_tasks = vec![];
         for next_input in materialized_output.split_into_materialized_outputs() {
             let mut num_rows = next_input.num_rows()?;
@@ -189,6 +190,7 @@ impl LimitNode {
                                     num_rows as u64,
                                     Some(skip_num_rows as u64),
                                     StatsState::NotMaterialized,
+                                    hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
                                 )
                             } else {
                                 input
@@ -210,6 +212,7 @@ impl LimitNode {
                                 remaining as u64,
                                 Some(skip_num_rows as u64),
                                 StatsState::NotMaterialized,
+                                hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
                             )
                         },
                         None,
@@ -234,6 +237,7 @@ impl LimitNode {
         scheduler_handle: SchedulerHandle<SwordfishTask>,
         task_id_counter: TaskIDCounter,
     ) -> DaftResult<()> {
+        let node_id = self.node_id();
         let mut limit_state = LimitState::new(self.limit, self.offset);
         let mut max_concurrent_tasks = 1;
         let mut input_exhausted = false;
@@ -255,6 +259,7 @@ impl LimitNode {
                                 local_limit_per_task as u64,
                                 Some(0),
                                 StatsState::NotMaterialized,
+                                hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
                             )
                         },
                     );

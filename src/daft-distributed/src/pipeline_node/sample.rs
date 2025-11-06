@@ -91,6 +91,7 @@ impl PipelineNodeImpl for SampleNode {
         let fraction = self.fraction;
         let with_replacement = self.with_replacement;
         let seed = self.seed;
+        let node_id = self.node_id();
         let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
             LocalPhysicalPlan::sample(
                 input,
@@ -98,6 +99,7 @@ impl PipelineNodeImpl for SampleNode {
                 with_replacement,
                 seed,
                 StatsState::NotMaterialized,
+                hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
             )
         };
 

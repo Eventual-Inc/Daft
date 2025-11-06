@@ -93,11 +93,13 @@ impl ScanSourceNode {
         scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
         task_context: TaskContext,
     ) -> DaftResult<SwordfishTask> {
+        let node_id = self.node_id();
         let physical_scan = LocalPhysicalPlan::physical_scan(
             scan_tasks.clone(),
             self.pushdowns.clone(),
             self.config.schema.clone(),
             StatsState::NotMaterialized,
+            hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
         );
 
         let task = SwordfishTask::new(
@@ -112,7 +114,10 @@ impl ScanSourceNode {
     }
 
     fn make_empty_scan_task(&self, task_context: TaskContext) -> DaftResult<SwordfishTask> {
-        let transformed_plan = LocalPhysicalPlan::empty_scan(self.config.schema.clone());
+        let transformed_plan = LocalPhysicalPlan::empty_scan(
+            self.config.schema.clone(),
+            hash_map! { "distributed_node_id".to_string() => self.node_id().to_string() },
+        );
         let psets = HashMap::new();
         let task = SwordfishTask::new(
             task_context,

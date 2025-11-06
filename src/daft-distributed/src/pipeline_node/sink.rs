@@ -70,6 +70,7 @@ impl SinkNode {
         data_schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
         let file_schema = self.config.schema.clone();
+        let node_id = self.node_id();
         match self.sink_info.as_ref() {
             SinkInfo::OutputFileInfo(info) => LocalPhysicalPlan::physical_write(
                 input,
@@ -77,6 +78,7 @@ impl SinkNode {
                 file_schema,
                 info.clone(),
                 StatsState::NotMaterialized,
+                hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
             ),
             #[cfg(feature = "python")]
             SinkInfo::CatalogInfo(info) => match &info.catalog {
@@ -87,6 +89,7 @@ impl SinkNode {
                     data_schema,
                     file_schema,
                     StatsState::NotMaterialized,
+                    hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
                 ),
                 daft_logical_plan::CatalogType::Lance(info) => LocalPhysicalPlan::lance_write(
                     input,
@@ -94,6 +97,7 @@ impl SinkNode {
                     data_schema,
                     file_schema,
                     StatsState::NotMaterialized,
+                    hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
                 ),
             },
             #[cfg(feature = "python")]
@@ -102,6 +106,7 @@ impl SinkNode {
                 data_sink_info.clone(),
                 file_schema,
                 StatsState::NotMaterialized,
+                hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
             ),
         }
     }
@@ -117,6 +122,7 @@ impl SinkNode {
         let file_schema = self.config.schema.clone();
         let materialized_stream = input.materialize(scheduler);
         let materialized = materialized_stream.try_collect::<Vec<_>>().await?;
+        let node_id = self.node_id();
         let task = make_new_task_from_materialized_outputs(
             TaskContext::from((&self.context, task_id_counter.next())),
             materialized,
@@ -128,6 +134,7 @@ impl SinkNode {
                     file_schema,
                     info,
                     StatsState::NotMaterialized,
+                    hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
                 )
             },
             None,

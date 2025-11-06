@@ -6,6 +6,8 @@ use std::{
 };
 
 use common_error::DaftResult;
+use common_metrics::StatSnapshotRecv;
+use daft_logical_plan::LogicalPlanRef;
 
 use crate::{
     pipeline_node::NodeID,
@@ -28,6 +30,7 @@ pub(crate) enum TaskEvent {
     },
     Completed {
         context: TaskContext,
+        stats: Vec<(usize, StatSnapshotRecv)>,
     },
     Failed {
         context: TaskContext,
@@ -54,7 +57,7 @@ impl From<(TaskContext, &DaftResult<TaskStatus>)> for TaskEvent {
     fn from((context, task_result): (TaskContext, &DaftResult<TaskStatus>)) -> Self {
         match task_result {
             Ok(task_status) => match task_status {
-                TaskStatus::Success { .. } => Self::Completed { context },
+                TaskStatus::Success { stats, .. } => Self::Completed { context, stats: stats.clone() },
                 TaskStatus::Failed { error } => Self::Failed {
                     context,
                     reason: error.to_string(),

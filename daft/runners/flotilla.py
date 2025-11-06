@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from daft.daft import (
     DistributedPhysicalPlan,
@@ -41,6 +41,11 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+class SwordfishTaskMetadata(NamedTuple):
+    partition_metadatas: list[PartitionMetadata]
+    stats: bytes
+
+
 @ray.remote
 class RaySwordfishActor:
     """RaySwordfishActor is a ray actor that runs local physical plans on swordfish.
@@ -61,7 +66,7 @@ class RaySwordfishActor:
         exec_cfg: PyDaftExecutionConfig,
         psets: dict[str, list[ray.ObjectRef]],
         context: dict[str, str] | None,
-    ) -> AsyncGenerator[MicroPartition | list[PartitionMetadata], None]:
+    ) -> AsyncGenerator[MicroPartition | SwordfishTaskMetadata, None]:
         """Run a plan on swordfish and yield partitions."""
         # We import PyDaftContext inside the function because PyDaftContext is not serializable.
         from daft.daft import PyDaftContext
@@ -74,13 +79,16 @@ class RaySwordfishActor:
             native_executor = NativeExecutor()
             ctx = PyDaftContext()
             ctx._daft_execution_config = exec_cfg
-            async for partition in native_executor.run(plan, psets_mp, ctx, None, context):
+            result_handle = native_executor.run(plan, psets_mp, ctx, None, context)
+            async for partition in result_handle:
                 if partition is None:
                     break
                 mp = MicroPartition._from_pymicropartition(partition)
                 metas.append(PartitionMetadata.from_table(mp))
                 yield mp
-            yield metas
+
+            stats = await result_handle.finish()
+            yield SwordfishTaskMetadata(partition_metadatas=metas, stats=stats)
 
 
 @ray.remote  # type: ignore[misc]
@@ -126,16 +134,17 @@ class RaySwordfishTaskHandle:
         try:
             await self.result_handle.completed()
             results = [result for result in self.result_handle]
-            metadatas_ref = results.pop()
+            metadata_ref = results.pop()
 
-            metadatas = await metadatas_ref
-            assert len(results) == len(metadatas)
+            task_metadata: SwordfishTaskMetadata = await metadata_ref
+            assert len(results) == len(task_metadata.partition_metadatas)
 
             return RayTaskResult.success(
                 [
-                    RayPartitionRef(result, metadata.num_rows, metadata.size_bytes)
-                    for result, metadata in zip(results, metadatas)
-                ]
+                    RayPartitionRef(result, metadata.num_rows, metadata.size_bytes or 0)
+                    for result, metadata in zip(results, task_metadata.partition_metadatas)
+                ],
+                task_metadata.stats,
             )
         except (ray.exceptions.ActorDiedError, ray.exceptions.ActorUnschedulableError):
             return RayTaskResult.worker_died()

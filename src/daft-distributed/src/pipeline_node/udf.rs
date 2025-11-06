@@ -113,6 +113,7 @@ impl PipelineNodeImpl for UDFNode {
         let udf_properties = self.udf_properties.clone();
         let passthrough_columns = self.passthrough_columns.clone();
         let schema = self.config.schema.clone();
+        let node_id = self.context.node_id;
         let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
             LocalPhysicalPlan::udf_project(
                 input,
@@ -121,6 +122,7 @@ impl PipelineNodeImpl for UDFNode {
                 passthrough_columns.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,
+                hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
             )
         };
 

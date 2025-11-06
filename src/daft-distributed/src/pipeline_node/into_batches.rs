@@ -104,6 +104,7 @@ impl IntoBatchesNode {
                                 group_size,
                                 true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
                                 StatsState::NotMaterialized,
+                                hash_map! { "distributed_node_id".to_string() => self_clone.node_id().to_string() },
                             )
                         },
                         None,
@@ -128,6 +129,7 @@ impl IntoBatchesNode {
                         current_group_size,
                         true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
                         StatsState::NotMaterialized,
+                        hash_map! { "distributed_node_id".to_string() => self_clone.node_id().to_string() },
                     )
                 },
                 None,
@@ -161,12 +163,14 @@ impl PipelineNodeImpl for IntoBatchesNode {
     ) -> SubmittableTaskStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
         let self_clone = self.clone();
+        let node_id = self_clone.node_id();
         let local_into_batches_node = input_node.pipeline_instruction(self.clone(), move |input| {
             LocalPhysicalPlan::into_batches(
                 input,
                 self_clone.batch_size,
                 false, // No need strict batch sizes for the child tasks, as we coalesce them later on.
                 StatsState::NotMaterialized,
+                hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
             )
         });
 

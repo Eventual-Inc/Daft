@@ -132,6 +132,7 @@ impl PipelineNodeImpl for AggregateNode {
                     self_clone.aggs.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
+                    hash_map! { "distributed_node_id".to_string() => self_clone.node_id().to_string() },
                 )
             } else {
                 LocalPhysicalPlan::hash_aggregate(
@@ -140,6 +141,7 @@ impl PipelineNodeImpl for AggregateNode {
                     self_clone.group_by.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
+                    hash_map! { "distributed_node_id".to_string() => self_clone.node_id().to_string() },
                 )
             }
         })

@@ -16,7 +16,7 @@ from daft.event_loop import get_or_init_event_loop
 from daft.recordbatch import MicroPartition
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import AsyncIterator, Iterator
 
     from daft.context import DaftContext
     from daft.logical.builder import LogicalPlanBuilder
@@ -56,16 +56,19 @@ class NativeExecutor:
             part_id: [part.micropartition()._micropartition for part in parts] for part_id, parts in psets.items()
         }
 
-        async def run_executor() -> PyLocalPartitionStream:
-            return self._executor.run(
+        async def run_executor() -> AsyncIterator[PyMicroPartition]:
+            result_handle = self._executor.run(
                 local_physical_plan,
                 psets_mp,
                 ctx._ctx,
                 results_buffer_size,
                 context,
             )
+            async for batch in result_handle:
+                yield batch
+            _ = await result_handle.finish()
 
-        async_iter = LocalPartitionStream(get_or_init_event_loop().run(run_executor()))
+        async_iter = LocalPartitionStream(get_or_init_event_loop().run(run_executor()))  # type: ignore
         while True:
             part = get_or_init_event_loop().run(async_iter.__anext__())
             if part is None:

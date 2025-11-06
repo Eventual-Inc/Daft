@@ -80,12 +80,14 @@ impl PipelineNodeImpl for ExplodeNode {
         let input_node = self.child.clone().produce_tasks(plan_context);
         let to_explode = self.to_explode.clone();
         let schema = self.config.schema.clone();
+        let node_id = self.node_id();
         input_node.pipeline_instruction(self, move |input| {
             LocalPhysicalPlan::explode(
                 input,
                 to_explode.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,
+                hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
             )
         })
     }

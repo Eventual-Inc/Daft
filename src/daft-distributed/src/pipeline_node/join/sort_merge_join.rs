@@ -114,13 +114,13 @@ impl SortMergeJoinNode {
         let left_in_memory_source_plan = make_in_memory_scan_from_materialized_outputs(
             &left_partition_group,
             self.left.config().schema.clone(),
-            left_cache_key.clone(),
+            self.left.node_id(),
         )?;
 
         let right_in_memory_source_plan = make_in_memory_scan_from_materialized_outputs(
             &right_partition_group,
             self.right.config().schema.clone(),
-            right_cache_key.clone(),
+            self.right.node_id(),
         )?;
 
         let left_partition_refs = left_partition_group
@@ -147,6 +147,7 @@ impl SortMergeJoinNode {
             self.join_type,
             self.config.schema.clone(),
             StatsState::NotMaterialized,
+            hash_map! { "distributed_node_id".to_string() => self.node_id().to_string() },
         );
 
         // Create the task

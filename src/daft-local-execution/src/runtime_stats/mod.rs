@@ -14,7 +14,7 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::NodeID;
+use common_metrics::{NodeID, StatSnapshotSend};
 use common_runtime::RuntimeTask;
 use daft_context::Subscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
@@ -77,7 +77,7 @@ impl RuntimeStatsManagerHandle {
 pub struct RuntimeStatsManager {
     node_tx: Arc<mpsc::UnboundedSender<(usize, bool)>>,
     finish_tx: oneshot::Sender<()>,
-    stats_manager_task: RuntimeTask<()>,
+    stats_manager_task: RuntimeTask<Vec<(usize, StatSnapshotSend)>>,
 }
 
 impl std::fmt::Debug for RuntimeStatsManager {
@@ -211,6 +211,15 @@ impl RuntimeStatsManager {
                     log::error!("Failed to flush subscriber: {}", e);
                 }
             }
+
+            // Return the final stat snapshot for all nodes
+            let mut final_snapshot = Vec::new();
+            for node_id in &active_nodes {
+                let runtime_stats = &node_stats_map[node_id];
+                let event = runtime_stats.flush();
+                final_snapshot.push((*node_id, event));
+            }
+            final_snapshot
         };
 
         let task_handle = RuntimeTask::new(handle, event_loop);
@@ -225,13 +234,13 @@ impl RuntimeStatsManager {
         RuntimeStatsManagerHandle(self.node_tx.clone())
     }
 
-    pub async fn finish(self) {
+    pub async fn finish(self) -> Vec<(usize, StatSnapshotSend)> {
         self.finish_tx
             .send(())
             .expect("The finish_tx channel was closed");
         self.stats_manager_task
             .await
-            .expect("The finish_tx channel was closed");
+            .expect("The finish_tx channel was closed")
     }
 }
 

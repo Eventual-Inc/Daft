@@ -57,6 +57,7 @@ impl WindowNodePartitionOnly {
             StatsState::NotMaterialized,
             self.agg_exprs.clone(),
             self.base.aliases.clone(),
+            hash_map! { "distributed_node_id".to_string() => self.base.context.node_id.to_string() },
         )
     }
 
@@ -95,6 +96,7 @@ impl WindowNodePartitionAndOrderBy {
             StatsState::NotMaterialized,
             self.window_exprs.clone(),
             self.base.aliases.clone(),
+            hash_map! { "distributed_node_id".to_string() => self.base.context.node_id.to_string() },
         )
     }
 
@@ -145,6 +147,7 @@ impl WindowNodePartitionAndDynamicFrame {
             StatsState::NotMaterialized,
             self.agg_exprs.clone(),
             self.base.aliases.clone(),
+            hash_map! { "distributed_node_id".to_string() => self.base.context.node_id.to_string() },
         )
     }
 
@@ -195,6 +198,7 @@ impl WindowNodeOrderByOnly {
             StatsState::NotMaterialized,
             self.window_exprs.clone(),
             self.base.aliases.clone(),
+            hash_map! { "distributed_node_id".to_string() => self.base.context.node_id.to_string() },
         )
     }
 

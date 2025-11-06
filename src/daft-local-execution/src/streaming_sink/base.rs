@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
@@ -119,6 +119,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         plan_stats: StatsState,
         ctx: &RuntimeContext,
         output_schema: SchemaRef,
+        context: HashMap<String, String>,
     ) -> Self {
         let name = op.name().into();
         let node_info = ctx.next_node_info(
@@ -126,6 +127,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
             op.op_type(),
             NodeCategory::StreamingSink,
             output_schema,
+            context,
         );
         let runtime_stats = op.make_runtime_stats();
         let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();

@@ -98,8 +98,11 @@ impl InMemorySourceNode {
             None,
             None,
         );
-        let in_memory_source_plan =
-            LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
+        let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
+            info,
+            StatsState::NotMaterialized,
+            hash_map! { "distributed_node_id".to_string() => self.node_id().to_string() },
+        );
         let psets = HashMap::from([(self.info.cache_key.clone(), partition_refs.clone())]);
         let task = SwordfishTask::new(
             task_context,

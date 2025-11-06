@@ -123,13 +123,19 @@ impl IntoPartitionsNode {
             // Collect all the outputs from this task and coalesce them into a single task.
             let materialized_outputs = result??;
             let self_arc = self.clone();
+            let node_id = self_arc.node_id();
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((&self.context, task_id_counter.next())),
                 materialized_outputs,
                 self_arc.config.schema.clone(),
                 &(self_arc as Arc<dyn PipelineNodeImpl>),
                 move |input| {
-                    LocalPhysicalPlan::into_partitions(input, 1, StatsState::NotMaterialized)
+                    LocalPhysicalPlan::into_partitions(
+                        input,
+                        1,
+                        StatsState::NotMaterialized,
+                        hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+                    )
                 },
                 None,
             )?;
@@ -154,6 +160,7 @@ impl IntoPartitionsNode {
             tasks.len(),
             self.num_partitions
         );
+        let node_id = self.node_id();
 
         // Split partitions evenly with remainder handling
         // Example: 3 inputs, 10 partitions = 4, 3, 3
@@ -179,6 +186,7 @@ impl IntoPartitionsNode {
                         plan,
                         num_outputs,
                         StatsState::NotMaterialized,
+                        hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
                     )
                 },
             );

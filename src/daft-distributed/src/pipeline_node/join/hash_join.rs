@@ -99,6 +99,7 @@ impl HashJoinNode {
             self.join_type,
             self.config.schema.clone(),
             StatsState::NotMaterialized,
+            hash_map! { "distributed_node_id".to_string() => self.node_id().to_string() },
         );
 
         let mut psets = left_task.task().psets().clone();
