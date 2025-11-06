@@ -565,6 +565,7 @@ def test_postgres_table_with_different_data_types(test_db, write_mode) -> None:
         assert result_dict["list_string_col"] == [["a", "b"], ["c", "d"]]
         assert result_dict["list_int_col"] == [[1, 2, 3], [4, 5]]
         assert result_dict["fixed_size_list_col"] == [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+        # TODO(desmond): Support nested lists.
         # assert result_dict["list_of_list_col"] == [[[1.0, 2.0, 3.0]], [[4.0, 5.0, 6.0]]]
 
         # Struct
