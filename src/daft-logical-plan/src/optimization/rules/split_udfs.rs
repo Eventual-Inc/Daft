@@ -600,7 +600,7 @@ fn recursive_optimize_project(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{num::NonZeroUsize, sync::Arc};
 
     use common_error::DaftResult;
     use common_resource_request::ResourceRequest;
@@ -680,7 +680,7 @@ mod tests {
                 return_dtype: DataType::Utf8,
                 resource_request: Some(create_resource_request()),
                 batch_size: None,
-                concurrency: Some(8),
+                concurrency: Some(NonZeroUsize::new(8).unwrap()),
                 use_process: None,
             }),
             inputs,
