@@ -127,7 +127,6 @@ class OpenAIPrompter(Prompter):
                 return {"type": "input_image", "image_url": encoded_content}
         else:
             if self.use_chat_completions:
-                # Chat completions doesn't have a specific file type, treat as text
                 return {
                     "type": "file",
                     "file": {  # type: ignore[dict-item]
@@ -165,7 +164,6 @@ class OpenAIPrompter(Prompter):
     async def _prompt_with_responses(self, messages_list: list[dict[str, Any]]) -> Any:
         """Generate responses using the Responses API."""
         if self.return_format is not None:
-            # Use structured outputs with Pydantic model
             response = await self.llm.responses.parse(
                 model=self.model,
                 input=messages_list,
@@ -174,7 +172,6 @@ class OpenAIPrompter(Prompter):
             )
             return response.output_parsed
         else:
-            # Return plain text
             response = await self.llm.responses.create(
                 model=self.model,
                 input=messages_list,
