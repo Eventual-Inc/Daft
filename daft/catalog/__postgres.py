@@ -362,7 +362,7 @@ class PostgresCatalog(Catalog):
 
         quoted_schema = psycopg.sql.Literal(identifier[0])
 
-        with psycopg.connect(self._inner) as conn:
+        with postgres_connection(self._inner, self._extensions) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     psycopg.sql.SQL(
