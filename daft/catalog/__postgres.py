@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
@@ -104,32 +105,21 @@ def _daft_dtype_to_postgres_type(dtype: DataType, set_dimensions: bool = True) -
         return "timestamp"
     elif dtype.is_time():
         return "time"
-    elif dtype.is_duration():
-        return "interval"
-    elif dtype.is_interval():
-        return "interval"
-    elif dtype.is_list():
-        # PostgreSQL supports multi-dimensional arrays, but ADBC has issues with deeply nested types
-        # Use JSONB for nested lists to avoid ADBC compatibility issues
+    # TODO(desmond): Daft is currently unable to read INTERVAL types via read_sql()
+    # elif dtype.is_duration():
+    #     return "interval"
+    # TODO(desmond): Daft INTERVAL can't currently be casted correctly into timedelta objects.
+    # elif dtype.is_interval():
+    #     return "interval"
+    elif dtype.is_list() or dtype.is_fixed_size_list():
+        # TODO(desmond): We need to rework array types a little.
+        # PostgreSQL supports multi-dimensional arrays and arrays of fixed sizes. However they're all
+        # treated equally as a flat array and are simply documentation.
         try:
             inner_dtype = dtype.dtype
             inner_type = _daft_dtype_to_postgres_type(inner_dtype)
-            # If inner type contains arrays (multi-dimensional) or is JSONB, use JSONB
-            if "[]" in inner_type or inner_type == "JSONB":
-                return "jsonb"
-            else:
-                return f"{inner_type}[]"
-        except AttributeError:
-            pass
-        return "jsonb"  # Fallback for unknown inner types
-    elif dtype.is_fixed_size_list():
-        # PostgreSQL supports multi-dimensional arrays, but ADBC has issues with deeply nested types
-        # Use JSONB for nested lists to avoid ADBC compatibility issues
-        try:
-            inner_dtype = dtype.dtype
-            inner_type = _daft_dtype_to_postgres_type(inner_dtype)
-            # If inner type contains arrays (multi-dimensional) or is JSONB, use JSONB
-            if "[]" in inner_type or inner_type == "JSONB":
+            # If inner type contains a complex type, simply use JSONB.
+            if "[]" in inner_type or inner_type == "jsonb":
                 return "jsonb"
             else:
                 return f"{inner_type}[]"
@@ -137,50 +127,36 @@ def _daft_dtype_to_postgres_type(dtype: DataType, set_dimensions: bool = True) -
             pass
         return "jsonb"  # Fallback for unknown inner types
     elif dtype.is_struct():
-        # Use PostgreSQL composite types (ROW syntax) for structs
-        try:
-            fields = dtype.fields
-            if fields:
-                field_defs = []
-                for field_name, field_dtype in fields.items():
-                    field_type = _daft_dtype_to_postgres_type(field_dtype)
-                    # Quote field names to handle special characters and reserved words
-                    field_defs.append(f'"{field_name}" {field_type}')
-                return f"ROW({', '.join(field_defs)})"
-        except (AttributeError, TypeError):
-            pass
-        return "jsonb"  # Fallback
+        # TODO(desmond): PostgreSQL doesn't support ROW syntax in column definitions, we'd need to define new composite types.
+        # Use JSONB for now.
+        return "jsonb"
     elif dtype.is_map():
         return "jsonb"
     elif dtype.is_extension():
         return "jsonb"
-    elif dtype.is_image():
-        return "bytea"  # Images are binary data
-    elif dtype.is_fixed_shape_image():
-        return "bytea"  # Fixed shape images are also binary data
+    elif dtype.is_image() or dtype.is_fixed_shape_image():
+        # TODO(desmond): Under the hood Daft uses structs for images. We should update this as we update the struct story.
+        return "jsonb"
     elif dtype.is_embedding():
         # Use pgvector VECTOR type for embeddings.
         if set_dimensions:
             return f"vector({dtype.size})"
         else:
             return "vector"
-    elif dtype.is_tensor():
-        return "jsonb"  # Tensors are multi-dimensional arrays, JSONB can represent them
-    elif dtype.is_fixed_shape_tensor():
-        return "jsonb"  # Fixed shape tensors also map to JSONB
-    elif dtype.is_sparse_tensor():
-        return "jsonb"  # Sparse tensors have complex structure, JSONB is appropriate
-    elif dtype.is_fixed_shape_sparse_tensor():
-        return "jsonb"  # Fixed shape sparse tensors also use JSONB
+    elif (
+        dtype.is_tensor()
+        or dtype.is_fixed_shape_tensor()
+        or dtype.is_sparse_tensor()
+        or dtype.is_fixed_shape_sparse_tensor()
+    ):
+        # TODO(desmond): Tensors are multidimensional arrays. We should update this as we update the story for lists.
+        return "jsonb"
     elif dtype.is_python():
-        return "jsonb"  # Python objects are typically serialized
+        return "jsonb"
     elif dtype.is_decimal128():
-        try:
-            precision = dtype.precision
-            scale = dtype.scale
-            return f"decimal({precision},{scale})"
-        except AttributeError:
-            return "decimal(38,18)"  # Default precision and scale
+        # PostgreSQL supports decimal/numeric without parameters, or with precision,scale
+        # But psycopg type registry may not know about parameterized versions
+        return "numeric"
     elif dtype.is_null():
         return "text"  # Default to TEXT for null type
     else:
@@ -575,7 +551,18 @@ class PostgresTable(Table):
 
                     for batch in df.to_arrow_iter():
                         for row in batch.to_pylist():
-                            copy.write_row(list(row.values()))
+                            values = list(row.values())
+                            # Serialize complex types that are mapped to 'text' to JSON strings for binary COPY
+                            serialized_values = []
+                            for value, postgres_type in zip(values, types_to_set):
+                                if postgres_type in ("text", "jsonb") and not isinstance(
+                                    value, (str, int, float, bool, type(None))
+                                ):
+                                    # Complex types (lists, dicts, etc.) need to be JSON serialized.
+                                    serialized_values.append(json.dumps(value))
+                                else:
+                                    serialized_values.append(value)
+                            copy.write_row(serialized_values)
             conn.commit()
 
     def overwrite(self, df: DataFrame, **options: Any) -> None:
@@ -655,5 +642,16 @@ class PostgresTable(Table):
 
                     for batch in df.to_arrow_iter():
                         for row in batch.to_pylist():
-                            copy.write_row(list(row.values()))
+                            values = list(row.values())
+                            # Serialize complex types that are mapped to 'text' to JSON strings for binary COPY
+                            serialized_values = []
+                            for value, postgres_type in zip(values, types_to_set):
+                                if postgres_type in ("text", "jsonb") and not isinstance(
+                                    value, (str, int, float, bool, type(None))
+                                ):
+                                    # Complex types (lists, dicts, etc.) need to be JSON serialized.
+                                    serialized_values.append(json.dumps(value))
+                                else:
+                                    serialized_values.append(value)
+                            copy.write_row(serialized_values)
             conn.commit()
