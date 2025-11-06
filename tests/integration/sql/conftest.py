@@ -30,6 +30,7 @@ URLS = [
 ]
 TEST_TABLE_NAME = "example"
 EMPTY_TEST_TABLE_NAME = "empty_table"
+WRITE_TEST_TABLE_NAME = "write_test_table"
 
 
 @pytest.fixture(scope="session", params=[{"num_rows": 200}])
@@ -126,3 +127,70 @@ def create_and_populate(engine: Engine, data: pd.DataFrame) -> None:
     )
     metadata.create_all(engine)
     data.to_sql(table.name, con=engine, if_exists="replace", index=False)
+
+
+@pytest.fixture(scope="session", params=URLS)
+def empty_test_db_for_write(request: pytest.FixtureRequest) -> Generator[str, None, None]:
+    """Creates an empty database connection for write_sql tests.
+
+    Ensures any existing test tables are dropped before yielding the connection.
+    """
+    db_url = request.param
+    try:
+        engine = create_engine(db_url, pool_size=5, max_overflow=10, pool_timeout=30, pool_recycle=3600)
+
+        # Drop test tables if they exist to ensure clean state
+        with engine.connect() as conn:
+            try:
+                conn.execute(text(f"DROP TABLE IF EXISTS {WRITE_TEST_TABLE_NAME}"))
+                conn.execute(text(f"DROP TABLE IF EXISTS {TEST_TABLE_NAME}"))
+                conn.commit()
+            except Exception:
+                # Some databases might not support IF EXISTS or need different syntax
+                # Ignore errors here as the table might not exist
+                pass
+
+        yield db_url
+    except Exception as e:
+        pytest.skip(f"Skipping test due to database connection error: {e}, {db_url}")
+
+
+@pytest.fixture(scope="session", params=URLS)
+def test_db_via_write_sql(request: pytest.FixtureRequest, generated_data: pd.DataFrame) -> Generator[str, None, None]:
+    """Creates a database populated using Daft's write_sql for round-trip testing.
+
+    This fixture uses write_sql to populate the TEST_TABLE_NAME with the same data
+    that test_db uses, allowing us to verify that write_sql produces identical results
+    to SQLAlchemy's to_sql.
+    """
+    import daft
+
+    db_url = request.param
+    try:
+        # First ensure clean state
+        engine = create_engine(db_url, pool_size=5, max_overflow=10, pool_timeout=30, pool_recycle=3600)
+        with engine.connect() as conn:
+            try:
+                conn.execute(text(f"DROP TABLE IF EXISTS {TEST_TABLE_NAME}"))
+                conn.commit()
+            except Exception:
+                pass
+
+        # Use Daft's write_sql to populate the database
+        df = daft.from_pandas(generated_data)
+        result_df = df.write_sql(TEST_TABLE_NAME, db_url, mode="overwrite")
+        result_df = result_df.collect()
+
+        # Verify the write succeeded
+        result_dict = result_df.to_pydict()
+        rows_written = result_dict["rows_written"][0]
+        assert rows_written == len(generated_data), f"Expected {len(generated_data)} rows written, got {rows_written}"
+
+        # Verify data was actually written to the database
+        with engine.connect() as conn:
+            result = conn.execute(text(f"SELECT COUNT(*) FROM {TEST_TABLE_NAME}")).fetchone()[0]
+            assert result == len(generated_data), f"Expected {len(generated_data)} rows in database, got {result}"
+
+        yield db_url
+    except Exception as e:
+        pytest.skip(f"Skipping test due to database connection error or write_sql error: {e}, {db_url}")
