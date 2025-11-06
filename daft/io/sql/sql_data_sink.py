@@ -30,8 +30,6 @@ from daft.io.sink import WriteResult
 from daft.recordbatch.micropartition import MicroPartition
 from daft.schema import Schema
 
-# from daft.sql.sql_connection import SQLConnection
-
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -200,20 +198,16 @@ def create_table(table_name: str, conn: Connection, df_schema: Schema) -> None:
         raise ValueError(f"Table '{table_name}' already exists! Use mode='append' instead of mode='overwrite'")
 
     # Create the table
-    table = query_create_table(table_name, df_schema)
-    table.create(bind=conn)
-    conn.commit()
-
-
-def query_create_table(table_name: str, df_schema: Schema) -> Table:
-    """Build a SQLAlchemy Table definition for the given name and schema."""
     columns = [c for c in df_schema]
     if len(columns) == 0:
         raise ValueError("DataFrame schema is empty!")
 
     arrow_schema = df_schema.to_pyarrow_schema()
-    metadata = MetaData()
-    return Table(table_name, metadata, *arrow_schema_to_sqlalchemy_columns(arrow_schema))
+    columns = arrow_schema_to_sqlalchemy_columns(arrow_schema)
+    table = Table(table_name, MetaData(), *columns)
+
+    table.create(bind=conn)
+    conn.commit()
 
 
 def ensure_table_exists(table_name: str, conn: Connection, df_schema: Schema) -> None:
