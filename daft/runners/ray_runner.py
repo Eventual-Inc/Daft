@@ -1327,7 +1327,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         daft_execution_config = ctx.daft_execution_config
 
         # Optimize the logical plan.
-        builder = builder.optimize()
+        builder = builder.optimize(daft_execution_config)
 
         if daft_execution_config.use_legacy_ray_runner:
             if daft_execution_config.enable_aqe:

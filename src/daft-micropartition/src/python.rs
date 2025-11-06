@@ -1002,13 +1002,14 @@ pub fn read_json_into_py_table(
         .getattr(pyo3::intern!(py, "Schema"))?
         .getattr(pyo3::intern!(py, "_from_pyschema"))?
         .call1((schema,))?;
-    py.import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
+    Ok(py
+        .import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
         .getattr(pyo3::intern!(py, "read_json"))?
         .call1((uri, py_schema, storage_config, read_options))?
         .getattr(pyo3::intern!(py, "to_record_batch"))?
         .call0()?
         .getattr(pyo3::intern!(py, "_recordbatch"))?
-        .extract()
+        .extract()?)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1037,13 +1038,14 @@ pub fn read_csv_into_py_table(
         .import(pyo3::intern!(py, "daft.runners.partitioning"))?
         .getattr(pyo3::intern!(py, "TableParseCSVOptions"))?
         .call1((delimiter, header_idx, double_quote))?;
-    py.import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
+    Ok(py
+        .import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
         .getattr(pyo3::intern!(py, "read_csv"))?
         .call1((uri, py_schema, storage_config, parse_options, read_options))?
         .getattr(pyo3::intern!(py, "to_record_batch"))?
         .call0()?
         .getattr(pyo3::intern!(py, "_recordbatch"))?
-        .extract()
+        .extract()?)
 }
 
 pub fn read_parquet_into_py_table(
@@ -1073,13 +1075,14 @@ pub fn read_parquet_into_py_table(
         .import(pyo3::intern!(py, "daft.runners.partitioning"))?
         .getattr(pyo3::intern!(py, "TableParseParquetOptions"))?
         .call1((py_coerce_int96_timestamp_unit,))?;
-    py.import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
+    Ok(py
+        .import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
         .getattr(pyo3::intern!(py, "read_parquet"))?
         .call1((uri, py_schema, storage_config, read_options, parse_options))?
         .getattr(pyo3::intern!(py, "to_record_batch"))?
         .call0()?
         .getattr(pyo3::intern!(py, "_recordbatch"))?
-        .extract()
+        .extract()?)
 }
 
 pub fn read_sql_into_py_table(
@@ -1109,13 +1112,14 @@ pub fn read_sql_into_py_table(
         .import(pyo3::intern!(py, "daft.runners.partitioning"))?
         .getattr(pyo3::intern!(py, "TableReadOptions"))?
         .call1((num_rows, include_columns))?;
-    py.import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
+    Ok(py
+        .import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
         .getattr(pyo3::intern!(py, "read_sql"))?
         .call1((sql, conn, py_schema, read_options, py_predicate))?
         .getattr(pyo3::intern!(py, "to_record_batch"))?
         .call0()?
         .getattr(pyo3::intern!(py, "_recordbatch"))?
-        .extract()
+        .extract()?)
 }
 
 pub fn read_pyfunc_into_table_iter(
@@ -1160,7 +1164,7 @@ pub fn read_pyfunc_into_table_iter(
         .flat_map(move |iter| {
             std::iter::from_fn(move || {
                 Python::attach(|py| {
-                    iter.downcast_bound::<pyo3::types::PyIterator>(py)
+                    iter.cast_bound::<pyo3::types::PyIterator>(py)
                         .expect("Function must return an iterator of tables")
                         .clone()
                         .next()

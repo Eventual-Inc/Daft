@@ -19,7 +19,7 @@ use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, GlobScan, HashAggregate,
     HashJoin, InMemoryScan, IntoBatches, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId,
     PhysicalWrite, Pivot, Project, Sample, SamplingMethod, Sort, SortMergeJoin, TopN, UDFProject,
-    UnGroupedAggregate, Unpivot, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
+    UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
     WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
@@ -70,6 +70,7 @@ use crate::{
         base::StreamingSinkNode, concat::ConcatSink, limit::LimitSink,
         monotonically_increasing_id::MonotonicallyIncreasingIdSink,
         outer_hash_join_probe::OuterHashJoinProbeSink, sort_merge_join_probe::SortMergeJoinProbe,
+        vllm::VLLMSink,
     },
 };
 
@@ -246,6 +247,7 @@ pub fn viz_pipeline_mermaid(
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "python", pyo3::pyclass)]
+#[allow(dead_code)]
 pub struct RelationshipNode {
     pub id: usize,
     pub parent_id: Option<usize>,
@@ -253,6 +255,7 @@ pub struct RelationshipNode {
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "python", pyo3::pyclass)]
+#[allow(dead_code)]
 pub struct RelationshipInformation {
     pub ids: Vec<RelationshipNode>,
     pub plan_id: Arc<str>,
@@ -1448,6 +1451,30 @@ fn physical_plan_to_pipeline(
                 io_config.clone(),
             );
             SourceNode::new(source.arced(), stats_state.clone(), ctx, schema.clone()).boxed()
+        }
+        LocalPhysicalPlan::VLLMProject(VLLMProject {
+            input,
+            expr,
+            llm_actors,
+            output_column_name,
+            schema,
+            stats_state,
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
+            let vllm_sink = VLLMSink::new(
+                Arc::new(expr.clone()),
+                output_column_name.clone(),
+                llm_actors.clone(),
+                schema.clone(),
+            );
+            StreamingSinkNode::new(
+                Arc::new(vllm_sink),
+                vec![child_node],
+                stats_state.clone(),
+                ctx,
+                schema.clone(),
+            )
+            .boxed()
         }
     };
 

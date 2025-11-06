@@ -9,14 +9,13 @@ import io
 import multiprocessing
 import os
 import pathlib
-import sys
 import typing
 import warnings
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial, reduce
-from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypeVar, Union, overload
+from typing import TYPE_CHECKING, Any, Callable, Concatenate, Literal, Optional, ParamSpec, TypeVar, Union, overload
 
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
@@ -53,11 +52,6 @@ if TYPE_CHECKING:
     from daft.io.catalog import DataCatalogTable
     from daft.io.sink import WriteResultType
     from daft.unity_catalog import UnityCatalogTable
-
-if sys.version_info < (3, 10):
-    from typing_extensions import Concatenate, ParamSpec
-else:
-    from typing import Concatenate, ParamSpec
 
 from daft.schema import Schema
 
@@ -281,19 +275,19 @@ class DataFrame:
         print_to_file(builder.pretty_print(simple, format=format))
         if show_all:
             print_to_file("\n== Optimized Logical Plan ==\n")
-            builder = builder.optimize()
+            execution_config = get_context().daft_execution_config
+            builder = builder.optimize(execution_config)
             print_to_file(builder.pretty_print(simple))
             print_to_file("\n== Physical Plan ==\n")
             if get_or_create_runner().name != "native":
-                daft_execution_config = get_context().daft_execution_config
-                if daft_execution_config.use_legacy_ray_runner:
-                    physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
+                if execution_config.use_legacy_ray_runner:
+                    physical_plan_scheduler = builder.to_physical_plan_scheduler(execution_config)
                     print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
                 else:
                     from daft.daft import DistributedPhysicalPlan
 
                     distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
-                        builder._builder, daft_execution_config
+                        builder._builder, execution_config
                     )
                     if format == "ascii":
                         print_to_file(distributed_plan.repr_ascii(simple))
@@ -336,9 +330,8 @@ class DataFrame:
             10
         """
         # We need to run the optimizer since that could change the number of partitions
-        return (
-            self.__builder.optimize().to_physical_plan_scheduler(get_context().daft_execution_config).num_partitions()
-        )
+        execution_config = get_context().daft_execution_config
+        return self.__builder.optimize(execution_config).to_physical_plan_scheduler(execution_config).num_partitions()
 
     @DataframePublicAPI
     def schema(self) -> Schema:
@@ -1464,10 +1457,6 @@ class DataFrame:
               to ensure compatibility unless ``mode="overwrite"``.
           **kwargs: Additional keyword arguments to pass to the Lance writer.
 
-        Note:
-            `write_lance` requires python 3.9 or higher
-            This call is **blocking** and will execute the DataFrame when called
-
         Returns:
             DataFrame: A DataFrame containing metadata about the written Lance table, such as number of fragments, number of deleted rows, number of small files, and version.
 
@@ -1935,7 +1924,7 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
-            >>> df.summarize().show()
+            >>> df.summarize().show()  # doctest: +SKIP
             ╭────────┬────────┬────────┬────────────┬────────┬─────────────┬───────────────────────╮
             │ column ┆ type   ┆ min    ┆      …     ┆ count  ┆ count_nulls ┆ approx_count_distinct │
             │ ---    ┆ ---    ┆ ---    ┆            ┆ ---    ┆ ---         ┆ ---                   │

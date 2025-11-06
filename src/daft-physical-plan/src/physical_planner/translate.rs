@@ -588,6 +588,9 @@ pub(super) fn translate_single_logical_node(
         LogicalPlan::Window(_window) => Err(DaftError::NotImplemented(
             "Window functions are currently only supported on the native runner.".to_string(),
         )),
+        LogicalPlan::VLLMProject(..) => Err(DaftError::NotImplemented(
+            "VLLMProject is currently only supported on the native runner.".to_string(),
+        )),
     }?;
     // TODO(desmond): We can't perform this check for now because ScanTasks currently provide
     // different size estimations depending on when the approximation is computed. Once we fix

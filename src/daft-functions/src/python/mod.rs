@@ -35,6 +35,7 @@ impl PyScalarFunction {
             .map(|py| {
                 py.extract::<PyExpr>()
                     .map(|e| FunctionArg::unnamed(e.into()))
+                    .map_err(PyErr::from)
             })
             .collect::<PyResult<Vec<_>>>()?;
 
