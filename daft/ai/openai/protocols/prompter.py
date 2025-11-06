@@ -7,10 +7,12 @@ from typing import TYPE_CHECKING, Any
 from openai import AsyncOpenAI
 
 from daft.ai.protocols import Prompter, PrompterDescriptor
-from daft.ai.typing import Image, UDFOptions
+from daft.ai.typing import UDFOptions
+from daft.dependencies import np
 from daft.file import File
 
 if TYPE_CHECKING:
+    import numpy.typing as npt
     from pydantic import BaseModel
 
     from daft.ai.openai.typing import OpenAIProviderOptions
@@ -109,8 +111,8 @@ class OpenAIPrompter(Prompter):
             return self._build_image_message(encoded_content)
         return self._build_file_message(encoded_content)
 
-    @_process_message.register
-    def _process_image_message(self, msg: Image) -> dict[str, Any]:
+    @_process_message.register(np.ndarray)
+    def _process_image_message(self, msg: npt.NDArray[Any]) -> dict[str, Any]:
         """Handle numpy array messages (images)."""
         import base64
         import io
