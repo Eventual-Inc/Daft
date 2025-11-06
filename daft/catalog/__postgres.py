@@ -386,7 +386,7 @@ class PostgresCatalog(Catalog):
         else:
             return False
 
-        with psycopg.connect(self._inner) as conn:
+        with postgres_connection(self._inner, self._extensions) as conn:
             with conn.cursor() as cur:
                 if schema_name:
                     cur.execute(
