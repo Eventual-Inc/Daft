@@ -91,6 +91,7 @@ dev = [
   "pandas-stubs==2.2.2.240807",
   "xxhash>=3.0.0",
   "Pillow==10.4.0",
+  "reportlab",
   "opencv-python==4.10.0.84",
   "tiktoken==0.9.0",
   "duckdb==1.1.2",

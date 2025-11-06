@@ -729,8 +729,8 @@ def test_openai_prompter_with_file():
             assert len(messages) == 1
             assert isinstance(messages[0]["content"], list)
             assert messages[0]["content"][1]["type"] == "input_file"
-            assert "file_url" in messages[0]["content"][1]
-            assert messages[0]["content"][1]["file_url"].startswith("data:")
+            assert "file_data" in messages[0]["content"][1]
+            assert messages[0]["content"][1]["file_data"].startswith("data:")
         finally:
             import os
 
@@ -786,5 +786,289 @@ def test_openai_prompter_with_mixed_modalities():
             import os
 
             os.unlink(temp_path)
+
+    run_async(_test())
+
+
+# Tests with use_chat_completions=True
+
+
+def test_openai_prompter_chat_completions_plain_text():
+    """Test prompting with plain text using Chat Completions API."""
+
+    async def _test():
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_choice = Mock()
+        mock_message = Mock()
+        mock_message.content = "This is a test response."
+        mock_choice.message = mock_message
+        mock_response.choices = [mock_choice]
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        prompter = OpenAIPrompter(
+            provider_options={"api_key": "test-key"},
+            model="gpt-4o-mini",
+            use_chat_completions=True,
+        )
+        prompter.llm = mock_client
+
+        result = await prompter.prompt(("Hello, world!",))
+
+        assert result == "This is a test response."
+        mock_client.chat.completions.create.assert_called_once_with(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": [{"type": "text", "text": "Hello, world!"}]}],
+        )
+
+    run_async(_test())
+
+
+def test_openai_prompter_chat_completions_structured_output():
+    """Test prompting with structured output using Chat Completions API."""
+
+    async def _test():
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_choice = Mock()
+        mock_message = Mock()
+        expected_output = SimpleResponse(answer="Yes", confidence=0.95)
+        mock_message.parsed = expected_output
+        mock_choice.message = mock_message
+        mock_response.choices = [mock_choice]
+        mock_client.chat.completions.parse = AsyncMock(return_value=mock_response)
+
+        prompter = OpenAIPrompter(
+            provider_options={"api_key": "test-key"},
+            model="gpt-4o-mini",
+            return_format=SimpleResponse,
+            use_chat_completions=True,
+        )
+        prompter.llm = mock_client
+
+        result = await prompter.prompt(("Is this a test?",))
+
+        assert isinstance(result, SimpleResponse)
+        assert result.answer == "Yes"
+        assert result.confidence == 0.95
+        mock_client.chat.completions.parse.assert_called_once_with(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": [{"type": "text", "text": "Is this a test?"}]}],
+            response_format=SimpleResponse,
+        )
+
+    run_async(_test())
+
+
+def test_openai_prompter_chat_completions_with_system_message():
+    """Test Chat Completions API with system message."""
+
+    async def _test():
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_choice = Mock()
+        mock_message = Mock()
+        mock_message.content = "Response with system context."
+        mock_choice.message = mock_message
+        mock_response.choices = [mock_choice]
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        prompter = OpenAIPrompter(
+            provider_options={"api_key": "test-key"},
+            model="gpt-4o-mini",
+            system_message="You are a helpful assistant.",
+            use_chat_completions=True,
+        )
+        prompter.llm = mock_client
+
+        result = await prompter.prompt(("Hello!",))
+
+        assert result == "Response with system context."
+
+        # Verify system message was included
+        call_args = mock_client.chat.completions.create.call_args
+        messages = call_args.kwargs["messages"]
+        assert len(messages) == 2
+        assert messages[0]["role"] == "system"
+        assert messages[0]["content"] == "You are a helpful assistant."
+        assert messages[1]["role"] == "user"
+
+    run_async(_test())
+
+
+def test_openai_prompter_chat_completions_with_image():
+    """Test Chat Completions API with image (numpy array)."""
+
+    async def _test():
+        from daft.dependencies import np
+
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_choice = Mock()
+        mock_message = Mock()
+        mock_message.content = "This image shows a cat."
+        mock_choice.message = mock_message
+        mock_response.choices = [mock_choice]
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        prompter = OpenAIPrompter(
+            provider_options={"api_key": "test-key"},
+            model="gpt-4o-mini",
+            use_chat_completions=True,
+        )
+        prompter.llm = mock_client
+
+        # Create a dummy numpy array image
+        image = np.zeros((100, 100, 3), dtype=np.uint8)
+
+        result = await prompter.prompt(("What is in this image?", image))
+
+        assert result == "This image shows a cat."
+
+        # Verify that the call was made with both text and image
+        call_args = mock_client.chat.completions.create.call_args
+        assert call_args.kwargs["model"] == "gpt-4o-mini"
+        messages = call_args.kwargs["messages"]
+        assert len(messages) == 1
+        assert messages[0]["role"] == "user"
+        assert isinstance(messages[0]["content"], list)
+        assert messages[0]["content"][0]["type"] == "text"
+        assert messages[0]["content"][0]["text"] == "What is in this image?"
+        assert messages[0]["content"][1]["type"] == "image_url"
+        assert "image_url" in messages[0]["content"][1]
+        assert messages[0]["content"][1]["image_url"]["url"].startswith("data:image/png;base64,")
+
+    run_async(_test())
+
+
+def test_openai_prompter_chat_completions_with_generation_config():
+    """Test Chat Completions API with generation config parameters."""
+
+    async def _test():
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_choice = Mock()
+        mock_message = Mock()
+        mock_message.content = "Response with custom config."
+        mock_choice.message = mock_message
+        mock_response.choices = [mock_choice]
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        prompter = OpenAIPrompter(
+            provider_options={"api_key": "test-key"},
+            model="gpt-4o-mini",
+            generation_config={"temperature": 0.8, "max_tokens": 50},
+            use_chat_completions=True,
+        )
+        prompter.llm = mock_client
+
+        result = await prompter.prompt(("Tell me a story",))
+
+        assert result == "Response with custom config."
+        mock_client.chat.completions.create.assert_called_once_with(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": [{"type": "text", "text": "Tell me a story"}]}],
+            temperature=0.8,
+            max_tokens=50,
+        )
+
+    run_async(_test())
+
+
+def test_openai_prompter_chat_completions_complex_structured_output():
+    """Test Chat Completions API with complex Pydantic model."""
+
+    async def _test():
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_choice = Mock()
+        mock_message = Mock()
+        expected_output = ComplexResponse(
+            summary="Test summary",
+            key_points=["Point 1", "Point 2", "Point 3"],
+            sentiment="positive",
+        )
+        mock_message.parsed = expected_output
+        mock_choice.message = mock_message
+        mock_response.choices = [mock_choice]
+        mock_client.chat.completions.parse = AsyncMock(return_value=mock_response)
+
+        prompter = OpenAIPrompter(
+            provider_options={"api_key": "test-key"},
+            model="gpt-4o-mini",
+            return_format=ComplexResponse,
+            use_chat_completions=True,
+        )
+        prompter.llm = mock_client
+
+        result = await prompter.prompt(("Summarize this text",))
+
+        assert isinstance(result, ComplexResponse)
+        assert result.summary == "Test summary"
+        assert len(result.key_points) == 3
+        assert result.sentiment == "positive"
+
+    run_async(_test())
+
+
+def test_openai_provider_get_prompter_with_use_chat_completions():
+    """Test that the provider accepts use_chat_completions parameter."""
+    provider = OpenAIProvider(api_key="test-key")
+    descriptor = provider.get_prompter(model="gpt-4o-mini", use_chat_completions=True)
+
+    assert isinstance(descriptor, OpenAIPrompterDescriptor)
+    assert descriptor.use_chat_completions is True
+
+    # Test instantiation
+    prompter = descriptor.instantiate()
+    assert isinstance(prompter, OpenAIPrompter)
+    assert prompter.use_chat_completions is True
+
+
+def test_openai_prompter_chat_completions_with_image_structured_output():
+    """Test Chat Completions API with image and structured output."""
+
+    async def _test():
+        from daft.dependencies import np
+
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_choice = Mock()
+        mock_message = Mock()
+        expected_output = ComplexResponse(
+            summary="Image of a cat",
+            key_points=["fluffy", "orange", "sleeping"],
+            sentiment="positive",
+        )
+        mock_message.parsed = expected_output
+        mock_choice.message = mock_message
+        mock_response.choices = [mock_choice]
+        mock_client.chat.completions.parse = AsyncMock(return_value=mock_response)
+
+        prompter = OpenAIPrompter(
+            provider_options={"api_key": "test-key"},
+            model="gpt-4o-mini",
+            return_format=ComplexResponse,
+            use_chat_completions=True,
+        )
+        prompter.llm = mock_client
+
+        # Create a dummy numpy array image
+        image = np.zeros((100, 100, 3), dtype=np.uint8)
+
+        result = await prompter.prompt(("Describe this image", image))
+
+        assert isinstance(result, ComplexResponse)
+        assert result.summary == "Image of a cat"
+        assert len(result.key_points) == 3
+        assert result.sentiment == "positive"
+
+        # Verify the call was made with image
+        call_args = mock_client.chat.completions.parse.call_args
+        messages = call_args.kwargs["messages"]
+        assert len(messages) == 1
+        assert isinstance(messages[0]["content"], list)
+        assert messages[0]["content"][0]["type"] == "text"
+        assert messages[0]["content"][1]["type"] == "image_url"
 
     run_async(_test())
