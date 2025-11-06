@@ -83,7 +83,6 @@ pub enum WriteFormat {
     PartitionedIceberg,
     Deltalake,
     PartitionedDeltalake,
-    Lance,
     DataSink(String),
 }
 
@@ -192,7 +191,6 @@ impl BlockingSink for WriteSink {
             WriteFormat::PartitionedIceberg => "PartitionedIceberg Write".into(),
             WriteFormat::Deltalake => "Deltalake Write".into(),
             WriteFormat::PartitionedDeltalake => "PartitionedDeltalake Write".into(),
-            WriteFormat::Lance => "Lance Write".into(),
             WriteFormat::DataSink(name) => name.clone().into(),
         }
     }

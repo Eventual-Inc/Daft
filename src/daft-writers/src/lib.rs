@@ -17,8 +17,6 @@ pub mod test;
 #[cfg(feature = "python")]
 mod catalog;
 #[cfg(feature = "python")]
-mod lance;
-#[cfg(feature = "python")]
 mod pyarrow;
 #[cfg(feature = "python")]
 mod sink;
@@ -40,8 +38,6 @@ use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use file::TargetFileSizeWriterFactory;
 use ipc::IPCWriterFactory;
-#[cfg(feature = "python")]
-pub use lance::make_lance_writer_factory;
 use partition::PartitionedWriterFactory;
 use physical::PhysicalWriterFactory;
 #[cfg(feature = "python")]

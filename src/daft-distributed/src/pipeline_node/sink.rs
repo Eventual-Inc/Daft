@@ -89,13 +89,6 @@ impl SinkNode {
                     file_schema,
                     StatsState::NotMaterialized,
                 ),
-                daft_logical_plan::CatalogType::Lance(info) => LocalPhysicalPlan::lance_write(
-                    input,
-                    info.clone(),
-                    data_schema,
-                    file_schema,
-                    StatsState::NotMaterialized,
-                ),
             },
             #[cfg(feature = "python")]
             SinkInfo::DataSinkInfo(data_sink_info) => LocalPhysicalPlan::data_sink(
@@ -168,10 +161,6 @@ impl PipelineNodeImpl for SinkNode {
                 daft_logical_plan::CatalogType::DeltaLake(deltalake_info) => {
                     res.push(format!("Sink: DeltaLake({})", deltalake_info.path));
                     res.extend(deltalake_info.multiline_display());
-                }
-                daft_logical_plan::CatalogType::Lance(lance_info) => {
-                    res.push(format!("Sink: Lance({})", lance_info.path));
-                    res.extend(lance_info.multiline_display());
                 }
             },
             #[cfg(feature = "python")]

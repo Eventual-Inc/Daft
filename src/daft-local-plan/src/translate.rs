@@ -423,15 +423,6 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                             sink.stats_state.clone(),
                         ))
                     }
-                    daft_logical_plan::CatalogType::Lance(info) => {
-                        Ok(LocalPhysicalPlan::lance_write(
-                            input,
-                            info.clone(),
-                            data_schema,
-                            sink.schema.clone(),
-                            sink.stats_state.clone(),
-                        ))
-                    }
                 },
                 #[cfg(feature = "python")]
                 SinkInfo::DataSinkInfo(data_sink_info) => Ok(LocalPhysicalPlan::data_sink(

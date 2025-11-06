@@ -4,7 +4,7 @@ mod plan;
 mod python;
 mod translate;
 #[cfg(feature = "python")]
-pub use plan::{CatalogWrite, DataSink, DistributedActorPoolProject, LanceWrite};
+pub use plan::{CatalogWrite, DataSink, DistributedActorPoolProject};
 pub use plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, GlobScan, HashAggregate,
     HashJoin, InMemoryScan, IntoBatches, IntoPartitions, Limit, LocalPhysicalPlan,

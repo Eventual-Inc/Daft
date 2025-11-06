@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::{CatalogType, DeltaLakeCatalogInfo, IcebergCatalogInfo};
 use daft_micropartition::MicroPartition;
@@ -86,8 +86,5 @@ pub fn create_pyarrow_catalog_writer(
             )?;
             Ok(Box::new(writer))
         }
-        _ => Err(DaftError::ComputeError(
-            "Unsupported file format for physical write".to_string(),
-        )),
     }
 }

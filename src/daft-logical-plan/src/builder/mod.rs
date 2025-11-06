@@ -792,33 +792,6 @@ impl LogicalPlanBuilder {
     }
 
     #[cfg(feature = "python")]
-    #[allow(clippy::too_many_arguments)]
-    pub fn lance_write(
-        &self,
-        path: String,
-        columns_name: Vec<String>,
-        mode: String,
-        io_config: Option<IOConfig>,
-        kwargs: Arc<Py<PyAny>>,
-    ) -> DaftResult<Self> {
-        use crate::sink_info::LanceCatalogInfo;
-
-        let sink_info = SinkInfo::CatalogInfo(CatalogInfo {
-            catalog: crate::sink_info::CatalogType::Lance(LanceCatalogInfo {
-                path,
-                mode,
-                io_config,
-                kwargs,
-            }),
-            catalog_columns: columns_name,
-        });
-
-        let logical_plan: LogicalPlan =
-            ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
-        Ok(self.with_new_plan(logical_plan))
-    }
-
-    #[cfg(feature = "python")]
     pub fn datasink_write(&self, name: String, sink: Arc<Py<PyAny>>) -> DaftResult<Self> {
         use crate::sink_info::DataSinkInfo;
 
@@ -1447,35 +1420,6 @@ impl PyLogicalPlanBuilder {
                 large_dtypes,
                 partition_cols,
                 io_config.map(|cfg| cfg.config),
-            )?
-            .into())
-    }
-
-    #[pyo3(signature = (
-        path,
-        columns_name,
-        mode,
-        io_config=None,
-        kwargs=None
-    ))]
-    pub fn lance_write(
-        &self,
-        py: Python,
-        path: String,
-        columns_name: Vec<String>,
-        mode: String,
-        io_config: Option<common_io_config::python::IOConfig>,
-        kwargs: Option<pyo3::Py<pyo3::PyAny>>,
-    ) -> PyResult<Self> {
-        let kwargs = Arc::new(kwargs.unwrap_or_else(|| py.None()));
-        Ok(self
-            .builder
-            .lance_write(
-                path,
-                columns_name,
-                mode,
-                io_config.map(|cfg| cfg.config),
-                kwargs,
             )?
             .into())
     }
