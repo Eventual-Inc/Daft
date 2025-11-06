@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import singledispatchmethod
 from typing import TYPE_CHECKING, Any
 
 from openai import AsyncOpenAI
 
 from daft.ai.protocols import Prompter, PrompterDescriptor
-from daft.ai.typing import UDFOptions
+from daft.ai.typing import Image, UDFOptions
 from daft.file import File
 
 if TYPE_CHECKING:
@@ -76,70 +77,81 @@ class OpenAIPrompter(Prompter):
         self.generation_config = {k: v for k, v in generation_config.items() if k not in client_params_keys}
         self.llm = AsyncOpenAI(**client_params)
 
-    def _process_message_content(self, msg: Any) -> dict[str, str]:
+    @singledispatchmethod
+    def _process_message(self, msg: Any) -> dict[str, Any]:
+        """Fallback for unsupported message content types."""
+        raise ValueError(f"Unsupported content type in prompt: {type(msg)}")
+
+    @_process_message.register
+    def _process_str_message(self, msg: str) -> dict[str, Any]:
+        """Handle string messages as plain text."""
+        if self.use_chat_completions:
+            return {"type": "text", "text": msg}
+        else:
+            return {"type": "input_text", "text": msg}
+
+    @_process_message.register
+    def _process_bytes_message(self, msg: bytes) -> dict[str, Any]:
+        """Handle bytes messages by converting to File and processing."""
+        daft_file = File(msg)
+        mime_type, encoded_content = self._encode_file(daft_file)
+
+        if mime_type.startswith("image/"):
+            return self._build_image_message(encoded_content)
+        return self._build_file_message(encoded_content)
+
+    @_process_message.register
+    def _process_file_message(self, msg: File) -> dict[str, Any]:
+        """Handle File objects."""
+        mime_type, encoded_content = self._encode_file(msg)
+
+        if mime_type.startswith("image/"):
+            return self._build_image_message(encoded_content)
+        return self._build_file_message(encoded_content)
+
+    @_process_message.register
+    def _process_image_message(self, msg: Image) -> dict[str, Any]:
+        """Handle numpy array messages (images)."""
+        import base64
+        import io
+
+        from daft.dependencies import pil_image
+
+        pil_image = pil_image.fromarray(msg)
+        bio = io.BytesIO()
+        pil_image.save(bio, "PNG")
+        base64_string = base64.b64encode(bio.getvalue()).decode("utf-8")
+        encoded_content = f"data:image/png;base64,{base64_string}"
+        return self._build_image_message(encoded_content)
+
+    def _encode_file(self, file_obj: File) -> tuple[str, str]:
         import base64
 
-        from daft.dependencies import np
+        mime_type = file_obj.mime_type()
+        with file_obj.open() as f:
+            base64_string = base64.b64encode(f.read()).decode("utf-8")
+        encoded_content = f"data:{mime_type};base64,{base64_string}"
+        return mime_type, encoded_content
 
-        # Strings are always treated as plain text
-        if isinstance(msg, str):
-            if self.use_chat_completions:
-                return {"type": "text", "text": msg}
-            else:
-                return {"type": "input_text", "text": msg}
+    def _build_image_message(self, encoded_content: str) -> dict[str, Any]:
+        if self.use_chat_completions:
+            return {"type": "image_url", "image_url": {"url": encoded_content}}
+        return {"type": "input_image", "image_url": encoded_content}
 
-        # Handle numpy arrays (images)
-        if isinstance(msg, np.ndarray):
-            import io
-
-            from daft.dependencies import pil_image
-
-            pil_image = pil_image.fromarray(msg)
-            bio = io.BytesIO()
-            pil_image.save(bio, "PNG")
-            base64_string = base64.b64encode(bio.getvalue()).decode("utf-8")
-            encoded_content = f"data:image/png;base64,{base64_string}"
-            if self.use_chat_completions:
-                return {"type": "image_url", "image_url": {"url": encoded_content}}  # type: ignore[dict-item]
-            else:
-                return {"type": "input_image", "image_url": encoded_content}
-
-        # Handle bytes and File objects
-        if isinstance(msg, bytes):
-            daft_file = File(msg)
-            mime_type = daft_file.mime_type()
-            with daft_file.open() as f:
-                base64_string = base64.b64encode(f.read()).decode("utf-8")
-            encoded_content = f"data:{mime_type};base64,{base64_string}"
-        elif isinstance(msg, File):
-            mime_type = msg.mime_type()
-            with msg.open() as f:
-                base64_string = base64.b64encode(f.read()).decode("utf-8")
-            encoded_content = f"data:{mime_type};base64,{base64_string}"
-        else:
-            raise ValueError(f"Unsupported content type in prompt: {type(msg)}")
-
-        # Determine if it's an image or generic file based on MIME type
-        if mime_type.startswith("image/"):
-            if self.use_chat_completions:
-                return {"type": "image_url", "image_url": {"url": encoded_content}}  # type: ignore[dict-item]
-            else:
-                return {"type": "input_image", "image_url": encoded_content}
-        else:
-            if self.use_chat_completions:
-                return {
-                    "type": "file",
-                    "file": {  # type: ignore[dict-item]
-                        "filename": "file",
-                        "file_data": encoded_content,
-                    },
-                }
-            else:
-                return {
-                    "type": "input_file",
-                    "filename": "file",
+    def _build_file_message(self, encoded_content: str, filename: str = "file") -> dict[str, Any]:
+        if self.use_chat_completions:
+            return {
+                "type": "file",
+                "file": {
+                    "filename": filename,
                     "file_data": encoded_content,
-                }
+                },
+            }
+        return {
+            "type": "input_file",
+            "filename": filename,
+            "file_data": encoded_content,
+        }
 
     async def _prompt_with_chat_completions(self, messages_list: list[dict[str, Any]]) -> Any:
         """Generate responses using the Chat Completions API."""
@@ -185,7 +197,7 @@ class OpenAIPrompter(Prompter):
         if self.system_message is not None:
             messages_list.append({"role": "system", "content": self.system_message})
 
-        content = [self._process_message_content(msg) for msg in messages]
+        content = [self._process_message(msg) for msg in messages]
         messages_list.append({"role": "user", "content": content})  # type: ignore [dict-item]
 
         if self.use_chat_completions:
