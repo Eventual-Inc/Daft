@@ -330,7 +330,7 @@ class PostgresCatalog(Catalog):
         else:
             raise ValueError(f"PostgreSQL table identifier must be 'schema.table' or 'table', got {identifier}")
 
-        with psycopg.connect(self._inner) as conn:
+        with postgres_connection(self._inner, self._extensions) as conn:
             with conn.cursor() as cur:
                 try:
                     cur.execute(psycopg.sql.SQL("DROP TABLE {}").format(quoted_full_table))
