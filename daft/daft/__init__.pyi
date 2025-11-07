@@ -2031,6 +2031,7 @@ class PyDaftExecutionConfig:
         use_legacy_ray_runner: bool | None = None,
         min_cpu_per_task: float | None = None,
         actor_udf_ready_timeout: int | None = None,
+        maintain_order: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
