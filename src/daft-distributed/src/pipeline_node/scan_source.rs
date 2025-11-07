@@ -4,7 +4,7 @@ use common_display::{DisplayAs, DisplayLevel};
 use common_error::DaftResult;
 use common_file_formats::FileFormatConfig;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
@@ -99,7 +99,10 @@ impl ScanSourceNode {
             self.pushdowns.clone(),
             self.config.schema.clone(),
             StatsState::NotMaterialized,
-            hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+            LocalNodeContext {
+                origin_node_id: Some(node_id as usize),
+                additional: None,
+            },
         );
 
         let task = SwordfishTask::new(
@@ -116,7 +119,10 @@ impl ScanSourceNode {
     fn make_empty_scan_task(&self, task_context: TaskContext) -> DaftResult<SwordfishTask> {
         let transformed_plan = LocalPhysicalPlan::empty_scan(
             self.config.schema.clone(),
-            hash_map! { "distributed_node_id".to_string() => self.node_id().to_string() },
+            LocalNodeContext {
+                origin_node_id: Some(self.node_id() as usize),
+                additional: None,
+            },
         );
         let psets = HashMap::new();
         let task = SwordfishTask::new(

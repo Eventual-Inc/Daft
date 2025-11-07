@@ -6,12 +6,7 @@ use std::{
     time::Duration,
 };
 
-use common_metrics::{Stat, StatSnapshotSend, snapshot};
-
-// Common statistic names
-pub const ROWS_IN_KEY: &str = "rows in";
-pub const ROWS_OUT_KEY: &str = "rows out";
-pub const CPU_US_KEY: &str = "cpu us";
+use common_metrics::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshotSend, snapshot};
 
 // ----------------------- General Traits for Runtime Stat Collection ----------------------- //
 

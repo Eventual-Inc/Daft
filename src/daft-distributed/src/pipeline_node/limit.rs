@@ -2,7 +2,7 @@ use std::{cmp::Ordering, collections::VecDeque, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::QueryID;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
@@ -190,7 +190,10 @@ impl LimitNode {
                                     num_rows as u64,
                                     Some(skip_num_rows as u64),
                                     StatsState::NotMaterialized,
-                                    hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+                                    LocalNodeContext {
+                                        origin_node_id: Some(node_id as usize),
+                                        additional: None,
+                                    },
                                 )
                             } else {
                                 input
@@ -212,7 +215,10 @@ impl LimitNode {
                                 remaining as u64,
                                 Some(skip_num_rows as u64),
                                 StatsState::NotMaterialized,
-                                hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+                                LocalNodeContext {
+                                    origin_node_id: Some(node_id as usize),
+                                    additional: None,
+                                },
                             )
                         },
                         None,
@@ -259,7 +265,10 @@ impl LimitNode {
                                 local_limit_per_task as u64,
                                 Some(0),
                                 StatsState::NotMaterialized,
-                                hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+                                LocalNodeContext {
+                                    origin_node_id: Some(node_id as usize),
+                                    additional: None,
+                                },
                             )
                         },
                     );

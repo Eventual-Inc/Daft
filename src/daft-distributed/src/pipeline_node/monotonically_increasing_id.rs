@@ -1,6 +1,6 @@
 use std::sync::{Arc, atomic::AtomicU64};
 
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
@@ -99,7 +99,10 @@ impl PipelineNodeImpl for MonotonicallyIncreasingIdNode {
                 ),
                 schema.clone(),
                 StatsState::NotMaterialized,
-                hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
+                },
             )
         })
     }

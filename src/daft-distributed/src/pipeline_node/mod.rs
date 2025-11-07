@@ -16,7 +16,7 @@ use common_error::DaftResult;
 use common_metrics::QueryID;
 use common_partitioning::PartitionRef;
 use common_treenode::ConcreteTreeNode;
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{InMemoryInfo, partitioning::ClusteringSpecRef, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt, stream::BoxStream};
@@ -374,7 +374,10 @@ pub(crate) fn make_in_memory_scan_from_materialized_outputs(
     let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
         info,
         StatsState::NotMaterialized,
-        hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+        LocalNodeContext {
+            origin_node_id: Some(node_id as usize),
+            additional: None,
+        },
     );
     Ok(in_memory_source_plan)
 }

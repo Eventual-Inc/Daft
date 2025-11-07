@@ -7,7 +7,7 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{Stat, StatSnapshotSend, ops::NodeType, snapshot};
+use common_metrics::{CPU_US_KEY, ROWS_IN_KEY, Stat, StatSnapshotSend, ops::NodeType, snapshot};
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -24,7 +24,7 @@ use crate::{
     ExecutionTaskSpawner,
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
     pipeline::{MorselSizeRequirement, NodeName},
-    runtime_stats::{CPU_US_KEY, ROWS_IN_KEY, RuntimeStats},
+    runtime_stats::RuntimeStats,
 };
 
 #[derive(Default)]

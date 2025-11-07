@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, LockResult},
+};
 
 use common_error::{DaftError, DaftResult, ensure};
 use common_io_config::IOConfig;
@@ -22,6 +25,12 @@ use daft_logical_plan::{
     stats::{PlanStats, StatsState},
 };
 use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct LocalNodeContext {
+    pub origin_node_id: Option<usize>,
+    pub additional: Option<HashMap<String, String>>,
+}
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
 #[derive(Debug, strum::IntoStaticStr, Serialize, Deserialize)]
@@ -142,7 +151,7 @@ impl LocalPhysicalPlan {
     }
 
     #[allow(dead_code)]
-    pub fn context(&self) -> &HashMap<String, String> {
+    pub fn context(&self) -> &LocalNodeContext {
         match self {
             Self::InMemoryScan(InMemoryScan { context, .. })
             | Self::PhysicalScan(PhysicalScan { context, .. })
@@ -191,7 +200,7 @@ impl LocalPhysicalPlan {
     pub fn in_memory_scan(
         in_memory_info: InMemoryInfo,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::InMemoryScan(InMemoryScan {
             info: in_memory_info,
@@ -206,7 +215,7 @@ impl LocalPhysicalPlan {
         pushdowns: Pushdowns,
         schema: SchemaRef,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::PhysicalScan(PhysicalScan {
             scan_tasks,
@@ -224,7 +233,7 @@ impl LocalPhysicalPlan {
         schema: SchemaRef,
         stats_state: StatsState,
         io_config: Option<IOConfig>,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::GlobScan(GlobScan {
             glob_paths,
@@ -240,7 +249,7 @@ impl LocalPhysicalPlan {
     pub fn placeholder_scan(
         schema: SchemaRef,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::PlaceholderScan(PlaceholderScan {
             schema,
@@ -250,7 +259,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn empty_scan(schema: SchemaRef, context: HashMap<String, String>) -> LocalPhysicalPlanRef {
+    pub fn empty_scan(schema: SchemaRef, context: LocalNodeContext) -> LocalPhysicalPlanRef {
         Self::EmptyScan(EmptyScan {
             schema,
             stats_state: StatsState::Materialized(PlanStats::empty().into()),
@@ -263,7 +272,7 @@ impl LocalPhysicalPlan {
         input: LocalPhysicalPlanRef,
         predicate: BoundExpr,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
         Self::Filter(Filter {
@@ -281,7 +290,7 @@ impl LocalPhysicalPlan {
         batch_size: usize,
         strict: bool,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
         Self::IntoBatches(IntoBatches {
@@ -300,7 +309,7 @@ impl LocalPhysicalPlan {
         limit: u64,
         offset: Option<u64>,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
         Self::Limit(Limit {
@@ -319,7 +328,7 @@ impl LocalPhysicalPlan {
         to_explode: Vec<BoundExpr>,
         schema: SchemaRef,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::Explode(Explode {
             input,
@@ -336,7 +345,7 @@ impl LocalPhysicalPlan {
         projection: Vec<BoundExpr>,
         schema: SchemaRef,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::Project(Project {
             input,
@@ -355,7 +364,7 @@ impl LocalPhysicalPlan {
         passthrough_columns: Vec<BoundExpr>,
         schema: SchemaRef,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::UDFProject(UDFProject {
             input,
@@ -377,7 +386,7 @@ impl LocalPhysicalPlan {
         memory_request: u64,
         schema: SchemaRef,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::DistributedActorPoolProject(DistributedActorPoolProject {
             input,
@@ -395,7 +404,7 @@ impl LocalPhysicalPlan {
         aggregations: Vec<BoundAggExpr>,
         schema: SchemaRef,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::UnGroupedAggregate(UnGroupedAggregate {
             input,
@@ -413,7 +422,7 @@ impl LocalPhysicalPlan {
         group_by: Vec<BoundExpr>,
         schema: SchemaRef,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::HashAggregate(HashAggregate {
             input,
@@ -431,7 +440,7 @@ impl LocalPhysicalPlan {
         columns: Vec<BoundExpr>,
         schema: SchemaRef,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::Dedup(Dedup {
             input,
@@ -450,7 +459,7 @@ impl LocalPhysicalPlan {
         stats_state: StatsState,
         aggregations: Vec<BoundAggExpr>,
         aliases: Vec<String>,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::WindowPartitionOnly(WindowPartitionOnly {
             input,
@@ -475,7 +484,7 @@ impl LocalPhysicalPlan {
         stats_state: StatsState,
         functions: Vec<BoundWindowExpr>,
         aliases: Vec<String>,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy {
             input,
@@ -505,7 +514,7 @@ impl LocalPhysicalPlan {
         stats_state: StatsState,
         aggregations: Vec<BoundAggExpr>,
         aliases: Vec<String>,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
             input,
@@ -534,7 +543,7 @@ impl LocalPhysicalPlan {
         stats_state: StatsState,
         functions: Vec<BoundWindowExpr>,
         aliases: Vec<String>,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::WindowOrderByOnly(WindowOrderByOnly {
             input,
@@ -559,7 +568,7 @@ impl LocalPhysicalPlan {
         value_name: String,
         schema: SchemaRef,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::Unpivot(Unpivot {
             input,
@@ -585,7 +594,7 @@ impl LocalPhysicalPlan {
         pre_agg: bool,
         schema: SchemaRef,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::Pivot(Pivot {
             input,
@@ -608,7 +617,7 @@ impl LocalPhysicalPlan {
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
         Self::Sort(Sort {
@@ -632,7 +641,7 @@ impl LocalPhysicalPlan {
         limit: u64,
         offset: Option<u64>,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
         Self::TopN(TopN {
@@ -655,7 +664,7 @@ impl LocalPhysicalPlan {
         with_replacement: bool,
         seed: Option<u64>,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
         Self::Sample(Sample {
@@ -676,7 +685,7 @@ impl LocalPhysicalPlan {
         starting_offset: Option<u64>,
         schema: SchemaRef,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
             input,
@@ -700,7 +709,7 @@ impl LocalPhysicalPlan {
         join_type: JoinType,
         schema: SchemaRef,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::HashJoin(HashJoin {
             left,
@@ -722,7 +731,7 @@ impl LocalPhysicalPlan {
         right: LocalPhysicalPlanRef,
         schema: SchemaRef,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::CrossJoin(CrossJoin {
             left,
@@ -743,7 +752,7 @@ impl LocalPhysicalPlan {
         join_type: JoinType,
         schema: SchemaRef,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::SortMergeJoin(SortMergeJoin {
             left,
@@ -762,7 +771,7 @@ impl LocalPhysicalPlan {
         input: LocalPhysicalPlanRef,
         other: LocalPhysicalPlanRef,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
         Self::Concat(Concat {
@@ -781,7 +790,7 @@ impl LocalPhysicalPlan {
         file_schema: SchemaRef,
         file_info: OutputFileInfo<BoundExpr>,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::PhysicalWrite(PhysicalWrite {
             input,
@@ -799,7 +808,7 @@ impl LocalPhysicalPlan {
         file_schema: SchemaRef,
         file_info: OutputFileInfo<BoundExpr>,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::CommitWrite(CommitWrite {
             input,
@@ -818,7 +827,7 @@ impl LocalPhysicalPlan {
         data_schema: SchemaRef,
         file_schema: SchemaRef,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::CatalogWrite(CatalogWrite {
             input,
@@ -838,7 +847,7 @@ impl LocalPhysicalPlan {
         data_schema: SchemaRef,
         file_schema: SchemaRef,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::LanceWrite(LanceWrite {
             input,
@@ -857,7 +866,7 @@ impl LocalPhysicalPlan {
         data_sink_info: daft_logical_plan::DataSinkInfo,
         file_schema: SchemaRef,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::DataSink(DataSink {
             input,
@@ -875,7 +884,7 @@ impl LocalPhysicalPlan {
         num_partitions: usize,
         schema: SchemaRef,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::Repartition(Repartition {
             input,
@@ -892,7 +901,7 @@ impl LocalPhysicalPlan {
         input: LocalPhysicalPlanRef,
         num_partitions: usize,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
         Self::IntoPartitions(IntoPartitions {
@@ -1634,7 +1643,7 @@ impl DynTreeNode for LocalPhysicalPlan {
 pub struct InMemoryScan {
     pub info: InMemoryInfo,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1643,7 +1652,7 @@ pub struct PhysicalScan {
     pub pushdowns: Pushdowns,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1653,21 +1662,21 @@ pub struct GlobScan {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub io_config: Option<common_io_config::IOConfig>,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PlaceholderScan {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EmptyScan {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1676,7 +1685,7 @@ pub struct Project {
     pub projection: Vec<BoundExpr>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1687,7 +1696,7 @@ pub struct UDFProject {
     pub passthrough_columns: Vec<BoundExpr>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[cfg(feature = "python")]
@@ -1699,7 +1708,7 @@ pub struct DistributedActorPoolProject {
     pub memory_request: u64,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1708,7 +1717,7 @@ pub struct Filter {
     pub predicate: BoundExpr,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1718,7 +1727,7 @@ pub struct IntoBatches {
     pub strict: bool,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1728,7 +1737,7 @@ pub struct Limit {
     pub offset: Option<u64>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1737,7 +1746,7 @@ pub struct Explode {
     pub to_explode: Vec<BoundExpr>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1748,7 +1757,7 @@ pub struct Sort {
     pub nulls_first: Vec<bool>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1761,7 +1770,7 @@ pub struct TopN {
     pub offset: Option<u64>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1778,7 +1787,7 @@ pub struct Sample {
     pub seed: Option<u64>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1788,7 +1797,7 @@ pub struct MonotonicallyIncreasingId {
     pub starting_offset: Option<u64>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1797,7 +1806,7 @@ pub struct UnGroupedAggregate {
     pub aggregations: Vec<BoundAggExpr>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1807,7 +1816,7 @@ pub struct HashAggregate {
     pub group_by: Vec<BoundExpr>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1816,7 +1825,7 @@ pub struct Dedup {
     pub columns: Vec<BoundExpr>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1828,7 +1837,7 @@ pub struct Unpivot {
     pub value_name: String,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1842,7 +1851,7 @@ pub struct Pivot {
     pub pre_agg: bool,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1856,7 +1865,7 @@ pub struct HashJoin {
     pub join_type: JoinType,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1865,7 +1874,7 @@ pub struct CrossJoin {
     pub right: LocalPhysicalPlanRef,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1877,7 +1886,7 @@ pub struct SortMergeJoin {
     pub join_type: JoinType,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1886,7 +1895,7 @@ pub struct Concat {
     pub other: LocalPhysicalPlanRef,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1896,7 +1905,7 @@ pub struct PhysicalWrite {
     pub file_schema: SchemaRef,
     pub file_info: OutputFileInfo<BoundExpr>,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1905,7 +1914,7 @@ pub struct CommitWrite {
     pub file_schema: SchemaRef,
     pub file_info: OutputFileInfo<BoundExpr>,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[cfg(feature = "python")]
@@ -1916,7 +1925,7 @@ pub struct CatalogWrite {
     pub data_schema: SchemaRef,
     pub file_schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[cfg(feature = "python")]
@@ -1927,7 +1936,7 @@ pub struct LanceWrite {
     pub data_schema: SchemaRef,
     pub file_schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[cfg(feature = "python")]
@@ -1937,7 +1946,7 @@ pub struct DataSink {
     pub data_sink_info: daft_logical_plan::DataSinkInfo,
     pub file_schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1948,7 +1957,7 @@ pub struct WindowPartitionOnly {
     pub stats_state: StatsState,
     pub aggregations: Vec<BoundAggExpr>,
     pub aliases: Vec<String>,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1962,7 +1971,7 @@ pub struct WindowPartitionAndOrderBy {
     pub stats_state: StatsState,
     pub functions: Vec<BoundWindowExpr>,
     pub aliases: Vec<String>,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1978,7 +1987,7 @@ pub struct WindowPartitionAndDynamicFrame {
     pub stats_state: StatsState,
     pub aggregations: Vec<BoundAggExpr>,
     pub aliases: Vec<String>,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1991,7 +2000,7 @@ pub struct WindowOrderByOnly {
     pub stats_state: StatsState,
     pub functions: Vec<BoundWindowExpr>,
     pub aliases: Vec<String>,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -2001,7 +2010,7 @@ pub struct Repartition {
     pub num_partitions: usize,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -2010,7 +2019,7 @@ pub struct IntoPartitions {
     pub num_partitions: usize,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -17,10 +17,10 @@ use daft_core::{
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, GlobScan, HashAggregate,
-    HashJoin, InMemoryScan, IntoBatches, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId,
-    PhysicalWrite, Pivot, Project, Sample, SamplingMethod, Sort, SortMergeJoin, TopN, UDFProject,
-    UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
-    WindowPartitionAndOrderBy, WindowPartitionOnly,
+    HashJoin, InMemoryScan, IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan,
+    MonotonicallyIncreasingId, PhysicalWrite, Pivot, Project, Sample, SamplingMethod, Sort,
+    SortMergeJoin, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
+    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{
@@ -215,19 +215,26 @@ impl RuntimeContext {
         node_type: NodeType,
         node_category: NodeCategory,
         output_schema: SchemaRef,
-        node_context: HashMap<String, String>,
+        node_context: &LocalNodeContext,
     ) -> NodeInfo {
+        let context = if let Some(node_context) = &node_context.additional {
+            node_context
+                .iter()
+                .chain(self.context.iter())
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
+        } else {
+            self.context.clone()
+        };
+
         NodeInfo {
             name,
-            id: self.next_id(),
+            id: node_context
+                .origin_node_id
+                .unwrap_or_else(|| self.next_id()),
             node_type,
             node_category,
-            context: self
-                .context
-                .clone()
-                .into_iter()
-                .chain(node_context.into_iter())
-                .collect(),
+            context,
             output_schema,
         }
     }
@@ -350,7 +357,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -373,7 +380,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -398,7 +405,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -433,7 +440,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -472,7 +479,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -505,7 +512,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -528,7 +535,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 info.source_schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -551,7 +558,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -581,7 +588,7 @@ fn physical_plan_to_pipeline(
                     stats_state.clone(),
                     ctx,
                     schema.clone(),
-                    context.clone(),
+                    context,
                 )
                 .boxed()
             } else {
@@ -601,7 +608,7 @@ fn physical_plan_to_pipeline(
                     stats_state.clone(),
                     ctx,
                     schema.clone(),
-                    context.clone(),
+                    context,
                 )
                 .boxed()
             }
@@ -633,7 +640,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -661,7 +668,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -680,7 +687,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -700,7 +707,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -719,7 +726,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -740,7 +747,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -760,7 +767,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -783,7 +790,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -807,7 +814,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -828,7 +835,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -855,7 +862,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -886,7 +893,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -908,7 +915,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -938,7 +945,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -963,7 +970,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -1128,7 +1135,7 @@ fn physical_plan_to_pipeline(
                     build_child.get_stats_state().clone(),
                     ctx,
                     build_child.schema().clone(),
-                    context.clone(),
+                    context,
                 )
                 .boxed();
 
@@ -1147,7 +1154,7 @@ fn physical_plan_to_pipeline(
                         stats_state.clone(),
                         ctx,
                         schema.clone(),
-                        context.clone(),
+                        context,
                     )
                     .boxed()),
                     JoinType::Inner => Ok(IntermediateNode::new(
@@ -1164,7 +1171,7 @@ fn physical_plan_to_pipeline(
                         stats_state.clone(),
                         ctx,
                         schema.clone(),
-                        context.clone(),
+                        context,
                     )
                     .boxed()),
                     JoinType::Left | JoinType::Right | JoinType::Outer => {
@@ -1183,7 +1190,7 @@ fn physical_plan_to_pipeline(
                             stats_state.clone(),
                             ctx,
                             schema.clone(),
-                            context.clone(),
+                            context,
                         )
                         .boxed())
                     }
@@ -1239,7 +1246,7 @@ fn physical_plan_to_pipeline(
                 collect_child.get_stats_state().clone(),
                 ctx,
                 collect_child.schema().clone(),
-                context.clone(),
+                context,
             )
             .boxed();
 
@@ -1253,7 +1260,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -1278,7 +1285,7 @@ fn physical_plan_to_pipeline(
                 left.get_stats_state().clone(),
                 ctx,
                 left.schema().clone(),
-                context.clone(),
+                context,
             )
             .boxed();
 
@@ -1294,7 +1301,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -1332,7 +1339,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 file_schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -1351,7 +1358,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 file_schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -1406,7 +1413,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 file_schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -1433,7 +1440,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 file_schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -1460,7 +1467,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 file_schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -1481,7 +1488,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -1500,7 +1507,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
@@ -1524,7 +1531,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }

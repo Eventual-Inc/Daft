@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
@@ -82,7 +82,10 @@ impl PipelineNodeImpl for FilterNode {
                 input,
                 predicate.clone(),
                 StatsState::NotMaterialized,
-                hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
+                },
             )
         })
     }

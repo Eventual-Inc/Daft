@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
@@ -134,7 +134,10 @@ impl IntoPartitionsNode {
                         input,
                         1,
                         StatsState::NotMaterialized,
-                        hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
                     )
                 },
                 None,
@@ -186,7 +189,10 @@ impl IntoPartitionsNode {
                         plan,
                         num_outputs,
                         StatsState::NotMaterialized,
-                        hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
                     )
                 },
             );

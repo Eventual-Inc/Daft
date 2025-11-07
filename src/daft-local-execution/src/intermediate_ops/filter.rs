@@ -7,7 +7,9 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{Stat, StatSnapshotSend, ops::NodeType, snapshot};
+use common_metrics::{
+    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshotSend, ops::NodeType, snapshot,
+};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use tracing::{Span, instrument};
@@ -15,11 +17,7 @@ use tracing::{Span, instrument};
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{
-    ExecutionTaskSpawner,
-    pipeline::NodeName,
-    runtime_stats::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats},
-};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
 
 #[derive(Default)]
 pub struct FilterStats {

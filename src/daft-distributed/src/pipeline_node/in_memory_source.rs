@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, InMemoryInfo, stats::StatsState};
 
 use super::{PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream};
@@ -101,7 +101,10 @@ impl InMemorySourceNode {
         let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
             info,
             StatsState::NotMaterialized,
-            hash_map! { "distributed_node_id".to_string() => self.node_id().to_string() },
+            LocalNodeContext {
+                origin_node_id: Some(self.node_id() as usize),
+                additional: None,
+            },
         );
         let psets = HashMap::from([(self.info.cache_key.clone(), partition_refs.clone())]);
         let task = SwordfishTask::new(

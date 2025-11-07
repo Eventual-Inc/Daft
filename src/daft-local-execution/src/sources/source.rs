@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -12,12 +11,13 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
-    Stat, StatSnapshotSend,
+    CPU_US_KEY, ROWS_OUT_KEY, Stat, StatSnapshotSend,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot,
 };
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
+use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use futures::{StreamExt, stream::BoxStream};
@@ -26,7 +26,7 @@ use crate::{
     ExecutionRuntimeContext,
     channel::{Receiver, create_channel},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
-    runtime_stats::{CPU_US_KEY, CountingSender, ROWS_OUT_KEY, RuntimeStats},
+    runtime_stats::{CountingSender, RuntimeStats},
 };
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
@@ -95,7 +95,7 @@ impl SourceNode {
         plan_stats: StatsState,
         ctx: &RuntimeContext,
         output_schema: SchemaRef,
-        context: HashMap<String, String>,
+        context: &LocalNodeContext,
     ) -> Self {
         let info = ctx.next_node_info(
             source.name().into(),

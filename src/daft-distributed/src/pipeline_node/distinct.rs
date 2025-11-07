@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
@@ -96,7 +96,10 @@ impl PipelineNodeImpl for DistinctNode {
                 self_clone.columns.clone(),
                 self_clone.config.schema.clone(),
                 StatsState::NotMaterialized,
-                hash_map! { "distributed_node_id".to_string() => self_clone.node_id().to_string() },
+                LocalNodeContext {
+                    origin_node_id: Some(self_clone.node_id() as usize),
+                    additional: None,
+                },
             )
         })
     }

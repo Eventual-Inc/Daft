@@ -28,7 +28,7 @@ use tokio::{
     time::interval,
 };
 use tracing::{Instrument, instrument::Instrumented};
-pub use values::{CPU_US_KEY, DefaultRuntimeStats, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats};
+pub use values::{DefaultRuntimeStats, RuntimeStats};
 
 use crate::{
     channel::{Receiver, Sender},
@@ -347,7 +347,7 @@ mod tests {
 
     use async_trait::async_trait;
     use common_error::DaftResult;
-    use common_metrics::{NodeID, Stat, StatSnapshotSend};
+    use common_metrics::{CPU_US_KEY, NodeID, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshotSend};
     use tokio::time::{Duration, sleep};
 
     use super::*;

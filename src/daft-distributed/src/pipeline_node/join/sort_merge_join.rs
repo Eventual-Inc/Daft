@@ -2,7 +2,7 @@ use std::{collections::HashMap, future, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{TryStreamExt, future::try_join_all};
@@ -147,7 +147,10 @@ impl SortMergeJoinNode {
             self.join_type,
             self.config.schema.clone(),
             StatsState::NotMaterialized,
-            hash_map! { "distributed_node_id".to_string() => self.node_id().to_string() },
+            LocalNodeContext {
+                origin_node_id: Some(self.node_id() as usize),
+                additional: None,
+            },
         );
 
         // Create the task

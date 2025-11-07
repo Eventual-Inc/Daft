@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
@@ -104,7 +104,10 @@ impl IntoBatchesNode {
                                 group_size,
                                 true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
                                 StatsState::NotMaterialized,
-                                hash_map! { "distributed_node_id".to_string() => self_clone.node_id().to_string() },
+                                LocalNodeContext {
+                                    origin_node_id: Some(self_clone.node_id() as usize),
+                                    additional: None,
+                                },
                             )
                         },
                         None,
@@ -129,7 +132,10 @@ impl IntoBatchesNode {
                         current_group_size,
                         true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
                         StatsState::NotMaterialized,
-                        hash_map! { "distributed_node_id".to_string() => self_clone.node_id().to_string() },
+                        LocalNodeContext {
+                            origin_node_id: Some(self_clone.node_id() as usize),
+                            additional: None,
+                        },
                     )
                 },
                 None,
@@ -170,7 +176,10 @@ impl PipelineNodeImpl for IntoBatchesNode {
                 self_clone.batch_size,
                 false, // No need strict batch sizes for the child tasks, as we coalesce them later on.
                 StatsState::NotMaterialized,
-                hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
+                },
             )
         });
 

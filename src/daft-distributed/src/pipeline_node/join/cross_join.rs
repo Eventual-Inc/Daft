@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, stream::select};
@@ -123,7 +123,10 @@ impl CrossJoinNode {
             right_plan,
             self.config.schema.clone(),
             StatsState::NotMaterialized,
-            hash_map! { "distributed_node_id".to_string() => self.node_id().to_string() },
+            LocalNodeContext {
+                origin_node_id: Some(self.node_id() as usize),
+                additional: None,
+            },
         );
 
         let mut psets = right_psets;

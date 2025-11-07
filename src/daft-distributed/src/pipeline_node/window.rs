@@ -6,7 +6,7 @@ use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
     window_to_agg_exprs,
 };
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
@@ -57,7 +57,10 @@ impl WindowNodePartitionOnly {
             StatsState::NotMaterialized,
             self.agg_exprs.clone(),
             self.base.aliases.clone(),
-            hash_map! { "distributed_node_id".to_string() => self.base.context.node_id.to_string() },
+            LocalNodeContext {
+                origin_node_id: Some(self.base.context.node_id as usize),
+                additional: None,
+            },
         )
     }
 
@@ -96,7 +99,10 @@ impl WindowNodePartitionAndOrderBy {
             StatsState::NotMaterialized,
             self.window_exprs.clone(),
             self.base.aliases.clone(),
-            hash_map! { "distributed_node_id".to_string() => self.base.context.node_id.to_string() },
+            LocalNodeContext {
+                origin_node_id: Some(self.base.context.node_id as usize),
+                additional: None,
+            },
         )
     }
 
@@ -147,7 +153,10 @@ impl WindowNodePartitionAndDynamicFrame {
             StatsState::NotMaterialized,
             self.agg_exprs.clone(),
             self.base.aliases.clone(),
-            hash_map! { "distributed_node_id".to_string() => self.base.context.node_id.to_string() },
+            LocalNodeContext {
+                origin_node_id: Some(self.base.context.node_id as usize),
+                additional: None,
+            },
         )
     }
 
@@ -198,7 +207,10 @@ impl WindowNodeOrderByOnly {
             StatsState::NotMaterialized,
             self.window_exprs.clone(),
             self.base.aliases.clone(),
-            hash_map! { "distributed_node_id".to_string() => self.base.context.node_id.to_string() },
+            LocalNodeContext {
+                origin_node_id: Some(self.base.context.node_id as usize),
+                additional: None,
+            },
         )
     }
 

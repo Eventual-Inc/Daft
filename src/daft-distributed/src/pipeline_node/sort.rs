@@ -2,7 +2,7 @@ use std::{future, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::{LocalPhysicalPlan, SamplingMethod};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, SamplingMethod};
 use daft_logical_plan::{
     partitioning::{RangeRepartitionConfig, RepartitionSpec},
     stats::StatsState,
@@ -147,14 +147,20 @@ pub(crate) fn create_sample_tasks(
                         false,
                         None,
                         StatsState::NotMaterialized,
-                        hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
                     );
                     LocalPhysicalPlan::project(
                         sample,
                         sample_by,
                         sample_schema,
                         StatsState::NotMaterialized,
-                        hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
                     )
                 },
                 None,
@@ -205,7 +211,10 @@ pub(crate) fn create_range_repartition_tasks(
                         num_partitions,
                         input_schema,
                         StatsState::NotMaterialized,
-                        hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
                     )
                 },
                 None,
@@ -298,7 +307,10 @@ impl SortNode {
                         self_clone.descending.clone(),
                         self_clone.nulls_first.clone(),
                         StatsState::NotMaterialized,
-                        hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
                     )
                 },
                 None,
@@ -371,7 +383,10 @@ impl SortNode {
                         self_clone.descending.clone(),
                         self_clone.nulls_first.clone(),
                         StatsState::NotMaterialized,
-                        hash_map! { "distributed_node_id".to_string() => self_clone.node_id().to_string() },
+                        LocalNodeContext {
+                            origin_node_id: Some(self_clone.node_id() as usize),
+                            additional: None,
+                        },
                     )
                 },
                 None,

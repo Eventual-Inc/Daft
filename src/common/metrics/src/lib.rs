@@ -109,6 +109,12 @@ pub struct StatSnapshotRecv(Vec<(String, Stat)>);
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct StatSnapshotView<'a>(SmallVec<[(&'a str, Stat); 3]>);
 
+impl StatSnapshotRecv {
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &Stat)> + use<'_> {
+        self.0.iter().map(|(name, value)| (name.as_str(), value))
+    }
+}
+
 impl From<StatSnapshotSend> for StatSnapshotView<'static> {
     fn from(snapshot: StatSnapshotSend) -> Self {
         Self(snapshot.0)
@@ -131,6 +137,11 @@ impl<'de, 'a> IntoIterator for &'de StatSnapshotView<'a> {
         self.0.iter()
     }
 }
+
+// Common statistic names
+pub const ROWS_IN_KEY: &str = "rows in";
+pub const ROWS_OUT_KEY: &str = "rows out";
+pub const CPU_US_KEY: &str = "cpu us";
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {

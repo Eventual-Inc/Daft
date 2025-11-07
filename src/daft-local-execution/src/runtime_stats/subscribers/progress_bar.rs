@@ -4,17 +4,14 @@ use async_trait::async_trait;
 use common_error::DaftResult;
 use common_logging::GLOBAL_LOGGER;
 use common_metrics::{
-    NodeID, StatSnapshotSend,
+    CPU_US_KEY, NodeID, StatSnapshotSend,
     ops::{NodeCategory, NodeInfo},
 };
 use indicatif::{ProgressDrawTarget, ProgressStyle};
 use itertools::Itertools;
 use log::Log;
 
-use crate::{
-    PythonPrintTarget, STDOUT,
-    runtime_stats::{CPU_US_KEY, subscribers::RuntimeStatsSubscriber},
-};
+use crate::{PythonPrintTarget, STDOUT, runtime_stats::subscribers::RuntimeStatsSubscriber};
 
 /// Convert statistics to a message for progress bars
 fn event_to_message(event: &StatSnapshotSend) -> String {

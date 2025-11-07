@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_file_formats::WriteMode;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{OutputFileInfo, SinkInfo, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
@@ -78,7 +78,10 @@ impl SinkNode {
                 file_schema,
                 info.clone(),
                 StatsState::NotMaterialized,
-                hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
+                },
             ),
             #[cfg(feature = "python")]
             SinkInfo::CatalogInfo(info) => match &info.catalog {
@@ -89,7 +92,10 @@ impl SinkNode {
                     data_schema,
                     file_schema,
                     StatsState::NotMaterialized,
-                    hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+                    LocalNodeContext {
+                        origin_node_id: Some(node_id as usize),
+                        additional: None,
+                    },
                 ),
                 daft_logical_plan::CatalogType::Lance(info) => LocalPhysicalPlan::lance_write(
                     input,
@@ -97,7 +103,10 @@ impl SinkNode {
                     data_schema,
                     file_schema,
                     StatsState::NotMaterialized,
-                    hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+                    LocalNodeContext {
+                        origin_node_id: Some(node_id as usize),
+                        additional: None,
+                    },
                 ),
             },
             #[cfg(feature = "python")]
@@ -106,7 +115,10 @@ impl SinkNode {
                 data_sink_info.clone(),
                 file_schema,
                 StatsState::NotMaterialized,
-                hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
+                },
             ),
         }
     }
@@ -134,7 +146,10 @@ impl SinkNode {
                     file_schema,
                     info,
                     StatsState::NotMaterialized,
-                    hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+                    LocalNodeContext {
+                        origin_node_id: Some(node_id as usize),
+                        additional: None,
+                    },
                 )
             },
             None,

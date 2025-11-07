@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_py_serde::PyObjectWrapper;
 use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties, python::PyExpr};
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
@@ -211,7 +211,10 @@ impl ActorUDF {
                     memory_request,
                     schema.clone(),
                     StatsState::NotMaterialized,
-                    hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+                    LocalNodeContext {
+                        origin_node_id: Some(node_id as usize),
+                        additional: None,
+                    },
                 )
             },
         )
