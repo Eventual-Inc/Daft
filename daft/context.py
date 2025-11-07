@@ -311,7 +311,7 @@ def set_execution_config(
         use_legacy_ray_runner: Whether to use the legacy ray runner. Defaults to `False`.
         min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 0.5.
         actor_udf_ready_timeout: Timeout for UDF actors to be ready. Defaults to 120 seconds.
-        maintain_order: Whether to maintain order during execution. Defaults to True. Some blocking sink operators (e.g. write_parquet) won't respect this flag and will always keep maintain_order as false, and propagate to child operators. It's useful to set with false for running df.collect() and no ordered requirement.
+        maintain_order: Whether to maintain order during execution. Defaults to True. Some blocking sink operators (e.g. write_parquet) won't respect this flag and will always keep maintain_order as false, and propagate to child operators. It's useful to set this to False for running df.collect() when no ordering is required.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
