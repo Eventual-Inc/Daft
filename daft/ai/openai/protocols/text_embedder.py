@@ -173,6 +173,9 @@ class OpenAITextEmbedder(TextEmbedder):
             curr_batch_token_count = 0
 
         for input_text in text:
+            # Handle None values by treating them as empty strings
+            if input_text is None:
+                input_text = ""
             input_text_token_count = len(input_text) // approx_chars_per_token
             if input_text_token_count > input_text_token_limit:
                 # Must process previous inputs first, if any, to maintain ordered outputs.
