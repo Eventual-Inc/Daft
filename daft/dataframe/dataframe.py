@@ -1711,7 +1711,6 @@ class DataFrame:
                 Examples of connection strings:
                 - PostgreSQL: "postgresql://user:password@localhost:5432/mydb"
                 - SQLite: "sqlite:///path/to/database.db"
-                - MySQL: "mysql+pymysql://user:password@localhost:3306/mydb"
             mode: Write mode for the operation. One of:
                 - "append": Append data to an existing table.
                 - "overwrite": Drop the table, if it exists, and create a new table with new data.
