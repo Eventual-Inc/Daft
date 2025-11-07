@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, hash_map::Entry},
     sync::{LazyLock, Mutex},
 };
 
@@ -7,52 +7,26 @@ use std::{
 use pyo3::{Py, exceptions::PyValueError, prelude::*, types::PyDict};
 
 #[derive(Default)]
-pub struct MetricsSnapshot {
+pub(crate) struct MetricsStore {
     pub counters: HashMap<String, u64>,
     pub gauges: HashMap<String, f64>,
 }
 
-#[derive(Default)]
-struct MetricsStore {
-    counters: HashMap<String, u64>,
-    gauges: HashMap<String, f64>,
-    last_counters: HashMap<String, u64>,
-}
-
 impl MetricsStore {
     fn increment_counter(&mut self, name: &str, amount: u64) {
-        *self.counters.entry(name.to_string()).or_default() += amount;
+        if let Some(count) = self.counters.get_mut(name) {
+            *count += amount;
+        } else {
+            self.counters.insert(name.to_string(), amount);
+        }
     }
 
     fn set_gauge(&mut self, name: &str, value: f64) {
         self.gauges.insert(name.to_string(), value);
     }
-
-    fn snapshot_delta(&mut self) -> MetricsSnapshot {
-        let mut delta_counters = HashMap::new();
-        for (name, total) in &self.counters {
-            let previous = self.last_counters.get(name).copied().unwrap_or(0);
-            let delta = total.saturating_sub(previous);
-            if delta > 0 {
-                delta_counters.insert(name.clone(), delta);
-            }
-        }
-        // Remove entries that no longer exist in totals from last_counters
-        self.last_counters
-            .retain(|name, _| self.counters.contains_key(name));
-        // Update last_counters to current totals
-        for (name, total) in &self.counters {
-            self.last_counters.insert(name.clone(), *total);
-        }
-
-        MetricsSnapshot {
-            counters: delta_counters,
-            gauges: self.gauges.clone(),
-        }
-    }
 }
 
-static METRIC_STORES: LazyLock<Mutex<HashMap<String, MetricsStore>>> =
+pub static METRIC_STORES: LazyLock<Mutex<HashMap<String, MetricsStore>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[cfg(feature = "python")]
@@ -96,22 +70,18 @@ fn set_gauge(udf_id: &str, name: &str, value: f64) -> PyResult<()> {
     Ok(())
 }
 
-pub fn take_snapshot_for_udf(udf_id: &str) -> MetricsSnapshot {
+pub fn drain_metrics(udf_id: &str) -> Option<(HashMap<String, u64>, HashMap<String, f64>)> {
     let mut stores = METRIC_STORES
         .lock()
         .expect("Failed to lock UDF metrics store");
-    let store = stores.entry(udf_id.to_string()).or_default();
-    store.snapshot_delta()
-}
-
-pub fn take_snapshot_native() -> HashMap<String, MetricsSnapshot> {
-    let mut stores = METRIC_STORES
-        .lock()
-        .expect("Failed to lock UDF metrics store");
-    stores
-        .iter_mut()
-        .map(|(id, store)| (id.clone(), store.snapshot_delta()))
-        .collect()
+    match stores.get_mut(udf_id) {
+        Some(store) => {
+            let counters = std::mem::take(&mut store.counters);
+            let gauges = std::mem::take(&mut store.gauges);
+            Some((counters, gauges))
+        }
+        None => None,
+    }
 }
 
 #[cfg(feature = "python")]
@@ -131,35 +101,30 @@ fn _reset(udf_id: Option<&str>) -> PyResult<()> {
 
 #[cfg(feature = "python")]
 #[pyfunction]
-fn _snapshot(py: Python<'_>, udf_id: Option<&str>) -> PyResult<Py<PyDict>> {
-    let snapshots = if let Some(id) = udf_id {
-        let snapshot = take_snapshot_for_udf(id);
-        let mut map = HashMap::new();
-        map.insert(id.to_string(), snapshot);
-        map
-    } else {
-        take_snapshot_native()
+fn _drain_metrics(py: Python<'_>, udf_id: &str) -> PyResult<Py<PyDict>> {
+    let mut stores = METRIC_STORES
+        .lock()
+        .expect("Failed to lock UDF metrics store");
+    let (counters_vec, gauges_vec) = match stores.entry(udf_id.to_string()) {
+        Entry::Occupied(mut entry) => {
+            let store = entry.get_mut();
+            let counters = store.counters.drain().collect::<Vec<_>>();
+            let gauges = store.gauges.drain().collect::<Vec<_>>();
+            if store.counters.is_empty() && store.gauges.is_empty() {
+                entry.remove();
+            }
+            (counters, gauges)
+        }
+        Entry::Vacant(_) => (Vec::new(), Vec::new()),
     };
 
-    let mut combined_counters: HashMap<String, u64> = HashMap::new();
-    let mut combined_gauges: HashMap<String, f64> = HashMap::new();
-
-    for snapshot in snapshots.into_values() {
-        for (name, value) in snapshot.counters {
-            *combined_counters.entry(name).or_default() += value;
-        }
-        for (name, value) in snapshot.gauges {
-            combined_gauges.insert(name, value);
-        }
-    }
-
     let counters_dict = PyDict::new(py);
-    for (name, value) in combined_counters {
+    for (name, value) in counters_vec {
         counters_dict.set_item(name, value)?;
     }
 
     let gauges_dict = PyDict::new(py);
-    for (name, value) in combined_gauges {
+    for (name, value) in gauges_vec {
         gauges_dict.set_item(name, value)?;
     }
 
@@ -175,7 +140,7 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(increment_counter, &module)?)?;
     module.add_function(wrap_pyfunction!(set_gauge, &module)?)?;
     module.add_function(wrap_pyfunction!(_reset, &module)?)?;
-    module.add_function(wrap_pyfunction!(_snapshot, &module)?)?;
+    module.add_function(wrap_pyfunction!(_drain_metrics, &module)?)?;
     parent.add_submodule(&module)?;
     parent.setattr(pyo3::intern!(parent.py(), "_udf_metrics"), &module)?;
     let sys_modules = parent

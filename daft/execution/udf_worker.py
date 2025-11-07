@@ -64,7 +64,7 @@ def udf_event_loop(
 
             with udf_metrics._metrics_context(udf_id):
                 evaluated = input.eval_expression_list(expression_projection)
-                metrics_payload = udf_metrics._snapshot(udf_id)
+                metrics_payload = udf_metrics._drain_metrics(udf_id)
 
             output_bytes = evaluated.to_ipc_stream()
             out_name, out_size = transport.write_and_close(output_bytes)

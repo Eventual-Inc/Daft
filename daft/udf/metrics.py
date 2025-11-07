@@ -76,8 +76,8 @@ def _metrics_context(udf_id: str) -> Any:
         _CURRENT_UDF_ID.reset(token)
 
 
-def _snapshot(udf_id: str) -> dict[str, dict[str, Any]]:
-    snapshot = _rust_metrics._snapshot(udf_id)
+def _drain_metrics(udf_id: str) -> dict[str, dict[str, Any]]:
+    snapshot = _rust_metrics._drain_metrics(udf_id)
     assert isinstance(snapshot, dict)
     return snapshot
 
