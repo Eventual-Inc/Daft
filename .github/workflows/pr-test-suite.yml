@@ -1096,11 +1096,17 @@ jobs:
     needs: skipcheck
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: ${{ matrix.os }}-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu, Windows]
+        on-main:
+        - ${{ github.ref == 'refs/heads/main' }}
+        exclude:
+          # Don't run Windows rust tests in PRs
+        - os: Windows
+          on-main: false
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
