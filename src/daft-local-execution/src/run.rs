@@ -494,7 +494,6 @@ impl PyExecutionEngineResult {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut result = result.lock().await;
             let stats = result.finish().await?;
-            eprintln!("Serializing stats from worker: {:?}", stats);
             Ok(bincode::encode_to_vec(&stats, bincode::config::legacy())
                 .expect("Failed to serialize stats object"))
         })

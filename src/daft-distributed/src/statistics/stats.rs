@@ -113,7 +113,6 @@ impl RuntimeStats for DefaultRuntimeStats {
                 self.inc_active_tasks();
             }
             TaskEvent::Completed { stats, .. } => {
-                eprintln!("TaskCompleted Stats: {:?}", stats);
                 self.dec_active_tasks();
                 self.completed_tasks.add(1, self.node_kv.as_slice());
 

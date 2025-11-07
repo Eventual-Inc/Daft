@@ -92,7 +92,6 @@ impl TaskResultHandle for RayTaskResultHandle {
                         bincode::decode_from_slice(&stats_serialized, bincode::config::legacy())
                             .expect("Failed to deserialize stats")
                             .0;
-                    eprintln!("Deserialized stats: {:?}", stats);
                     let materialized_output = MaterializedOutput::new(
                         ray_part_refs
                             .into_iter()
