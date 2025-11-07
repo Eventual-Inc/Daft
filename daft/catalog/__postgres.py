@@ -520,7 +520,7 @@ class PostgresTable(Table):
             with conn.cursor() as cur:
                 if schema_name:
                     cur.execute(
-                        """
+                        psycopg.sql.SQL("""
                         SELECT
                             c.column_name,
                             c.data_type,
@@ -534,14 +534,13 @@ class PostgresTable(Table):
                         JOIN pg_class cls ON cls.relname = c.table_name
                         JOIN pg_namespace nsp ON nsp.oid = cls.relnamespace AND nsp.nspname = c.table_schema
                         LEFT JOIN pg_attribute a ON a.attrelid = cls.oid AND a.attname = c.column_name
-                        WHERE c.table_schema = %s AND c.table_name = %s
+                        WHERE c.table_schema = {} AND c.table_name = {}
                         ORDER BY c.ordinal_position
-                        """,
-                        (schema_name, table_name),
+                        """).format(psycopg.sql.Literal(schema_name), psycopg.sql.Literal(table_name)),
                     )
                 else:
                     cur.execute(
-                        """
+                        psycopg.sql.SQL("""
                         SELECT
                             c.column_name,
                             c.data_type,
@@ -554,10 +553,9 @@ class PostgresTable(Table):
                         FROM information_schema.columns c
                         JOIN pg_class cls ON cls.relname = c.table_name
                         LEFT JOIN pg_attribute a ON a.attrelid = cls.oid AND a.attname = c.column_name
-                        WHERE c.table_name = %s
+                        WHERE c.table_name = {}
                         ORDER BY c.ordinal_position
-                        """,
-                        (table_name,),
+                        """).format(psycopg.sql.Literal(table_name)),
                     )
 
                 columns = cur.fetchall()
@@ -589,9 +587,17 @@ class PostgresTable(Table):
                 except Exception:
                     # Fall back to data-based inference for unmappable types
                     # This is inefficient but ensures we get the correct types
-                    single_col_query = f"SELECT {column_name} FROM {table_name} LIMIT 1"
                     if schema_name:
-                        single_col_query = f"SELECT {column_name} FROM {schema_name}.{table_name} LIMIT 1"
+                        single_col_query = psycopg.sql.SQL("SELECT {} FROM {}.{} LIMIT 1").format(
+                            psycopg.sql.Identifier(column_name),
+                            psycopg.sql.Identifier(schema_name),
+                            psycopg.sql.Identifier(table_name),
+                        )
+                    else:
+                        single_col_query = psycopg.sql.SQL("SELECT {} FROM {} LIMIT 1").format(
+                            psycopg.sql.Identifier(column_name),
+                            psycopg.sql.Identifier(table_name),
+                        )
 
                     try:
                         single_col_df = read_sql(single_col_query, connection_string)
