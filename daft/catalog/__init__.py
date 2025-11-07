@@ -313,20 +313,20 @@ class Catalog(ABC):
             raise ImportError("AWS Glue support not installed: pip install -U 'daft[aws]'")
 
     @staticmethod
-    def from_postgres(connection_string: str, extensions: list[str] | None = None) -> Catalog:
+    def from_postgres(connection_string: str, extensions: list[str] | None = ["vector"]) -> Catalog:
         """Create a Daft Catalog from a PostgreSQL connection string.
-
-        Note::
-            This is an experimental feature and the API may change in the future.
 
         Args:
             connection_string (str): a PostgreSQL connection string
             extensions (list[str], optional): List of PostgreSQL extensions to create if they don't exist.
                 For each extension, "CREATE EXTENSION IF NOT EXISTS <extension>" will be executed.
-                Defaults to None (no extensions).
+                Defaults to ["vector"] (pgvector extension, if available).
 
         Returns:
             Catalog: a new Catalog instance to a PostgreSQL database.
+
+        Warning:
+            This features is early in development and will likely experience API changes.
 
         Examples:
             >>> catalog = Catalog.from_postgres("postgresql://user:password@host:port/database")

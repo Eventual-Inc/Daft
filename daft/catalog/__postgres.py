@@ -16,23 +16,43 @@ from daft.io._sql import read_sql
 
 
 @contextmanager
-def postgres_connection(connection_string: str, extensions: list[str] | None = None) -> psycopg.Connection.connect:
+def postgres_connection(connection_string: str, extensions: list[str] | None) -> psycopg.Connection.connect:
     """Context manager that provides a PostgreSQL connection with specified extensions setup.
 
     Args:
         connection_string: PostgreSQL connection string
-        extensions: List of extension names to create if they don't exist. For each extension,
-                   "CREATE EXTENSION IF NOT EXISTS <extension>" will be executed.
+        extensions: List of extension names to create if they don't exist and are available.
+                   For each extension, availability is checked in pg_available_extensions before
+                   attempting "CREATE EXTENSION IF NOT EXISTS <extension>".
     """
     with psycopg.connect(connection_string) as conn:
         if extensions:
-            for extension in extensions:
-                conn.execute(
-                    psycopg.sql.SQL("CREATE EXTENSION IF NOT EXISTS {}").format(psycopg.sql.Identifier(extension))
-                )
-            # Special handling for vector extension - register pgvector types.
-            if "vector" in extensions:
-                register_vector(conn)
+            with conn.cursor() as cur:
+                for extension in extensions:
+                    # Check if extension is available before attempting to create it
+                    cur.execute(
+                        psycopg.sql.SQL("SELECT EXISTS(SELECT 1 FROM pg_available_extensions WHERE name = {})").format(
+                            psycopg.sql.Literal(extension)
+                        )
+                    )
+                    result = cur.fetchone()
+                    is_available = result[0] if result else False
+
+                    if is_available:
+                        cur.execute(
+                            psycopg.sql.SQL("CREATE EXTENSION IF NOT EXISTS {}").format(
+                                psycopg.sql.Identifier(extension)
+                            )
+                        )
+
+                # Register pgvector type if it was successfully created
+                if "vector" in extensions:
+                    cur.execute(psycopg.sql.SQL("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'vector')"))
+                    result = cur.fetchone()
+                    vector_installed = result[0] if result else False
+
+                    if vector_installed:
+                        register_vector(conn)
         yield conn
 
 
@@ -187,7 +207,7 @@ class PostgresCatalog(Catalog):
         raise RuntimeError("PostgresCatalog.__init__ is not supported, please use `Catalog.from_postgres` instead.")
 
     @staticmethod
-    def from_uri(uri: str, extensions: list[str] | None = None, **options: str | None) -> PostgresCatalog:
+    def from_uri(uri: str, extensions: list[str] | None, **options: str | None) -> PostgresCatalog:
         """Create a PostgresCatalog from a connection string."""
         validate_connection_string(uri)
         c = PostgresCatalog.__new__(PostgresCatalog)

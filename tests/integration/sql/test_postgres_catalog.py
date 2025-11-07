@@ -596,11 +596,22 @@ def test_postgres_table_with_different_data_types(test_db, write_mode) -> None:
 
 
 @pytest.mark.integration()
-def test_postgres_table_with_embedding_columns(test_db) -> None:
+@pytest.mark.parametrize(
+    "extensions",
+    [
+        ["vector"],
+        None,
+    ],
+)
+def test_postgres_table_with_embedding_columns(test_db, extensions) -> None:
     if not test_db.startswith("postgres"):
         pytest.skip("Skipping test for non-PostgreSQL databases")
 
-    catalog = Catalog.from_postgres(test_db, extensions=["vector"])
+    if extensions is None:
+        # Pgvector extension is should be installed by default if available.
+        catalog = Catalog.from_postgres(test_db)
+    else:
+        catalog = Catalog.from_postgres(test_db, extensions=extensions)
     test_table = "test_pgvector_embeddings"
 
     try:
