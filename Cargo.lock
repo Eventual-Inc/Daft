@@ -2968,6 +2968,7 @@ name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
  "arc-swap",
+ "async-stream",
  "async-trait",
  "capitalize",
  "common-daft-config",
