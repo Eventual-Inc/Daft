@@ -77,7 +77,8 @@ where
                         DataOrReference::Reference(url, ioconfig) => {
                             urls_arr.push(Some(url));
                             let io_config = ioconfig.map(|c| {
-                                bincode::serialize(&c).expect("Failed to serialize IOConfig")
+                                bincode::serde::encode_to_vec(&c, bincode::config::legacy())
+                                    .expect("Failed to serialize IOConfig")
                             });
                             io_conf_arr.push(io_config);
                             data_arr.push_null();
@@ -138,8 +139,10 @@ where
         .into_series();
 
         let sa_field = Field::new("literal", DataType::File(T::get_type()).to_physical());
-        let io_conf: Option<Vec<u8>> =
-            io_config.map(|c| bincode::serialize(&c).expect("Failed to serialize IOConfig"));
+        let io_conf: Option<Vec<u8>> = io_config.map(|c| {
+            bincode::serde::encode_to_vec(&c, bincode::config::legacy())
+                .expect("Failed to serialize IOConfig")
+        });
         let io_conf = BinaryArray::from_iter("io_config", std::iter::repeat_n(io_conf, urls.len()));
 
         let data = BinaryArray::full_null("data", &DataType::Binary, urls.len()).into_series();

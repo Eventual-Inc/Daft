@@ -810,12 +810,12 @@ impl ToFromProto for ir::ScanTaskLikeRef {
     where
         Self: Sized,
     {
-        Ok(bincode::deserialize(&message.task)?)
+        Ok(bincode::serde::decode_from_slice(&message.task, bincode::config::legacy())?.0)
     }
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
         Ok(Self::Message {
-            task: bincode::serialize(self)?,
+            task: bincode::serde::encode_to_vec(self, bincode::config::legacy())?,
         })
     }
 }

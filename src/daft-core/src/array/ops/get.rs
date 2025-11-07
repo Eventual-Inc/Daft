@@ -210,10 +210,16 @@ where
                 let io_config = io_config_array.get(idx);
                 let io_config: Option<common_io_config::IOConfig> = {
                     io_config
-                        .map(bincode::deserialize)
+                        .map(|c| {
+                            bincode::serde::decode_from_slice::<common_io_config::IOConfig, _>(
+                                c,
+                                bincode::config::legacy(),
+                            )
+                        })
                         .transpose()
                         .ok()
                         .flatten()
+                        .map(|(config, _)| config)
                 };
 
                 Some(FileReference::new_from_reference(

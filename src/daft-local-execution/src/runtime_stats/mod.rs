@@ -214,8 +214,7 @@ impl RuntimeStatsManager {
 
             // Return the final stat snapshot for all nodes
             let mut final_snapshot = Vec::new();
-            for node_id in &active_nodes {
-                let runtime_stats = &node_stats_map[node_id];
+            for (node_id, runtime_stats) in &node_stats_map {
                 let event = runtime_stats.flush();
                 final_snapshot.push((*node_id, event));
             }

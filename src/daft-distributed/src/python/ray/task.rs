@@ -88,9 +88,11 @@ impl TaskResultHandle for RayTaskResultHandle {
 
             match ray_task_result {
                 Ok(RayTaskResult::Success(ray_part_refs, stats_serialized)) => {
-                    let stats =
-                        bincode::deserialize::<Vec<(usize, StatSnapshotRecv)>>(&stats_serialized)
-                            .expect("Failed to deserialize stats");
+                    let stats: Vec<(usize, StatSnapshotRecv)> =
+                        bincode::decode_from_slice(&stats_serialized, bincode::config::legacy())
+                            .expect("Failed to deserialize stats")
+                            .0;
+                    eprintln!("Deserialized stats: {:?}", stats);
                     let materialized_output = MaterializedOutput::new(
                         ray_part_refs
                             .into_iter()

@@ -4,6 +4,7 @@ pub mod python;
 
 use std::{ops::Index, sync::Arc, time::Duration};
 
+use bincode::{Decode, Encode};
 use indicatif::{HumanBytes, HumanCount, HumanDuration, HumanFloatCount};
 #[cfg(feature = "python")]
 use pyo3::types::PyModule;
@@ -22,7 +23,7 @@ pub type QueryPlan = Arc<str>;
 /// Unique identifier for a node in the execution plan.
 pub type NodeID = usize;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
 #[serde(tag = "type", content = "value")]
 pub enum Stat {
     // Integer Representations
@@ -56,7 +57,7 @@ impl std::fmt::Display for Stat {
 ///
 /// This is intended to be lightweight for execution to generate while still
 /// encoding to the same format as the receivable end.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Encode)]
 pub struct StatSnapshotSend(pub SmallVec<[(&'static str, Stat); 3]>);
 
 impl StatSnapshotSend {
@@ -102,7 +103,7 @@ macro_rules! snapshot {
 /// This should match the format of the sendable snapshot, but is a different
 /// type for deserialization
 #[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub struct StatSnapshotRecv(Vec<(String, Stat)>);
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

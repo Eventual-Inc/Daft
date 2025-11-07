@@ -23,7 +23,7 @@ pub trait RuntimeStats: Send + Sync + std::any::Any {
     fn snapshot(&self) -> StatSnapshotSend {
         self.build_snapshot(Ordering::Relaxed)
     }
-    /// Get a snapshot of the final statistics. Should be accurate.
+    /// Get a snapshot of the final statistics. Must be accurate.
     fn flush(&self) -> StatSnapshotSend {
         self.build_snapshot(Ordering::SeqCst)
     }

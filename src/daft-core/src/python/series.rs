@@ -427,13 +427,16 @@ impl PySeries {
     }
 
     pub fn _debug_bincode_serialize(&self, py: Python) -> PyResult<Py<PyAny>> {
-        let values = bincode::serialize(&self.series).unwrap();
+        let values =
+            bincode::serde::encode_to_vec(&self.series, bincode::config::legacy()).unwrap();
         Ok(PyBytes::new(py, &values).into())
     }
 
     #[staticmethod]
     pub fn _debug_bincode_deserialize(bytes: &[u8]) -> PyResult<Self> {
-        let values = bincode::deserialize::<Series>(bytes).unwrap();
+        let values: Series = bincode::serde::decode_from_slice(bytes, bincode::config::legacy())
+            .unwrap()
+            .0;
         Ok(Self { series: values })
     }
 

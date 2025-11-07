@@ -369,7 +369,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                     match f.inner {
                         DataOrReference::Reference(file, ioconfig) => {
                             let io_conf = ioconfig.map(|c| {
-                                bincode::serialize(&c)
+                                bincode::serde::encode_to_vec(&c, bincode::config::legacy())
                                     .expect("Failed to serialize IO configuration")
                             });
 
