@@ -92,7 +92,9 @@ class DataSink(ABC, Generic[WriteResultType]):
             Exception: Any exception that occurs during the write operation.
         """
         try:
+            print("before yield from")
             yield from self.write(micropartitions)
+            print("after yield from")
         except Exception as e:
             raise RuntimeError(f"Exception occurred while writing to {self.name()}: {type(e).__name__}: {e!s}") from e
 

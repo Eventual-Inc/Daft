@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Callable, Literal, TypedDict
+from contextlib import ExitStack
 
 from sqlalchemy import (
     JSON,
@@ -29,6 +30,7 @@ from daft.io import DataSink
 from daft.io.sink import WriteResult
 from daft.recordbatch.micropartition import MicroPartition
 from daft.schema import Schema
+
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -131,7 +133,10 @@ class SQLDataSink(DataSink[WriteSqlResult]):
         Yields:
             WriteResult: Result containing rows/bytes written metadata
         """
-        with self._create_connection() as conn:
+        with ExitStack() as stack:
+            conn = stack.enter_context(self._create_connection())
+            stack.enter_context(conn.begin())
+
             metadata = MetaData()
             metadata.reflect(bind=conn)
 
@@ -155,6 +160,7 @@ class SQLDataSink(DataSink[WriteSqlResult]):
                     )
                     print(f"yielding: {wr}")
                     yield wr
+                    print("finished a yield")
 
                 # Commit the transaction, writing all micropartition updates into the database
                 print("comitting")
