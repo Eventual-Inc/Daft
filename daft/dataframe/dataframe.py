@@ -1702,7 +1702,8 @@ class DataFrame:
     ) -> "DataFrame":
         """Write a DataFrame into a relational database table.
 
-        Supports PostgreSQL, SQLite, MySQL, and other SQLAlchemy-compatible databases.
+        Supports PostgreSQL and SQLite databases. This is still an experimental feature. Support for 
+        additional databases is ongoing.
 
         Args:
             table_name: Name of the target SQL table to write to.
