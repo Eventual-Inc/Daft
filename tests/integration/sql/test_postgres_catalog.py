@@ -583,7 +583,7 @@ def test_postgres_table_with_different_data_types(test_db, write_mode) -> None:
         assert parsed_nested_struct_col == [{"nested": {"a": 1, "b": "x"}}, {"nested": {"a": 2, "b": "y"}}]
 
         # Embedding
-        assert result_dict["embedding_col"] == [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+        assert [list(embedding) for embedding in result_dict["embedding_col"]] == [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
 
         # Decimal
         assert result_dict["decimal_col"] == [decimal.Decimal("123.45"), decimal.Decimal("678.90")]
@@ -647,9 +647,9 @@ def test_postgres_table_with_embedding_columns(test_db, extensions) -> None:
 
         embeddings = result.to_pydict()["embedding"]
         assert len(embeddings) == 3
-        assert embeddings[0] == [1.0, 2.0, 3.0]
-        assert embeddings[1] == [4.0, 5.0, 6.0]
-        assert embeddings[2] == [7.0, 8.0, 9.0]
+        assert list(embeddings[0]) == [1.0, 2.0, 3.0]
+        assert list(embeddings[1]) == [4.0, 5.0, 6.0]
+        assert list(embeddings[2]) == [7.0, 8.0, 9.0]
 
         new_df = daft.from_pydict(
             {
@@ -668,8 +668,8 @@ def test_postgres_table_with_embedding_columns(test_db, extensions) -> None:
         assert result.to_pydict()["text"] == ["new", "data"]
 
         new_embeddings = result.to_pydict()["embedding"]
-        assert new_embeddings[0] == [10.0, 11.0, 12.0]
-        assert new_embeddings[1] == [13.0, 14.0, 15.0]
+        assert list(new_embeddings[0]) == [10.0, 11.0, 12.0]
+        assert list(new_embeddings[1]) == [13.0, 14.0, 15.0]
 
     finally:
         if catalog.has_table(f"public.{test_table}"):
