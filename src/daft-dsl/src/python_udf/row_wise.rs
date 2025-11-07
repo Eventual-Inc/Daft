@@ -259,9 +259,15 @@ impl RowWisePyFn {
                 }
 
                 let f = || {
-                    func.call1((cls_ref, method_ref, args_ref, &py_args))
-                        .and_then(|res| Literal::from_pyobj(&res, Some(&self.return_dtype)))
-                        .map_err(DaftError::from)
+                    func.call1((
+                        self.function_name.as_ref(),
+                        cls_ref,
+                        method_ref,
+                        args_ref,
+                        &py_args,
+                    ))
+                    .and_then(|res| Literal::from_pyobj(&res, Some(&self.return_dtype)))
+                    .map_err(DaftError::from)
                 };
                 let res = retry(py, f, max_retries, on_error, delay_ms);
                 py_args.clear();
@@ -288,7 +294,8 @@ impl RowWisePyFn {
         let method = self.method.clone();
         let original_args = self.original_args.clone();
         let args = args.to_vec();
-        let py_return_type = daft_core::python::PyDataType::from(self.return_dtype.clone());
+        let udf_id = self.function_name.to_string();
+        let return_dtype = self.return_dtype.clone();
 
         common_runtime::python::execute_python_coroutine::<_, PySeries>(move |py| {
             let f = py
@@ -309,7 +316,9 @@ impl RowWisePyFn {
 
                 evaluated_args.push(py_args_for_row);
             }
+            let py_return_type = daft_core::python::PyDataType::from(return_dtype.clone());
             f.call1((
+                udf_id.as_str(),
                 cls.as_ref(),
                 method.as_ref(),
                 py_return_type,

@@ -6,6 +6,7 @@ from daft import DataType
 from daft.dependencies import np, pa
 from daft.expressions.expressions import Expression
 from daft.series import Series
+from daft.udf import metrics
 
 if TYPE_CHECKING:
     from collections.abc import Coroutine
@@ -28,6 +29,7 @@ def replace_expressions_with_evaluated_args(
 
 
 async def call_async_func_batched(
+    udf_id: str,
     cls: ClsBase[C],
     method: Callable[Concatenate[C, ...], Any],
     return_dtype: PyDataType,
@@ -45,11 +47,13 @@ async def call_async_func_batched(
         tasks.append(coroutine)
 
     dtype = DataType._from_pydatatype(return_dtype)
-    outputs = await asyncio.gather(*tasks)
-    return Series.from_pylist(outputs, dtype=dtype)._series
+    with metrics.metrics_context(udf_id):
+        outputs = await asyncio.gather(*tasks)
+        return Series.from_pylist(outputs, dtype=dtype)._series
 
 
 def call_func(
+    udf_id: str,
     cls: ClsBase[C],
     method: Callable[Concatenate[C, ...], Any],
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
@@ -60,11 +64,13 @@ def call_func(
 
     bound_method = cls._daft_bind_method(method)
 
-    output = bound_method(*args, **kwargs)
-    return output
+    with metrics.metrics_context(udf_id):
+        output = bound_method(*args, **kwargs)
+        return output
 
 
 def call_batch_func(
+    udf_id: str,
     cls: ClsBase[C],
     method: Callable[Concatenate[C, ...], Series],
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
@@ -76,7 +82,8 @@ def call_batch_func(
 
     bound_method = cls._daft_bind_method(method)
 
-    output = bound_method(*args, **kwargs)
+    with metrics.metrics_context(udf_id):
+        output = bound_method(*args, **kwargs)
     if isinstance(output, Series):
         output_series = output
     elif isinstance(output, list):
@@ -92,6 +99,7 @@ def call_batch_func(
 
 
 async def call_batch_async(
+    udf_id: str,
     cls: ClsBase[C],
     method: Callable[Concatenate[C, ...], Coroutine[Any, Any, Series]],
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
@@ -103,7 +111,8 @@ async def call_batch_async(
 
     bound_coroutine: Callable[..., Coroutine[Any, Any, Series]] = cls._daft_bind_coroutine_method(method)
 
-    output = await bound_coroutine(*args, **kwargs)
+    with metrics.metrics_context(udf_id):
+        output = await bound_coroutine(*args, **kwargs)
     if isinstance(output, Series):
         output_series = output
     elif isinstance(output, list):

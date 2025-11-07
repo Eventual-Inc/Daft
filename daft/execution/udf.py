@@ -8,7 +8,7 @@ import sys
 import tempfile
 from multiprocessing import resource_tracker, shared_memory
 from multiprocessing.connection import Listener
-from typing import IO, TYPE_CHECKING, cast
+from typing import IO, TYPE_CHECKING, Any, cast
 
 import daft.pickle
 from daft.daft import PyRecordBatch
@@ -53,7 +53,7 @@ class SharedMemoryTransport:
 
 
 class UdfHandle:
-    def __init__(self, udf_expr: PyExpr) -> None:
+    def __init__(self, udf_expr: PyExpr, udf_id: str) -> None:
         # Construct UNIX socket path for basic communication
         with tempfile.NamedTemporaryFile(delete=True) as tmp:
             self.socket_path = tmp.name
@@ -76,6 +76,7 @@ class UdfHandle:
 
         # Python auto-buffers stdout by default, so disable
         env["PYTHONUNBUFFERED"] = "1"
+        env["DAFT_UDF_ID"] = udf_id
 
         # Start the worker process
         self.process = subprocess.Popen(
@@ -114,7 +115,7 @@ class UdfHandle:
             lines.append(line.decode().rstrip())
         return lines
 
-    def eval_input(self, input: PyRecordBatch) -> tuple[PyRecordBatch, list[str]]:
+    def eval_input(self, input: PyRecordBatch) -> tuple[PyRecordBatch, list[str], dict[str, Any]]:
         if self.process.poll() is not None:
             raise RuntimeError("UDF process has terminated")
 
@@ -152,10 +153,10 @@ class UdfHandle:
         elif response[0] == _ERROR:
             raise RuntimeError("UDF unexpectedly failed with traceback:\n" + response[1])
         elif response[0] == _SUCCESS:
-            out_name, out_size = response[1], response[2]
+            _, out_name, out_size, metrics_payload = response
             output_bytes = self.transport.read_and_release(out_name, out_size)
             deserialized = PyRecordBatch.from_ipc_stream(output_bytes)
-            return (deserialized, stdout)
+            return (deserialized, stdout, metrics_payload)
         else:
             raise RuntimeError(f"Unknown response from actor: {response}")
 

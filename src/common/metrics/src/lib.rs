@@ -2,7 +2,7 @@ pub mod ops;
 #[cfg(feature = "python")]
 pub mod python;
 
-use std::{ops::Index, sync::Arc, time::Duration};
+use std::{ops::Index, slice, sync::Arc, time::Duration};
 
 use indicatif::{HumanBytes, HumanCount, HumanDuration, HumanFloatCount};
 #[cfg(feature = "python")]
@@ -57,32 +57,32 @@ impl std::fmt::Display for Stat {
 /// This is intended to be lightweight for execution to generate while still
 /// encoding to the same format as the receivable end.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct StatSnapshotSend(pub SmallVec<[(&'static str, Stat); 3]>);
+pub struct StatSnapshotSend(pub SmallVec<[(Arc<str>, Stat); 3]>);
 
 impl StatSnapshotSend {
-    pub fn names(&self) -> impl Iterator<Item = &'static str> + use<'_> {
-        self.0.iter().map(|(name, _)| *name)
+    pub fn names(&self) -> impl Iterator<Item = &str> + '_ {
+        self.0.iter().map(|(name, _)| name.as_ref())
     }
 
-    pub fn values(&self) -> impl Iterator<Item = &Stat> + use<'_> {
+    pub fn values(&self) -> impl Iterator<Item = &Stat> + '_ {
         self.0.iter().map(|(_, value)| value)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&'static str, &Stat)> + use<'_> {
-        self.0.iter().map(|(name, value)| (*name, value))
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &Stat)> + '_ {
+        self.0.iter().map(|(name, value)| (name.as_ref(), value))
     }
 }
 
 impl Index<usize> for StatSnapshotSend {
-    type Output = (&'static str, Stat);
+    type Output = (Arc<str>, Stat);
     fn index(&self, index: usize) -> &Self::Output {
         &self.0[index]
     }
 }
 
 impl IntoIterator for StatSnapshotSend {
-    type Item = (&'static str, Stat);
-    type IntoIter = smallvec::IntoIter<[(&'static str, Stat); 3]>;
+    type Item = (Arc<str>, Stat);
+    type IntoIter = smallvec::IntoIter<[(Arc<str>, Stat); 3]>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
@@ -92,7 +92,7 @@ impl IntoIterator for StatSnapshotSend {
 macro_rules! snapshot {
     ($($name:expr; $value:expr),* $(,)?) => {
         StatSnapshotSend(smallvec![
-            $(($name, $value)),*
+            $( (::std::sync::Arc::<str>::from($name), $value) ),*
         ])
     };
 }
@@ -106,28 +106,49 @@ macro_rules! snapshot {
 pub struct StatSnapshotRecv(Vec<(String, Stat)>);
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct StatSnapshotView<'a>(SmallVec<[(&'a str, Stat); 3]>);
+pub struct StatSnapshotView(SmallVec<[(Arc<str>, Stat); 3]>);
 
-impl From<StatSnapshotSend> for StatSnapshotView<'static> {
+impl From<StatSnapshotSend> for StatSnapshotView {
     fn from(snapshot: StatSnapshotSend) -> Self {
         Self(snapshot.0)
     }
 }
 
-impl<'a> IntoIterator for StatSnapshotView<'a> {
-    type Item = (&'a str, Stat);
-    type IntoIter = smallvec::IntoIter<[(&'a str, Stat); 3]>;
+impl StatSnapshotView {
+    pub fn iter(&self) -> StatSnapshotViewIter<'_> {
+        StatSnapshotViewIter {
+            inner: self.0.iter(),
+        }
+    }
+}
+
+pub struct StatSnapshotViewIter<'a> {
+    inner: slice::Iter<'a, (Arc<str>, Stat)>,
+}
+
+impl<'a> Iterator for StatSnapshotViewIter<'a> {
+    type Item = (&'a str, &'a Stat);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(|(name, stat)| (name.as_ref(), stat))
+    }
+}
+
+impl IntoIterator for StatSnapshotView {
+    type Item = (Arc<str>, Stat);
+    type IntoIter = smallvec::IntoIter<[(Arc<str>, Stat); 3]>;
+
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
 }
 
-impl<'de, 'a> IntoIterator for &'de StatSnapshotView<'a> {
-    type Item = &'de (&'a str, Stat);
-    type IntoIter = std::slice::Iter<'de, (&'a str, Stat)>;
+impl<'a> IntoIterator for &'a StatSnapshotView {
+    type Item = (&'a str, &'a Stat);
+    type IntoIter = StatSnapshotViewIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.iter()
+        self.iter()
     }
 }
 

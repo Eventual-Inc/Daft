@@ -443,7 +443,7 @@ mod tests {
         );
         assert_eq!(
             mock_state.get_latest_event()[1],
-            (ROWS_IN_KEY, Stat::Count(200))
+            (Arc::<str>::from(ROWS_IN_KEY), Stat::Count(200))
         );
 
         // Wait for throttle interval to pass, then send another event
@@ -458,7 +458,7 @@ mod tests {
         );
         assert_eq!(
             mock_state.get_latest_event()[1],
-            (ROWS_IN_KEY, Stat::Count(500))
+            (Arc::<str>::from(ROWS_IN_KEY), Stat::Count(500))
         );
     }
 
@@ -543,18 +543,18 @@ mod tests {
 
         // Test initial state
         let stats = node_stat.snapshot();
-        assert_eq!(stats[1], (ROWS_IN_KEY, Stat::Count(0)));
-        assert_eq!(stats[2], (ROWS_OUT_KEY, Stat::Count(0)));
+        assert_eq!(stats[1], (Arc::<str>::from(ROWS_IN_KEY), Stat::Count(0)));
+        assert_eq!(stats[2], (Arc::<str>::from(ROWS_OUT_KEY), Stat::Count(0)));
 
         // Test incremental updates
         node_stat.add_rows_in(100);
         node_stat.add_rows_in(50);
         let stats = node_stat.snapshot();
-        assert_eq!(stats[1], (ROWS_IN_KEY, Stat::Count(150)));
+        assert_eq!(stats[1], (Arc::<str>::from(ROWS_IN_KEY), Stat::Count(150)));
 
         node_stat.add_rows_out(75);
         let stats = node_stat.snapshot();
-        assert_eq!(stats[2], (ROWS_OUT_KEY, Stat::Count(75)));
+        assert_eq!(stats[2], (Arc::<str>::from(ROWS_OUT_KEY), Stat::Count(75)));
     }
 
     #[tokio::test(start_paused = true)]
@@ -584,7 +584,7 @@ mod tests {
         // Now we should get an event
         assert_eq!(state.get_total_calls(), 1);
         let event = state.get_latest_event();
-        assert_eq!(event[1], (ROWS_IN_KEY, Stat::Count(100)));
+        assert_eq!(event[1], (Arc::<str>::from(ROWS_IN_KEY), Stat::Count(100)));
     }
 
     #[tokio::test(start_paused = true)]
@@ -621,9 +621,12 @@ mod tests {
         let event = state.get_latest_event();
         assert_eq!(
             event[0],
-            (CPU_US_KEY, Stat::Duration(Duration::from_millis(1)))
+            (
+                Arc::<str>::from(CPU_US_KEY),
+                Stat::Duration(Duration::from_millis(1))
+            )
         );
-        assert_eq!(event[1], (ROWS_IN_KEY, Stat::Count(100)));
-        assert_eq!(event[2], (ROWS_OUT_KEY, Stat::Count(50)));
+        assert_eq!(event[1], (Arc::<str>::from(ROWS_IN_KEY), Stat::Count(100)));
+        assert_eq!(event[2], (Arc::<str>::from(ROWS_OUT_KEY), Stat::Count(50)));
     }
 }

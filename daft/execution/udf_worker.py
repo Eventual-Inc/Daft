@@ -22,6 +22,7 @@ from daft.execution.udf import (
 )
 from daft.expressions.expressions import ExpressionsProjection
 from daft.recordbatch import RecordBatch
+from daft.udf import metrics as udf_metrics
 
 
 def udf_event_loop(
@@ -35,6 +36,10 @@ def udf_event_loop(
     name, expr_projection_bytes = conn.recv()
     if name != _ENTER:
         raise ValueError(f"Expected '{_ENTER}' but got {name}")
+
+    udf_id = os.environ.get("DAFT_UDF_ID")
+    if udf_id is None:
+        raise RuntimeError("DAFT_UDF_ID environment variable is not set for UDF worker")
 
     transport = SharedMemoryTransport()
 
@@ -56,7 +61,10 @@ def udf_event_loop(
 
             input_bytes = transport.read_and_release(name, size)
             input = RecordBatch.from_ipc_stream(input_bytes)
-            evaluated = input.eval_expression_list(expression_projection)
+
+            with udf_metrics.metrics_context(udf_id):
+                evaluated = input.eval_expression_list(expression_projection)
+                metrics_payload = udf_metrics._snapshot(udf_id)
 
             output_bytes = evaluated.to_ipc_stream()
             out_name, out_size = transport.write_and_close(output_bytes)
@@ -66,7 +74,7 @@ def udf_event_loop(
             sys.stdout.flush()
             sys.stderr.flush()
 
-            conn.send((_SUCCESS, out_name, out_size))
+            conn.send((_SUCCESS, out_name, out_size, metrics_payload))
     except UDFException as e:
         exc = e.__cause__
         assert exc is not None
@@ -100,7 +108,10 @@ def udf_event_loop(
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
-        print("Usage: python -m daft.execution.udf_worker <socket_path> <secret>", file=sys.stderr)
+        print(
+            "Usage: python -m daft.execution.udf_worker <socket_path> <secret>",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     socket_path = sys.argv[1]

@@ -1,0 +1,274 @@
+from __future__ import annotations
+
+from collections import defaultdict
+from collections.abc import Mapping
+from typing import Any
+
+import pytest
+
+import daft
+from daft import DataType, Series
+from daft.subscribers import StatType, Subscriber
+from tests.conftest import get_tests_daft_runner_name
+
+pytestmark = pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native",
+    reason="Custom UDF metrics tests require the native runner with subscriber support",
+)
+
+
+class MetricsSubscriber(Subscriber):
+    def __init__(self) -> None:
+        self.query_ids: list[str] = []
+        self.node_stats: defaultdict[str, defaultdict[int, dict[str, tuple[StatType, Any]]]] = defaultdict(
+            lambda: defaultdict(dict)
+        )
+
+    def on_query_start(self, query_id: str, metadata: Any) -> None:
+        self.query_ids.append(query_id)
+
+    def on_query_end(self, query_id: str) -> None:
+        pass
+
+    def on_result_out(self, query_id: str, result: Any) -> None:
+        pass
+
+    def on_optimization_start(self, query_id: str) -> None:
+        pass
+
+    def on_optimization_end(self, query_id: str, optimized_plan: str) -> None:
+        pass
+
+    def on_exec_start(self, query_id: str, node_infos: list[Any]) -> None:
+        pass
+
+    def on_exec_operator_start(self, query_id: str, node_id: int) -> None:
+        pass
+
+    def on_exec_emit_stats(
+        self,
+        query_id: str,
+        all_stats: Mapping[int, Mapping[str, tuple[StatType, Any]]],
+    ) -> None:  # type: ignore[override]
+        for node_id, stats in all_stats.items():
+            self.node_stats[query_id][node_id] = {
+                name: (stat_type, value) for name, (stat_type, value) in stats.items()
+            }
+
+    def on_exec_operator_end(self, query_id: str, node_id: int) -> None:
+        pass
+
+    def on_exec_end(self, query_id: str) -> None:
+        pass
+
+
+def _find_udf_stats(subscriber: MetricsSubscriber, metric_name: str) -> dict[str, tuple[StatType, Any]]:
+    assert subscriber.query_ids, "No queries recorded by subscriber"
+    query_id = subscriber.query_ids[-1]
+    for stats in subscriber.node_stats[query_id].values():
+        if metric_name in stats:
+            return stats
+    raise AssertionError(f"Metric '{metric_name}' not found in emitted stats")
+
+
+VALUES = list(range(1, 11))
+VALUES_SUM = sum(VALUES)
+
+
+@pytest.mark.parametrize("num_udfs", [1, 2])
+@pytest.mark.parametrize("batch_size", [None, 1, 4])
+@pytest.mark.parametrize("use_process", [False, True])
+def test_udf_custom_metrics_func(num_udfs: int, batch_size: int | None, use_process: bool) -> None:
+    ctx = daft.context.get_context()
+    subscriber = MetricsSubscriber()
+    sub_name = (
+        f"udf-metrics-func-{'multi' if num_udfs == 2 else 'single'}-"
+        f"{batch_size}-{'proc' if use_process else 'inline'}"
+    )
+    ctx.attach_subscriber(sub_name, subscriber)
+
+    try:
+        df = daft.from_pydict({"value": VALUES})
+        if batch_size is not None:
+            df = df.into_batches(batch_size)
+
+        cases = []
+        for i in range(num_udfs):
+            from daft.udf import metrics
+
+            factor = i + 1
+            gauge_offset = i * 10
+            counter_name = f"udf{i} counter"
+            gauge_name = f"udf{i} gauge"
+
+            @daft.func(use_process=use_process)
+            def udf(
+                value: int,
+                *,
+                _ctr=counter_name,
+                _gauge=gauge_name,
+                _factor=factor,
+                _offset=gauge_offset,
+            ) -> int:
+                metrics.increment_counter(_ctr, amount=value * _factor)
+                metrics.set_gauge(_gauge, float(value + _offset))
+                return value + _factor
+
+            df = df.with_column(f"out_{i}", udf(daft.col("value")))
+
+            cases.append(
+                {
+                    "counter_name": counter_name,
+                    "gauge_name": gauge_name,
+                    "expected_counter": factor * VALUES_SUM,
+                    "expected_gauge_values": {float(v + gauge_offset) for v in VALUES},
+                }
+            )
+
+        df.collect()
+
+        for case in cases:
+            stats = _find_udf_stats(subscriber, case["counter_name"])
+            _, counter_value = stats[case["counter_name"]]
+            assert counter_value == case["expected_counter"]
+
+            _, gauge_value = stats[case["gauge_name"]]
+            assert gauge_value in case["expected_gauge_values"]
+    finally:
+        ctx.detach_subscriber(sub_name)
+
+
+@pytest.mark.parametrize("num_udfs", [1, 2])
+@pytest.mark.parametrize("batch_size", [None, 1, 4])
+@pytest.mark.parametrize("use_process", [False, True])
+def test_udf_custom_metrics_batch(num_udfs: int, batch_size: int | None, use_process: bool) -> None:
+    ctx = daft.context.get_context()
+    subscriber = MetricsSubscriber()
+    sub_name = (
+        f"udf-metrics-batch-{'multi' if num_udfs == 2 else 'single'}-"
+        f"{batch_size}-{'proc' if use_process else 'inline'}"
+    )
+    ctx.attach_subscriber(sub_name, subscriber)
+
+    try:
+        df = daft.from_pydict({"value": VALUES})
+        if batch_size is not None:
+            df = df.into_batches(batch_size)
+
+        cases = []
+        for i in range(num_udfs):
+            from daft.udf import metrics
+
+            factor = i + 1
+            gauge_offset = i * 10
+            counter_name = f"udf{i} counter"
+            gauge_name = f"udf{i} gauge"
+
+            @daft.func.batch(return_dtype=DataType.int64(), use_process=use_process)
+            def udf(
+                values: Series,
+                *,
+                _ctr=counter_name,
+                _gauge=gauge_name,
+                _factor=factor,
+                _offset=gauge_offset,
+            ) -> Series:
+                py_values = values.to_pylist()
+                for v in py_values:
+                    metrics.increment_counter(_ctr, amount=v * _factor)
+                    metrics.set_gauge(_gauge, float(v + _offset))
+                return Series.from_pylist([v + _factor for v in py_values])
+
+            df = df.with_column(f"out_{i}", udf(daft.col("value")))
+
+            cases.append(
+                {
+                    "counter_name": counter_name,
+                    "gauge_name": gauge_name,
+                    "expected_counter": factor * VALUES_SUM,
+                    "expected_gauge_values": {float(v + gauge_offset) for v in VALUES},
+                }
+            )
+
+        df.collect()
+
+        for case in cases:
+            stats = _find_udf_stats(subscriber, case["counter_name"])
+            _, counter_value = stats[case["counter_name"]]
+            assert counter_value == case["expected_counter"]
+
+            _, gauge_value = stats[case["gauge_name"]]
+            assert gauge_value in case["expected_gauge_values"]
+    finally:
+        ctx.detach_subscriber(sub_name)
+
+
+@pytest.mark.parametrize("num_udfs", [1, 2])
+@pytest.mark.parametrize("batch_size", [None, 1, 4])
+@pytest.mark.parametrize("use_process", [False, True])
+def test_udf_custom_metrics_cls(num_udfs: int, batch_size: int | None, use_process: bool) -> None:
+    ctx = daft.context.get_context()
+    subscriber = MetricsSubscriber()
+    sub_name = (
+        f"udf-metrics-cls-{'multi' if num_udfs == 2 else 'single'}-"
+        f"{batch_size}-{'proc' if use_process else 'inline'}"
+    )
+    ctx.attach_subscriber(sub_name, subscriber)
+
+    try:
+        df = daft.from_pydict({"value": VALUES})
+        if batch_size is not None:
+            df = df.into_batches(batch_size)
+
+        cases = []
+        for i in range(num_udfs):
+            from daft.udf import metrics
+
+            factor = i + 1
+            gauge_offset = i * 10
+            counter_name = f"udf{i} counter"
+            gauge_name = f"udf{i} gauge"
+
+            @daft.cls(use_process=use_process)
+            class MetricUdf:
+                def __init__(
+                    self,
+                    addend: int,
+                    gauge_offset: int,
+                    counter_name: str,
+                    gauge_name: str,
+                ) -> None:
+                    self.addend = addend
+                    self.gauge_offset = gauge_offset
+                    self.counter_name = counter_name
+                    self.gauge_name = gauge_name
+
+                def __call__(self, value: int) -> int:
+                    metrics.increment_counter(self.counter_name, amount=value * self.addend)
+                    metrics.set_gauge(self.gauge_name, float(value + self.gauge_offset))
+                    return value + self.addend
+
+            instance = MetricUdf(factor, gauge_offset, counter_name, gauge_name)
+
+            cases.append(
+                {
+                    "counter_name": counter_name,
+                    "gauge_name": gauge_name,
+                    "expected_counter": factor * VALUES_SUM,
+                    "expected_gauge_values": {float(v + gauge_offset) for v in VALUES},
+                }
+            )
+
+            df = df.with_column(f"out_{i}", instance(daft.col("value")))
+
+        df.collect()
+
+        for case in cases:
+            stats = _find_udf_stats(subscriber, case["counter_name"])
+            _, counter_value = stats[case["counter_name"]]
+            assert counter_value == case["expected_counter"]
+
+            _, gauge_value = stats[case["gauge_name"]]
+            assert gauge_value in case["expected_gauge_values"]
+    finally:
+        ctx.detach_subscriber(sub_name)

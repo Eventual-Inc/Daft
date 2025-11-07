@@ -3007,6 +3007,7 @@ dependencies = [
  "itertools 0.14.0",
  "kanal",
  "log",
+ "once_cell",
  "pin-project",
  "pyo3",
  "pyo3-async-runtimes",
