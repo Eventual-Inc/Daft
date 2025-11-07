@@ -33,11 +33,10 @@ impl ConcatNode {
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id(), other.node_id()],
-            vec![child.name(), other.name()],
         );
 
         let config = PipelineNodeConfig::new(

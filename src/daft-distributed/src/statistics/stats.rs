@@ -1,4 +1,5 @@
 use common_error::DaftResult;
+use common_metrics::QueryID;
 use opentelemetry::{
     KeyValue, global,
     metrics::{Counter, Meter, UpDownCounter},
@@ -20,10 +21,13 @@ pub struct DefaultRuntimeStats {
 }
 
 impl DefaultRuntimeStats {
-    pub fn new_impl(meter: &Meter, node_id: NodeID) -> Self {
-        let node_kv = KeyValue::new("node_id", node_id.to_string());
+    pub fn new_impl(meter: &Meter, node_id: NodeID, query_id: QueryID) -> Self {
+        let node_kv = vec![
+            KeyValue::new("node_id", node_id.to_string()),
+            KeyValue::new("query_id", query_id),
+        ];
         Self {
-            node_kv: vec![node_kv],
+            node_kv,
             active_tasks: meter
                 .i64_up_down_counter("daft.distributed.node_stats.active_tasks")
                 .build(),
@@ -39,8 +43,12 @@ impl DefaultRuntimeStats {
         }
     }
 
-    pub fn new(node_id: NodeID) -> Self {
-        Self::new_impl(&global::meter("daft.distributed.node_stats"), node_id)
+    pub fn new(node_id: NodeID, query_id: QueryID) -> Self {
+        Self::new_impl(
+            &global::meter("daft.distributed.node_stats"),
+            node_id,
+            query_id,
+        )
     }
 
     fn inc_active_tasks(&self) {
@@ -55,22 +63,22 @@ impl DefaultRuntimeStats {
 impl RuntimeStats for DefaultRuntimeStats {
     fn handle_task_event(&self, event: &TaskEvent) -> DaftResult<()> {
         match event {
-            TaskEvent::TaskScheduled { .. } => {
+            TaskEvent::Scheduled { .. } => {
                 self.inc_active_tasks();
             }
-            TaskEvent::TaskCompleted { .. } => {
+            TaskEvent::Completed { .. } => {
                 self.dec_active_tasks();
                 self.completed_tasks.add(1, self.node_kv.as_slice());
             }
-            TaskEvent::TaskFailed { .. } => {
+            TaskEvent::Failed { .. } => {
                 self.dec_active_tasks();
                 self.failed_tasks.add(1, self.node_kv.as_slice());
             }
-            TaskEvent::TaskCancelled { .. } => {
+            TaskEvent::Cancelled { .. } => {
                 self.dec_active_tasks();
                 self.cancelled_tasks.add(1, self.node_kv.as_slice());
             }
-            TaskEvent::TaskSubmitted { .. } => (), // We don't track submitted tasks
+            TaskEvent::Submitted { .. } => (), // We don't track submitted tasks
         }
 
         Ok(())

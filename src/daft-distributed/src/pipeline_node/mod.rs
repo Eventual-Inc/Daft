@@ -13,17 +13,17 @@ use common_display::{
     tree::TreeDisplay,
 };
 use common_error::DaftResult;
+use common_metrics::QueryID;
 use common_partitioning::PartitionRef;
 use common_treenode::ConcreteTreeNode;
 use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{InMemoryInfo, partitioning::ClusteringSpecRef, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt, stream::BoxStream};
-use itertools::Itertools;
 use materialize::materialize_all_pipeline_outputs;
 
 use crate::{
-    plan::{PlanExecutionContext, PlanID},
+    plan::{PlanExecutionContext, QueryIdx},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SchedulingStrategy, SwordfishTask, Task, TaskContext},
@@ -142,37 +142,32 @@ impl PipelineNodeConfig {
 
 #[derive(Clone)]
 pub(super) struct PipelineNodeContext {
-    pub plan_id: PlanID,
+    pub query_idx: QueryIdx,
+    pub query_id: QueryID,
     pub node_id: NodeID,
     pub node_name: NodeName,
-    pub child_ids: Vec<NodeID>,
-    pub child_names: Vec<NodeName>,
 }
 
 impl PipelineNodeContext {
     pub fn new(
-        plan_id: PlanID,
+        query_idx: QueryIdx,
+        query_id: QueryID,
         node_id: NodeID,
         node_name: NodeName,
-        child_ids: Vec<NodeID>,
-        child_names: Vec<NodeName>,
     ) -> Self {
         Self {
-            plan_id,
+            query_idx,
+            query_id,
             node_id,
             node_name,
-            child_ids,
-            child_names,
         }
     }
 
     pub fn to_hashmap(&self) -> HashMap<String, String> {
         HashMap::from([
-            ("plan_id".to_string(), self.plan_id.to_string()),
+            ("query_id".to_string(), self.query_id.to_string()),
             ("node_id".to_string(), self.node_id.to_string()),
             ("node_name".to_string(), self.node_name.to_string()),
-            ("child_ids".to_string(), self.child_ids.iter().join(",")),
-            ("child_names".to_string(), self.child_names.iter().join(",")),
         ])
     }
 }
@@ -181,7 +176,10 @@ pub(crate) trait PipelineNodeImpl: Send + Sync {
     fn context(&self) -> &PipelineNodeContext;
     fn config(&self) -> &PipelineNodeConfig;
     fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::new(self.node_id()))
+        Arc::new(DefaultRuntimeStats::new(
+            self.node_id(),
+            self.context().query_id.clone(),
+        ))
     }
 
     fn children(&self) -> Vec<DistributedPipelineNode>;
@@ -191,10 +189,6 @@ pub(crate) trait PipelineNodeImpl: Send + Sync {
     ) -> SubmittableTaskStream;
     fn name(&self) -> NodeName {
         self.context().node_name
-    }
-    #[allow(dead_code)]
-    fn plan_id(&self) -> PlanID {
-        self.context().plan_id
     }
     fn node_id(&self) -> NodeID {
         self.context().node_id

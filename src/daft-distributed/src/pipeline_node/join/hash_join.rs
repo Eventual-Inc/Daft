@@ -49,11 +49,10 @@ impl HashJoinNode {
         output_schema: SchemaRef,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![left.node_id(), right.node_id()],
-            vec![left.name(), right.name()],
         );
         let partition_cols = left_on
             .iter()
