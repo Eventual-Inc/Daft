@@ -600,7 +600,7 @@ class PostgresTable(Table):
                         )
 
                     try:
-                        single_col_df = read_sql(single_col_query, connection_string)
+                        single_col_df = read_sql(single_col_query.as_string(), connection_string)
                         inferred_dtype = single_col_df.schema()[column_name].dtype
                         fields.append(Field.create(column_name, inferred_dtype))
                     except Exception:
