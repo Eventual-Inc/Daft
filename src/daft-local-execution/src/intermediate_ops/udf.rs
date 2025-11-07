@@ -34,11 +34,12 @@ use tracing::{Span, instrument};
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
+#[cfg(feature = "python")]
+use crate::udf_metrics;
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{MorselSizeRequirement, NodeName},
     runtime_stats::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats},
-    udf_metrics,
 };
 
 /// Given an expression, extract the indexes of used columns and remap them to
@@ -178,7 +179,7 @@ impl UdfMetricUpdates {
         self.counters.is_empty() && self.gauges.is_empty()
     }
 
-    fn absorb(&mut self, mut other: UdfMetricUpdates) {
+    fn absorb(&mut self, mut other: Self) {
         for (name, value) in other.counters.drain() {
             *self.counters.entry(name).or_default() += value;
         }
@@ -189,35 +190,36 @@ impl UdfMetricUpdates {
     }
 }
 
+#[cfg(feature = "python")]
 fn take_python_udf_metrics(udf_id: &str) -> DaftResult<UdfMetricUpdates> {
     let snapshot = udf_metrics::take_snapshot_for_udf(udf_id);
-    let mut updates = UdfMetricUpdates::default();
-    updates.counters = snapshot.counters;
-    updates.gauges = snapshot.gauges;
-    Ok(updates)
+    Ok(UdfMetricUpdates {
+        counters: snapshot.counters,
+        gauges: snapshot.gauges,
+    })
 }
 
 #[cfg(feature = "python")]
 fn metric_updates_from_py(metrics: &Bound<'_, PyDict>) -> PyResult<UdfMetricUpdates> {
     let mut updates = UdfMetricUpdates::default();
 
-    if let Some(counters_any) = metrics.get_item("counters")? {
-        if let Ok(counters) = counters_any.cast::<PyDict>() {
-            for (name, value) in counters.iter() {
-                let metric_name: String = name.extract()?;
-                let amount: u64 = value.extract()?;
-                updates.counters.insert(metric_name, amount);
-            }
+    if let Some(counters_any) = metrics.get_item("counters")?
+        && let Ok(counters) = counters_any.cast::<PyDict>()
+    {
+        for (name, value) in counters.iter() {
+            let metric_name: String = name.extract()?;
+            let amount: u64 = value.extract()?;
+            updates.counters.insert(metric_name, amount);
         }
     }
 
-    if let Some(gauges_any) = metrics.get_item("gauges")? {
-        if let Ok(gauges) = gauges_any.cast::<PyDict>() {
-            for (name, value) in gauges.iter() {
-                let metric_name: String = name.extract()?;
-                let gauge_value: f64 = value.extract()?;
-                updates.gauges.insert(metric_name, gauge_value);
-            }
+    if let Some(gauges_any) = metrics.get_item("gauges")?
+        && let Ok(gauges) = gauges_any.cast::<PyDict>()
+    {
+        for (name, value) in gauges.iter() {
+            let metric_name: String = name.extract()?;
+            let gauge_value: f64 = value.extract()?;
+            updates.gauges.insert(metric_name, gauge_value);
         }
     }
 
@@ -314,8 +316,7 @@ impl UdfHandle {
 
         let metrics = Python::attach(|py| -> PyResult<UdfMetricUpdates> {
             let bound = metrics_payload.bind(py);
-            let dict = bound.cast::<PyDict>()?;
-            metric_updates_from_py(&dict)
+            metric_updates_from_py(bound.cast::<PyDict>()?)
         })
         .map_err(DaftError::from)?;
 
@@ -337,7 +338,10 @@ impl UdfHandle {
     }
 
     #[cfg(not(feature = "python"))]
-    fn eval_input(&mut self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
+    fn eval_input(
+        &mut self,
+        input: Arc<MicroPartition>,
+    ) -> DaftResult<(Arc<MicroPartition>, UdfMetricUpdates)> {
         panic!("Cannot evaluate a UDF without compiling for Python");
     }
 

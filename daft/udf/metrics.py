@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import contextvars
 from contextlib import contextmanager
-from typing import Any, Dict
+from typing import Any
 
-from daft.daft import _udf_metrics as _rust_metrics
+from daft.daft import _udf_metrics as _rust_metrics  # type: ignore[attr-defined]
 
 _CURRENT_UDF_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar("daft_udf_metrics_udf_id", default=None)
 
@@ -29,7 +29,7 @@ def set_gauge(name: str, value: float) -> None:
 
 
 @contextmanager
-def metrics_context(udf_id: str):
+def metrics_context(udf_id: str) -> Any:
     if not isinstance(udf_id, str) or not udf_id:
         raise ValueError("metrics_context requires a non-empty string udf_id")
     token = _CURRENT_UDF_ID.set(udf_id)
@@ -39,7 +39,7 @@ def metrics_context(udf_id: str):
         _CURRENT_UDF_ID.reset(token)
 
 
-def _snapshot(udf_id: str) -> Dict[str, Dict[str, Any]]:
+def _snapshot(udf_id: str) -> dict[str, dict[str, Any]]:
     snapshot = _rust_metrics._snapshot(udf_id)
     assert isinstance(snapshot, dict)
     return snapshot

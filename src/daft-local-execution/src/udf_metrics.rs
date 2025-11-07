@@ -1,19 +1,17 @@
-#[cfg(feature = "python")]
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::{LazyLock, Mutex},
+};
 
-#[cfg(feature = "python")]
-use once_cell::sync::Lazy;
 #[cfg(feature = "python")]
 use pyo3::{Py, exceptions::PyValueError, prelude::*, types::PyDict};
 
-#[cfg(feature = "python")]
 #[derive(Default)]
 pub struct MetricsSnapshot {
     pub counters: HashMap<String, u64>,
     pub gauges: HashMap<String, f64>,
 }
 
-#[cfg(feature = "python")]
 #[derive(Default)]
 struct MetricsStore {
     counters: HashMap<String, u64>,
@@ -21,7 +19,6 @@ struct MetricsStore {
     last_counters: HashMap<String, u64>,
 }
 
-#[cfg(feature = "python")]
 impl MetricsStore {
     fn increment_counter(&mut self, name: &str, amount: u64) {
         *self.counters.entry(name.to_string()).or_default() += amount;
@@ -55,9 +52,8 @@ impl MetricsStore {
     }
 }
 
-#[cfg(feature = "python")]
-static METRIC_STORES: Lazy<Mutex<HashMap<String, MetricsStore>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+static METRIC_STORES: LazyLock<Mutex<HashMap<String, MetricsStore>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[cfg(feature = "python")]
 fn with_store_mut<F, R>(udf_id: &str, f: F) -> PyResult<R>
@@ -71,9 +67,7 @@ where
     let mut stores = METRIC_STORES
         .lock()
         .expect("Failed to lock UDF metrics store");
-    let store = stores
-        .entry(udf_id.to_string())
-        .or_insert_with(MetricsStore::default);
+    let store = stores.entry(udf_id.to_string()).or_default();
     Ok(f(store))
 }
 
@@ -102,18 +96,14 @@ fn set_gauge(udf_id: &str, name: &str, value: f64) -> PyResult<()> {
     Ok(())
 }
 
-#[cfg(feature = "python")]
 pub fn take_snapshot_for_udf(udf_id: &str) -> MetricsSnapshot {
     let mut stores = METRIC_STORES
         .lock()
         .expect("Failed to lock UDF metrics store");
-    let store = stores
-        .entry(udf_id.to_string())
-        .or_insert_with(MetricsStore::default);
+    let store = stores.entry(udf_id.to_string()).or_default();
     store.snapshot_delta()
 }
 
-#[cfg(feature = "python")]
 pub fn take_snapshot_native() -> HashMap<String, MetricsSnapshot> {
     let mut stores = METRIC_STORES
         .lock()
