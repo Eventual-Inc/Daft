@@ -256,7 +256,7 @@ class PostgresCatalog(Catalog):
         Args:
             identifier (Identifier): The identifier of the table to create.
             schema (Schema): The schema of the table to create.
-            properties (Properties): The properties of the table to create. One supported property is "enable_rls" (bool), which enables Row Level Security by default. See: https://www.postgresql.org/docs/current/ddl-rowsecurity.html
+            properties (Properties): The properties of the table to create. One supported property is "enable_rls" (bool), which enables Row Level Security. This property is set to True by default. See: https://www.postgresql.org/docs/current/ddl-rowsecurity.html
             partition_fields (list[PartitionField]): The partition fields of the table to create.
 
         Returns:
@@ -300,7 +300,7 @@ class PostgresCatalog(Catalog):
                         )
                     )
 
-                    if properties and properties.get("enable_rls", False):
+                    if properties is None or properties.get("enable_rls", True):
                         cur.execute(
                             psycopg.sql.SQL("ALTER TABLE {} ENABLE ROW LEVEL SECURITY").format(quoted_full_table)
                         )

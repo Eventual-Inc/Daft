@@ -8,6 +8,7 @@ from typing import Any
 import pandas as pd
 import pyarrow as pa
 import pytest
+from sqlalchemy import create_engine, text
 
 import daft
 from daft.catalog import Catalog, NotFoundError
@@ -708,6 +709,47 @@ def test_postgres_table_with_map_columns(test_db) -> None:
         assert result.to_pydict()["a"] == [1, None, None]
         # The map column should contain the original data: [{"a": 1}], [], [{"b": 2}]
         assert result.to_pydict()["map_col"] == [{"a": 1}, {}, {"b": 2}]
+    finally:
+        if catalog.has_table(f"public.{test_table}"):
+            catalog.drop_table(f"public.{test_table}")
+
+
+def _check_rls_enabled(test_db: str, schema_name: str, table_name: str) -> bool:
+    engine = create_engine(test_db)
+    with engine.connect() as conn:
+        result = conn.execute(
+            text("""
+                SELECT relrowsecurity FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE c.relname = :table_name AND n.nspname = :schema_name
+            """),
+            {"table_name": table_name, "schema_name": schema_name},
+        ).fetchone()
+        return result[0] if result else False
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize("enable_rls", [None, True, False])
+def test_postgres_catalog_create_table_rls_defaults(test_db, enable_rls) -> None:
+    if not test_db.startswith("postgres"):
+        pytest.skip("Skipping test for non-PostgreSQL databases")
+
+    catalog = Catalog.from_postgres(test_db)
+    test_table = "test_rls_table"
+
+    try:
+        df = daft.from_pydict(
+            {
+                "id": [1, 2, 3],
+                "name": ["Alice", "Bob", "Charlie"],
+            }
+        )
+        if enable_rls is None:
+            catalog.create_table(f"public.{test_table}", df)
+            assert _check_rls_enabled(test_db, "public", test_table)
+        else:
+            catalog.create_table(f"public.{test_table}", df, properties={"enable_rls": enable_rls})
+            assert _check_rls_enabled(test_db, "public", test_table) == enable_rls
     finally:
         if catalog.has_table(f"public.{test_table}"):
             catalog.drop_table(f"public.{test_table}")
