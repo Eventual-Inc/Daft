@@ -133,44 +133,42 @@ class SQLDataSink(DataSink[WriteSqlResult]):
         Yields:
             WriteResult: Result containing rows/bytes written metadata
         """
-        with ExitStack() as stack:
-            conn = stack.enter_context(self._create_connection())
-            stack.enter_context(conn.begin())
+        with self._create_connection() as conn:
+            with conn.begin():
+                metadata = MetaData()
+                metadata.reflect(bind=conn)
 
-            metadata = MetaData()
-            metadata.reflect(bind=conn)
+                table = create_table_metadata(self._table_name, conn, self._df_schema.to_pyarrow_schema(), metadata)
 
-            table = create_table_metadata(self._table_name, conn, self._df_schema.to_pyarrow_schema(), metadata)
+                result = WriteSqlResult(table_name=self._table_name)
 
-            result = WriteSqlResult(table_name=self._table_name)
+                try:
+                    for micropartition in micropartitions:
+                        # Convert MicroPartition to PyArrow table
+                        micropartition_arrow_table = micropartition.to_arrow()
+                        rows_written = micropartition_arrow_table.num_rows
+                        bytes_written = micropartition_arrow_table.nbytes
 
-            try:
-                for micropartition in micropartitions:
-                    # Convert MicroPartition to PyArrow table
-                    micropartition_arrow_table = micropartition.to_arrow()
-                    rows_written = micropartition_arrow_table.num_rows
-                    bytes_written = micropartition_arrow_table.nbytes
+                        insert_arrow_table(conn, table, micropartition_arrow_table)
 
-                    insert_arrow_table(conn, table, micropartition_arrow_table)
+                        wr = WriteResult(
+                            result=result,
+                            bytes_written=bytes_written,
+                            rows_written=rows_written,
+                        )
+                        print(f"yielding: {wr}")
+                        yield wr
+                        print("finished a yield")
 
-                    wr = WriteResult(
-                        result=result,
-                        bytes_written=bytes_written,
-                        rows_written=rows_written,
-                    )
-                    print(f"yielding: {wr}")
-                    yield wr
-                    print("finished a yield")
+                    # Commit the transaction, writing all micropartition updates into the database
+                    # print("comitting")
+                    # conn.commit()
+                    # print("comitted")
 
-                # Commit the transaction, writing all micropartition updates into the database
-                print("comitting")
-                conn.commit()
-                print("comitted")
-
-            except Exception as e:
-                print("before rollback")
-                conn.rollback()
-                raise RuntimeError(f"Failed to write to SQL table '{self._table_name}': {e}") from e
+                except Exception as e:
+                    print("before rollback")
+                    conn.rollback()
+                    raise RuntimeError(f"Failed to write to SQL table '{self._table_name}': {e}") from e
 
     def finalize(self, write_results: list[WriteResult[WriteSqlResult]]) -> MicroPartition:
         """Finalize the write operation and return summary statistics.

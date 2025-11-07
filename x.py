@@ -2,7 +2,7 @@ import os
 import daft
 from datetime import datetime
 
-N = 1000
+N = 10
 # LIM = 0x110000
 LIM = 1000
 df = daft.from_pydict({"a": list(range(1, N)), "b": [chr(x % LIM) for x in range(1, N)]})
