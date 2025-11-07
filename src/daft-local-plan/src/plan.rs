@@ -188,7 +188,7 @@ impl LocalPhysicalPlan {
                 ..
             })
             | Self::VLLMProject(VLLMProject { context, .. }) => context,
-            | Self::WindowOrderByOnly(WindowOrderByOnly { context, .. }) => context,
+            Self::WindowOrderByOnly(WindowOrderByOnly { context, .. }) => context,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { context, .. })
             | Self::LanceWrite(LanceWrite { context, .. })
@@ -921,7 +921,7 @@ impl LocalPhysicalPlan {
         output_column_name: Arc<str>,
         schema: SchemaRef,
         stats_state: StatsState,
-        context: HashMap<String, String>,
+        context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::VLLMProject(VLLMProject {
             input,
@@ -2030,5 +2030,5 @@ pub struct VLLMProject {
     pub output_column_name: Arc<str>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub context: HashMap<String, String>,
+    pub context: LocalNodeContext,
 }

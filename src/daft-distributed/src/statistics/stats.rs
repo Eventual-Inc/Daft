@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use common_error::DaftResult;
-use common_metrics::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshotRecv, QueryID};
+use common_metrics::{CPU_US_KEY, QueryID, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshotRecv};
 use opentelemetry::{
     KeyValue, global,
     metrics::{Counter, Meter, UpDownCounter},

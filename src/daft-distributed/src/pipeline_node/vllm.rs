@@ -103,7 +103,7 @@ impl VLLMNode {
                 task,
                 &(self.clone() as Arc<dyn PipelineNodeImpl>),
                 &move |input| {
-                    use daft_local_plan::LocalPhysicalPlan;
+                    use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
                     use daft_logical_plan::stats::StatsState;
 
                     LocalPhysicalPlan::vllm_project(
@@ -113,7 +113,10 @@ impl VLLMNode {
                         output_column_name.clone(),
                         schema.clone(),
                         StatsState::NotMaterialized,
-                        hash_map! { "distributed_node_id".to_string() => node_id.to_string() },
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
                     )
                 },
             );

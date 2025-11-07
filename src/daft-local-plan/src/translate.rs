@@ -498,7 +498,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 vllm_project.output_column_name.clone(),
                 vllm_project.output_schema.clone(),
                 vllm_project.stats_state.clone(),
-                HashMap::new(),
+                LocalNodeContext::default(),
             ))
         }
         LogicalPlan::Intersect(_)

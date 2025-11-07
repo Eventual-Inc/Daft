@@ -1557,7 +1557,7 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context.clone(),
+                context,
             )
             .boxed()
         }
