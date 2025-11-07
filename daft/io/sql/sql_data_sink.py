@@ -49,7 +49,7 @@ SQL_SINK_MODES = Literal["append", "overwrite"]
 """The supported write modes for the SQLDataSink.
 
 The supported modes are:
-    - "append": Inserts new rows into an existing table. It's an error if the table does not exist.
+    - "append": Inserts new rows into an existing table. The table is created if it doesn't exist.
     - "overwrite": Drops the table if it already exists. Always creates a new table.
 """
 
@@ -110,9 +110,11 @@ class SQLDataSink(DataSink[WriteSqlResult]):
                 drop_table_if_exists(self._table_name, conn)
                 create_table(self._table_name, conn, self._df_schema)
             elif self._mode == "append":
-                ensure_table_exists(self._table_name, conn, self._df_schema)
+                if not table_exists(self._table_name, conn):
+                    create_table(self._table_name, conn, self._df_schema)
             else:
                 raise ValueError(f"Unrecognized mode: '{self._mode}'. Expecting one of: {SQL_SINK_MODES}")
+            ensure_table_exists(self._table_name, conn, self._df_schema)
         finally:
             conn.close()
 
@@ -222,7 +224,7 @@ def create_table(table_name: str, conn: Connection, df_schema: Schema) -> None:
 def ensure_table_exists(table_name: str, conn: Connection, df_schema: Schema) -> None:
     """Ensure that a table exists in the database."""
     inspector = inspect(conn)
-    if table_name not in inspector.get_table_names():
+    if not table_exists(table_name, conn):
         raise ValueError(f"Table '{table_name}' does not exist!")
 
     # The table must have the exact same columns (name + type) of the DataFrame that we're writing.
@@ -263,10 +265,13 @@ def ensure_table_exists(table_name: str, conn: Connection, df_schema: Schema) ->
 def drop_table_if_exists(table_name: str, conn: Connection) -> None:
     """Drop the table if it exists."""
     inspector = inspect(conn)
-    if table_name in inspector.get_table_names():
-        conn.execute(text(f"DROP TABLE {table_name}"))
+    if table_exists(table_name, conn):
+        conn.execute(text(f"DROP TABLE :table_name"), {"table_name": table_name})
         conn.commit()
 
+def table_exists(table_name: str, conn: Connection) -> bool:
+    """True if the table exists. False otherwise."""
+    return table_name in inspector.get_table_names()
 
 def create_table_metadata(table_name: str, conn: Connection, arrow_schema: pa.Schema, metadata: MetaData) -> Table:
     """Create the SQL table construct: columns + types + metadata."""
