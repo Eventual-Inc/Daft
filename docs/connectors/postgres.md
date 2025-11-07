@@ -16,6 +16,8 @@ pip install -U "daft[postgres]"
 
 To read from PostgreSQL tables, use Daft's [Catalog API](../api/catalogs_tables.md). Daft provides high-level APIs for connecting to PostgreSQL databases and accessing tables as DataFrames.
 
+To connect to a PostgreSQL database, provide a connection string to `Catalog.from_postgres()` and a list of PostgreSQL extensions to install. By default, the pgvector `vector` extension is automatically installed if available for vector support.
+
 === "🐍 Python"
 
     ```python
@@ -23,7 +25,8 @@ To read from PostgreSQL tables, use Daft's [Catalog API](../api/catalogs_tables.
     from daft.catalog import Catalog
 
     # Connect to PostgreSQL database
-    catalog = Catalog.from_postgres("postgresql://user:password@localhost:5432/mydb")
+    # Note: The pgvector extension is enabled by default for vector support
+    catalog = Catalog.from_postgres("postgresql://user:password@localhost:5432/mydb", extensions=["vector"])
 
     # List available schemas
     schemas = catalog.list_namespaces()

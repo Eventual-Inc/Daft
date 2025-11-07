@@ -13,6 +13,7 @@ from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema,
 from daft.datatype import DataType
 from daft.expressions import col
 from daft.io._sql import read_sql
+from daft.logical.schema import Field
 
 
 @contextmanager
@@ -500,7 +501,107 @@ class PostgresTable(Table):
 
     def schema(self) -> Schema:
         """Returns the table's schema."""
-        return self.read().schema()
+        connection_string, identifier = self._inner
+
+        if len(identifier) == 1:
+            # When no schema is specified, PostgreSQL uses the schema search path to select the schema to use.
+            # Since this is user-configurable, we simply pass along the single identifier to PostgreSQL.
+            # See: https://www.postgresql.org/docs/current/ddl-schemas.html#DDL-SCHEMAS-PATH
+            schema_name = None
+            table_name = identifier[0]
+        elif len(identifier) == 2:
+            schema_name = identifier[0]
+            table_name = identifier[1]
+        else:
+            raise ValueError(f"Invalid table identifier: {identifier}")
+
+        # Query the database schema to get column information
+        with postgres_connection(connection_string, self._extensions) as conn:
+            with conn.cursor() as cur:
+                if schema_name:
+                    cur.execute(
+                        """
+                        SELECT
+                            c.column_name,
+                            c.data_type,
+                            c.udt_name,
+                            CASE
+                                WHEN c.data_type = 'USER-DEFINED' AND c.udt_name = 'vector'
+                                THEN a.atttypmod
+                                ELSE NULL
+                            END as vector_dimension
+                        FROM information_schema.columns c
+                        JOIN pg_class cls ON cls.relname = c.table_name
+                        JOIN pg_namespace nsp ON nsp.oid = cls.relnamespace AND nsp.nspname = c.table_schema
+                        LEFT JOIN pg_attribute a ON a.attrelid = cls.oid AND a.attname = c.column_name
+                        WHERE c.table_schema = %s AND c.table_name = %s
+                        ORDER BY c.ordinal_position
+                        """,
+                        (schema_name, table_name),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT
+                            c.column_name,
+                            c.data_type,
+                            c.udt_name,
+                            CASE
+                                WHEN c.data_type = 'USER-DEFINED' AND c.udt_name = 'vector'
+                                THEN a.atttypmod
+                                ELSE NULL
+                            END as vector_dimension
+                        FROM information_schema.columns c
+                        JOIN pg_class cls ON cls.relname = c.table_name
+                        LEFT JOIN pg_attribute a ON a.attrelid = cls.oid AND a.attname = c.column_name
+                        WHERE c.table_name = %s
+                        ORDER BY c.ordinal_position
+                        """,
+                        (table_name,),
+                    )
+
+                columns = cur.fetchall()
+
+        # If no columns found, fall back to data-based inference
+        if not columns:
+            return self.read().schema()
+
+        # Build schema from database metadata
+        fields = []
+        for column_name, data_type, udt_name, vector_dimension in columns:
+            if data_type == "USER-DEFINED" and udt_name == "vector":
+                # This is a pgvector column, convert to embedding type
+                # vector_dimension from atttypmod contains the dimension information
+                # For pgvector, atttypmod stores the dimension directly
+                dimension = vector_dimension if vector_dimension and vector_dimension > 0 else 0
+
+                if dimension > 0:
+                    fields.append(Field.create(column_name, DataType.embedding(DataType.float32(), dimension)))
+                else:
+                    # Fallback to list if we can't determine dimension
+                    fields.append(Field.create(column_name, DataType.list(DataType.float32())))
+            else:
+                # For non-vector columns, try direct PostgreSQL type mapping first
+                try:
+                    # Attempt to map PostgreSQL type directly to Daft type
+                    inferred_dtype = DataType.from_sql(data_type)
+                    fields.append(Field.create(column_name, inferred_dtype))
+                except Exception:
+                    # Fall back to data-based inference for unmappable types
+                    # This is inefficient but ensures we get the correct types
+                    single_col_query = f"SELECT {column_name} FROM {table_name} LIMIT 1"
+                    if schema_name:
+                        single_col_query = f"SELECT {column_name} FROM {schema_name}.{table_name} LIMIT 1"
+
+                    try:
+                        single_col_df = read_sql(single_col_query, connection_string)
+                        inferred_dtype = single_col_df.schema()[column_name].dtype
+                        fields.append(Field.create(column_name, inferred_dtype))
+                    except Exception:
+                        # If inference fails, use string as fallback
+                        fields.append(Field.create(column_name, DataType.string()))
+
+        return Schema._from_fields(fields)
 
     @staticmethod
     def _from_obj(obj: object) -> PostgresTable:
@@ -530,11 +631,19 @@ class PostgresTable(Table):
 
         query = psycopg.sql.SQL("SELECT * FROM {}").format(quoted_full_table)
 
-        return read_sql(
+        df = read_sql(
             query.as_string(),
             connection_string,
             **options,
         )
+
+        # Cast any vector columns that were read as lists to embeddings
+        schema = self.schema()  # Use our custom schema method
+        for field in schema:
+            if field.dtype.is_embedding():
+                df = df.with_column(field.name, df[field.name].cast(field.dtype))
+
+        return df
 
     def append(self, df: DataFrame, **options: Any) -> None:
         """Append the DataFrame to the table."""
