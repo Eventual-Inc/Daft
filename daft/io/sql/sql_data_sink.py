@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Callable, Literal, TypedDict
-from contextlib import ExitStack
 
 from sqlalchemy import (
+    DOUBLE,
+    FLOAT,
     JSON,
     BigInteger,
     Boolean,
     Column,
     Date,
     DateTime,
-    Float,
     Integer,
     LargeBinary,
     MetaData,
@@ -30,7 +30,6 @@ from daft.io import DataSink
 from daft.io.sink import WriteResult
 from daft.recordbatch.micropartition import MicroPartition
 from daft.schema import Schema
-
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -163,9 +162,9 @@ class SQLDataSink(DataSink[WriteSqlResult]):
                         print("finished a yield")
 
                     # Commit the transaction, writing all micropartition updates into the database
-                    # print("comitting")
+                    # print("committing")
                     # conn.commit()
-                    # print("comitted")
+                    # print("committed")
 
                 except Exception as e:
                     print("before rollback")
@@ -181,7 +180,7 @@ class SQLDataSink(DataSink[WriteSqlResult]):
         Returns:
             MicroPartition: Summary of the write operation
         """
-        print("enter finializing")
+        print("enter finalizing")
         total_rows = 0
         total_bytes = 0
 
@@ -264,14 +263,16 @@ def ensure_table_exists(table_name: str, conn: Connection, df_schema: Schema) ->
 
 def drop_table_if_exists(table_name: str, conn: Connection) -> None:
     """Drop the table if it exists."""
-    inspector = inspect(conn)
     if table_exists(table_name, conn):
-        conn.execute(text(f"DROP TABLE :table_name"), {"table_name": table_name})
+        conn.execute(text("DROP TABLE :table_name"), {"table_name": table_name})
         conn.commit()
+
 
 def table_exists(table_name: str, conn: Connection) -> bool:
     """True if the table exists. False otherwise."""
+    inspector = inspect(conn)
     return table_name in inspector.get_table_names()
+
 
 def create_table_metadata(table_name: str, conn: Connection, arrow_schema: pa.Schema, metadata: MetaData) -> Table:
     """Create the SQL table construct: columns + types + metadata."""
@@ -309,8 +310,11 @@ def arrow_type_to_sqlalchemy_type(arrow_type: pa.DataType) -> TypeEngine[Any]:
         return BigInteger()
     elif pa.types.is_uint64(arrow_type):
         return BigInteger()
-    elif pa.types.is_floating(arrow_type):
-        return Float()
+    # elif pa.types.is_floating(arrow_type):
+    elif pa.types.is_float16(arrow_type) or pa.types.is_float32(arrow_type):
+        return FLOAT()  # we show 16 and 32 bit floats into a 32 bit float
+    elif pa.types.is_float64(arrow_type):
+        return DOUBLE()
     elif pa.types.is_boolean(arrow_type):
         return Boolean()
     elif pa.types.is_string(arrow_type) or pa.types.is_large_string(arrow_type):
