@@ -39,8 +39,10 @@ use crate::{
 };
 
 fn should_enable_progress_bar() -> bool {
-    let progress_var_name = "DAFT_PROGRESS_BAR";
-    if let Ok(val) = std::env::var(progress_var_name) {
+    if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+        return false;
+    }
+    if let Ok(val) = std::env::var("DAFT_PROGRESS_BAR") {
         matches!(val.trim().to_lowercase().as_str(), "1" | "true")
     } else {
         true // Return true when env var is not set
@@ -95,30 +97,25 @@ impl RuntimeStatsManager {
     ) -> DaftResult<Self> {
         // Construct mapping between node id and their node info and runtime stats
         let mut node_stats_map = HashMap::new();
-        let mut node_infos = HashMap::new();
+        let mut node_info_map = HashMap::new();
         let _ = pipeline.apply(|node| {
             let node_info = node.node_info();
             let runtime_stats = node.runtime_stats();
             node_stats_map.insert(node_info.id, runtime_stats);
-            node_infos.insert(node_info.id, node_info);
+            node_info_map.insert(node_info.id, node_info);
             Ok(TreeNodeRecursion::Continue)
         });
-
-        let total_nodes = node_infos.len();
-        let node_infos = (0..total_nodes)
-            .map(|id| node_infos.get(&id).unwrap().clone())
-            .collect::<Vec<_>>();
 
         let mut subscribers: Vec<Box<dyn RuntimeStatsSubscriber>> = Vec::new();
         for subscriber in query_subscribers {
             subscribers.push(Box::new(SubscriberWrapper::try_new(
                 subscriber,
-                &node_infos,
+                &node_info_map,
             )?));
         }
 
         if should_enable_progress_bar() {
-            subscribers.push(make_progress_bar_manager(&node_infos));
+            subscribers.push(make_progress_bar_manager(&node_info_map));
         }
 
         let throttle_interval = Duration::from_millis(200);

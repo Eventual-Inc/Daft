@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use common_error::DaftResult;
@@ -93,7 +93,7 @@ struct IndicatifProgressBarManager {
 }
 
 impl IndicatifProgressBarManager {
-    fn new(node_infos: &[Arc<NodeInfo>]) -> Self {
+    fn new(node_info_map: &HashMap<NodeID, Arc<NodeInfo>>) -> Self {
         let multi_progress = indicatif::MultiProgress::new();
 
         if cfg!(feature = "python") {
@@ -109,7 +109,7 @@ impl IndicatifProgressBarManager {
         multi_progress.set_move_cursor(true);
         multi_progress.set_draw_target(ProgressDrawTarget::stderr_with_hz(10));
 
-        let total = node_infos.len();
+        let total = node_info_map.len();
 
         let mut manager = Self {
             multi_progress,
@@ -117,7 +117,11 @@ impl IndicatifProgressBarManager {
             total,
         };
 
-        for node_info in node_infos {
+        // For Swordfish only, so node ids should be consecutive
+        for node_id in 0..total {
+            let node_info = node_info_map
+                .get(&node_id)
+                .expect("Expected node info for all node ids in range 0..total");
             manager.make_new_bar(node_info.as_ref());
         }
 
@@ -206,19 +210,21 @@ impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
 
 pub const MAX_PIPELINE_NAME_LEN: usize = 22;
 
-pub fn make_progress_bar_manager(node_infos: &[Arc<NodeInfo>]) -> Box<dyn RuntimeStatsSubscriber> {
+pub fn make_progress_bar_manager(
+    node_info_map: &HashMap<NodeID, Arc<NodeInfo>>,
+) -> Box<dyn RuntimeStatsSubscriber> {
     #[cfg(feature = "python")]
     {
         if python::in_notebook() {
-            Box::new(python::TqdmProgressBarManager::new(node_infos))
+            Box::new(python::TqdmProgressBarManager::new(node_info_map))
         } else {
-            Box::new(IndicatifProgressBarManager::new(node_infos))
+            Box::new(IndicatifProgressBarManager::new(node_info_map))
         }
     }
 
     #[cfg(not(feature = "python"))]
     {
-        Box::new(IndicatifProgressBarManager::new(node_infos))
+        Box::new(IndicatifProgressBarManager::new(node_info_map))
     }
 }
 
@@ -248,7 +254,7 @@ mod python {
     }
 
     impl TqdmProgressBarManager {
-        pub fn new(node_infos: &[Arc<NodeInfo>]) -> Self {
+        pub fn new(node_info_map: &HashMap<NodeID, Arc<NodeInfo>>) -> Self {
             let mut node_id_to_pb_id = HashMap::new();
 
             Python::attach(|py| {
@@ -256,7 +262,11 @@ mod python {
                 let progress_bar_class = module.getattr("SwordfishProgressBar")?;
                 let pb_object = progress_bar_class.call0()?;
 
-                for node_info in node_infos {
+                // For Swordfish only, so node ids should be consecutive
+                for node_id in 0..node_info_map.len() {
+                    let node_info = node_info_map
+                        .get(&node_id)
+                        .expect("Expected node info for all node ids in range 0..total");
                     let bar_format = format!(
                         "🗡️ 🐟 {prefix}: {{elapsed}} {{desc}}",
                         prefix = node_info.name

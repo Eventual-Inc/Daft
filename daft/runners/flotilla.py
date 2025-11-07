@@ -54,6 +54,7 @@ class RaySwordfishActor:
     """
 
     def __init__(self, num_cpus: int, num_gpus: int) -> None:
+        os.environ["DAFT_FLOTILLA_WORKER"] = "1"
         if num_gpus > 0:
             os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(num_gpus))
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
