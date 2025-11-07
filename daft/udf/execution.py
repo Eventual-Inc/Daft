@@ -47,7 +47,7 @@ async def call_async_func_batched(
         tasks.append(coroutine)
 
     dtype = DataType._from_pydatatype(return_dtype)
-    with metrics.metrics_context(udf_id):
+    with metrics._metrics_context(udf_id):
         outputs = await asyncio.gather(*tasks)
         return Series.from_pylist(outputs, dtype=dtype)._series
 
@@ -64,7 +64,7 @@ def call_func(
 
     bound_method = cls._daft_bind_method(method)
 
-    with metrics.metrics_context(udf_id):
+    with metrics._metrics_context(udf_id):
         output = bound_method(*args, **kwargs)
         return output
 
@@ -82,7 +82,7 @@ def call_batch_func(
 
     bound_method = cls._daft_bind_method(method)
 
-    with metrics.metrics_context(udf_id):
+    with metrics._metrics_context(udf_id):
         output = bound_method(*args, **kwargs)
     if isinstance(output, Series):
         output_series = output
@@ -111,7 +111,7 @@ async def call_batch_async(
 
     bound_coroutine: Callable[..., Coroutine[Any, Any, Series]] = cls._daft_bind_coroutine_method(method)
 
-    with metrics.metrics_context(udf_id):
+    with metrics._metrics_context(udf_id):
         output = await bound_coroutine(*args, **kwargs)
     if isinstance(output, Series):
         output_series = output

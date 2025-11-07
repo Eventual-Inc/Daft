@@ -101,17 +101,20 @@ def test_udf_custom_metrics_func(num_udfs: int, batch_size: int | None, use_proc
             counter_name = f"udf{i} counter"
             gauge_name = f"udf{i} gauge"
 
+            counter_metric = metrics.counter(counter_name)
+            gauge_metric = metrics.gauge(gauge_name)
+
             @daft.func(use_process=use_process)
             def udf(
                 value: int,
                 *,
-                _ctr=counter_name,
-                _gauge=gauge_name,
+                _ctr=counter_metric,
+                _gauge=gauge_metric,
                 _factor=factor,
                 _offset=gauge_offset,
             ) -> int:
-                metrics.increment_counter(_ctr, amount=value * _factor)
-                metrics.set_gauge(_gauge, float(value + _offset))
+                _ctr.increment(amount=value * _factor)
+                _gauge.set(float(value + _offset))
                 return value + _factor
 
             df = df.with_column(f"out_{i}", udf(daft.col("value")))
@@ -164,19 +167,22 @@ def test_udf_custom_metrics_batch(num_udfs: int, batch_size: int | None, use_pro
             counter_name = f"udf{i} counter"
             gauge_name = f"udf{i} gauge"
 
+            counter_metric = metrics.counter(counter_name)
+            gauge_metric = metrics.gauge(gauge_name)
+
             @daft.func.batch(return_dtype=DataType.int64(), use_process=use_process)
             def udf(
                 values: Series,
                 *,
-                _ctr=counter_name,
-                _gauge=gauge_name,
+                _ctr=counter_metric,
+                _gauge=gauge_metric,
                 _factor=factor,
                 _offset=gauge_offset,
             ) -> Series:
                 py_values = values.to_pylist()
                 for v in py_values:
-                    metrics.increment_counter(_ctr, amount=v * _factor)
-                    metrics.set_gauge(_gauge, float(v + _offset))
+                    _ctr.increment(amount=v * _factor)
+                    _gauge.set(float(v + _offset))
                 return Series.from_pylist([v + _factor for v in py_values])
 
             df = df.with_column(f"out_{i}", udf(daft.col("value")))
@@ -240,12 +246,12 @@ def test_udf_custom_metrics_cls(num_udfs: int, batch_size: int | None, use_proce
                 ) -> None:
                     self.addend = addend
                     self.gauge_offset = gauge_offset
-                    self.counter_name = counter_name
-                    self.gauge_name = gauge_name
+                    self.counter = metrics.counter(counter_name)
+                    self.gauge = metrics.gauge(gauge_name)
 
                 def __call__(self, value: int) -> int:
-                    metrics.increment_counter(self.counter_name, amount=value * self.addend)
-                    metrics.set_gauge(self.gauge_name, float(value + self.gauge_offset))
+                    self.counter.increment(amount=value * self.addend)
+                    self.gauge.set(float(value + self.gauge_offset))
                     return value + self.addend
 
             instance = MetricUdf(factor, gauge_offset, counter_name, gauge_name)

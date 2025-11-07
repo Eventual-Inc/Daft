@@ -296,14 +296,20 @@ impl UdfHandle {
 
         use crate::STDOUT;
 
-        let (result, stdout_lines, metrics_payload) = Python::attach(|py| {
-            handle
+        let (result, stdout_lines, metrics_update) = Python::attach(|py| {
+            let (py_result, py_stdout_lines, py_metrics_payload) = handle
                 .bind(py)
                 .call_method1(
                     pyo3::intern!(py, "eval_input"),
                     (PyRecordBatch::from(input),),
                 )?
-                .extract::<(PyRecordBatch, Vec<String>, Py<PyAny>)>()
+                .extract::<(PyRecordBatch, Vec<String>, Py<PyAny>)>()?;
+            let py_metrics_payload = py_metrics_payload.bind(py).cast::<PyDict>()?;
+            PyResult::Ok((
+                RecordBatch::from(py_result),
+                py_stdout_lines,
+                metric_updates_from_py(py_metrics_payload)?,
+            ))
         })?;
 
         let label = format!(
@@ -314,18 +320,11 @@ impl UdfHandle {
             STDOUT.print(&label, &line);
         }
 
-        let metrics = Python::attach(|py| -> PyResult<UdfMetricUpdates> {
-            let bound = metrics_payload.bind(py);
-            metric_updates_from_py(bound.cast::<PyDict>()?)
-        })
-        .map_err(DaftError::from)?;
-
-        let result: RecordBatch = result.into();
         debug_assert!(
             result.num_columns() == 1,
             "UDF should return a single column"
         );
-        Ok((result.get_column(0).clone(), metrics))
+        Ok((result.get_column(0).clone(), metrics_update))
     }
 
     #[cfg(feature = "python")]
