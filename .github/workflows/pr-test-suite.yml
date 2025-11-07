@@ -116,7 +116,7 @@ jobs:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        key: ${{ runner.os }}-build
+        prefix-key: ${{ runner.os }}-build
         cache-all-crates: 'true'
     - name: Install cargo-llvm-cov
       uses: taiki-e/install-action@cargo-llvm-cov
@@ -243,7 +243,7 @@ jobs:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        key: ${{ runner.os }}-integration-build
+        prefix-key: ${{ runner.os }}-integration-build
         cache-all-crates: 'true'
     - uses: oven-sh/setup-bun@v2
       with:
@@ -1096,7 +1096,7 @@ jobs:
     needs: skipcheck
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: ${{ matrix.os }}-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -1181,7 +1181,7 @@ jobs:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        key: ${{ runner.os }}-build
+        prefix-key: ${{ runner.os }}-build
         cache-all-crates: 'true'
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v6
@@ -1263,7 +1263,7 @@ jobs:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        key: ${{ runner.os }}-build
+        prefix-key: ${{ runner.os }}-build
         cache-all-crates: 'true'
 
     - name: Setup Python and uv
@@ -1366,7 +1366,7 @@ jobs:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        key: ${{ runner.os }}-build
+        prefix-key: ${{ runner.os }}-build
         cache-all-crates: 'true'
 
     - uses: actions/cache@v4
