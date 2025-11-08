@@ -18,6 +18,7 @@ def test_aggs_sql():
         df.agg(
             [
                 col("values").sum().alias("sum"),
+                col("values").product().alias("product"),
                 col("values").mean().alias("mean"),
                 col("values").avg().alias("avg"),
                 col("values").min().alias("min"),
@@ -35,6 +36,7 @@ def test_aggs_sql():
         daft.sql("""
     SELECT
         sum(values) as sum,
+        product(values) as product,
         mean(values) as mean,
         avg(values) as avg,
         min(values) as min,
@@ -49,6 +51,32 @@ def test_aggs_sql():
     )
 
     assert actual == expected
+
+    # Test product aggregation with GROUP BY
+    df_groupby = daft.from_pydict(
+        {
+            "id": [1, 1, 2, 2, 3, 3],
+            "values": [2, 3, 4, 5, 6, 7],
+        }
+    )
+    bindings = {"df_groupby": df_groupby}
+
+    sql_groupby = """
+    SELECT
+        id,
+        product(values) as product
+    FROM df_groupby
+    GROUP BY id
+    ORDER BY id
+    """
+
+    actual_groupby = daft.sql(sql_groupby, **bindings).to_pydict()
+    expected_groupby = {
+        "id": [1, 2, 3],
+        "product": [6, 20, 42],  # 2*3=6, 4*5=20, 6*7=42
+    }
+
+    assert actual_groupby == expected_groupby
 
 
 @pytest.mark.parametrize(

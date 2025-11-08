@@ -584,6 +584,9 @@ impl RecordBatch {
             AggExpr::Sum(expr) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .sum(groups),
+            AggExpr::Product(expr) => self
+                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .product(groups),
             &AggExpr::ApproxPercentile(ApproxPercentileParams {
                 child: ref expr,
                 ref percentiles,
