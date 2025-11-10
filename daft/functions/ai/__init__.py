@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from typing import TYPE_CHECKING, Any
 
 from daft import (
@@ -120,9 +121,13 @@ def embed_text(
 
     udf_options = text_embedder.get_udf_options()
 
-    # Decorate the __call__ method with @daft.method to specify return_dtype
+    # Choose synchronous or asynchronous call implementation based on the embedder
+    is_async = text_embedder.is_async()
+    call_impl = _TextEmbedderExpression._call_async if is_async else _TextEmbedderExpression._call_sync
+
+    # Decorate the selected call method with @daft.method to specify return_dtype
     _TextEmbedderExpression.__call__ = method.batch(  # type: ignore[method-assign]
-        method=_TextEmbedderExpression.__call__, return_dtype=text_embedder.get_dimensions().as_dtype()
+        method=call_impl, return_dtype=text_embedder.get_dimensions().as_dtype()
     )
     wrapped_cls = daft_cls(
         _TextEmbedderExpression,
