@@ -63,7 +63,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
     model_options: Options
 
     def __post_init__(self) -> None:
-        if self.model_name not in _models:
+        if self.provider_options.get("base_url") is None and self.model_name not in _models:
             supported_models = ", ".join(_models.keys())
             raise ValueError(
                 f"Unsupported OpenAI embedding model '{self.model_name}', expected one of: {supported_models}"
@@ -79,10 +79,12 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
         return self.model_options
 
     def get_dimensions(self) -> EmbeddingDimensions:
+        if self.model_options.get("embedding_dimensions") is not None:
+            return EmbeddingDimensions(size=self.model_options["embedding_dimensions"], dtype=DataType.float32())
         return _models[self.model_name].dimensions
 
     def get_udf_options(self) -> UDFOptions:
-        return get_http_udf_options()
+        return UDFOptions(concurrency=None, num_gpus=None)
 
     def is_async(self) -> bool:
         return True
