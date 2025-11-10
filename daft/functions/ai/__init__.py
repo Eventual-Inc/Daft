@@ -93,7 +93,7 @@ def embed_text(
         ...     "embeddings",
         ...     embed_text(
         ...         daft.col("text"),
-        ...         provider="sentence_transformers",
+        ...         provider="transformers",
         ...         model="sentence-transformers/all-MiniLM-L6-v2",
         ...     ),
         ... )
