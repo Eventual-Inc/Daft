@@ -229,6 +229,34 @@ def test_embed_text_empty_input(mock_text_embedder, mock_client):
     mock_client.embeddings.create.assert_not_awaited()
 
 
+def test_embed_text_with_none_values(mock_text_embedder, mock_client):
+    """Test that None values are handled gracefully and don't crash."""
+    mock_response = Mock(spec=CreateEmbeddingResponse)
+    mock_embeddings = []
+    for i in range(3):
+        mock_embedding = Mock(spec=OpenAIEmbedding)
+        mock_embedding.embedding = np.array([float(i), 0.2, 0.3] * 512, dtype=np.float32)  # 1536 dimensions
+        mock_embeddings.append(mock_embedding)
+    mock_response.data = mock_embeddings
+    mock_client.embeddings.create.return_value = mock_response
+
+    # Test with None values mixed with regular strings
+    result = mock_text_embedder.embed_text([None, "Hello", None])
+
+    assert len(result) == 3
+    for embedding in result:
+        assert isinstance(embedding, np.ndarray)
+        assert embedding.shape == (1536,)
+        assert embedding.dtype == np.float32
+
+    # Verify that None values were converted to empty strings
+    mock_client.embeddings.create.assert_called_once()
+    call_args = mock_client.embeddings.create.call_args
+    assert call_args[1]["input"] == ["", "Hello", ""]
+    assert call_args[1]["model"] == "text-embedding-3-small"
+    assert call_args[1]["encoding_format"] == "float"
+
+
 def test_embed_text_failure_with_zero_on_failure(mock_text_embedder, mock_client):
     """Test that failures are handled when zero_on_failure is True."""
     mock_client.embeddings.create.side_effect = Exception("API Error")
