@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from openai import OpenAI
+from openai import AsyncOpenAI, OpenAI
 
 from daft import DataType
 from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedder
@@ -40,6 +40,9 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
     def get_udf_options(self) -> UDFOptions:
         return get_http_udf_options()
 
+    def is_async(self) -> bool:
+        return True
+
     def get_dimensions(self) -> EmbeddingDimensions:
         try:
             client = OpenAI(**self.provider_options)
@@ -55,6 +58,6 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
 
     def instantiate(self) -> TextEmbedder:
         return OpenAITextEmbedder(
-            client=OpenAI(**self.provider_options),
+            client=AsyncOpenAI(**self.provider_options),
             model=self.model_name,
         )

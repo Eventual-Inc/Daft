@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 pytest.importorskip("openai")
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import numpy as np
 from openai.types.create_embedding_response import CreateEmbeddingResponse
@@ -51,15 +53,27 @@ def test_lm_studio_text_embedder(model, embedding_dim):
     with patch("openai.resources.embeddings.Embeddings.create") as mock_embed:
         mock_embed.side_effect = lambda **kwargs: mock_embedding_response(kwargs.get("input"))
 
-        descriptor = LMStudioProvider().get_text_embedder(model=model)
-        assert isinstance(descriptor, TextEmbedderDescriptor)
-        assert descriptor.get_provider() == "lm_studio"
-        assert descriptor.get_model() == model
-        assert descriptor.get_dimensions().size == embedding_dim
+        with (
+            patch("daft.ai.openai.protocols.text_embedder.AsyncOpenAI") as mock_openai_async,
+            patch("daft.ai.lm_studio.protocols.text_embedder.AsyncOpenAI") as mock_lm_async,
+        ):
+            mock_async_client = Mock()
+            mock_async_client.embeddings = Mock()
+            mock_async_client.embeddings.create = AsyncMock(
+                side_effect=lambda **kwargs: mock_embedding_response(kwargs.get("input"))
+            )
+            mock_openai_async.return_value = mock_async_client
+            mock_lm_async.return_value = mock_async_client
 
-        embedder = descriptor.instantiate()
-        assert isinstance(embedder, TextEmbedder)
-        embeddings = embedder.embed_text(text_data)
-        assert len(embeddings) == len(text_data)
-        assert all(isinstance(embedding, np.ndarray) for embedding in embeddings)
-        assert all(len(embedding) == embedding_dim for embedding in embeddings)
+            descriptor = LMStudioProvider().get_text_embedder(model=model)
+            assert isinstance(descriptor, TextEmbedderDescriptor)
+            assert descriptor.get_provider() == "lm_studio"
+            assert descriptor.get_model() == model
+            assert descriptor.get_dimensions().size == embedding_dim
+
+            embedder = descriptor.instantiate()
+            assert isinstance(embedder, TextEmbedder)
+            embeddings = asyncio.run(embedder.embed_text(text_data))
+            assert len(embeddings) == len(text_data)
+            assert all(isinstance(embedding, np.ndarray) for embedding in embeddings)
+            assert all(len(embedding) == embedding_dim for embedding in embeddings)
