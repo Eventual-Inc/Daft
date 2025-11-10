@@ -568,7 +568,9 @@ fn physical_plan_to_pipeline(
                 .with_context(|_| PipelineCreationSnafu {
                     plan_name: physical_plan.name(),
                 })?;
-                if udf_properties.batch_size.is_none() {
+                // We can only use the dynamic batching if we don't care about maintaining order
+                // and if the user did not specify a batch size
+                if udf_properties.batch_size.is_none() && !cfg.maintain_order {
                     StreamingSinkNode::new(
                         Arc::new(proj_op),
                         vec![child_node],
