@@ -36,7 +36,6 @@ pub(crate) struct RaySwordfishWorker {
     active_task_details: ActiveTaskDetails,
     last_task_finished_at: Instant,
     state: ActorState,
-    exempt_from_downscale: bool,
 }
 
 #[pymethods]
@@ -58,7 +57,6 @@ impl RaySwordfishWorker {
             active_task_details: Default::default(),
             last_task_finished_at: Instant::now(),
             state: ActorState::Starting,
-            exempt_from_downscale: false,
         };
         w.set_state(ActorState::Ready);
         w
@@ -69,9 +67,6 @@ impl RaySwordfishWorker {
     pub fn total_memory_bytes(&self) -> usize {
         self.total_memory_bytes
     }
-    pub fn exempt_from_downscale(&self) -> bool {
-        self.exempt_from_downscale
-    }
 
     pub fn set_state(&mut self, next: ActorState) {
         if self.state as u8 != next as u8 {
@@ -81,7 +76,6 @@ impl RaySwordfishWorker {
 
     pub fn mark_task_finished(&mut self, task_context: &TaskContext) {
         self.active_task_details.remove(task_context);
-        // Update last finished time when worker becomes idle for safe downscaling
         let now = Instant::now();
         self.last_task_finished_at = now;
         if self.active_task_details.is_empty() {

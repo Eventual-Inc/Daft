@@ -46,34 +46,13 @@ impl<T: Task> DefaultScheduler<T> {
     // Spread scheduling: Schedule tasks to the worker with the most available slots, to
     // TODO: Change the approach to instead spread based on tasks of the same 'type', i.e. from the same pipeline node.
     fn try_schedule_spread_task(&self, task: &T) -> Option<WorkerId> {
-        // Prefer the worker with the fewest in-flight tasks (busy/idle aware), subject to capacity
-        let candidates: Vec<(WorkerId, usize, f64)> = self
-            .worker_snapshots
+        self.worker_snapshots
             .iter()
             .filter(|(_, worker)| worker.can_schedule_task(task))
-            .map(|(id, worker)| {
-                (
-                    id.clone(),
-                    worker.active_task_details.len(),
-                    worker.available_num_cpus(),
-                )
+            .max_by_key(|(_, worker)| {
+                (worker.available_num_cpus() + worker.available_num_gpus()) as usize
             })
-            .collect();
-        candidates
-            .iter()
-            .min_by(|a, b| {
-                let ai = a.1;
-                let bi = b.1;
-                if ai != bi {
-                    ai.cmp(&bi)
-                } else {
-                    // Tie-break: prefer higher available CPU to concentrate workload
-                    let ac = a.2;
-                    let bc = b.2;
-                    bc.partial_cmp(&ac).unwrap_or(std::cmp::Ordering::Equal)
-                }
-            })
-            .map(|(id, _, _)| id.clone())
+            .map(|(id, _)| id.clone())
     }
 
     // Soft worker affinity scheduling: Schedule task to the worker if it has capacity

@@ -208,12 +208,9 @@ impl WorkerSnapshot {
         self.total_num_gpus
     }
 
+    #[cfg(test)]
     pub fn worker_id(&self) -> &WorkerId {
         &self.worker_id
-    }
-
-    pub fn active_task_count(&self) -> usize {
-        self.active_task_details.len()
     }
 
     // TODO: Potentially include memory as well, and also be able to overschedule tasks.
