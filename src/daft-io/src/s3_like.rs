@@ -405,6 +405,11 @@ pub async fn s3_config_from_env() -> super::Result<S3Config> {
             .await;
     let creds = provide_credentials_with_retry(&credentials_provider).await?;
 
+    // Support configure retry error messages via system environment variable
+    let retry_error_msgs = std::env::var("DAFT_S3_RETRY_ERROR_MSGS")
+        .map(|s| s.split(',').map(|s| s.to_string()).collect::<Vec<_>>())
+        .unwrap_or_default();
+
     Ok(if let Some(creds) = creds {
         S3Config {
             key_id: Some(creds.access_key_id().to_string()),
@@ -412,12 +417,14 @@ pub async fn s3_config_from_env() -> super::Result<S3Config> {
             session_token: creds.session_token().map(|t| t.to_string().into()),
             region_name,
             anonymous: false,
+            custom_retry_msgs: retry_error_msgs,
             ..Default::default()
         }
     } else {
         S3Config {
             region_name,
             anonymous: true,
+            custom_retry_msgs: retry_error_msgs,
             ..Default::default()
         }
     })
