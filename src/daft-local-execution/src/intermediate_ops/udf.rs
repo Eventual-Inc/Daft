@@ -103,6 +103,7 @@ pub(crate) struct UdfHandle {
     // Second bool indicates if the UDF was initialized
     #[cfg(feature = "python")]
     pub(crate) handle: Option<Py<PyAny>>,
+    pub(crate) udf_initialized: bool,
 }
 
 impl UdfHandle {
@@ -117,6 +118,7 @@ impl UdfHandle {
             worker_idx,
             #[cfg(feature = "python")]
             handle: None,
+            udf_initialized: false,
         }
     }
 
@@ -182,15 +184,9 @@ impl UdfHandle {
         Ok(result.get_column(0).clone())
     }
 
-    // TODO(universalmind303): i had to makes this &self instead of &mut self.
-    // Move the udf init out of this function
     #[cfg(feature = "python")]
     pub(crate) fn eval_input_inline(&self, func_input: RecordBatch) -> DaftResult<Series> {
-        use daft_dsl::functions::python::initialize_udfs;
-        // Only actually initialized the first time
-        func_input.eval_expression(&BoundExpr::new_unchecked(initialize_udfs(
-            self.udf_expr.inner().clone(),
-        )?))
+        func_input.eval_expression(&self.udf_expr)
     }
 
     #[cfg(not(feature = "python"))]
@@ -352,16 +348,25 @@ impl IntermediateOperator for UdfOperator {
     type State = UdfState;
 
     #[instrument(skip_all, name = "UdfOperator::execute")]
+    #[cfg(feature = "python")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
-        state: Self::State,
+        mut state: Self::State,
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self> {
         let memory_request = self.memory_request;
         let fut = task_spawner.spawn_with_memory_request(
             memory_request,
             async move {
+                if !state.udf_handle.udf_initialized {
+                    state.udf_handle.udf_expr =
+                        BoundExpr::new_unchecked(daft_dsl::functions::python::initialize_udfs(
+                            state.udf_handle.udf_expr.inner().clone(),
+                        )?);
+                    state.udf_handle.udf_initialized = true;
+                }
+
                 let res = state
                     .udf_handle
                     .eval_input(input)
@@ -371,6 +376,16 @@ impl IntermediateOperator for UdfOperator {
             Span::current(),
         );
         fut.into()
+    }
+
+    #[cfg(not(feature = "python"))]
+    fn execute(
+        &self,
+        input: Arc<MicroPartition>,
+        mut state: Self::State,
+        task_spawner: &ExecutionTaskSpawner,
+    ) -> IntermediateOpExecuteResult<Self> {
+        unimplemented!("UDF execution not supported without Python feature")
     }
 
     fn name(&self) -> NodeName {

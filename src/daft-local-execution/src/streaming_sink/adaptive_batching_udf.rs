@@ -11,6 +11,7 @@ use std::{
 
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use futures::{Stream, TryStreamExt};
@@ -61,6 +62,8 @@ pub(crate) struct UdfState {
     // but a stream is conceptually simpler and easier to reason about
     // The only issue is that its's not `Send` so we need to `Arc<Mutex<_>>` it
     batch_stream: Option<SendableStream>,
+    udf_expr: BoundExpr,
+    udf_initialized: bool,
 }
 
 impl UdfState {
@@ -442,10 +445,20 @@ impl StreamingSink for UdfOperator {
 
         let fut = task_spawner.spawn(
             async move {
+                if !state.udf_initialized {
+                    use daft_dsl::functions::python::initialize_udfs;
+
+                    state.udf_expr = BoundExpr::new_unchecked(initialize_udfs(
+                        state.udf_expr.inner().clone(),
+                    )?);
+                    state.udf_initialized = true;
+                }
+
                 let shared_batch_size = state.current_batch_size.clone();
 
                 if state.batch_stream.is_none() {
                     let params = params.clone();
+                    let udf_expr = state.udf_expr.clone();
 
                     let stream = async_stream::stream! {
 
@@ -485,7 +498,7 @@ impl StreamingSink for UdfOperator {
                                         }
                                     }
                                 } else {
-                                    match handle.eval_input_inline(func_input) {
+                                    match func_input.eval_expression(&udf_expr) {
                                         Ok(r) => r,
                                         Err(e) => {
                                             yield Err(e);
@@ -715,6 +728,8 @@ impl StreamingSink for UdfOperator {
             dynamic_batching: Default::default(),
             execution_times: Default::default(),
             batch_stream: None,
+            udf_expr: self.params.expr.clone(),
+            udf_initialized: false,
         })
     }
 
