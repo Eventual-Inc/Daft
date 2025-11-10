@@ -12,14 +12,11 @@ from __future__ import annotations
 import os
 import time
 
-import dotenv
 import pytest
 from pydantic import BaseModel, Field
 
 import daft
 from daft.functions.ai import embed_text, prompt
-
-dotenv.load_dotenv()
 
 
 @pytest.fixture(scope="module", autouse=True)
