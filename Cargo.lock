@@ -1847,7 +1847,6 @@ dependencies = [
  "common-py-serde",
  "derive_more",
  "educe",
- "log",
  "pyo3",
  "secrecy",
  "serde",

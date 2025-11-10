@@ -17,7 +17,7 @@ use tokio::{
     sync::{OwnedSemaphorePermit, Semaphore},
 };
 use tokio_stream::Stream;
-use url::Url;
+use url::{ParseError, Position, Url};
 use ve_tos_rust_sdk::{
     asynchronous::{
         object::ObjectAPI,
@@ -44,13 +44,18 @@ const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(display("TOS client creation error: {}", source))]
-    ClientCreation {
-        source: Box<dyn std::error::Error + Send + Sync>,
-    },
+    #[snafu(display(
+        "Failed to create tos client with endpoint {} error: {}",
+        endpoint,
+        source
+    ))]
+    ClientCreation { endpoint: String, source: TosError },
 
-    #[snafu(display("TOS URL parse error: {} is not a valid TOS URL", path))]
-    UrlParse { path: String },
+    #[snafu(display("Unsupported scheme: {} in URL: \"{}\"", scheme, path))]
+    UnSupportedScheme { scheme: String, path: String },
+
+    #[snafu(display("Unable to parse URL: \"{}\"", path))]
+    InvalidUrl { path: String, source: ParseError },
 
     #[snafu(display("Unable to open {}: {}", path, source))]
     UnableToOpenFile { path: String, source: TosError },
@@ -63,23 +68,30 @@ pub enum Error {
 
     #[snafu(display("Unable to grab semaphore. {}", source))]
     UnableToGrabSemaphore { source: tokio::sync::AcquireError },
+
+    #[snafu(display("Operation failed after {} retries: {}", retries, err_msg))]
+    MaxRetriesExceeded { retries: u32, err_msg: String },
 }
 
 #[allow(clippy::fallible_impl_from)]
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         match error {
-            Error::ClientCreation { source } => Self::UnableToCreateClient {
-                store: SourceType::Tos,
+            Error::ClientCreation {
+                endpoint: _,
                 source,
+            } => Self::UnableToCreateClient {
+                store: SourceType::Tos,
+                source: Box::new(source),
             },
-            Error::UrlParse { path } => Self::InvalidUrl {
-                path,
-                source: url::ParseError::RelativeUrlWithoutBase,
-            },
+            Error::InvalidUrl { path, source } => Self::InvalidUrl { path, source },
             Error::UnableToOpenFile { path, source } => Self::UnableToOpenFile {
                 path,
                 source: Box::new(source),
+            },
+            Error::MaxRetriesExceeded { retries, err_msg } => Self::Generic {
+                store: SourceType::Tos,
+                source: Error::MaxRetriesExceeded { retries, err_msg }.into(),
             },
             err => Self::Generic {
                 store: SourceType::Tos,
@@ -119,9 +131,93 @@ type TosClient =
 pub struct TosSource {
     client: TosClient,
     connection_pool_sema: Arc<Semaphore>,
+    config: TosConfig,
 }
 
 impl TosSource {
+    async fn retry_operation<T, F, Fut, E>(
+        &self,
+        operation: F,
+        operation_name: &str,
+        path: &str,
+        max_retries: u32,
+        error_converter: impl Fn(TosError) -> E,
+    ) -> Result<T, E>
+    where
+        F: Fn() -> Fut,
+        Fut: Future<Output = Result<T, TosError>>,
+        E: From<Error>,
+    {
+        let mut last_error = None;
+
+        for attempt in 0..=max_retries {
+            match operation().await {
+                Ok(result) => return Ok(result),
+                Err(error) => {
+                    last_error = Some(error.clone());
+
+                    if Self::is_retryable_error(&error) {
+                        if attempt < max_retries {
+                            let delay = Duration::from_millis(100 * (attempt + 1) as u64);
+                            log::warn!(
+                                "TOS {} operation failed for {} (attempt {}/{}): {}. Retrying in {:?}",
+                                operation_name,
+                                path,
+                                attempt + 1,
+                                max_retries + 1,
+                                error,
+                                delay
+                            );
+                            tokio::time::sleep(delay).await;
+                        } else {
+                            return Err(Error::MaxRetriesExceeded {
+                                retries: max_retries,
+                                err_msg: last_error.map(|e| e.to_string()).unwrap_or_default(),
+                            }
+                            .into());
+                        }
+                    } else {
+                        return Err(error_converter(error));
+                    }
+                }
+            }
+        }
+
+        Err(Error::MaxRetriesExceeded {
+            retries: max_retries,
+            err_msg: last_error.map(|e| e.to_string()).unwrap_or_default(),
+        }
+        .into())
+    }
+
+    fn is_retryable_error(error: &TosError) -> bool {
+        let error_msg = error.to_string().to_lowercase();
+
+        if error_msg.contains("timeout")
+            || error_msg.contains("connection")
+            || error_msg.contains("network")
+            || error_msg.contains("reset")
+            || error_msg.contains("broken pipe")
+            || error_msg.contains("connection refused")
+        {
+            return true;
+        }
+
+        // Rate limiting and server errors
+        if error_msg.contains("429")  // Too Many Requests
+            || error_msg.contains("500")  // Internal Server Error
+            || error_msg.contains("502")  // Bad Gateway
+            || error_msg.contains("503")  // Service Unavailable
+            || error_msg.contains("504")  // Gateway Timeout
+            || error_msg.contains("throttl")
+        // Throttling
+        {
+            return true;
+        }
+
+        false
+    }
+
     pub async fn get_client(config: &TosConfig) -> Result<Arc<Self>> {
         let (endpoint, region) = config.endpoint_and_region();
 
@@ -129,9 +225,9 @@ impl TosSource {
             .max_connections(config.max_concurrent_requests as isize)
             .connection_timeout(config.connect_timeout_ms as isize)
             .request_timeout(config.read_timeout_ms as isize)
-            .max_retry_count(config.max_retries as isize)
+            .max_retry_count(0) // disable the retry logical of SDK
             .region(region)
-            .endpoint(endpoint);
+            .endpoint(endpoint.clone());
 
         if let Some(access_key) = config.access_key.clone() {
             builder = builder.ak(access_key);
@@ -145,9 +241,10 @@ impl TosSource {
             builder = builder.security_token(session_token.as_string().clone());
         }
 
-        let client = builder.build().map_err(|e| Error::ClientCreation {
-            source: Box::new(e),
-        })?;
+        let client = builder
+            .max_retry_count(config.max_retries as isize)
+            .build()
+            .with_context(|_| ClientCreationSnafu { endpoint })?;
 
         let connection_pool_sema = Arc::new(Semaphore::new(
             (config.max_connections_per_io_thread as usize)
@@ -157,39 +254,39 @@ impl TosSource {
         Ok(Arc::new(Self {
             client,
             connection_pool_sema,
+            config: config.clone(),
         }))
     }
 
     fn parse_tos_url(url: &str, allow_empty_key: bool) -> Result<(String, String)> {
-        let url = Url::parse(url).map_err(|_| Error::UrlParse {
+        let parsed = Url::parse(url).with_context(|_| InvalidUrlSnafu {
             path: url.to_string(),
         })?;
 
-        // TOS URL format: tos://bucket-name/path/to/object
-        if url.scheme() != "tos" {
-            return Err(Error::UrlParse {
+        if parsed.scheme() != "tos" {
+            return Err(Error::UnSupportedScheme {
+                scheme: parsed.scheme().to_string(),
                 path: url.to_string(),
             }
             .into());
         }
 
-        let bucket = url
-            .host_str()
-            .ok_or_else(|| Error::UrlParse {
-                path: url.to_string(),
-            })?
-            .to_string();
+        let bucket = parsed.host_str().ok_or_else(|| Error::InvalidUrl {
+            path: parsed.to_string(),
+            source: ParseError::EmptyHost,
+        })?;
 
-        let key = url.path().trim_start_matches('/').to_string();
+        let bucket_scheme_len = parsed[..Position::AfterHost].len();
+        let key = url[bucket_scheme_len..].trim_start_matches(DELIMITER);
 
         if !allow_empty_key && key.is_empty() {
             return Err(super::Error::NotAFile {
-                path: url.to_string(),
+                path: parsed.to_string(),
             }
             .into());
         }
 
-        Ok((bucket, key))
+        Ok((bucket.to_string(), key.to_string()))
     }
 
     async fn get_impl(
@@ -205,14 +302,18 @@ impl TosSource {
             request.set_range(range.to_string());
         }
 
-        // TODO Add retry logic for some specific errors
-        let response: GetObjectOutput =
-            self.client
-                .get_object(&request)
-                .await
-                .context(UnableToOpenFileSnafu {
+        let response: GetObjectOutput = self
+            .retry_operation(
+                || self.client.get_object(&request),
+                "get_object",
+                uri,
+                self.config.max_retries,
+                |err| Error::UnableToOpenFile {
                     path: uri.to_string(),
-                })?;
+                    source: err,
+                },
+            )
+            .await?;
 
         let size = response.content_length() as usize;
 
@@ -249,28 +350,37 @@ impl TosSource {
         let (bucket, key) = Self::parse_tos_url(uri, false)?;
         let request = PutObjectFromBufferInput::new_with_content(bucket, key, data);
 
-        // TODO Add retry logic for some specific errors
-        self.client
-            .put_object_from_buffer(&request)
-            .await
-            .context(UnableToPutFileSnafu {
+        self.retry_operation(
+            || self.client.put_object_from_buffer(&request),
+            "put_object",
+            uri,
+            self.config.max_retries,
+            |err| Error::UnableToPutFile {
                 path: uri.to_string(),
-            })?;
+                source: err,
+            },
+        )
+        .await?;
 
         Ok(())
     }
 
     async fn get_size_impl(&self, _permit: OwnedSemaphorePermit, uri: &str) -> Result<usize> {
         let (bucket, key) = Self::parse_tos_url(uri, false)?;
+        let request = HeadObjectInput::new(bucket, key);
 
-        // TODO Add retry logic for some specific errors
         let response: HeadObjectOutput = self
-            .client
-            .head_object(&HeadObjectInput::new(bucket, key))
-            .await
-            .context(UnableToOpenFileSnafu {
-                path: uri.to_string(),
-            })?;
+            .retry_operation(
+                || self.client.head_object(&request),
+                "head_object",
+                uri,
+                self.config.max_retries,
+                |err| Error::UnableToOpenFile {
+                    path: uri.to_string(),
+                    source: err,
+                },
+            )
+            .await?;
 
         Ok(response.content_length() as usize)
     }
@@ -299,10 +409,17 @@ impl TosSource {
             request.set_max_keys(page_size as isize);
         }
 
-        // TODO Add retry logic for some specific errors
         let result = self
-            .client
-            .list_objects_type2(&request)
+            .retry_operation(
+                || self.client.list_objects_type2(&request),
+                "list_objects_type2",
+                &format!("tos://{bucket}/{key}"),
+                self.config.max_retries,
+                |err| Error::UnableToListObjects {
+                    path: format!("tos://{bucket}/{key}"),
+                    source: err,
+                },
+            )
             .await
             .map(|r: ListObjectsType2Output| {
                 let dirs = r.common_prefixes();
@@ -328,9 +445,6 @@ impl TosSource {
                     files,
                     continuation_token,
                 }
-            })
-            .context(UnableToListObjectsSnafu {
-                path: format!("tos://{bucket}/{key}"),
             })?;
         Ok(result)
     }
