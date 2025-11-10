@@ -293,7 +293,10 @@ impl UdfOperator {
         let max_concurrency =
             Self::get_optimal_allocation(udf_properties.name.as_str(), resource_request)?;
         // If parallelism is already specified, use that
-        let concurrency = udf_properties.concurrency.unwrap_or(max_concurrency);
+        let concurrency = udf_properties
+            .concurrency
+            .map(|c| c.get())
+            .unwrap_or(max_concurrency);
 
         let memory_request = resource_request
             .and_then(|req| req.memory_bytes())

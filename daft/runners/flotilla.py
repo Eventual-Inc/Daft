@@ -242,8 +242,8 @@ class RemoteFlotillaRunner:
             k: [RayPartitionRef(v.partition(), v.metadata().num_rows, v.metadata().size_bytes or 0) for v in v.values()]
             for k, v in partition_sets.items()
         }
-        self.curr_plans[plan.id()] = plan
-        self.curr_result_gens[plan.id()] = self.plan_runner.run_plan(plan, psets)
+        self.curr_plans[plan.idx()] = plan
+        self.curr_result_gens[plan.idx()] = self.plan_runner.run_plan(plan, psets)
 
     async def get_next_partition(self, plan_id: str) -> RayMaterializedResult | None:
         from daft.runners.ray_runner import (
@@ -310,7 +310,7 @@ class FlotillaRunner:
         plan: DistributedPhysicalPlan,
         partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
     ) -> Iterator[RayMaterializedResult]:
-        plan_id = plan.id()
+        plan_id = plan.idx()
         ray.get(self.runner.run_plan.remote(plan, partition_sets))
         while True:
             materialized_result = ray.get(self.runner.get_next_partition.remote(plan_id))

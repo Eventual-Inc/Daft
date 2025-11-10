@@ -8,11 +8,12 @@ use std::{
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
+use common_metrics::QueryID;
 use common_partitioning::PartitionRef;
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use futures::{Stream, StreamExt};
 
-use super::{DistributedPhysicalPlan, PlanID, PlanResult};
+use super::{DistributedPhysicalPlan, PlanResult, QueryIdx};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, SubmittableTaskStream,
@@ -79,13 +80,18 @@ impl PlanExecutionContext {
 
 #[derive(Clone)]
 pub(crate) struct PlanConfig {
-    pub plan_id: PlanID,
+    pub query_idx: QueryIdx,
+    pub query_id: QueryID,
     pub config: Arc<DaftExecutionConfig>,
 }
 
 impl PlanConfig {
-    pub fn new(plan_id: PlanID, config: Arc<DaftExecutionConfig>) -> Self {
-        Self { plan_id, config }
+    pub fn new(query_idx: QueryIdx, query_id: QueryID, config: Arc<DaftExecutionConfig>) -> Self {
+        Self {
+            query_idx,
+            query_id,
+            config,
+        }
     }
 }
 
@@ -147,10 +153,11 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         psets: HashMap<String, Vec<PartitionRef>>,
         subscribers: Vec<Box<dyn StatisticsSubscriber>>,
     ) -> DaftResult<PlanResult> {
-        let plan_id = plan.id();
+        let query_idx = plan.idx();
+        let query_id = plan.query_id();
         let config = plan.execution_config().clone();
         let logical_plan = plan.logical_plan().clone();
-        let plan_config = PlanConfig::new(plan_id, config);
+        let plan_config = PlanConfig::new(query_idx, query_id, config);
 
         let pipeline_node =
             logical_plan_to_pipeline_node(plan_config, logical_plan, Arc::new(psets))?;

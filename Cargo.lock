@@ -2629,6 +2629,7 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-io-config",
+ "common-metrics",
  "common-partitioning",
  "common-py-serde",
  "common-resource-request",

@@ -35,6 +35,7 @@
         * [Delta Lake](connectors/delta_lake.md)
         * [Lance](connectors/lance.md)
         * [Hugging Face Datasets](connectors/huggingface.md)
+        * [Postgres](connectors/postgres.md)
         * [S3](connectors/aws.md)
         * [SQL Databases](connectors/sql.md)
         * [Turbopuffer](connectors/turbopuffer.md)

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from openai import OpenAI, OpenAIError, RateLimitError
+from openai import AsyncOpenAI, OpenAI, OpenAIError, RateLimitError
 
 from daft import DataType
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
@@ -62,7 +63,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
     model_options: Options
 
     def __post_init__(self) -> None:
-        if self.model_name not in _models:
+        if self.provider_options.get("base_url") is None and self.model_name not in _models:
             supported_models = ", ".join(_models.keys())
             raise ValueError(
                 f"Unsupported OpenAI embedding model '{self.model_name}', expected one of: {supported_models}"
@@ -78,14 +79,19 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
         return self.model_options
 
     def get_dimensions(self) -> EmbeddingDimensions:
+        if self.model_options.get("embedding_dimensions") is not None:
+            return EmbeddingDimensions(size=self.model_options["embedding_dimensions"], dtype=DataType.float32())
         return _models[self.model_name].dimensions
 
     def get_udf_options(self) -> UDFOptions:
-        return get_http_udf_options()
+        return UDFOptions(concurrency=None, num_gpus=None)
+
+    def is_async(self) -> bool:
+        return True
 
     def instantiate(self) -> TextEmbedder:
         return OpenAITextEmbedder(
-            client=OpenAI(**self.provider_options),
+            client=AsyncOpenAI(**self.provider_options),
             model=self.model_name,
         )
 
@@ -128,9 +134,12 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
     def get_udf_options(self) -> UDFOptions:
         return get_http_udf_options()
 
+    def is_async(self) -> bool:
+        return True
+
     def instantiate(self) -> TextEmbedder:
         return OpenAITextEmbedder(
-            client=OpenAI(**self.provider_options),
+            client=AsyncOpenAI(**self.provider_options),
             model=self.model_name,
         )
 
@@ -144,15 +153,15 @@ class OpenAITextEmbedder(TextEmbedder):
         which is conservative and O(1) rather than being perfect with tiktoken.
     """
 
-    _client: OpenAI
+    _client: AsyncOpenAI
     _model: str
 
-    def __init__(self, client: OpenAI, model: str, zero_on_failure: bool = False):
+    def __init__(self, client: AsyncOpenAI, model: str, zero_on_failure: bool = False):
         self._client = client
         self._model = model
         self._zero_on_failure = zero_on_failure
 
-    def embed_text(self, text: list[str]) -> list[Embedding]:
+    async def embed_text(self, text: list[str]) -> list[Embedding]:
         embeddings: list[Embedding] = []
         curr_batch: list[str] = []
         curr_batch_token_count: int = 0
@@ -162,12 +171,12 @@ class OpenAITextEmbedder(TextEmbedder):
         input_text_token_limit = 8192
         input_text_chars_limit = input_text_token_limit * approx_chars_per_token
 
-        def flush() -> None:
+        async def flush() -> None:
             nonlocal curr_batch
             nonlocal curr_batch_token_count
             if len(curr_batch) == 0:
                 return None
-            embeddings_result = self._embed_text_batch(curr_batch)
+            embeddings_result = await self._embed_text_batch(curr_batch)
             embeddings.extend(embeddings_result)
             curr_batch = []
             curr_batch_token_count = 0
@@ -176,11 +185,11 @@ class OpenAITextEmbedder(TextEmbedder):
             input_text_token_count = len(input_text) // approx_chars_per_token
             if input_text_token_count > input_text_token_limit:
                 # Must process previous inputs first, if any, to maintain ordered outputs.
-                flush()
+                await flush()
                 # If the current input exceeds the maximum tokens per input (8192),
                 # then we will split this single input into its own batch request.
                 chunked_batch = chunk_text(input_text, input_text_chars_limit)
-                chunked_result = self._embed_text_batch(chunked_batch)
+                chunked_result = await self._embed_text_batch(chunked_batch)
                 # We combine all result embedding vectors into a single embedding using a weighted average.
                 # https://github.com/openai/openai-cookbook/blob/main/examples/Embedding_long_inputs.ipynb
                 chunked_lens = [len(chunk) for chunk in chunked_batch]
@@ -188,18 +197,18 @@ class OpenAITextEmbedder(TextEmbedder):
                 chunked_vec = chunked_vec / np.linalg.norm(chunked_vec)  # normalizes length to 1
                 embeddings.append(chunked_vec)
             elif input_text_token_count + curr_batch_token_count >= batch_token_limit:
-                flush()
+                await flush()
             else:
                 curr_batch.append(input_text)
                 curr_batch_token_count += input_text_token_count
-        flush()
+        await flush()
 
         return embeddings
 
-    def _embed_text_batch(self, input_batch: list[str]) -> list[Embedding]:
+    async def _embed_text_batch(self, input_batch: list[str]) -> list[Embedding]:
         """Embeds text as a batch call, falling back to _embed_text on rate limit exceptions."""
         try:
-            response = self._client.embeddings.create(
+            response = await self._client.embeddings.create(
                 input=input_batch,
                 model=self._model,
                 encoding_format="float",
@@ -208,14 +217,14 @@ class OpenAITextEmbedder(TextEmbedder):
         except RateLimitError:
             # fall back to individual calls when rate limited
             # consider sleeping or other backoff mechanisms
-            return [self._embed_text(text) for text in input_batch]
+            return await asyncio.gather(*(self._embed_text(text) for text in input_batch))
         except OpenAIError as ex:
             raise ValueError("The `embed_text` method encountered an OpenAI error.") from ex
 
-    def _embed_text(self, input_text: str) -> Embedding:
+    async def _embed_text(self, input_text: str) -> Embedding:
         """Embeds a single text input and possibly returns a zero vector."""
         try:
-            response: CreateEmbeddingResponse = self._client.embeddings.create(
+            response: CreateEmbeddingResponse = await self._client.embeddings.create(
                 input=input_text,
                 model=self._model,
                 encoding_format="float",

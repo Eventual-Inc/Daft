@@ -1,4 +1,4 @@
-use std::{fmt::Display, sync::Arc};
+use std::{fmt::Display, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::{prelude::DataType, series::Series};
@@ -20,7 +20,7 @@ pub fn batch_udf(
     return_dtype: DataType,
     gpus: usize,
     use_process: Option<bool>,
-    max_concurrency: Option<usize>,
+    max_concurrency: Option<NonZeroUsize>,
     batch_size: Option<usize>,
     original_args: RuntimePyObject,
     args: Vec<ExprRef>,
@@ -53,7 +53,7 @@ pub struct BatchPyFn {
     pub return_dtype: DataType,
     pub gpus: usize,
     pub use_process: Option<bool>,
-    pub max_concurrency: Option<usize>,
+    pub max_concurrency: Option<NonZeroUsize>,
     pub batch_size: Option<usize>,
     pub original_args: RuntimePyObject,
     pub args: Vec<ExprRef>,
