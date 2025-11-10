@@ -14,7 +14,7 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorOutput,
 };
 use crate::{ExecutionTaskSpawner, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef};
 
@@ -162,11 +162,7 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
     ) -> IntermediateOpExecuteResult<Self> {
         if input.is_empty() {
             let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
-            return Ok((
-                state,
-                IntermediateOperatorResult::NeedMoreInput(Some(empty)),
-            ))
-            .into();
+            return Ok((state, IntermediateOperatorOutput::Yield(empty))).into();
         }
 
         let params = self.params.clone();
@@ -185,7 +181,7 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
                         params.build_on_left,
                         &output_schema,
                     );
-                    Ok((state, IntermediateOperatorResult::NeedMoreInput(Some(res?))))
+                    Ok((state, IntermediateOperatorOutput::Yield(res?)))
                 },
                 Span::current(),
             )

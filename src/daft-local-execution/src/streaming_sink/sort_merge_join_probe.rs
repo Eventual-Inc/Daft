@@ -86,7 +86,7 @@ impl StreamingSink for SortMergeJoinProbe {
                 async move {
                     let (_, probe_contents) = state.get_or_await_probe_state().await;
                     probe_contents.push(input);
-                    Ok((state, StreamingSinkOutput::NeedMoreInput(None)))
+                    Ok((state, StreamingSinkOutput::AwaitingInput))
                 },
                 Span::current(),
             )

@@ -31,7 +31,7 @@ use pyo3::prelude::*;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorOutput,
 };
 use crate::{
     ExecutionTaskSpawner,
@@ -358,7 +358,7 @@ impl IntermediateOperator for UdfOperator {
                 let res = state
                     .udf_handle
                     .eval_input(input)
-                    .map(|result| IntermediateOperatorResult::NeedMoreInput(Some(result)))?;
+                    .map(IntermediateOperatorOutput::Yield)?;
                 Ok((state, res))
             },
             Span::current(),

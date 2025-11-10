@@ -8,7 +8,7 @@ use daft_recordbatch::RecordBatch;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorOutput,
 };
 use crate::{ExecutionTaskSpawner, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef};
 
@@ -51,13 +51,10 @@ impl CrossJoinOperator {
 fn empty_result(
     state: CrossJoinState,
     output_schema: SchemaRef,
-) -> DaftResult<(CrossJoinState, IntermediateOperatorResult)> {
+) -> DaftResult<(CrossJoinState, IntermediateOperatorOutput)> {
     let empty = Arc::new(MicroPartition::empty(Some(output_schema)));
 
-    Ok((
-        state,
-        IntermediateOperatorResult::NeedMoreInput(Some(empty)),
-    ))
+    Ok((state, IntermediateOperatorOutput::Yield(empty)))
 }
 
 impl IntermediateOperator for CrossJoinOperator {
@@ -114,10 +111,10 @@ impl IntermediateOperator for CrossJoinOperator {
 
                     let result = if state.stream_idx == 0 && state.collect_idx == 0 {
                         // finished the outer loop, move onto next input
-                        IntermediateOperatorResult::NeedMoreInput(Some(output_morsel))
+                        IntermediateOperatorOutput::Yield(output_morsel)
                     } else {
                         // still looping through tables
-                        IntermediateOperatorResult::HasMoreOutput(output_morsel)
+                        IntermediateOperatorOutput::Pending(output_morsel)
                     };
                     Ok((state, result))
                 },

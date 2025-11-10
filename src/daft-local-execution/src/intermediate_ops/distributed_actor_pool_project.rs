@@ -17,7 +17,7 @@ use rand::Rng;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorOutput,
 };
 use crate::{
     ExecutionTaskSpawner,
@@ -154,10 +154,11 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
             let fut = task_spawner.spawn_with_memory_request(
                 memory_request,
                 async move {
-                    let res =
-                        state.actor_handle.eval_input(input).await.map(|result| {
-                            IntermediateOperatorResult::NeedMoreInput(Some(result))
-                        })?;
+                    let res = state
+                        .actor_handle
+                        .eval_input(input)
+                        .await
+                        .map(IntermediateOperatorOutput::Yield)?;
                     Ok((state, res))
                 },
                 Span::current(),

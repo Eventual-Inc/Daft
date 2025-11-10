@@ -24,11 +24,26 @@ use crate::{
     },
 };
 
+/// Output states for streaming sink operations, indicating whether the sink
+/// needs input, has output to yield, or has completed processing
 pub enum StreamingSinkOutput {
-    NeedMoreInput(Option<Arc<MicroPartition>>),
-    #[allow(dead_code)]
-    HasMoreOutput(Option<Arc<MicroPartition>>),
-    Finished(Option<Arc<MicroPartition>>),
+    /// Sink has no output and is waiting for input
+    AwaitingInput,
+    /// Sink processed input and is yielding output,
+    /// ready for next input (stateless operation)
+    Yield(Arc<MicroPartition>),
+    /// Sink has buffered output to emit,
+    /// not ready for new input (stateful operation)
+    ///
+    /// Note: this is mostly used when the operator changes the cardinality or can produce multiple partitions for a given input partition.
+    /// Operations such as a cross-join can produce multiple partitions for a given input partition.
+    #[allow(unused)]
+    Pending(Arc<MicroPartition>),
+    /// Sink has finished processing with final output
+    FinishedWithOutput(Arc<MicroPartition>),
+    /// Sink has finished processing, no remaining output
+    #[allow(unused)]
+    Finished,
 }
 
 pub enum StreamingSinkFinalizeOutput<Op: StreamingSink> {
@@ -161,25 +176,27 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 let result = op.execute(morsel.clone(), state, &spawner).await??;
                 state = result.0;
                 match result.1 {
-                    StreamingSinkOutput::NeedMoreInput(mp) => {
-                        if let Some(mp) = mp
-                            && output_sender.send(mp).await.is_err()
-                        {
+                    StreamingSinkOutput::AwaitingInput => {
+                        break;
+                    }
+
+                    StreamingSinkOutput::Yield(mp) => {
+                        if output_sender.send(mp).await.is_err() {
                             return Ok(state);
                         }
                         break;
                     }
-                    StreamingSinkOutput::HasMoreOutput(mp) => {
-                        if let Some(mp) = mp
-                            && output_sender.send(mp).await.is_err()
-                        {
+                    StreamingSinkOutput::Pending(mp) => {
+                        if output_sender.send(mp).await.is_err() {
                             return Ok(state);
                         }
                     }
-                    StreamingSinkOutput::Finished(mp) => {
-                        if let Some(mp) = mp {
-                            let _ = output_sender.send(mp).await;
-                        }
+                    StreamingSinkOutput::FinishedWithOutput(mp) => {
+                        let _ = output_sender.send(mp).await;
+                        return Ok(state);
+                    }
+
+                    StreamingSinkOutput::Finished => {
                         return Ok(state);
                     }
                 }

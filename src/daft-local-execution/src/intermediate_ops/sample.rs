@@ -6,7 +6,7 @@ use daft_micropartition::MicroPartition;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorOutput,
 };
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
@@ -72,10 +72,7 @@ impl IntermediateOperator for SampleOperator {
                             input.sample_by_size(*size, params.with_replacement, params.seed)?
                         }
                     };
-                    Ok((
-                        state,
-                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
-                    ))
+                    Ok((state, IntermediateOperatorOutput::Yield(Arc::new(out))))
                 },
                 Span::current(),
             )

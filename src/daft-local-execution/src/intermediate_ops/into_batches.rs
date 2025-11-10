@@ -7,7 +7,7 @@ use daft_micropartition::MicroPartition;
 use tracing::Span;
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorOutput,
 };
 use crate::{
     ExecutionTaskSpawner,
@@ -47,7 +47,7 @@ impl IntermediateOperator for IntoBatchesOperator {
                         )),
                         None => Arc::new(MicroPartition::empty(Some(input.schema()))),
                     };
-                    Ok((state, IntermediateOperatorResult::NeedMoreInput(Some(out))))
+                    Ok((state, IntermediateOperatorOutput::Yield(out)))
                 },
                 Span::current(),
             )

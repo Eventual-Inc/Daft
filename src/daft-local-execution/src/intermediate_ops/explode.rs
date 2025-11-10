@@ -9,7 +9,7 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorOutput,
 };
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
@@ -45,10 +45,7 @@ impl IntermediateOperator for ExplodeOperator {
             .spawn(
                 async move {
                     let out = input.explode(&to_explode)?;
-                    Ok((
-                        state,
-                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
-                    ))
+                    Ok((state, IntermediateOperatorOutput::Yield(Arc::new(out))))
                 },
                 Span::current(),
             )

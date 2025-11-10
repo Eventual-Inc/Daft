@@ -14,7 +14,7 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorOutput,
 };
 use crate::{
     ExecutionTaskSpawner,
@@ -129,10 +129,7 @@ impl IntermediateOperator for ProjectOperator {
                             .eval_expression_list_async(Arc::unwrap_or_clone(projection))
                             .await?
                     };
-                    Ok((
-                        state,
-                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
-                    ))
+                    Ok((state, IntermediateOperatorOutput::Yield(Arc::new(out))))
                 },
                 Span::current(),
             )

@@ -141,14 +141,14 @@ impl StreamingSink for AsyncUdfSink {
                         }
 
                         if ready_batches.is_empty() {
-                            Ok((state, StreamingSinkOutput::NeedMoreInput(None)))
+                            Ok((state, StreamingSinkOutput::AwaitingInput))
                         } else {
                             let output = Arc::new(MicroPartition::new_loaded(
                                 params.output_schema.clone(),
                                 Arc::new(ready_batches),
                                 None,
                             ));
-                            Ok((state, StreamingSinkOutput::NeedMoreInput(Some(output))))
+                            Ok((state, StreamingSinkOutput::Yield(output)))
                         }
                     },
                     Span::current(),
