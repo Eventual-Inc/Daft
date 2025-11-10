@@ -149,7 +149,16 @@ impl UdfState {
         let throughputs: Vec<(usize, f64)> = self
             .execution_times
             .iter()
-            .map(|(size, time)| (*size, if time.as_secs_f64() > 0.0 { *size as f64 / time.as_secs_f64() } else { f64::MAX }))
+            .map(|(size, time)| {
+                (
+                    *size,
+                    if time.as_secs_f64() > 0.0 {
+                        *size as f64 / time.as_secs_f64()
+                    } else {
+                        f64::MAX
+                    },
+                )
+            })
             .collect();
 
         // Group measurements by batch size and calculate averages
