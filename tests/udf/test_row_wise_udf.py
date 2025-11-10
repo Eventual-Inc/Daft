@@ -333,19 +333,19 @@ def test_dynamic_batching_same_result():
     df = create_df_from_batches(
         [
             [
-                {"x": np.arange(1000).tolist(), "y": np.arange(1000) * 2},
-                {"x": np.arange(50).tolist(), "y": np.arange(50) * 2},
-                {"x": np.arange(5000).tolist(), "y": np.arange(5000) * 2},
+                {"x": np.arange(1001).tolist(), "y": np.arange(1001) * 2},
+                {"x": np.arange(53).tolist(), "y": np.arange(53) * 2},
+                {"x": np.arange(5009).tolist(), "y": np.arange(5009) * 2},
             ],
             [
-                {"x": np.arange(10).tolist(), "y": np.arange(10) * 2},
-                {"x": np.arange(3000).tolist(), "y": np.arange(3000) * 2},
+                {"x": np.arange(11).tolist(), "y": np.arange(11) * 2},
+                {"x": np.arange(3332).tolist(), "y": np.arange(3332) * 2},
             ],
             [
-                {"x": np.arange(100).tolist(), "y": np.arange(100) * 2},
+                {"x": np.arange(111).tolist(), "y": np.arange(111) * 2},
                 {"x": np.arange(1).tolist(), "y": np.arange(1) * 2},
-                {"x": np.arange(7500).tolist(), "y": np.arange(7500) * 2},
-                {"x": np.arange(250).tolist(), "y": np.arange(250) * 2},
+                {"x": np.arange(7597).tolist(), "y": np.arange(7597) * 2},
+                {"x": np.arange(253).tolist(), "y": np.arange(253) * 2},
             ],
         ]
     )._add_monotonically_increasing_id()
