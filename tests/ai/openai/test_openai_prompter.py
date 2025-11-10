@@ -739,6 +739,49 @@ def test_openai_prompter_with_file():
     run_async(_test())
 
 
+def test_openai_prompter_with_text_file():
+    """Test prompting with a plain text document."""
+
+    async def _test():
+        import os
+        import tempfile
+
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.output_text = "This appears to be a text document."
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
+
+        prompter = OpenAIPrompter(
+            provider_options={"api_key": "test-key"},
+            model="gpt-4o-mini",
+        )
+        prompter.llm = mock_client
+
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w", encoding="utf-8") as tmp:
+            tmp.write("This is a plain text document.")
+            temp_path = tmp.name
+
+        try:
+            from daft.file import File
+
+            result = await prompter.prompt(("Summarize this document.", File(temp_path)))
+
+            assert result == "This appears to be a text document."
+
+            call_args = mock_client.responses.create.call_args
+            messages = call_args.kwargs["input"]
+            assert len(messages) == 1
+            assert isinstance(messages[0]["content"], list)
+            assert len(messages[0]["content"]) == 2
+            text_message = messages[0]["content"][1]
+            assert text_message["type"] == "input_text"
+            assert text_message["text"] == "This is a plain text document."
+        finally:
+            os.unlink(temp_path)
+
+    run_async(_test())
+
+
 def test_openai_prompter_with_mixed_modalities():
     """Test prompting with mixed modalities (text, image, and document)."""
 

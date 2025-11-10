@@ -105,6 +105,11 @@ class OpenAIPrompter(Prompter):
     @_process_message.register
     def _process_file_message(self, msg: File) -> dict[str, Any]:
         """Handle File objects."""
+        mime_type = msg.mime_type()
+        if self._is_text_mime_type(mime_type):
+            text_content = f"File contents: {self._read_text_content(msg)}"
+            return self._process_str_message(text_content)
+
         mime_type, encoded_content = self._encode_file(msg)
 
         if mime_type.startswith("image/"):
@@ -134,6 +139,25 @@ class OpenAIPrompter(Prompter):
             base64_string = base64.b64encode(f.read()).decode("utf-8")
         encoded_content = f"data:{mime_type};base64,{base64_string}"
         return mime_type, encoded_content
+
+    def _is_text_mime_type(self, mime_type: str) -> bool:
+        normalized = mime_type.split(";")[0].strip().lower()
+        return normalized.startswith("text/")
+
+    def _read_text_content(self, file_obj: File) -> str:
+        with file_obj.open() as f:
+            file_bytes = f.read()
+
+        if isinstance(file_bytes, str):
+            return file_bytes
+
+        if isinstance(file_bytes, bytes):
+            try:
+                return file_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                return file_bytes.decode("utf-8", errors="replace")
+
+        raise TypeError("File contents must be bytes or string")
 
     def _build_image_message(self, encoded_content: str) -> dict[str, Any]:
         if self.use_chat_completions:

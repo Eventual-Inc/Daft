@@ -18,17 +18,16 @@ from pydantic import BaseModel, Field
 import daft
 from daft.functions.ai import embed_text, prompt
 
+# @pytest.fixture(scope="module", autouse=True)
+# def skip_no_credential(pytestconfig):
+#     if not pytestconfig.getoption("--credentials"):
+#         pytest.skip(reason="OpenAI integration tests require the `--credentials` flag.")
+#     if os.environ.get("OPENAI_API_KEY") is None:
+#         pytest.skip(reason="OpenAI integration tests require the OPENAI_API_KEY environment variable.")
+
 
 @pytest.fixture(scope="module", autouse=True)
-def skip_no_credential(pytestconfig):
-    if not pytestconfig.getoption("--credentials"):
-        pytest.skip(reason="OpenAI integration tests require the `--credentials` flag.")
-    if os.environ.get("OPENAI_API_KEY") is None:
-        pytest.skip(reason="OpenAI integration tests require the OPENAI_API_KEY environment variable.")
-
-
-@pytest.fixture(scope="module", autouse=True)
-def session(skip_no_credential):
+def session():
     """Configures the session to be used for all tests."""
     with daft.session() as session:
         # the key is not explicitly needed, but was added with angry lookup for clarity.
@@ -328,6 +327,51 @@ def test_prompt_with_image_structured_output(session, use_chat_completions):
         assert len(analysis["description"]) > 0
         # Check if "blue" appears in the dominant color (case-insensitive)
         assert "#0000ff" in analysis["dominant_color"].lower()
+
+    time.sleep(1)  # self limit to ~1 tps.
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize("use_chat_completions", [False, True])
+def test_prompt_with_text_document(session, use_chat_completions):
+    """Test prompt function with plain text document input."""
+    import tempfile
+
+    document_contents = "The secret word hidden in this document is pineapple."
+
+    with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w", encoding="utf-8") as tmp:
+        tmp.write(document_contents)
+        temp_path = tmp.name
+
+    try:
+        df = daft.from_pydict(
+            {
+                "question": [
+                    "Read the attached document and tell me the secret word it mentions.",
+                ],
+                "document_path": [temp_path],
+            }
+        )
+
+        df = df.with_column(
+            "answer",
+            prompt(
+                [daft.col("question"), daft.functions.file(daft.col("document_path"))],
+                use_chat_completions=use_chat_completions,
+            ),
+        )
+
+        answers = df.to_pydict()["answer"]
+
+        assert len(answers) == 1
+        for answer in answers:
+            assert isinstance(answer, str)
+            assert len(answer) > 0
+            assert "pineapple" in answer.lower()
+    finally:
+        import os
+
+        os.unlink(temp_path)
 
     time.sleep(1)  # self limit to ~1 tps.
 
