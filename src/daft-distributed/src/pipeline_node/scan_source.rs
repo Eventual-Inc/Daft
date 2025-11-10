@@ -37,15 +37,12 @@ impl ScanSourceNode {
         pushdowns: Pushdowns,
         scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
         schema: SchemaRef,
-        logical_node_id: Option<NodeID>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![],
-            vec![],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,

@@ -50,7 +50,6 @@ impl SortMergeJoinNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         left_on: Vec<BoundExpr>,
         right_on: Vec<BoundExpr>,
@@ -61,12 +60,10 @@ impl SortMergeJoinNode {
         output_schema: SchemaRef,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![left.node_id(), right.node_id()],
-            vec![left.name(), right.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             output_schema,

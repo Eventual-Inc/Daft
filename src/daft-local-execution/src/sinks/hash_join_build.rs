@@ -13,7 +13,7 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::{ProbeState, ProbeableBuilder, RecordBatch, make_probeable_builder};
 use itertools::Itertools;
-use opentelemetry::{global, metrics::Counter};
+use opentelemetry::{KeyValue, global, metrics::Counter};
 use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
@@ -103,15 +103,25 @@ impl ProbeTableState {
 struct HashJoinBuildRuntimeStats {
     cpu_us: AtomicU64,
     rows_in: AtomicU64,
+
+    node_kv: Vec<KeyValue>,
     cpu_us_otel: Counter<u64>,
     rows_in_otel: Counter<u64>,
 }
 impl HashJoinBuildRuntimeStats {
-    pub fn new(name: &str) -> Self {
-        let meter = global::meter("runtime_stats");
-        let cpu_us_otel = meter.u64_counter(format!("{name}.cpu_us")).build();
-        let rows_in_otel = meter.u64_counter(format!("{name}.rows_in")).build();
-        Self { cpu_us: AtomicU64::new(0), rows_in: AtomicU64::new(0), cpu_us_otel, rows_in_otel }
+    pub fn new(id: usize) -> Self {
+        let meter = global::meter("daft.local.node_stats");
+        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+        let cpu_us_otel = meter.u64_counter("cpu_us").build();
+        let rows_in_otel = meter.u64_counter("rows_in").build();
+        Self {
+            cpu_us: AtomicU64::new(0),
+            rows_in: AtomicU64::new(0),
+
+            node_kv,
+            cpu_us_otel,
+            rows_in_otel,
+        }
     }
 }
 
@@ -129,7 +139,7 @@ impl RuntimeStats for HashJoinBuildRuntimeStats {
 
     fn add_rows_in(&self, rows: u64) {
         self.rows_in.fetch_add(rows, Ordering::Relaxed);
-        self.rows_in_otel.add(rows, &[]);
+        self.rows_in_otel.add(rows, self.node_kv.as_slice());
     }
 
     fn add_rows_out(&self, _: u64) {
@@ -237,8 +247,8 @@ impl BlockingSink for HashJoinBuildSink {
         )
     }
 
-    fn make_runtime_stats(&self, name: &str) -> Arc<dyn RuntimeStats> {
-        Arc::new(HashJoinBuildRuntimeStats::new(name))
+    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(HashJoinBuildRuntimeStats::new(id))
     }
 
     fn morsel_size_requirement(&self) -> Option<crate::pipeline::MorselSizeRequirement> {

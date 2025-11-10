@@ -42,7 +42,6 @@ impl BroadcastJoinNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         left_on: Vec<BoundExpr>,
         right_on: Vec<BoundExpr>,
@@ -54,12 +53,10 @@ impl BroadcastJoinNode {
         output_schema: SchemaRef,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![broadcaster.node_id(), receiver.node_id()],
-            vec![broadcaster.name(), receiver.name()],
-            logical_node_id,
         );
 
         // For broadcast joins, we use the receiver's clustering spec since the broadcaster

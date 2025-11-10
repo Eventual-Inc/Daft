@@ -10,7 +10,7 @@ use common_error::DaftResult;
 use common_metrics::{Stat, StatSnapshotSend, ops::NodeType, snapshot};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
-use opentelemetry::{global, metrics::{Counter}};
+use opentelemetry::{KeyValue, global, metrics::Counter};
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{
@@ -26,22 +26,27 @@ pub struct FilterStats {
     cpu_us: AtomicU64,
     rows_in: AtomicU64,
     rows_out: AtomicU64,
+
+    node_kv: Vec<KeyValue>,
     cpu_us_otel: Counter<u64>,
     rows_in_otel: Counter<u64>,
     rows_out_otel: Counter<u64>,
 }
 
 impl FilterStats {
-    pub fn new(name: &str) -> Self {
-        let meter = global::meter("runtime_stats");
-        let cpu_us_otel = meter.u64_counter(format!("{name}.cpu_us")).build();
-        let rows_in_otel = meter.u64_counter(format!("{name}.rows_in")).build();
-        let rows_out_otel = meter.u64_counter(format!("{name}.rows_out")).build();
+    pub fn new(id: usize) -> Self {
+        let meter = global::meter("daft.local.node_stats");
+        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+        let cpu_us_otel = meter.u64_counter("cpu_us").build();
+        let rows_in_otel = meter.u64_counter("rows_in").build();
+        let rows_out_otel = meter.u64_counter("rows_out").build();
 
         Self {
             cpu_us: AtomicU64::new(0),
             rows_in: AtomicU64::new(0),
             rows_out: AtomicU64::new(0),
+
+            node_kv,
             cpu_us_otel,
             rows_in_otel,
             rows_out_otel,
@@ -74,17 +79,17 @@ impl RuntimeStats for FilterStats {
 
     fn add_rows_in(&self, rows: u64) {
         self.rows_in.fetch_add(rows, Ordering::Relaxed);
-        self.rows_in_otel.add(rows, &[]);
+        self.rows_in_otel.add(rows, self.node_kv.as_slice());
     }
 
     fn add_rows_out(&self, rows: u64) {
         self.rows_out.fetch_add(rows, Ordering::Relaxed);
-        self.rows_out_otel.add(rows, &[]);
+        self.rows_out_otel.add(rows, self.node_kv.as_slice());
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
         self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
-        self.cpu_us_otel.add(cpu_us, &[]);
+        self.cpu_us_otel.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
@@ -135,8 +140,8 @@ impl IntermediateOperator for FilterOperator {
         NodeType::Filter
     }
 
-    fn make_runtime_stats(&self, name: &str) -> Arc<dyn RuntimeStats> {
-        Arc::new(FilterStats::new(name))
+    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(FilterStats::new(id))
     }
 
     fn make_state(&self) -> DaftResult<Self::State> {

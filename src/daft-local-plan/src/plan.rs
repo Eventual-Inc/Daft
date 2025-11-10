@@ -11,10 +11,10 @@ use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
     Column, ExprRef, WindowExpr, WindowFrame, WindowSpec,
     expr::{
-        BoundColumn,
-        bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+        BoundColumn, VLLMExpr,
+        bound_expr::{BoundAggExpr, BoundExpr, BoundVLLMExpr, BoundWindowExpr},
     },
-    functions::python::{UDFProperties, get_resource_request},
+    functions::python::{RuntimePyObject, UDFProperties, get_resource_request},
 };
 use daft_logical_plan::{
     InMemoryInfo, OutputFileInfo,
@@ -78,6 +78,7 @@ pub enum LocalPhysicalPlan {
     SortMergeJoin(SortMergeJoin),
     #[cfg(feature = "python")]
     DistributedActorPoolProject(DistributedActorPoolProject),
+    VLLMProject(VLLMProject),
 }
 
 impl LocalPhysicalPlan {
@@ -128,7 +129,8 @@ impl LocalPhysicalPlan {
                 stats_state,
                 ..
             })
-            | Self::WindowOrderByOnly(WindowOrderByOnly { stats_state, .. }) => stats_state,
+            | Self::WindowOrderByOnly(WindowOrderByOnly { stats_state, .. })
+            | Self::VLLMProject(VLLMProject { stats_state, .. }) => stats_state,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { stats_state, .. })
             | Self::LanceWrite(LanceWrite { stats_state, .. })
@@ -779,6 +781,25 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub fn vllm_project(
+        input: LocalPhysicalPlanRef,
+        expr: BoundVLLMExpr,
+        llm_actors: Option<RuntimePyObject>,
+        output_column_name: Arc<str>,
+        schema: SchemaRef,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        Self::VLLMProject(VLLMProject {
+            input,
+            expr,
+            llm_actors,
+            output_column_name,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
@@ -825,6 +846,7 @@ impl LocalPhysicalPlan {
             Self::IntoPartitions(IntoPartitions { schema, .. }) => schema,
             Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
             Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
+            Self::VLLMProject(VLLMProject { schema, .. }) => schema,
         }
     }
 
@@ -906,6 +928,7 @@ impl LocalPhysicalPlan {
             Self::IntoPartitions(IntoPartitions { input, .. }) => vec![input.clone()],
             Self::TopN(TopN { input, .. }) => vec![input.clone()],
             Self::WindowOrderByOnly(WindowOrderByOnly { input, .. }) => vec![input.clone()],
+            Self::VLLMProject(VLLMProject { input, .. }) => vec![input.clone()],
         }
     }
 
@@ -1268,6 +1291,21 @@ impl LocalPhysicalPlan {
                         StatsState::NotMaterialized,
                     )
                 }
+                Self::VLLMProject(VLLMProject {
+                    input,
+                    expr,
+                    llm_actors,
+                    output_column_name,
+                    schema,
+                    stats_state,
+                }) => Self::vllm_project(
+                    new_child.clone(),
+                    expr.clone(),
+                    llm_actors.clone(),
+                    output_column_name.clone(),
+                    schema.clone(),
+                    stats_state.clone(),
+                ),
                 Self::HashJoin(_) => {
                     panic!("LocalPhysicalPlan::with_new_children: HashJoin should have 2 children")
                 }
@@ -1725,6 +1763,16 @@ pub struct Repartition {
 pub struct IntoPartitions {
     pub input: LocalPhysicalPlanRef,
     pub num_partitions: usize,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VLLMProject {
+    pub input: LocalPhysicalPlanRef,
+    pub expr: BoundVLLMExpr,
+    pub llm_actors: Option<RuntimePyObject>,
+    pub output_column_name: Arc<str>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }

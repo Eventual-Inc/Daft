@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable
 from typing import TYPE_CHECKING, Any
 
 from daft.dependencies import pil_image
@@ -29,9 +30,21 @@ class _TextEmbedderExpression:
     def __init__(self, text_embedder: TextEmbedderDescriptor):
         self.text_embedder = text_embedder.instantiate()
 
-    def __call__(self, text_series: Series) -> list[Embedding]:
+    def _call_sync(self, text_series: Series) -> list[Embedding]:
         text = text_series.to_pylist()
-        return self.text_embedder.embed_text(text) if text else []
+        if not text:
+            return []
+        result = self.text_embedder.embed_text(text)
+        assert isinstance(result, list)
+        return result
+
+    async def _call_async(self, text_series: Series) -> list[Embedding]:
+        text = text_series.to_pylist()
+        if not text:
+            return []
+        result_awaitable = self.text_embedder.embed_text(text)
+        assert isinstance(result_awaitable, Awaitable)
+        return await result_awaitable
 
 
 class _ImageEmbedderExpression:
@@ -88,5 +101,5 @@ class _PrompterExpression:
     def __init__(self, prompter: PrompterDescriptor):
         self.prompter = prompter.instantiate()
 
-    async def __call__(self, message: str) -> Any:
-        return await self.prompter.prompt(message)
+    async def prompt(self, *messages: Any) -> Any:
+        return await self.prompter.prompt(messages)

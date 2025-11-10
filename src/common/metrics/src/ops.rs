@@ -1,5 +1,6 @@
 use std::{collections::HashMap, fmt::Display, sync::Arc};
 
+use daft_schema::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 
 use crate::NodeID;
@@ -25,6 +26,7 @@ pub enum NodeType {
     Sample,
     UDFProject,
     Unpivot,
+    VLLMProject,
 
     // Blocking Sinks
     // Consumes all input MicroPartitions before producing 1-N outputs
@@ -49,6 +51,7 @@ pub enum NodeType {
     // Both consumes and produces MicroPartitions at arbitrary intervals
     // For example, limit cuts off early.
     AntiSemiHashJoinProbe,
+    AsyncUDFProject,
     Concat,
     Limit,
     MonotonicallyIncreasingId,
@@ -85,4 +88,5 @@ pub struct NodeInfo {
     pub node_type: NodeType,
     pub node_category: NodeCategory,
     pub context: HashMap<String, String>,
+    pub output_schema: SchemaRef,
 }

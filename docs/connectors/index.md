@@ -73,6 +73,14 @@ See also [Lance](lance.md) for detailed integration.
 | [`write_parquet`][daft.dataframe.DataFrame.write_parquet] | Write a DataFrame to Parquet files                             |
 
 
+## PostgreSQL
+
+| Function                                                | Description                                       |
+|---------------------------------------------------------|---------------------------------------------------|
+| [`Catalog.from_postgres`][daft.catalog.Catalog.from_postgres] | Create a catalog from a PostgreSQL database       |
+
+See also [PostgreSQL](postgres.md) for detailed integration.
+
 ## SQL
 
 | Function                       | Description                                    |
@@ -118,7 +126,7 @@ Daft integrates with various catalog implementations using its `Catalog` and `Ta
 
 !!! note "Note"
 
-    These examples use the Iceberg Catalog from the [Daft Sessions](../sessions.md) tutorial.
+    These examples use the Iceberg Catalog from the [Daft Sessions](../configuration/sessions-usage.md) tutorial.
 
 ```python
 import daft

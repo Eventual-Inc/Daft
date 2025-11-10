@@ -1,6 +1,57 @@
 pub use common_io_config::IOConfig;
 use serde::{Deserialize, Serialize};
 
+/// Resolve and parse the boolean configuration item from the Env. It's considered true when the
+/// value is "1" or "true"; otherwise, it is false.
+fn parse_bool_from_env(env_var_name: &str) -> Option<bool> {
+    if let Ok(val) = std::env::var(env_var_name) {
+        Some(matches!(val.trim().to_lowercase().as_str(), "1" | "true"))
+    } else {
+        None
+    }
+}
+
+/// Resolve and parse the string configuration item from the Env.
+fn parse_string_from_env(env_var: &str, trim: bool) -> Option<String> {
+    if let Ok(val) = std::env::var(env_var) {
+        Some(if trim { val.trim().to_string() } else { val })
+    } else {
+        None
+    }
+}
+
+/// Resolve and parse the numeric-type configuration item from the Env. If parsing fails, print an
+/// error message and return the default value.
+fn parse_number_from_env<T: std::str::FromStr + std::fmt::Display>(
+    env_var: &str,
+    default_val: T,
+) -> Option<T> {
+    parse_number_from_env_with_custom_parser(env_var, default_val, |_| None)
+}
+
+fn parse_number_from_env_with_custom_parser<T: std::str::FromStr + std::fmt::Display>(
+    env_var: &str,
+    default_val: T,
+    custom_parser: impl FnOnce(&str) -> Option<T>,
+) -> Option<T> {
+    if let Ok(val) = std::env::var(env_var) {
+        if let Some(parsed) = custom_parser(&val) {
+            return Some(parsed);
+        }
+
+        if let Ok(parsed) = val.trim().parse::<T>() {
+            return Some(parsed);
+        }
+
+        eprintln!(
+            "Invalid {} value: {}, using default {}",
+            env_var, val, default_val
+        );
+        return Some(default_val);
+    }
+    None
+}
+
 /// Configurations for Daft to use during the building of a Dataframe's plan.
 ///
 /// 1. Creation of a Dataframe including any file listing and schema inference that needs to happen. Note
@@ -14,20 +65,22 @@ pub struct DaftPlanningConfig {
 }
 
 impl DaftPlanningConfig {
+    const ENV_DAFT_DEV_DISABLE_JOIN_REORDERING: &'static str = "DAFT_DEV_DISABLE_JOIN_REORDERING";
+    const ENV_DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN: &'static str =
+        "DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN";
+
     #[must_use]
     pub fn from_env() -> Self {
         let mut cfg: Self = Default::default();
-        let disable_join_reordering_var_name = "DAFT_DEV_DISABLE_JOIN_REORDERING";
-        if let Ok(val) = std::env::var(disable_join_reordering_var_name)
-            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
-        {
-            cfg.disable_join_reordering = true;
+
+        if let Some(val) = parse_bool_from_env(Self::ENV_DAFT_DEV_DISABLE_JOIN_REORDERING) {
+            cfg.disable_join_reordering = val;
         }
-        if let Ok(val) = std::env::var("DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN")
-            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
-        {
-            cfg.enable_strict_filter_pushdown = true;
+
+        if let Some(val) = parse_bool_from_env(Self::ENV_DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN) {
+            cfg.enable_strict_filter_pushdown = val;
         }
+
         cfg
     }
 }
@@ -74,6 +127,7 @@ pub struct DaftExecutionConfig {
     pub use_legacy_ray_runner: bool,
     pub min_cpu_per_task: f64,
     pub actor_udf_ready_timeout: usize,
+    pub maintain_order: bool,
 }
 
 impl Default for DaftExecutionConfig {
@@ -93,7 +147,7 @@ impl Default for DaftExecutionConfig {
             csv_target_filesize: 512 * 1024 * 1024, // 512MB
             csv_inflation_factor: 0.5,
             json_target_filesize: 512 * 1024 * 1024, // 512MB
-            json_inflation_factor: 0.5, // TODO(desmond): This can be tuned with more real world datasets.
+            json_inflation_factor: 0.25, // TODO(desmond): This can be tuned with more real world datasets.
             shuffle_aggregation_default_partitions: 200,
             partial_aggregation_threshold: 10000,
             high_cardinality_aggregation_threshold: 0.8,
@@ -110,68 +164,100 @@ impl Default for DaftExecutionConfig {
             use_legacy_ray_runner: false,
             min_cpu_per_task: 0.5,
             actor_udf_ready_timeout: 120,
+            maintain_order: true,
         }
     }
 }
 
 impl DaftExecutionConfig {
+    const ENV_DAFT_ENABLE_AQE: &'static str = "DAFT_ENABLE_AQE";
+    const ENV_DAFT_ENABLE_RAY_TRACING: &'static str = "DAFT_ENABLE_RAY_TRACING";
+    const ENV_DAFT_SHUFFLE_ALGORITHM: &'static str = "DAFT_SHUFFLE_ALGORITHM";
+    const ENV_DAFT_SCANTASK_SPLITTING_LEVEL: &'static str = "DAFT_SCANTASK_SPLITTING_LEVEL";
+    const ENV_DAFT_SCANTASK_MAX_PARALLEL: &'static str = "DAFT_SCANTASK_MAX_PARALLEL";
+    const ENV_DAFT_NATIVE_PARQUET_WRITER: &'static str = "DAFT_NATIVE_PARQUET_WRITER";
+    const ENV_DAFT_FLOTILLA: &'static str = "DAFT_FLOTILLA";
+    const ENV_DAFT_MIN_CPU_PER_TASK: &'static str = "DAFT_MIN_CPU_PER_TASK";
+    const ENV_DAFT_ACTOR_UDF_READY_TIMEOUT: &'static str = "DAFT_ACTOR_UDF_READY_TIMEOUT";
+    const ENV_PARQUET_INFLATION_FACTOR: &'static str = "DAFT_PARQUET_INFLATION_FACTOR";
+    const ENV_CSV_INFLATION_FACTOR: &'static str = "DAFT_CSV_INFLATION_FACTOR";
+    const ENV_JSON_INFLATION_FACTOR: &'static str = "DAFT_JSON_INFLATION_FACTOR";
+    const ENV_DAFT_MAINTAIN_ORDER: &'static str = "DAFT_MAINTAIN_ORDER";
+
     #[must_use]
     pub fn from_env() -> Self {
         let mut cfg = Self::default();
-        let aqe_env_var_name = "DAFT_ENABLE_AQE";
-        if let Ok(val) = std::env::var(aqe_env_var_name)
-            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
-        {
-            cfg.enable_aqe = true;
+
+        if let Some(val) = parse_bool_from_env(Self::ENV_DAFT_ENABLE_AQE) {
+            cfg.enable_aqe = val;
         }
-        let ray_tracing_env_var_name = "DAFT_ENABLE_RAY_TRACING";
-        if let Ok(val) = std::env::var(ray_tracing_env_var_name)
-            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
-        {
-            cfg.enable_ray_tracing = true;
+
+        if let Some(val) = parse_bool_from_env(Self::ENV_DAFT_ENABLE_RAY_TRACING) {
+            cfg.enable_ray_tracing = val;
         }
-        let shuffle_algorithm_env_var_name = "DAFT_SHUFFLE_ALGORITHM";
-        if let Ok(val) = std::env::var(shuffle_algorithm_env_var_name) {
+
+        if let Some(val) = parse_string_from_env(Self::ENV_DAFT_SHUFFLE_ALGORITHM, true) {
             cfg.shuffle_algorithm = val;
         }
-        let enable_aggressive_scantask_splitting_env_var_name = "DAFT_SCANTASK_SPLITTING_LEVEL";
-        if let Ok(val) = std::env::var(enable_aggressive_scantask_splitting_env_var_name) {
-            cfg.scantask_splitting_level = val.parse::<i32>().unwrap_or(0);
+
+        if let Some(val) = parse_number_from_env(Self::ENV_DAFT_SCANTASK_SPLITTING_LEVEL, 0) {
+            cfg.scantask_splitting_level = val;
         }
-        let scantask_max_parallel_env_var_name = "DAFT_SCANTASK_MAX_PARALLEL";
-        if let Ok(val) = std::env::var(scantask_max_parallel_env_var_name) {
-            if val.trim().to_lowercase().as_str() == "auto" {
-                cfg.scantask_max_parallel = 0;
-            } else {
-                match val.parse::<usize>() {
-                    Ok(parallel) => cfg.scantask_max_parallel = parallel,
-                    Err(_) => eprintln!(
-                        "Invalid {} value: {}, using default {}",
-                        scantask_max_parallel_env_var_name, val, cfg.scantask_max_parallel
-                    ),
-                }
-            }
+
+        if let Some(val) = parse_number_from_env_with_custom_parser(
+            Self::ENV_DAFT_SCANTASK_MAX_PARALLEL,
+            cfg.scantask_max_parallel,
+            |v| {
+                if v == "auto" { Some(0) } else { None }
+            },
+        ) {
+            cfg.scantask_max_parallel = val;
         }
-        let native_parquet_writer_env_var_name = "DAFT_NATIVE_PARQUET_WRITER";
-        if let Ok(val) = std::env::var(native_parquet_writer_env_var_name)
-            && matches!(val.trim().to_lowercase().as_str(), "0" | "false")
+
+        if let Some(val) = parse_bool_from_env(Self::ENV_DAFT_NATIVE_PARQUET_WRITER) {
+            cfg.native_parquet_writer = val;
+        }
+
+        if let Some(val) = parse_bool_from_env(Self::ENV_DAFT_FLOTILLA) {
+            cfg.use_legacy_ray_runner = !val;
+        }
+
+        if let Some(val) =
+            parse_number_from_env(Self::ENV_DAFT_MIN_CPU_PER_TASK, cfg.min_cpu_per_task)
         {
-            cfg.native_parquet_writer = false;
+            cfg.min_cpu_per_task = val;
         }
-        let flotilla_env_var_name = "DAFT_FLOTILLA";
-        if let Ok(val) = std::env::var(flotilla_env_var_name) {
-            cfg.use_legacy_ray_runner = matches!(val.trim().to_lowercase().as_str(), "0" | "false");
+
+        if let Some(val) = parse_number_from_env(
+            Self::ENV_DAFT_ACTOR_UDF_READY_TIMEOUT,
+            cfg.actor_udf_ready_timeout,
+        ) {
+            cfg.actor_udf_ready_timeout = val;
         }
-        let min_cpu_var = "DAFT_MIN_CPU_PER_TASK";
-        if let Ok(val) = std::env::var(min_cpu_var) {
-            match val.parse::<f64>() {
-                Ok(parsed) => cfg.min_cpu_per_task = parsed,
-                Err(_) => eprintln!(
-                    "Invalid {} value: {}, using default {}",
-                    min_cpu_var, val, cfg.min_cpu_per_task
-                ),
-            }
+
+        if let Some(val) = parse_bool_from_env(Self::ENV_DAFT_MAINTAIN_ORDER) {
+            cfg.maintain_order = val;
         }
+
+        if let Some(val) = parse_number_from_env(
+            Self::ENV_PARQUET_INFLATION_FACTOR,
+            cfg.parquet_inflation_factor,
+        ) {
+            cfg.parquet_inflation_factor = val;
+        }
+
+        if let Some(val) =
+            parse_number_from_env(Self::ENV_CSV_INFLATION_FACTOR, cfg.csv_inflation_factor)
+        {
+            cfg.csv_inflation_factor = val;
+        }
+
+        if let Some(val) =
+            parse_number_from_env(Self::ENV_JSON_INFLATION_FACTOR, cfg.json_inflation_factor)
+        {
+            cfg.json_inflation_factor = val;
+        }
+
         cfg
     }
 }
@@ -192,4 +278,314 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<python::PyDaftPlanningConfig>()?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{DaftExecutionConfig, DaftPlanningConfig};
+
+    #[test]
+    fn test_from_env_for_planning_config() {
+        // ENV_DAFT_DEV_DISABLE_JOIN_REORDERING
+        {
+            let cfg = DaftPlanningConfig::from_env();
+            assert_eq!(cfg.disable_join_reordering, false);
+
+            unsafe {
+                std::env::set_var(
+                    DaftPlanningConfig::ENV_DAFT_DEV_DISABLE_JOIN_REORDERING,
+                    "1",
+                );
+            }
+            let cfg = DaftPlanningConfig::from_env();
+            assert_eq!(cfg.disable_join_reordering, true);
+
+            unsafe {
+                std::env::set_var(
+                    DaftPlanningConfig::ENV_DAFT_DEV_DISABLE_JOIN_REORDERING,
+                    "false",
+                );
+            }
+            let cfg = DaftPlanningConfig::from_env();
+            assert_eq!(cfg.disable_join_reordering, false);
+
+            unsafe {
+                std::env::remove_var(DaftPlanningConfig::ENV_DAFT_DEV_DISABLE_JOIN_REORDERING);
+            }
+        }
+
+        // ENV_DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN
+        {
+            let cfg = DaftPlanningConfig::from_env();
+            assert_eq!(cfg.enable_strict_filter_pushdown, false);
+
+            unsafe {
+                std::env::set_var(
+                    DaftPlanningConfig::ENV_DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN,
+                    "0",
+                );
+            }
+            let cfg = DaftPlanningConfig::from_env();
+            assert_eq!(cfg.enable_strict_filter_pushdown, false);
+
+            unsafe {
+                std::env::set_var(
+                    DaftPlanningConfig::ENV_DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN,
+                    "true",
+                );
+            }
+            let cfg = DaftPlanningConfig::from_env();
+            assert_eq!(cfg.enable_strict_filter_pushdown, true);
+
+            unsafe {
+                std::env::remove_var(
+                    DaftPlanningConfig::ENV_DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_from_env_for_execution_config() {
+        // ENV_DAFT_ENABLE_AQE
+        {
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.enable_aqe, false);
+
+            unsafe {
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_ENABLE_AQE, "true");
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.enable_aqe, true);
+
+            unsafe {
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_ENABLE_AQE, "0");
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.enable_aqe, false);
+
+            unsafe {
+                std::env::remove_var(DaftExecutionConfig::ENV_DAFT_ENABLE_AQE);
+            }
+        }
+
+        // ENV_DAFT_ENABLE_RAY_TRACING
+        {
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.enable_ray_tracing, false);
+
+            unsafe {
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_ENABLE_RAY_TRACING, "1");
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.enable_ray_tracing, true);
+
+            unsafe {
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_ENABLE_RAY_TRACING, "false");
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.enable_ray_tracing, false);
+
+            unsafe {
+                std::env::remove_var(DaftExecutionConfig::ENV_DAFT_ENABLE_RAY_TRACING);
+            }
+        }
+
+        // ENV_DAFT_SHUFFLE_ALGORITHM
+        {
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.shuffle_algorithm, "auto");
+
+            unsafe {
+                std::env::set_var(
+                    DaftExecutionConfig::ENV_DAFT_SHUFFLE_ALGORITHM,
+                    "pre_shuffle_merge  ",
+                );
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.shuffle_algorithm, "pre_shuffle_merge");
+
+            unsafe {
+                std::env::set_var(
+                    DaftExecutionConfig::ENV_DAFT_SHUFFLE_ALGORITHM,
+                    "map_reduce  ",
+                );
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.shuffle_algorithm, "map_reduce");
+
+            unsafe {
+                std::env::remove_var(DaftExecutionConfig::ENV_DAFT_SHUFFLE_ALGORITHM);
+            }
+        }
+
+        // ENV_DAFT_SCANTASK_SPLITTING_LEVEL
+        {
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.scantask_splitting_level, 1);
+
+            unsafe {
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_SCANTASK_SPLITTING_LEVEL, "5");
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.scantask_splitting_level, 5);
+
+            unsafe {
+                std::env::set_var(
+                    DaftExecutionConfig::ENV_DAFT_SCANTASK_SPLITTING_LEVEL,
+                    "invalid",
+                );
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.scantask_splitting_level, 0);
+
+            unsafe {
+                std::env::remove_var(DaftExecutionConfig::ENV_DAFT_SCANTASK_SPLITTING_LEVEL);
+            }
+        }
+
+        // ENV_DAFT_SCANTASK_MAX_PARALLEL
+        {
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.scantask_max_parallel, 8);
+
+            unsafe {
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_SCANTASK_MAX_PARALLEL, "16");
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.scantask_max_parallel, 16);
+
+            unsafe {
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_SCANTASK_MAX_PARALLEL, "auto");
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.scantask_max_parallel, 0);
+
+            unsafe {
+                std::env::set_var(
+                    DaftExecutionConfig::ENV_DAFT_SCANTASK_MAX_PARALLEL,
+                    "invalid",
+                );
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.scantask_max_parallel, 8);
+
+            unsafe {
+                std::env::remove_var(DaftExecutionConfig::ENV_DAFT_SCANTASK_MAX_PARALLEL);
+            }
+        }
+
+        // ENV_DAFT_NATIVE_PARQUET_WRITER
+        {
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.native_parquet_writer, true);
+
+            unsafe {
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_NATIVE_PARQUET_WRITER, "false");
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.native_parquet_writer, false);
+
+            unsafe {
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_NATIVE_PARQUET_WRITER, "1");
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.native_parquet_writer, true);
+
+            unsafe {
+                std::env::remove_var(DaftExecutionConfig::ENV_DAFT_NATIVE_PARQUET_WRITER);
+            }
+        }
+
+        // ENV_DAFT_FLOTILLA
+        {
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.use_legacy_ray_runner, false);
+
+            unsafe {
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_FLOTILLA, "0");
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.use_legacy_ray_runner, true);
+
+            unsafe {
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_FLOTILLA, "true");
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.use_legacy_ray_runner, false);
+
+            unsafe {
+                std::env::remove_var(DaftExecutionConfig::ENV_DAFT_FLOTILLA);
+            }
+        }
+
+        // ENV_DAFT_MIN_CPU_PER_TASK
+        {
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.min_cpu_per_task, 0.5);
+
+            unsafe {
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_MIN_CPU_PER_TASK, "0.1");
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.min_cpu_per_task, 0.1);
+
+            unsafe {
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_MIN_CPU_PER_TASK, "invalid");
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.min_cpu_per_task, 0.5);
+
+            unsafe {
+                std::env::remove_var(DaftExecutionConfig::ENV_DAFT_MIN_CPU_PER_TASK);
+            }
+        }
+
+        // ENV_DAFT_ACTOR_UDF_READY_TIMEOUT
+        {
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.actor_udf_ready_timeout, 120);
+
+            unsafe {
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_ACTOR_UDF_READY_TIMEOUT, "300");
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.actor_udf_ready_timeout, 300);
+
+            unsafe {
+                std::env::set_var(
+                    DaftExecutionConfig::ENV_DAFT_ACTOR_UDF_READY_TIMEOUT,
+                    "invalid",
+                );
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.actor_udf_ready_timeout, 120);
+
+            unsafe {
+                std::env::remove_var(DaftExecutionConfig::ENV_DAFT_ACTOR_UDF_READY_TIMEOUT);
+            }
+        }
+
+        // ENV_DAFT_MAINTAIN_ORDER
+        {
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.maintain_order, true);
+
+            unsafe {
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_MAINTAIN_ORDER, "false");
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.maintain_order, false);
+
+            unsafe {
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_MAINTAIN_ORDER, "1");
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.maintain_order, true);
+
+            unsafe {
+                std::env::remove_var(DaftExecutionConfig::ENV_DAFT_MAINTAIN_ORDER);
+            }
+        }
+    }
 }

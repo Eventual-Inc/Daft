@@ -11,7 +11,7 @@ use daft_logical_plan::{
 use daft_schema::schema::SchemaRef;
 
 use crate::pipeline_node::{
-    DistributedPipelineNode, NodeID,
+    DistributedPipelineNode,
     join::{BroadcastJoinNode, CrossJoinNode, HashJoinNode, SortMergeJoinNode},
     translate::LogicalPlanToPipelineNodeTranslator,
 };
@@ -65,7 +65,6 @@ impl LogicalPlanToPipelineNodeTranslator {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn gen_hash_join_nodes(
         &mut self,
-        logical_node_id: Option<NodeID>,
         left: DistributedPipelineNode,
         right: DistributedPipelineNode,
         left_on: Vec<BoundExpr>,
@@ -117,7 +116,6 @@ impl LogicalPlanToPipelineNodeTranslator {
             || (num_partitions > 1 && !is_left_hash_partitioned)
         {
             self.gen_shuffle_node(
-                logical_node_id,
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
                     Some(num_partitions),
                     left_on.iter().map(|e| e.clone().into()).collect(),
@@ -133,7 +131,6 @@ impl LogicalPlanToPipelineNodeTranslator {
             || (num_partitions > 1 && !is_right_hash_partitioned)
         {
             self.gen_shuffle_node(
-                logical_node_id,
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
                     Some(num_partitions),
                     right_on.iter().map(|e| e.clone().into()).collect(),
@@ -147,7 +144,6 @@ impl LogicalPlanToPipelineNodeTranslator {
 
         Ok(HashJoinNode::new(
             self.get_next_pipeline_node_id(),
-            logical_node_id,
             &self.plan_config,
             left_on,
             right_on,
@@ -164,7 +160,6 @@ impl LogicalPlanToPipelineNodeTranslator {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn gen_broadcast_join_node(
         &mut self,
-        logical_node_id: Option<NodeID>,
         left_on: Vec<BoundExpr>,
         right_on: Vec<BoundExpr>,
         null_equals_nulls: Vec<bool>,
@@ -201,7 +196,6 @@ impl LogicalPlanToPipelineNodeTranslator {
         // Create broadcast join node
         Ok(BroadcastJoinNode::new(
             self.get_next_pipeline_node_id(),
-            logical_node_id,
             &self.plan_config,
             left_on,
             right_on,
@@ -218,7 +212,6 @@ impl LogicalPlanToPipelineNodeTranslator {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn gen_sort_merge_join_node(
         &mut self,
-        logical_node_id: Option<NodeID>,
         left: DistributedPipelineNode,
         right: DistributedPipelineNode,
         left_on: Vec<BoundExpr>,
@@ -234,7 +227,6 @@ impl LogicalPlanToPipelineNodeTranslator {
 
         Ok(SortMergeJoinNode::new(
             self.get_next_pipeline_node_id(),
-            logical_node_id,
             &self.plan_config,
             left_on,
             right_on,
@@ -249,7 +241,6 @@ impl LogicalPlanToPipelineNodeTranslator {
 
     pub(crate) fn gen_cross_join_node(
         &mut self,
-        logical_node_id: Option<NodeID>,
         left_node: DistributedPipelineNode,
         right_node: DistributedPipelineNode,
         output_schema: SchemaRef,
@@ -262,7 +253,6 @@ impl LogicalPlanToPipelineNodeTranslator {
 
         Ok(CrossJoinNode::new(
             self.get_next_pipeline_node_id(),
-            logical_node_id,
             &self.plan_config,
             num_partitions,
             left_node,
@@ -274,7 +264,6 @@ impl LogicalPlanToPipelineNodeTranslator {
 
     pub(crate) fn translate_join(
         &mut self,
-        logical_node_id: Option<NodeID>,
         join: &Join,
         left_node: DistributedPipelineNode,
         right_node: DistributedPipelineNode,
@@ -312,7 +301,6 @@ impl LogicalPlanToPipelineNodeTranslator {
 
         match join_strategy {
             JoinStrategy::Hash => self.gen_hash_join_nodes(
-                logical_node_id,
                 left_node,
                 right_node,
                 left_on,
@@ -322,7 +310,6 @@ impl LogicalPlanToPipelineNodeTranslator {
                 join.output_schema.clone(),
             ),
             JoinStrategy::SortMerge => self.gen_sort_merge_join_node(
-                logical_node_id,
                 left_node,
                 right_node,
                 left_on,
@@ -331,7 +318,6 @@ impl LogicalPlanToPipelineNodeTranslator {
                 join.output_schema.clone(),
             ),
             JoinStrategy::Broadcast => self.gen_broadcast_join_node(
-                logical_node_id,
                 left_on,
                 right_on,
                 null_equals_nulls,
@@ -342,12 +328,9 @@ impl LogicalPlanToPipelineNodeTranslator {
                 &right_stats,
                 join.output_schema.clone(),
             ),
-            JoinStrategy::Cross => self.gen_cross_join_node(
-                logical_node_id,
-                left_node,
-                right_node,
-                join.output_schema.clone(),
-            ),
+            JoinStrategy::Cross => {
+                self.gen_cross_join_node(left_node, right_node, join.output_schema.clone())
+            }
         }
     }
 }

@@ -40,7 +40,7 @@ pub(crate) async fn get_partition_boundaries_from_samples(
     num_partitions: usize,
 ) -> DaftResult<RecordBatch> {
     use daft_io::IOStatsContext;
-    use pyo3::{Python, prelude::*};
+    use pyo3::prelude::*;
 
     // Extract partition refs from samples
     let ray_partition_refs = samples
@@ -57,15 +57,6 @@ pub(crate) async fn get_partition_boundaries_from_samples(
         })
         .collect::<DaftResult<Vec<_>>>()?;
 
-    let (task_locals, py_object_refs) = Python::attach(|py| {
-        let task_locals = crate::utils::runtime::get_task_locals(py);
-        let py_object_refs = ray_partition_refs
-            .into_iter()
-            .map(|pr| pr.get_object_ref(py))
-            .collect::<Vec<_>>();
-
-        (task_locals, py_object_refs)
-    });
     let py_sort_by = partition_by
         .iter()
         .map(|e| daft_dsl::python::PyExpr {
@@ -73,24 +64,27 @@ pub(crate) async fn get_partition_boundaries_from_samples(
         })
         .collect::<Vec<_>>();
 
-    let boundaries: daft_micropartition::python::PyMicroPartition =
-        common_runtime::python::execute_python_coroutine(
-            move |py| {
-                let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
-                flotilla_module.call_method1(
-                    pyo3::intern!(py, "get_boundaries"),
-                    (
-                        py_object_refs,
-                        py_sort_by,
-                        descending,
-                        nulls_first,
-                        num_partitions,
-                    ),
-                )
-            },
-            task_locals,
+    let boundaries = common_runtime::python::execute_python_coroutine::<
+        _,
+        daft_micropartition::python::PyMicroPartition,
+    >(move |py| {
+        let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+        let py_object_refs = ray_partition_refs
+            .into_iter()
+            .map(|pr| pr.get_object_ref(py))
+            .collect::<Vec<_>>();
+        flotilla_module.call_method1(
+            pyo3::intern!(py, "get_boundaries"),
+            (
+                py_object_refs,
+                py_sort_by,
+                descending,
+                nulls_first,
+                num_partitions,
+            ),
         )
-        .await?;
+    })
+    .await?;
 
     let boundaries = boundaries
         .inner
@@ -233,7 +227,6 @@ impl SortNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         sort_by: Vec<BoundExpr>,
         descending: Vec<bool>,
@@ -242,12 +235,10 @@ impl SortNode {
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
-            logical_node_id,
         );
 
         let config = PipelineNodeConfig::new(

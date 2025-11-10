@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 
 import pytest
@@ -115,8 +116,6 @@ def test_row_wise_udf_kwargs():
 
 
 def test_row_wise_async_udf():
-    import asyncio
-
     @daft.func
     async def my_async_stringify_and_sum(a: int, b: int) -> str:
         await asyncio.sleep(0.1)
@@ -124,13 +123,17 @@ def test_row_wise_async_udf():
 
     df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
     async_df = df.select(my_async_stringify_and_sum(col("x"), col("y")))
-    assert async_df.to_pydict() == {"x": ["5", "7", "9"]}
+    assert sorted(async_df.to_pydict()["x"]) == ["5", "7", "9"]
 
 
 def test_row_wise_udf_unnest():
     @daft.func(
         return_dtype=daft.DataType.struct(
-            {"id": daft.DataType.int64(), "name": daft.DataType.string(), "score": daft.DataType.float64()}
+            {
+                "id": daft.DataType.int64(),
+                "name": daft.DataType.string(),
+                "score": daft.DataType.float64(),
+            }
         ),
         unnest=True,
     )
@@ -140,7 +143,11 @@ def test_row_wise_udf_unnest():
     df = daft.from_pydict({"value": [1, 2, 3]})
     result = df.select(create_record(col("value"))).to_pydict()
 
-    expected = {"id": [1, 2, 3], "name": ["item_1", "item_2", "item_3"], "score": [1.5, 3.0, 4.5]}
+    expected = {
+        "id": [1, 2, 3],
+        "name": ["item_1", "item_2", "item_3"],
+        "score": [1.5, 3.0, 4.5],
+    }
     assert result == expected
 
 
@@ -298,3 +305,14 @@ def test_async_rowwise_retry_defaults_to_raise_and_zero_retries():
         pytest.fail("Expected ValueError")
     except ValueError:
         pass
+
+
+def test_row_wise_async_udf_use_process():
+    @daft.func(use_process=True)
+    async def my_async_stringify_and_sum(a: int, b: int) -> str:
+        await asyncio.sleep(0.01)
+        return f"{a + b}"
+
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+    async_df = df.select(my_async_stringify_and_sum(col("x"), col("y")))
+    assert sorted(async_df.to_pydict()["x"]) == ["5", "7", "9"]

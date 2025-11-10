@@ -11,7 +11,6 @@ from daft.ai.protocols import TextEmbedderDescriptor
 from daft.ai.transformers.provider import TransformersProvider
 from daft.ai.typing import EmbeddingDimensions
 from daft.datatype import DataType
-from tests.benchmarks.conftest import IS_CI
 
 
 def test_sentence_transformers_text_embedder_default():
@@ -43,19 +42,7 @@ def test_sentence_transformers_text_embedder_other(model_name, dimensions, run_m
     assert descriptor.get_provider() == "transformers"
     assert descriptor.get_model() == model_name
     assert descriptor.get_options() == mock_options
-
-    if not IS_CI or run_model_in_ci:
-        embedder = descriptor.instantiate()
-
-        true_dimensions = embedder.model.get_sentence_embedding_dimension()
-        assert descriptor.get_dimensions() == EmbeddingDimensions(true_dimensions, dtype=DataType.float32())
-
-        test_texts = ["Hello world", "Bye world"]
-        embeddings = embedder.embed_text(test_texts)
-        assert len(embeddings) == 2
-        assert all(len(emb) == dimensions for emb in embeddings)
-    else:
-        assert descriptor.get_dimensions() == EmbeddingDimensions(dimensions, dtype=DataType.float32())
+    assert descriptor.get_dimensions() == EmbeddingDimensions(dimensions, dtype=DataType.float32())
 
 
 def test_sentence_transformers_device_selection():

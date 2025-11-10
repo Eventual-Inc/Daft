@@ -5,6 +5,7 @@ use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
+use daft_core::prelude::SchemaRef;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
@@ -60,7 +61,7 @@ pub(crate) trait BlockingSink: Send + Sync {
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Self::State>;
-    fn make_runtime_stats(&self, name: &str) -> Arc<dyn RuntimeStats> {
+    fn make_runtime_stats(&self, name: usize) -> Arc<dyn RuntimeStats> {
         Arc::new(DefaultRuntimeStats::new(name))
     }
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
@@ -97,10 +98,16 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         child: Box<dyn PipelineNode>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
+        output_schema: SchemaRef,
     ) -> Self {
         let name: Arc<str> = op.name().into();
-        let node_info = ctx.next_node_info(name.clone(), op.op_type(), NodeCategory::BlockingSink);
-        let runtime_stats = op.make_runtime_stats(name.as_ref());
+        let node_info = ctx.next_node_info(
+            name,
+            op.op_type(),
+            NodeCategory::BlockingSink,
+            output_schema,
+        );
+        let runtime_stats = op.make_runtime_stats(node_info.id);
 
         let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
@@ -161,7 +168,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
     }
 }
 
-impl<Op: BlockingSink> TreeDisplay for BlockingSinkNode<Op> {
+impl<Op: BlockingSink + 'static> TreeDisplay for BlockingSinkNode<Op> {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -187,6 +194,14 @@ impl<Op: BlockingSink> TreeDisplay for BlockingSinkNode<Op> {
             }
         }
         display
+    }
+
+    fn repr_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "id": self.id(),
+            "type": self.op.op_type().to_string(),
+            "name": self.name(),
+        })
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {

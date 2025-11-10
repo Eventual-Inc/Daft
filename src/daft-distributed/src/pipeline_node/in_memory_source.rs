@@ -31,15 +31,12 @@ impl InMemorySourceNode {
         plan_config: &PlanConfig,
         info: InMemoryInfo,
         input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
-        logical_node_id: Option<NodeID>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![],
-            vec![],
-            logical_node_id,
         );
 
         let num_partitions = input_psets.values().map(|pset| pset.len()).sum::<usize>();

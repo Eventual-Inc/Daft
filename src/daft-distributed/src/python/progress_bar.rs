@@ -3,7 +3,7 @@ use pyo3::{Py, PyAny, PyResult, Python, types::PyAnyMethods};
 
 use crate::{
     scheduling::task::TaskContext,
-    statistics::{StatisticsEvent, StatisticsSubscriber},
+    statistics::{StatisticsSubscriber, TaskEvent},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -11,7 +11,7 @@ struct BarId(i64);
 
 impl From<&TaskContext> for BarId {
     fn from(task_context: &TaskContext) -> Self {
-        Self(((task_context.plan_id as i64) << 32) | (task_context.node_id as i64))
+        Self(((task_context.query_idx as i64) << 32) | (task_context.last_node_id as i64))
     }
 }
 
@@ -67,29 +67,25 @@ impl Drop for FlotillaProgressBar {
 }
 
 impl StatisticsSubscriber for FlotillaProgressBar {
-    fn handle_event(&mut self, event: &StatisticsEvent) -> DaftResult<()> {
+    fn handle_event(&mut self, event: &TaskEvent) -> DaftResult<()> {
         match event {
-            StatisticsEvent::TaskSubmitted { context, name } => {
+            TaskEvent::Submitted { context, name } => {
                 self.make_bar_or_update_total(BarId::from(context), name)?;
                 Ok(())
             }
             // For progress bar we don't care if it is scheduled, for now.
-            StatisticsEvent::TaskScheduled { .. } => Ok(()),
-            StatisticsEvent::TaskStarted { .. } => Ok(()), // Progress bar doesn't need to handle task start separately
-            StatisticsEvent::TaskCompleted { context } => {
+            TaskEvent::Scheduled { .. } => Ok(()),
+            TaskEvent::Completed { context } => {
                 self.update_bar(BarId::from(context))?;
                 Ok(())
             }
             // We don't care about failed tasks as they will be retried
-            StatisticsEvent::TaskFailed { .. } => Ok(()),
+            TaskEvent::Failed { .. } => Ok(()),
             // We consider cancelled tasks as finished tasks
-            StatisticsEvent::TaskCancelled { context } => {
+            TaskEvent::Cancelled { context } => {
                 self.update_bar(BarId::from(context))?;
                 Ok(())
             }
-            StatisticsEvent::PlanSubmitted { .. } => Ok(()),
-            StatisticsEvent::PlanStarted { .. } => Ok(()),
-            StatisticsEvent::PlanFinished { .. } => Ok(()),
         }
     }
 }

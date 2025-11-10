@@ -261,7 +261,7 @@ dependencies = [
  "futures",
  "prost 0.13.5",
  "prost-types",
- "tonic",
+ "tonic 0.12.3",
 ]
 
 [[package]]
@@ -1785,6 +1785,7 @@ dependencies = [
  "comfy-table 7.1.4",
  "indexmap 2.11.4",
  "pyo3",
+ "serde_json",
  "terminal_size",
  "textwrap",
 ]
@@ -1800,16 +1801,6 @@ dependencies = [
  "regex",
  "serde_json",
  "thiserror 2.0.16",
-]
-
-[[package]]
-name = "common-file"
-version = "0.3.0-dev0"
-dependencies = [
- "common-error",
- "common-io-config",
- "pyo3",
- "serde",
 ]
 
 [[package]]
@@ -1885,6 +1876,7 @@ dependencies = [
 name = "common-metrics"
 version = "0.3.0-dev0"
 dependencies = [
+ "daft-schema",
  "indicatif 0.17.11",
  "pyo3",
  "serde",
@@ -1976,10 +1968,10 @@ name = "common-tracing"
 version = "0.3.0-dev0"
 dependencies = [
  "common-runtime",
- "opentelemetry",
+ "opentelemetry 0.31.0",
  "opentelemetry-otlp",
  "opentelemetry-stdout",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.31.0",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
@@ -2342,7 +2334,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-daft-config",
  "common-display",
- "common-file",
  "common-file-formats",
  "common-hashable-float-wrapper",
  "common-logging",
@@ -2497,7 +2488,7 @@ dependencies = [
  "spark-connect",
  "textwrap",
  "tokio",
- "tonic",
+ "tonic 0.12.3",
  "tracing",
  "uuid 1.18.1",
 ]
@@ -2537,7 +2528,6 @@ dependencies = [
  "common-arrow-ffi",
  "common-display",
  "common-error",
- "common-file",
  "common-hashable-float-wrapper",
  "common-image",
  "common-io-config",
@@ -2640,6 +2630,7 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-io-config",
+ "common-metrics",
  "common-partitioning",
  "common-py-serde",
  "common-resource-request",
@@ -2656,28 +2647,29 @@ dependencies = [
  "daft-schema",
  "futures",
  "itertools 0.14.0",
+ "opentelemetry 0.31.0",
  "pyo3",
  "pyo3-async-runtimes",
  "rand 0.8.5",
- "reqwest",
  "serde",
  "serde_json",
  "tokio",
  "tokio-stream",
  "tokio-util",
  "tracing",
- "uuid 1.18.1",
 ]
 
 [[package]]
 name = "daft-dsl"
 version = "0.3.0-dev0"
 dependencies = [
+ "async-trait",
  "common-error",
  "common-hashable-float-wrapper",
  "common-macros",
  "common-py-serde",
  "common-resource-request",
+ "common-runtime",
  "common-treenode",
  "daft-core",
  "daft-sketch",
@@ -2688,6 +2680,7 @@ dependencies = [
  "pyo3",
  "rstest",
  "serde",
+ "tokio",
  "typetag",
 ]
 
@@ -2696,11 +2689,11 @@ name = "daft-file"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
- "common-file",
  "common-runtime",
  "daft-core",
  "daft-dsl",
  "daft-io",
+ "daft-schema",
  "mime_guess",
  "pyo3",
  "serde",
@@ -2812,6 +2805,7 @@ dependencies = [
 name = "daft-functions-uri"
 version = "0.3.0-dev0"
 dependencies = [
+ "async-trait",
  "bytes",
  "common-error",
  "common-runtime",
@@ -3015,11 +3009,12 @@ dependencies = [
  "itertools 0.14.0",
  "kanal",
  "log",
- "opentelemetry",
+ "opentelemetry 0.31.0",
  "pin-project",
  "pyo3",
  "pyo3-async-runtimes",
  "rand 0.8.5",
+ "serde_json",
  "snafu",
  "tokio",
  "tokio-util",
@@ -3191,6 +3186,7 @@ dependencies = [
  "num-format",
  "rstest",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -3208,6 +3204,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
  "arrow2",
+ "async-recursion",
  "comfy-table 7.1.4",
  "common-arrow-ffi",
  "common-display",
@@ -3227,6 +3224,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -3355,7 +3353,7 @@ dependencies = [
  "pyo3",
  "pyo3-async-runtimes",
  "tokio",
- "tonic",
+ "tonic 0.12.3",
 ]
 
 [[package]]
@@ -5699,9 +5697,9 @@ checksum = "830b246a0e5f20af87141b25c173cd1b609bd7779a4617d6ec582abaf90870f3"
 
 [[package]]
 name = "numpy"
-version = "0.26.0"
+version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b2dba356160b54f5371b550575b78130a54718b4c6e46b3f33a6da74a27e78b"
+checksum = "0fa24ffc88cf9d43f7269d6b6a0d0a00010924a8cc90604a21ef9c433b66998d"
 dependencies = [
  "libc",
  "ndarray",
@@ -5805,49 +5803,62 @@ dependencies = [
 ]
 
 [[package]]
-name = "opentelemetry-http"
-version = "0.29.0"
+name = "opentelemetry"
+version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46d7ab32b827b5b495bd90fa95a6cb65ccc293555dcc3199ae2937d2d237c8ed"
+checksum = "b84bcd6ae87133e903af7ef497404dda70c60d0ea14895fc8a5e6722754fc2a0"
 dependencies = [
- "async-trait",
- "bytes",
- "http 1.3.1",
- "opentelemetry",
- "reqwest",
+ "futures-core",
+ "futures-sink",
+ "js-sys",
+ "pin-project-lite",
+ "thiserror 2.0.16",
  "tracing",
 ]
 
 [[package]]
-name = "opentelemetry-otlp"
-version = "0.29.0"
+name = "opentelemetry-http"
+version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d899720fe06916ccba71c01d04ecd77312734e2de3467fd30d9d580c8ce85656"
+checksum = "d7a6d09a73194e6b66df7c8f1b680f156d916a1a942abf2de06823dd02b7855d"
 dependencies = [
- "futures-core",
+ "async-trait",
+ "bytes",
  "http 1.3.1",
- "opentelemetry",
+ "opentelemetry 0.31.0",
+ "reqwest",
+]
+
+[[package]]
+name = "opentelemetry-otlp"
+version = "0.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a2366db2dca4d2ad033cad11e6ee42844fd727007af5ad04a1730f4cb8163bf"
+dependencies = [
+ "http 1.3.1",
+ "opentelemetry 0.31.0",
  "opentelemetry-http",
  "opentelemetry-proto",
- "opentelemetry_sdk",
- "prost 0.13.5",
+ "opentelemetry_sdk 0.31.0",
+ "prost 0.14.1",
  "reqwest",
  "thiserror 2.0.16",
  "tokio",
- "tonic",
+ "tonic 0.14.2",
  "tracing",
 ]
 
 [[package]]
 name = "opentelemetry-proto"
-version = "0.29.0"
+version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c40da242381435e18570d5b9d50aca2a4f4f4d8e146231adb4e7768023309b3"
+checksum = "a7175df06de5eaee9909d4805a3d07e28bb752c34cab57fa9cff549da596b30f"
 dependencies = [
- "opentelemetry",
- "opentelemetry_sdk",
- "prost 0.13.5",
- "tonic",
+ "opentelemetry 0.31.0",
+ "opentelemetry_sdk 0.31.0",
+ "prost 0.14.1",
+ "tonic 0.14.2",
+ "tonic-prost",
 ]
 
 [[package]]
@@ -5858,8 +5869,8 @@ checksum = "a7e27d446dabd68610ef0b77d07b102ecde827a4596ea9c01a4d3811e945b286"
 dependencies = [
  "chrono",
  "futures-util",
- "opentelemetry",
- "opentelemetry_sdk",
+ "opentelemetry 0.29.1",
+ "opentelemetry_sdk 0.29.0",
 ]
 
 [[package]]
@@ -5872,12 +5883,27 @@ dependencies = [
  "futures-executor",
  "futures-util",
  "glob",
- "opentelemetry",
+ "opentelemetry 0.29.1",
  "percent-encoding",
  "rand 0.9.1",
  "serde_json",
  "thiserror 2.0.16",
  "tracing",
+]
+
+[[package]]
+name = "opentelemetry_sdk"
+version = "0.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e14ae4f5991976fd48df6d843de219ca6d31b01daaab2dad5af2badeded372bd"
+dependencies = [
+ "futures-channel",
+ "futures-executor",
+ "futures-util",
+ "opentelemetry 0.31.0",
+ "percent-encoding",
+ "rand 0.9.1",
+ "thiserror 2.0.16",
 ]
 
 [[package]]
@@ -6395,6 +6421,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7231bd9b3d3d33c86b58adbac74b5ec0ad9f496b19d22801d773636feaa95f3d"
+dependencies = [
+ "bytes",
+ "prost-derive 0.14.1",
+]
+
+[[package]]
 name = "prost-build"
 version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6454,6 +6490,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost-derive"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9120690fafc389a67ba3803df527d0ec9cbbc9cc45e4cc20b332996dfb672425"
+dependencies = [
+ "anyhow",
+ "itertools 0.14.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
 name = "prost-types"
 version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6473,9 +6522,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3"
-version = "0.26.0"
+version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ba0117f4212101ee6544044dae45abe1083d30ce7b29c4b5cbdfa2354e07383"
+checksum = "37a6df7eab65fc7bee654a421404947e10a0f7085b6951bf2ea395f4659fb0cf"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -6494,9 +6543,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-async-runtimes"
-version = "0.26.0"
+version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6ee6d4cb3e8d5b925f5cdb38da183e0ff18122eb2048d4041c9e7034d026e23"
+checksum = "57ddb5b570751e93cc6777e81fee8087e59cd53b5043292f2a6d59d5bd80fdfd"
 dependencies = [
  "futures",
  "once_cell",
@@ -6508,9 +6557,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-async-runtimes-macros"
-version = "0.26.0"
+version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c29bc5c673e36a8102d0b9179149c1bb59990d8db4f3ae58bd7dceccab90b951"
+checksum = "bcd7d70ee0ca1661c40407e6f84e4463ef2658c90a9e2fbbd4515b2bcdfcaeca"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6519,18 +6568,18 @@ dependencies = [
 
 [[package]]
 name = "pyo3-build-config"
-version = "0.26.0"
+version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fc6ddaf24947d12a9aa31ac65431fb1b851b8f4365426e182901eabfb87df5f"
+checksum = "f77d387774f6f6eec64a004eac0ed525aab7fa1966d94b42f743797b3e395afb"
 dependencies = [
  "target-lexicon",
 ]
 
 [[package]]
 name = "pyo3-ffi"
-version = "0.26.0"
+version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "025474d3928738efb38ac36d4744a74a400c901c7596199e20e45d98eb194105"
+checksum = "2dd13844a4242793e02df3e2ec093f540d948299a6a77ea9ce7afd8623f542be"
 dependencies = [
  "libc",
  "pyo3-build-config",
@@ -6538,9 +6587,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-log"
-version = "0.13.1"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d359e20231345f21a3b5b6aea7e73f4dc97e1712ef3bfe2d88997ac6a308d784"
+checksum = "2f8bae9ad5ba08b0b0ed2bb9c2bdbaeccc69cafca96d78cf0fbcea0d45d122bb"
 dependencies = [
  "arc-swap",
  "log",
@@ -6549,9 +6598,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-macros"
-version = "0.26.0"
+version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e64eb489f22fe1c95911b77c44cc41e7c19f3082fc81cce90f657cdc42ffded"
+checksum = "eaf8f9f1108270b90d3676b8679586385430e5c0bb78bb5f043f95499c821a71"
 dependencies = [
  "proc-macro2",
  "pyo3-macros-backend",
@@ -6561,9 +6610,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-macros-backend"
-version = "0.26.0"
+version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "100246c0ecf400b475341b8455a9213344569af29a3c841d29270e53102e0fcf"
+checksum = "70a3b2274450ba5288bc9b8c1b69ff569d1d61189d4bff38f8d22e03d17f932b"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -7631,7 +7680,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "prost 0.13.5",
  "prost-types",
- "tonic",
+ "tonic 0.12.3",
 ]
 
 [[package]]
@@ -8245,6 +8294,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "tonic"
+version = "0.14.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb7613188ce9f7df5bfe185db26c5814347d110db17920415cf2fbcad85e7203"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "bytes",
+ "http 1.3.1",
+ "http-body 1.0.1",
+ "http-body-util",
+ "hyper",
+ "hyper-timeout",
+ "hyper-util",
+ "percent-encoding",
+ "pin-project",
+ "sync_wrapper",
+ "tokio",
+ "tokio-stream",
+ "tower 0.5.2",
+ "tower-layer",
+ "tower-service",
+ "tracing",
+]
+
+[[package]]
 name = "tonic-build"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8256,6 +8331,17 @@ dependencies = [
  "prost-types",
  "quote",
  "syn 2.0.106",
+]
+
+[[package]]
+name = "tonic-prost"
+version = "0.14.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66bd50ad6ce1252d87ef024b3d64fe4c3cf54a86fb9ef4c631fdd0ded7aeaa67"
+dependencies = [
+ "bytes",
+ "prost 0.14.1",
+ "tonic 0.14.2",
 ]
 
 [[package]]
@@ -8286,9 +8372,12 @@ checksum = "d039ad9159c98b70ecfd540b2573b97f7f52c3e8d9f8ad57a24b916a536975f9"
 dependencies = [
  "futures-core",
  "futures-util",
+ "indexmap 2.11.4",
  "pin-project-lite",
+ "slab",
  "sync_wrapper",
  "tokio",
+ "tokio-util",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -8380,15 +8469,16 @@ dependencies = [
 
 [[package]]
 name = "tracing-opentelemetry"
-version = "0.30.0"
+version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd8e764bd6f5813fd8bebc3117875190c5b0415be8f7f8059bffb6ecd979c444"
+checksum = "1e6e5658463dd88089aba75c7791e1d3120633b1bfde22478b28f625a9bb1b8e"
 dependencies = [
  "js-sys",
- "once_cell",
- "opentelemetry",
- "opentelemetry_sdk",
+ "opentelemetry 0.31.0",
+ "opentelemetry_sdk 0.31.0",
+ "rustversion",
  "smallvec",
+ "thiserror 2.0.16",
  "tracing",
  "tracing-core",
  "tracing-subscriber",

@@ -16,7 +16,6 @@ use std::{
 use common_error::DaftResult;
 use common_metrics::NodeID;
 use common_runtime::RuntimeTask;
-use common_tracing::should_enable_opentelemetry;
 use daft_context::Subscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_micropartition::MicroPartition;
@@ -35,8 +34,7 @@ use crate::{
     channel::{Receiver, Sender},
     pipeline::PipelineNode,
     runtime_stats::subscribers::{
-        RuntimeStatsSubscriber, opentelemetry::OpenTelemetrySubscriber,
-        progress_bar::make_progress_bar_manager, query::SubscriberWrapper,
+        RuntimeStatsSubscriber, progress_bar::make_progress_bar_manager, query::SubscriberWrapper,
     },
 };
 
@@ -123,10 +121,6 @@ impl RuntimeStatsManager {
             subscribers.push(make_progress_bar_manager(&node_infos));
         }
 
-        if should_enable_opentelemetry() {
-            subscribers.push(Box::new(OpenTelemetrySubscriber::new(&node_infos)));
-        }
-
         let throttle_interval = Duration::from_millis(200);
         Ok(Self::new_impl(
             handle,
@@ -199,6 +193,7 @@ impl RuntimeStatsManager {
                             let event = runtime_stats.snapshot();
                             snapshot_container.push((*node_id, event));
                         }
+
                         for res in future::join_all(subscribers.iter().map(|subscriber| {
                             subscriber.handle_event(snapshot_container.as_slice())
                         })).await {
@@ -415,7 +410,7 @@ mod tests {
         let mock_subscriber = Box::new(MockSubscriber::new());
         let mock_state = mock_subscriber.state.clone();
 
-        let node_stat = Arc::new(DefaultRuntimeStats::new("Operator_0")) as Arc<dyn RuntimeStats>;
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0)) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
@@ -474,7 +469,7 @@ mod tests {
         let state1 = subscriber1.state.clone();
         let state2 = subscriber2.state.clone();
 
-        let node_stat = Arc::new(DefaultRuntimeStats::new("Operator_0")) as Arc<dyn RuntimeStats>;
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0)) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
@@ -524,7 +519,7 @@ mod tests {
         let mock_subscriber = Box::new(MockSubscriber::new());
         let state = mock_subscriber.state.clone();
 
-        let node_stat = Arc::new(DefaultRuntimeStats::new("Operator_0")) as Arc<dyn RuntimeStats>;
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0)) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
@@ -544,7 +539,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_runtime_stats_context_operations() {
-        let node_stat = Arc::new(DefaultRuntimeStats::new("Operator_0"));
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0));
 
         // Test initial state
         let stats = node_stat.snapshot();
@@ -567,7 +562,7 @@ mod tests {
         let mock_subscriber = Box::new(MockSubscriber::new());
         let state = mock_subscriber.state.clone();
 
-        let node_stat = Arc::new(DefaultRuntimeStats::new("Operator_0")) as Arc<dyn RuntimeStats>;
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0)) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
@@ -599,7 +594,7 @@ mod tests {
 
         // Use 500ms for the throttle interval.
         let throttle_interval = Duration::from_millis(500);
-        let node_stat = Arc::new(DefaultRuntimeStats::new("Operator_0")) as Arc<dyn RuntimeStats>;
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0)) as Arc<dyn RuntimeStats>;
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
             vec![mock_subscriber],

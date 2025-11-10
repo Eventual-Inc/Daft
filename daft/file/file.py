@@ -5,10 +5,13 @@ import tempfile
 from typing import TYPE_CHECKING
 
 from daft.daft import PyDaftFile, PyFileReference
+from daft.datatype import MediaType
+from daft.dependencies import av
 
 if TYPE_CHECKING:
     from tempfile import _TemporaryFileWrapper
 
+    from daft.file.video import VideoFile
     from daft.io import IOConfig
 
 
@@ -44,11 +47,13 @@ class File:
         instance._inner = reference
         return instance
 
-    def __init__(self, str_or_bytes: str | bytes, io_config: IOConfig | None = None) -> None:
+    def __init__(
+        self, str_or_bytes: str | bytes, io_config: IOConfig | None = None, media_type: MediaType = MediaType.unknown()
+    ) -> None:
         if isinstance(str_or_bytes, str):
-            self._inner = PyFileReference._from_tuple((str_or_bytes, io_config))  # type: ignore
+            self._inner = PyFileReference._from_tuple((media_type._media_type, str_or_bytes, io_config))  # type: ignore
         elif isinstance(str_or_bytes, bytes):
-            self._inner = PyFileReference._from_tuple((str_or_bytes, io_config))  # type: ignore
+            self._inner = PyFileReference._from_tuple((media_type._media_type, str_or_bytes, io_config))  # type: ignore
         else:
             raise TypeError("str_or_bytes must be a string or bytes")
 
@@ -114,3 +119,25 @@ class File:
             temp_file.seek(0)
 
             return temp_file
+
+    def is_video(self) -> bool:
+        mimetype = self.mime_type()
+        if mimetype.startswith("video/"):
+            return True
+        return False
+
+    def as_video(self) -> VideoFile:
+        """Convert to VideoFile if this file contains video data."""
+        if not av.module_available():
+            raise ImportError("The 'av' module is required to convert files to video.")
+        # this is purposely inside the function, and after the `av` check
+        # because using VideoFile means that the user has `av` installed
+        from daft.file.video import VideoFile
+
+        if not self.is_video():
+            raise ValueError(f"File {self} is not a video file")
+
+        cls = VideoFile.__new__(VideoFile)
+        cls._inner = self._inner
+
+        return cls

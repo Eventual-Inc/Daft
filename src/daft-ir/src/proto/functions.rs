@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{num::NonZeroUsize, str::FromStr};
 
 use daft_dsl::functions::python::OnError;
 
@@ -48,7 +48,10 @@ pub fn from_proto_function(message: proto::ScalarFn) -> ProtoResult<ir::Expr> {
                     args: args.into_inner(),
                     gpus: row_wise_fn.gpus as usize,
                     use_process: row_wise_fn.use_process,
-                    max_concurrency: row_wise_fn.max_concurrency.map(|c| c as usize),
+                    max_concurrency: row_wise_fn.max_concurrency.map(|c| {
+                        NonZeroUsize::new(c as usize)
+                            .expect("max_concurrency for udf should be non-zero")
+                    }),
                     max_retries: row_wise_fn.max_retries.map(|c| c as usize),
                     on_error: row_wise_fn
                         .on_error
@@ -62,10 +65,14 @@ pub fn from_proto_function(message: proto::ScalarFn) -> ProtoResult<ir::Expr> {
                     function_name: batch_fn.name.into(),
                     cls: from_proto(batch_fn.cls)?,
                     method: from_proto(batch_fn.method)?,
+                    is_async: batch_fn.is_async,
                     return_dtype: from_proto(batch_fn.return_dtype)?,
                     gpus: batch_fn.gpus as usize,
                     use_process: batch_fn.use_process,
-                    max_concurrency: batch_fn.max_concurrency.map(|c| c as usize),
+                    max_concurrency: batch_fn.max_concurrency.map(|c| {
+                        NonZeroUsize::new(c as usize)
+                            .expect("max_concurrency for udf should be non-zero")
+                    }),
                     batch_size: batch_fn.batch_size.map(|b| b as usize),
                     original_args: from_proto(batch_fn.original_args)?,
                     args: args.into_inner(),
@@ -138,7 +145,7 @@ pub fn scalar_fn_to_proto(sf: &ir::functions::scalar::ScalarFn) -> ProtoResult<p
                             original_args: Some(row_wise_fn.original_args.to_proto()?),
                             gpus: row_wise_fn.gpus as u64,
                             use_process: row_wise_fn.use_process,
-                            max_concurrency: row_wise_fn.max_concurrency.map(|c| c as u64),
+                            max_concurrency: row_wise_fn.max_concurrency.map(|c| c.get() as u64),
                             max_retries: row_wise_fn.max_retries.map(|c| c as u64),
                             on_error: Some(row_wise_fn.on_error.to_string()),
                         },
@@ -161,13 +168,14 @@ pub fn scalar_fn_to_proto(sf: &ir::functions::scalar::ScalarFn) -> ProtoResult<p
                     variant: Some(proto::scalar_fn::py_fn::Variant::Batch(
                         proto::scalar_fn::py_fn::BatchFn {
                             name: batch_fn.function_name.to_string(),
+                            is_async: batch_fn.is_async,
                             return_dtype: Some(batch_fn.return_dtype.to_proto()?),
                             cls: Some(batch_fn.cls.to_proto()?),
                             method: Some(batch_fn.method.to_proto()?),
                             original_args: Some(batch_fn.original_args.to_proto()?),
                             gpus: batch_fn.gpus as u64,
                             use_process: batch_fn.use_process,
-                            max_concurrency: batch_fn.max_concurrency.map(|c| c as u64),
+                            max_concurrency: batch_fn.max_concurrency.map(|c| c.get() as u64),
                             batch_size: batch_fn.batch_size.map(|b| b as u64),
                             max_retries: batch_fn.max_retries.map(|c| c as u64),
                             on_error: Some(batch_fn.on_error.to_string()),
@@ -462,7 +470,8 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             return_dtype: return_type,
             resource_request,
             batch_size,
-            concurrency,
+            concurrency: concurrency
+                .map(|c| NonZeroUsize::new(c).expect("concurrency for udf should be non-zero")),
             use_process,
         })
     }
@@ -493,7 +502,7 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
         let callable_call_args = self.bound_args.to_proto()?;
 
         // Now flatten out what is currently "resources" but will get renamed at some point.
-        let concurrency: Option<u64> = self.concurrency.map(|s| s as u64);
+        let concurrency: Option<u64> = self.concurrency.map(|s| s.get() as u64);
         let batch_size: Option<u64> = self.batch_size.map(|s| s as u64);
         let (num_cpus, num_gpus, max_memory_bytes) = match &self.resource_request {
             Some(req) => {

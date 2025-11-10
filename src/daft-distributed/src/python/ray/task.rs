@@ -47,8 +47,6 @@ pub(crate) struct RayTaskResultHandle {
     handle: Py<PyAny>,
     /// The coroutine to await the result of the task
     coroutine: Option<Py<PyAny>>,
-    /// The task locals, i.e. the asyncio event loop
-    task_locals: Option<pyo3_async_runtimes::TaskLocals>,
     /// The worker id
     worker_id: WorkerId,
 }
@@ -59,14 +57,12 @@ impl RayTaskResultHandle {
         task_context: TaskContext,
         handle: Py<PyAny>,
         coroutine: Py<PyAny>,
-        task_locals: pyo3_async_runtimes::TaskLocals,
         worker_id: WorkerId,
     ) -> Self {
         Self {
             task_context,
             handle,
             coroutine: Some(coroutine),
-            task_locals: Some(task_locals),
             worker_id,
         }
     }
@@ -81,13 +77,11 @@ impl TaskResultHandle for RayTaskResultHandle {
     fn get_result(&mut self) -> impl Future<Output = TaskStatus> + Send + 'static {
         // Create a rust future that will await the coroutine
         let coroutine = self.coroutine.take().unwrap();
-        let task_locals = self.task_locals.take().unwrap();
         let worker_id = self.worker_id.clone();
 
-        let fut = common_runtime::python::execute_python_coroutine(
-            move |py| Ok(coroutine.into_bound(py)),
-            task_locals,
-        );
+        let fut = common_runtime::python::execute_python_coroutine::<_, RayTaskResult>(move |py| {
+            Ok(coroutine.into_bound(py))
+        });
         async move {
             let ray_task_result = fut.await;
 

@@ -38,16 +38,13 @@ impl GlobScanSourceNode {
         glob_paths: Arc<Vec<String>>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
-        logical_node_id: Option<NodeID>,
         io_config: Option<IOConfig>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![],
-            vec![],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,

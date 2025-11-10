@@ -37,7 +37,6 @@ impl UDFActors {
         udf_properties: &UDFProperties,
         actor_ready_timeout: usize,
     ) -> DaftResult<Vec<PyObjectWrapper>> {
-        let task_locals = Python::attach(crate::utils::runtime::get_task_locals);
         let py_exprs = projection
             .iter()
             .map(|e| PyExpr {
@@ -56,8 +55,8 @@ impl UDFActors {
             None => (0.0, 1.0, 0),
         };
 
-        let result: Vec<Py<PyAny>> = common_runtime::python::execute_python_coroutine(
-            move |py| {
+        let result =
+            common_runtime::python::execute_python_coroutine::<_, Vec<Py<PyAny>>>(move |py| {
                 let ray_actor_pool_udf_module =
                     py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
                 ray_actor_pool_udf_module.call_method1(
@@ -71,10 +70,8 @@ impl UDFActors {
                         actor_ready_timeout,
                     ),
                 )
-            },
-            task_locals,
-        )
-        .await?;
+            })
+            .await?;
 
         let actors = result
             .into_iter()
@@ -126,7 +123,6 @@ impl ActorUDF {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         projection: Vec<BoundExpr>,
         udf_properties: UDFProperties,
@@ -134,12 +130,10 @@ impl ActorUDF {
         child: DistributedPipelineNode,
     ) -> DaftResult<Self> {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,

@@ -1,14 +1,8 @@
 import builtins
 import datetime
-import sys
 from collections.abc import AsyncIterator, Iterator
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar
-
-if sys.version_info < (3, 10):
-    from typing_extensions import Concatenate
-else:
-    from typing import Concatenate
+from typing import TYPE_CHECKING, Any, Callable, Concatenate, Literal, TypeVar
 
 from daft.dataframe.display import MermaidOptions
 from daft.execution import physical_plan
@@ -1138,7 +1132,7 @@ class PyDataType:
     @staticmethod
     def python() -> PyDataType: ...
     @staticmethod
-    def file() -> PyDataType: ...
+    def file(media_type: PyMediaType) -> PyDataType: ...
     def to_arrow(self, cast_tensor_type_for_ray: builtins.bool | None = None) -> pa.DataType: ...
     def is_null(self) -> builtins.bool: ...
     def is_boolean(self) -> builtins.bool: ...
@@ -1286,6 +1280,20 @@ class PyExpr:
     def partitioning_years(self) -> PyExpr: ...
     def partitioning_iceberg_bucket(self, n: int) -> PyExpr: ...
     def partitioning_iceberg_truncate(self, w: int) -> PyExpr: ...
+    def vllm(
+        self,
+        model: str,
+        concurrency: int,
+        gpus_per_actor: int,
+        do_prefix_routing: bool,
+        max_buffer_size: int,
+        min_bucket_size: int,
+        prefix_match_threshold: float,
+        load_balance_threshold: int,
+        batch_size: int | None,
+        engine_args: Any,
+        generate_args: Any,
+    ) -> PyExpr: ...
 
     ###
     # Visitor methods
@@ -1365,6 +1373,7 @@ def batch_udf(
     name: str,
     cls: ClsBase[Any],
     method: Callable[Concatenate[Any, ...], Any],
+    is_async: bool,
     return_dtype: PyDataType,
     gpus: int,
     use_process: bool | None,
@@ -1895,7 +1904,7 @@ class LogicalPlanBuilder:
     def schema(self) -> PySchema: ...
     def describe(self) -> LogicalPlanBuilder: ...
     def summarize(self) -> LogicalPlanBuilder: ...
-    def optimize(self) -> LogicalPlanBuilder: ...
+    def optimize(self, execution_config: PyDaftExecutionConfig) -> LogicalPlanBuilder: ...
     def to_physical_plan_scheduler(self, cfg: PyDaftExecutionConfig) -> PhysicalPlanScheduler: ...
     def to_adaptive_physical_plan_scheduler(self, cfg: PyDaftExecutionConfig) -> AdaptivePhysicalPlanScheduler: ...
     def repr_ascii(self, simple: bool) -> str: ...
@@ -1905,9 +1914,9 @@ class LogicalPlanBuilder:
 class DistributedPhysicalPlan:
     @staticmethod
     def from_logical_plan_builder(
-        builder: LogicalPlanBuilder, config: PyDaftExecutionConfig
+        builder: LogicalPlanBuilder, query_id: str, config: PyDaftExecutionConfig
     ) -> DistributedPhysicalPlan: ...
-    def id(self) -> str: ...
+    def idx(self) -> str: ...
     def repr_ascii(self, simple: bool) -> str: ...
     def repr_mermaid(self, options: MermaidOptions) -> str: ...
 
@@ -1953,6 +1962,10 @@ class RaySwordfishWorker:
         total_memory_bytes: int,
     ) -> None: ...
 
+class PyLocalPartitionStream:
+    def __aiter__(self) -> PyLocalPartitionStream: ...
+    async def __anext__(self) -> PyMicroPartition: ...
+
 class NativeExecutor:
     def __init__(self) -> None: ...
     def run(
@@ -1960,18 +1973,9 @@ class NativeExecutor:
         plan: LocalPhysicalPlan,
         psets: dict[str, list[PyMicroPartition]],
         daft_ctx: PyDaftContext,
-        results_buffer_size: int | None,
-        context: dict[str, str] | None = None,
-    ) -> Iterator[PyMicroPartition]: ...
-    # Primarily used for Flotilla, so subscribers are unused
-    def run_async(
-        self,
-        plan: LocalPhysicalPlan,
-        psets: dict[str, list[PyMicroPartition]],
-        daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: int | None = None,
         context: dict[str, str] | None = None,
-    ) -> AsyncIterator[PyMicroPartition]: ...
+    ) -> PyLocalPartitionStream: ...
     @staticmethod
     def repr_ascii(builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, simple: bool) -> str: ...
     @staticmethod
@@ -2010,6 +2014,7 @@ class PyDaftExecutionConfig:
         parquet_inflation_factor: float | None = None,
         csv_target_filesize: int | None = None,
         csv_inflation_factor: float | None = None,
+        json_inflation_factor: float | None = None,
         shuffle_aggregation_default_partitions: int | None = None,
         partial_aggregation_threshold: int | None = None,
         high_cardinality_aggregation_threshold: float | None = None,
@@ -2026,6 +2031,7 @@ class PyDaftExecutionConfig:
         use_legacy_ray_runner: bool | None = None,
         min_cpu_per_task: float | None = None,
         actor_udf_ready_timeout: int | None = None,
+        maintain_order: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -2051,6 +2057,8 @@ class PyDaftExecutionConfig:
     def csv_target_filesize(self) -> int: ...
     @property
     def csv_inflation_factor(self) -> float: ...
+    @property
+    def json_inflation_factor(self) -> float: ...
     @property
     def shuffle_aggregation_default_partitions(self) -> int: ...
     @property
@@ -2311,3 +2319,9 @@ class PyDaftFile:
     def _from_file_reference(ref: PyFileReference) -> PyDaftFile: ...
     def __enter__(self) -> PyDaftFile: ...
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None: ...
+
+class PyMediaType:
+    @staticmethod
+    def unknown() -> PyMediaType: ...
+    @staticmethod
+    def video() -> PyMediaType: ...

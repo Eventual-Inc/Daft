@@ -102,6 +102,7 @@ impl PyDaftExecutionConfig {
         parquet_inflation_factor=None,
         csv_target_filesize=None,
         csv_inflation_factor=None,
+        json_inflation_factor=None,
         shuffle_aggregation_default_partitions=None,
         partial_aggregation_threshold=None,
         high_cardinality_aggregation_threshold=None,
@@ -118,6 +119,7 @@ impl PyDaftExecutionConfig {
         use_legacy_ray_runner=None,
         min_cpu_per_task=None,
         actor_udf_ready_timeout=None,
+        maintain_order=None,
     ))]
     fn with_config_values(
         &self,
@@ -134,6 +136,7 @@ impl PyDaftExecutionConfig {
         parquet_inflation_factor: Option<f64>,
         csv_target_filesize: Option<usize>,
         csv_inflation_factor: Option<f64>,
+        json_inflation_factor: Option<f64>,
         shuffle_aggregation_default_partitions: Option<usize>,
         partial_aggregation_threshold: Option<usize>,
         high_cardinality_aggregation_threshold: Option<f64>,
@@ -150,6 +153,7 @@ impl PyDaftExecutionConfig {
         use_legacy_ray_runner: Option<bool>,
         min_cpu_per_task: Option<f64>,
         actor_udf_ready_timeout: Option<usize>,
+        maintain_order: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -191,6 +195,9 @@ impl PyDaftExecutionConfig {
         }
         if let Some(csv_inflation_factor) = csv_inflation_factor {
             config.csv_inflation_factor = csv_inflation_factor;
+        }
+        if let Some(json_inflation_factor) = json_inflation_factor {
+            config.json_inflation_factor = json_inflation_factor;
         }
         if let Some(shuffle_aggregation_default_partitions) = shuffle_aggregation_default_partitions
         {
@@ -264,6 +271,10 @@ impl PyDaftExecutionConfig {
             config.actor_udf_ready_timeout = actor_udf_ready_timeout;
         }
 
+        if let Some(maintain_order) = maintain_order {
+            config.maintain_order = maintain_order;
+        }
+
         Ok(Self {
             config: Arc::new(config),
         })
@@ -330,6 +341,11 @@ impl PyDaftExecutionConfig {
     }
 
     #[getter]
+    fn get_json_inflation_factor(&self) -> PyResult<f64> {
+        Ok(self.config.json_inflation_factor)
+    }
+
+    #[getter]
     fn get_shuffle_aggregation_default_partitions(&self) -> PyResult<usize> {
         Ok(self.config.shuffle_aggregation_default_partitions)
     }
@@ -393,6 +409,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn actor_udf_ready_timeout(&self) -> PyResult<usize> {
         Ok(self.config.actor_udf_ready_timeout)
+    }
+
+    #[getter]
+    fn maintain_order(&self) -> PyResult<bool> {
+        Ok(self.config.maintain_order)
     }
 }
 

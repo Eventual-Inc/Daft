@@ -5,6 +5,7 @@ use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
+use daft_core::prelude::SchemaRef;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
@@ -48,8 +49,8 @@ pub(crate) trait IntermediateOperator: Send + Sync {
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Self::State>;
-    fn make_runtime_stats(&self, name: &str) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::new(name))
+    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(DefaultRuntimeStats::new(id))
     }
     /// The maximum number of concurrent workers that can be spawned for this operator.
     /// Each worker will has its own IntermediateOperatorState.
@@ -90,14 +91,16 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         children: Vec<Box<dyn PipelineNode>>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
+        output_schema: SchemaRef,
     ) -> Self {
         let name: Arc<str> = intermediate_op.name().into();
         let info = ctx.next_node_info(
-            name.clone(),
+            name,
             intermediate_op.op_type(),
             NodeCategory::Intermediate,
+            output_schema,
         );
-        let runtime_stats = intermediate_op.make_runtime_stats(name.as_ref());
+        let runtime_stats = intermediate_op.make_runtime_stats(info.id);
         let morsel_size_requirement = intermediate_op
             .morsel_size_requirement()
             .unwrap_or_default();
@@ -205,6 +208,14 @@ impl<Op: IntermediateOperator + 'static> TreeDisplay for IntermediateNode<Op> {
             }
         }
         display
+    }
+
+    fn repr_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "id": self.id(),
+            "type": self.intermediate_op.op_type().to_string(),
+            "name": self.name(),
+        })
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {

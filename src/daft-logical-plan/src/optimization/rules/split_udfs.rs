@@ -258,8 +258,8 @@ impl TreeNodeRewriter for TruncateRootUDF {
                 Ok(common_treenode::Transformed::no(node))
             }
             // TODO: UDFs inside of list.map() can not be split
-            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. }))
-                if udf.as_ref().type_id() == TypeId::of::<ListMap>() =>
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func: udf, .. }))
+                if udf.type_id() == TypeId::of::<ListMap>() =>
             {
                 Ok(common_treenode::Transformed::no(node))
             }
@@ -324,8 +324,8 @@ impl TreeNodeRewriter for TruncateAnyUDFChildren {
                 Ok(common_treenode::Transformed::no(node))
             }
             // TODO: UDFs inside of list.map() can not be split
-            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. }))
-                if udf.as_ref().type_id() == TypeId::of::<ListMap>() =>
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func: udf, .. }))
+                if udf.type_id() == TypeId::of::<ListMap>() =>
             {
                 self.is_list_map = true;
                 Ok(common_treenode::Transformed::no(node))
@@ -364,7 +364,7 @@ impl TreeNodeRewriter for TruncateAnyUDFChildren {
 }
 
 fn is_list_map(expr: &ExprRef) -> bool {
-    matches!(expr.as_ref(), Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. })) if udf.as_ref().type_id() == TypeId::of::<ListMap>())
+    matches!(expr.as_ref(), Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func, .. })) if func.type_id() == TypeId::of::<ListMap>())
 }
 
 fn exists_skip_list_map<F: FnMut(&ExprRef) -> bool>(expr: &ExprRef, mut f: F) -> bool {
@@ -600,7 +600,7 @@ fn recursive_optimize_project(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{num::NonZeroUsize, sync::Arc};
 
     use common_error::DaftResult;
     use common_resource_request::ResourceRequest;
@@ -680,7 +680,7 @@ mod tests {
                 return_dtype: DataType::Utf8,
                 resource_request: Some(create_resource_request()),
                 batch_size: None,
-                concurrency: Some(8),
+                concurrency: Some(NonZeroUsize::new(8).unwrap()),
                 use_process: None,
             }),
             inputs,
