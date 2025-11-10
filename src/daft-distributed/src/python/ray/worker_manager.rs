@@ -76,6 +76,83 @@ impl RayWorkerManager {
             })),
         }
     }
+
+    fn internal_release_idle_workers(
+        &self,
+        max_to_release: usize,
+        force_all: bool,
+        idle_threshold: Option<u64>,
+    ) -> DaftResult<usize> {
+        if max_to_release == 0 && !force_all {
+            return Ok(0);
+        }
+
+        let now = Instant::now();
+        let mut state = self
+            .state
+            .lock()
+            .expect("Failed to lock RayWorkerManagerState");
+
+        let mut candidates: Vec<(WorkerId, Duration)> = state
+            .ray_workers
+            .iter()
+            .filter_map(|(wid, w)| {
+                if w.is_idle() && !w.exempt_from_downscale() {
+                    let idle_for = w.idle_duration(now);
+                    if let Some(threshold) = idle_threshold {
+                        if idle_for.as_secs() >= threshold {
+                            Some((wid.clone(), idle_for))
+                        } else {
+                            None
+                        }
+                    } else {
+                        Some((wid.clone(), idle_for))
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        candidates.sort_by_key(|(_, d)| std::cmp::Reverse(d.as_secs()));
+
+        let selected: Vec<(WorkerId, Duration)> = if force_all {
+            candidates
+        } else {
+            candidates.into_iter().take(max_to_release).collect()
+        };
+
+        let mut released = 0usize;
+        Python::attach(|py| -> DaftResult<()> {
+            for (wid, _idle_for) in selected {
+                if let Some(mut worker) = state.ray_workers.remove(&wid) {
+                    worker.release(py);
+                    released += 1;
+                }
+            }
+            Ok(())
+        })?;
+
+        Python::attach(|py| -> DaftResult<()> {
+            let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+            flotilla_module.call_method0(pyo3::intern!(py, "clear_autoscaling_requests"))?;
+
+            let exclude_node_ids = state
+                .ray_workers
+                .keys()
+                .map(|wid| wid.as_ref().to_string())
+                .collect::<Vec<_>>();
+
+            let _sweep_result = flotilla_module.call_method1(
+                pyo3::intern!(py, "sweep_force_release_swordfish_actors"),
+                (exclude_node_ids,),
+            )?;
+
+            Ok(())
+        })?;
+
+        Ok(released)
+    }
 }
 
 impl WorkerManager for RayWorkerManager {
@@ -172,6 +249,22 @@ impl WorkerManager for RayWorkerManager {
             .lock()
             .expect("Failed to lock RayWorkerManagerState");
 
+        // If no desired bundles, clear outstanding autoscaler requests instead of scale-up.
+        if bundles.is_empty()
+            || (requested_num_cpus <= 0.0
+                && requested_num_gpus <= 0.0
+                && requested_memory_bytes == 0)
+        {
+            Python::attach(|py| -> DaftResult<()> {
+                let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+                flotilla_module.call_method0(pyo3::intern!(py, "clear_autoscaling_requests"))?;
+                Ok(())
+            })?;
+            // Reset max_resources_requested to permit future jobs to bootstrap
+            state.max_resources_requested = ResourceRequest::default();
+            return Ok(());
+        }
+
         let (cluster_num_cpus, cluster_num_gpus, cluster_memory_bytes) = state
             .ray_workers
             .values()
@@ -192,9 +285,16 @@ impl WorkerManager for RayWorkerManager {
             || requested_num_gpus > state.max_resources_requested.num_gpus().unwrap_or(0.0)
             || requested_memory_bytes > state.max_resources_requested.memory_bytes().unwrap_or(0);
 
-        // Only autoscale if we need more capacity AND this is greater than we've seen before
-        if resource_request_greater_than_current_capacity
-            && resource_request_greater_than_max_requested
+        let cluster_is_zero_capacity =
+            cluster_num_cpus <= 0.0 && cluster_num_gpus <= 0.0 && cluster_memory_bytes == 0;
+        let should_bootstrap = cluster_is_zero_capacity
+            && (requested_num_cpus > 0.0 || requested_num_gpus > 0.0 || requested_memory_bytes > 0);
+
+        // Only autoscale if we need more capacity AND this is greater than we've seen before,
+        // or when bootstrapping on an empty cluster.
+        if (resource_request_greater_than_current_capacity
+            && resource_request_greater_than_max_requested)
+            || should_bootstrap
         {
             state.max_resources_requested = ResourceRequest::try_new_internal(
                 Some(requested_num_cpus),
@@ -220,5 +320,157 @@ impl WorkerManager for RayWorkerManager {
             })?;
         }
         Ok(())
+    }
+
+    fn retire_idle_workers(&self, max_to_retire: usize) -> DaftResult<usize> {
+        if max_to_retire == 0 {
+            return Ok(0);
+        }
+        let idle_secs_threshold: u64 = std::env::var("DAFT_AUTOSCALING_DOWNSCALE_IDLE_SECONDS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(120);
+        self.internal_release_idle_workers(max_to_retire, false, Some(idle_secs_threshold))
+    }
+
+    fn release_idle_actors(
+        &self,
+        max_to_release: usize,
+        force_all_when_cluster_idle: bool,
+    ) -> DaftResult<usize> {
+        self.internal_release_idle_workers(
+            max_to_release,
+            force_all_when_cluster_idle, // 可强制释放所有
+            None,                        // 无闲置时间阈值
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use pyo3::{prelude::*, types::PyModule};
+
+    use super::*;
+    use crate::utils::runtime::get_or_init_runtime;
+
+    static CLEAR_CALLS: AtomicUsize = AtomicUsize::new(0);
+    static REQUEST_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    #[pyfunction]
+    fn clear_autoscaling_requests_py() -> PyResult<()> {
+        CLEAR_CALLS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    #[pyfunction]
+    fn try_autoscale_plan_py(_bundles: Py<PyAny>, _exclude: Py<PyAny>) -> PyResult<()> {
+        REQUEST_CALLS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    #[pyfunction]
+    fn start_ray_workers_py(
+        _existing_worker_ids: Vec<String>,
+    ) -> PyResult<Vec<RaySwordfishWorker>> {
+        Ok(vec![])
+    }
+
+    #[pyfunction]
+    fn sweep_force_release_swordfish_actors_py(
+        exclude_node_ids: Vec<String>,
+    ) -> PyResult<(i64, i64, i64)> {
+        Ok((
+            exclude_node_ids.len() as i64,
+            0,
+            exclude_node_ids.len() as i64,
+        ))
+    }
+
+    fn install_fake_flotilla(py: Python<'_>) -> PyResult<()> {
+        let m_daft = PyModule::new(py, "daft")?;
+        let m_runners = PyModule::new(py, "daft.runners")?;
+        let m_flotilla = PyModule::new(py, "daft.runners.flotilla")?;
+        m_flotilla.add_function(wrap_pyfunction!(
+            clear_autoscaling_requests_py,
+            &m_flotilla
+        )?)?;
+        m_flotilla.add_function(wrap_pyfunction!(try_autoscale_plan_py, &m_flotilla)?)?;
+        m_flotilla.add_function(wrap_pyfunction!(start_ray_workers_py, &m_flotilla)?)?;
+        m_flotilla.add_function(wrap_pyfunction!(
+            sweep_force_release_swordfish_actors_py,
+            &m_flotilla
+        )?)?;
+        m_runners.add_submodule(&m_flotilla)?;
+        m_daft.add_submodule(&m_runners)?;
+        let sys = py.import(pyo3::intern!(py, "sys"))?;
+        let modules = sys.getattr(pyo3::intern!(py, "modules"))?;
+        modules.set_item("daft", m_daft)?;
+        modules.set_item("daft.runners", m_runners)?;
+        modules.set_item("daft.runners.flotilla", m_flotilla)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_worker_manager_clear_bundles_resets_max() -> DaftResult<()> {
+        // Initialize runtimes required for pyo3 async
+        let _ = get_or_init_runtime();
+        Python::with_gil(|py| {
+            install_fake_flotilla(py).expect("install fake flotilla");
+            let wm = RayWorkerManager::new();
+            // First, set a non-zero max by issuing a scale-up request
+            let rr = ResourceRequest::try_new_internal(Some(8.0), None, None)?;
+            let bundle = TaskResourceRequest::new(rr);
+            wm.try_autoscale(vec![bundle.clone()])?;
+            {
+                let state = wm.state.lock().expect("lock");
+                assert_eq!(state.max_resources_requested.num_cpus(), Some(8.0));
+            }
+            // Now clear desired bundles and ensure max is reset
+            wm.try_autoscale(vec![])?;
+            {
+                let state = wm.state.lock().expect("lock");
+                assert_eq!(state.max_resources_requested.has_any(), false);
+            }
+            // And ensure Python clear_autoscaling_requests was invoked at least once
+            assert!(CLEAR_CALLS.load(Ordering::SeqCst) >= 1);
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_worker_manager_zero_capacity_bootstrap_non_increasing_request() -> DaftResult<()> {
+        // Initialize runtimes required for pyo3 async
+        let _ = get_or_init_runtime();
+        Python::with_gil(|py| {
+            // Reset counters and install stub
+            CLEAR_CALLS.store(0, Ordering::SeqCst);
+            REQUEST_CALLS.store(0, Ordering::SeqCst);
+            install_fake_flotilla(py).expect("install fake flotilla");
+            let wm = RayWorkerManager::new();
+            // Ensure zero capacity cluster (no ray workers in state)
+            {
+                let state = wm.state.lock().expect("lock");
+                assert_eq!(state.ray_workers.len(), 0);
+            }
+            // First, record a historical max (e.g., 8 CPUs) via bootstrap
+            let rr_big = ResourceRequest::try_new_internal(Some(8.0), None, None)?;
+            wm.try_autoscale(vec![TaskResourceRequest::new(rr_big)])?;
+            // Second, issue a smaller request (e.g., 2 CPUs). Even though it's <= historical max,
+            // zero-capacity bootstrap rule should still invoke autoscale.
+            let rr_small = ResourceRequest::try_new_internal(Some(2.0), None, None)?;
+            wm.try_autoscale(vec![TaskResourceRequest::new(rr_small)])?;
+            assert_eq!(
+                CLEAR_CALLS.load(Ordering::SeqCst),
+                0,
+                "should not clear bundles during bootstrap"
+            );
+            assert!(
+                REQUEST_CALLS.load(Ordering::SeqCst) >= 2,
+                "try_autoscale should be invoked for both initial and subsequent non-increasing request on zero capacity"
+            );
+            Ok(())
+        })
     }
 }

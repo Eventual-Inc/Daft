@@ -26,6 +26,8 @@ pub(super) trait Scheduler<T: Task>: Send + Sync {
     fn schedule_tasks(&mut self) -> Vec<ScheduledTask<T>>;
     fn get_autoscaling_request(&mut self) -> Option<Vec<TaskResourceRequest>>;
     fn num_pending_tasks(&self) -> usize;
+    /// Returns resource requests representing current backlog tasks regardless of autoscaling decision.
+    fn get_backlog_resource_requests(&self) -> Vec<TaskResourceRequest>;
 }
 
 pub(crate) struct PendingTask<T: Task> {
@@ -206,9 +208,12 @@ impl WorkerSnapshot {
         self.total_num_gpus
     }
 
-    #[cfg(test)]
     pub fn worker_id(&self) -> &WorkerId {
         &self.worker_id
+    }
+
+    pub fn active_task_count(&self) -> usize {
+        self.active_task_details.len()
     }
 
     // TODO: Potentially include memory as well, and also be able to overschedule tasks.

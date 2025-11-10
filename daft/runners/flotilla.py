@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from daft.daft import (
     DistributedPhysicalPlan,
@@ -217,6 +217,11 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
 def try_autoscale(bundles: list[dict[str, int]]) -> None:
     from ray.autoscaler.sdk import request_resources
 
+    if not bundles:
+        clear_autoscaling_requests()
+        logger.debug("The number of bundles to scale up is 0.")
+        return
+
     request_resources(
         bundles=bundles,
     )
@@ -317,3 +322,101 @@ class FlotillaRunner:
             if materialized_result is None:
                 break
             yield materialized_result
+
+
+def clear_autoscaling_requests() -> None:
+    import time as _time
+
+    from ray.autoscaler.sdk import request_resources
+
+    for i in range(1, 3):
+        try:
+            request_resources(bundles=[])
+            try:
+                sweep_force_release_swordfish_actors(exclude_node_ids=None)
+            except Exception as _e:
+                logger.warning("[actor_release_sweep] exception=%r", _e)
+            break
+        except Exception as e:
+            logger.warning("[clear_desired_bundles_error] exc=%r", e)
+            _time.sleep(0.1)
+
+
+def list_swordfish_actors() -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    named_handles: dict[str, Any] = {}
+    try:
+        named_handles = ray.util.list_named_actors(all_namespaces=True)
+
+        # Process named actors directly instead of using ray.state.actors()
+        for name, handle in named_handles.items():
+            try:
+                entries.append({"name": name, "state": "ALIVE", "node": None, "handle": handle})
+            except Exception:
+                continue
+    except Exception as e:
+        print(f"[actor_list] error enumerating actors exc={e!r}")
+
+    summary = ", ".join([f"{e.get('name') or '<unnamed>'}:{e.get('state')}:{e.get('node')}" for e in entries])
+    print(f"[actor_list] count={len(entries)}, actors=[{summary}]")
+    return entries
+
+
+def force_release_swordfish_actor(actor_handle: Any, name: str | None) -> bool:
+    ok = False
+    method = "terminate"
+    exc_repr = "-"
+    try:
+        terminate = getattr(actor_handle, "__ray_terminate__", None)
+        if terminate is not None:
+            # __ray_terminate__ is async on the actor
+            ray.get(terminate.remote())
+            ok = True
+            method = "terminate"
+        else:
+            raise AttributeError("__ray_terminate__ not available")
+    except Exception as e:
+        exc_repr = repr(e)
+        try:
+            ray.kill(actor_handle, no_restart=True)
+            ok = True
+            method = "kill"
+            exc_repr = "-"
+        except Exception as e2:
+            ok = False
+            method = "kill"
+            exc_repr = repr(e2)
+    print(f"[actor_force_kill] name={name} method={method} ok={str(ok).lower()} exc={exc_repr}")
+    return ok
+
+
+def sweep_force_release_swordfish_actors(exclude_node_ids: list[str] | None = None) -> tuple[int, int, int]:
+    """Sweep ALIVE RaySwordfishActor entries and force release those not excluded by node id."""
+    entries = list_swordfish_actors()
+    exclude = set(exclude_node_ids or [])
+    attempted = 0
+    released = 0
+    survivors = 0
+    for e in entries:
+        node_id = e.get("node")
+        if node_id and node_id in exclude:
+            continue
+        attempted += 1
+        handle = e.get("handle")
+        name = e.get("name")
+        ok = False
+        if handle is not None:
+            ok = force_release_swordfish_actor(handle, name)
+        else:
+            if name:
+                try:
+                    h = ray.get_actor(name)
+                    ok = force_release_swordfish_actor(h, name)
+                except Exception:
+                    ok = False
+        if ok:
+            released += 1
+        else:
+            survivors += 1
+    logger.debug("[actor_release_sweep] attempted=%d, released=%d, survivors=%d", attempted, released, survivors)
+    return attempted, released, survivors
