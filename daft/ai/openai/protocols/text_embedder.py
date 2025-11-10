@@ -83,7 +83,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
         return _models[self.model_name].dimensions
 
     def get_udf_options(self) -> UDFOptions:
-        return get_http_udf_options()
+        return UDFOptions(concurrency=None, num_gpus=None)
 
     def instantiate(self) -> TextEmbedder:
         return OpenAITextEmbedder(
