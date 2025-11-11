@@ -384,7 +384,7 @@ impl UdfState {
                     .iter()
                     .fold(0.0, |a, &b| if b > a { b } else { a });
 
-                println!(
+                log::debug!(
                     "{}: Max throughput: {:.2}, Min throughput: {:.2}",
                     std::thread::current().name().unwrap_or("unknown"),
                     max_throughput,
@@ -395,7 +395,7 @@ impl UdfState {
                 if (max_throughput - min_throughput) / max_throughput < 0.1 {
                     // Converged - just stay at current size if it's close to best
                     if current_throughput >= best_throughput * 0.9 {
-                        println!(
+                        log::debug!(
                             "{}: Converged on batch size {} (within 5% of best throughput)",
                             std::thread::current().name().unwrap_or("unknown"),
                             current_size
@@ -577,7 +577,7 @@ impl StreamingSink for UdfOperator {
                                         return;
                                     }
                                 };
-                                log::info!("Output batch size: {}", output_batch.len());
+                                log::debug!("Output batch size: {}", output_batch.len());
                                 yield Ok((output_batch, current_batch_size, duration));
                             }
                         }
