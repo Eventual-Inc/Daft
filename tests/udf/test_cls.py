@@ -354,6 +354,8 @@ def test_cls_input_dtype_validation():
 
     with pytest.raises(daft.exceptions.DaftCoreException, match="to be Float64, but received Int64"):
         df.select(v.types_and_kwarg_defaults(df["x"], b=df["x"]))
+
+
 def test_cls_max_concurrency_zero():
     with pytest.raises(ValueError, match="max_concurrency for udf must be non-zero"):
 

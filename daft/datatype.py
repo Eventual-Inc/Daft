@@ -131,9 +131,9 @@ class DataType:
         """Infer Daft DataType from a Python type."""
         # NOTE: Make sure this matches the logic in `Literal::from_pyobj` in Rust
 
-        assert isinstance(t, (type, GenericAlias, UnionType)), (
-            f"Input to DataType.infer_from_type must be a type, found: {t}"
-        )
+        assert isinstance(
+            t, (type, GenericAlias, UnionType)
+        ), f"Input to DataType.infer_from_type must be a type, found: {t}"
 
         import datetime
         import decimal
