@@ -43,6 +43,7 @@ pin-project = "1"
 pyo3 = {workspace = true, optional = true}
 pyo3-async-runtimes = {workspace = true, optional = true}
 rand = {workspace = true}
+rstest = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true, features = ["test-util"]}
 tokio-util = {workspace = true}
