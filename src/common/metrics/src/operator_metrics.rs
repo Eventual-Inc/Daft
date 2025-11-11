@@ -1,16 +1,12 @@
 use std::collections::HashMap;
 
-#[cfg(feature = "python")]
-use pyo3::{
-    Bound, PyResult,
-    types::{PyAnyMethods, PyDict, PyDictMethods},
-};
+use serde::{Deserialize, Serialize};
 
 pub trait MetricsCollector: Send {
     fn inc_counter(&mut self, name: &str, value: u64);
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Serialize, Deserialize)]
 pub struct OperatorMetrics {
     counters: HashMap<String, u64>,
 }
@@ -43,10 +39,12 @@ impl OperatorMetrics {
 
 impl MetricsCollector for OperatorMetrics {
     fn inc_counter(&mut self, name: &str, value: u64) {
-        if value == 0 {
-            return;
+        match self.counters.get_mut(name) {
+            Some(count) => *count += value,
+            None => {
+                self.counters.insert(name.to_string(), value);
+            }
         }
-        *self.counters.entry(name.to_string()).or_insert(0) += value;
     }
 }
 
@@ -54,20 +52,4 @@ pub struct NoopMetricsCollector;
 
 impl MetricsCollector for NoopMetricsCollector {
     fn inc_counter(&mut self, _name: &str, _value: u64) {}
-}
-
-#[cfg(feature = "python")]
-pub fn operator_metrics_from_pydict(metrics: &Bound<'_, PyDict>) -> PyResult<OperatorMetrics> {
-    let mut operator_metrics = OperatorMetrics::default();
-
-    if let Some(counters_any) = metrics.get_item("counters")? {
-        let counters = counters_any.cast::<PyDict>()?;
-        for (name, value) in counters.iter() {
-            let metric_name: String = name.extract()?;
-            let amount: u64 = value.extract()?;
-            operator_metrics.counters.insert(metric_name, amount);
-        }
-    }
-
-    Ok(operator_metrics)
 }

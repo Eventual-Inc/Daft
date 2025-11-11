@@ -3,8 +3,6 @@ use std::{fmt::Display, num::NonZeroUsize, sync::Arc};
 use common_error::DaftResult;
 use daft_core::{prelude::DataType, series::Series};
 use itertools::Itertools;
-#[cfg(feature = "python")]
-use pyo3::types::{PyDict, PyTuple};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
@@ -115,6 +113,8 @@ impl BatchPyFn {
 
         let mut try_call_batch = || {
             Python::attach(|py| {
+                use common_metrics::python::PyOperatorMetrics;
+
                 let func = py
                     .import(pyo3::intern!(py, "daft.udf.execution"))?
                     .getattr(pyo3::intern!(py, "call_batch_func"))?;
@@ -126,10 +126,9 @@ impl BatchPyFn {
                     py_args.clone(),
                 ))?;
 
-                let (result_series, metrics_dict): (PySeries, Bound<PyDict>) = result.extract()?;
-                let operator_metrics =
-                    operator_metrics::operator_metrics_from_pydict(&metrics_dict)?;
-                collected_metrics.merge(operator_metrics);
+                let (result_series, operator_metrics): (PySeries, PyOperatorMetrics) =
+                    result.extract()?;
+                collected_metrics.merge(operator_metrics.inner);
 
                 PyResult::Ok(result_series.series)
             })
@@ -250,6 +249,7 @@ impl BatchPyFn {
         name: &str,
         metrics: &mut operator_metrics::OperatorMetrics,
     ) -> DaftResult<Series> {
+        use common_metrics::python::PyOperatorMetrics;
         use daft_core::python::PySeries;
         use pyo3::prelude::*;
 
@@ -258,38 +258,30 @@ impl BatchPyFn {
         let original_args = self.original_args.clone();
         let args = args.to_vec();
 
-        let result_any =
-            common_runtime::python::execute_python_coroutine::<_, Py<PyAny>>(move |py| {
-                let f = py
-                    .import(pyo3::intern!(py, "daft.udf.execution"))?
-                    .getattr(pyo3::intern!(py, "call_batch_async"))?;
+        let (py_series, operator_metrics) = common_runtime::python::execute_python_coroutine::<
+            _,
+            (PySeries, PyOperatorMetrics),
+        >(move |py| {
+            let f = py
+                .import(pyo3::intern!(py, "daft.udf.execution"))?
+                .getattr(pyo3::intern!(py, "call_batch_async"))?;
 
-                let evaluated_args = args
-                    .iter()
-                    .map(|s| PySeries::from(s.clone()))
-                    .collect::<Vec<_>>();
+            let evaluated_args = args
+                .iter()
+                .map(|s| PySeries::from(s.clone()))
+                .collect::<Vec<_>>();
 
-                let result = f.call1((
-                    cls.as_ref(),
-                    method.as_ref(),
-                    original_args.as_ref(),
-                    evaluated_args,
-                ))?;
+            let coroutine = f.call1((
+                cls.as_ref(),
+                method.as_ref(),
+                original_args.as_ref(),
+                evaluated_args,
+            ))?;
 
-                Ok(result)
-            })
-            .await?;
-
-        let (py_series, operator_metrics) = Python::attach(|py| {
-            let result_tuple = result_any.bind(py).cast::<PyTuple>()?;
-            let value_obj = result_tuple.get_item(0)?;
-            let metrics_item = result_tuple.get_item(1)?;
-            let metrics_dict = metrics_item.cast::<PyDict>()?;
-            let operator_metrics = operator_metrics::operator_metrics_from_pydict(metrics_dict)?;
-            let py_series = value_obj.extract::<PySeries>()?;
-            PyResult::Ok((py_series, operator_metrics))
-        })?;
-        metrics.merge(operator_metrics);
+            Ok(coroutine)
+        })
+        .await?;
+        metrics.merge(operator_metrics.inner);
 
         Ok(py_series.series.rename(name))
     }

@@ -4,13 +4,13 @@ import contextvars
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
-from daft.daft import PyMetricsCollector as MetricsCollector
+from daft.daft import OperatorMetrics
 
 if TYPE_CHECKING:
     from collections.abc import Generator
 
-_CURRENT_COUNTERS: contextvars.ContextVar[dict[str, int] | None] = contextvars.ContextVar(
-    "daft_udf_metrics_counters", default=None
+_CURRENT_METRICS: contextvars.ContextVar[OperatorMetrics | None] = contextvars.ContextVar(
+    "daft_udf_metrics_metrics", default=None
 )
 
 
@@ -29,8 +29,8 @@ class _MetricBase:
 
 class Counter(_MetricBase):
     def increment(self, amount: int = 1) -> None:
-        counters = _require_counters()
-        counters[self._name] = counters.get(self._name, 0) + amount
+        metrics = _require_metrics()
+        metrics.inc_counter(self._name, amount)
 
 
 def counter(name: str) -> Counter:
@@ -41,40 +41,27 @@ def increment_counter(name: str, amount: int = 1) -> None:
     counter(name).increment(amount)
 
 
-class _MetricsHandle:
-    __slots__ = "_counters"
-
-    def __init__(self, counters: dict[str, int]) -> None:
-        self._counters = counters
-
-    def payload(self) -> dict[str, dict[str, int]]:
-        if not self._counters:
-            return {}
-        return {"counters": self._counters.copy()}
-
-
-def _require_counters() -> dict[str, int]:
-    counters = _CURRENT_COUNTERS.get()
-    if counters is None:
+def _require_metrics() -> OperatorMetrics:
+    metrics = _CURRENT_METRICS.get()
+    if metrics is None:
         raise RuntimeError(
             "Custom UDF metrics can only be used inside an active metrics context; the engine should establish this automatically."
         )
-    return counters
+    return metrics
 
 
 @contextmanager
-def _metrics_context() -> Generator[_MetricsHandle, None, None]:
-    counters: dict[str, int] = {}
-    counters_token = _CURRENT_COUNTERS.set(counters)
+def _metrics_context() -> Generator[OperatorMetrics, None, None]:
+    metrics = OperatorMetrics()
+    token = _CURRENT_METRICS.set(metrics)
     try:
-        yield _MetricsHandle(counters)
+        yield metrics
     finally:
-        _CURRENT_COUNTERS.reset(counters_token)
+        _CURRENT_METRICS.reset(token)
 
 
 __all__ = [
     "Counter",
-    "MetricsCollector",
     "counter",
     "increment_counter",
 ]

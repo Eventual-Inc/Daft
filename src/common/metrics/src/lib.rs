@@ -158,10 +158,10 @@ impl<'a> IntoIterator for &'a StatSnapshotView {
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     use pyo3::types::PyModuleMethods;
 
-    use crate::python::{PyMetricsCollector, PyNodeInfo, StatType};
+    use crate::python::{PyNodeInfo, PyOperatorMetrics, StatType};
 
     parent.add_class::<StatType>()?;
     parent.add_class::<PyNodeInfo>()?;
-    parent.add_class::<PyMetricsCollector>()?;
+    parent.add_class::<PyOperatorMetrics>()?;
     Ok(())
 }

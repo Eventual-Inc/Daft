@@ -189,14 +189,11 @@ def test_udf_custom_metrics_batch(num_udfs: int, batch_size: int | None, use_pro
 
 @pytest.mark.parametrize("num_udfs", [1, 2])
 @pytest.mark.parametrize("batch_size", [None, 1, 4])
-@pytest.mark.parametrize("use_process", [False, True])
-def test_udf_custom_metrics_cls(num_udfs: int, batch_size: int | None, use_process: bool) -> None:
+@pytest.mark.parametrize("concurrency", [None, 1])
+def test_udf_custom_metrics_cls(num_udfs: int, batch_size: int | None, concurrency: int | None) -> None:
     ctx = daft.context.get_context()
     subscriber = MetricsSubscriber()
-    sub_name = (
-        f"udf-metrics-cls-{'multi' if num_udfs == 2 else 'single'}-"
-        f"{batch_size}-{'proc' if use_process else 'inline'}"
-    )
+    sub_name = f"udf-metrics-cls-{'multi' if num_udfs == 2 else 'single'}-" f"{batch_size}-{concurrency}"
     ctx.attach_subscriber(sub_name, subscriber)
 
     try:
@@ -211,7 +208,7 @@ def test_udf_custom_metrics_cls(num_udfs: int, batch_size: int | None, use_proce
             factor = i + 1
             counter_name = f"udf{i} counter"
 
-            @daft.cls(use_process=use_process)
+            @daft.cls(max_concurrency=concurrency)
             class MetricUdf:
                 def __init__(
                     self,

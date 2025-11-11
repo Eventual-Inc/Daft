@@ -1,14 +1,14 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex, MutexGuard},
-};
+use std::{collections::HashMap, sync::Arc};
 
-use pyo3::{
-    Bound, IntoPyObject, Py, PyAny, PyResult, Python, pyclass, pymethods,
-    types::{PyAnyMethods, PyDict},
-};
+use common_py_serde::impl_bincode_py_state_serialization;
+use pyo3::{Bound, IntoPyObject, PyAny, PyResult, Python, pyclass, pymethods};
+use serde::{Deserialize, Serialize};
 
-use crate::{Stat, operator_metrics::OperatorMetrics, ops::NodeInfo};
+use crate::{
+    Stat,
+    operator_metrics::{MetricsCollector, OperatorMetrics},
+    ops::NodeInfo,
+};
 
 #[pyclass(eq, eq_int)]
 #[derive(PartialEq, Eq)]
@@ -72,48 +72,24 @@ impl From<Arc<NodeInfo>> for PyNodeInfo {
     }
 }
 
-#[pyclass]
-#[derive(Clone, Default)]
-pub struct PyMetricsCollector {
-    pub(crate) inner: Arc<Mutex<OperatorMetrics>>,
+#[pyclass(module = "daft.daft", name = "OperatorMetrics")]
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct PyOperatorMetrics {
+    pub inner: OperatorMetrics,
 }
 
 #[pymethods]
-impl PyMetricsCollector {
+impl PyOperatorMetrics {
     #[new]
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(Mutex::new(OperatorMetrics::default())),
+            inner: OperatorMetrics::default(),
         }
     }
 
-    pub fn payload(&self, py: Python) -> PyResult<Py<PyDict>> {
-        let metrics = self
-            .inner
-            .lock()
-            .expect("Failed to lock metrics sink")
-            .clone();
-        let payload = PyDict::new(py);
-        let counters = metrics.into_inner();
-        if !counters.is_empty() {
-            let counters_dict = PyDict::new(py);
-            for (name, value) in counters {
-                counters_dict.set_item(name, value)?;
-            }
-            payload.set_item("counters", counters_dict)?;
-        }
-        Ok(payload.into())
-    }
-
-    pub fn reset(&self) {
-        if let Ok(mut metrics) = self.inner.lock() {
-            metrics.clear();
-        }
+    pub fn inc_counter(&mut self, name: &str, value: u64) {
+        self.inner.inc_counter(name, value);
     }
 }
 
-impl PyMetricsCollector {
-    pub fn lock(&self) -> MutexGuard<'_, OperatorMetrics> {
-        self.inner.lock().expect("Failed to lock metrics sink")
-    }
-}
+impl_bincode_py_state_serialization!(PyOperatorMetrics);

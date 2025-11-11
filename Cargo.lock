@@ -1876,6 +1876,7 @@ dependencies = [
 name = "common-metrics"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-py-serde",
  "daft-schema",
  "indicatif 0.17.11",
  "pyo3",

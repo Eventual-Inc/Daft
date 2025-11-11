@@ -8,7 +8,7 @@ from pickle import PicklingError
 from traceback import TracebackException
 
 import daft.pickle
-from daft.daft import PyMetricsCollector, set_compute_runtime_num_worker_threads
+from daft.daft import set_compute_runtime_num_worker_threads
 from daft.errors import UDFException
 from daft.execution.udf import (
     _ENTER,
@@ -40,8 +40,6 @@ def udf_event_loop(
 
     # Set the compute runtime num worker threads to 1 for the UDF worker
     set_compute_runtime_num_worker_threads(1)
-    metrics_collector = PyMetricsCollector()
-
     try:
         conn.send(_READY)
 
@@ -59,9 +57,7 @@ def udf_event_loop(
             input_bytes = transport.read_and_release(name, size)
             input = RecordBatch.from_ipc_stream(input_bytes)
 
-            evaluated = input.eval_expression_list_with_metrics(expression_projection, metrics_collector)
-            metrics_payload = metrics_collector.payload()
-            metrics_collector.reset()
+            evaluated, metrics = input.eval_expression_list_with_metrics(expression_projection)
 
             output_bytes = evaluated.to_ipc_stream()
             out_name, out_size = transport.write_and_close(output_bytes)
@@ -71,7 +67,7 @@ def udf_event_loop(
             sys.stdout.flush()
             sys.stderr.flush()
 
-            conn.send((_SUCCESS, out_name, out_size, metrics_payload))
+            conn.send((_SUCCESS, out_name, out_size, metrics))
     except UDFException as e:
         exc = e.__cause__
         assert exc is not None

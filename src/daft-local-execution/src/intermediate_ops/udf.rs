@@ -22,14 +22,14 @@ use daft_dsl::{
     common_treenode::{Transformed, TreeNode},
     expr::{BoundColumn, bound_expr::BoundExpr},
     functions::python::UDFProperties,
-    operator_metrics::{self, OperatorMetrics},
+    operator_metrics::OperatorMetrics,
 };
 use daft_micropartition::MicroPartition;
 #[cfg(feature = "python")]
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
 #[cfg(feature = "python")]
-use pyo3::{Py, prelude::*, types::PyDict};
+use pyo3::{Py, prelude::*};
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{
@@ -216,6 +216,7 @@ impl UdfHandle {
         input: RecordBatch,
         runtime_stats: &UdfRuntimeStats,
     ) -> DaftResult<Series> {
+        use common_metrics::python::PyOperatorMetrics;
         use daft_recordbatch::python::PyRecordBatch;
 
         use crate::STDOUT;
@@ -226,16 +227,18 @@ impl UdfHandle {
             .expect("eval_input_with_handle called without an actor handle");
 
         let (result, stdout_lines, metrics) = Python::attach(|py| {
-            let (py_result, py_stdout_lines, py_metrics_payload) = handle
+            let (py_result, py_stdout_lines, py_metrics) = handle
                 .bind(py)
                 .call_method1(
                     pyo3::intern!(py, "eval_input"),
                     (PyRecordBatch::from(input),),
                 )?
-                .extract::<(PyRecordBatch, Vec<String>, Py<PyAny>)>()?;
-            let py_metrics_payload = py_metrics_payload.bind(py).cast::<PyDict>()?;
-            let metrics = operator_metrics::operator_metrics_from_pydict(py_metrics_payload)?;
-            PyResult::Ok((RecordBatch::from(py_result), py_stdout_lines, metrics))
+                .extract::<(PyRecordBatch, Vec<String>, PyOperatorMetrics)>()?;
+            PyResult::Ok((
+                RecordBatch::from(py_result),
+                py_stdout_lines,
+                py_metrics.inner,
+            ))
         })?;
 
         let label = format!(

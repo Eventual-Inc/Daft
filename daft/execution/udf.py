@@ -8,7 +8,7 @@ import sys
 import tempfile
 from multiprocessing import resource_tracker, shared_memory
 from multiprocessing.connection import Listener
-from typing import IO, TYPE_CHECKING, Any, cast
+from typing import IO, TYPE_CHECKING, cast
 
 import daft.pickle
 from daft.daft import PyRecordBatch
@@ -114,7 +114,7 @@ class UdfHandle:
             lines.append(line.decode().rstrip())
         return lines
 
-    def eval_input(self, input: PyRecordBatch) -> tuple[PyRecordBatch, list[str], dict[str, Any]]:
+    def eval_input(self, input: PyRecordBatch) -> tuple[PyRecordBatch, list[str], dict[str, int]]:
         if self.process.poll() is not None:
             raise RuntimeError("UDF process has terminated")
 
@@ -152,10 +152,10 @@ class UdfHandle:
         elif response[0] == _ERROR:
             raise RuntimeError("UDF unexpectedly failed with traceback:\n" + response[1])
         elif response[0] == _SUCCESS:
-            _, out_name, out_size, metrics_payload = response
+            _, out_name, out_size, metrics = response
             output_bytes = self.transport.read_and_release(out_name, out_size)
             deserialized = PyRecordBatch.from_ipc_stream(output_bytes)
-            return (deserialized, stdout, metrics_payload)
+            return (deserialized, stdout, metrics)
         else:
             raise RuntimeError(f"Unknown response from actor: {response}")
 
