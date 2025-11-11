@@ -3031,7 +3031,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "uuid 1.18.1",
 ]
 
 [[package]]
