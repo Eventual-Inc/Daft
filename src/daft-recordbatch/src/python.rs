@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use common_metrics::python::PyMetricsCollector;
 use daft_core::{
     join::JoinType,
     prelude::*,
@@ -40,6 +41,22 @@ impl PyRecordBatch {
             Ok(self
                 .record_batch
                 .eval_expression_list(converted_exprs.as_slice())?
+                .into())
+        })
+    }
+
+    pub fn eval_expression_list_with_metrics(
+        &self,
+        py: Python,
+        exprs: Vec<PyExpr>,
+        metrics: &PyMetricsCollector,
+    ) -> PyResult<Self> {
+        let converted_exprs = BoundExpr::bind_all(&exprs, &self.record_batch.schema)?;
+        let record_batch = self.record_batch.clone();
+        py.detach(move || {
+            let mut metrics_guard = metrics.lock();
+            Ok(record_batch
+                .eval_expression_list_with_metrics(converted_exprs.as_slice(), &mut *metrics_guard)?
                 .into())
         })
     }

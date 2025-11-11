@@ -22,20 +22,19 @@ use daft_dsl::{
     common_treenode::{Transformed, TreeNode},
     expr::{BoundColumn, bound_expr::BoundExpr},
     functions::python::UDFProperties,
+    operator_metrics::{self, OperatorMetrics},
 };
 use daft_micropartition::MicroPartition;
 #[cfg(feature = "python")]
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
 #[cfg(feature = "python")]
-use pyo3::{Bound, Py, prelude::*, types::PyDict};
+use pyo3::{Py, prelude::*, types::PyDict};
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-#[cfg(feature = "python")]
-use crate::udf_metrics;
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{MorselSizeRequirement, NodeName},
@@ -91,7 +90,6 @@ struct UdfRuntimeStats {
     rows_in: AtomicU64,
     rows_out: AtomicU64,
     counters: Mutex<HashMap<Arc<str>, u64>>,
-    gauges: Mutex<HashMap<Arc<str>, f64>>,
 }
 
 impl RuntimeStats for UdfRuntimeStats {
@@ -115,18 +113,9 @@ impl RuntimeStats for UdfRuntimeStats {
             Stat::Count(self.rows_out.load(ordering)),
         ));
 
-        {
-            let counters = self.counters.lock().unwrap();
-            for (name, value) in counters.iter() {
-                entries.push((name.clone(), Stat::Count(*value)));
-            }
-        }
-
-        {
-            let gauges = self.gauges.lock().unwrap();
-            for (name, value) in gauges.iter() {
-                entries.push((name.clone(), Stat::Float(*value)));
-            }
+        let counters = self.counters.lock().unwrap();
+        for (name, value) in counters.iter() {
+            entries.push((name.clone(), Stat::Count(*value)));
         }
 
         StatSnapshotSend(entries)
@@ -146,48 +135,19 @@ impl RuntimeStats for UdfRuntimeStats {
 }
 
 impl UdfRuntimeStats {
-    fn increment_counter(&self, name: &str, amount: u64) {
-        if amount == 0 {
-            return;
-        }
+    fn update_metrics(&self, metrics: OperatorMetrics) {
         let mut counters = self.counters.lock().unwrap();
-        let key = Arc::<str>::from(name);
-        *counters.entry(key).or_default() += amount;
-    }
-
-    fn set_gauge(&self, name: &str, value: f64) {
-        let mut gauges = self.gauges.lock().unwrap();
-        gauges.insert(Arc::<str>::from(name), value);
-    }
-}
-
-#[cfg(feature = "python")]
-fn extract_metrics_from_pydict(
-    metrics: &Bound<'_, PyDict>,
-) -> PyResult<(HashMap<String, u64>, HashMap<String, f64>)> {
-    let mut counters_result = HashMap::new();
-    if let Some(counters_any) = metrics.get_item("counters")?
-        && let Ok(counters) = counters_any.cast::<PyDict>()
-    {
-        for (name, value) in counters.iter() {
-            let metric_name: String = name.extract()?;
-            let amount: u64 = value.extract()?;
-            counters_result.insert(metric_name, amount);
+        for (name, value) in metrics.into_inner() {
+            match counters.get_mut(name.as_str()) {
+                Some(counter) => {
+                    *counter += value;
+                }
+                None => {
+                    counters.insert(name.into(), value);
+                }
+            }
         }
     }
-
-    let mut gauges_result = HashMap::new();
-    if let Some(gauges_any) = metrics.get_item("gauges")?
-        && let Ok(gauges) = gauges_any.cast::<PyDict>()
-    {
-        for (name, value) in gauges.iter() {
-            let metric_name: String = name.extract()?;
-            let gauge_value: f64 = value.extract()?;
-            gauges_result.insert(metric_name, gauge_value);
-        }
-    }
-
-    Ok((counters_result, gauges_result))
 }
 
 /// Common parameters for UDF handle and operator
@@ -265,7 +225,7 @@ impl UdfHandle {
             .as_ref()
             .expect("eval_input_with_handle called without an actor handle");
 
-        let (result, stdout_lines, counters, gauges) = Python::attach(|py| {
+        let (result, stdout_lines, metrics) = Python::attach(|py| {
             let (py_result, py_stdout_lines, py_metrics_payload) = handle
                 .bind(py)
                 .call_method1(
@@ -274,13 +234,8 @@ impl UdfHandle {
                 )?
                 .extract::<(PyRecordBatch, Vec<String>, Py<PyAny>)>()?;
             let py_metrics_payload = py_metrics_payload.bind(py).cast::<PyDict>()?;
-            let (counters, gauges) = extract_metrics_from_pydict(py_metrics_payload)?;
-            PyResult::Ok((
-                RecordBatch::from(py_result),
-                py_stdout_lines,
-                counters,
-                gauges,
-            ))
+            let metrics = operator_metrics::operator_metrics_from_pydict(py_metrics_payload)?;
+            PyResult::Ok((RecordBatch::from(py_result), py_stdout_lines, metrics))
         })?;
 
         let label = format!(
@@ -291,12 +246,7 @@ impl UdfHandle {
             STDOUT.print(&label, &line);
         }
 
-        for (name, value) in counters {
-            runtime_stats.increment_counter(name.as_str(), value);
-        }
-        for (name, value) in gauges {
-            runtime_stats.set_gauge(name.as_str(), value);
-        }
+        runtime_stats.update_metrics(metrics);
 
         debug_assert!(
             result.num_columns() == 1,
@@ -309,22 +259,16 @@ impl UdfHandle {
     fn eval_input_inline(
         &mut self,
         func_input: RecordBatch,
-        udf_id: &str,
         runtime_stats: &UdfRuntimeStats,
     ) -> DaftResult<Series> {
         use daft_dsl::functions::python::initialize_udfs;
 
         // Only actually initialized the first time
         self.udf_expr = BoundExpr::new_unchecked(initialize_udfs(self.udf_expr.inner().clone())?);
-        let result = func_input.eval_expression(&self.udf_expr)?;
-        if let Some((counters, gauges)) = udf_metrics::drain_metrics(udf_id) {
-            for (name, value) in counters {
-                runtime_stats.increment_counter(name.as_str(), value);
-            }
-            for (name, value) in gauges {
-                runtime_stats.set_gauge(name.as_str(), value);
-            }
-        }
+        let mut collected_metrics = OperatorMetrics::default();
+        let result =
+            func_input.eval_expression_with_metrics(&self.udf_expr, &mut collected_metrics)?;
+        runtime_stats.update_metrics(collected_metrics);
         Ok(result)
     }
 
@@ -346,13 +290,6 @@ impl UdfHandle {
         let input_batches = input.get_tables()?;
         let mut output_batches = Vec::with_capacity(input_batches.len());
 
-        let using_actor = self.handle.is_some();
-        let inline_udf_id: Option<String> = if !using_actor {
-            Some(self.params.udf_properties.name.clone())
-        } else {
-            None
-        };
-
         for batch in input_batches.as_ref() {
             // Prepare inputs
             let func_input = batch.get_columns(self.params.required_cols.as_slice());
@@ -361,10 +298,7 @@ impl UdfHandle {
             let mut result_series = if self.handle.is_some() {
                 self.eval_input_with_handle(func_input, &runtime_stats)?
             } else {
-                let udf_id = inline_udf_id
-                    .as_deref()
-                    .expect("inline UDFs must have an associated udf id");
-                self.eval_input_inline(func_input, udf_id, &runtime_stats)?
+                self.eval_input_inline(func_input, &runtime_stats)?
             };
 
             // If result.len() == 1 (because it was a 0-column UDF), broadcast to right size

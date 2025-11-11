@@ -97,24 +97,18 @@ def test_udf_custom_metrics_func(num_udfs: int, batch_size: int | None, use_proc
             from daft.udf import metrics
 
             factor = i + 1
-            gauge_offset = i * 10
             counter_name = f"udf{i} counter"
-            gauge_name = f"udf{i} gauge"
 
             counter_metric = metrics.counter(counter_name)
-            gauge_metric = metrics.gauge(gauge_name)
 
             @daft.func(use_process=use_process)
             def udf(
                 value: int,
                 *,
                 _ctr=counter_metric,
-                _gauge=gauge_metric,
                 _factor=factor,
-                _offset=gauge_offset,
             ) -> int:
                 _ctr.increment(amount=value * _factor)
-                _gauge.set(float(value + _offset))
                 return value + _factor
 
             df = df.with_column(f"out_{i}", udf(daft.col("value")))
@@ -122,9 +116,7 @@ def test_udf_custom_metrics_func(num_udfs: int, batch_size: int | None, use_proc
             cases.append(
                 {
                     "counter_name": counter_name,
-                    "gauge_name": gauge_name,
                     "expected_counter": factor * VALUES_SUM,
-                    "expected_gauge_values": {float(v + gauge_offset) for v in VALUES},
                 }
             )
 
@@ -134,9 +126,6 @@ def test_udf_custom_metrics_func(num_udfs: int, batch_size: int | None, use_proc
             stats = _find_udf_stats(subscriber, case["counter_name"])
             _, counter_value = stats[case["counter_name"]]
             assert counter_value == case["expected_counter"]
-
-            _, gauge_value = stats[case["gauge_name"]]
-            assert gauge_value in case["expected_gauge_values"]
     finally:
         ctx.detach_subscriber(sub_name)
 
@@ -163,26 +152,20 @@ def test_udf_custom_metrics_batch(num_udfs: int, batch_size: int | None, use_pro
             from daft.udf import metrics
 
             factor = i + 1
-            gauge_offset = i * 10
             counter_name = f"udf{i} counter"
-            gauge_name = f"udf{i} gauge"
 
             counter_metric = metrics.counter(counter_name)
-            gauge_metric = metrics.gauge(gauge_name)
 
             @daft.func.batch(return_dtype=DataType.int64(), use_process=use_process)
             def udf(
                 values: Series,
                 *,
                 _ctr=counter_metric,
-                _gauge=gauge_metric,
                 _factor=factor,
-                _offset=gauge_offset,
             ) -> Series:
                 py_values = values.to_pylist()
                 for v in py_values:
                     _ctr.increment(amount=v * _factor)
-                    _gauge.set(float(v + _offset))
                 return Series.from_pylist([v + _factor for v in py_values])
 
             df = df.with_column(f"out_{i}", udf(daft.col("value")))
@@ -190,9 +173,7 @@ def test_udf_custom_metrics_batch(num_udfs: int, batch_size: int | None, use_pro
             cases.append(
                 {
                     "counter_name": counter_name,
-                    "gauge_name": gauge_name,
                     "expected_counter": factor * VALUES_SUM,
-                    "expected_gauge_values": {float(v + gauge_offset) for v in VALUES},
                 }
             )
 
@@ -202,9 +183,6 @@ def test_udf_custom_metrics_batch(num_udfs: int, batch_size: int | None, use_pro
             stats = _find_udf_stats(subscriber, case["counter_name"])
             _, counter_value = stats[case["counter_name"]]
             assert counter_value == case["expected_counter"]
-
-            _, gauge_value = stats[case["gauge_name"]]
-            assert gauge_value in case["expected_gauge_values"]
     finally:
         ctx.detach_subscriber(sub_name)
 
@@ -231,37 +209,28 @@ def test_udf_custom_metrics_cls(num_udfs: int, batch_size: int | None, use_proce
             from daft.udf import metrics
 
             factor = i + 1
-            gauge_offset = i * 10
             counter_name = f"udf{i} counter"
-            gauge_name = f"udf{i} gauge"
 
             @daft.cls(use_process=use_process)
             class MetricUdf:
                 def __init__(
                     self,
                     addend: int,
-                    gauge_offset: int,
                     counter_name: str,
-                    gauge_name: str,
                 ) -> None:
                     self.addend = addend
-                    self.gauge_offset = gauge_offset
                     self.counter = metrics.counter(counter_name)
-                    self.gauge = metrics.gauge(gauge_name)
 
                 def __call__(self, value: int) -> int:
                     self.counter.increment(amount=value * self.addend)
-                    self.gauge.set(float(value + self.gauge_offset))
                     return value + self.addend
 
-            instance = MetricUdf(factor, gauge_offset, counter_name, gauge_name)
+            instance = MetricUdf(factor, counter_name)
 
             cases.append(
                 {
                     "counter_name": counter_name,
-                    "gauge_name": gauge_name,
                     "expected_counter": factor * VALUES_SUM,
-                    "expected_gauge_values": {float(v + gauge_offset) for v in VALUES},
                 }
             )
 
@@ -273,8 +242,5 @@ def test_udf_custom_metrics_cls(num_udfs: int, batch_size: int | None, use_proce
             stats = _find_udf_stats(subscriber, case["counter_name"])
             _, counter_value = stats[case["counter_name"]]
             assert counter_value == case["expected_counter"]
-
-            _, gauge_value = stats[case["gauge_name"]]
-            assert gauge_value in case["expected_gauge_values"]
     finally:
         ctx.detach_subscriber(sub_name)

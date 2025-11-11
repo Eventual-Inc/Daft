@@ -8,6 +8,7 @@ common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false, features = ["arrow"]}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
+common-metrics = {path = "../common/metrics", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-functions-list = {path = "../daft-functions-list", default-features = false}
@@ -33,6 +34,7 @@ python = [
   "common-arrow-ffi/python",
   "common-display/python",
   "common-py-serde/python",
+  "common-metrics/python",
   "daft-image/python",
   "daft-functions-list/python"
 ]

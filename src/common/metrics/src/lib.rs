@@ -1,3 +1,4 @@
+pub mod operator_metrics;
 pub mod ops;
 #[cfg(feature = "python")]
 pub mod python;
@@ -5,6 +6,7 @@ pub mod python;
 use std::{ops::Index, slice, sync::Arc, time::Duration};
 
 use indicatif::{HumanBytes, HumanCount, HumanDuration, HumanFloatCount};
+pub use operator_metrics::{MetricsCollector, NoopMetricsCollector, OperatorMetrics};
 #[cfg(feature = "python")]
 use pyo3::types::PyModule;
 #[cfg(feature = "python")]
@@ -156,9 +158,10 @@ impl<'a> IntoIterator for &'a StatSnapshotView {
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     use pyo3::types::PyModuleMethods;
 
-    use crate::python::{PyNodeInfo, StatType};
+    use crate::python::{PyMetricsCollector, PyNodeInfo, StatType};
 
     parent.add_class::<StatType>()?;
     parent.add_class::<PyNodeInfo>()?;
+    parent.add_class::<PyMetricsCollector>()?;
     Ok(())
 }

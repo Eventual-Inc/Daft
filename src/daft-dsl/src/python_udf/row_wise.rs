@@ -3,11 +3,16 @@ use std::{fmt::Display, num::NonZeroUsize, sync::Arc};
 use common_error::DaftResult;
 use daft_core::prelude::*;
 use itertools::Itertools;
+#[cfg(feature = "python")]
+use pyo3::types::{PyDict, PyTuple};
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "python")]
+use crate::operator_metrics;
 use crate::{
     Expr, ExprRef,
     functions::{python::RuntimePyObject, scalar::ScalarFn},
+    operator_metrics::MetricsCollector,
     python_udf::PyScalarFn,
 };
 
@@ -91,12 +96,16 @@ impl RowWisePyFn {
     }
 
     #[cfg(not(feature = "python"))]
-    pub fn call(&self, _args: &[Series]) -> DaftResult<Series> {
+    pub fn call(
+        &self,
+        _args: &[Series],
+        _metrics: &mut dyn MetricsCollector,
+    ) -> DaftResult<Series> {
         panic!("Cannot evaluate a RowWisePyFn without compiling for Python");
     }
 
     #[cfg(feature = "python")]
-    pub fn call(&self, args: &[Series]) -> DaftResult<Series> {
+    pub fn call(&self, args: &[Series], metrics: &mut dyn MetricsCollector) -> DaftResult<Series> {
         let num_rows = args
             .iter()
             .map(Series::len)
@@ -111,16 +120,24 @@ impl RowWisePyFn {
                 a.len()
             );
         }
-        self.call_serial(args, num_rows)
+        self.call_serial(args, num_rows, metrics)
     }
 
     #[cfg(not(feature = "python"))]
-    pub async fn call_async(&self, _args: &[Series]) -> DaftResult<Series> {
+    pub async fn call_async(
+        &self,
+        _args: &[Series],
+        _metrics: &mut dyn MetricsCollector,
+    ) -> DaftResult<Series> {
         panic!("Cannot evaluate a RowWisePyFn without compiling for Python");
     }
 
     #[cfg(feature = "python")]
-    pub async fn call_async(&self, args: &[Series]) -> DaftResult<Series> {
+    pub async fn call_async(
+        &self,
+        args: &[Series],
+        metrics: &mut dyn MetricsCollector,
+    ) -> DaftResult<Series> {
         use common_error::DaftError;
 
         use crate::functions::python::OnError;
@@ -139,6 +156,7 @@ impl RowWisePyFn {
             );
         }
 
+        let mut collected_metrics = operator_metrics::OperatorMetrics::default();
         let max_retries = self.max_retries.unwrap_or(0);
 
         let name = args[0].name();
@@ -147,7 +165,9 @@ impl RowWisePyFn {
         let mut delay_ms: u64 = 100; // Start with 100 ms
         const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
 
-        let mut result_series = self.call_async_batch_once(args, num_rows, name).await;
+        let mut result_series = self
+            .call_async_batch_once(args, num_rows, name, &mut collected_metrics)
+            .await;
 
         for _attempt in 0..max_retries {
             if result_series.is_ok() {
@@ -157,13 +177,17 @@ impl RowWisePyFn {
             tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
             delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
 
-            result_series = self.call_async_batch_once(args, num_rows, name).await;
+            result_series = self
+                .call_async_batch_once(args, num_rows, name, &mut collected_metrics)
+                .await;
         }
         let name = args[0].name();
 
         let result_series = result_series
             .map_err(DaftError::from)
             .and_then(|s| Ok(s.cast(&self.return_dtype)?.rename(name)));
+
+        collected_metrics.merge_into_collector(metrics);
 
         match (result_series, self.on_error) {
             (Ok(result_series), _) => Ok(result_series),
@@ -182,7 +206,12 @@ impl RowWisePyFn {
     }
 
     #[cfg(feature = "python")]
-    fn call_serial(&self, args: &[Series], num_rows: usize) -> DaftResult<Series> {
+    fn call_serial(
+        &self,
+        args: &[Series],
+        num_rows: usize,
+        metrics: &mut dyn MetricsCollector,
+    ) -> DaftResult<Series> {
         use common_error::DaftError;
         use daft_core::series::from_lit::series_from_literals_iter;
         use pyo3::prelude::*;
@@ -198,10 +227,11 @@ impl RowWisePyFn {
         let max_retries = self.max_retries.unwrap_or(0);
         let delay_ms: u64 = 100; // Start with 100 ms
         const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
+        let mut collected_metrics = operator_metrics::OperatorMetrics::default();
 
-        fn retry<F: Fn() -> DaftResult<Literal>>(
+        fn retry<F: FnMut() -> DaftResult<Literal>>(
             py: Python,
-            func: F,
+            mut func: F,
             max_retries: usize,
             on_error: OnError,
             mut delay_ms: u64,
@@ -266,7 +296,15 @@ impl RowWisePyFn {
                         args_ref,
                         &py_args,
                     ))
-                    .and_then(|res| Literal::from_pyobj(&res, Some(&self.return_dtype)))
+                    .and_then(|res| {
+                        let (value_obj, metrics_dict): (Bound<PyAny>, Bound<PyDict>) =
+                            res.extract()?;
+                        let literal = Literal::from_pyobj(&value_obj, Some(&self.return_dtype))?;
+                        let operator_metrics =
+                            operator_metrics::operator_metrics_from_pydict(&metrics_dict)?;
+                        collected_metrics.merge(operator_metrics);
+                        Ok(literal)
+                    })
                     .map_err(DaftError::from)
                 };
                 let res = retry(py, f, max_retries, on_error, delay_ms);
@@ -277,6 +315,10 @@ impl RowWisePyFn {
         })?
         .rename(name);
 
+        if !collected_metrics.is_empty() {
+            collected_metrics.merge_into_collector(metrics);
+        }
+
         Ok(s)
     }
 
@@ -286,6 +328,7 @@ impl RowWisePyFn {
         args: &[Series],
         num_rows: usize,
         name: &str,
+        metrics: &mut operator_metrics::OperatorMetrics,
     ) -> DaftResult<Series> {
         use daft_core::python::PySeries;
         use pyo3::prelude::*;
@@ -297,36 +340,50 @@ impl RowWisePyFn {
         let udf_id = self.function_name.to_string();
         let return_dtype = self.return_dtype.clone();
 
-        common_runtime::python::execute_python_coroutine::<_, PySeries>(move |py| {
-            let f = py
-                .import(pyo3::intern!(py, "daft.udf.execution"))?
-                .getattr(pyo3::intern!(py, "call_async_func_batched"))?;
-            let mut evaluated_args = Vec::with_capacity(num_rows);
-            for i in 0..num_rows {
-                let py_args_for_row = args
-                    .iter()
-                    .map(|s| {
-                        let idx = if s.len() == 1 { 0 } else { i };
-                        let lit = s.get_lit(idx);
-                        lit.into_pyobject(py)
-                            .map_err(|e| e.into())
-                            .map(|obj| obj.unbind())
-                    })
-                    .collect::<DaftResult<Vec<_>>>()?;
+        let result_any =
+            common_runtime::python::execute_python_coroutine::<_, Py<PyAny>>(move |py| {
+                let f = py
+                    .import(pyo3::intern!(py, "daft.udf.execution"))?
+                    .getattr(pyo3::intern!(py, "call_async_func_batched"))?;
+                let mut evaluated_args = Vec::with_capacity(num_rows);
+                for i in 0..num_rows {
+                    let py_args_for_row = args
+                        .iter()
+                        .map(|s| {
+                            let idx = if s.len() == 1 { 0 } else { i };
+                            let lit = s.get_lit(idx);
+                            lit.into_pyobject(py)
+                                .map_err(|e| e.into())
+                                .map(|obj| obj.unbind())
+                        })
+                        .collect::<DaftResult<Vec<_>>>()?;
 
-                evaluated_args.push(py_args_for_row);
-            }
-            let py_return_type = daft_core::python::PyDataType::from(return_dtype.clone());
-            f.call1((
-                udf_id.as_str(),
-                cls.as_ref(),
-                method.as_ref(),
-                py_return_type,
-                original_args.as_ref(),
-                evaluated_args,
-            ))
-        })
-        .await
-        .map(|py_series| py_series.series.rename(name))
+                    evaluated_args.push(py_args_for_row);
+                }
+                let py_return_type = daft_core::python::PyDataType::from(return_dtype.clone());
+                let result = f.call1((
+                    udf_id.as_str(),
+                    cls.as_ref(),
+                    method.as_ref(),
+                    py_return_type,
+                    original_args.as_ref(),
+                    evaluated_args,
+                ))?;
+                Ok(result)
+            })
+            .await?;
+
+        let (py_series, operator_metrics) = Python::attach(|py| {
+            let result_tuple = result_any.bind(py).cast::<PyTuple>()?;
+            let value_obj = result_tuple.get_item(0)?;
+            let metrics_item = result_tuple.get_item(1)?;
+            let metrics_dict = metrics_item.cast::<PyDict>()?;
+            let operator_metrics = operator_metrics::operator_metrics_from_pydict(metrics_dict)?;
+            let py_series = value_obj.extract::<PySeries>()?;
+            PyResult::Ok((py_series, operator_metrics))
+        })?;
+        metrics.merge(operator_metrics);
+
+        Ok(py_series.series.rename(name))
     }
 }

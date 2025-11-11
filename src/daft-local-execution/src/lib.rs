@@ -10,9 +10,6 @@ mod sinks;
 mod sources;
 mod state_bridge;
 mod streaming_sink;
-#[cfg(feature = "python")]
-mod udf_metrics;
-
 use std::{
     future::Future,
     pin::Pin,
@@ -338,6 +335,5 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
 
     parent.add_class::<PyNativeExecutor>()?;
     parent.add_class::<LocalPartitionStream>()?;
-    udf_metrics::register(parent)?;
     Ok(())
 }
