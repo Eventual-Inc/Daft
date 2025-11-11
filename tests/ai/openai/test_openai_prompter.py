@@ -775,7 +775,7 @@ def test_openai_prompter_with_text_file():
             assert len(messages[0]["content"]) == 2
             text_message = messages[0]["content"][1]
             assert text_message["type"] == "input_text"
-            assert text_message["text"] == "File contents: This is a plain text document."
+            assert text_message["text"] == "<file_text_plain>This is a plain text document.</file_text_plain>"
         finally:
             os.unlink(temp_path)
 
