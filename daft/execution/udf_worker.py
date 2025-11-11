@@ -36,10 +36,6 @@ def udf_event_loop(
     if name != _ENTER:
         raise ValueError(f"Expected '{_ENTER}' but got {name}")
 
-    udf_id = os.environ.get("DAFT_UDF_ID")
-    if udf_id is None:
-        raise RuntimeError("DAFT_UDF_ID environment variable is not set for UDF worker")
-
     transport = SharedMemoryTransport()
 
     # Set the compute runtime num worker threads to 1 for the UDF worker

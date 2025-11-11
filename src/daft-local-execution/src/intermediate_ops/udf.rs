@@ -194,7 +194,7 @@ impl UdfHandle {
                 Ok::<pyo3::Py<pyo3::PyAny>, PyErr>(
                     py.import(pyo3::intern!(py, "daft.execution.udf"))?
                         .getattr(pyo3::intern!(py, "UdfHandle"))?
-                        .call1((py_expr, self.params.udf_properties.name.as_str()))?
+                        .call1((py_expr,))?
                         .unbind(),
                 )
             })?;

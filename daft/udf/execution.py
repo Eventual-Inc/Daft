@@ -29,7 +29,6 @@ def replace_expressions_with_evaluated_args(
 
 
 async def call_async_func_batched(
-    udf_id: str,
     cls: ClsBase[C],
     method: Callable[Concatenate[C, ...], Any],
     return_dtype: PyDataType,
@@ -47,7 +46,7 @@ async def call_async_func_batched(
         tasks.append(coroutine)
 
     dtype = DataType._from_pydatatype(return_dtype)
-    with metrics._metrics_context(udf_id) as ctx:
+    with metrics._metrics_context() as ctx:
         outputs = await asyncio.gather(*tasks)
     metrics_payload = ctx.payload()
 
@@ -56,7 +55,6 @@ async def call_async_func_batched(
 
 
 def call_func(
-    udf_id: str,
     cls: ClsBase[C],
     method: Callable[Concatenate[C, ...], Any],
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
@@ -67,7 +65,7 @@ def call_func(
 
     bound_method = cls._daft_bind_method(method)
 
-    with metrics._metrics_context(udf_id) as ctx:
+    with metrics._metrics_context() as ctx:
         output = bound_method(*args, **kwargs)
     metrics_payload = ctx.payload()
 
@@ -75,7 +73,6 @@ def call_func(
 
 
 def call_batch_func(
-    udf_id: str,
     cls: ClsBase[C],
     method: Callable[Concatenate[C, ...], Series],
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
@@ -87,7 +84,7 @@ def call_batch_func(
 
     bound_method = cls._daft_bind_method(method)
 
-    with metrics._metrics_context(udf_id) as ctx:
+    with metrics._metrics_context() as ctx:
         output = bound_method(*args, **kwargs)
     metrics_payload = ctx.payload()
 
@@ -106,7 +103,6 @@ def call_batch_func(
 
 
 async def call_batch_async(
-    udf_id: str,
     cls: ClsBase[C],
     method: Callable[Concatenate[C, ...], Coroutine[Any, Any, Series]],
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
@@ -118,7 +114,7 @@ async def call_batch_async(
 
     bound_coroutine: Callable[..., Coroutine[Any, Any, Series]] = cls._daft_bind_coroutine_method(method)
 
-    with metrics._metrics_context(udf_id) as ctx:
+    with metrics._metrics_context() as ctx:
         output = await bound_coroutine(*args, **kwargs)
     metrics_payload = ctx.payload()
 

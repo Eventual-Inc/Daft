@@ -120,7 +120,6 @@ impl BatchPyFn {
                     .getattr(pyo3::intern!(py, "call_batch_func"))?;
 
                 let result = func.call1((
-                    self.function_name.as_ref(),
                     self.cls.as_ref(),
                     self.method.as_ref(),
                     self.original_args.as_ref(),
@@ -258,7 +257,6 @@ impl BatchPyFn {
         let method = self.method.clone();
         let original_args = self.original_args.clone();
         let args = args.to_vec();
-        let udf_id = self.function_name.to_string();
 
         let result_any =
             common_runtime::python::execute_python_coroutine::<_, Py<PyAny>>(move |py| {
@@ -272,7 +270,6 @@ impl BatchPyFn {
                     .collect::<Vec<_>>();
 
                 let result = f.call1((
-                    udf_id.as_str(),
                     cls.as_ref(),
                     method.as_ref(),
                     original_args.as_ref(),

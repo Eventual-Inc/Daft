@@ -53,7 +53,7 @@ class SharedMemoryTransport:
 
 
 class UdfHandle:
-    def __init__(self, udf_expr: PyExpr, udf_id: str) -> None:
+    def __init__(self, udf_expr: PyExpr) -> None:
         # Construct UNIX socket path for basic communication
         with tempfile.NamedTemporaryFile(delete=True) as tmp:
             self.socket_path = tmp.name
@@ -76,7 +76,6 @@ class UdfHandle:
 
         # Python auto-buffers stdout by default, so disable
         env["PYTHONUNBUFFERED"] = "1"
-        env["DAFT_UDF_ID"] = udf_id
 
         # Start the worker process
         self.process = subprocess.Popen(
