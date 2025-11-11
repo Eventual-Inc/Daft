@@ -12,7 +12,6 @@ from daft.dependencies import np
 from daft.file import File
 
 if TYPE_CHECKING:
-    import numpy.typing as npt
     from pydantic import BaseModel
 
     from daft.ai.openai.typing import OpenAIProviderOptions
@@ -117,20 +116,22 @@ class OpenAIPrompter(Prompter):
             return self._build_image_message(encoded_content)
         return self._build_file_message(encoded_content)
 
-    @_process_message.register(np.ndarray)
-    def _process_image_message(self, msg: npt.NDArray[Any]) -> dict[str, Any]:
-        """Handle numpy array messages (images)."""
-        import base64
-        import io
+    if np.module_available():  # type: ignore[attr-defined]
 
-        from daft.dependencies import pil_image
+        @_process_message.register(np.ndarray)
+        def _process_image_message(self, msg: np.typing.NDArray[Any]) -> dict[str, Any]:
+            """Handle numpy array messages (images)."""
+            import base64
+            import io
 
-        pil_image = pil_image.fromarray(msg)
-        bio = io.BytesIO()
-        pil_image.save(bio, "PNG")
-        base64_string = base64.b64encode(bio.getvalue()).decode("utf-8")
-        encoded_content = f"data:image/png;base64,{base64_string}"
-        return self._build_image_message(encoded_content)
+            from daft.dependencies import pil_image
+
+            pil_image = pil_image.fromarray(msg)
+            bio = io.BytesIO()
+            pil_image.save(bio, "PNG")
+            base64_string = base64.b64encode(bio.getvalue()).decode("utf-8")
+            encoded_content = f"data:image/png;base64,{base64_string}"
+            return self._build_image_message(encoded_content)
 
     def _encode_file(self, file_obj: File) -> tuple[str, str]:
         import base64
