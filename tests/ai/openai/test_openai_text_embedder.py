@@ -241,7 +241,7 @@ def test_embed_text_with_none_values(mock_text_embedder, mock_client):
     mock_client.embeddings.create.return_value = mock_response
 
     # Test with None values mixed with regular strings
-    result = mock_text_embedder.embed_text([None, "Hello", None])
+    result = run(mock_text_embedder.embed_text([None, "Hello", None]))
 
     assert len(result) == 3
     for embedding in result:
