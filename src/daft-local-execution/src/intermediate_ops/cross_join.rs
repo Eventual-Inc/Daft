@@ -54,7 +54,7 @@ fn empty_result(
 ) -> DaftResult<(CrossJoinState, IntermediateOperatorOutput)> {
     let empty = Arc::new(MicroPartition::empty(Some(output_schema)));
 
-    Ok((state, IntermediateOperatorOutput::Yield(empty)))
+    Ok((state, IntermediateOperatorOutput::NeedMoreInput(empty)))
 }
 
 impl IntermediateOperator for CrossJoinOperator {
@@ -111,10 +111,10 @@ impl IntermediateOperator for CrossJoinOperator {
 
                     let result = if state.stream_idx == 0 && state.collect_idx == 0 {
                         // finished the outer loop, move onto next input
-                        IntermediateOperatorOutput::Yield(output_morsel)
+                        IntermediateOperatorOutput::NeedMoreInput(output_morsel)
                     } else {
                         // still looping through tables
-                        IntermediateOperatorOutput::Pending(output_morsel)
+                        IntermediateOperatorOutput::HasMoreOutput(output_morsel)
                     };
                     Ok((state, result))
                 },

@@ -31,14 +31,14 @@ pub enum StreamingSinkOutput {
     AwaitingInput,
     /// Sink processed input and is yielding output,
     /// ready for next input (stateless operation)
-    Yield(Arc<MicroPartition>),
+    NeedMoreInput(Arc<MicroPartition>),
     /// Sink has buffered output to emit,
     /// not ready for new input (stateful operation)
     ///
     /// Note: this is mostly used when the operator changes the cardinality or can produce multiple partitions for a given input partition.
     /// Operations such as a cross-join can produce multiple partitions for a given input partition.
     #[allow(unused)]
-    Pending(Arc<MicroPartition>),
+    HasMoreOutput(Arc<MicroPartition>),
     /// Sink has finished processing with final output
     FinishedWithOutput(Arc<MicroPartition>),
     /// Sink has finished processing, no remaining output
@@ -180,13 +180,13 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                         break;
                     }
 
-                    StreamingSinkOutput::Yield(mp) => {
+                    StreamingSinkOutput::NeedMoreInput(mp) => {
                         if output_sender.send(mp).await.is_err() {
                             return Ok(state);
                         }
                         break;
                     }
-                    StreamingSinkOutput::Pending(mp) => {
+                    StreamingSinkOutput::HasMoreOutput(mp) => {
                         if output_sender.send(mp).await.is_err() {
                             return Ok(state);
                         }

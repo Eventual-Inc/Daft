@@ -26,7 +26,7 @@ impl StreamingSink for ConcatSink {
         state: Self::State,
         _spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult<Self> {
-        Ok((state, StreamingSinkOutput::Yield(input))).into()
+        Ok((state, StreamingSinkOutput::NeedMoreInput(input))).into()
     }
 
     fn name(&self) -> NodeName {

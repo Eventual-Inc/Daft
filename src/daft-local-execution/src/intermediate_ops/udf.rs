@@ -358,7 +358,7 @@ impl IntermediateOperator for UdfOperator {
                 let res = state
                     .udf_handle
                     .eval_input(input)
-                    .map(IntermediateOperatorOutput::Yield)?;
+                    .map(IntermediateOperatorOutput::NeedMoreInput)?;
                 Ok((state, res))
             },
             Span::current(),

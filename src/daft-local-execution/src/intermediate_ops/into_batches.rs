@@ -47,7 +47,7 @@ impl IntermediateOperator for IntoBatchesOperator {
                         )),
                         None => Arc::new(MicroPartition::empty(Some(input.schema()))),
                     };
-                    Ok((state, IntermediateOperatorOutput::Yield(out)))
+                    Ok((state, IntermediateOperatorOutput::NeedMoreInput(out)))
                 },
                 Span::current(),
             )

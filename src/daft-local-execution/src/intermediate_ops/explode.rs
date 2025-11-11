@@ -45,7 +45,10 @@ impl IntermediateOperator for ExplodeOperator {
             .spawn(
                 async move {
                     let out = input.explode(&to_explode)?;
-                    Ok((state, IntermediateOperatorOutput::Yield(Arc::new(out))))
+                    Ok((
+                        state,
+                        IntermediateOperatorOutput::NeedMoreInput(Arc::new(out)),
+                    ))
                 },
                 Span::current(),
             )

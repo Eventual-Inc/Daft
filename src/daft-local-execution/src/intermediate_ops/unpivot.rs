@@ -60,7 +60,10 @@ impl IntermediateOperator for UnpivotOperator {
                         &params.variable_name,
                         &params.value_name,
                     )?;
-                    Ok((state, IntermediateOperatorOutput::Yield(Arc::new(out))))
+                    Ok((
+                        state,
+                        IntermediateOperatorOutput::NeedMoreInput(Arc::new(out)),
+                    ))
                 },
                 Span::current(),
             )

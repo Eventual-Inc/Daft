@@ -89,7 +89,10 @@ impl IntermediateOperator for FilterOperator {
             .spawn(
                 async move {
                     let out = input.filter(&[predicate])?;
-                    Ok((state, IntermediateOperatorOutput::Yield(Arc::new(out))))
+                    Ok((
+                        state,
+                        IntermediateOperatorOutput::NeedMoreInput(Arc::new(out)),
+                    ))
                 },
                 Span::current(),
             )

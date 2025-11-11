@@ -162,7 +162,7 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
     ) -> IntermediateOpExecuteResult<Self> {
         if input.is_empty() {
             let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
-            return Ok((state, IntermediateOperatorOutput::Yield(empty))).into();
+            return Ok((state, IntermediateOperatorOutput::NeedMoreInput(empty))).into();
         }
 
         let params = self.params.clone();
@@ -181,7 +181,7 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
                         params.build_on_left,
                         &output_schema,
                     );
-                    Ok((state, IntermediateOperatorOutput::Yield(res?)))
+                    Ok((state, IntermediateOperatorOutput::NeedMoreInput(res?)))
                 },
                 Span::current(),
             )

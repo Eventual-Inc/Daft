@@ -148,7 +148,7 @@ impl StreamingSink for AsyncUdfSink {
                                 Arc::new(ready_batches),
                                 None,
                             ));
-                            Ok((state, StreamingSinkOutput::Yield(output)))
+                            Ok((state, StreamingSinkOutput::NeedMoreInput(output)))
                         }
                     },
                     Span::current(),

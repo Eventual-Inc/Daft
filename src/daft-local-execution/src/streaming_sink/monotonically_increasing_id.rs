@@ -82,7 +82,7 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
                         None,
                     );
 
-                    Ok((state, StreamingSinkOutput::Yield(Arc::new(out))))
+                    Ok((state, StreamingSinkOutput::NeedMoreInput(Arc::new(out))))
                 },
                 Span::current(),
             )

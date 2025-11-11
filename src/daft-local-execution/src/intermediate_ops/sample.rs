@@ -72,7 +72,10 @@ impl IntermediateOperator for SampleOperator {
                             input.sample_by_size(*size, params.with_replacement, params.seed)?
                         }
                     };
-                    Ok((state, IntermediateOperatorOutput::Yield(Arc::new(out))))
+                    Ok((
+                        state,
+                        IntermediateOperatorOutput::NeedMoreInput(Arc::new(out)),
+                    ))
                 },
                 Span::current(),
             )

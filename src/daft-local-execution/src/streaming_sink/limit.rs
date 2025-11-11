@@ -65,7 +65,9 @@ impl StreamingSink for LimitSink {
             if skip_num_rows >= input_num_rows {
                 return Ok((
                     state,
-                    StreamingSinkOutput::Yield(MicroPartition::empty(Some(input.schema())).into()),
+                    StreamingSinkOutput::NeedMoreInput(
+                        MicroPartition::empty(Some(input.schema())).into(),
+                    ),
                 ))
                 .into();
             }
@@ -77,7 +79,7 @@ impl StreamingSink for LimitSink {
         match input_num_rows.cmp(remaining_take) {
             Less => {
                 *remaining_take -= input_num_rows;
-                Ok((state, StreamingSinkOutput::Yield(input))).into()
+                Ok((state, StreamingSinkOutput::NeedMoreInput(input))).into()
             }
             Equal => {
                 *remaining_take = 0;

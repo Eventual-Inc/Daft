@@ -547,7 +547,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
     ) -> StreamingSinkExecuteResult<Self> {
         if input.is_empty() {
             let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
-            return Ok((state, StreamingSinkOutput::Yield(empty))).into();
+            return Ok((state, StreamingSinkOutput::NeedMoreInput(empty))).into();
         }
 
         let needs_bitmap = self.needs_bitmap;
@@ -609,7 +609,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
                         "Only Left, Right, and Outer joins are supported in OuterHashJoinProbeSink"
                     ),
                     }?;
-                    Ok((state, StreamingSinkOutput::Yield(out)))
+                    Ok((state, StreamingSinkOutput::NeedMoreInput(out)))
                 },
                 Span::current(),
             )

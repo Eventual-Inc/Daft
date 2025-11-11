@@ -158,7 +158,7 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
                         .actor_handle
                         .eval_input(input)
                         .await
-                        .map(IntermediateOperatorOutput::Yield)?;
+                        .map(IntermediateOperatorOutput::NeedMoreInput)?;
                     Ok((state, res))
                 },
                 Span::current(),

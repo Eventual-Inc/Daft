@@ -390,7 +390,7 @@ impl StreamingSink for VLLMSink {
 
                     let output = this.poll_tasks(&state)?;
                     let output = match output {
-                        Some(output) => StreamingSinkOutput::Yield(output),
+                        Some(output) => StreamingSinkOutput::NeedMoreInput(output),
                         None => StreamingSinkOutput::AwaitingInput,
                     };
 

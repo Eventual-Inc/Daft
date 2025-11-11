@@ -29,13 +29,13 @@ use crate::{
 pub enum IntermediateOperatorOutput {
     /// Sink processed input and is yielding output,
     /// ready for next input (stateless operation)
-    Yield(Arc<MicroPartition>),
+    NeedMoreInput(Arc<MicroPartition>),
     /// Operator has buffered output to emit,
     /// not ready for new input (stateful operation)
     ///
     /// Note: this is mostly used when the operator changes the cardinality or can produce multiple partitions for a given input partition.
     /// Operations such as a cross-join can produce multiple partitions for a given input partition.
-    Pending(Arc<MicroPartition>),
+    HasMoreOutput(Arc<MicroPartition>),
 }
 
 pub(crate) type IntermediateOpExecuteResult<Op> = OperatorOutput<
@@ -143,13 +143,13 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 let result = op.execute(morsel.clone(), state, &task_spawner).await??;
                 state = result.0;
                 match result.1 {
-                    IntermediateOperatorOutput::Yield(mp) => {
+                    IntermediateOperatorOutput::NeedMoreInput(mp) => {
                         if sender.send(mp).await.is_err() {
                             return Ok(());
                         }
                         break;
                     }
-                    IntermediateOperatorOutput::Pending(mp) => {
+                    IntermediateOperatorOutput::HasMoreOutput(mp) => {
                         if sender.send(mp).await.is_err() {
                             return Ok(());
                         }

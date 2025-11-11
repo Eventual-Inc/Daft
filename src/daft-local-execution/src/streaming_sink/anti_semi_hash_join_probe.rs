@@ -211,7 +211,7 @@ impl StreamingSink for AntiSemiProbeSink {
     ) -> StreamingSinkExecuteResult<Self> {
         if input.is_empty() {
             let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
-            return Ok((state, StreamingSinkOutput::Yield(empty))).into();
+            return Ok((state, StreamingSinkOutput::NeedMoreInput(empty))).into();
         }
 
         let params = self.params.clone();
@@ -232,7 +232,7 @@ impl StreamingSink for AntiSemiProbeSink {
                     } else {
                         let res =
                             Self::probe_anti_semi(&params.probe_on, ps, &input, params.is_semi);
-                        Ok((state, StreamingSinkOutput::Yield(res?)))
+                        Ok((state, StreamingSinkOutput::NeedMoreInput(res?)))
                     }
                 },
                 Span::current(),
