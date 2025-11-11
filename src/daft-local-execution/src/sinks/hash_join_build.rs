@@ -148,7 +148,7 @@ impl RuntimeStats for HashJoinBuildRuntimeStats {
 
     fn add_cpu_us(&self, cpu_us: u64) {
         self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
-        self.cpu_us_otel.add(cpu_us, &[]);
+        self.cpu_us_otel.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
