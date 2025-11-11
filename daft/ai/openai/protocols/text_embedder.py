@@ -31,6 +31,7 @@ class _ModelProfile:
     """
 
     dimensions: EmbeddingDimensions
+    supports_overriding_dimensions: bool
 
 
 _models: dict[EmbeddingModel, _ModelProfile] = {
@@ -39,18 +40,21 @@ _models: dict[EmbeddingModel, _ModelProfile] = {
             size=1536,
             dtype=DataType.float32(),
         ),
+        supports_overriding_dimensions=False,
     ),
     "text-embedding-3-small": _ModelProfile(
         dimensions=EmbeddingDimensions(
             size=1536,
             dtype=DataType.float32(),
         ),
+        supports_overriding_dimensions=True,
     ),
     "text-embedding-3-large": _ModelProfile(
         dimensions=EmbeddingDimensions(
             size=3072,
             dtype=DataType.float32(),
         ),
+        supports_overriding_dimensions=True,
     ),
 }
 
@@ -60,7 +64,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
     provider_name: str
     provider_options: OpenAIProviderOptions
     model_name: str
-    dimensions: int
+    dimensions: int | None
     model_options: Options
 
     def __post_init__(self) -> None:
@@ -107,6 +111,8 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
 
     Unlike OpenAI, LM Studio can load different models with varying embedding dimensions.
     This descriptor queries the local server to get the actual model dimensions.
+
+    TODO check if I need to change this
     """
 
     provider_name: str
@@ -161,9 +167,9 @@ class OpenAITextEmbedder(TextEmbedder):
 
     _client: AsyncOpenAI
     _model: str
-    _dimensions: int
+    _dimensions: int | None
 
-    def __init__(self, client: AsyncOpenAI, model: str, dimensions: int, zero_on_failure: bool = False):
+    def __init__(self, client: AsyncOpenAI, model: str, dimensions: int | None = None, zero_on_failure: bool = False):
         self._client = client
         self._model = model
         self._zero_on_failure = zero_on_failure

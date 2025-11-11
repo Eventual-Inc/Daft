@@ -54,11 +54,16 @@ def test_embed_text_sanity_all_models(session):
         }
     )
 
-    # assert success for all models
-    for model in _models.keys():
-        df = df.with_column("embedding", embed_text(df["text"], model=model))
-        df.collect()
-        time.sleep(1)  # self limit to ~1 tps.
+    # assert success for all models, plus the default model
+    for model in list(_models.keys()) + [None]:
+        dimensions_overrides = [None]
+        if model is None or _models[model].supports_overriding_dimensions:
+            dimensions_overrides.append(256)
+        for dimensions in dimensions_overrides:
+            print(model, dimensions)
+            df = df.with_column("embedding", embed_text(df["text"], model=model, dimensions=dimensions))
+            df.collect()
+            time.sleep(1)  # self limit to ~1 tps.
 
 
 @pytest.mark.integration()

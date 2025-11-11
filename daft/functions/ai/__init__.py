@@ -78,6 +78,7 @@ def embed_text(
             The provider to use for the embedding model. If None, the default provider is used.
         model (str | None):
             The embedding model to use. Can be a model instance or a model name. If None, the default model is used.
+        TODO dimensions
         **options: Any additional options to pass for the model.
 
     Note:
