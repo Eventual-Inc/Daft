@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import re
 
-# create a large dataframe with multiple micropartitions and batches
 import numpy as np
 import pytest
 
