@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     import fsspec
     import numpy as np
     import pandas as pd
+    import PIL
     import PIL.Image as pil_image
     import pyarrow as pa
     import pyarrow.compute as pc
@@ -25,6 +26,7 @@ else:
     fsspec = LazyImport("fsspec")
     np = LazyImport("numpy")
     pd = LazyImport("pandas")
+    PIL = LazyImport("PIL")
     pil_image = LazyImport("PIL.Image")
     pa = LazyImport("pyarrow")
     pacsv = LazyImport("pyarrow.csv")
@@ -40,6 +42,7 @@ else:
 unity_catalog = LazyImport("daft.unity_catalog")
 
 __all__ = [
+    "PIL",
     "av",
     "flight",
     "fsspec",

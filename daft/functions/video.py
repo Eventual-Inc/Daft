@@ -10,7 +10,7 @@ from daft.udf.udf_v2 import Func
 
 if TYPE_CHECKING:
     from daft import Expression
-    from daft.dependencies import pil_image as Image
+    from daft.dependencies import PIL
 
 
 def get_metadata_impl(
@@ -45,7 +45,9 @@ def video_metadata(
     return video_metadata_fn(file_expr)
 
 
-def keyframes_impl(file: daft.VideoFile, *, start_time: float = 0, end_time: float | None = None) -> list[Image.Image]:
+def keyframes_impl(
+    file: daft.VideoFile, *, start_time: float = 0, end_time: float | None = None
+) -> list[PIL.Image.Image]:
     return list(file.keyframes(start_time, end_time))
 
 
