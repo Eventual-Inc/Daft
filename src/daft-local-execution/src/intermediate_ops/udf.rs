@@ -9,7 +9,7 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use common_metrics::{Stat, StatSnapshotSend, ops::NodeType, smallvec};
+use common_metrics::{Stat, StatSnapshotSend, ops::NodeType};
 use common_resource_request::ResourceRequest;
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
@@ -30,6 +30,7 @@ use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
 #[cfg(feature = "python")]
 use pyo3::{Py, prelude::*};
+use smallvec::SmallVec;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{
@@ -98,24 +99,21 @@ impl RuntimeStats for UdfRuntimeStats {
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
-        let mut entries = smallvec![];
+        let counters = self.counters.lock().unwrap();
+        let mut entries = SmallVec::with_capacity(3 + counters.len());
 
         entries.push((
-            Arc::<str>::from(CPU_US_KEY),
+            CPU_US_KEY.into(),
             Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
         ));
+        entries.push((ROWS_IN_KEY.into(), Stat::Count(self.rows_in.load(ordering))));
         entries.push((
-            Arc::<str>::from(ROWS_IN_KEY),
-            Stat::Count(self.rows_in.load(ordering)),
-        ));
-        entries.push((
-            Arc::<str>::from(ROWS_OUT_KEY),
+            ROWS_OUT_KEY.into(),
             Stat::Count(self.rows_out.load(ordering)),
         ));
 
-        let counters = self.counters.lock().unwrap();
         for (name, value) in counters.iter() {
-            entries.push((name.clone(), Stat::Count(*value)));
+            entries.push((name.clone().into(), Stat::Count(*value)));
         }
 
         StatSnapshotSend(entries)

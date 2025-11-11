@@ -92,7 +92,7 @@ impl Subscriber for DebugSubscriber {
         for node_id in stats {
             eprintln!("  Node `{}`", node_id.0);
             for (name, stat) in node_id.1.clone() {
-                eprintln!("  - {} = {}", name.as_ref(), stat);
+                eprintln!("  - {} = {}", name.as_str(), stat);
             }
         }
         Ok(())

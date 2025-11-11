@@ -49,6 +49,38 @@ impl std::fmt::Display for Stat {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StatKeyType {
+    Static(&'static str),
+    Dynamic(Arc<str>),
+}
+
+impl StatKeyType {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Static(name) => name,
+            Self::Dynamic(name) => name.as_ref(),
+        }
+    }
+}
+
+impl From<&'static str> for StatKeyType {
+    fn from(name: &'static str) -> Self {
+        Self::Static(name)
+    }
+}
+
+impl From<Arc<str>> for StatKeyType {
+    fn from(name: Arc<str>) -> Self {
+        Self::Dynamic(name)
+    }
+}
+
+impl From<String> for StatKeyType {
+    fn from(name: String) -> Self {
+        Self::Dynamic(name.into())
+    }
+}
 /// A sendable statistics snapshot of the metrics for a given node.
 ///
 /// The general length of a snapshot is 3, because the 3 most common values are
@@ -59,11 +91,11 @@ impl std::fmt::Display for Stat {
 /// This is intended to be lightweight for execution to generate while still
 /// encoding to the same format as the receivable end.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct StatSnapshotSend(pub SmallVec<[(Arc<str>, Stat); 3]>);
+pub struct StatSnapshotSend(pub SmallVec<[(StatKeyType, Stat); 3]>);
 
 impl StatSnapshotSend {
     pub fn names(&self) -> impl Iterator<Item = &str> + '_ {
-        self.0.iter().map(|(name, _)| name.as_ref())
+        self.0.iter().map(|(name, _)| name.as_str())
     }
 
     pub fn values(&self) -> impl Iterator<Item = &Stat> + '_ {
@@ -71,20 +103,20 @@ impl StatSnapshotSend {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&str, &Stat)> + '_ {
-        self.0.iter().map(|(name, value)| (name.as_ref(), value))
+        self.0.iter().map(|(name, value)| (name.as_str(), value))
     }
 }
 
 impl Index<usize> for StatSnapshotSend {
-    type Output = (Arc<str>, Stat);
+    type Output = (StatKeyType, Stat);
     fn index(&self, index: usize) -> &Self::Output {
         &self.0[index]
     }
 }
 
 impl IntoIterator for StatSnapshotSend {
-    type Item = (Arc<str>, Stat);
-    type IntoIter = smallvec::IntoIter<[(Arc<str>, Stat); 3]>;
+    type Item = (StatKeyType, Stat);
+    type IntoIter = smallvec::IntoIter<[(StatKeyType, Stat); 3]>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
@@ -94,7 +126,7 @@ impl IntoIterator for StatSnapshotSend {
 macro_rules! snapshot {
     ($($name:expr; $value:expr),* $(,)?) => {
         StatSnapshotSend(smallvec![
-            $( (::std::sync::Arc::<str>::from($name), $value) ),*
+            $( ($name.into(), $value) ),*
         ])
     };
 }
@@ -108,7 +140,7 @@ macro_rules! snapshot {
 pub struct StatSnapshotRecv(Vec<(String, Stat)>);
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct StatSnapshotView(SmallVec<[(Arc<str>, Stat); 3]>);
+pub struct StatSnapshotView(SmallVec<[(StatKeyType, Stat); 3]>);
 
 impl From<StatSnapshotSend> for StatSnapshotView {
     fn from(snapshot: StatSnapshotSend) -> Self {
@@ -125,20 +157,20 @@ impl StatSnapshotView {
 }
 
 pub struct StatSnapshotViewIter<'a> {
-    inner: slice::Iter<'a, (Arc<str>, Stat)>,
+    inner: slice::Iter<'a, (StatKeyType, Stat)>,
 }
 
 impl<'a> Iterator for StatSnapshotViewIter<'a> {
     type Item = (&'a str, &'a Stat);
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next().map(|(name, stat)| (name.as_ref(), stat))
+        self.inner.next().map(|(name, stat)| (name.as_str(), stat))
     }
 }
 
 impl IntoIterator for StatSnapshotView {
-    type Item = (Arc<str>, Stat);
-    type IntoIter = smallvec::IntoIter<[(Arc<str>, Stat); 3]>;
+    type Item = (StatKeyType, Stat);
+    type IntoIter = smallvec::IntoIter<[(StatKeyType, Stat); 3]>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
