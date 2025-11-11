@@ -28,7 +28,9 @@ use tokio::{
     time::interval,
 };
 use tracing::{Instrument, instrument::Instrumented};
-pub use values::{CPU_US_KEY, DefaultRuntimeStats, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats};
+pub use values::{
+    CPU_US_KEY, Counter, DefaultRuntimeStats, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats,
+};
 
 use crate::{
     channel::{Receiver, Sender},

@@ -1,8 +1,5 @@
 use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::{Arc, atomic::Ordering},
     time::Duration,
 };
 
@@ -20,25 +17,23 @@ use daft_io::IOStatsRef;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use futures::{StreamExt, stream::BoxStream};
-use opentelemetry::{KeyValue, global, metrics::Counter};
+use opentelemetry::{KeyValue, global};
 
 use crate::{
     ExecutionRuntimeContext,
     channel::{Receiver, create_channel},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
-    runtime_stats::{CPU_US_KEY, CountingSender, ROWS_OUT_KEY, RuntimeStats},
+    runtime_stats::{CPU_US_KEY, Counter, CountingSender, ROWS_OUT_KEY, RuntimeStats},
 };
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
 
 pub(crate) struct SourceStats {
-    cpu_us: AtomicU64,
-    rows_out: AtomicU64,
+    cpu_us: Counter,
+    rows_out: Counter,
     io_stats: IOStatsRef,
 
     node_kv: Vec<KeyValue>,
-    cpu_us_otel: Counter<u64>,
-    rows_out_otel: Counter<u64>,
 }
 
 impl SourceStats {
@@ -47,13 +42,11 @@ impl SourceStats {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: AtomicU64::new(0),
-            rows_out: AtomicU64::new(0),
+            cpu_us: Counter::new(&meter, "cpu_us".into()),
+            rows_out: Counter::new(&meter, "rows_out".into()),
             io_stats: IOStatsRef::default(),
 
             node_kv,
-            cpu_us_otel: meter.u64_counter("cpu_us").build(),
-            rows_out_otel: meter.u64_counter("rows_out").build(),
         }
     }
 }
@@ -76,13 +69,11 @@ impl RuntimeStats for SourceStats {
     }
 
     fn add_rows_out(&self, rows: u64) {
-        self.rows_out.fetch_add(rows, Ordering::Relaxed);
-        self.rows_out_otel.add(rows, self.node_kv.as_slice());
+        self.rows_out.add(rows, self.node_kv.as_slice());
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
-        self.cpu_us_otel.add(cpu_us, self.node_kv.as_slice());
+        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 

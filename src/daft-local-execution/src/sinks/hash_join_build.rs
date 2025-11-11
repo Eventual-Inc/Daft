@@ -1,8 +1,5 @@
 use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::{Arc, atomic::Ordering},
     time::Duration,
 };
 
@@ -13,7 +10,7 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::{ProbeState, ProbeableBuilder, RecordBatch, make_probeable_builder};
 use itertools::Itertools;
-use opentelemetry::{KeyValue, global, metrics::Counter};
+use opentelemetry::{KeyValue, global};
 use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
@@ -23,7 +20,7 @@ use super::blocking_sink::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::NodeName,
-    runtime_stats::{CPU_US_KEY, RuntimeStats},
+    runtime_stats::{CPU_US_KEY, Counter, RuntimeStats},
     state_bridge::BroadcastStateBridgeRef,
 };
 
@@ -101,26 +98,19 @@ impl ProbeTableState {
 }
 
 struct HashJoinBuildRuntimeStats {
-    cpu_us: AtomicU64,
-    rows_in: AtomicU64,
+    cpu_us: Counter,
+    rows_in: Counter,
 
     node_kv: Vec<KeyValue>,
-    cpu_us_otel: Counter<u64>,
-    rows_in_otel: Counter<u64>,
 }
 impl HashJoinBuildRuntimeStats {
     pub fn new(id: usize) -> Self {
         let meter = global::meter("daft.local.node_stats");
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
-        let cpu_us_otel = meter.u64_counter("cpu_us").build();
-        let rows_in_otel = meter.u64_counter("rows_in").build();
         Self {
-            cpu_us: AtomicU64::new(0),
-            rows_in: AtomicU64::new(0),
-
+            cpu_us: Counter::new(&meter, "cpu_us".into()),
+            rows_in: Counter::new(&meter, "rows_in".into()),
             node_kv,
-            cpu_us_otel,
-            rows_in_otel,
         }
     }
 }
@@ -138,8 +128,7 @@ impl RuntimeStats for HashJoinBuildRuntimeStats {
     }
 
     fn add_rows_in(&self, rows: u64) {
-        self.rows_in.fetch_add(rows, Ordering::Relaxed);
-        self.rows_in_otel.add(rows, self.node_kv.as_slice());
+        self.rows_in.add(rows, self.node_kv.as_slice());
     }
 
     fn add_rows_out(&self, _: u64) {
@@ -147,8 +136,7 @@ impl RuntimeStats for HashJoinBuildRuntimeStats {
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
-        self.cpu_us_otel.add(cpu_us, self.node_kv.as_slice());
+        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
