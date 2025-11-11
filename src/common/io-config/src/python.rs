@@ -172,6 +172,12 @@ pub struct HuggingFaceConfig {
     pub config: crate::HuggingFaceConfig,
 }
 
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[pyclass(module = "daft.daft")]
+pub struct TosConfig {
+    pub config: crate::TosConfig,
+}
+
 #[pymethods]
 impl IOConfig {
     #[new]
@@ -182,7 +188,8 @@ impl IOConfig {
         gcs=None,
         http=None,
         unity=None,
-        hf=None
+        hf=None,
+        tos=None,
     ))]
     pub fn new(
         s3: Option<S3Config>,
@@ -191,6 +198,7 @@ impl IOConfig {
         http: Option<HTTPConfig>,
         unity: Option<UnityConfig>,
         hf: Option<HuggingFaceConfig>,
+        tos: Option<TosConfig>,
     ) -> Self {
         Self {
             config: config::IOConfig {
@@ -200,10 +208,12 @@ impl IOConfig {
                 http: http.unwrap_or_default().config,
                 unity: unity.unwrap_or_default().config,
                 hf: hf.unwrap_or_default().config,
+                tos: tos.unwrap_or_default().config,
             },
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[must_use]
     #[pyo3(signature = (
         s3=None,
@@ -211,7 +221,8 @@ impl IOConfig {
         gcs=None,
         http=None,
         unity=None,
-        hf=None
+        hf=None,
+        tos=None,
     ))]
     pub fn replace(
         &self,
@@ -221,6 +232,7 @@ impl IOConfig {
         http: Option<HTTPConfig>,
         unity: Option<UnityConfig>,
         hf: Option<HuggingFaceConfig>,
+        tos: Option<TosConfig>,
     ) -> Self {
         Self {
             config: config::IOConfig {
@@ -242,6 +254,9 @@ impl IOConfig {
                 hf: hf
                     .map(|hf| hf.config)
                     .unwrap_or_else(|| self.config.hf.clone()),
+                tos: tos
+                    .map(|tos| tos.config)
+                    .unwrap_or_else(|| self.config.tos.clone()),
             },
         }
     }
@@ -293,6 +308,13 @@ impl IOConfig {
     pub fn hf(&self) -> PyResult<HuggingFaceConfig> {
         Ok(HuggingFaceConfig {
             config: self.config.hf.clone(),
+        })
+    }
+
+    #[getter]
+    pub fn tos(&self) -> PyResult<TosConfig> {
+        Ok(TosConfig {
+            config: self.config.tos.clone(),
         })
     }
 
@@ -1281,6 +1303,182 @@ impl HuggingFaceConfig {
     }
 }
 
+#[pymethods]
+impl TosConfig {
+    #[allow(clippy::too_many_arguments)]
+    #[new]
+    #[pyo3(signature = (
+        region=None,
+        endpoint=None,
+        access_key=None,
+        secret_key=None,
+        security_token=None,
+        anonymous=None,
+        max_retries=None,
+        retry_timeout_ms=None,
+        connect_timeout_ms=None,
+        read_timeout_ms=None,
+        max_concurrent_requests=None,
+        max_connections=None,
+    ))]
+    pub fn new(
+        region: Option<String>,
+        endpoint: Option<String>,
+        access_key: Option<String>,
+        secret_key: Option<String>,
+        security_token: Option<String>,
+        anonymous: Option<bool>,
+        max_retries: Option<u32>,
+        retry_timeout_ms: Option<u64>,
+        connect_timeout_ms: Option<u64>,
+        read_timeout_ms: Option<u64>,
+        max_concurrent_requests: Option<u32>,
+        max_connections: Option<u32>,
+    ) -> PyResult<Self> {
+        let def = crate::TosConfig::default();
+        Ok(Self {
+            config: crate::TosConfig {
+                region: region.or(def.region),
+                endpoint: endpoint.or(def.endpoint),
+                access_key: access_key.or(def.access_key),
+                secret_key: secret_key.map(std::convert::Into::into).or(def.secret_key),
+                security_token: security_token
+                    .map(std::convert::Into::into)
+                    .or(def.security_token),
+                anonymous: anonymous.unwrap_or(def.anonymous),
+                max_retries: max_retries.unwrap_or(def.max_retries),
+                retry_timeout_ms: retry_timeout_ms.unwrap_or(def.retry_timeout_ms),
+                connect_timeout_ms: connect_timeout_ms.unwrap_or(def.connect_timeout_ms),
+                read_timeout_ms: read_timeout_ms.unwrap_or(def.read_timeout_ms),
+                max_concurrent_requests: max_concurrent_requests
+                    .unwrap_or(def.max_concurrent_requests),
+                max_connections_per_io_thread: max_connections
+                    .unwrap_or(def.max_connections_per_io_thread),
+            },
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        region=None,
+        endpoint=None,
+        access_key=None,
+        secret_key=None,
+        security_token=None,
+        anonymous=None,
+        max_retries=None,
+        retry_timeout_ms=None,
+        connect_timeout_ms=None,
+        read_timeout_ms=None,
+        max_concurrent_requests=None,
+        max_connections=None,
+    ))]
+    pub fn replace(
+        &self,
+        region: Option<String>,
+        endpoint: Option<String>,
+        access_key: Option<String>,
+        secret_key: Option<String>,
+        security_token: Option<String>,
+        anonymous: Option<bool>,
+        max_retries: Option<u32>,
+        retry_timeout_ms: Option<u64>,
+        connect_timeout_ms: Option<u64>,
+        read_timeout_ms: Option<u64>,
+        max_concurrent_requests: Option<u32>,
+        max_connections: Option<u32>,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            config: crate::TosConfig {
+                region: region.or_else(|| self.config.region.clone()),
+                endpoint: endpoint.or_else(|| self.config.endpoint.clone()),
+                access_key: access_key.or_else(|| self.config.access_key.clone()),
+                secret_key: secret_key
+                    .map(std::convert::Into::into)
+                    .or_else(|| self.config.secret_key.clone()),
+                security_token: security_token
+                    .map(std::convert::Into::into)
+                    .or_else(|| self.config.security_token.clone()),
+                anonymous: anonymous.unwrap_or(self.config.anonymous),
+                max_retries: max_retries.unwrap_or(self.config.max_retries),
+                retry_timeout_ms: retry_timeout_ms.unwrap_or(self.config.retry_timeout_ms),
+                connect_timeout_ms: connect_timeout_ms.unwrap_or(self.config.connect_timeout_ms),
+                read_timeout_ms: read_timeout_ms.unwrap_or(self.config.read_timeout_ms),
+                max_concurrent_requests: max_concurrent_requests
+                    .unwrap_or(self.config.max_concurrent_requests),
+                max_connections_per_io_thread: max_connections
+                    .unwrap_or(self.config.max_connections_per_io_thread),
+            },
+        })
+    }
+
+    #[staticmethod]
+    pub fn from_env(_py: Python) -> PyResult<Self> {
+        let endpoint = std::env::var("TOS_ENDPOINT").ok();
+        let region = std::env::var("TOS_REGION").ok();
+        let access_key: Option<String> = std::env::var("TOS_ACCESS_KEY").ok();
+        let secret_key: Option<String> = std::env::var("TOS_SECRET_KEY").ok();
+        let session_token: Option<String> = std::env::var("TOS_SESSION_TOKEN").ok();
+        let anonymous = access_key.is_none();
+
+        Ok(Self {
+            config: crate::TosConfig {
+                endpoint,
+                region,
+                access_key,
+                secret_key: secret_key.map(|s| s.into()),
+                security_token: session_token.map(|s| s.into()),
+                anonymous,
+                ..Default::default()
+            },
+        })
+    }
+
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.config))
+    }
+
+    #[getter]
+    pub fn region_name(&self) -> PyResult<Option<String>> {
+        Ok(self.config.region.clone())
+    }
+
+    #[getter]
+    pub fn endpoint(&self) -> PyResult<Option<String>> {
+        Ok(self.config.endpoint.clone())
+    }
+
+    #[getter]
+    pub fn access_key(&self) -> PyResult<Option<String>> {
+        Ok(self.config.access_key.clone())
+    }
+
+    #[getter]
+    pub fn secret_key(&self) -> PyResult<Option<String>> {
+        Ok(self
+            .config
+            .secret_key
+            .as_ref()
+            .map(super::ObfuscatedString::as_string)
+            .cloned())
+    }
+
+    #[getter]
+    pub fn session_token(&self) -> PyResult<Option<String>> {
+        Ok(self
+            .config
+            .security_token
+            .as_ref()
+            .map(super::ObfuscatedString::as_string)
+            .cloned())
+    }
+
+    #[getter]
+    pub fn max_connections(&self) -> PyResult<u32> {
+        Ok(self.config.max_connections_per_io_thread)
+    }
+}
+
 impl_bincode_py_state_serialization!(IOConfig);
 impl_bincode_py_state_serialization!(S3Config);
 impl_bincode_py_state_serialization!(S3Credentials);
@@ -1289,6 +1487,7 @@ impl_bincode_py_state_serialization!(GCSConfig);
 impl_bincode_py_state_serialization!(HTTPConfig);
 impl_bincode_py_state_serialization!(UnityConfig);
 impl_bincode_py_state_serialization!(HuggingFaceConfig);
+impl_bincode_py_state_serialization!(TosConfig);
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<AzureConfig>()?;
@@ -1296,6 +1495,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<S3Config>()?;
     parent.add_class::<HTTPConfig>()?;
     parent.add_class::<S3Credentials>()?;
+    parent.add_class::<TosConfig>()?;
     parent.add_class::<UnityConfig>()?;
     parent.add_class::<HuggingFaceConfig>()?;
     parent.add_class::<IOConfig>()?;
