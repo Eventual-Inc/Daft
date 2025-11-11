@@ -153,19 +153,6 @@ impl PyNativeExecutor {
             result: Arc::new(Mutex::new(res)),
         };
         Ok(py_execution_result.into_pyobject(py)?.into_any())
-        // todo!()
-        // let stream = Box::pin(res.into_stream().map(|part| {
-        //     pyo3::Python::attach(|py| {
-        //         Ok(PyMicroPartition::from(part?)
-        //             .into_pyobject(py)?
-        //             .unbind()
-        //             .into_any())
-        //     })
-        // }));
-        // let stream = LocalPartitionStream {
-        //     stream: Arc::new(Mutex::new(stream)),
-        // };
-        // Ok(stream.into_pyobject(py)?.into_any())
     }
 
     #[staticmethod]
