@@ -137,7 +137,7 @@ impl RuntimeStats for UdfRuntimeStats {
 impl UdfRuntimeStats {
     fn update_metrics(&self, metrics: OperatorMetrics) {
         let mut counters = self.counters.lock().unwrap();
-        for (name, value) in metrics.into_inner() {
+        for (name, value) in metrics {
             match counters.get_mut(name.as_str()) {
                 Some(counter) => {
                     *counter += value;

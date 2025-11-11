@@ -11,7 +11,7 @@ from multiprocessing.connection import Listener
 from typing import IO, TYPE_CHECKING, cast
 
 import daft.pickle
-from daft.daft import PyRecordBatch
+from daft.daft import OperatorMetrics, PyRecordBatch
 from daft.errors import UDFException
 from daft.expressions import Expression, ExpressionsProjection
 
@@ -114,7 +114,7 @@ class UdfHandle:
             lines.append(line.decode().rstrip())
         return lines
 
-    def eval_input(self, input: PyRecordBatch) -> tuple[PyRecordBatch, list[str], dict[str, int]]:
+    def eval_input(self, input: PyRecordBatch) -> tuple[PyRecordBatch, list[str], OperatorMetrics]:
         if self.process.poll() is not None:
             raise RuntimeError("UDF process has terminated")
 

@@ -11,29 +11,11 @@ pub struct OperatorMetrics {
     counters: HashMap<String, u64>,
 }
 
-impl OperatorMetrics {
-    pub fn is_empty(&self) -> bool {
-        self.counters.is_empty()
-    }
-
-    pub fn clear(&mut self) {
-        self.counters.clear();
-    }
-
-    pub fn merge(&mut self, other: Self) {
-        for (name, value) in other.counters {
-            *self.counters.entry(name).or_insert(0) += value;
-        }
-    }
-
-    pub fn merge_into_collector(&self, collector: &mut dyn MetricsCollector) {
-        for (name, value) in &self.counters {
-            collector.inc_counter(name, *value);
-        }
-    }
-
-    pub fn into_inner(self) -> HashMap<String, u64> {
-        self.counters
+impl IntoIterator for OperatorMetrics {
+    type Item = (String, u64);
+    type IntoIter = std::collections::hash_map::IntoIter<String, u64>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.counters.into_iter()
     }
 }
 

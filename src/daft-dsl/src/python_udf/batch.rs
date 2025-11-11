@@ -5,8 +5,6 @@ use daft_core::{prelude::DataType, series::Series};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "python")]
-use crate::operator_metrics;
 use crate::{
     Expr, ExprRef,
     functions::{python::RuntimePyObject, scalar::ScalarFn},
@@ -105,7 +103,6 @@ impl BatchPyFn {
 
         use crate::functions::python::OnError;
         let max_retries = self.max_retries.unwrap_or(0);
-        let mut collected_metrics = operator_metrics::OperatorMetrics::default();
         let py_args = args
             .iter()
             .map(|s| PySeries::from(s.clone()))
@@ -128,7 +125,9 @@ impl BatchPyFn {
 
                 let (result_series, operator_metrics): (PySeries, PyOperatorMetrics) =
                     result.extract()?;
-                collected_metrics.merge(operator_metrics.inner);
+                for (key, value) in operator_metrics.inner {
+                    metrics.inc_counter(&key, value);
+                }
 
                 PyResult::Ok(result_series.series)
             })
@@ -156,8 +155,6 @@ impl BatchPyFn {
         let result_series = result_series
             .map_err(DaftError::from)
             .and_then(|s| Ok(s.cast(&self.return_dtype)?.rename(name)));
-
-        collected_metrics.merge_into_collector(metrics);
 
         match (result_series, self.on_error) {
             (Ok(result_series), _) => Ok(result_series),
@@ -198,15 +195,12 @@ impl BatchPyFn {
 
         let max_retries = self.max_retries.unwrap_or(0);
         let name = args[0].name();
-        let mut collected_metrics = operator_metrics::OperatorMetrics::default();
 
         // TODO(cory): consider exposing delay and max_delay to users.
         let mut delay_ms: u64 = 100; // Start with 100 ms
         const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
 
-        let mut result_series = self
-            .call_async_once(args, name, &mut collected_metrics)
-            .await;
+        let mut result_series = self.call_async_once(args, name, metrics).await;
 
         for _attempt in 0..max_retries {
             if result_series.is_ok() {
@@ -216,16 +210,12 @@ impl BatchPyFn {
             tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
             delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
 
-            result_series = self
-                .call_async_once(args, name, &mut collected_metrics)
-                .await;
+            result_series = self.call_async_once(args, name, metrics).await;
         }
 
         let result_series = result_series
             .map_err(DaftError::from)
             .and_then(|s| Ok(s.cast(&self.return_dtype)?.rename(name)));
-
-        collected_metrics.merge_into_collector(metrics);
 
         match (result_series, self.on_error) {
             (Ok(result_series), _) => Ok(result_series),
@@ -247,7 +237,7 @@ impl BatchPyFn {
         &self,
         args: &[Series],
         name: &str,
-        metrics: &mut operator_metrics::OperatorMetrics,
+        metrics: &mut dyn MetricsCollector,
     ) -> DaftResult<Series> {
         use common_metrics::python::PyOperatorMetrics;
         use daft_core::python::PySeries;
@@ -281,7 +271,9 @@ impl BatchPyFn {
             Ok(coroutine)
         })
         .await?;
-        metrics.merge(operator_metrics.inner);
+        for (key, value) in operator_metrics.inner {
+            metrics.inc_counter(&key, value);
+        }
 
         Ok(py_series.series.rename(name))
     }

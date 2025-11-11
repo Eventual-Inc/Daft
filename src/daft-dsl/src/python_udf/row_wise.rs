@@ -5,8 +5,6 @@ use daft_core::prelude::*;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "python")]
-use crate::operator_metrics;
 use crate::{
     Expr, ExprRef,
     functions::{python::RuntimePyObject, scalar::ScalarFn},
@@ -154,7 +152,6 @@ impl RowWisePyFn {
             );
         }
 
-        let mut collected_metrics = operator_metrics::OperatorMetrics::default();
         let max_retries = self.max_retries.unwrap_or(0);
 
         let name = args[0].name();
@@ -164,7 +161,7 @@ impl RowWisePyFn {
         const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
 
         let mut result_series = self
-            .call_async_batch_once(args, num_rows, name, &mut collected_metrics)
+            .call_async_batch_once(args, num_rows, name, metrics)
             .await;
 
         for _attempt in 0..max_retries {
@@ -176,7 +173,7 @@ impl RowWisePyFn {
             delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
 
             result_series = self
-                .call_async_batch_once(args, num_rows, name, &mut collected_metrics)
+                .call_async_batch_once(args, num_rows, name, metrics)
                 .await;
         }
         let name = args[0].name();
@@ -184,8 +181,6 @@ impl RowWisePyFn {
         let result_series = result_series
             .map_err(DaftError::from)
             .and_then(|s| Ok(s.cast(&self.return_dtype)?.rename(name)));
-
-        collected_metrics.merge_into_collector(metrics);
 
         match (result_series, self.on_error) {
             (Ok(result_series), _) => Ok(result_series),
@@ -225,7 +220,6 @@ impl RowWisePyFn {
         let max_retries = self.max_retries.unwrap_or(0);
         let delay_ms: u64 = 100; // Start with 100 ms
         const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
-        let mut collected_metrics = operator_metrics::OperatorMetrics::default();
 
         fn retry<F: FnMut() -> DaftResult<Literal>>(
             py: Python,
@@ -295,7 +289,9 @@ impl RowWisePyFn {
                                 res.extract()?;
                             let literal =
                                 Literal::from_pyobj(&value_obj, Some(&self.return_dtype))?;
-                            collected_metrics.merge(operator_metrics.inner);
+                            for (key, value) in operator_metrics.inner {
+                                metrics.inc_counter(&key, value);
+                            }
                             Ok(literal)
                         })
                         .map_err(DaftError::from)
@@ -308,10 +304,6 @@ impl RowWisePyFn {
         })?
         .rename(name);
 
-        if !collected_metrics.is_empty() {
-            collected_metrics.merge_into_collector(metrics);
-        }
-
         Ok(s)
     }
 
@@ -321,7 +313,7 @@ impl RowWisePyFn {
         args: &[Series],
         num_rows: usize,
         name: &str,
-        metrics: &mut operator_metrics::OperatorMetrics,
+        metrics: &mut dyn MetricsCollector,
     ) -> DaftResult<Series> {
         use common_metrics::python::PyOperatorMetrics;
         use daft_core::python::PySeries;
@@ -366,7 +358,9 @@ impl RowWisePyFn {
             Ok(coroutine)
         })
         .await?;
-        metrics.merge(operator_metrics.inner);
+        for (key, value) in operator_metrics.inner {
+            metrics.inc_counter(&key, value);
+        }
 
         Ok(py_series.series.rename(name))
     }
