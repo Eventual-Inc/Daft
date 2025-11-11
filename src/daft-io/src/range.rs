@@ -30,6 +30,9 @@ pub enum InvalidGetRange {
 
     #[error("Range end '{end}' is always expected to be greater than start '{start}'")]
     Inconsistent { start: usize, end: usize },
+
+    #[error("Suffix range is not supported")]
+    UnsupportedSuffixRange,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]

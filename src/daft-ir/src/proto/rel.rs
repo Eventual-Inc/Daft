@@ -833,6 +833,7 @@ impl ToFromProto for ir::IOConfig {
         let http = ir::HTTPConfig::from_proto(non_null!(message.http))?;
         let unity = ir::UnityConfig::from_proto(non_null!(message.unity))?;
         let hf = ir::HuggingFaceConfig::from_proto(non_null!(message.hf))?;
+        let disable_suffix_range = message.disable_suffix_range;
 
         Ok(Self {
             s3,
@@ -841,6 +842,7 @@ impl ToFromProto for ir::IOConfig {
             http,
             unity,
             hf,
+            disable_suffix_range,
         })
     }
 
@@ -851,6 +853,7 @@ impl ToFromProto for ir::IOConfig {
         let http = self.http.to_proto()?;
         let unity = self.unity.to_proto()?;
         let hf = self.hf.to_proto()?;
+        let disable_suffix_range = self.disable_suffix_range;
 
         Ok(proto::IoConfig {
             s3: Some(s3),
@@ -859,6 +862,7 @@ impl ToFromProto for ir::IOConfig {
             http: Some(http),
             unity: Some(unity),
             hf: Some(hf),
+            disable_suffix_range,
         })
     }
 }
