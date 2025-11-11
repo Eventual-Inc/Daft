@@ -46,6 +46,7 @@ pub fn init_opentelemetry_providers() {
 
 pub fn flush_opentelemetry_providers() {
     flush_oltp_tracer_provider();
+    flush_oltp_metrics_provider();
 }
 
 async fn init_otlp_metrics_provider(otlp_endpoint: &str) {
@@ -81,9 +82,9 @@ async fn init_otlp_metrics_provider(otlp_endpoint: &str) {
 pub fn flush_oltp_metrics_provider() {
     let mg = GLOBAL_METER_PROVIDER.lock().unwrap();
     if let Some(meter_provider) = mg.as_ref()
-        && let Err(e) = meter_provider.shutdown()
+        && let Err(e) = meter_provider.force_flush()
     {
-        println!("Failed to flush OTLP metrics provider: {}", e);
+        eprintln!("Failed to flush OTLP metrics provider: {}", e);
     }
 }
 
@@ -124,6 +125,6 @@ fn flush_oltp_tracer_provider() {
     if let Some(tracer_provider) = mg.as_ref()
         && let Err(e) = tracer_provider.force_flush()
     {
-        println!("Failed to flush OTLP tracer provider: {}", e);
+        eprintln!("Failed to flush OTLP tracer provider: {}", e);
     }
 }
