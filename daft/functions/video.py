@@ -53,7 +53,7 @@ def keyframes_impl(
 
 video_keyframes_fn = Func._from_func(
     keyframes_impl,
-    return_dtype=list[PIL.Image.Image],
+    return_dtype=daft.DataType.infer_from_type(list[PIL.Image.Image]),
     unnest=False,
     use_process=None,
     is_batch=False,
