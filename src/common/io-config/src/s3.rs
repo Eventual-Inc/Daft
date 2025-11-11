@@ -229,7 +229,7 @@ impl Default for S3Config {
             profile_name: None,
             multipart_size: 8 * 1024 * 1024, // 8MB
             multipart_max_concurrency: 100,
-            custom_retry_msgs: vec!["UnexpectedEof".to_string(), "Timeout".to_string()],
+            custom_retry_msgs: vec![],
         }
     }
 }
