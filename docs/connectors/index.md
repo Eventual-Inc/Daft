@@ -73,6 +73,14 @@ See also [Lance](lance.md) for detailed integration.
 | [`write_parquet`][daft.dataframe.DataFrame.write_parquet] | Write a DataFrame to Parquet files                             |
 
 
+## PostgreSQL
+
+| Function                                                | Description                                       |
+|---------------------------------------------------------|---------------------------------------------------|
+| [`Catalog.from_postgres`][daft.catalog.Catalog.from_postgres] | Create a catalog from a PostgreSQL database       |
+
+See also [PostgreSQL](postgres.md) for detailed integration.
+
 ## SQL
 
 | Function                       | Description                                    |

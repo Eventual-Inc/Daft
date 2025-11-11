@@ -354,3 +354,17 @@ def test_cls_input_dtype_validation():
 
     with pytest.raises(daft.exceptions.DaftCoreException, match="to be Float64, but received Int64"):
         df.select(v.types_and_kwarg_defaults(df["x"], b=df["x"]))
+def test_cls_max_concurrency_zero():
+    with pytest.raises(ValueError, match="max_concurrency for udf must be non-zero"):
+
+        @daft.cls(max_concurrency=0)
+        class MaxConcurrencyZero:
+            def __init__(self):
+                pass
+
+            def __call__(self, x: int) -> int:
+                return x
+
+        df = daft.from_pydict({"a": [1, 2, 3]})
+        result = df.select(MaxConcurrencyZero()(df["a"])).to_pydict()
+        assert result == {"a": [1, 2, 3]}

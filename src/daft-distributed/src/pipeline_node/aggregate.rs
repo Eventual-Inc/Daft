@@ -57,11 +57,10 @@ impl AggregateNode {
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::node_name(&group_by),
-            vec![child.node_id()],
-            vec![child.name()],
         );
         let config = PipelineNodeConfig::new(
             output_schema,

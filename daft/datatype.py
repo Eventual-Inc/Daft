@@ -131,9 +131,9 @@ class DataType:
         """Infer Daft DataType from a Python type."""
         # NOTE: Make sure this matches the logic in `Literal::from_pyobj` in Rust
 
-        assert isinstance(
-            t, (type, GenericAlias, UnionType)
-        ), f"Input to DataType.infer_from_type must be a type, found: {t}"
+        assert isinstance(t, (type, GenericAlias, UnionType)), (
+            f"Input to DataType.infer_from_type must be a type, found: {t}"
+        )
 
         import datetime
         import decimal
@@ -149,15 +149,15 @@ class DataType:
         args = typing.get_args(t)
 
         def extract_non_none_type(tp: type | GenericAlias | UnionType) -> Any:
-            args = None
-
             if isinstance(tp, UnionType):
                 args = typing.get_args(tp)
-            elif typing.get_origin(tp) is Union:
-                args = typing.get_args(tp)
+                non_none_args = [arg for arg in args if arg is not NoneType and arg is not type(None)]
 
-            if args and len(args) == 2 and (NoneType in args or type(None) in args):
-                return next(arg for arg in args if arg is not NoneType and arg is not type(None))
+                if len(non_none_args) == 1:
+                    return non_none_args[0]
+                elif len(non_none_args) > 1:
+                    return Any
+
             return tp
 
         def check_type(type_or_path: type | str) -> bool:

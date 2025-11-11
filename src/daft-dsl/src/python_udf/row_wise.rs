@@ -1,4 +1,4 @@
-use std::{fmt::Display, sync::Arc};
+use std::{fmt::Display, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::prelude::*;
@@ -20,7 +20,7 @@ pub fn row_wise_udf(
     return_dtype: DataType,
     gpus: usize,
     use_process: Option<bool>,
-    max_concurrency: Option<usize>,
+    max_concurrency: Option<NonZeroUsize>,
     max_retries: Option<usize>,
     on_error: crate::functions::python::OnError,
     original_args: RuntimePyObject,
@@ -55,7 +55,7 @@ pub struct RowWisePyFn {
     pub args: Vec<ExprRef>,
     pub gpus: usize,
     pub use_process: Option<bool>,
-    pub max_concurrency: Option<usize>,
+    pub max_concurrency: Option<NonZeroUsize>,
     pub max_retries: Option<usize>,
     pub on_error: crate::functions::python::OnError,
     pub input_dtypes: Vec<DataType>,

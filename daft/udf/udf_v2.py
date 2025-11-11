@@ -186,7 +186,7 @@ class Func(Generic[P, T, C]):
             if param_name not in type_hints:
                 input_dtypes[param_name] = DataType.python()
             else:
-                input_dtypes[param_name] = DataType._infer(type_hints[param_name])
+                input_dtypes[param_name] = DataType._infer_from_type(type_hints[param_name])
         return input_dtypes
 
     @staticmethod

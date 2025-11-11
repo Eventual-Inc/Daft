@@ -708,6 +708,7 @@ message IOConfig {
   HTTPConfig http = 4;
   UnityConfig unity = 5;
   HuggingFaceConfig hf = 6;
+  TosConfig tos = 7;
 }
 
 message S3Config {
@@ -782,6 +783,21 @@ message HuggingFaceConfig {
   optional uint64 row_group_size = 4;
   uint64 target_filesize = 5;
   uint64 max_operations_per_commit = 6;
+}
+
+message TosConfig {
+  optional string region = 1;
+  optional string endpoint = 2;
+  optional string access_key = 3;
+  optional string secret_key = 4;
+  optional string security_token = 5;
+  bool anonymous = 6;
+  uint32 max_retries = 7;
+  uint64 retry_timeout_ms = 8;
+  uint64 connect_timeout_ms = 9;
+  uint64 read_timeout_ms = 10;
+  uint32 max_concurrent_requests = 11;
+  uint32 max_connections_per_io_thread = 12;
 }
 
 message PartitionFields {
