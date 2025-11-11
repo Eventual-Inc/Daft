@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 from collections import defaultdict
 from collections.abc import Mapping
 from typing import Any, Callable
@@ -77,6 +78,7 @@ VALUES_SUM = sum(VALUES)
 
 
 def _wrap_async(fn: Callable[..., Any]) -> Callable[..., Any]:
+    @functools.wraps(fn)
     async def async_fn(*args: Any, **kwargs: Any) -> Any:
         await asyncio.sleep(0)
         return fn(*args, **kwargs)
