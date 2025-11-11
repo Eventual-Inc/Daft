@@ -1,10 +1,6 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
-    pin::Pin,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
+    sync::{Arc, atomic::Ordering},
     time::Duration,
     vec,
 };
@@ -14,9 +10,7 @@ use common_metrics::ops::NodeType;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
-use futures::{Stream, TryStreamExt};
 use itertools::Itertools;
-use tokio::sync::Mutex;
 use tracing::{Span, instrument};
 
 use crate::{
@@ -31,12 +25,20 @@ use crate::{
 
 #[derive(Clone)]
 struct DynamicBatchingConfig {
+    /// Max batch size
     max_size: usize,
+    /// Min batch size
     min_size: usize,
+    /// How many samples to keep in our sliding window.
     timing_window: usize,
+    /// During the initial bootstrap and sampling phase, we'll increase the batch size by `growth_factor`
+    /// until we reach `max_size` or the latency threshold is reached.
     growth_factor: usize,
+    /// Max latency for batch processing in seconds
     max_latency_s: f64,
+    /// Minimum number of measurements per batch size to use during sampling
     min_measurements_per_size: usize,
+    /// How many samples to take per batch size before moving to the next phase
     min_sample_size: usize,
 }
 
@@ -49,29 +51,21 @@ impl Default for DynamicBatchingConfig {
             growth_factor: 4,
             max_latency_s: 5.0,
             min_measurements_per_size: 4,
-            min_sample_size: 28,
+            min_sample_size: 24,
         }
     }
 }
-
-type Item = DaftResult<(RecordBatch, usize, Duration)>;
-type UdfResultStream = Pin<Box<dyn Stream<Item = Item> + Send>>;
-type SendableStream = Arc<Mutex<UdfResultStream>>;
 
 /// Each UdfState holds a handle to a single Python process.
 /// The concurrency of the Python process pool is thus tied to the concurrency of the operator
 /// and the local executor handles task scheduling.
 pub(crate) struct UdfState {
-    udf_handle: Arc<UdfHandle>,
+    udf_handle: UdfHandle,
     execution_times: VecDeque<(usize, Duration)>,
-    current_batch_size: Arc<AtomicUsize>,
+    current_batch_size: usize,
     dynamic_batching: DynamicBatchingConfig,
-    // Could probably implement this without a stream and manually produce batches
-    // but a stream is conceptually simpler and easier to reason about
-    // The only issue is that its's not `Send` so we need to `Arc<Mutex<_>>` it
-    batch_stream: Option<SendableStream>,
-    udf_expr: BoundExpr,
-    udf_initialized: bool,
+    row_offset: usize,
+    batches: VecDeque<RecordBatch>,
 }
 
 impl UdfState {
@@ -137,7 +131,7 @@ impl UdfState {
     // Note: This algorithm could likely be improved with more sophisticated techniques
     // (e.g., gradient-based optimization, better statistical modeling), but provides
     // a reasonable initial approach that works well in practice.
-    fn adjust_batch_size(&self) {
+    fn adjust_batch_size(&mut self) {
         let growth_factor = self.dynamic_batching.growth_factor;
         let max_latency_seconds = self.dynamic_batching.max_latency_s;
         let min_sample_size = self.dynamic_batching.min_sample_size;
@@ -145,11 +139,10 @@ impl UdfState {
 
         if self.execution_times.len() < 2 {
             // Initial growth phase
-            let current_size = self.current_batch_size.load(Ordering::Relaxed);
+            let current_size = self.current_batch_size;
 
             let new_size = (current_size * growth_factor).min(self.dynamic_batching.max_size);
-            self.current_batch_size
-                .store(to_efficient_batch_size(new_size), Ordering::Relaxed);
+            self.current_batch_size = to_efficient_batch_size(new_size);
             return;
         }
 
@@ -192,7 +185,7 @@ impl UdfState {
         avg_throughputs.sort_by_key(|(size, _, _)| *size);
 
         // Get current size and throughput
-        let current_size = self.current_batch_size.load(Ordering::Relaxed);
+        let current_size = self.current_batch_size;
         let (current_throughput, current_count) = avg_throughputs
             .iter()
             .find(|(size, _, _)| *size == current_size)
@@ -299,7 +292,8 @@ impl UdfState {
                         max_latency_seconds
                     );
 
-                    self.current_batch_size.store(new_size, Ordering::Relaxed);
+                    self.current_batch_size = to_efficient_batch_size(new_size);
+
                     return;
                 }
             }
@@ -313,8 +307,8 @@ impl UdfState {
                 new_size,
                 self.execution_times.len()
             );
-            self.current_batch_size
-                .store(to_efficient_batch_size(new_size), Ordering::Relaxed);
+            self.current_batch_size = to_efficient_batch_size(new_size);
+
             return;
         }
         // If we have enough samples, check if we're converging
@@ -329,8 +323,8 @@ impl UdfState {
                     current_size,
                     current_throughput
                 );
-                self.current_batch_size
-                    .store(to_efficient_batch_size(best_size), Ordering::Relaxed);
+                self.current_batch_size = best_size;
+
                 return;
             }
             // Check if we should continue exploring larger sizes
@@ -364,8 +358,7 @@ impl UdfState {
                     new_size
                 );
 
-                self.current_batch_size
-                    .store(to_efficient_batch_size(new_size), Ordering::Relaxed);
+                self.current_batch_size = to_efficient_batch_size(new_size);
                 return;
             }
 
@@ -428,7 +421,8 @@ impl UdfState {
                     current_size,
                     larger
                 );
-                self.current_batch_size.store(larger, Ordering::Relaxed);
+                self.current_batch_size = larger;
+
                 return;
             }
 
@@ -443,7 +437,7 @@ impl UdfState {
                     current_size,
                     smaller
                 );
-                self.current_batch_size.store(smaller, Ordering::Relaxed);
+                self.current_batch_size = smaller;
                 return;
             }
 
@@ -463,14 +457,12 @@ impl UdfState {
             current_size,
             best_size
         );
-        self.current_batch_size
-            .store(to_efficient_batch_size(best_size), Ordering::Relaxed);
+        self.current_batch_size = best_size;
     }
 }
 
 impl StreamingSink for UdfOperator {
     type State = UdfState;
-
     #[instrument(skip_all, name = "UdfOperator::execute")]
     #[cfg(feature = "python")]
     fn execute(
@@ -480,151 +472,88 @@ impl StreamingSink for UdfOperator {
         task_spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult<Self> {
         let params = self.params.clone();
-        let handle = state.udf_handle.clone();
 
         let fut = task_spawner.spawn(
             async move {
-                if !state.udf_initialized {
+                if !state.udf_handle.udf_initialized {
                     use daft_dsl::functions::python::initialize_udfs;
 
-                    state.udf_expr = BoundExpr::new_unchecked(initialize_udfs(
-                        state.udf_expr.inner().clone(),
+                    state.udf_handle.udf_expr = BoundExpr::new_unchecked(initialize_udfs(
+                        state.udf_handle.udf_expr.inner().clone(),
                     )?);
-                    state.udf_initialized = true;
+                    state.udf_handle.udf_initialized = true;
                 }
 
-                let shared_batch_size = state.current_batch_size.clone();
+                let handle = &state.udf_handle;
 
-                if state.batch_stream.is_none() {
-                    let params = params.clone();
-                    let udf_expr = state.udf_expr.clone();
-
-                    let stream = async_stream::stream! {
-
-                        let input_batches = match input.get_tables() {
-                            Ok(batches) => batches,
-                            Err(e) => {
-                                yield Err(e.into());
-                                return;
-                            }
-                        };
-
-                        for batch in input_batches.as_ref() {
-                            let total_rows = batch.num_rows();
-                            let mut row_offset = 0;
-
-                            while row_offset < total_rows {
-                                let current_batch_size = shared_batch_size.load(Ordering::Relaxed).min(total_rows - row_offset);
-                                let sub_batch = match batch.slice(row_offset, row_offset + current_batch_size) {
-                                    Ok(b) => b,
-                                    Err(e) => {
-                                        yield Err(e);
-                                        return;
-                                    }
-                                };
-                                let func_input = sub_batch.get_columns(params.required_cols.as_slice());
-
-
-                                let num_rows = sub_batch.num_rows();
-                                let start_time = std::time::Instant::now();
-
-                                let mut sub_result = if let Some(h) = &handle.handle {
-                                    match handle.eval_input_with_handle(func_input, h) {
-                                        Ok(r) => r,
-                                        Err(e) => {
-                                            yield Err(e);
-                                            return;
-                                        }
-                                    }
-                                } else {
-                                    match func_input.eval_expression(&udf_expr) {
-                                        Ok(r) => r,
-                                        Err(e) => {
-                                            yield Err(e);
-                                            return;
-                                        }
-                                    }
-                                };
-
-                                let duration = start_time.elapsed();
-
-
-                                if sub_result.len() == 1 {
-                                    sub_result = match sub_result.broadcast(num_rows) {
-                                        Ok(r) => r,
-                                        Err(e) => {
-                                            yield Err(e);
-                                            return;
-                                        }
-                                    };
-                                }
-
-                                row_offset += current_batch_size;
-
-
-                                let passthrough_input = match sub_batch.eval_expression_list(params.passthrough_columns.as_slice()) {
-                                    Ok(p) => p,
-                                    Err(e) => {
-                                        yield Err(e);
-                                        return;
-                                    }
-                                };
-
-                                let output_batch = match passthrough_input.append_column(params.output_schema.clone(), sub_result) {
-                                    Ok(o) => o,
-                                    Err(e) => {
-                                        yield Err(e);
-                                        return;
-                                    }
-                                };
-                                log::debug!("Output batch size: {}", output_batch.len());
-                                yield Ok((output_batch, current_batch_size, duration));
-                            }
-                        }
-                    };
-
-                    state.batch_stream = Some(Arc::new(Mutex::new(Box::pin(stream))));
-
+                // Add new batches to our queue
+                if state.batches.is_empty() && state.row_offset == 0 {
+                    let input_batches = input.get_tables()?;
+                    state.batches.extend(input_batches.iter().cloned());
                 }
 
+                // Process batches until we produce output or run out
+                while let Some(batch) = state.batches.front() {
+                    let total_rows = batch.num_rows();
 
-                if let Some(stream_mutex) = &state.batch_stream {
-                    let result = {
-                        let mut stream = stream_mutex.lock().await;
-                        stream.try_next().await
-                    };
-                    match result {
-                        Ok(Some((batch, batch_size, duration))) => {
-                            // Update state with performance data
-                            state.execution_times.push_back((batch_size, duration));
-                            if state.execution_times.len() > state.dynamic_batching.timing_window {
-                                state.execution_times.pop_front();
-                            }
-                            state.adjust_batch_size();
-
-                            let output = Arc::new(MicroPartition::new_loaded(
-                                params.output_schema.clone(),
-                                Arc::new(vec![batch]),
-                                None,
-                            ));
-
-                            Ok((state, StreamingSinkOutput::HasMoreOutput(Some(output))))
-                        },
-                        Ok(None) => {
-                            state.batch_stream = None;
-                            Ok((state, StreamingSinkOutput::NeedMoreInput(None)))
-                        }
-                        Err(e) => Err(e)
+                    // If we've processed all rows in current batch, move to next
+                    if state.row_offset >= total_rows {
+                        state.batches.pop_front();
+                        state.row_offset = 0;
+                        continue;
                     }
 
+                    let current_batch_size =
+                        state.current_batch_size.min(total_rows - state.row_offset);
 
-                } else {
-                    Ok((state, StreamingSinkOutput::NeedMoreInput(None)))
+                    let sub_batch =
+                        batch.slice(state.row_offset, state.row_offset + current_batch_size)?;
+                    let func_input = sub_batch.get_columns(params.required_cols.as_slice());
 
+                    let num_rows = sub_batch.num_rows();
+                    let start_time = std::time::Instant::now();
+
+                    let mut sub_result = if let Some(h) = &handle.handle {
+                        handle.eval_input_with_handle(func_input, h)?
+                    } else {
+                        handle.eval_input_inline(func_input)?
+                    };
+
+                    let duration = start_time.elapsed();
+
+                    if sub_result.len() == 1 {
+                        sub_result = sub_result.broadcast(num_rows)?;
+                    }
+
+                    state.row_offset += current_batch_size;
+
+                    let passthrough_input =
+                        sub_batch.eval_expression_list(params.passthrough_columns.as_slice())?;
+                    let output_batch = passthrough_input
+                        .append_column(params.output_schema.clone(), sub_result)?;
+
+                    // Update performance tracking
+                    state
+                        .execution_times
+                        .push_back((current_batch_size, duration));
+                    if state.execution_times.len() > state.dynamic_batching.timing_window {
+                        state.execution_times.pop_front();
+                    }
+                    state.adjust_batch_size();
+
+                    let output = Arc::new(MicroPartition::new_loaded(
+                        params.output_schema.clone(),
+                        Arc::new(vec![output_batch]),
+                        None,
+                    ));
+
+                    return Ok((state, StreamingSinkOutput::HasMoreOutput(Some(output))));
                 }
+
+                // No more batches to process
+                Ok((state, StreamingSinkOutput::NeedMoreInput(None)))
             },
             Span::current(),
-
         );
         fut.into()
     }
@@ -642,74 +571,12 @@ impl StreamingSink for UdfOperator {
     #[cfg(feature = "python")]
     fn finalize(
         &self,
-        mut states: Vec<Self::State>,
+        _states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult<Self> {
-        // The streams (should) never have anything left after the execute, but just to be safe,
-        // we'll check if there's anything left in the streams push it downstream.
-        let params = self.params.clone();
-
         spawner
             .spawn(
-                async move {
-                    // Try to drain streams from all states
-                    for (idx, state) in states.iter_mut().enumerate() {
-                        if let Some(stream_mutex) = &state.batch_stream {
-                            let result = {
-                                let mut stream = stream_mutex.lock().await;
-                                stream.try_next().await
-                            };
-
-                            match result {
-                                Ok(Some((batch, batch_size, duration))) => {
-                                    // Update state with performance data
-                                    state.execution_times.push_back((batch_size, duration));
-                                    if state.execution_times.len()
-                                        > state.dynamic_batching.timing_window
-                                    {
-                                        state.execution_times.pop_front();
-                                    }
-                                    state.adjust_batch_size();
-
-                                    log::debug!(
-                                        "Finalize: Worker {} yielding batch of size {}",
-                                        idx,
-                                        batch_size
-                                    );
-
-                                    let output = Some(Arc::new(MicroPartition::new_loaded(
-                                        params.output_schema.clone(),
-                                        Arc::new(vec![batch]),
-                                        None,
-                                    )));
-
-                                    // Still have more to drain
-                                    return Ok(StreamingSinkFinalizeOutput::HasMoreOutput {
-                                        states,
-                                        output,
-                                    });
-                                }
-                                Ok(None) => {
-                                    // This stream is exhausted
-                                    state.batch_stream = None;
-                                }
-                                Err(e) => return Err(e),
-                            }
-                        }
-                    }
-
-                    // Check if any state still has an active stream
-                    let has_active_streams = states.iter().any(|s| s.batch_stream.is_some());
-
-                    if has_active_streams {
-                        Ok(StreamingSinkFinalizeOutput::HasMoreOutput {
-                            states,
-                            output: None,
-                        })
-                    } else {
-                        Ok(StreamingSinkFinalizeOutput::Finished(None))
-                    }
-                },
+                async move { Ok(StreamingSinkFinalizeOutput::Finished(None)) },
                 Span::current(),
             )
             .into()
@@ -761,14 +628,16 @@ impl StreamingSink for UdfOperator {
             }
         }
 
+        let dynamic_batching = DynamicBatchingConfig::default();
+        let execution_times = VecDeque::with_capacity(dynamic_batching.max_size);
+
         Ok(UdfState {
-            udf_handle: Arc::new(udf_handle),
-            current_batch_size: Arc::new(AtomicUsize::new(1)),
-            dynamic_batching: Default::default(),
-            execution_times: Default::default(),
-            batch_stream: None,
-            udf_expr: self.params.expr.clone(),
-            udf_initialized: false,
+            udf_handle,
+            current_batch_size: 1,
+            dynamic_batching,
+            execution_times,
+            row_offset: 0,
+            batches: VecDeque::new(),
         })
     }
 
@@ -898,13 +767,12 @@ mod tests {
     #[fixture]
     fn state() -> UdfState {
         UdfState {
-            udf_handle: Arc::new(mock_udf_handle()),
+            udf_handle: mock_udf_handle(),
             execution_times: Default::default(),
-            current_batch_size: Arc::new(AtomicUsize::new(0)),
+            current_batch_size: 1,
             dynamic_batching: Default::default(),
-            batch_stream: None,
-            udf_expr: BoundExpr::new_unchecked(null_lit()),
-            udf_initialized: true,
+            row_offset: 0,
+            batches: VecDeque::new(),
         }
     }
 
@@ -913,24 +781,24 @@ mod tests {
     fn test_initial_growth_no_measurements(mut state: UdfState) {
         // When execution_times is empty, should grow by growth_factor
         state.dynamic_batching.growth_factor = 2; // Test with 2x growth
-        state.current_batch_size.store(1, Ordering::Relaxed);
+        state.current_batch_size = 1;
 
         state.adjust_batch_size();
-        assert_eq!(state.current_batch_size.load(Ordering::Relaxed), 2);
+        assert_eq!(state.current_batch_size, 2);
     }
 
     #[rstest]
     fn test_initial_growth_one_measurement(mut state: UdfState) {
         // When execution_times has 1 entry, should continue growing by growth_factor
         state.dynamic_batching.growth_factor = 2; // Test with 2x growth
-        state.current_batch_size.store(1, Ordering::Relaxed);
+        state.current_batch_size = 1;
 
         state
             .execution_times
             .push_back((10, Duration::from_secs(1)));
 
         state.adjust_batch_size();
-        assert_eq!(state.current_batch_size.load(Ordering::Relaxed), 2);
+        assert_eq!(state.current_batch_size, 2);
     }
 
     #[rstest]
@@ -938,52 +806,195 @@ mod tests {
         // Initial growth should not exceed dynamic_batching.max_size
         state.dynamic_batching.max_size = 10;
         state.dynamic_batching.growth_factor = 4;
-        state.current_batch_size.store(1, Ordering::Relaxed);
+        state.current_batch_size = 1;
         state.adjust_batch_size();
-        assert_eq!(state.current_batch_size.load(Ordering::Relaxed), 4);
+        assert_eq!(state.current_batch_size, 4);
 
         state.adjust_batch_size();
-        assert_eq!(state.current_batch_size.load(Ordering::Relaxed), 10);
+        assert_eq!(state.current_batch_size, 10);
     }
 
     #[rstest]
     fn test_fast_exploration_duration_capping_triggers(mut state: UdfState) {
-        state.dynamic_batching.max_latency_s = 1.0;
+        state.dynamic_batching.max_latency_s = 1.1;
         state.dynamic_batching.growth_factor = 2;
         state.dynamic_batching.min_measurements_per_size = 1;
-        state.current_batch_size.store(1, Ordering::Relaxed);
+        state.current_batch_size = 1;
         // 1 (under cap) -> 2 (exceeds)
 
         // Add measurements for current batch size (1)
         state
             .execution_times
-            .push_back((1, Duration::from_secs_f64(0.8))); // 1.25 rows/s
+            .push_back((1, Duration::from_secs_f64(0.95)));
         state
             .execution_times
             .push_back((2, Duration::from_secs_f64(2.0))); // 1 rows/s
 
         state.adjust_batch_size();
 
-        assert_eq!(state.current_batch_size.load(Ordering::Relaxed), 2);
+        assert_eq!(dbg!(state.current_batch_size), 2);
 
         // at this point, we should be locked in at a batch size of 2
-        for _ in 0..state.dynamic_batching.min_sample_size {
-            let size = state.current_batch_size.load(Ordering::Relaxed);
+        for _ in 2..=state.dynamic_batching.min_sample_size {
+            let size = state.current_batch_size;
+
             // 1 row/s
             state
                 .execution_times
                 .push_back((size, Duration::from_secs(size as _)));
             state.adjust_batch_size();
-            let size = state.current_batch_size.load(Ordering::Relaxed);
+            let size = state.current_batch_size;
             assert_eq!(size, 2);
         }
+    }
+    #[rstest]
+    fn test_switches_to_significantly_better_size(mut state: UdfState) {
+        state.dynamic_batching.min_sample_size = 10;
+        state.dynamic_batching.min_measurements_per_size = 2;
+        state.dynamic_batching.max_size = 256; // Limit exploration
+        state.current_batch_size = 64;
+
+        // Add enough measurements to exit fast exploration
+        for i in 0..15 {
+            let sizes = [32, 64, 128];
+            let size = sizes[i % 3];
+
+            // Performance characteristics:
+            // - Size 32: 1000 rows/s
+            // - Size 64: 2000 rows/s
+            // - Size 128: 3000 rows/s (50% better than 64)
+            let throughput = match size {
+                32 => 1000.0,
+                64 => 2000.0,
+                128 => 3000.0,
+                _ => unreachable!(),
+            };
+
+            let duration = Duration::from_secs_f64(size as f64 / throughput);
+            state.execution_times.push_back((size, duration));
+        }
+
+        // Currently at size 64 with throughput 2000 rows/s
+        // Size 128 has throughput 3000 rows/s (50% better)
+        // Should switch to 128 since it's >20% better
+        state.adjust_batch_size();
+
+        assert_eq!(state.current_batch_size, 128);
+    }
+
+    #[rstest]
+    fn test_switches_to_significantly_better_size_for_smaller_batch(mut state: UdfState) {
+        state.dynamic_batching.min_sample_size = 10;
+        state.dynamic_batching.min_measurements_per_size = 2;
+        state.dynamic_batching.max_size = 500;
+        state.dynamic_batching.max_latency_s = 0.03; // 30ms - this limits exploration
+        state.current_batch_size = 64;
+
+        // Add enough measurements to exit fast exploration
+        for i in 0..24 {
+            let sizes = [32, 64, 128, 256];
+            let size = sizes[i % 4];
+
+            // Performance characteristics:
+            // - Size 32: 1000 rows/s
+            // - Size 64: 9000 rows/s (BEST!)
+            // - Size 128: 3000 rows/s
+            // - Size 256: 3000 rows/s
+            let throughput = match size {
+                32 => 1000.0,
+                64 => 9000.0,
+                128 => 3000.0,
+                256 => 3000.0,
+                _ => unreachable!(),
+            };
+
+            let duration = Duration::from_secs_f64(size as f64 / throughput);
+            state.execution_times.push_back((size, duration));
+        }
+
+        state.adjust_batch_size();
+        // will try to adjust to see if ~10% > 64 will perform better
+        assert_eq!(state.current_batch_size, 72);
+        let size = 72;
+        let throughput = 2000.0;
+        let duration = Duration::from_secs_f64(size as f64 / throughput);
+        state.execution_times.push_back((size, duration));
+        state.execution_times.push_back((size, duration));
+        state.adjust_batch_size();
+        // it does not, so it adjusts back down to 64
+        assert_eq!(state.current_batch_size, 64);
+    }
+    #[rstest]
+    fn test_stays_at_current_if_not_significantly_better(mut state: UdfState) {
+        state.dynamic_batching.min_sample_size = 10;
+        state.dynamic_batching.min_measurements_per_size = 2;
+        state.dynamic_batching.max_size = 256; // Limit exploration
+        state.dynamic_batching.max_latency_s = 0.1; // 100ms latency limit
+        state.current_batch_size = 64;
+
+        // Add enough measurements to exit fast exploration
+        for i in 0..20 {
+            let sizes = [32, 64, 128, 256];
+            let size = sizes[i % 4];
+
+            // Performance characteristics (small differences):
+            // - Size 32: 1900 rows/s
+            // - Size 64: 2000 rows/s
+            // - Size 128: 2100 rows/s (only 5% better)
+            // - Size 256: 2150 rows/s
+            let throughput = match size {
+                32 => 1900.0,
+                64 => 2000.0,
+                128 => 2100.0,
+                256 => 2150.0,
+                _ => unreachable!(),
+            };
+
+            let duration = Duration::from_secs_f64(size as f64 / throughput);
+            state.execution_times.push_back((size, duration));
+        }
+
+        state.adjust_batch_size();
+
+        // With max throughput ~2150, sizes within 10% threshold are those >= 1935
+        // All sizes qualify, so algorithm picks largest: 256
+        assert_eq!(state.current_batch_size, 256);
+    }
+
+    #[rstest]
+    fn test_prefers_larger_size_among_similar_performers(mut state: UdfState) {
+        state.dynamic_batching.min_sample_size = 12; // Ensure we're past fast exploration
+        state.dynamic_batching.min_measurements_per_size = 3;
+        state.dynamic_batching.max_size = 260;
+        state.dynamic_batching.max_latency_s = 0.03;
+        state.current_batch_size = 32;
+        state.dynamic_batching.growth_factor = 2;
+
+        // Add enough measurements for all sizes to be considered reliable
+        let sizes = [32, 64, 128, 256];
+        for size in &sizes {
+            for _ in 0..3 {
+                // Exactly min_measurements_per_size for each
+                // All sizes have very similar throughput (within 10%)
+                let throughput = 10000.0 + (*size as f64 * 0.01);
+                let duration = Duration::from_secs_f64(*size as f64 / throughput);
+                state.execution_times.push_back((*size, duration));
+            }
+        }
+
+        // Now we have exactly 12 measurements, 3 for each size
+        // This ensures all sizes are considered "reliable"
+        state.adjust_batch_size();
+
+        // Should pick the largest size (256) since all are within 10% of max throughput
+        assert_eq!(state.current_batch_size, 256);
     }
 
     #[rstest]
     fn test_duration_capping_with_custom_latency(mut state: UdfState) {
         state.dynamic_batching.max_latency_s = 1.0; // Only 1 second allowed
         state.dynamic_batching.growth_factor = 10;
-        state.current_batch_size.store(1000, Ordering::Relaxed);
+        state.current_batch_size = 1000;
 
         // Throughput of 1000 rows/sec
         state
@@ -996,14 +1007,14 @@ mod tests {
         state.adjust_batch_size();
 
         // Next would be 10,000 rows = 10 seconds. Should cap to ~1000 rows for 1 second
-        assert!(state.current_batch_size.load(Ordering::Relaxed) <= 1000);
+        assert!(state.current_batch_size <= 1000);
     }
 
     #[rstest]
     fn test_min_measurements_requirement(mut state: UdfState) {
         state.dynamic_batching.min_measurements_per_size = 10; // Need 10 measurements
         state.dynamic_batching.min_sample_size = 50;
-        state.current_batch_size.store(256, Ordering::Relaxed);
+        state.current_batch_size = 256;
 
         // Add 9 measurements for current size (not enough)
         for _ in 0..9 {
@@ -1025,7 +1036,7 @@ mod tests {
         state.adjust_batch_size();
 
         // Should stay at 256 to get more measurements
-        assert_eq!(state.current_batch_size.load(Ordering::Relaxed), 256);
+        assert_eq!(state.current_batch_size, 256);
     }
 
     #[rstest]
@@ -1033,11 +1044,11 @@ mod tests {
         state.dynamic_batching.min_sample_size = 10; // Short exploration phase
         state.dynamic_batching.min_measurements_per_size = 1;
         state.dynamic_batching.growth_factor = 2;
-        state.current_batch_size.store(1, Ordering::Relaxed);
+        state.current_batch_size = 1;
 
         // Run through fast exploration
         for _ in 0..9 {
-            let size = state.current_batch_size.load(Ordering::Relaxed);
+            let size = state.current_batch_size;
             state
                 .execution_times
                 .push_back((size, Duration::from_secs_f64(0.01)));
@@ -1045,7 +1056,7 @@ mod tests {
             state.adjust_batch_size();
         }
         // 1 -> 2 -> 4 -> 8 -> 16 -> 32 -> 64 -> 128 -> 256 -> 512
-        assert!(state.current_batch_size.load(Ordering::Relaxed) == 512);
+        assert!(state.current_batch_size == 512);
     }
 
     #[rstest]
@@ -1055,26 +1066,26 @@ mod tests {
         state.dynamic_batching.min_measurements_per_size = 2;
 
         state.dynamic_batching.max_size = 100_000;
-        state.current_batch_size.store(1, Ordering::Relaxed);
+        state.current_batch_size = 1;
         // We should reach convergence as soon as we're done sampling.
         // idx, size
         // 1 4 4 16 16 64 64 256 256 -> 992 ... (24) 992
         // Throughput of 10,000 rows/sec
         for _ in 0..23 {
-            let size = state.current_batch_size.load(Ordering::Relaxed);
+            let size = state.current_batch_size;
             state
                 .execution_times
                 .push_back((size, Duration::from_secs_f64(size as f64 / 10_000.0)));
             state.adjust_batch_size();
         }
 
-        let final_size = state.current_batch_size.load(Ordering::Relaxed);
+        let final_size = state.current_batch_size;
         // With 10k rows/sec and 0.1s latency, max size should converge on 896
         assert!(final_size == 992);
 
         // make sure we've converged
         for _ in 0..100 {
-            let size = state.current_batch_size.load(Ordering::Relaxed);
+            let size = state.current_batch_size;
             assert!(size == 992);
 
             state
@@ -1086,24 +1097,24 @@ mod tests {
 
     #[rstest]
     fn test_adjust_batch_size_initial_bootstrap(mut state: UdfState) {
-        state.current_batch_size.store(100, Ordering::Relaxed);
+        state.current_batch_size = 100;
         state.dynamic_batching.max_size = 10000;
 
         // First adjustment with no measurements
         state.adjust_batch_size();
-        assert_eq!(state.current_batch_size.load(Ordering::Relaxed), 400);
+        assert_eq!(state.current_batch_size, 400);
 
         // Second adjustment with 1 measurement
         state
             .execution_times
             .push_back((400, Duration::from_secs_f64(0.1)));
         state.adjust_batch_size();
-        assert_eq!(state.current_batch_size.load(Ordering::Relaxed), 1600);
+        assert_eq!(state.current_batch_size, 1600);
     }
 
     #[rstest]
     fn test_adjust_batch_size_duration_capping(mut state: UdfState) {
-        state.current_batch_size.store(2000, Ordering::Relaxed);
+        state.current_batch_size = 2000;
         state.dynamic_batching.max_size = 100000;
         state.dynamic_batching.min_size = 10;
 
@@ -1118,7 +1129,7 @@ mod tests {
         // Next growth would be 8000, taking 16 seconds - way over 5 second limit
         state.adjust_batch_size();
 
-        let new_size = state.current_batch_size.load(Ordering::Relaxed);
+        let new_size = state.current_batch_size;
 
         // Should reduce to fit within 5 seconds
         assert!(new_size <= 2000);
@@ -1126,19 +1137,19 @@ mod tests {
 
     #[rstest]
     fn test_adjust_batch_size_should_explore_with_constant_throughput(mut state: UdfState) {
-        state.current_batch_size.store(1, Ordering::Relaxed);
+        state.current_batch_size = 1;
         state.dynamic_batching.max_size = 5_000_000;
         state.dynamic_batching.min_size = 1;
 
         for _ in 0..500 {
-            let size = state.current_batch_size.load(Ordering::Relaxed);
+            let size = state.current_batch_size;
             state
                 .execution_times
                 .push_back((size, Duration::from_secs_f64(size as f64 / 1_000_000.0)));
             state.adjust_batch_size();
         }
 
-        let final_size = state.current_batch_size.load(Ordering::Relaxed);
+        let final_size = state.current_batch_size;
         // Constant throughput of 1,000,000 rows/sec
         // At this throughput, 5 seconds = 5,000,000 rows
 
