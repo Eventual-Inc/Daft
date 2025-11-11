@@ -107,7 +107,8 @@ class OpenAIPrompter(Prompter):
         """Handle File objects."""
         mime_type = msg.mime_type()
         if self._is_text_mime_type(mime_type):
-            text_content = f"File contents: {self._read_text_content(msg)}"
+            filetag = f"file_{mime_type.replace("/","_")}"
+            text_content = f"<{filetag}>{self._read_text_content(msg)}</{filetag}>"
             return self._process_str_message(text_content)
 
         mime_type, encoded_content = self._encode_file(msg)
