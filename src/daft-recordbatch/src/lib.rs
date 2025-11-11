@@ -670,66 +670,169 @@ impl RecordBatch {
         }
     }
 
-    #[async_recursion::async_recursion]
     pub async fn eval_expression_async(&self, expr: BoundExpr) -> DaftResult<Series> {
+        let mut sink = NoopMetricsCollector;
+        self.eval_expression_async_with_metrics(expr, &mut sink)
+            .await
+    }
+
+    #[async_recursion::async_recursion]
+    pub async fn eval_expression_async_with_metrics(
+        &self,
+        expr: BoundExpr,
+        metrics: &mut dyn MetricsCollector,
+    ) -> DaftResult<Series> {
         let expected_field = expr.inner().to_field(self.schema.as_ref())?;
         let series = match expr.as_ref() {
-            Expr::Alias(child, name) => Ok(self.eval_expression_async(BoundExpr::new_unchecked(child.clone())).await?.rename(name)),
-            Expr::Agg(agg_expr) => self.eval_agg_expression(&BoundAggExpr::new_unchecked(agg_expr.clone()), None),
-            Expr::Over(..) => Err(DaftError::ComputeError("Window expressions should be evaluated via the window operator.".to_string())),
-            Expr::WindowFunction(..) => Err(DaftError::ComputeError("Window expressions cannot be directly evaluated. Please specify a window using \"over\".".to_string())),
-            Expr::Cast(child, dtype) => self.eval_expression_async(BoundExpr::new_unchecked(child.clone())).await?.cast(dtype),
-            Expr::Column(Column::Bound(BoundColumn { index, .. })) => Ok(self.columns[*index].clone()),
-            Expr::Not(child) => !(self.eval_expression_async(BoundExpr::new_unchecked(child.clone())).await?),
-            Expr::IsNull(child) => self.eval_expression_async(BoundExpr::new_unchecked(child.clone())).await?.is_null(),
-            Expr::NotNull(child) => self.eval_expression_async(BoundExpr::new_unchecked(child.clone())).await?.not_null(),
+            Expr::Alias(child, name) => Ok(
+                self.eval_expression_async_with_metrics(
+                    BoundExpr::new_unchecked(child.clone()),
+                    metrics,
+                )
+                .await?
+                .rename(name),
+            ),
+            Expr::Agg(agg_expr) => {
+                self.eval_agg_expression(&BoundAggExpr::new_unchecked(agg_expr.clone()), None)
+            }
+            Expr::Over(..) => Err(DaftError::ComputeError(
+                "Window expressions should be evaluated via the window operator.".to_string(),
+            )),
+            Expr::WindowFunction(..) => Err(DaftError::ComputeError(
+                "Window expressions cannot be directly evaluated. Please specify a window using \"over\".".to_string(),
+            )),
+            Expr::Cast(child, dtype) => self
+                .eval_expression_async_with_metrics(
+                    BoundExpr::new_unchecked(child.clone()),
+                    metrics,
+                )
+                .await?
+                .cast(dtype),
+            Expr::Column(Column::Bound(BoundColumn { index, .. })) => {
+                Ok(self.columns[*index].clone())
+            }
+            Expr::Not(child) => !(self
+                .eval_expression_async_with_metrics(
+                    BoundExpr::new_unchecked(child.clone()),
+                    metrics,
+                )
+                .await?),
+            Expr::IsNull(child) => self
+                .eval_expression_async_with_metrics(
+                    BoundExpr::new_unchecked(child.clone()),
+                    metrics,
+                )
+                .await?
+                .is_null(),
+            Expr::NotNull(child) => self
+                .eval_expression_async_with_metrics(
+                    BoundExpr::new_unchecked(child.clone()),
+                    metrics,
+                )
+                .await?
+                .not_null(),
             Expr::FillNull(child, fill_value) => {
-                let fill_value = self.eval_expression_async(BoundExpr::new_unchecked(fill_value.clone())).await?;
-                self.eval_expression_async(BoundExpr::new_unchecked(child.clone())).await?.fill_null(&fill_value)
+                let fill_value = self
+                    .eval_expression_async_with_metrics(
+                        BoundExpr::new_unchecked(fill_value.clone()),
+                        metrics,
+                    )
+                    .await?;
+                self.eval_expression_async_with_metrics(
+                    BoundExpr::new_unchecked(child.clone()),
+                    metrics,
+                )
+                .await?
+                .fill_null(&fill_value)
             }
             Expr::IsIn(child, items) => {
                 if items.is_empty() {
-                    return BooleanArray::from_iter(&child.get_name(&self.schema)?, std::iter::once(Some(false))).into_series().broadcast(self.len());
+                    return BooleanArray::from_iter(
+                        &child.get_name(&self.schema)?,
+                        std::iter::once(Some(false)),
+                    )
+                    .into_series()
+                    .broadcast(self.len());
                 }
-                let items_futures = items.iter().map(|i| async {
-                    self.eval_expression_async(BoundExpr::new_unchecked(i.clone())).await
-                });
-                let items = futures::future::try_join_all(items_futures).await?;
-
-                let items = items.iter().collect::<Vec<&Series>>();
+                let mut evaluated_items = Vec::with_capacity(items.len());
+                for item in items {
+                    evaluated_items.push(
+                        self.eval_expression_async_with_metrics(
+                            BoundExpr::new_unchecked(item.clone()),
+                            metrics,
+                        )
+                        .await?,
+                    );
+                }
+                let items = evaluated_items.iter().collect::<Vec<&Series>>();
                 let s = Series::concat(items.as_slice())?;
-                self
-                .eval_expression_async(BoundExpr::new_unchecked(child.clone())).await?
+                self.eval_expression_async_with_metrics(
+                    BoundExpr::new_unchecked(child.clone()),
+                    metrics,
+                )
+                .await?
                 .is_in(&s)
             }
             Expr::List(items) => {
-                // compute list type to determine each child cast
                 let field = expr.inner().to_field(&self.schema)?;
-                // extract list child type (could be de-duped with zip and moved to impl DataType)
                 let dtype = if let DataType::List(dtype) = &field.dtype {
                     dtype
                 } else {
-                    return Err(DaftError::ComputeError("List expression must be of type List(T)".to_string()))
+                    return Err(DaftError::ComputeError(
+                        "List expression must be of type List(T)".to_string(),
+                    ));
                 };
-                // compute child series with explicit casts to the supertype
-                let items = items.iter().map(|i| i.clone().cast(dtype)).collect::<Vec<_>>();
-                let items_futures = items.iter().map(|i| async {
-                    self.eval_expression_async(BoundExpr::new_unchecked(i.clone())).await
-                });
-                let items = futures::future::try_join_all(items_futures).await?;
-                let items = items.iter().collect::<Vec<&Series>>();
-                // zip the series into a single series of lists
+                let cast_items = items
+                    .iter()
+                    .map(|i| i.clone().cast(dtype))
+                    .collect::<Vec<_>>();
+                let mut evaluated = Vec::with_capacity(cast_items.len());
+                for item in cast_items {
+                    evaluated.push(
+                        self.eval_expression_async_with_metrics(
+                            BoundExpr::new_unchecked(item),
+                            metrics,
+                        )
+                        .await?,
+                    );
+                }
+                let items = evaluated.iter().collect::<Vec<&Series>>();
                 Series::zip(field, items.as_slice())
             }
             Expr::Between(child, lower, upper) => {
-                    let child_series = self.eval_expression_async(BoundExpr::new_unchecked(child.clone())).await?;
-                let lower_series = self.eval_expression_async(BoundExpr::new_unchecked(lower.clone())).await?;
-                let upper_series = self.eval_expression_async(BoundExpr::new_unchecked(upper.clone())).await?;
+                let child_series = self
+                    .eval_expression_async_with_metrics(
+                        BoundExpr::new_unchecked(child.clone()),
+                        metrics,
+                    )
+                    .await?;
+                let lower_series = self
+                    .eval_expression_async_with_metrics(
+                        BoundExpr::new_unchecked(lower.clone()),
+                        metrics,
+                    )
+                    .await?;
+                let upper_series = self
+                    .eval_expression_async_with_metrics(
+                        BoundExpr::new_unchecked(upper.clone()),
+                        metrics,
+                    )
+                    .await?;
                 child_series.between(&lower_series, &upper_series)
             }
             Expr::BinaryOp { op, left, right } => {
-                let lhs = self.eval_expression_async(BoundExpr::new_unchecked(left.clone())).await?;
-                let rhs = self.eval_expression_async(BoundExpr::new_unchecked(right.clone())).await?;
+                let lhs = self
+                    .eval_expression_async_with_metrics(
+                        BoundExpr::new_unchecked(left.clone()),
+                        metrics,
+                    )
+                    .await?;
+                let rhs = self
+                    .eval_expression_async_with_metrics(
+                        BoundExpr::new_unchecked(right.clone()),
+                        metrics,
+                    )
+                    .await?;
                 use daft_core::array::ops::{DaftCompare, DaftLogical};
                 use daft_dsl::Operator::*;
                 match op {
@@ -754,10 +857,16 @@ impl RecordBatch {
                 }
             }
             Expr::Function { func, inputs } => {
-                let input_futures = inputs.iter().map(|e| async {
-                    self.eval_expression_async(BoundExpr::new_unchecked(e.clone())).await
-                });
-                let evaluated_inputs = futures::future::try_join_all(input_futures).await?;
+                let mut evaluated_inputs = Vec::with_capacity(inputs.len());
+                for e in inputs {
+                    evaluated_inputs.push(
+                        self.eval_expression_async_with_metrics(
+                            BoundExpr::new_unchecked(e.clone()),
+                            metrics,
+                        )
+                        .await?,
+                    );
+                }
                 func.evaluate(evaluated_inputs.as_slice(), func)
             }
             Expr::ScalarFn(ScalarFn::Builtin(func)) => {
@@ -765,23 +874,34 @@ impl RecordBatch {
                 for arg in func.inputs.iter() {
                     let evaluated = match arg {
                         FunctionArg::Named { name, arg: e } => {
-                            let result = self.eval_expression_async(BoundExpr::new_unchecked(e.clone())).await?;
-                            FunctionArg::Named { name: name.clone(), arg: result }
+                            let result = self
+                                .eval_expression_async_with_metrics(
+                                    BoundExpr::new_unchecked(e.clone()),
+                                    metrics,
+                                )
+                                .await?;
+                            FunctionArg::Named {
+                                name: name.clone(),
+                                arg: result,
+                            }
                         }
                         FunctionArg::Unnamed(e) => {
-                            let result = self.eval_expression_async(BoundExpr::new_unchecked(e.clone())).await?;
+                            let result = self
+                                .eval_expression_async_with_metrics(
+                                    BoundExpr::new_unchecked(e.clone()),
+                                    metrics,
+                                )
+                                .await?;
                             FunctionArg::Unnamed(result)
                         }
                     };
                     evaluated_args.push(evaluated);
                 }
                 let args = FunctionArgs::new_unchecked(evaluated_args);
-
                 match &func.func {
-                  BuiltinScalarFnVariant::Sync(func) => func.call(args),
-                  BuiltinScalarFnVariant::Async(func) => func.call(args).await,
+                    BuiltinScalarFnVariant::Sync(func) => func.call(args),
+                    BuiltinScalarFnVariant::Async(func) => func.call(args).await,
                 }
-
             }
             Expr::Literal(lit_value) => Ok(lit_value.clone().into()),
             Expr::IfElse {
@@ -789,28 +909,57 @@ impl RecordBatch {
                 if_false,
                 predicate,
             } => match predicate.as_ref() {
-                // TODO: move this into simplify expression
-                Expr::Literal(Literal::Boolean(true)) => self.eval_expression_async(BoundExpr::new_unchecked(if_true.clone())).await,
-                Expr::Literal(Literal::Boolean(false)) => {
-                    Ok(self.eval_expression_async(BoundExpr::new_unchecked(if_false.clone())).await?.rename(if_true.get_name(&self.schema)?))
-                }
+                Expr::Literal(Literal::Boolean(true)) => self
+                    .eval_expression_async_with_metrics(
+                        BoundExpr::new_unchecked(if_true.clone()),
+                        metrics,
+                    )
+                    .await,
+                Expr::Literal(Literal::Boolean(false)) => Ok(
+                    self.eval_expression_async_with_metrics(
+                        BoundExpr::new_unchecked(if_false.clone()),
+                        metrics,
+                    )
+                    .await?
+                    .rename(if_true.get_name(&self.schema)?),
+                ),
                 _ => {
-                    let if_true_series = self.eval_expression_async(BoundExpr::new_unchecked(if_true.clone())).await?;
-                    let if_false_series = self.eval_expression_async(BoundExpr::new_unchecked(if_false.clone())).await?;
-                    let predicate_series = self.eval_expression_async(BoundExpr::new_unchecked(predicate.clone())).await?;
+                    let if_true_series = self
+                        .eval_expression_async_with_metrics(
+                            BoundExpr::new_unchecked(if_true.clone()),
+                            metrics,
+                        )
+                        .await?;
+                    let if_false_series = self
+                        .eval_expression_async_with_metrics(
+                            BoundExpr::new_unchecked(if_false.clone()),
+                            metrics,
+                        )
+                        .await?;
+                    let predicate_series = self
+                        .eval_expression_async_with_metrics(
+                            BoundExpr::new_unchecked(predicate.clone()),
+                            metrics,
+                        )
+                        .await?;
                     Ok(if_true_series.if_else(&if_false_series, &predicate_series)?)
                 }
             },
             Expr::ScalarFn(ScalarFn::Python(python_udf)) => {
-                let args_futures = python_udf.args().into_iter().map(|expr|
-                    self.eval_expression_async(BoundExpr::new_unchecked(expr))
-                );
-                let args = futures::future::try_join_all(args_futures).await?;
-                let mut noop_metrics_collector   = NoopMetricsCollector;
+                let mut args = Vec::with_capacity(python_udf.args().len());
+                for expr in python_udf.args() {
+                    args.push(
+                        self.eval_expression_async_with_metrics(
+                            BoundExpr::new_unchecked(expr),
+                            metrics,
+                        )
+                        .await?,
+                    );
+                }
                 if python_udf.is_async() {
-                    python_udf.call_async(args.as_slice(), &mut noop_metrics_collector).await
+                    python_udf.call_async(args.as_slice(), metrics).await
                 } else {
-                    python_udf.call(args.as_slice(), &mut noop_metrics_collector)
+                    python_udf.call(args.as_slice(), metrics)
                 }
             }
             Expr::Subquery(_subquery) => Err(DaftError::ComputeError(
@@ -822,8 +971,12 @@ impl RecordBatch {
             Expr::Exists(_subquery) => Err(DaftError::ComputeError(
                 "EXISTS <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
             )),
-            Expr::Column(_) => unreachable!("bound expressions should not have unbound columns"),
-            Expr::VLLM(..) => unreachable!("VLLM expressions should not be evaluated directly. This indicates a bug in the query optimizer."),
+            Expr::Column(_) => {
+                unreachable!("bound expressions should not have unbound columns")
+            }
+            Expr::VLLM(..) => unreachable!(
+                "VLLM expressions should not be evaluated directly. This indicates a bug in the query optimizer."
+            ),
         }?;
 
         if expected_field.name != series.field().name {

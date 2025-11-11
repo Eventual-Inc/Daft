@@ -1,12 +1,23 @@
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Duration,
+};
 
 use common_error::DaftResult;
-use common_metrics::ops::NodeType;
+use common_metrics::{Stat, StatSnapshotSend, ops::NodeType};
 use daft_core::{prelude::SchemaRef, series::Series};
-use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties};
+use daft_dsl::{
+    expr::bound_expr::BoundExpr, functions::python::UDFProperties,
+    operator_metrics::OperatorMetrics,
+};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
+use smallvec::SmallVec;
 use tracing::{Span, instrument};
 
 use super::base::{
@@ -17,6 +28,7 @@ use crate::{
     ExecutionTaskSpawner, TaskSet,
     intermediate_ops::udf::remap_used_cols,
     pipeline::{MorselSizeRequirement, NodeName},
+    runtime_stats::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats},
 };
 
 struct AsyncUdfParams {
@@ -25,6 +37,69 @@ struct AsyncUdfParams {
     passthrough_columns: Vec<BoundExpr>,
     output_schema: SchemaRef,
     required_cols: Vec<usize>,
+}
+
+#[derive(Default)]
+struct AsyncUdfRuntimeStats {
+    cpu_us: AtomicU64,
+    rows_in: AtomicU64,
+    rows_out: AtomicU64,
+    counters: Mutex<HashMap<Arc<str>, u64>>,
+}
+
+impl RuntimeStats for AsyncUdfRuntimeStats {
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
+        let counters = self.counters.lock().unwrap();
+        let mut entries = SmallVec::with_capacity(3 + counters.len());
+
+        entries.push((
+            CPU_US_KEY.into(),
+            Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
+        ));
+        entries.push((ROWS_IN_KEY.into(), Stat::Count(self.rows_in.load(ordering))));
+        entries.push((
+            ROWS_OUT_KEY.into(),
+            Stat::Count(self.rows_out.load(ordering)),
+        ));
+
+        for (name, value) in counters.iter() {
+            entries.push((name.clone().into(), Stat::Count(*value)));
+        }
+
+        StatSnapshotSend(entries)
+    }
+
+    fn add_rows_in(&self, rows: u64) {
+        self.rows_in.fetch_add(rows, Ordering::Relaxed);
+    }
+
+    fn add_rows_out(&self, rows: u64) {
+        self.rows_out.fetch_add(rows, Ordering::Relaxed);
+    }
+
+    fn add_cpu_us(&self, cpu_us: u64) {
+        self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
+    }
+}
+
+impl AsyncUdfRuntimeStats {
+    fn update_metrics(&self, metrics: OperatorMetrics) {
+        let mut counters = self.counters.lock().unwrap();
+        for (name, value) in metrics {
+            match counters.get_mut(name.as_str()) {
+                Some(counter) => {
+                    *counter += value;
+                }
+                None => {
+                    counters.insert(name.into(), value);
+                }
+            }
+        }
+    }
 }
 
 pub struct AsyncUdfSink {
@@ -85,70 +160,87 @@ impl StreamingSink for AsyncUdfSink {
         #[cfg(feature = "python")]
         {
             let params = self.params.clone();
+            let runtime_stats = spawner
+                .runtime_stats
+                .clone()
+                .as_any_arc()
+                .downcast::<AsyncUdfRuntimeStats>()
+                .expect("Expected AsyncUdfRuntimeStats in task_spawner.runtime_stats");
             spawner
                 .spawn(
-                    async move {
-                        use daft_dsl::functions::python::initialize_udfs;
+                    {
+                        async move {
+                            use daft_dsl::functions::python::initialize_udfs;
 
-                        let input_batches = input.get_tables()?;
+                            let input_batches = input.get_tables()?;
 
-                        if !state.udf_initialized {
-                            state.udf_expr = BoundExpr::new_unchecked(initialize_udfs(
-                                state.udf_expr.inner().clone(),
-                            )?);
-                            state.udf_initialized = true;
-                        }
+                            if !state.udf_initialized {
+                                state.udf_expr = BoundExpr::new_unchecked(initialize_udfs(
+                                    state.udf_expr.inner().clone(),
+                                )?);
+                                state.udf_initialized = true;
+                            }
 
-                        // Spawn tasks for each batch
-                        for batch in input_batches.as_ref() {
-                            let params = params.clone();
-                            let expr = state.udf_expr.clone();
-                            let batch = batch.clone();
-                            state.task_set.spawn(async move {
-                                let func_input = batch.get_columns(params.required_cols.as_slice());
+                            // Spawn tasks for each batch
+                            for batch in input_batches.as_ref() {
+                                let params = params.clone();
+                                let expr = state.udf_expr.clone();
+                                let batch = batch.clone();
+                                let runtime_stats = runtime_stats.clone();
+                                state.task_set.spawn(async move {
+                                    let func_input =
+                                        batch.get_columns(params.required_cols.as_slice());
 
-                                let mut result: Series =
-                                    func_input.eval_expression_async(expr).await?;
+                                    let mut collected_metrics = OperatorMetrics::default();
+                                    let mut result: Series = func_input
+                                        .eval_expression_async_with_metrics(
+                                            expr,
+                                            &mut collected_metrics,
+                                        )
+                                        .await?;
+                                    runtime_stats.update_metrics(collected_metrics);
 
-                                if result.len() == 1 {
-                                    result = result.broadcast(batch.num_rows())?;
-                                }
+                                    if result.len() == 1 {
+                                        result = result.broadcast(batch.num_rows())?;
+                                    }
 
-                                let passthrough_input = batch
-                                    .eval_expression_list(params.passthrough_columns.as_slice())?;
-                                let output_batch = passthrough_input
-                                    .append_column(params.output_schema.clone(), result)?;
-                                Ok(output_batch)
-                            });
-                        }
+                                    let passthrough_input = batch.eval_expression_list(
+                                        params.passthrough_columns.as_slice(),
+                                    )?;
+                                    let output_batch = passthrough_input
+                                        .append_column(params.output_schema.clone(), result)?;
+                                    Ok(output_batch)
+                                });
+                            }
 
-                        // Drain any ready tasks non-blockingly
-                        let mut ready_batches = Vec::new();
-                        while let Some(join_res) = state.task_set.try_join_next() {
-                            let batch = join_res??;
-                            ready_batches.push(batch);
-                        }
-
-                        // Force drain tasks until the number of inflight tasks is less than the concurrency limit
-                        let mut num_inflight_tasks = state.task_set.len();
-                        let max_inflight_tasks = get_max_inflight_tasks();
-                        while num_inflight_tasks > max_inflight_tasks {
-                            if let Some(join_res) = state.task_set.join_next().await {
+                            // Drain any ready tasks non-blockingly
+                            let mut ready_batches = Vec::new();
+                            while let Some(join_res) = state.task_set.try_join_next() {
                                 let batch = join_res??;
                                 ready_batches.push(batch);
                             }
-                            num_inflight_tasks = state.task_set.len();
-                        }
 
-                        if ready_batches.is_empty() {
-                            Ok((state, StreamingSinkOutput::NeedMoreInput(None)))
-                        } else {
-                            let output = Arc::new(MicroPartition::new_loaded(
-                                params.output_schema.clone(),
-                                Arc::new(ready_batches),
-                                None,
-                            ));
-                            Ok((state, StreamingSinkOutput::NeedMoreInput(Some(output))))
+                            // Force drain tasks until the number of inflight tasks is less than the concurrency limit
+                            let mut num_inflight_tasks = state.task_set.len();
+                            let max_inflight_tasks = get_max_inflight_tasks();
+                            while num_inflight_tasks > max_inflight_tasks {
+                                if let Some(join_res) = state.task_set.join_next().await {
+                                    let batch = join_res??;
+                                    ready_batches.push(batch);
+                                }
+                                num_inflight_tasks = state.task_set.len();
+                            }
+
+                            if ready_batches.is_empty() {
+                                Ok((state, StreamingSinkOutput::NeedMoreInput(None)))
+                            } else {
+                                let output = Arc::new(MicroPartition::new_loaded(
+                                    params.output_schema.clone(),
+                                    Arc::new(ready_batches),
+                                    None,
+                                ));
+                                Ok((state, StreamingSinkOutput::NeedMoreInput(Some(output))))
+                            }
                         }
                     },
                     Span::current(),
@@ -232,6 +324,10 @@ impl StreamingSink for AsyncUdfSink {
             task_set: TaskSet::new(),
             udf_initialized: false,
         })
+    }
+
+    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
+        Arc::new(AsyncUdfRuntimeStats::default())
     }
 
     fn max_concurrency(&self) -> usize {
