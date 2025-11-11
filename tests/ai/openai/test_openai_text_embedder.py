@@ -369,6 +369,35 @@ def test_descriptor_to_embedder_workflow():
         assert result[0].shape == (1536,)
 
 
+def test_overridden_model_dimensions(mock_client):
+    """Test that overriding the embedding dimensions works."""
+    descriptor = OpenAITextEmbedderDescriptor(
+        provider_name="openai",
+        provider_options={"api_key": "test_key"},
+        model_name="text-embedding-3-large",
+        model_options={"embedding_dimensions": 402},
+    )
+
+    with patch("daft.ai.openai.protocols.text_embedder.AsyncOpenAI") as mock_async_openai_class:
+        mock_client = Mock()
+        mock_client.embeddings = Mock()
+        mock_client.embeddings.create = AsyncMock()
+        mock_async_openai_class.return_value = mock_client
+
+        mock_response = Mock(spec=CreateEmbeddingResponse)
+        mock_embedding = Mock(spec=OpenAIEmbedding)
+        mock_embedding.embedding = np.array([0.1, 0.2, 0.3] * 512, dtype=np.float32)
+        mock_response.data = [mock_embedding]
+        mock_client.embeddings.create.return_value = mock_response
+
+        text_embedder = descriptor.instantiate()
+        result = run(text_embedder.embed_text(["Hello world"]))
+
+        assert len(result) == 1
+        assert isinstance(result[0], np.ndarray)
+        assert result[0].shape == (402,)
+
+
 def test_protocol_compliance():
     """Test that OpenAITextEmbedder implements the TextEmbedder protocol."""
     text_embedder = OpenAITextEmbedder(

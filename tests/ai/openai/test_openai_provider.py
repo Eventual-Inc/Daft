@@ -79,3 +79,14 @@ def test_openai_text_embedder_dimensions():
         model_options={},
     )
     assert descriptor_large.get_dimensions().size == 3072
+
+
+def test_openai_text_embedder_overridden_dimensions():
+    descriptor = OpenAITextEmbedderDescriptor(
+        provider_name="openai",
+        provider_options={"api_key": "test_key"},
+        model_name="text-embedding-3-large",
+        model_options={"embedding_dimensions": 402},
+    )
+
+    assert descriptor.get_dimensions().size == 402

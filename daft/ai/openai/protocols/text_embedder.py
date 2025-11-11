@@ -60,6 +60,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
     provider_name: str
     provider_options: OpenAIProviderOptions
     model_name: str
+    dimensions: int
     model_options: Options
 
     def __post_init__(self) -> None:
@@ -79,8 +80,11 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
         return self.model_options
 
     def get_dimensions(self) -> EmbeddingDimensions:
+        # TODO change this
         if self.model_options.get("embedding_dimensions") is not None:
             return EmbeddingDimensions(size=self.model_options["embedding_dimensions"], dtype=DataType.float32())
+        if self.dimensions is not None:
+            return EmbeddingDimensions(size=self.dimensions, dtype=DataType.float32())
         return _models[self.model_name].dimensions
 
     def get_udf_options(self) -> UDFOptions:
@@ -93,6 +97,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
         return OpenAITextEmbedder(
             client=AsyncOpenAI(**self.provider_options),
             model=self.model_name,
+            dimensions=self.dimensions,
         )
 
 
@@ -141,6 +146,7 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
         return OpenAITextEmbedder(
             client=AsyncOpenAI(**self.provider_options),
             model=self.model_name,
+            dimensions=self.dimensions,
         )
 
 
@@ -155,11 +161,13 @@ class OpenAITextEmbedder(TextEmbedder):
 
     _client: AsyncOpenAI
     _model: str
+    _dimensions: int
 
-    def __init__(self, client: AsyncOpenAI, model: str, zero_on_failure: bool = False):
+    def __init__(self, client: AsyncOpenAI, model: str, dimensions: int, zero_on_failure: bool = False):
         self._client = client
         self._model = model
         self._zero_on_failure = zero_on_failure
+        self._dimensions = dimensions
 
     async def embed_text(self, text: list[str]) -> list[Embedding]:
         embeddings: list[Embedding] = []
@@ -212,6 +220,7 @@ class OpenAITextEmbedder(TextEmbedder):
                 input=input_batch,
                 model=self._model,
                 encoding_format="float",
+                dimensions=self._dimensions,
             )
             return [np.array(embedding.embedding) for embedding in response.data]
         except RateLimitError:
@@ -228,6 +237,7 @@ class OpenAITextEmbedder(TextEmbedder):
                 input=input_text,
                 model=self._model,
                 encoding_format="float",
+                dimensions=self._dimensions,
             )
             return np.array(response.data[0].embedding)
         except Exception as ex:
