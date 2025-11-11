@@ -136,7 +136,21 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |   Retry initial backoff ms = 1000
 |   Connect timeout ms = 30000
 |   Read timeout ms = 30000
-|   Max retries = 5))) as {id_placeholder}, col(0: data)
+|   Max retries = 5
+|   TosConfig
+|       region: None
+|       endpoint: None
+|       access_key: None
+|       secret_key: ***
+|       security_token: ***
+|       anonymous: false
+|       max_retries: 3
+|       retry_timeout_ms: 30000
+|       connect_timeout_ms: 10000
+|       read_timeout_ms: 30000
+|       max_concurrent_requests: 50
+|       max_connections_per_io_thread: 50
+|   ))) as {id_placeholder}, col(0: data)
 |   Batch Size = Range(0, 10]
 |
 * InMemorySource:
