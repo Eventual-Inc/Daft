@@ -186,7 +186,7 @@ class Func(Generic[P, T, C]):
             if param_name not in type_hints:
                 input_dtypes[param_name] = DataType.python()
             else:
-                input_dtypes[param_name] = DataType._infer_from_type(type_hints[param_name])
+                input_dtypes[param_name] = DataType.infer_from_type(type_hints[param_name])
         return input_dtypes
 
     @staticmethod
@@ -227,12 +227,11 @@ class Func(Generic[P, T, C]):
         expr_args = []
         input_dtypes = []
 
-        tmp_dtypes_iter = iter(self.input_dtypes.values())
-
-        for arg in args:
+        tmp_dtypes_list = list(self.input_dtypes.values())
+        for i, arg in enumerate(args):
             if isinstance(arg, Expression):
                 expr_args.append(arg._expr)
-                input_dtypes.append(next(tmp_dtypes_iter)._dtype)
+                input_dtypes.append(tmp_dtypes_list[i]._dtype)
 
         for key, arg in kwargs.items():
             if isinstance(arg, Expression):
