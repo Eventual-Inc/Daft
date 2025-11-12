@@ -63,21 +63,6 @@ extra:
   analytics:
     provider: google
     property: G-YN4QSRPV0K
-    feedback:
-      title: Was this page helpful?
-      ratings:
-      - icon: material/emoticon-happy-outline
-        name: This page was helpful
-        data: 1
-        note: >-
-          Thanks for your feedback!
-      - icon: material/emoticon-sad-outline
-        name: This page could be improved
-        data: 0
-        note: >-
-          Thanks for your feedback! Help us improve this page by
-          <a href="https://github.com/Eventual-Inc/Daft/issues" target="_blank"
-          rel="noopener">submitting an issue</a> on our Daft repo.
   social:
   - icon: fontawesome/brands/github
     link: https://github.com/Eventual-Inc/Daft

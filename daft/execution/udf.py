@@ -11,7 +11,7 @@ from multiprocessing.connection import Listener
 from typing import IO, TYPE_CHECKING, cast
 
 import daft.pickle
-from daft.daft import PyRecordBatch
+from daft.daft import OperatorMetrics, PyRecordBatch
 from daft.errors import UDFException
 from daft.expressions import Expression, ExpressionsProjection
 
@@ -114,7 +114,7 @@ class UdfHandle:
             lines.append(line.decode().rstrip())
         return lines
 
-    def eval_input(self, input: PyRecordBatch) -> tuple[PyRecordBatch, list[str]]:
+    def eval_input(self, input: PyRecordBatch) -> tuple[PyRecordBatch, list[str], OperatorMetrics]:
         if self.process.poll() is not None:
             raise RuntimeError("UDF process has terminated")
 
@@ -152,10 +152,10 @@ class UdfHandle:
         elif response[0] == _ERROR:
             raise RuntimeError("UDF unexpectedly failed with traceback:\n" + response[1])
         elif response[0] == _SUCCESS:
-            out_name, out_size = response[1], response[2]
+            _, out_name, out_size, metrics = response
             output_bytes = self.transport.read_and_release(out_name, out_size)
             deserialized = PyRecordBatch.from_ipc_stream(output_bytes)
-            return (deserialized, stdout)
+            return (deserialized, stdout, metrics)
         else:
             raise RuntimeError(f"Unknown response from actor: {response}")
 

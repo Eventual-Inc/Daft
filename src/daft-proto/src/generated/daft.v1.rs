@@ -1061,6 +1061,8 @@ pub struct S3Config {
     pub multipart_size: u64,
     #[prost(uint32, tag = "22")]
     pub multipart_max_concurrency: u32,
+    #[prost(string, repeated, tag = "23")]
+    pub custom_retry_msgs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AzureConfig {
