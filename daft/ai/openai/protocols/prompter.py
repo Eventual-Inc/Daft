@@ -5,11 +5,14 @@ from functools import singledispatchmethod
 from typing import TYPE_CHECKING, Any
 
 from openai import AsyncOpenAI
+from openai.types.completion_usage import CompletionUsage
+from openai.types.responses import ResponseUsage
 
 from daft.ai.protocols import Prompter, PrompterDescriptor
 from daft.ai.typing import UDFOptions
 from daft.dependencies import np
 from daft.file import File
+from daft.udf.metrics import increment_counter
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
@@ -54,6 +57,11 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
 
 class OpenAIPrompter(Prompter):
     """OpenAI prompter implementation using AsyncOpenAI for chat completions."""
+
+    REQUESTS_COUNTER_NAME: str = "num_requests"
+    INPUT_TOKENS_COUNTER_NAME: str = "tokens_in"
+    OUTPUT_TOKENS_COUNTER_NAME: str = "tokens_out"
+    TOTAL_TOKENS_COUNTER_NAME: str = "total_tokens"
 
     def __init__(
         self,
@@ -201,7 +209,7 @@ class OpenAIPrompter(Prompter):
                 response_format=self.return_format,
                 **self.generation_config,
             )
-            return response.choices[0].message.parsed
+            result = response.choices[0].message.parsed
         else:
             # Return plain text
             response = await self.llm.chat.completions.create(
@@ -209,7 +217,18 @@ class OpenAIPrompter(Prompter):
                 messages=messages_list,
                 **self.generation_config,
             )
-            return response.choices[0].message.content
+            result = response.choices[0].message.content
+
+        usage = response.usage
+        if usage is not None and isinstance(usage, CompletionUsage):
+            input_tokens = usage.prompt_tokens
+            output_tokens = usage.completion_tokens
+
+            increment_counter(self.INPUT_TOKENS_COUNTER_NAME, input_tokens)
+            increment_counter(self.OUTPUT_TOKENS_COUNTER_NAME, output_tokens)
+            increment_counter(self.TOTAL_TOKENS_COUNTER_NAME, usage.total_tokens)
+            increment_counter(self.REQUESTS_COUNTER_NAME)
+        return result
 
     async def _prompt_with_responses(self, messages_list: list[dict[str, Any]]) -> Any:
         """Generate responses using the Responses API."""
@@ -220,14 +239,26 @@ class OpenAIPrompter(Prompter):
                 text_format=self.return_format,
                 **self.generation_config,
             )
-            return response.output_parsed
+            result = response.output_parsed
         else:
             response = await self.llm.responses.create(
                 model=self.model,
                 input=messages_list,
                 **self.generation_config,
             )
-            return response.output_text
+            result = response.output_text
+
+        usage = response.usage
+        if usage is not None and isinstance(usage, ResponseUsage):
+            input_tokens = usage.input_tokens
+            output_tokens = usage.output_tokens
+            total_tokens = usage.total_tokens
+
+            increment_counter(self.INPUT_TOKENS_COUNTER_NAME, input_tokens)
+            increment_counter(self.OUTPUT_TOKENS_COUNTER_NAME, output_tokens)
+            increment_counter(self.TOTAL_TOKENS_COUNTER_NAME, total_tokens)
+            increment_counter(self.REQUESTS_COUNTER_NAME)
+        return result
 
     async def prompt(self, messages: tuple[Any, ...]) -> Any:
         """Generate responses for a batch of message strings."""

@@ -9,7 +9,7 @@ pytest.importorskip("openai")
 from unittest.mock import AsyncMock, Mock, patch
 
 import numpy as np
-from openai import RateLimitError
+from openai import NOT_GIVEN, RateLimitError
 from openai.types.create_embedding_response import CreateEmbeddingResponse
 from openai.types.embedding import Embedding as OpenAIEmbedding
 
@@ -53,6 +53,7 @@ def test_valid_model_names():
             provider_name="openai",
             provider_options={"api_key": "test-key"},
             model_name=model_name,
+            dimensions=None,
             model_options={},
         )
         assert descriptor.get_provider() == "openai"
@@ -68,6 +69,7 @@ def test_invalid_model_name():
             provider_name="openai",
             provider_options={"api_key": "test-key"},
             model_name="invalid-model",
+            dimensions=None,
             model_options={},
         )
 
@@ -78,6 +80,7 @@ def test_instantiate():
         provider_name="openai",
         provider_options={"api_key": "test-key"},
         model_name="text-embedding-3-small",
+        dimensions=None,
         model_options={},
     )
 
@@ -104,6 +107,7 @@ def test_embed_text_single_input(mock_text_embedder, mock_client):
         input=["Hello world"],
         model="text-embedding-3-small",
         encoding_format="float",
+        dimensions=NOT_GIVEN,
     )
 
 
@@ -131,6 +135,7 @@ def test_embed_text_multiple_inputs(mock_text_embedder, mock_client):
         input=["Hello", "World", "Test"],
         model="text-embedding-3-small",
         encoding_format="float",
+        dimensions=NOT_GIVEN,
     )
 
 
@@ -269,6 +274,19 @@ def test_embed_text_failure_with_zero_on_failure(mock_text_embedder, mock_client
     assert np.all(result == 0)  # Should be zero array
 
 
+def test_embed_text_failure_with_zero_on_failure_and_dimensions(mock_text_embedder, mock_client):
+    """Test that failures are handled when zero_on_failure is True."""
+    mock_client.embeddings.create.side_effect = Exception("API Error")
+    mock_text_embedder._zero_on_failure = True
+    mock_text_embedder._dimensions = 256
+
+    result = run(mock_text_embedder._embed_text("Hello world"))
+
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (256,)
+    assert np.all(result == 0)  # Should be zero array
+
+
 def test_embed_text_failure_without_zero_on_failure(mock_client):
     """Test that failures are re-raised when zero_on_failure is False."""
     embedder = OpenAITextEmbedder(
@@ -374,6 +392,7 @@ def test_descriptor_to_embedder_workflow():
         provider_name="openai",
         provider_options={"api_key": "test-key"},
         model_name="text-embedding-3-small",
+        dimensions=None,
         model_options={},
     )
 

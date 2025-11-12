@@ -74,7 +74,7 @@ extra:
     link: https://x.com/daftengine
   - icon: fontawesome/brands/youtube
     link: https://www.youtube.com/@daftengine
-  - icon: fontawesome/solid/bookmark
+  - icon: fontawesome/solid/blog
     link: https://www.daft.ai/blog
   generator: false
 # Additional Style
