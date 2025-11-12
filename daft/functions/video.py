@@ -5,12 +5,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import daft
-from daft.dependencies import PIL
-from daft.file.typing import VideoMetadata
 from daft.udf.udf_v2 import Func
 
 if TYPE_CHECKING:
+    import PIL
+
     from daft import Expression
+    from daft.file.typing import VideoMetadata
 
 
 def get_metadata_impl(
@@ -21,7 +22,15 @@ def get_metadata_impl(
 
 video_metadata_fn = Func._from_func(
     get_metadata_impl,
-    return_dtype=daft.DataType._infer(VideoMetadata),
+    return_dtype=daft.DataType.struct(
+        {
+            "width": daft.DataType.int64(),
+            "height": daft.DataType.int64(),
+            "fps": daft.DataType.float64(),
+            "frame_count": daft.DataType.int64(),
+            "time_base": daft.DataType.float64(),
+        }
+    ),
     unnest=False,
     use_process=None,
     is_batch=False,
@@ -53,7 +62,7 @@ def keyframes_impl(
 
 video_keyframes_fn = Func._from_func(
     keyframes_impl,
-    return_dtype=daft.DataType.infer_from_type(list[PIL.Image.Image]),
+    return_dtype=daft.DataType.list(daft.DataType.image()),
     unnest=False,
     use_process=None,
     is_batch=False,
