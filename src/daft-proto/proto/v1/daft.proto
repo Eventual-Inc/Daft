@@ -733,6 +733,7 @@ message S3Config {
   optional string profile_name = 20;
   uint64 multipart_size = 21;
   uint32 multipart_max_concurrency = 22;
+  repeated string custom_retry_msgs = 23;
 }
 
 message AzureConfig {

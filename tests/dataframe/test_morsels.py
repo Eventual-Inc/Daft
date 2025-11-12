@@ -95,22 +95,25 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |       region_name: None
 |       endpoint_url: None
 |       key_id: None
-|       session_token: None,
+|       session_token: None
 |       access_key: None
 |       credentials_provider: None
 |       buffer_time: None
-|       max_connections: 32,
-|       retry_initial_backoff_ms: 1000,
-|       connect_timeout_ms: 30000,
-|       read_timeout_ms: 30000,
-|       num_tries: 25,
-|       retry_mode: Some("adaptive"),
-|       anonymous: false,
-|       use_ssl: true,
-|       verify_ssl: true,
+|       max_connections: 32
+|       retry_initial_backoff_ms: 1000
+|       connect_timeout_ms: 30000
+|       read_timeout_ms: 30000
+|       num_tries: 25
+|       retry_mode: Some("adaptive")
+|       anonymous: false
+|       use_ssl: true
+|       verify_ssl: true
 |       check_hostname_ssl: true
 |       requester_pays: false
 |       force_virtual_addressing: false
+|       multipart_size: 8388608
+|       multipart_max_concurrency: 100
+|       custom_retry_msgs:[]
 |   AzureConfig
 |       storage_account: None
 |       access_key: None
