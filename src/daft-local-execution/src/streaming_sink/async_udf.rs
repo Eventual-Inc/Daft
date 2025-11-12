@@ -1,9 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::{Arc, Mutex, atomic::Ordering},
     time::Duration,
 };
 
@@ -17,6 +14,7 @@ use daft_dsl::{
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
+use opentelemetry::{KeyValue, global, metrics::Meter};
 use smallvec::SmallVec;
 use tracing::{Span, instrument};
 
@@ -28,7 +26,7 @@ use crate::{
     ExecutionTaskSpawner, TaskSet,
     intermediate_ops::udf::remap_used_cols,
     pipeline::{MorselSizeRequirement, NodeName},
-    runtime_stats::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats},
+    runtime_stats::{CPU_US_KEY, Counter, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats},
 };
 
 struct AsyncUdfParams {
@@ -39,12 +37,13 @@ struct AsyncUdfParams {
     required_cols: Vec<usize>,
 }
 
-#[derive(Default)]
 struct AsyncUdfRuntimeStats {
-    cpu_us: AtomicU64,
-    rows_in: AtomicU64,
-    rows_out: AtomicU64,
-    counters: Mutex<HashMap<Arc<str>, u64>>,
+    meter: Meter,
+    node_kv: Vec<KeyValue>,
+    cpu_us: Counter,
+    rows_in: Counter,
+    rows_out: Counter,
+    custom_counters: Mutex<HashMap<Arc<str>, Counter>>,
 }
 
 impl RuntimeStats for AsyncUdfRuntimeStats {
@@ -53,7 +52,7 @@ impl RuntimeStats for AsyncUdfRuntimeStats {
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
-        let counters = self.counters.lock().unwrap();
+        let counters = self.custom_counters.lock().unwrap();
         let mut entries = SmallVec::with_capacity(3 + counters.len());
 
         entries.push((
@@ -66,36 +65,52 @@ impl RuntimeStats for AsyncUdfRuntimeStats {
             Stat::Count(self.rows_out.load(ordering)),
         ));
 
-        for (name, value) in counters.iter() {
-            entries.push((name.clone().into(), Stat::Count(*value)));
+        for (name, counter) in counters.iter() {
+            entries.push((name.clone().into(), Stat::Count(counter.load(ordering))));
         }
 
         StatSnapshotSend(entries)
     }
 
     fn add_rows_in(&self, rows: u64) {
-        self.rows_in.fetch_add(rows, Ordering::Relaxed);
+        self.rows_in.add(rows, self.node_kv.as_slice());
     }
 
     fn add_rows_out(&self, rows: u64) {
-        self.rows_out.fetch_add(rows, Ordering::Relaxed);
+        self.rows_out.add(rows, self.node_kv.as_slice());
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
+        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
 impl AsyncUdfRuntimeStats {
+    fn new(id: usize) -> Self {
+        let meter = global::meter("daft.local.node_stats");
+        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+
+        Self {
+            cpu_us: Counter::new(&meter, CPU_US_KEY.into()),
+            rows_in: Counter::new(&meter, ROWS_IN_KEY.into()),
+            rows_out: Counter::new(&meter, ROWS_OUT_KEY.into()),
+            custom_counters: Mutex::new(HashMap::new()),
+            node_kv,
+            meter,
+        }
+    }
+
     fn update_metrics(&self, metrics: OperatorMetrics) {
-        let mut counters = self.counters.lock().unwrap();
+        let mut counters = self.custom_counters.lock().unwrap();
         for (name, value) in metrics {
             match counters.get_mut(name.as_str()) {
                 Some(counter) => {
-                    *counter += value;
+                    counter.add(value, self.node_kv.as_slice());
                 }
                 None => {
-                    counters.insert(name.into(), value);
+                    let counter = Counter::new(&self.meter, name.clone().into());
+                    counter.add(value, self.node_kv.as_slice());
+                    counters.insert(name.into(), counter);
                 }
             }
         }
@@ -326,8 +341,8 @@ impl StreamingSink for AsyncUdfSink {
         })
     }
 
-    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        Arc::new(AsyncUdfRuntimeStats::default())
+    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(AsyncUdfRuntimeStats::new(id))
     }
 
     fn max_concurrency(&self) -> usize {

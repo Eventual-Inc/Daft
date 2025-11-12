@@ -30,7 +30,7 @@ homepage = "https://www.daft.ai"
 repository = "https://github.com/Eventual-Inc/Daft"
 
 [project.optional-dependencies]
-all = ["daft[aws, azure, clickhouse, deltalake, gcp, hudi, huggingface, iceberg, lance, numpy, openai, pandas, ray, sentence-transformers, spark, sql, transformers, turbopuffer, unity, video]"]
+all = ["daft[aws, azure, clickhouse, deltalake, gcp, hudi, huggingface, iceberg, lance, numpy, openai, pandas, postgres, ray, sentence-transformers, spark, sql, transformers, turbopuffer, unity, video]"]
 aws = ["boto3"]
 azure = []
 clickhouse = ["clickhouse_connect"]
@@ -46,6 +46,7 @@ lance = ["pylance"]
 numpy = ["numpy"]
 openai = ["openai"]
 pandas = ["pandas"]
+postgres = ["psycopg", "pgvector"]
 ray = [
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
   'ray[data, client]>=2.0.0; platform_system != "Windows"',
@@ -53,7 +54,8 @@ ray = [
 ]
 transformers = ["transformers", "sentence-transformers", "torch", "torchvision"]
 spark = ["googleapis-common-protos >= 1.56.4", "grpcio >= 1.48", "grpcio-status >= 1.48", "numpy >= 1.15", "pandas >= 1.0.5", "py4j >= 0.10.9.7", "pyspark == 3.5.5"]
-sql = ["connectorx", "sqlalchemy", "sqlglot"]
+# connectorx 0.4.4 is needed for pgvector support.
+sql = ["connectorx>=0.4.4", "sqlalchemy", "sqlglot"]
 turbopuffer = ["turbopuffer"]
 unity = ["httpx <= 0.27.2", "unitycatalog"]
 video = ["av >= 15.0.0"]
@@ -91,6 +93,7 @@ dev = [
   "pandas-stubs==2.2.2.240807",
   "xxhash>=3.0.0",
   "Pillow==10.4.0",
+  "reportlab",
   "opencv-python==4.10.0.84",
   "tiktoken==0.9.0",
   "duckdb==1.1.2",
@@ -121,8 +124,8 @@ dev = [
   "unitycatalog==0.1.1",
   # SQL
   "sqlalchemy==2.0.36",
-  "connectorx==0.2.4; platform_system == \"Linux\" and platform_machine == \"aarch64\"",
-  "connectorx==0.4.0; platform_system != \"Linux\" or platform_machine != \"aarch64\"",
+  "connectorx>=0.4.4; platform_system == \"Linux\" and platform_machine == \"aarch64\"",
+  "connectorx>=0.4.4; platform_system != \"Linux\" or platform_machine != \"aarch64\"",
   "trino[sqlalchemy]==0.328.0",
   "PyMySQL==1.1.0",
   "psycopg2-binary==2.9.10",

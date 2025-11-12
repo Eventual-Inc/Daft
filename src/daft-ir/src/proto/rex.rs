@@ -350,6 +350,7 @@ impl ToFromProto for ir::AggExpr {
                     "count_star" => Self::Count(arg, ir::CountMode::All),
                     "count_nulls" => Self::Count(arg, ir::CountMode::Null),
                     "sum" => Self::Sum(arg),
+                    "product" => Self::Product(arg),
                     "mean" => Self::Mean(arg),
                     "stddev" => Self::Stddev(arg),
                     "min" => Self::Min(arg),
@@ -432,6 +433,14 @@ impl ToFromProto for ir::AggExpr {
                 // SUM([ALL] <expr>)
                 proto::AggVariant::SetFunction(proto::agg::SetFunction {
                     name: "sum".to_string(),
+                    args: vec![expr.to_proto()?],
+                    is_all: true,
+                })
+            }
+            Self::Product(expr) => {
+                // PRODUCT([ALL] <expr>)
+                proto::AggVariant::SetFunction(proto::agg::SetFunction {
+                    name: "product".to_string(),
                     args: vec![expr.to_proto()?],
                     is_all: true,
                 })

@@ -584,6 +584,9 @@ impl RecordBatch {
             AggExpr::Sum(expr) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .sum(groups),
+            AggExpr::Product(expr) => self
+                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .product(groups),
             &AggExpr::ApproxPercentile(ApproxPercentileParams {
                 child: ref expr,
                 ref percentiles,
@@ -956,10 +959,11 @@ impl RecordBatch {
                         .await?,
                     );
                 }
+                let mut noop_metrics_collector   = NoopMetricsCollector;
                 if python_udf.is_async() {
-                    python_udf.call_async(args.as_slice(), metrics).await
+                    python_udf.call_async(args.as_slice(), &mut noop_metrics_collector).await
                 } else {
-                    python_udf.call(args.as_slice(), metrics)
+                    python_udf.call(args.as_slice(), &mut noop_metrics_collector)
                 }
             }
             Expr::Subquery(_subquery) => Err(DaftError::ComputeError(

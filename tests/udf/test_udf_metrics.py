@@ -11,6 +11,7 @@ import pytest
 import daft
 from daft import DataType, Series
 from daft.subscribers import StatType, Subscriber
+from daft.udf import metrics
 from tests.conftest import get_tests_daft_runner_name
 
 pytestmark = pytest.mark.skipif(
@@ -88,7 +89,7 @@ def _wrap_async(fn: Callable[..., Any]) -> Callable[..., Any]:
 
 def _make_scalar_udf(
     *,
-    counter_metric: Any,
+    counter_name: str,
     factor: int,
     use_process: bool,
     is_async: bool,
@@ -96,10 +97,9 @@ def _make_scalar_udf(
     def body(
         value: int,
         *,
-        _ctr=counter_metric,
         _factor=factor,
     ) -> int:
-        _ctr.increment(amount=value * _factor)
+        metrics.increment_counter(counter_name, amount=value * _factor)
         return value + _factor
 
     impl = _wrap_async(body) if is_async else body
@@ -108,21 +108,18 @@ def _make_scalar_udf(
 
 def _make_batch_udf(
     *,
-    counter_metric: Any,
+    counter_name: str,
     factor: int,
     use_process: bool,
     is_async: bool,
 ) -> Callable[[Any], Any]:
     def body(
         values: Series,
-        *,
-        _ctr=counter_metric,
-        _factor=factor,
     ) -> Series:
         py_values = values.to_pylist()
         for v in py_values:
-            _ctr.increment(amount=v * _factor)
-        return Series.from_pylist([v + _factor for v in py_values])
+            metrics.increment_counter(counter_name, amount=v * factor)
+        return Series.from_pylist([v + factor for v in py_values])
 
     impl = _wrap_async(body) if is_async else body
     return daft.func.batch(return_dtype=DataType.int64(), use_process=use_process)(impl)
@@ -130,7 +127,6 @@ def _make_batch_udf(
 
 def _make_cls_udf(
     *,
-    metrics_module: Any,
     factor: int,
     counter_name: str,
     concurrency: int | None,
@@ -140,13 +136,13 @@ def _make_cls_udf(
 
         async def call_impl(self: Any, value: int) -> int:
             await asyncio.sleep(0)  # Make it async but don't slow down tests
-            self.counter.increment(amount=value * self.addend)
+            metrics.increment_counter(self.counter_name, amount=value * factor)
             return value + self.addend
 
     else:
 
         def call_impl(self: Any, value: int) -> int:
-            self.counter.increment(amount=value * self.addend)
+            metrics.increment_counter(self.counter_name, amount=value * factor)
             return value + self.addend
 
     @daft.cls(max_concurrency=concurrency)
@@ -157,11 +153,34 @@ def _make_cls_udf(
             counter_name: str,
         ) -> None:
             self.addend = addend
-            self.counter = metrics_module.counter(counter_name)
+            self.counter_name = counter_name
 
         __call__ = call_impl  # type: ignore[assignment]
 
     return MetricUdf(factor, counter_name)
+
+
+def test_udf_metrics_increment_outside_context() -> None:
+    with pytest.warns(
+        RuntimeWarning,
+        match="Custom UDF metrics will only be recorded during execution within a UDF function or class method.",
+    ):
+        metrics.increment_counter("outside counter")
+
+
+def test_udf_metrics_direct_udf_call_warns() -> None:
+    @daft.func
+    def direct_udf(value: int, *, _counter_name: str = "direct counter") -> int:
+        metrics.increment_counter(_counter_name)
+        return value + 1
+
+    with pytest.warns(
+        RuntimeWarning,
+        match="Custom UDF metrics will only be recorded during execution within a UDF function or class method.",
+    ):
+        result = direct_udf(1)
+
+    assert result == 2
 
 
 @pytest.mark.parametrize("num_udfs", [1, 2])
@@ -184,15 +203,11 @@ def test_udf_custom_metrics_func(num_udfs: int, batch_size: int | None, use_proc
 
         cases = []
         for i in range(num_udfs):
-            from daft.udf import metrics
-
             factor = i + 1
             counter_name = f"udf{i} counter"
 
-            counter_metric = metrics.counter(counter_name)
-
             udf = _make_scalar_udf(
-                counter_metric=counter_metric,
+                counter_name=counter_name,
                 factor=factor,
                 use_process=use_process,
                 is_async=is_async,
@@ -236,15 +251,11 @@ def test_udf_custom_metrics_batch(num_udfs: int, batch_size: int | None, use_pro
 
         cases = []
         for i in range(num_udfs):
-            from daft.udf import metrics
-
             factor = i + 1
             counter_name = f"udf{i} counter"
 
-            counter_metric = metrics.counter(counter_name)
-
             udf = _make_batch_udf(
-                counter_metric=counter_metric,
+                counter_name=counter_name,
                 factor=factor,
                 use_process=use_process,
                 is_async=is_async,
@@ -264,6 +275,54 @@ def test_udf_custom_metrics_batch(num_udfs: int, batch_size: int | None, use_pro
             stats = _find_udf_stats(subscriber, case["counter_name"])
             _, counter_value = stats[case["counter_name"]]
             assert counter_value == case["expected_counter"]
+    finally:
+        ctx.detach_subscriber(sub_name)
+
+
+@pytest.mark.parametrize("use_process", [False, True])
+def test_udf_custom_metrics_shared_counter(use_process: bool) -> None:
+    ctx = daft.context.get_context()
+    subscriber = MetricsSubscriber()
+    sub_name = f"udf-metrics-shared-counter-{'proc' if use_process else 'inline'}"
+    ctx.attach_subscriber(sub_name, subscriber)
+
+    try:
+        df = daft.from_pydict({"value": VALUES})
+
+        shared_counter_name = "shared counter"
+
+        @daft.func(use_process=use_process)
+        def udf_increment_by_value(
+            value: int,
+            *,
+            _counter_name: str = shared_counter_name,
+        ) -> int:
+            metrics.increment_counter(_counter_name, amount=value)
+            return value + 1
+
+        @daft.func(use_process=use_process)
+        def udf_increment_by_double(
+            value: int,
+            *,
+            _counter_name: str = shared_counter_name,
+        ) -> int:
+            metrics.increment_counter(_counter_name, amount=value * 2)
+            return value + 2
+
+        df = df.with_column("out_0", udf_increment_by_value(daft.col("value")))
+        df = df.with_column("out_1", udf_increment_by_double(daft.col("value")))
+
+        df.collect()
+
+        query_id = subscriber.query_ids[-1]
+        counter_values = []
+        for stats in subscriber.node_stats[query_id].values():
+            if shared_counter_name in stats:
+                _, counter_value = stats[shared_counter_name]
+                counter_values.append(counter_value)
+
+        assert counter_values, "Shared counter metric not found in operator stats"
+        assert sum(counter_values) == 3 * VALUES_SUM
     finally:
         ctx.detach_subscriber(sub_name)
 
@@ -288,13 +347,10 @@ def test_udf_custom_metrics_cls(num_udfs: int, batch_size: int | None, concurren
 
         cases = []
         for i in range(num_udfs):
-            from daft.udf import metrics
-
             factor = i + 1
             counter_name = f"udf{i} counter"
 
             instance = _make_cls_udf(
-                metrics_module=metrics,
                 factor=factor,
                 counter_name=counter_name,
                 concurrency=concurrency,
