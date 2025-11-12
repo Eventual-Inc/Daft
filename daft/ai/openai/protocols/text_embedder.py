@@ -83,9 +83,6 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
         return self.model_options
 
     def get_dimensions(self) -> EmbeddingDimensions:
-        # TODO change this
-        if self.model_options.get("embedding_dimensions") is not None:
-            return EmbeddingDimensions(size=self.model_options["embedding_dimensions"], dtype=DataType.float32())
         if self.dimensions is not None:
             return EmbeddingDimensions(size=self.dimensions, dtype=DataType.float32())
         return _models[self.model_name].dimensions
