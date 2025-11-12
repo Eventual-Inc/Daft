@@ -28,12 +28,13 @@ impl RecordBatch {
                 descending.len()
             )));
         }
-        if sort_keys.len() == 1 {
-            self.eval_expression(sort_keys.first().unwrap())?
+        let sort_values = self.eval_expression_list(sort_keys)?;
+        if sort_values.num_columns() == 1 {
+            sort_values
+                .get_column(0)
                 .argsort(*descending.first().unwrap(), *nulls_first.first().unwrap())
         } else {
-            let expr_result = self.eval_expression_list(sort_keys)?;
-            Series::argsort_multikey(expr_result.columns.as_slice(), descending, nulls_first)
+            Series::argsort_multikey(sort_values.columns.as_slice(), descending, nulls_first)
         }
     }
 
