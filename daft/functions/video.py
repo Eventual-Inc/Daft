@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     import PIL
 
     from daft import Expression
-    from daft.file.typing import VideoMetadata
+    from daft.file import VideoMetadata
 
 
 def get_metadata_impl(
