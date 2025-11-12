@@ -19,7 +19,7 @@ use daft_micropartition::{
     MicroPartition, MicroPartitionRef,
     partitioning::{InMemoryPartitionSetCache, MicroPartitionSet, PartitionSetCache},
 };
-use futures::{Stream, StreamExt, stream::BoxStream};
+use futures::Stream;
 use tokio::{runtime::Handle, sync::Mutex};
 use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
@@ -28,7 +28,7 @@ use {
     daft_context::python::PyDaftContext,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    pyo3::{Bound, IntoPyObject, Py, PyAny, PyRef, PyResult, Python, pyclass, pymethods},
+    pyo3::{Bound, IntoPyObject, PyAny, PyRef, PyResult, Python, pyclass, pymethods},
 };
 
 use crate::{
@@ -62,28 +62,6 @@ fn get_global_runtime() -> &'static Handle {
 #[cfg(not(feature = "python"))]
 fn get_global_runtime() -> &'static Handle {
     unimplemented!("get_global_runtime is not implemented without python feature");
-}
-
-#[cfg(feature = "python")]
-#[pyclass(module = "daft.daft", name = "PyLocalPartitionStream", frozen)]
-pub struct LocalPartitionStream {
-    stream: Arc<Mutex<BoxStream<'static, DaftResult<Py<PyAny>>>>>,
-}
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl LocalPartitionStream {
-    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-    fn __anext__<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, pyo3::PyAny>> {
-        let stream = self.stream.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut stream = stream.lock().await;
-            let part = stream.next().await;
-            Ok(part.transpose()?)
-        })
-    }
 }
 
 #[cfg_attr(

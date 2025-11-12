@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 from daft.daft import (
     LocalPhysicalPlan,
     PyDaftExecutionConfig,
-    PyLocalPartitionStream,
     PyMicroPartition,
 )
 from daft.daft import (
@@ -25,17 +24,6 @@ if TYPE_CHECKING:
         MaterializedResult,
         PartitionT,
     )
-
-
-class LocalPartitionStream:
-    def __init__(self, stream: PyLocalPartitionStream) -> None:
-        self._stream = stream
-
-    def __aiter__(self) -> LocalPartitionStream:
-        return self
-
-    async def __anext__(self) -> PyMicroPartition:
-        return await self._stream.__anext__()
 
 
 class NativeExecutor:
@@ -68,9 +56,10 @@ class NativeExecutor:
                 yield batch
             _ = await result_handle.finish()
 
-        async_iter = LocalPartitionStream(get_or_init_event_loop().run(run_executor()))  # type: ignore
+        event_loop = get_or_init_event_loop()
+        async_iter = run_executor()
         while True:
-            part = get_or_init_event_loop().run(async_iter.__anext__())
+            part = event_loop.run(async_iter.__anext__())  # type: ignore
             if part is None:
                 break
             yield LocalMaterializedResult(MicroPartition._from_pymicropartition(part))
