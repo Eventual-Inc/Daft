@@ -79,7 +79,7 @@ def embed_text(
         model (str | None):
             The embedding model to use. Can be a model instance or a model name. If None, the default model is used.
         dimensions (int | None):
-            Number of dimensions to return, if the provider and model support specifying. If None, the model will determine the number of dimensions to return.
+            Number of dimensions the output embeddings should have, if the provider and model support specifying. If None, the model will determine the number of dimensions.
         **options: Any additional options to pass for the model.
 
     Note:

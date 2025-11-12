@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from openai import AsyncOpenAI, OpenAIError, RateLimitError
+from openai import NOT_GIVEN, AsyncOpenAI, OpenAIError, RateLimitError
 
 from daft import DataType
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
@@ -171,7 +171,7 @@ class OpenAITextEmbedder(TextEmbedder):
                 input=input_batch,
                 model=self._model,
                 encoding_format="float",
-                dimensions=self._dimensions,
+                dimensions=self._dimensions or NOT_GIVEN,
             )
             return [np.array(embedding.embedding) for embedding in response.data]
         except RateLimitError:
@@ -188,7 +188,7 @@ class OpenAITextEmbedder(TextEmbedder):
                 input=input_text,
                 model=self._model,
                 encoding_format="float",
-                dimensions=self._dimensions,
+                dimensions=self._dimensions or NOT_GIVEN,
             )
             return np.array(response.data[0].embedding)
         except Exception as ex:
