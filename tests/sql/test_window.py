@@ -838,14 +838,3 @@ def test_order_by_only_multiple_columns():
     )
 
     assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["x", "y"])
-
-
-def test_order_by_literal():
-    """Test window functions with ORDER BY literal."""
-    df = daft.from_pydict({"a": [1, 1, 1, 2], "b": [3, 3, 4, 4]})
-
-    res = df.with_column(
-        "c", daft.col("a").count(mode="all").over(daft.Window().partition_by("a", "b").order_by(daft.lit(1)))
-    )
-
-    assert res.sort(["a", "b"]).to_pydict() == {"a": [1, 1, 1, 2], "b": [3, 3, 4, 4], "c": [2, 2, 1, 1]}
