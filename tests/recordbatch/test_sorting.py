@@ -6,7 +6,7 @@ import numpy as np
 import pyarrow as pa
 import pytest
 
-from daft import col
+from daft import col, lit
 from daft.logical.schema import Schema
 from daft.recordbatch import MicroPartition
 from daft.series import Series
@@ -460,3 +460,9 @@ def test_string_table_sorting():
         "firstname": ["alice", "alice", "bob", "bob", "eve", None, None],
         "lastname": ["a", "a", "a", None, "a", "bond", None],
     }
+
+
+def test_literal_sorting() -> None:
+    daft_recordbatch = MicroPartition.from_pydict({"a": [1, 2, 3, 4, 5]})
+    sorted_table = daft_recordbatch.sort([lit(1)])
+    assert sorted_table.to_pydict() == {"a": [1, 2, 3, 4, 5]}
