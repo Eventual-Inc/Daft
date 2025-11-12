@@ -1,8 +1,5 @@
 use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::{Arc, atomic::Ordering},
     time::Duration,
 };
 
@@ -13,6 +10,7 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::{ProbeState, ProbeableBuilder, RecordBatch, make_probeable_builder};
 use itertools::Itertools;
+use opentelemetry::{KeyValue, global};
 use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
@@ -20,7 +18,9 @@ use super::blocking_sink::{
     BlockingSinkStatus,
 };
 use crate::{
-    ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats,
+    ExecutionTaskSpawner,
+    pipeline::NodeName,
+    runtime_stats::{Counter, RuntimeStats},
     state_bridge::BroadcastStateBridgeRef,
 };
 
@@ -97,10 +97,22 @@ impl ProbeTableState {
     }
 }
 
-#[derive(Default)]
 struct HashJoinBuildRuntimeStats {
-    cpu_us: AtomicU64,
-    rows_in: AtomicU64,
+    cpu_us: Counter,
+    rows_in: Counter,
+
+    node_kv: Vec<KeyValue>,
+}
+impl HashJoinBuildRuntimeStats {
+    pub fn new(id: usize) -> Self {
+        let meter = global::meter("daft.local.node_stats");
+        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+        Self {
+            cpu_us: Counter::new(&meter, "cpu_us".into()),
+            rows_in: Counter::new(&meter, "rows_in".into()),
+            node_kv,
+        }
+    }
 }
 
 impl RuntimeStats for HashJoinBuildRuntimeStats {
@@ -116,7 +128,7 @@ impl RuntimeStats for HashJoinBuildRuntimeStats {
     }
 
     fn add_rows_in(&self, rows: u64) {
-        self.rows_in.fetch_add(rows, Ordering::Relaxed);
+        self.rows_in.add(rows, self.node_kv.as_slice());
     }
 
     fn add_rows_out(&self, _: u64) {
@@ -124,7 +136,7 @@ impl RuntimeStats for HashJoinBuildRuntimeStats {
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
+        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
@@ -223,8 +235,8 @@ impl BlockingSink for HashJoinBuildSink {
         )
     }
 
-    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        Arc::new(HashJoinBuildRuntimeStats::default())
+    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(HashJoinBuildRuntimeStats::new(id))
     }
 
     fn morsel_size_requirement(&self) -> Option<crate::pipeline::MorselSizeRequirement> {

@@ -1,8 +1,5 @@
 use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::{Arc, atomic::Ordering},
     time::Duration,
 };
 
@@ -21,21 +18,38 @@ use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use futures::{StreamExt, stream::BoxStream};
+use opentelemetry::{KeyValue, global};
 
 use crate::{
     ExecutionRuntimeContext,
     channel::{Receiver, create_channel},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
-    runtime_stats::{CountingSender, RuntimeStats},
+    runtime_stats::{Counter, CountingSender, RuntimeStats},
 };
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
 
-#[derive(Default)]
 pub(crate) struct SourceStats {
-    cpu_us: AtomicU64,
-    rows_out: AtomicU64,
+    cpu_us: Counter,
+    rows_out: Counter,
     io_stats: IOStatsRef,
+
+    node_kv: Vec<KeyValue>,
+}
+
+impl SourceStats {
+    pub fn new(id: usize) -> Self {
+        let meter = global::meter("daft.local.node_stats");
+        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+
+        Self {
+            cpu_us: Counter::new(&meter, "cpu_us".into()),
+            rows_out: Counter::new(&meter, "rows_out".into()),
+            io_stats: IOStatsRef::default(),
+
+            node_kv,
+        }
+    }
 }
 
 impl RuntimeStats for SourceStats {
@@ -56,11 +70,11 @@ impl RuntimeStats for SourceStats {
     }
 
     fn add_rows_out(&self, rows: u64) {
-        self.rows_out.fetch_add(rows, Ordering::Relaxed);
+        self.rows_out.add(rows, self.node_kv.as_slice());
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
+        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
@@ -68,8 +82,8 @@ impl RuntimeStats for SourceStats {
 pub trait Source: Send + Sync {
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
-    fn make_runtime_stats(&self) -> Arc<SourceStats> {
-        Arc::new(SourceStats::default())
+    fn make_runtime_stats(&self, id: usize) -> Arc<SourceStats> {
+        Arc::new(SourceStats::new(id))
     }
     fn multiline_display(&self) -> Vec<String>;
     async fn get_data(
@@ -104,7 +118,7 @@ impl SourceNode {
             output_schema,
             context,
         );
-        let runtime_stats = source.make_runtime_stats();
+        let runtime_stats = source.make_runtime_stats(info.id);
         Self {
             source,
             runtime_stats,

@@ -334,6 +334,51 @@ def test_prompt_with_image_structured_output(session, use_chat_completions):
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("use_chat_completions", [False, True])
+def test_prompt_with_text_document(session, use_chat_completions):
+    """Test prompt function with plain text document input."""
+    import tempfile
+
+    document_contents = "The secret word hidden in this document is pineapple."
+
+    with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w", encoding="utf-8") as tmp:
+        tmp.write(document_contents)
+        temp_path = tmp.name
+
+    try:
+        df = daft.from_pydict(
+            {
+                "question": [
+                    "Read the attached document and tell me the secret word it mentions.",
+                ],
+                "document_path": [temp_path],
+            }
+        )
+
+        df = df.with_column(
+            "answer",
+            prompt(
+                [daft.col("question"), daft.functions.file(daft.col("document_path"))],
+                use_chat_completions=use_chat_completions,
+            ),
+        )
+
+        answers = df.to_pydict()["answer"]
+
+        assert len(answers) == 1
+        for answer in answers:
+            assert isinstance(answer, str)
+            assert len(answer) > 0
+            assert "pineapple" in answer.lower()
+    finally:
+        import os
+
+        os.unlink(temp_path)
+
+    time.sleep(1)  # self limit to ~1 tps.
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize("use_chat_completions", [False, True])
 def test_prompt_with_pdf_document(session, use_chat_completions):
     """Test prompt function with PDF file input."""
     import tempfile

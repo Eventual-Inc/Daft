@@ -28,7 +28,7 @@ use tokio::{
     time::interval,
 };
 use tracing::{Instrument, instrument::Instrumented};
-pub use values::{DefaultRuntimeStats, RuntimeStats};
+pub use values::{Counter, DefaultRuntimeStats, RuntimeStats};
 
 use crate::{
     channel::{Receiver, Sender},
@@ -415,7 +415,7 @@ mod tests {
         let mock_subscriber = Box::new(MockSubscriber::new());
         let mock_state = mock_subscriber.state.clone();
 
-        let node_stat = Arc::new(DefaultRuntimeStats::default()) as Arc<dyn RuntimeStats>;
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0)) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
@@ -474,7 +474,7 @@ mod tests {
         let state1 = subscriber1.state.clone();
         let state2 = subscriber2.state.clone();
 
-        let node_stat = Arc::new(DefaultRuntimeStats::default()) as Arc<dyn RuntimeStats>;
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0)) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
@@ -524,7 +524,7 @@ mod tests {
         let mock_subscriber = Box::new(MockSubscriber::new());
         let state = mock_subscriber.state.clone();
 
-        let node_stat = Arc::new(DefaultRuntimeStats::default()) as Arc<dyn RuntimeStats>;
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0)) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
@@ -544,7 +544,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_runtime_stats_context_operations() {
-        let node_stat = Arc::new(DefaultRuntimeStats::default());
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0));
 
         // Test initial state
         let stats = node_stat.snapshot();
@@ -567,7 +567,7 @@ mod tests {
         let mock_subscriber = Box::new(MockSubscriber::new());
         let state = mock_subscriber.state.clone();
 
-        let node_stat = Arc::new(DefaultRuntimeStats::default()) as Arc<dyn RuntimeStats>;
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0)) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
@@ -599,7 +599,7 @@ mod tests {
 
         // Use 500ms for the throttle interval.
         let throttle_interval = Duration::from_millis(500);
-        let node_stat = Arc::new(DefaultRuntimeStats::default()) as Arc<dyn RuntimeStats>;
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0)) as Arc<dyn RuntimeStats>;
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
             vec![mock_subscriber],
