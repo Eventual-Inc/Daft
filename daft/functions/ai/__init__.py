@@ -66,6 +66,7 @@ def embed_text(
     *,
     provider: str | Provider | None = None,
     model: str | None = None,
+    dimensions: int | None = None,
     **options: str,
 ) -> Expression:
     """Returns an expression that embeds text using the specified embedding model and provider.
@@ -77,6 +78,8 @@ def embed_text(
             The provider to use for the embedding model. If None, the default provider is used.
         model (str | None):
             The embedding model to use. Can be a model instance or a model name. If None, the default model is used.
+        dimensions (int | None):
+            Number of dimensions the output embeddings should have, if the provider and model support specifying. If None, will use the default for the model.
         **options: Any additional options to pass for the model.
 
     Note:
@@ -117,7 +120,7 @@ def embed_text(
     from daft.ai.protocols import TextEmbedder
 
     # load a TextEmbedderDescriptor from the resolved provider
-    text_embedder = _resolve_provider(provider, "transformers").get_text_embedder(model, **options)
+    text_embedder = _resolve_provider(provider, "transformers").get_text_embedder(model, dimensions, **options)
 
     udf_options = text_embedder.get_udf_options()
 
