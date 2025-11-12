@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import warnings
 from typing import TYPE_CHECKING, Any
 
 if sys.version_info < (3, 11):
@@ -43,7 +44,10 @@ class LMStudioProvider(OpenAIProvider):
     ) -> TextEmbedderDescriptor:
         from daft.ai.lm_studio.protocols.text_embedder import LMStudioTextEmbedderDescriptor
 
-        # currently ignores dimensions
+        if dimensions is not None:
+            warnings.warn(
+                f"embed_text dimensions was specified but provider {self.name} currently ignores this property: see https://github.com/Eventual-Inc/Daft/issues/5555"
+            )
 
         return LMStudioTextEmbedderDescriptor(
             provider_name=self._name,
