@@ -44,6 +44,7 @@ mod merge_sketch;
 mod minhash;
 mod null;
 mod pairwise;
+mod product;
 mod repr;
 mod round;
 mod search_sorted;
@@ -189,6 +190,12 @@ pub trait DaftSumAggable {
     type Output;
     fn sum(&self) -> Self::Output;
     fn grouped_sum(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftProductAggable {
+    type Output;
+    fn product(&self) -> Self::Output;
+    fn grouped_product(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftApproxSketchAggable {

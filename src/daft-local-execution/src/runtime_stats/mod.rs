@@ -28,7 +28,9 @@ use tokio::{
     time::interval,
 };
 use tracing::{Instrument, instrument::Instrumented};
-pub use values::{CPU_US_KEY, DefaultRuntimeStats, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats};
+pub use values::{
+    CPU_US_KEY, Counter, DefaultRuntimeStats, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats,
+};
 
 use crate::{
     channel::{Receiver, Sender},
@@ -410,7 +412,7 @@ mod tests {
         let mock_subscriber = Box::new(MockSubscriber::new());
         let mock_state = mock_subscriber.state.clone();
 
-        let node_stat = Arc::new(DefaultRuntimeStats::default()) as Arc<dyn RuntimeStats>;
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0)) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
@@ -443,7 +445,7 @@ mod tests {
         );
         assert_eq!(
             mock_state.get_latest_event()[1],
-            (ROWS_IN_KEY, Stat::Count(200))
+            (ROWS_IN_KEY.into(), Stat::Count(200))
         );
 
         // Wait for throttle interval to pass, then send another event
@@ -458,7 +460,7 @@ mod tests {
         );
         assert_eq!(
             mock_state.get_latest_event()[1],
-            (ROWS_IN_KEY, Stat::Count(500))
+            (ROWS_IN_KEY.into(), Stat::Count(500))
         );
     }
 
@@ -469,7 +471,7 @@ mod tests {
         let state1 = subscriber1.state.clone();
         let state2 = subscriber2.state.clone();
 
-        let node_stat = Arc::new(DefaultRuntimeStats::default()) as Arc<dyn RuntimeStats>;
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0)) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
@@ -519,7 +521,7 @@ mod tests {
         let mock_subscriber = Box::new(MockSubscriber::new());
         let state = mock_subscriber.state.clone();
 
-        let node_stat = Arc::new(DefaultRuntimeStats::default()) as Arc<dyn RuntimeStats>;
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0)) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
@@ -539,22 +541,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_runtime_stats_context_operations() {
-        let node_stat = Arc::new(DefaultRuntimeStats::default());
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0));
 
         // Test initial state
         let stats = node_stat.snapshot();
-        assert_eq!(stats[1], (ROWS_IN_KEY, Stat::Count(0)));
-        assert_eq!(stats[2], (ROWS_OUT_KEY, Stat::Count(0)));
+        assert_eq!(stats[1], (ROWS_IN_KEY.into(), Stat::Count(0)));
+        assert_eq!(stats[2], (ROWS_OUT_KEY.into(), Stat::Count(0)));
 
         // Test incremental updates
         node_stat.add_rows_in(100);
         node_stat.add_rows_in(50);
         let stats = node_stat.snapshot();
-        assert_eq!(stats[1], (ROWS_IN_KEY, Stat::Count(150)));
+        assert_eq!(stats[1], (ROWS_IN_KEY.into(), Stat::Count(150)));
 
         node_stat.add_rows_out(75);
         let stats = node_stat.snapshot();
-        assert_eq!(stats[2], (ROWS_OUT_KEY, Stat::Count(75)));
+        assert_eq!(stats[2], (ROWS_OUT_KEY.into(), Stat::Count(75)));
     }
 
     #[tokio::test(start_paused = true)]
@@ -562,7 +564,7 @@ mod tests {
         let mock_subscriber = Box::new(MockSubscriber::new());
         let state = mock_subscriber.state.clone();
 
-        let node_stat = Arc::new(DefaultRuntimeStats::default()) as Arc<dyn RuntimeStats>;
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0)) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
@@ -584,7 +586,7 @@ mod tests {
         // Now we should get an event
         assert_eq!(state.get_total_calls(), 1);
         let event = state.get_latest_event();
-        assert_eq!(event[1], (ROWS_IN_KEY, Stat::Count(100)));
+        assert_eq!(event[1], (ROWS_IN_KEY.into(), Stat::Count(100)));
     }
 
     #[tokio::test(start_paused = true)]
@@ -594,7 +596,7 @@ mod tests {
 
         // Use 500ms for the throttle interval.
         let throttle_interval = Duration::from_millis(500);
-        let node_stat = Arc::new(DefaultRuntimeStats::default()) as Arc<dyn RuntimeStats>;
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0)) as Arc<dyn RuntimeStats>;
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
             vec![mock_subscriber],
@@ -621,9 +623,9 @@ mod tests {
         let event = state.get_latest_event();
         assert_eq!(
             event[0],
-            (CPU_US_KEY, Stat::Duration(Duration::from_millis(1)))
+            (CPU_US_KEY.into(), Stat::Duration(Duration::from_millis(1)))
         );
-        assert_eq!(event[1], (ROWS_IN_KEY, Stat::Count(100)));
-        assert_eq!(event[2], (ROWS_OUT_KEY, Stat::Count(50)));
+        assert_eq!(event[1], (ROWS_IN_KEY.into(), Stat::Count(100)));
+        assert_eq!(event[2], (ROWS_OUT_KEY.into(), Stat::Count(50)));
     }
 }

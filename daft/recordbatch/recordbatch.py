@@ -12,6 +12,7 @@ from daft.daft import (
     JsonConvertOptions,
     JsonParseOptions,
     JsonReadOptions,
+    OperatorMetrics,
     PySeries,
 )
 from daft.daft import PyRecordBatch as _PyRecordBatch
@@ -245,6 +246,12 @@ class RecordBatch:
         assert all(isinstance(e, Expression) for e in exprs)
         pyexprs = [e._expr for e in exprs]
         return RecordBatch._from_pyrecordbatch(self._recordbatch.eval_expression_list(pyexprs))
+
+    def eval_expression_list_with_metrics(self, exprs: ExpressionsProjection) -> tuple[RecordBatch, OperatorMetrics]:
+        assert all(isinstance(e, Expression) for e in exprs)
+        pyexprs = [e._expr for e in exprs]
+        record_batch, metrics = self._recordbatch.eval_expression_list_with_metrics(pyexprs)
+        return RecordBatch._from_pyrecordbatch(record_batch), metrics
 
     def head(self, num: int) -> RecordBatch:
         return RecordBatch._from_pyrecordbatch(self._recordbatch.head(num))

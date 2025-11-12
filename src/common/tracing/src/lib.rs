@@ -46,6 +46,7 @@ pub fn init_opentelemetry_providers() {
 
 pub fn flush_opentelemetry_providers() {
     flush_oltp_tracer_provider();
+    flush_oltp_metrics_provider();
 }
 
 async fn init_otlp_metrics_provider(otlp_endpoint: &str) {
@@ -68,6 +69,7 @@ async fn init_otlp_metrics_provider(otlp_endpoint: &str) {
         .build();
 
     let metrics_provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
+        // To customize the export interval, set the **"OTEL_METRIC_EXPORT_INTERVAL"** environment variable (in milliseconds).
         .with_reader(metrics_reader)
         .with_resource(resource)
         .build();
@@ -82,7 +84,7 @@ pub fn flush_oltp_metrics_provider() {
     if let Some(meter_provider) = mg.as_ref()
         && let Err(e) = meter_provider.force_flush()
     {
-        println!("Failed to flush OTLP metrics provider: {}", e);
+        eprintln!("Failed to flush OTLP metrics provider: {}", e);
     }
 }
 
@@ -123,6 +125,6 @@ fn flush_oltp_tracer_provider() {
     if let Some(tracer_provider) = mg.as_ref()
         && let Err(e) = tracer_provider.force_flush()
     {
-        println!("Failed to flush OTLP tracer provider: {}", e);
+        eprintln!("Failed to flush OTLP tracer provider: {}", e);
     }
 }

@@ -1886,6 +1886,7 @@ dependencies = [
 name = "common-metrics"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-py-serde",
  "daft-schema",
  "indicatif 0.17.11",
  "pyo3",
@@ -2698,6 +2699,7 @@ dependencies = [
  "common-error",
  "common-hashable-float-wrapper",
  "common-macros",
+ "common-metrics",
  "common-py-serde",
  "common-resource-request",
  "common-runtime",
@@ -3041,11 +3043,13 @@ dependencies = [
  "itertools 0.14.0",
  "kanal",
  "log",
+ "opentelemetry",
  "pin-project",
  "pyo3",
  "pyo3-async-runtimes",
  "rand 0.8.5",
  "serde_json",
+ "smallvec",
  "snafu",
  "tokio",
  "tokio-util",
@@ -3240,6 +3244,7 @@ dependencies = [
  "common-arrow-ffi",
  "common-display",
  "common-error",
+ "common-metrics",
  "common-py-serde",
  "common-runtime",
  "daft-core",
@@ -3255,7 +3260,6 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "tokio",
 ]
 
 [[package]]

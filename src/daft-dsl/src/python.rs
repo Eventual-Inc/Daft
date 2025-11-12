@@ -430,6 +430,10 @@ impl PyExpr {
         Ok(self.expr.clone().sum().into())
     }
 
+    pub fn product(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().product().into())
+    }
+
     pub fn approx_count_distinct(&self) -> PyResult<Self> {
         Ok(self.expr.clone().approx_count_distinct().into())
     }

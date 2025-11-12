@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -7,11 +8,37 @@ use std::{
 };
 
 use common_metrics::{Stat, StatSnapshotSend, snapshot};
+use opentelemetry::{KeyValue, global, metrics::Meter};
 
 // Common statistic names
 pub const ROWS_IN_KEY: &str = "rows in";
 pub const ROWS_OUT_KEY: &str = "rows out";
 pub const CPU_US_KEY: &str = "cpu us";
+
+// ----------------------- Wrappers for Runtime Stat Values ----------------------- //
+
+pub struct Counter {
+    value: AtomicU64,
+    otel: opentelemetry::metrics::Counter<u64>,
+}
+
+impl Counter {
+    pub fn new(meter: &Meter, name: Cow<'static, str>) -> Self {
+        Self {
+            value: AtomicU64::new(0),
+            otel: meter.u64_counter(name).build(),
+        }
+    }
+
+    pub fn add(&self, value: u64, key_values: &[KeyValue]) {
+        self.value.fetch_add(value, Ordering::Relaxed);
+        self.otel.add(value, key_values);
+    }
+
+    pub fn load(&self, ordering: Ordering) -> u64 {
+        self.value.load(ordering)
+    }
+}
 
 // ----------------------- General Traits for Runtime Stat Collection ----------------------- //
 
@@ -34,11 +61,25 @@ pub trait RuntimeStats: Send + Sync + std::any::Any {
     fn add_cpu_us(&self, cpu_us: u64);
 }
 
-#[derive(Default)]
 pub struct DefaultRuntimeStats {
-    cpu_us: AtomicU64,
-    rows_in: AtomicU64,
-    rows_out: AtomicU64,
+    cpu_us: Counter,
+    rows_in: Counter,
+    rows_out: Counter,
+    node_kv: Vec<KeyValue>,
+}
+
+impl DefaultRuntimeStats {
+    pub fn new(id: usize) -> Self {
+        let meter = global::meter("daft.local.node_stats");
+        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+
+        Self {
+            cpu_us: Counter::new(&meter, "cpu_us".into()),
+            rows_in: Counter::new(&meter, "rows_in".into()),
+            rows_out: Counter::new(&meter, "rows_out".into()),
+            node_kv,
+        }
+    }
 }
 
 impl RuntimeStats for DefaultRuntimeStats {
@@ -55,14 +96,14 @@ impl RuntimeStats for DefaultRuntimeStats {
     }
 
     fn add_rows_in(&self, rows: u64) {
-        self.rows_in.fetch_add(rows, Ordering::Relaxed);
+        self.rows_in.add(rows, self.node_kv.as_slice());
     }
 
     fn add_rows_out(&self, rows: u64) {
-        self.rows_out.fetch_add(rows, Ordering::Relaxed);
+        self.rows_out.add(rows, self.node_kv.as_slice());
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
+        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
