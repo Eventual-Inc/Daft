@@ -67,11 +67,15 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
     model_options: Options
 
     def __post_init__(self) -> None:
-        if self.provider_options.get("base_url") is None and self.model_name not in _models:
-            supported_models = ", ".join(_models.keys())
-            raise ValueError(
-                f"Unsupported OpenAI embedding model '{self.model_name}', expected one of: {supported_models}"
-            )
+        if self.provider_options.get("base_url") is None:
+            if self.model_name not in _models:
+                supported_models = ", ".join(_models.keys())
+                raise ValueError(
+                    f"Unsupported OpenAI embedding model '{self.model_name}', expected one of: {supported_models}"
+                )
+            model = _models[self.model_name]
+            if self.dimensions is not None and not model.supports_overriding_dimensions:
+                raise ValueError(f"OpenAI embedding model '{self.model_name}' does not support specifying dimensions")
 
     def get_provider(self) -> str:
         return self.provider_name
