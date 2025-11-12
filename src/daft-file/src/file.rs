@@ -354,7 +354,9 @@ fn guess_mimetype_from_url(url: &str) -> Option<String> {
     Some(mime.to_string())
 }
 
-fn guess_mimetype_from_content<R: Read + Seek>(reader: &mut R) -> std::io::Result<Option<String>> {
+pub(crate) fn guess_mimetype_from_content<R: Read + Seek>(
+    reader: &mut R,
+) -> std::io::Result<Option<String>> {
     let mut buffer = [0; 16]; // Extended for more formats
     let original_pos = reader.stream_position()?;
 

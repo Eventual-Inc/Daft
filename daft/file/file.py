@@ -4,7 +4,7 @@ import shutil
 import tempfile
 from typing import TYPE_CHECKING
 
-from daft.daft import PyDaftFile, PyFileReference, PyMediaType
+from daft.daft import PyDaftFile, PyFileReference
 from daft.datatype import MediaType
 from daft.dependencies import av
 
@@ -39,23 +39,12 @@ class File:
         >>>         return data["text"]
     """
 
-    _inner: PyFileReference | None = None
-    _loaded_bytes: bytes | None = None
+    _inner: PyFileReference
 
     @staticmethod
     def _from_file_reference(reference: PyFileReference) -> File:
         instance = File.__new__(File)
         instance._inner = reference
-        return instance
-
-    @staticmethod
-    def _from_bytes(b: bytes) -> File:
-        """Internal method. DO NOT USE DIRECTLY.
-
-        Creating a file directly from bytes is deprecated and will eventually be phased out.
-        """
-        instance = File.__new__(File)
-        instance._loaded_bytes = b
         return instance
 
     def __init__(
@@ -64,11 +53,7 @@ class File:
         self._inner = PyFileReference._from_tuple((media_type._media_type, url, io_config))  # type: ignore
 
     def open(self) -> PyDaftFile:
-        if self._loaded_bytes is not None:
-            return PyDaftFile._from_bytes(PyMediaType.unknown(), self._loaded_bytes)
-        if self._inner is not None:
-            return PyDaftFile._from_file_reference(self._inner)
-        raise ValueError("File must either contain bytes or a file reference")
+        return PyDaftFile._from_file_reference(self._inner)
 
     def __str__(self) -> str:
         return self._inner.__str__()
@@ -86,12 +71,7 @@ class File:
         return False
 
     def size(self) -> int:
-        if self._loaded_bytes is not None:
-            return len(self._loaded_bytes)
-        if self._inner is not None:
-            return PyDaftFile._from_file_reference(self._inner).size()
-
-        raise ValueError("File must either contain bytes or a file reference")
+        return PyDaftFile._from_file_reference(self._inner).size()
 
     def mime_type(self) -> str:
         """Attempts to determine the MIME type of the file.
