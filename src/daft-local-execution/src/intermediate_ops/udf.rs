@@ -157,7 +157,9 @@ impl UdfRuntimeStats {
                     counter.add(value, self.node_kv.as_slice());
                 }
                 None => {
-                    counters.insert(name.clone().into(), Counter::new(&self.meter, name.into()));
+                    let counter = Counter::new(&self.meter, name.clone().into());
+                    counter.add(value, self.node_kv.as_slice());
+                    counters.insert(name.into(), counter);
                 }
             }
         }
