@@ -154,7 +154,7 @@ def my_sum(a: int, b: int) -> int:
 
 With row-wise functions, Daft will also automatically infer the return type of the function based on the Python type annotations. For example, in the above example, by specifying `-> int`, Daft will automatically infer the return dtype to be `daft.DataType.int64()`.
 
-The `return_dtype` parameter is still supported, but it is not required. See the [Type Conversions](../../api/datatypes/type_conversions#python-to-daft) page for a mapping from Python types to Daft types.
+The `return_dtype` parameter is still supported, but it is not required. See the [Type Conversions](../api/datatypes/type_conversions.md#python-to-daft) page for a mapping from Python types to Daft types.
 
 ### Async Functions
 
