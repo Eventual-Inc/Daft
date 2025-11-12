@@ -49,8 +49,12 @@ class TransformersProvider(Provider):
             model_options=model_options,  # type: ignore
         )
 
-    def get_text_embedder(self, model: str | None = None, **options: Any) -> TextEmbedderDescriptor:
+    def get_text_embedder(
+        self, model: str | None = None, dimensions: int | None = None, **options: Any
+    ) -> TextEmbedderDescriptor:
         from daft.ai.transformers.protocols.text_embedder import TransformersTextEmbedderDescriptor
+
+        # currently ignores dimensions
 
         return TransformersTextEmbedderDescriptor(model or self.DEFAULT_TEXT_EMBEDDER, options)
 
