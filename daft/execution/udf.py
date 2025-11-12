@@ -7,8 +7,8 @@ import subprocess
 import sys
 import tempfile
 from multiprocessing import resource_tracker, shared_memory
-from multiprocessing.connection import Listener
-from typing import IO, TYPE_CHECKING, cast
+from multiprocessing.connection import Connection, Listener
+from typing import TYPE_CHECKING, Any
 
 import daft.pickle
 from daft.daft import OperatorMetrics, PyRecordBatch
@@ -54,16 +54,25 @@ class SharedMemoryTransport:
 
 class UdfHandle:
     def __init__(self, udf_expr: PyExpr) -> None:
-        # Construct UNIX socket path for basic communication
+        expr_projection = ExpressionsProjection([Expression._from_pyexpr(udf_expr)])
+        self._expr_projection_bytes = daft.pickle.dumps(expr_projection)
+
+        self._transport = SharedMemoryTransport()
+        self._socket_path: str | None = None
+        self._listener: Listener | None = None
+        self._handle_conn: Connection[Any, Any] | None = None
+        self._process: subprocess.Popen[bytes] | None = None
+
+    def _ensure_started(self) -> None:
+        if self._handle_conn is not None:
+            return
+
         with tempfile.NamedTemporaryFile(delete=True) as tmp:
-            self.socket_path = tmp.name
+            socket_path = tmp.name
         secret = secrets.token_bytes(32)
-        self.listener = Listener(self.socket_path, authkey=secret)
+        listener = Listener(socket_path, authkey=secret)
 
-        # Copy the current process environment
         env = dict(os.environ)
-
-        # Copy the logging configuration of the current process
         root = logging.getLogger()
         env["LOG_LEVEL"] = str(root.level)
         for h in root.handlers:
@@ -74,16 +83,14 @@ class UdfHandle:
                     env["LOG_DATE_FORMAT"] = h.formatter.datefmt
                 break
 
-        # Python auto-buffers stdout by default, so disable
         env["PYTHONUNBUFFERED"] = "1"
 
-        # Start the worker process
-        self.process = subprocess.Popen(
+        process = subprocess.Popen(
             [
                 sys.executable,
                 "-m",
                 "daft.execution.udf_worker",
-                self.socket_path,
+                socket_path,
                 secret.hex(),
             ],
             stdout=subprocess.PIPE,
@@ -91,39 +98,64 @@ class UdfHandle:
             env=env,
         )
 
-        # Initialize communication
-        self.handle_conn = self.listener.accept()
-        self.transport = SharedMemoryTransport()
+        handle_conn = None
+        try:
+            handle_conn = listener.accept()
+            handle_conn.send((_ENTER, self._expr_projection_bytes))
+            response = handle_conn.recv()
+            if response != _READY:
+                raise RuntimeError(f"Expected '{_READY}' but got {response}")
+        except Exception:
+            if handle_conn is not None:
+                handle_conn.close()
+            if process.poll() is None:
+                process.terminate()
+                process.wait()
+            listener.close()
+            if os.path.exists(socket_path):
+                os.unlink(socket_path)
+            raise
 
-        # Serialize and send the expression projection
-        expr_projection = ExpressionsProjection([Expression._from_pyexpr(udf_expr)])
-        expr_projection_bytes = daft.pickle.dumps(expr_projection)
-        self.handle_conn.send((_ENTER, expr_projection_bytes))
-        response = self.handle_conn.recv()
-        if response != _READY:
-            raise RuntimeError(f"Expected '{_READY}' but got {response}")
+        self._socket_path = socket_path
+        self._listener = listener
+        self._handle_conn = handle_conn
+        self._process = process
+
+    @property
+    def transport(self) -> SharedMemoryTransport:
+        return self._transport
 
     def trace_output(self) -> list[str]:
+        if self._process is None:
+            return []
+        stdout = self._process.stdout
+        if stdout is None:
+            return []
+
         lines = []
         while True:
-            line = cast("IO[bytes]", self.process.stdout).readline()
+            line = stdout.readline()
             # UDF process is expected to return the divider
             # after initialization and every iteration
-            if line == b"" or line == _OUTPUT_DIVIDER or self.process.poll() is not None:
+            if line == b"" or line == _OUTPUT_DIVIDER or self._process.poll() is not None:
                 break
             lines.append(line.decode().rstrip())
         return lines
 
     def eval_input(self, input: PyRecordBatch) -> tuple[PyRecordBatch, list[str], OperatorMetrics]:
-        if self.process.poll() is not None:
+        self._ensure_started()
+        assert self._handle_conn is not None
+        assert self._process is not None
+
+        if self._process.poll() is not None:
             raise RuntimeError("UDF process has terminated")
 
         serialized = input.to_ipc_stream()
         shm_name, shm_size = self.transport.write_and_close(serialized)
-        self.handle_conn.send((shm_name, shm_size))
+        self._handle_conn.send((shm_name, shm_size))
 
         try:
-            response = self.handle_conn.recv()
+            response = self._handle_conn.recv()
         except EOFError:
             stdout = self.trace_output()
             raise RuntimeError(f"UDF process closed the connection unexpectedly (EOF reached), stdout: {stdout}")
@@ -147,7 +179,9 @@ class UdfHandle:
             if base_exc is None and sys.version_info >= (3, 11):
                 raise UDFException(response[1], tb_info)
             if base_exc and tb_info and sys.version_info >= (3, 11):
-                base_exc.add_note("\n".join(tb_info.format()).rstrip())  # type: ignore[attr-defined]
+                add_note = getattr(base_exc, "add_note", None)
+                if callable(add_note):
+                    add_note("\n".join(tb_info.format()).rstrip())
             raise UDFException(response[1], tb_info if base_exc is None else None) from base_exc
         elif response[0] == _ERROR:
             raise RuntimeError("UDF unexpectedly failed with traceback:\n" + response[1])
@@ -160,19 +194,26 @@ class UdfHandle:
             raise RuntimeError(f"Unknown response from actor: {response}")
 
     def teardown(self, timeout: float = 5.0) -> None:
+        if self._handle_conn is None or self._process is None or self._listener is None:
+            return
+
         try:
-            self.handle_conn.send(_SENTINEL)
+            self._handle_conn.send(_SENTINEL)
         except (BrokenPipeError, EOFError):
-            # If the connection is broken, just exit and join the process.
             pass
-        self.handle_conn.close()
-        self.listener.close()
+        self._handle_conn.close()
+        self._listener.close()
 
-        self.process.wait(timeout)
-        if self.process.poll() is None:
+        self._process.wait(timeout)
+        if self._process.poll() is None:
             logger.warning("UDF did not shut down in time; terminating...")
-            self.process.terminate()
-            self.process.wait()
+            self._process.terminate()
+            self._process.wait()
 
-        if os.path.exists(self.socket_path):
-            os.unlink(self.socket_path)
+        if self._socket_path and os.path.exists(self._socket_path):
+            os.unlink(self._socket_path)
+
+        self._handle_conn = None
+        self._process = None
+        self._listener = None
+        self._socket_path = None
