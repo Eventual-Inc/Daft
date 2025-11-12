@@ -246,6 +246,19 @@ def test_embed_text_failure_with_zero_on_failure(mock_text_embedder, mock_client
     assert np.all(result == 0)  # Should be zero array
 
 
+def test_embed_text_failure_with_zero_on_failure_and_dimensions(mock_text_embedder, mock_client):
+    """Test that failures are handled when zero_on_failure is True."""
+    mock_client.embeddings.create.side_effect = Exception("API Error")
+    mock_text_embedder._zero_on_failure = True
+    mock_text_embedder._dimensions = 256
+
+    result = run(mock_text_embedder._embed_text("Hello world"))
+
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (256,)
+    assert np.all(result == 0)  # Should be zero array
+
+
 def test_embed_text_failure_without_zero_on_failure(mock_client):
     """Test that failures are re-raised when zero_on_failure is False."""
     embedder = OpenAITextEmbedder(

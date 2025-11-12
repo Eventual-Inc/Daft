@@ -193,7 +193,7 @@ class OpenAITextEmbedder(TextEmbedder):
             return np.array(response.data[0].embedding)
         except Exception as ex:
             if self._zero_on_failure:
-                size = _models[self._model].dimensions.size
+                size = self._dimensions or _models[self._model].dimensions.size
                 return np.zeros(size, dtype=np.float32)
             else:
                 raise ex
