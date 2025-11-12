@@ -4,12 +4,11 @@ import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from openai import AsyncOpenAI, OpenAI, OpenAIError, RateLimitError
+from openai import NOT_GIVEN, AsyncOpenAI, OpenAIError, RateLimitError
 
 from daft import DataType
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
 from daft.ai.typing import EmbeddingDimensions, Options, UDFOptions
-from daft.ai.utils import get_http_udf_options
 from daft.dependencies import np
 
 if TYPE_CHECKING:
@@ -31,6 +30,7 @@ class _ModelProfile:
     """
 
     dimensions: EmbeddingDimensions
+    supports_overriding_dimensions: bool
 
 
 _models: dict[EmbeddingModel, _ModelProfile] = {
@@ -39,18 +39,21 @@ _models: dict[EmbeddingModel, _ModelProfile] = {
             size=1536,
             dtype=DataType.float32(),
         ),
+        supports_overriding_dimensions=False,
     ),
     "text-embedding-3-small": _ModelProfile(
         dimensions=EmbeddingDimensions(
             size=1536,
             dtype=DataType.float32(),
         ),
+        supports_overriding_dimensions=True,
     ),
     "text-embedding-3-large": _ModelProfile(
         dimensions=EmbeddingDimensions(
             size=3072,
             dtype=DataType.float32(),
         ),
+        supports_overriding_dimensions=True,
     ),
 }
 
@@ -60,14 +63,19 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
     provider_name: str
     provider_options: OpenAIProviderOptions
     model_name: str
+    dimensions: int | None
     model_options: Options
 
     def __post_init__(self) -> None:
-        if self.provider_options.get("base_url") is None and self.model_name not in _models:
-            supported_models = ", ".join(_models.keys())
-            raise ValueError(
-                f"Unsupported OpenAI embedding model '{self.model_name}', expected one of: {supported_models}"
-            )
+        if self.provider_options.get("base_url") is None:
+            if self.model_name not in _models:
+                supported_models = ", ".join(_models.keys())
+                raise ValueError(
+                    f"Unsupported OpenAI embedding model '{self.model_name}', expected one of: {supported_models}"
+                )
+            model = _models[self.model_name]
+            if self.dimensions is not None and not model.supports_overriding_dimensions:
+                raise ValueError(f"OpenAI embedding model '{self.model_name}' does not support specifying dimensions")
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -79,8 +87,8 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
         return self.model_options
 
     def get_dimensions(self) -> EmbeddingDimensions:
-        if self.model_options.get("embedding_dimensions") is not None:
-            return EmbeddingDimensions(size=self.model_options["embedding_dimensions"], dtype=DataType.float32())
+        if self.dimensions is not None:
+            return EmbeddingDimensions(size=self.dimensions, dtype=DataType.float32())
         return _models[self.model_name].dimensions
 
     def get_udf_options(self) -> UDFOptions:
@@ -93,54 +101,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
         return OpenAITextEmbedder(
             client=AsyncOpenAI(**self.provider_options),
             model=self.model_name,
-        )
-
-
-@dataclass
-class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
-    """LM Studio text embedder descriptor that dynamically discovers model dimensions.
-
-    Unlike OpenAI, LM Studio can load different models with varying embedding dimensions.
-    This descriptor queries the local server to get the actual model dimensions.
-    """
-
-    provider_name: str
-    provider_options: OpenAIProviderOptions
-    model_name: str
-    model_options: Options
-
-    def get_provider(self) -> str:
-        return "lm_studio"
-
-    def get_model(self) -> str:
-        return self.model_name
-
-    def get_options(self) -> Options:
-        return self.model_options
-
-    def get_dimensions(self) -> EmbeddingDimensions:
-        try:
-            client = OpenAI(**self.provider_options)
-            response = client.embeddings.create(
-                input="dimension probe",
-                model=self.model_name,
-                encoding_format="float",
-            )
-            size = len(response.data[0].embedding)
-            return EmbeddingDimensions(size=size, dtype=DataType.float32())
-        except Exception as ex:
-            raise ValueError("Failed to determine embedding dimensions from LM Studio.") from ex
-
-    def get_udf_options(self) -> UDFOptions:
-        return get_http_udf_options()
-
-    def is_async(self) -> bool:
-        return True
-
-    def instantiate(self) -> TextEmbedder:
-        return OpenAITextEmbedder(
-            client=AsyncOpenAI(**self.provider_options),
-            model=self.model_name,
+            dimensions=self.dimensions,
         )
 
 
@@ -155,11 +116,13 @@ class OpenAITextEmbedder(TextEmbedder):
 
     _client: AsyncOpenAI
     _model: str
+    _dimensions: int | None
 
-    def __init__(self, client: AsyncOpenAI, model: str, zero_on_failure: bool = False):
+    def __init__(self, client: AsyncOpenAI, model: str, dimensions: int | None = None, zero_on_failure: bool = False):
         self._client = client
         self._model = model
         self._zero_on_failure = zero_on_failure
+        self._dimensions = dimensions
 
     async def embed_text(self, text: list[str]) -> list[Embedding]:
         embeddings: list[Embedding] = []
@@ -215,6 +178,7 @@ class OpenAITextEmbedder(TextEmbedder):
                 input=input_batch,
                 model=self._model,
                 encoding_format="float",
+                dimensions=self._dimensions or NOT_GIVEN,
             )
             return [np.array(embedding.embedding) for embedding in response.data]
         except RateLimitError:
@@ -231,11 +195,12 @@ class OpenAITextEmbedder(TextEmbedder):
                 input=input_text,
                 model=self._model,
                 encoding_format="float",
+                dimensions=self._dimensions or NOT_GIVEN,
             )
             return np.array(response.data[0].embedding)
         except Exception as ex:
             if self._zero_on_failure:
-                size = _models[self._model].dimensions.size
+                size = self._dimensions or _models[self._model].dimensions.size
                 return np.zeros(size, dtype=np.float32)
             else:
                 raise ex
