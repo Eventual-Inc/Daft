@@ -23,6 +23,7 @@ impl SQLModule for SQLModuleAggs {
         parent.add_fn("count", AggExpr::Count(nil.clone(), CountMode::Valid));
         parent.add_fn("count_distinct", AggExpr::CountDistinct(nil.clone()));
         parent.add_fn("sum", AggExpr::Sum(nil.clone()));
+        parent.add_fn("product", AggExpr::Product(nil.clone()));
         parent.add_fn("avg", AggExpr::Mean(nil.clone()));
         parent.add_fn("mean", AggExpr::Mean(nil.clone()));
         parent.add_fn("min", AggExpr::Min(nil.clone()));
@@ -50,6 +51,7 @@ impl SQLFunction for AggExpr {
             Self::Count(_, _) => static_docs::COUNT_DOCSTRING.to_string(),
             Self::CountDistinct(_) => static_docs::COUNT_DISTINCT_DOCSTRING.to_string(),
             Self::Sum(_) => static_docs::SUM_DOCSTRING.to_string(),
+            Self::Product(_) => static_docs::PRODUCT_DOCSTRING.to_string(),
             Self::Mean(_) => static_docs::AVG_DOCSTRING.replace("{}", alias),
             Self::Min(_) => static_docs::MIN_DOCSTRING.to_string(),
             Self::Max(_) => static_docs::MAX_DOCSTRING.to_string(),
@@ -65,6 +67,7 @@ impl SQLFunction for AggExpr {
             Self::Count(_, _)
             | Self::CountDistinct(_)
             | Self::Sum(_)
+            | Self::Product(_)
             | Self::Mean(_)
             | Self::Min(_)
             | Self::Max(_)
@@ -153,6 +156,10 @@ fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
         AggExpr::Sum(_) => {
             ensure!(args.len() == 1, "sum takes exactly one argument");
             Ok(args[0].clone().sum())
+        }
+        AggExpr::Product(_) => {
+            ensure!(args.len() == 1, "product takes exactly one argument");
+            Ok(args[0].clone().product())
         }
         AggExpr::ApproxCountDistinct(_) => unsupported_sql_err!("approx_percentile"),
         AggExpr::ApproxPercentile(_) => unsupported_sql_err!("approx_percentile"),
@@ -305,6 +312,44 @@ Example:
     │ Int64 │
     ╞═══════╡
     │ 300   │
+    ╰───────╯
+    (Showing first 1 of 1 rows)";
+
+    pub(crate) const PRODUCT_DOCSTRING: &str =
+        "Calculates the product of non-null elements in the input expression.
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT product(x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 2     │
+    ├╌╌╌╌╌╌╌┤
+    │ 3     │
+    ├╌╌╌╌╌╌╌┤
+    │ null  │
+    ╰───────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 6     │
     ╰───────╯
     (Showing first 1 of 1 rows)";
 

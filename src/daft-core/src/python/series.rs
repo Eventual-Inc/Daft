@@ -313,6 +313,10 @@ impl PySeries {
         Ok((self.series).sum(None)?.into())
     }
 
+    pub fn product(&self) -> PyResult<Self> {
+        Ok((self.series).product(None)?.into())
+    }
+
     pub fn mean(&self) -> PyResult<Self> {
         Ok((self.series).mean(None)?.into())
     }

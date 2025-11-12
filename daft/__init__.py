@@ -121,7 +121,7 @@ from daft.session import (
     set_session,
     write_table,
 )
-from daft.udf import udf, func, cls, method
+from daft.udf import udf, func, cls, method, metrics
 from daft.io import (
     DataCatalogTable,
     DataCatalogType,
@@ -228,6 +228,7 @@ __all__ = [
     "list_tables",
     "lit",
     "method",
+    "metrics",
     "planning_config_ctx",
     "range",
     "read_csv",

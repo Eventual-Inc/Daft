@@ -897,6 +897,7 @@ impl ToFromProto for ir::S3Config {
             profile_name: message.profile_name,
             multipart_size: message.multipart_size,
             multipart_max_concurrency: message.multipart_max_concurrency,
+            custom_retry_msgs: message.custom_retry_msgs,
         })
     }
 
@@ -924,6 +925,7 @@ impl ToFromProto for ir::S3Config {
             profile_name: self.profile_name.clone(),
             multipart_size: self.multipart_size,
             multipart_max_concurrency: self.multipart_max_concurrency,
+            custom_retry_msgs: self.custom_retry_msgs.clone(),
         })
     }
 }

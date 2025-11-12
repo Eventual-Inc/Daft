@@ -29,13 +29,16 @@ class OpenAIProvider(Provider):
     def name(self) -> str:
         return self._name
 
-    def get_text_embedder(self, model: str | None = None, **options: Any) -> TextEmbedderDescriptor:
+    def get_text_embedder(
+        self, model: str | None = None, dimensions: int | None = None, **options: Any
+    ) -> TextEmbedderDescriptor:
         from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedderDescriptor
 
         return OpenAITextEmbedderDescriptor(
             provider_name=self._name,
             provider_options=self._options,
             model_name=(model or self.DEFAULT_TEXT_EMBEDDER),
+            dimensions=dimensions,
             model_options=options,
         )
 

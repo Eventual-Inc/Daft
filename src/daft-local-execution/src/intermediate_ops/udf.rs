@@ -1,14 +1,17 @@
 use std::{
     collections::HashMap,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
+    time::Duration,
     vec,
 };
 
 use common_error::{DaftError, DaftResult};
-use common_metrics::ops::NodeType;
+use common_metrics::{
+    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshotSend, ops::NodeType,
+};
 use common_resource_request::ResourceRequest;
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
@@ -21,13 +24,16 @@ use daft_dsl::{
     common_treenode::{Transformed, TreeNode},
     expr::{BoundColumn, bound_expr::BoundExpr},
     functions::python::UDFProperties,
+    operator_metrics::OperatorMetrics,
 };
 use daft_micropartition::MicroPartition;
 #[cfg(feature = "python")]
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
+use opentelemetry::{KeyValue, global, metrics::Meter};
 #[cfg(feature = "python")]
-use pyo3::prelude::*;
+use pyo3::{Py, prelude::*};
+use smallvec::SmallVec;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{
@@ -36,6 +42,7 @@ use super::intermediate_op::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{MorselSizeRequirement, NodeName},
+    runtime_stats::{Counter, RuntimeStats},
 };
 
 /// Given an expression, extract the indexes of used columns and remap them to
@@ -79,6 +86,86 @@ pub(crate) fn remap_used_cols(expr: BoundExpr) -> (BoundExpr, Vec<usize>) {
     };
 
     (BoundExpr::new_unchecked(new_expr.data), required_cols)
+}
+
+struct UdfRuntimeStats {
+    meter: Meter,
+    node_kv: Vec<KeyValue>,
+    cpu_us: Counter,
+    rows_in: Counter,
+    rows_out: Counter,
+    custom_counters: Mutex<HashMap<Arc<str>, Counter>>,
+}
+
+impl RuntimeStats for UdfRuntimeStats {
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
+        let counters = self.custom_counters.lock().unwrap();
+        let mut entries = SmallVec::with_capacity(3 + counters.len());
+
+        entries.push((
+            CPU_US_KEY.into(),
+            Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
+        ));
+        entries.push((ROWS_IN_KEY.into(), Stat::Count(self.rows_in.load(ordering))));
+        entries.push((
+            ROWS_OUT_KEY.into(),
+            Stat::Count(self.rows_out.load(ordering)),
+        ));
+
+        for (name, counter) in counters.iter() {
+            entries.push((name.clone().into(), Stat::Count(counter.load(ordering))));
+        }
+
+        StatSnapshotSend(entries)
+    }
+
+    fn add_rows_in(&self, rows: u64) {
+        self.rows_in.add(rows, self.node_kv.as_slice());
+    }
+
+    fn add_rows_out(&self, rows: u64) {
+        self.rows_out.add(rows, self.node_kv.as_slice());
+    }
+
+    fn add_cpu_us(&self, cpu_us: u64) {
+        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
+    }
+}
+
+impl UdfRuntimeStats {
+    fn new(id: usize) -> Self {
+        let meter = global::meter("daft.local.node_stats");
+        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+
+        Self {
+            cpu_us: Counter::new(&meter, CPU_US_KEY.into()),
+            rows_in: Counter::new(&meter, ROWS_IN_KEY.into()),
+            rows_out: Counter::new(&meter, ROWS_OUT_KEY.into()),
+            custom_counters: Mutex::new(HashMap::new()),
+            node_kv,
+            meter,
+        }
+    }
+
+    fn update_metrics(&self, metrics: OperatorMetrics) {
+        let mut counters = self.custom_counters.lock().unwrap();
+        for (name, value) in metrics {
+            match counters.get_mut(name.as_str()) {
+                Some(counter) => {
+                    counter.add(value, self.node_kv.as_slice());
+                }
+                None => {
+                    let counter = Counter::new(&self.meter, name.clone().into());
+                    counter.add(value, self.node_kv.as_slice());
+                    counters.insert(name.into(), counter);
+                }
+            }
+        }
+    }
 }
 
 /// Common parameters for UDF handle and operator
@@ -145,20 +232,31 @@ impl UdfHandle {
     fn eval_input_with_handle(
         &self,
         input: RecordBatch,
-        handle: &pyo3::Py<pyo3::PyAny>,
+        runtime_stats: &UdfRuntimeStats,
     ) -> DaftResult<Series> {
+        use common_metrics::python::PyOperatorMetrics;
         use daft_recordbatch::python::PyRecordBatch;
 
         use crate::STDOUT;
 
-        let (result, stdout_lines) = Python::attach(|py| {
-            handle
+        let handle = self
+            .handle
+            .as_ref()
+            .expect("eval_input_with_handle called without an actor handle");
+
+        let (result, stdout_lines, metrics) = Python::attach(|py| {
+            let (py_result, py_stdout_lines, py_metrics) = handle
                 .bind(py)
                 .call_method1(
                     pyo3::intern!(py, "eval_input"),
                     (PyRecordBatch::from(input),),
                 )?
-                .extract::<(PyRecordBatch, Vec<String>)>()
+                .extract::<(PyRecordBatch, Vec<String>, PyOperatorMetrics)>()?;
+            PyResult::Ok((
+                RecordBatch::from(py_result),
+                py_stdout_lines,
+                py_metrics.inner,
+            ))
         })?;
 
         let label = format!(
@@ -169,7 +267,8 @@ impl UdfHandle {
             STDOUT.print(&label, &line);
         }
 
-        let result: RecordBatch = result.into();
+        runtime_stats.update_metrics(metrics);
+
         debug_assert!(
             result.num_columns() == 1,
             "UDF should return a single column"
@@ -178,21 +277,37 @@ impl UdfHandle {
     }
 
     #[cfg(feature = "python")]
-    fn eval_input_inline(&mut self, func_input: RecordBatch) -> DaftResult<Series> {
+    fn eval_input_inline(
+        &mut self,
+        func_input: RecordBatch,
+        runtime_stats: &UdfRuntimeStats,
+    ) -> DaftResult<Series> {
         use daft_dsl::functions::python::initialize_udfs;
 
         // Only actually initialized the first time
         self.udf_expr = BoundExpr::new_unchecked(initialize_udfs(self.udf_expr.inner().clone())?);
-        func_input.eval_expression(&self.udf_expr)
+        let mut collected_metrics = OperatorMetrics::default();
+        let result =
+            func_input.eval_expression_with_metrics(&self.udf_expr, &mut collected_metrics)?;
+        runtime_stats.update_metrics(collected_metrics);
+        Ok(result)
     }
 
     #[cfg(not(feature = "python"))]
-    fn eval_input(&mut self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
+    fn eval_input(
+        &mut self,
+        input: Arc<MicroPartition>,
+        runtime_stats: Arc<UdfRuntimeStats>,
+    ) -> DaftResult<Arc<MicroPartition>> {
         panic!("Cannot evaluate a UDF without compiling for Python");
     }
 
     #[cfg(feature = "python")]
-    fn eval_input(&mut self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
+    fn eval_input(
+        &mut self,
+        input: Arc<MicroPartition>,
+        runtime_stats: Arc<UdfRuntimeStats>,
+    ) -> DaftResult<Arc<MicroPartition>> {
         let input_batches = input.get_tables()?;
         let mut output_batches = Vec::with_capacity(input_batches.len());
 
@@ -201,21 +316,22 @@ impl UdfHandle {
             let func_input = batch.get_columns(self.params.required_cols.as_slice());
 
             // Call the UDF
-            let mut result = if let Some(handle) = &self.handle {
-                self.eval_input_with_handle(func_input, handle)
+            let mut result_series = if self.handle.is_some() {
+                self.eval_input_with_handle(func_input, &runtime_stats)?
             } else {
-                self.eval_input_inline(func_input)
-            }?;
+                self.eval_input_inline(func_input, &runtime_stats)?
+            };
+
             // If result.len() == 1 (because it was a 0-column UDF), broadcast to right size
-            if result.len() == 1 {
-                result = result.broadcast(batch.num_rows())?;
+            if result_series.len() == 1 {
+                result_series = result_series.broadcast(batch.num_rows())?;
             }
 
             // Append result to passthrough
             let passthrough_input =
                 batch.eval_expression_list(self.params.passthrough_columns.as_slice())?;
-            let output_batch =
-                passthrough_input.append_column(self.params.output_schema.clone(), result)?;
+            let output_batch = passthrough_input
+                .append_column(self.params.output_schema.clone(), result_series)?;
             output_batches.push(output_batch);
         }
 
@@ -352,13 +468,17 @@ impl IntermediateOperator for UdfOperator {
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self> {
         let memory_request = self.memory_request;
+        let runtime_stats = task_spawner
+            .runtime_stats
+            .clone()
+            .as_any_arc()
+            .downcast::<UdfRuntimeStats>()
+            .expect("Expected UdfRuntimeStats in task_spawner.runtime_stats");
         let fut = task_spawner.spawn_with_memory_request(
             memory_request,
             async move {
-                let res = state
-                    .udf_handle
-                    .eval_input(input)
-                    .map(|result| IntermediateOperatorResult::NeedMoreInput(Some(result)))?;
+                let result = state.udf_handle.eval_input(input, runtime_stats)?;
+                let res = IntermediateOperatorResult::NeedMoreInput(Some(result));
                 Ok((state, res))
             },
             Span::current(),
@@ -379,6 +499,10 @@ impl IntermediateOperator for UdfOperator {
 
     fn op_type(&self) -> NodeType {
         NodeType::UDFProject
+    }
+
+    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(UdfRuntimeStats::new(id))
     }
 
     fn multiline_display(&self) -> Vec<String> {

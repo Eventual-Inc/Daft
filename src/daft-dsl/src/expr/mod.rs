@@ -20,8 +20,8 @@ use common_hashable_float_wrapper::FloatWrapper;
 use common_treenode::{Transformed, TreeNode};
 use daft_core::{
     datatypes::{
-        InferDataType, try_mean_aggregation_supertype, try_skew_aggregation_supertype,
-        try_stddev_aggregation_supertype, try_sum_supertype,
+        InferDataType, try_mean_aggregation_supertype, try_product_supertype,
+        try_skew_aggregation_supertype, try_stddev_aggregation_supertype, try_sum_supertype,
     },
     join::JoinSide,
     lit::Literal,
@@ -342,6 +342,9 @@ pub enum AggExpr {
     #[display("sum({_0})")]
     Sum(ExprRef),
 
+    #[display("product({_0})")]
+    Product(ExprRef),
+
     #[display("approx_percentile({}, percentiles={:?}, force_list_output={})", _0.child, _0.percentiles, _0.force_list_output)]
     ApproxPercentile(ApproxPercentileParams),
 
@@ -473,6 +476,7 @@ impl AggExpr {
             Self::Count(_, _) => "Count",
             Self::CountDistinct(_) => "Count Distinct",
             Self::Sum(_) => "Sum",
+            Self::Product(_) => "Product",
             Self::ApproxPercentile(_) => "Approx Percentile",
             Self::ApproxCountDistinct(_) => "Approx Count Distinct",
             Self::ApproxSketch(_, _) => "Approx Sketch",
@@ -497,6 +501,7 @@ impl AggExpr {
             Self::Count(expr, ..)
             | Self::CountDistinct(expr)
             | Self::Sum(expr)
+            | Self::Product(expr)
             | Self::ApproxPercentile(ApproxPercentileParams { child: expr, .. })
             | Self::ApproxCountDistinct(expr)
             | Self::ApproxSketch(expr, _)
@@ -529,6 +534,10 @@ impl AggExpr {
             Self::Sum(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_sum()"))
+            }
+            Self::Product(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_product()"))
             }
             Self::ApproxPercentile(ApproxPercentileParams {
                 child: expr,
@@ -612,6 +621,7 @@ impl AggExpr {
             Self::Count(expr, ..)
             | Self::CountDistinct(expr)
             | Self::Sum(expr)
+            | Self::Product(expr)
             | Self::ApproxPercentile(ApproxPercentileParams { child: expr, .. })
             | Self::ApproxCountDistinct(expr)
             | Self::ApproxSketch(expr, _)
@@ -642,6 +652,7 @@ impl AggExpr {
             &Self::Count(_, count_mode) => Self::Count(first_child(), count_mode),
             Self::CountDistinct(_) => Self::CountDistinct(first_child()),
             Self::Sum(_) => Self::Sum(first_child()),
+            Self::Product(_) => Self::Product(first_child()),
             Self::Mean(_) => Self::Mean(first_child()),
             Self::Stddev(_) => Self::Stddev(first_child()),
             Self::Min(_) => Self::Min(first_child()),
@@ -683,6 +694,13 @@ impl AggExpr {
                 Ok(Field::new(
                     field.name.as_str(),
                     try_sum_supertype(&field.dtype)?,
+                ))
+            }
+            Self::Product(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                    field.name.as_str(),
+                    try_product_supertype(&field.dtype)?,
                 ))
             }
 
@@ -1010,6 +1028,10 @@ impl Expr {
 
     pub fn sum(self: ExprRef) -> ExprRef {
         Self::Agg(AggExpr::Sum(self)).into()
+    }
+
+    pub fn product(self: ExprRef) -> ExprRef {
+        Self::Agg(AggExpr::Product(self)).into()
     }
 
     pub fn approx_count_distinct(self: ExprRef) -> ExprRef {
