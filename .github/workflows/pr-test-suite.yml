@@ -143,7 +143,7 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
-          uv sync --no-install-project --all-extras --all-groups
+          uv sync --no-install-project --extra all --no-group dev-freethreaded
 
     - name: Override pyarrow
       run: |
@@ -301,7 +301,7 @@ jobs:
         retry_wait_seconds: 10
         command: |
           source .venv/bin/activate
-          uv sync --no-install-project --all-extras --all-groups
+          uv sync --no-install-project --extra all --no-group dev-freethreaded
           uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - uses: actions/cache@v4
@@ -399,7 +399,7 @@ jobs:
         retry_wait_seconds: 10
         command: |
           source .venv/bin/activate
-          uv sync --no-install-project --all-extras --all-groups
+          uv sync --no-install-project --extra all --no-group dev-freethreaded
           uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - name: Prepare tmpdirs for IO services
@@ -486,7 +486,7 @@ jobs:
         retry_wait_seconds: 10
         command: |
           source .venv/bin/activate
-          uv sync --no-install-project --all-extras --all-groups
+          uv sync --no-install-project --extra all --no-group dev-freethreaded
           uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - name: Prepare tmpdirs for IO services
@@ -576,7 +576,7 @@ jobs:
         retry_wait_seconds: 10
         command: |
           source .venv/bin/activate
-          uv sync --no-install-project --all-extras --all-groups
+          uv sync --no-install-project --extra all --no-group dev-freethreaded
           uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - name: Install ODBC Driver 18 for SQL Server
@@ -687,7 +687,7 @@ jobs:
         retry_wait_seconds: 10
         command: |
           source .venv/bin/activate
-          uv sync --no-install-project --all-extras --all-groups
+          uv sync --no-install-project --extra all --no-group dev-freethreaded
           uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     # Iceberg test setup
@@ -825,7 +825,7 @@ jobs:
         retry_wait_seconds: 10
         command: |
           source .venv/bin/activate
-          uv sync --no-install-project --all-extras --all-groups
+          uv sync --no-install-project --extra all --no-group dev-freethreaded
           uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - name: Run AI provider integration tests
@@ -897,7 +897,7 @@ jobs:
         retry_wait_seconds: 10
         command: |
           source .venv/bin/activate
-          uv sync --no-install-project --all-extras --all-groups
+          uv sync --no-install-project --extra all --no-group dev-freethreaded
           uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
     - name: Run AI provider integration tests
@@ -964,7 +964,7 @@ jobs:
         retry_wait_seconds: 10
         command: |
           source .venv/bin/activate
-          uv sync --no-install-project --all-extras --all-groups
+          uv sync --no-install-project --extra all --no-group dev-freethreaded
           uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
 
@@ -1054,7 +1054,7 @@ jobs:
         timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 10
-        command: uv sync --no-install-project --all-extras --all-groups
+        command: uv sync --no-install-project --extra all --no-group dev-freethreaded
     - name: Build Rust Library
       run: |
         source .venv/bin/activate
@@ -1205,7 +1205,7 @@ jobs:
         timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 10
-        command: uv sync --no-install-project --all-extras --all-groups
+        command: uv sync --no-install-project --extra all --no-group dev-freethreaded
     - name: Run doctests
       run: |
         source .venv/bin/activate
