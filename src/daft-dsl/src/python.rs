@@ -362,7 +362,7 @@ pub fn try_get_udf_name(expr: PyExpr) -> Option<String> {
     try_get_udf_name(&expr.expr)
 }
 
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", frozen)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyExpr {
     pub expr: crate::ExprRef,

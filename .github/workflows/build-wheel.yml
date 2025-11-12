@@ -1,5 +1,5 @@
 name: Build Daft wheel
-run-name: 'Build Daft wheel for ${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-lto=${{ inputs.use_lto }}'
+run-name: 'Build Daft wheel for ${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-lto=${{ inputs.use_lto }}-free-threaded=${{ inputs.use_free_threaded }}'
 
 on:
   workflow_call:
@@ -24,6 +24,10 @@ on:
         description: Whether to run tests on the built wheels
         type: boolean
         default: false
+      use_free_threaded:
+        description: Whether to build for free-threaded Python (3.13+)
+        type: boolean
+        default: false
 
 env:
   PYTHON_VERSION: 3.11
@@ -46,7 +50,7 @@ jobs:
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v6
       with:
-        python-version: ${{ env.PYTHON_VERSION }}
+        python-version: ${{ inputs.use_free_threaded && '3.13t' || env.PYTHON_VERSION }}
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
 
@@ -145,7 +149,7 @@ jobs:
     - name: Upload wheels
       uses: actions/upload-artifact@v4
       with:
-        name: wheels-${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-lto=${{ inputs.use_lto }}
+        name: wheels-${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-lto=${{ inputs.use_lto }}-free-threaded=${{ inputs.use_free_threaded }}
         path: dist
 
   test-wheels:

@@ -25,6 +25,11 @@ on:
         type: boolean
         default: false
         required: false
+      use_free_threaded:
+        description: Whether to build for free-threaded Python (3.13+)
+        type: boolean
+        default: false
+        required: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -64,7 +69,7 @@ jobs:
         echo "build_exists=$OBJECT_EXISTS" >> "$GITHUB_OUTPUT"
 
   build:
-    name: 'Build Daft wheel for ${{ matrix.os }}-${{ matrix.arch }}-lts=${{ matrix.lts }}-lto=${{ inputs.use_lto }}'
+    name: 'Build Daft wheel for ${{ matrix.os }}-${{ matrix.arch }}-lts=${{ matrix.lts }}-lto=${{ inputs.use_lto }}-free-threaded=${{ inputs.use_free_threaded }}'
     needs: check-exists
     if: ${{ needs.check-exists.outputs.build_exists == 'false' }}
     uses: ./.github/workflows/build-wheel.yml
@@ -73,6 +78,7 @@ jobs:
       arch: ${{ matrix.arch }}
       lts: ${{ matrix.lts }}
       use_lto: ${{ inputs.use_lto }}
+      use_free_threaded: ${{ inputs.use_free_threaded }}
       build_type: release
       run_tests: ${{ inputs.run_tests }}
     strategy:

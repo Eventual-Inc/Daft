@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 /// | Null  - Count only null values.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int, frozen))]
 pub enum CountMode {
     #[serde(alias = "all")]
     All = 1,

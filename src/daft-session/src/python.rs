@@ -10,7 +10,7 @@ use pyo3::prelude::*;
 
 use crate::Session;
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct PySession(Session);
 
 impl PySession {

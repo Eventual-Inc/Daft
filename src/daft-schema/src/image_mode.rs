@@ -31,7 +31,7 @@ use crate::dtype::DataType;
 #[derive(
     Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash, FromPrimitive,
 )]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int, frozen))]
 pub enum ImageMode {
     L = 1,
     LA = 2,

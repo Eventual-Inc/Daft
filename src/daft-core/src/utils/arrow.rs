@@ -6,6 +6,7 @@ use std::{
 use arrow2::compute::cast;
 
 // TODO(Clark): Refactor to GILOnceCell in order to avoid deadlock between the below mutex and the Python GIL.
+// TODO(Srinu): Don't use GILOnceCell, its not thread-safe in no-GIL python. Determine alternative.
 static REGISTRY: LazyLock<Mutex<HashMap<std::string::String, arrow2::datatypes::DataType>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 

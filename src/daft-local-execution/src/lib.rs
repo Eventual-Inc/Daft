@@ -37,7 +37,7 @@ pub(crate) enum OperatorOutput<T> {
     Pending(#[pin] RuntimeTask<T>),
 }
 
-impl<T: Send + Sync + Unpin + 'static> Future for OperatorOutput<T> {
+impl<T: Send + Sync + 'static> Future for OperatorOutput<T> {
     type Output = DaftResult<T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {

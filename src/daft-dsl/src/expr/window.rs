@@ -35,7 +35,7 @@ pub enum WindowBoundary {
 }
 
 #[derive(Clone)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", frozen))]
 pub struct PyWindowBoundary(pub WindowBoundary);
 
 #[cfg(feature = "python")]
@@ -66,7 +66,7 @@ impl PyWindowBoundary {
 
 /// Represents a window frame specification
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", frozen))]
 pub struct WindowFrame {
     /// Start boundary of window frame
     pub start: WindowBoundary,
@@ -88,7 +88,7 @@ impl WindowFrame {
 
 /// Represents a window specification
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", frozen))]
 pub struct WindowSpec {
     /// Partition by expressions
     pub partition_by: Vec<Arc<Expr>>,

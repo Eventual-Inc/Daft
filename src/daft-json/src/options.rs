@@ -11,7 +11,7 @@ use {
 
 /// Options for converting JSON data to Daft data.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", frozen))]
 pub struct JsonConvertOptions {
     pub limit: Option<usize>,
     pub include_columns: Option<Vec<String>>,
@@ -119,7 +119,7 @@ impl_bincode_py_state_serialization!(JsonConvertOptions);
 
 /// Options for parsing JSON files.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all, frozen))]
 pub struct JsonParseOptions {
     pub sample_size: Option<usize>,
 }
@@ -161,7 +161,7 @@ impl_bincode_py_state_serialization!(JsonParseOptions);
 
 /// Options for reading JSON files.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all, frozen))]
 pub struct JsonReadOptions {
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,

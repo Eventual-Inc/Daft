@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use daft_dsl::python::PyExpr;
 use daft_micropartition::python::PyMicroPartition;
@@ -113,20 +113,27 @@ impl PyShuffleCache {
     }
 }
 
-#[pyclass(module = "daft.daft", name = "FlightServerConnectionHandle")]
+#[pyclass(module = "daft.daft", name = "FlightServerConnectionHandle", frozen)]
 pub struct PyFlightServerConnectionHandle {
-    handle: FlightServerConnectionHandle,
+    handle: Mutex<FlightServerConnectionHandle>,
 }
 
 #[pymethods]
 impl PyFlightServerConnectionHandle {
-    pub fn shutdown(&mut self) -> PyResult<()> {
-        self.handle.shutdown()?;
+    pub fn shutdown(&self) -> PyResult<()> {
+        self.handle
+            .lock()
+            .expect("Failed to acquire lock for FlightServerConnectionHandle")
+            .shutdown()?;
         Ok(())
     }
 
     pub fn port(&self) -> PyResult<u16> {
-        Ok(self.handle.port())
+        Ok(self
+            .handle
+            .lock()
+            .expect("Failed to acquire lock for FlightServerConnectionHandle")
+            .port())
     }
 }
 
@@ -136,7 +143,9 @@ pub fn py_start_flight_server(
     ip: &str,
 ) -> PyResult<PyFlightServerConnectionHandle> {
     let handle = start_flight_server(shuffle_cache.cache.clone(), ip);
-    Ok(PyFlightServerConnectionHandle { handle })
+    Ok(PyFlightServerConnectionHandle {
+        handle: Mutex::new(handle),
+    })
 }
 
 #[pyclass(module = "daft.daft", name = "FlightClientManager", frozen)]

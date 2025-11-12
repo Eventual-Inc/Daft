@@ -16,7 +16,7 @@ use crate::{
 };
 
 #[derive(Clone)]
-#[pyclass]
+#[pyclass(frozen)]
 pub struct PyCatalog(pub CatalogRef);
 
 #[pymethods]
@@ -84,7 +84,7 @@ impl PyCatalog {
 }
 
 #[derive(Clone)]
-#[pyclass]
+#[pyclass(frozen)]
 pub struct PyTable(pub TableRef);
 
 impl PyTable {
@@ -160,7 +160,7 @@ pub fn pyobj_to_table(obj: Bound<PyAny>) -> PyResult<TableRef> {
 }
 
 /// PyIdentifier maps identifier.py to identifier.rs
-#[pyclass(sequence)]
+#[pyclass(sequence, frozen)]
 #[derive(Debug, Clone)]
 pub struct PyIdentifier(Identifier);
 
@@ -224,7 +224,7 @@ impl AsRef<Identifier> for PyIdentifier {
 }
 
 /// PyTableSource wraps either a schema or dataframe.
-#[pyclass]
+#[pyclass(frozen)]
 pub struct PyTableSource(TableSource);
 
 impl From<TableSource> for PyTableSource {
