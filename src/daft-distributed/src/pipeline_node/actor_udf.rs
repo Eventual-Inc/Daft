@@ -55,6 +55,7 @@ impl UDFActors {
             None => (0.0, 1.0, 0),
         };
 
+        let actor_name = udf_properties.name.clone();
         let result =
             common_runtime::python::execute_python_coroutine::<_, Vec<Py<PyAny>>>(move |py| {
                 let ray_actor_pool_udf_module =
@@ -68,6 +69,7 @@ impl UDFActors {
                         cpu_request,
                         memory_request,
                         actor_ready_timeout,
+                        actor_name,
                     ),
                 )
             })
@@ -130,11 +132,10 @@ impl ActorUDF {
         child: DistributedPipelineNode,
     ) -> DaftResult<Self> {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
         );
         let config = PipelineNodeConfig::new(
             schema,

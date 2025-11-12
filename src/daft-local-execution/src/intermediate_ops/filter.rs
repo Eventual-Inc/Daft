@@ -1,8 +1,5 @@
 use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::{Arc, atomic::Ordering},
     time::Duration,
 };
 
@@ -10,6 +7,7 @@ use common_error::DaftResult;
 use common_metrics::{Stat, StatSnapshotSend, ops::NodeType, snapshot};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
+use opentelemetry::{KeyValue, global};
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{
@@ -18,14 +16,28 @@ use super::intermediate_op::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::NodeName,
-    runtime_stats::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats},
+    runtime_stats::{CPU_US_KEY, Counter, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats},
 };
 
-#[derive(Default)]
 pub struct FilterStats {
-    cpu_us: AtomicU64,
-    rows_in: AtomicU64,
-    rows_out: AtomicU64,
+    cpu_us: Counter,
+    rows_in: Counter,
+    rows_out: Counter,
+    node_kv: Vec<KeyValue>,
+}
+
+impl FilterStats {
+    pub fn new(id: usize) -> Self {
+        let meter = global::meter("daft.local.node_stats");
+        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+
+        Self {
+            cpu_us: Counter::new(&meter, "cpu_us".into()),
+            rows_in: Counter::new(&meter, "rows_in".into()),
+            rows_out: Counter::new(&meter, "rows_out".into()),
+            node_kv,
+        }
+    }
 }
 
 impl RuntimeStats for FilterStats {
@@ -52,15 +64,15 @@ impl RuntimeStats for FilterStats {
     }
 
     fn add_rows_in(&self, rows: u64) {
-        self.rows_in.fetch_add(rows, Ordering::Relaxed);
+        self.rows_in.add(rows, self.node_kv.as_slice());
     }
 
     fn add_rows_out(&self, rows: u64) {
-        self.rows_out.fetch_add(rows, Ordering::Relaxed);
+        self.rows_out.add(rows, self.node_kv.as_slice());
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
+        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
@@ -111,8 +123,8 @@ impl IntermediateOperator for FilterOperator {
         NodeType::Filter
     }
 
-    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        Arc::new(FilterStats::default())
+    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(FilterStats::new(id))
     }
 
     fn make_state(&self) -> DaftResult<Self::State> {
