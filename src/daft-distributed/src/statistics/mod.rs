@@ -6,45 +6,34 @@ use std::{
 };
 
 use common_error::DaftResult;
-use daft_logical_plan::LogicalPlanRef;
 
 use crate::{
     pipeline_node::NodeID,
-    plan::PlanID,
     scheduling::task::{TaskContext, TaskName, TaskStatus},
     statistics::stats::RuntimeStats,
 };
 
 const STATISTICS_LOG_TARGET: &str = "DaftStatisticsManager";
 
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct PlanState {
-    pub plan_id: PlanID,
-    pub query_id: String,
-    pub logical_plan: LogicalPlanRef,
-}
-
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-#[allow(clippy::enum_variant_names)]
 pub(crate) enum TaskEvent {
-    TaskSubmitted {
+    Submitted {
         context: TaskContext,
         name: TaskName,
     },
 
-    TaskScheduled {
+    Scheduled {
         context: TaskContext,
     },
-    TaskCompleted {
+    Completed {
         context: TaskContext,
     },
-    TaskFailed {
+    Failed {
         context: TaskContext,
         reason: String,
     },
-    TaskCancelled {
+    Cancelled {
         context: TaskContext,
     },
 }
@@ -52,11 +41,11 @@ pub(crate) enum TaskEvent {
 impl TaskEvent {
     pub fn context(&self) -> &TaskContext {
         match self {
-            Self::TaskSubmitted { context, .. } => context,
-            Self::TaskScheduled { context, .. } => context,
-            Self::TaskCompleted { context, .. } => context,
-            Self::TaskFailed { context, .. } => context,
-            Self::TaskCancelled { context, .. } => context,
+            Self::Submitted { context, .. } => context,
+            Self::Scheduled { context, .. } => context,
+            Self::Completed { context, .. } => context,
+            Self::Failed { context, .. } => context,
+            Self::Cancelled { context, .. } => context,
         }
     }
 }
@@ -65,22 +54,22 @@ impl From<(TaskContext, &DaftResult<TaskStatus>)> for TaskEvent {
     fn from((context, task_result): (TaskContext, &DaftResult<TaskStatus>)) -> Self {
         match task_result {
             Ok(task_status) => match task_status {
-                TaskStatus::Success { .. } => Self::TaskCompleted { context },
-                TaskStatus::Failed { error } => Self::TaskFailed {
+                TaskStatus::Success { .. } => Self::Completed { context },
+                TaskStatus::Failed { error } => Self::Failed {
                     context,
                     reason: error.to_string(),
                 },
-                TaskStatus::Cancelled => Self::TaskCancelled { context },
-                TaskStatus::WorkerDied => Self::TaskFailed {
+                TaskStatus::Cancelled => Self::Cancelled { context },
+                TaskStatus::WorkerDied => Self::Failed {
                     context,
                     reason: "Worker died".to_string(),
                 },
-                TaskStatus::WorkerUnavailable => Self::TaskFailed {
+                TaskStatus::WorkerUnavailable => Self::Failed {
                     context,
                     reason: "Worker unavailable".to_string(),
                 },
             },
-            Err(error) => Self::TaskFailed {
+            Err(error) => Self::Failed {
                 context,
                 reason: error.to_string(),
             },

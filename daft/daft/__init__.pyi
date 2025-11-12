@@ -504,6 +504,7 @@ class S3Config:
         profile_name (str, optional): Name of AWS_PROFILE to load, defaults to None which will then check the Environment Variable `AWS_PROFILE` then fall back to `default`
         multipart_size (int, optional): The size of multipart part (bytes), the size range should be 5MB to 5GB, defaults to 8MB.
         multipart_max_concurrency (int, optional): The max concurrency of upload part per object, defaults to 100.
+        custom_retry_msgs (list[str], optional): Will retry the request if any custom retry message appeared in the error message of response, defaults to None.
 
     Examples:
         >>> # For AWS S3
@@ -545,6 +546,7 @@ class S3Config:
     profile_name: str | None
     multipart_size: int | None
     multipart_max_concurrency: int | None
+    custom_retry_msgs: list[str] | None
 
     def __init__(
         self,
@@ -570,6 +572,7 @@ class S3Config:
         profile_name: str | None = None,
         multipart_size: int | None = None,
         multipart_max_concurrency: int | None = None,
+        custom_retry_msgs: list[str] | None = None,
     ): ...
     def replace(
         self,
@@ -594,6 +597,7 @@ class S3Config:
         profile_name: str | None = None,
         multipart_size: int | None = None,
         multipart_max_concurrency: int | None = None,
+        custom_retry_msgs: list[str] | None = None,
     ) -> S3Config:
         """Replaces values if provided, returning a new S3Config."""
         ...
@@ -767,6 +771,94 @@ class HuggingFaceConfig:
         """Replaces values if provided, returning a new HuggingFaceConfig."""
         ...
 
+class TosConfig:
+    """I/O configuration for accessing Volcengine TOS (Torch Object Storage).
+
+    Args:
+        region (str, optional): Name of the region to be used, defaults to None, it can be detected automatically from endpoint if standard endpoint is set.
+        endpoint (str, optional): URL to the TOS endpoint, defaults to None for Volcengine TOS, it can be inferred from region.
+        access_key (str, optional): TOS Access Key, defaults to None.
+        secret_key (str, optional): TOS Secret Key, defaults to None.
+        security_token (str, optional): TOS Security Token, required for temporary credentials, defaults to None.
+        anonymous (bool, optional): Whether to use "anonymous mode" or not, which will access TOS without any credentials. Defaults to False.
+        max_retries (int, optional): Maximum number of retries for failed requests, defaults to 3.
+        retry_timeout_ms (int, optional): Timeout duration for retry attempts in milliseconds, defaults to 30000ms.
+        connect_timeout_ms (int, optional): Timeout duration to wait to make a connection to TOS in milliseconds, defaults to 10000ms.
+        read_timeout_ms (int, optional): Timeout duration to wait to read the first byte from TOS in milliseconds, defaults to 30000ms.
+        max_concurrent_requests (int, optional): Maximum number of concurrent requests to TOS at any time, defaults to 50.
+        max_connections_per_io_thread (int, optional): Maximum number of connections to TOS per IO thread, defaults to 50.
+
+    Examples:
+        >>> # For Volcengine & byteplus TOS, refer to https://www.volcengine.com/docs/6349/107356
+        >>> # or https://docs.byteplus.com/en/docs/tos/docs-region-and-endpoint or get endpoint and region info.
+        >>>
+        >>> io_config = IOConfig(
+        ...     tos=TosConfig(
+        ...         region="cn-beijing",
+        ...         endpoint="https://tos-cn-beijing.volces.com",
+        ...         access_key="your-access-key",
+        ...         secret_key="your-secret-key",
+        ...     )
+        ... )
+        >>> daft.read_parquet("tos://some-path", io_config=io_config)
+    """
+
+    region: str | None
+    endpoint: str | None
+    access_key: str | None
+    secret_key: str | None
+    security_token: str | None
+    anonymous: bool
+    max_retries: int
+    retry_timeout_ms: int
+    connect_timeout_ms: int
+    read_timeout_ms: int
+    max_concurrent_requests: int
+    max_connections_per_io_thread: int
+
+    def __init__(
+        self,
+        region: str | None = None,
+        endpoint: str | None = None,
+        access_key: str | None = None,
+        secret_key: str | None = None,
+        security_token: str | None = None,
+        anonymous: bool | None = None,
+        max_retries: int | None = None,
+        retry_timeout_ms: int | None = None,
+        connect_timeout_ms: int | None = None,
+        read_timeout_ms: int | None = None,
+        max_concurrent_requests: int | None = None,
+        max_connections_per_io_thread: int | None = None,
+    ): ...
+    def replace(
+        self,
+        region: str | None = None,
+        endpoint: str | None = None,
+        access_key: str | None = None,
+        secret_key: str | None = None,
+        security_token: str | None = None,
+        anonymous: bool | None = None,
+        max_retries: int | None = None,
+        retry_timeout_ms: int | None = None,
+        connect_timeout_ms: int | None = None,
+        read_timeout_ms: int | None = None,
+        max_concurrent_requests: int | None = None,
+        max_connections_per_io_thread: int | None = None,
+    ) -> TosConfig:
+        """Replaces values if provided, returning a new TosConfig."""
+        ...
+    @staticmethod
+    def from_env() -> TosConfig:
+        """Creates a TosConfig, retrieving credentials and configurations from the current environment.
+
+        TOS_ENDPOINT: Endpoint of the TOS service.
+        TOS_REGION: Region of the TOS service.
+        TOS_ACCESS_KEY: Access key for TOS authentication.
+        TOS_SECRET_KEY: Secret key for TOS authentication.
+        TOS_SECURITY_TOKEN: Security token for TOS authentication.
+        """
+
 class IOConfig:
     """Configuration for the native I/O layer, e.g. credentials for accessing cloud storage systems."""
 
@@ -776,6 +868,7 @@ class IOConfig:
     http: HTTPConfig
     unity: UnityConfig
     hf: HuggingFaceConfig
+    tos: TosConfig
 
     def __init__(
         self,
@@ -785,6 +878,7 @@ class IOConfig:
         http: HTTPConfig | None = None,
         unity: UnityConfig | None = None,
         hf: HuggingFaceConfig | None = None,
+        tos: TosConfig | None = None,
     ): ...
     def replace(
         self,
@@ -794,6 +888,7 @@ class IOConfig:
         http: HTTPConfig | None = None,
         unity: UnityConfig | None = None,
         hf: HuggingFaceConfig | None = None,
+        tos: TosConfig | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig."""
         ...
@@ -1227,6 +1322,7 @@ class PyExpr:
     def count(self, mode: CountMode) -> PyExpr: ...
     def count_distinct(self) -> PyExpr: ...
     def sum(self) -> PyExpr: ...
+    def product(self) -> PyExpr: ...
     def approx_count_distinct(self) -> PyExpr: ...
     def approx_percentiles(self, percentiles: float | list[float]) -> PyExpr: ...
     def mean(self) -> PyExpr: ...
@@ -1478,6 +1574,7 @@ class PySeries:
     def count(self, mode: CountMode) -> PySeries: ...
     def count_distinct(self) -> PySeries: ...
     def sum(self) -> PySeries: ...
+    def product(self) -> PySeries: ...
     def mean(self) -> PySeries: ...
     def stddev(self) -> PySeries: ...
     def min(self) -> PySeries: ...
@@ -1525,9 +1622,13 @@ class PySeriesIterator:
 class PyShowOptions:
     pass
 
+class OperatorMetrics:
+    def inc_counter(self, name: str, value: int) -> None: ...
+
 class PyRecordBatch:
     def schema(self) -> PySchema: ...
     def eval_expression_list(self, exprs: list[PyExpr]) -> PyRecordBatch: ...
+    def eval_expression_list_with_metrics(self, exprs: list[PyExpr]) -> tuple[PyRecordBatch, OperatorMetrics]: ...
     def take(self, idx: PySeries) -> PyRecordBatch: ...
     def filter(self, exprs: list[PyExpr]) -> PyRecordBatch: ...
     def sort(self, sort_keys: list[PyExpr], descending: list[bool], nulls_first: list[bool]) -> PyRecordBatch: ...
@@ -1914,9 +2015,9 @@ class LogicalPlanBuilder:
 class DistributedPhysicalPlan:
     @staticmethod
     def from_logical_plan_builder(
-        builder: LogicalPlanBuilder, config: PyDaftExecutionConfig
+        builder: LogicalPlanBuilder, query_id: str, config: PyDaftExecutionConfig
     ) -> DistributedPhysicalPlan: ...
-    def id(self) -> str: ...
+    def idx(self) -> str: ...
     def repr_ascii(self, simple: bool) -> str: ...
     def repr_mermaid(self, options: MermaidOptions) -> str: ...
 
@@ -2031,6 +2132,7 @@ class PyDaftExecutionConfig:
         use_legacy_ray_runner: bool | None = None,
         min_cpu_per_task: float | None = None,
         actor_udf_ready_timeout: int | None = None,
+        maintain_order: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...

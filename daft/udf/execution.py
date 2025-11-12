@@ -6,11 +6,12 @@ from daft import DataType
 from daft.dependencies import np, pa
 from daft.expressions.expressions import Expression
 from daft.series import Series
+from daft.udf.metrics import _metrics_context
 
 if TYPE_CHECKING:
     from collections.abc import Coroutine
 
-    from daft.daft import PyDataType, PySeries
+    from daft.daft import OperatorMetrics, PyDataType, PySeries
 
     from .udf_v2 import ClsBase
 
@@ -33,7 +34,7 @@ async def call_async_func_batched(
     return_dtype: PyDataType,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     evaluated_args_list: list[list[Any]],
-) -> PySeries:
+) -> tuple[PySeries, OperatorMetrics]:
     import asyncio
 
     bound_method = cls._daft_bind_method(method)
@@ -45,8 +46,11 @@ async def call_async_func_batched(
         tasks.append(coroutine)
 
     dtype = DataType._from_pydatatype(return_dtype)
-    outputs = await asyncio.gather(*tasks)
-    return Series.from_pylist(outputs, dtype=dtype)._series
+    with _metrics_context() as metrics:
+        outputs = await asyncio.gather(*tasks)
+
+    series = Series.from_pylist(outputs, dtype=dtype)._series
+    return series, metrics
 
 
 def call_func(
@@ -54,14 +58,16 @@ def call_func(
     method: Callable[Concatenate[C, ...], Any],
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     evaluated_args: list[Any],
-) -> list[Any]:
+) -> tuple[Any, OperatorMetrics]:
     """Called from Rust to evaluate a Python scalar UDF. Returns a list of Python objects."""
     args, kwargs = replace_expressions_with_evaluated_args(original_args, evaluated_args)
 
     bound_method = cls._daft_bind_method(method)
 
-    output = bound_method(*args, **kwargs)
-    return output
+    with _metrics_context() as metrics:
+        output = bound_method(*args, **kwargs)
+
+    return output, metrics
 
 
 def call_batch_func(
@@ -69,14 +75,16 @@ def call_batch_func(
     method: Callable[Concatenate[C, ...], Series],
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     evaluated_args: list[PySeries],
-) -> PySeries:
+) -> tuple[PySeries, OperatorMetrics]:
     """Called from Rust to evaluate a Python batch UDF. Returns a PySeries."""
     evaluated_args_series = [Series._from_pyseries(arg) for arg in evaluated_args]
     args, kwargs = replace_expressions_with_evaluated_args(original_args, evaluated_args_series)
 
     bound_method = cls._daft_bind_method(method)
 
-    output = bound_method(*args, **kwargs)
+    with _metrics_context() as metrics:
+        output = bound_method(*args, **kwargs)
+
     if isinstance(output, Series):
         output_series = output
     elif isinstance(output, list):
@@ -88,7 +96,7 @@ def call_batch_func(
     else:
         raise ValueError(f"Expected output to be a Series, list, numpy array, or pyarrow array, got {type(output)}")
 
-    return output_series._series
+    return output_series._series, metrics
 
 
 async def call_batch_async(
@@ -96,14 +104,16 @@ async def call_batch_async(
     method: Callable[Concatenate[C, ...], Coroutine[Any, Any, Series]],
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     evaluated_args: list[PySeries],
-) -> PySeries:
+) -> tuple[PySeries, OperatorMetrics]:
     """Called from Rust to evaluate a Python batch UDF. Returns a PySeries."""
     evaluated_args_series = [Series._from_pyseries(arg) for arg in evaluated_args]
     args, kwargs = replace_expressions_with_evaluated_args(original_args, evaluated_args_series)
 
     bound_coroutine: Callable[..., Coroutine[Any, Any, Series]] = cls._daft_bind_coroutine_method(method)
 
-    output = await bound_coroutine(*args, **kwargs)
+    with _metrics_context() as metrics:
+        output = await bound_coroutine(*args, **kwargs)
+
     if isinstance(output, Series):
         output_series = output
     elif isinstance(output, list):
@@ -115,4 +125,4 @@ async def call_batch_async(
     else:
         raise ValueError(f"Expected output to be a Series, list, numpy array, or pyarrow array, got {type(output)}")
 
-    return output_series._series
+    return output_series._series, metrics

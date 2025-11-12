@@ -1,8 +1,8 @@
-use std::{sync::Arc, time::SystemTime};
+use std::{collections::HashMap, sync::Arc, time::SystemTime};
 
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
-use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryPlan, Stat, StatSnapshotView, ops::NodeInfo};
 use common_runtime::{RuntimeRef, get_io_runtime};
 use daft_io::IOStatsContext;
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
@@ -246,9 +246,9 @@ impl Subscriber for DashboardSubscriber {
                             (
                                 *node_id,
                                 stats
-                                    .into_iter()
-                                    .map(|(name, stat)| (*name, stat.clone()))
-                                    .collect(),
+                                    .iter()
+                                    .map(|(name, stat)| (name.to_string(), stat.clone()))
+                                    .collect::<HashMap<String, Stat>>(),
                             )
                         })
                         .collect::<Vec<_>>(),

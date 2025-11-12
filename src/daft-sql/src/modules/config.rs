@@ -1,4 +1,4 @@
-use common_io_config::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config};
+use common_io_config::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config, TosConfig};
 use daft_core::prelude::*;
 use daft_dsl::{Expr, ExprRef};
 
@@ -17,6 +17,7 @@ impl SQLModule for SQLModuleConfig {
         parent.add_fn("HTTPConfig", HTTPConfigFunction);
         parent.add_fn("AzureConfig", AzureConfigFunction);
         parent.add_fn("GCSConfig", GCSConfigFunction);
+        parent.add_fn("TosConfig", TosConfigFunction);
     }
 }
 
@@ -57,6 +58,9 @@ impl SQLFunction for S3ConfigFunction {
                 "requester_pays",
                 "force_virtual_addressing",
                 "profile_name",
+                "multipart_size",
+                "multipart_max_concurrency",
+                "custom_retry_msgs",
             ],
             0,
         )?;
@@ -95,6 +99,12 @@ impl SQLFunction for S3ConfigFunction {
         let force_virtual_addressing = args.try_get_named::<bool>("force_virtual_addressing")?;
         let profile_name = args.try_get_named::<String>("profile_name")?;
 
+        let multipart_size = args.try_get_named("multipart_size")?.map(|t: i64| t as u64);
+        let multipart_max_concurrency = args
+            .try_get_named("multipart_max_concurrency")?
+            .map(|t: i64| t as u32);
+        let custom_retry_msgs = args.try_get_named::<String>("custom_retry_msgs")?;
+
         let entries = vec![
             ("variant".to_string(), "s3".into()),
             item!(region_name),
@@ -116,6 +126,9 @@ impl SQLFunction for S3ConfigFunction {
             item!(requester_pays),
             item!(force_virtual_addressing),
             item!(profile_name),
+            item!(multipart_size),
+            item!(multipart_max_concurrency),
+            item!(custom_retry_msgs),
         ]
         .into_iter()
         .collect::<_>();
@@ -148,6 +161,9 @@ impl SQLFunction for S3ConfigFunction {
             "requester_pays",
             "force_virtual_addressing",
             "profile_name",
+            "multipart_size",
+            "multipart_max_concurrency",
+            "custom_retry_msgs",
         ]
     }
 }
@@ -327,6 +343,101 @@ impl SQLFunction for GCSConfigFunction {
     }
 }
 
+pub struct TosConfigFunction;
+
+impl SQLFunction for TosConfigFunction {
+    fn to_expr(
+        &self,
+        inputs: &[sqlparser::ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
+        let args: SQLFunctionArguments = planner.parse_function_args(
+            inputs,
+            &[
+                "region",
+                "endpoint",
+                "access_key",
+                "secret_key",
+                "security_token",
+                "anonymous",
+                "max_retries",
+                "retry_timeout_ms",
+                "connect_timeout_ms",
+                "read_timeout_ms",
+                "max_concurrent_requests",
+                "max_connections_per_io_thread",
+            ],
+            0,
+        )?;
+
+        let region = args.try_get_named::<String>("region")?;
+        let endpoint = args.try_get_named::<String>("endpoint")?;
+        let access_key = args.try_get_named::<String>("access_key")?;
+        let secret_key = args.try_get_named::<String>("secret_key")?;
+        let security_token = args.try_get_named::<String>("security_token")?;
+        let anonymous = args.try_get_named::<bool>("anonymous")?;
+        let max_retries = args
+            .try_get_named::<usize>("max_retries")?
+            .map(|t| t as u32);
+        let retry_timeout_ms = args
+            .try_get_named::<usize>("retry_timeout_ms")?
+            .map(|t| t as u64);
+        let connect_timeout_ms = args
+            .try_get_named::<usize>("connect_timeout_ms")?
+            .map(|t| t as u64);
+        let read_timeout_ms = args
+            .try_get_named::<usize>("read_timeout_ms")?
+            .map(|t| t as u64);
+        let max_concurrent_requests = args
+            .try_get_named::<usize>("max_concurrent_requests")?
+            .map(|t| t as u32);
+        let max_connections_per_io_thread = args
+            .try_get_named::<usize>("max_connections_per_io_thread")?
+            .map(|t| t as u32);
+
+        let entries = vec![
+            ("variant".to_string(), "tos".into()),
+            item!(region),
+            item!(endpoint),
+            item!(access_key),
+            item!(secret_key),
+            item!(security_token),
+            item!(anonymous),
+            item!(max_retries),
+            item!(retry_timeout_ms),
+            item!(connect_timeout_ms),
+            item!(read_timeout_ms),
+            item!(max_concurrent_requests),
+            item!(max_connections_per_io_thread),
+        ]
+        .into_iter()
+        .collect::<_>();
+
+        Ok(Expr::Literal(Literal::Struct(entries)).arced())
+    }
+
+    fn docstrings(&self, _: &str) -> String {
+        "Create configurations to be used when accessing TOS (Torch Object Storage).".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &[
+            "region",
+            "endpoint",
+            "access_key",
+            "secret_key",
+            "security_token",
+            "anonymous",
+            "max_retries",
+            "retry_timeout_ms",
+            "connect_timeout_ms",
+            "read_timeout_ms",
+            "max_concurrent_requests",
+            "max_connections_per_io_thread",
+        ]
+    }
+}
+
 pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
     // TODO(CORY): use serde to deserialize this
     let Expr::Literal(Literal::Struct(entries)) = expr.as_ref() else {
@@ -373,6 +484,10 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
             let profile_name = get_value!("profile_name", Utf8)?;
             let multipart_size = get_value!("multipart_size", UInt64)?;
             let multipart_max_concurrency = get_value!("multipart_max_concurrency", UInt32)?;
+            let custom_retry_msgs_str: Option<String> = get_value!("custom_retry_msgs", Utf8)?;
+            let custom_retry_msgs =
+                custom_retry_msgs_str.map(|s| s.split(',').map(|s| s.into()).collect());
+
             let default = S3Config::default();
             let s3_config = S3Config {
                 region_name,
@@ -401,6 +516,7 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
                 multipart_size: multipart_size.unwrap_or(default.multipart_size),
                 multipart_max_concurrency: multipart_max_concurrency
                     .unwrap_or(default.multipart_max_concurrency),
+                custom_retry_msgs: custom_retry_msgs.unwrap_or(default.custom_retry_msgs),
             };
 
             Ok(IOConfig {
@@ -490,6 +606,42 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
                     connect_timeout_ms: connect_timeout_ms.unwrap_or(default.connect_timeout_ms),
                     read_timeout_ms: read_timeout_ms.unwrap_or(default.read_timeout_ms),
                     num_tries: num_tries.unwrap_or(default.num_tries),
+                },
+                ..Default::default()
+            })
+        }
+        "tos" => {
+            let region = get_value!("region", Utf8)?;
+            let endpoint = get_value!("endpoint", Utf8)?;
+            let access_key = get_value!("access_key", Utf8)?;
+            let secret_key = get_value!("secret_key", Utf8)?.map(|s| s.into());
+            let security_token = get_value!("security_token", Utf8)?.map(|s| s.into());
+            let anonymous = get_value!("anonymous", Boolean)?;
+            let max_retries = get_value!("max_retries", UInt32)?;
+            let retry_timeout_ms = get_value!("retry_timeout_ms", UInt64)?;
+            let connect_timeout_ms = get_value!("connect_timeout_ms", UInt64)?;
+            let read_timeout_ms = get_value!("read_timeout_ms", UInt64)?;
+            let max_concurrent_requests = get_value!("max_concurrent_requests", UInt32)?;
+            let max_connections_per_io_thread =
+                get_value!("max_connections_per_io_thread", UInt32)?;
+
+            let default = TosConfig::default();
+            Ok(IOConfig {
+                tos: TosConfig {
+                    region,
+                    endpoint,
+                    access_key,
+                    secret_key,
+                    security_token,
+                    anonymous: anonymous.unwrap_or(default.anonymous),
+                    max_retries: max_retries.unwrap_or(default.max_retries),
+                    retry_timeout_ms: retry_timeout_ms.unwrap_or(default.retry_timeout_ms),
+                    connect_timeout_ms: connect_timeout_ms.unwrap_or(default.connect_timeout_ms),
+                    read_timeout_ms: read_timeout_ms.unwrap_or(default.read_timeout_ms),
+                    max_concurrent_requests: max_concurrent_requests
+                        .unwrap_or(default.max_concurrent_requests),
+                    max_connections_per_io_thread: max_connections_per_io_thread
+                        .unwrap_or(default.max_connections_per_io_thread),
                 },
                 ..Default::default()
             })

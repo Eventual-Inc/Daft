@@ -1324,6 +1324,7 @@ class RayRunner(Runner[ray.ObjectRef]):
 
         # Grab and freeze the current context
         ctx = get_context()
+        query_id = str(uuid.uuid4())
         daft_execution_config = ctx.daft_execution_config
 
         # Optimize the logical plan.
@@ -1382,7 +1383,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 yield from self._stream_plan(result_uuid)
         else:
             distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
-                builder._builder, daft_execution_config
+                builder._builder, query_id, daft_execution_config
             )
             if self.flotilla_plan_runner is None:
                 self.flotilla_plan_runner = FlotillaRunner()

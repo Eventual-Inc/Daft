@@ -61,8 +61,8 @@ pub(crate) trait BlockingSink: Send + Sync {
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Self::State>;
-    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::default())
+    fn make_runtime_stats(&self, name: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(DefaultRuntimeStats::new(name))
     }
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
         None
@@ -100,14 +100,14 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         ctx: &RuntimeContext,
         output_schema: SchemaRef,
     ) -> Self {
-        let name = op.name().into();
+        let name: Arc<str> = op.name().into();
         let node_info = ctx.next_node_info(
             name,
             op.op_type(),
             NodeCategory::BlockingSink,
             output_schema,
         );
-        let runtime_stats = op.make_runtime_stats();
+        let runtime_stats = op.make_runtime_stats(node_info.id);
 
         let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
@@ -188,7 +188,7 @@ impl<Op: BlockingSink + 'static> TreeDisplay for BlockingSinkNode<Op> {
                 if matches!(level, DisplayLevel::Verbose) {
                     let rt_result = self.runtime_stats.snapshot();
                     for (name, value) in rt_result {
-                        writeln!(display, "{} = {}", name.capitalize(), value).unwrap();
+                        writeln!(display, "{} = {}", name.as_str().capitalize(), value).unwrap();
                     }
                 }
             }

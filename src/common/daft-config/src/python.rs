@@ -119,6 +119,7 @@ impl PyDaftExecutionConfig {
         use_legacy_ray_runner=None,
         min_cpu_per_task=None,
         actor_udf_ready_timeout=None,
+        maintain_order=None,
     ))]
     fn with_config_values(
         &self,
@@ -152,6 +153,7 @@ impl PyDaftExecutionConfig {
         use_legacy_ray_runner: Option<bool>,
         min_cpu_per_task: Option<f64>,
         actor_udf_ready_timeout: Option<usize>,
+        maintain_order: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -267,6 +269,10 @@ impl PyDaftExecutionConfig {
 
         if let Some(actor_udf_ready_timeout) = actor_udf_ready_timeout {
             config.actor_udf_ready_timeout = actor_udf_ready_timeout;
+        }
+
+        if let Some(maintain_order) = maintain_order {
+            config.maintain_order = maintain_order;
         }
 
         Ok(Self {
@@ -403,6 +409,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn actor_udf_ready_timeout(&self) -> PyResult<usize> {
         Ok(self.config.actor_udf_ready_timeout)
+    }
+
+    #[getter]
+    fn maintain_order(&self) -> PyResult<bool> {
+        Ok(self.config.maintain_order)
     }
 }
 

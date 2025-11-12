@@ -571,6 +571,10 @@ class Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.sum())
 
+    def product(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series.product())
+
     def shift_right(self, bits: Series) -> Series:
         if not isinstance(bits, Series):
             raise TypeError(f"expected another Series but got {type(bits)}")

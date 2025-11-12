@@ -1,4 +1,4 @@
-use std::{fmt::Display, sync::Arc};
+use std::{fmt::Display, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::{prelude::DataType, series::Series};
@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     Expr, ExprRef,
     functions::{python::RuntimePyObject, scalar::ScalarFn},
+    operator_metrics::MetricsCollector,
     python_udf::PyScalarFn,
 };
 
@@ -20,7 +21,7 @@ pub fn batch_udf(
     return_dtype: DataType,
     gpus: usize,
     use_process: Option<bool>,
-    max_concurrency: Option<usize>,
+    max_concurrency: Option<NonZeroUsize>,
     batch_size: Option<usize>,
     original_args: RuntimePyObject,
     args: Vec<ExprRef>,
@@ -53,7 +54,7 @@ pub struct BatchPyFn {
     pub return_dtype: DataType,
     pub gpus: usize,
     pub use_process: Option<bool>,
-    pub max_concurrency: Option<usize>,
+    pub max_concurrency: Option<NonZeroUsize>,
     pub batch_size: Option<usize>,
     pub original_args: RuntimePyObject,
     pub args: Vec<ExprRef>,
@@ -95,21 +96,22 @@ impl BatchPyFn {
     }
 
     #[cfg(feature = "python")]
-    pub fn call(&self, args: &[Series]) -> DaftResult<Series> {
+    pub fn call(&self, args: &[Series], metrics: &mut dyn MetricsCollector) -> DaftResult<Series> {
         use common_error::DaftError;
         use daft_core::python::PySeries;
         use pyo3::prelude::*;
 
         use crate::functions::python::OnError;
         let max_retries = self.max_retries.unwrap_or(0);
-
         let py_args = args
             .iter()
             .map(|s| PySeries::from(s.clone()))
             .collect::<Vec<_>>();
 
-        let try_call_batch = || {
+        let mut try_call_batch = || {
             Python::attach(|py| {
+                use common_metrics::python::PyOperatorMetrics;
+
                 let func = py
                     .import(pyo3::intern!(py, "daft.udf.execution"))?
                     .getattr(pyo3::intern!(py, "call_batch_func"))?;
@@ -121,9 +123,13 @@ impl BatchPyFn {
                     py_args.clone(),
                 ))?;
 
-                let result_series = result.extract::<PySeries>()?.series;
+                let (result_series, operator_metrics): (PySeries, PyOperatorMetrics) =
+                    result.extract()?;
+                for (key, value) in operator_metrics.inner {
+                    metrics.inc_counter(&key, value);
+                }
 
-                PyResult::Ok(result_series)
+                PyResult::Ok(result_series.series)
             })
         };
 
@@ -169,12 +175,20 @@ impl BatchPyFn {
     }
 
     #[cfg(not(feature = "python"))]
-    pub async fn call_async(&self, _args: &[Series]) -> DaftResult<Series> {
+    pub async fn call_async(
+        &self,
+        _args: &[Series],
+        _metrics: &mut dyn MetricsCollector,
+    ) -> DaftResult<Series> {
         panic!("Cannot evaluate a BatchPyFn without compiling for Python");
     }
 
     #[cfg(feature = "python")]
-    pub async fn call_async(&self, args: &[Series]) -> DaftResult<Series> {
+    pub async fn call_async(
+        &self,
+        args: &[Series],
+        metrics: &mut dyn MetricsCollector,
+    ) -> DaftResult<Series> {
         use common_error::DaftError;
 
         use crate::functions::python::OnError;
@@ -186,7 +200,7 @@ impl BatchPyFn {
         let mut delay_ms: u64 = 100; // Start with 100 ms
         const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
 
-        let mut result_series = self.call_async_once(args, name).await;
+        let mut result_series = self.call_async_once(args, name, metrics).await;
 
         for _attempt in 0..max_retries {
             if result_series.is_ok() {
@@ -196,7 +210,7 @@ impl BatchPyFn {
             tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
             delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
 
-            result_series = self.call_async_once(args, name).await;
+            result_series = self.call_async_once(args, name, metrics).await;
         }
 
         let result_series = result_series
@@ -219,7 +233,13 @@ impl BatchPyFn {
     }
 
     #[cfg(feature = "python")]
-    async fn call_async_once(&self, args: &[Series], name: &str) -> DaftResult<Series> {
+    async fn call_async_once(
+        &self,
+        args: &[Series],
+        name: &str,
+        metrics: &mut dyn MetricsCollector,
+    ) -> DaftResult<Series> {
+        use common_metrics::python::PyOperatorMetrics;
         use daft_core::python::PySeries;
         use pyo3::prelude::*;
 
@@ -228,7 +248,10 @@ impl BatchPyFn {
         let original_args = self.original_args.clone();
         let args = args.to_vec();
 
-        common_runtime::python::execute_python_coroutine::<_, PySeries>(move |py| {
+        let (py_series, operator_metrics) = common_runtime::python::execute_python_coroutine::<
+            _,
+            (PySeries, PyOperatorMetrics),
+        >(move |py| {
             let f = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
                 .getattr(pyo3::intern!(py, "call_batch_async"))?;
@@ -238,19 +261,29 @@ impl BatchPyFn {
                 .map(|s| PySeries::from(s.clone()))
                 .collect::<Vec<_>>();
 
-            f.call1((
+            let coroutine = f.call1((
                 cls.as_ref(),
                 method.as_ref(),
                 original_args.as_ref(),
                 evaluated_args,
-            ))
+            ))?;
+
+            Ok(coroutine)
         })
-        .await
-        .map(|py_series| py_series.series.rename(name))
+        .await?;
+        for (key, value) in operator_metrics.inner {
+            metrics.inc_counter(&key, value);
+        }
+
+        Ok(py_series.series.rename(name))
     }
 
     #[cfg(not(feature = "python"))]
-    pub fn call(&self, args: &[Series]) -> DaftResult<Series> {
+    pub fn call(
+        &self,
+        _args: &[Series],
+        _metrics: &mut dyn MetricsCollector,
+    ) -> DaftResult<Series> {
         panic!("Cannot evaluate a BatchPyFn without compiling for Python");
     }
 }

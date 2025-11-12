@@ -1,7 +1,7 @@
 mod runtime_py_object;
 mod udf;
 
-use std::{str::FromStr, sync::Arc};
+use std::{num::NonZeroUsize, str::FromStr, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
@@ -120,7 +120,7 @@ pub struct LegacyPythonUDF {
     pub return_dtype: DataType,
     pub resource_request: Option<ResourceRequest>,
     pub batch_size: Option<usize>,
-    pub concurrency: Option<usize>,
+    pub concurrency: Option<NonZeroUsize>,
     pub use_process: Option<bool>,
 }
 
@@ -138,7 +138,7 @@ impl LegacyPythonUDF {
             return_dtype: DataType::Int64,
             resource_request: None,
             batch_size: None,
-            concurrency: Some(4),
+            concurrency: Some(NonZeroUsize::new(4).unwrap()),
             use_process: None,
         }
     }
@@ -154,7 +154,7 @@ pub fn udf(
     init_args: RuntimePyObject,
     resource_request: Option<ResourceRequest>,
     batch_size: Option<usize>,
-    concurrency: Option<usize>,
+    concurrency: Option<NonZeroUsize>,
     use_process: Option<bool>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
@@ -294,7 +294,7 @@ pub struct UDFProperties {
     pub name: String,
     pub resource_request: Option<ResourceRequest>,
     pub batch_size: Option<usize>,
-    pub concurrency: Option<usize>,
+    pub concurrency: Option<NonZeroUsize>,
     pub use_process: Option<bool>,
     pub max_retries: Option<usize>,
     pub is_async: bool,

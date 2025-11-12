@@ -296,3 +296,19 @@ def test_cls_async_batch_method(concurrency):
     processor = AsyncBatchProcessor(delay=0.01)
     result = df.select(processor.process(df["a"]))
     assert sorted(result.to_pydict()["a"]) == [1, 2, 3]
+
+
+def test_cls_max_concurrency_zero():
+    with pytest.raises(ValueError, match="max_concurrency for udf must be non-zero"):
+
+        @daft.cls(max_concurrency=0)
+        class MaxConcurrencyZero:
+            def __init__(self):
+                pass
+
+            def __call__(self, x: int) -> int:
+                return x
+
+        df = daft.from_pydict({"a": [1, 2, 3]})
+        result = df.select(MaxConcurrencyZero()(df["a"])).to_pydict()
+        assert result == {"a": [1, 2, 3]}

@@ -1,6 +1,7 @@
 use std::{cmp::Ordering, collections::VecDeque, sync::Arc};
 
 use common_error::DaftResult;
+use common_metrics::QueryID;
 use daft_local_plan::LocalPhysicalPlan;
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
@@ -83,10 +84,10 @@ pub struct LimitStats {
 }
 
 impl LimitStats {
-    fn new(node_id: NodeID) -> Self {
+    fn new(node_id: NodeID, query_id: QueryID) -> Self {
         let meter = global::meter("daft.distributed.node_stats");
         Self {
-            default_stats: DefaultRuntimeStats::new_impl(&meter, node_id),
+            default_stats: DefaultRuntimeStats::new_impl(&meter, node_id, query_id),
             active_rows_out: meter
                 .u64_counter("daft.distributed.node_stats.active_rows_out")
                 .build(),
@@ -127,11 +128,10 @@ impl LimitNode {
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -144,7 +144,7 @@ impl LimitNode {
             limit,
             offset,
             child,
-            stats: Arc::new(LimitStats::new(node_id)),
+            stats: Arc::new(LimitStats::new(node_id, plan_config.query_id.clone())),
         }
     }
 
