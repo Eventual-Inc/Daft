@@ -12,6 +12,8 @@ from daft.dependencies import np, pa
 from daft.errors import UDFException
 from daft.expressions import Expression
 from daft.series import Series
+from inspect import iscoroutine
+import asyncio
 
 from .udf_v2 import check_serializable
 
@@ -156,7 +158,16 @@ def run_udf(
     for start, end in make_batches(batch_size):
         args, kwargs = get_args_for_slice(start, end)
         try:
-            results.append(func(*args, **kwargs))
+            result = func(*args, **kwargs)
+            if iscoroutine(result):
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                results.append(loop.run_until_complete(result))
+            else:
+                results.append(result)
         except Exception as user_function_exception:
             # Remove the call-site `results.append(...)` from the traceback
             tb = user_function_exception.__traceback__
