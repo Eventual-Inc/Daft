@@ -94,7 +94,7 @@ class OpenAIPrompter(Prompter):
     @_process_message.register
     def _process_bytes_message(self, msg: bytes) -> dict[str, Any]:
         """Handle bytes messages by converting to File and processing."""
-        daft_file = File(msg)
+        daft_file = File._from_bytes(msg)
         mime_type, encoded_content = self._encode_file(daft_file)
 
         if mime_type.startswith("image/"):

@@ -8,7 +8,7 @@ use std::{
 };
 
 use common_error::DaftError;
-use daft_core::file::FileReference;
+use daft_core::file::{FileReference, MediaType};
 use pyo3::{
     exceptions::{PyIOError, PyRuntimeError, PyValueError},
     prelude::*,
@@ -107,6 +107,11 @@ impl PyDaftFile {
     #[staticmethod]
     fn _from_file_reference(f: PyFileReference) -> PyResult<Self> {
         Ok(DaftFile::load_blocking(f.inner.as_ref().clone(), false)?.into())
+    }
+
+    #[staticmethod]
+    fn _from_bytes(media_type: MediaType, bytes: Vec<u8>) -> PyResult<Self> {
+        Ok(DaftFile::from_bytes(media_type, bytes).into())
     }
 
     #[pyo3(signature=(size=-1))]

@@ -4,7 +4,7 @@ import shutil
 import tempfile
 from typing import TYPE_CHECKING
 
-from daft.daft import PyDaftFile, PyFileReference
+from daft.daft import PyDaftFile, PyFileReference, PyMediaType
 from daft.datatype import MediaType
 from daft.dependencies import av
 
@@ -39,7 +39,8 @@ class File:
         >>>         return data["text"]
     """
 
-    _inner: PyFileReference
+    _inner: PyFileReference | None = None
+    _loaded_bytes: bytes | None = None
 
     @staticmethod
     def _from_file_reference(reference: PyFileReference) -> File:
@@ -47,18 +48,27 @@ class File:
         instance._inner = reference
         return instance
 
+    @staticmethod
+    def _from_bytes(b: bytes) -> File:
+        """Internal method. DO NOT USE DIRECTLY.
+
+        Creating a file directly from bytes is deprecated and will eventually be phased out.
+        """
+        instance = File.__new__(File)
+        instance._loaded_bytes = b
+        return instance
+
     def __init__(
-        self, str_or_bytes: str | bytes, io_config: IOConfig | None = None, media_type: MediaType = MediaType.unknown()
+        self, url: str, io_config: IOConfig | None = None, media_type: MediaType = MediaType.unknown()
     ) -> None:
-        if isinstance(str_or_bytes, str):
-            self._inner = PyFileReference._from_tuple((media_type._media_type, str_or_bytes, io_config))  # type: ignore
-        elif isinstance(str_or_bytes, bytes):
-            self._inner = PyFileReference._from_tuple((media_type._media_type, str_or_bytes, io_config))  # type: ignore
-        else:
-            raise TypeError("str_or_bytes must be a string or bytes")
+        self._inner = PyFileReference._from_tuple((media_type._media_type, url, io_config))  # type: ignore
 
     def open(self) -> PyDaftFile:
-        return PyDaftFile._from_file_reference(self._inner)
+        if self._loaded_bytes is not None:
+            return PyDaftFile._from_bytes(PyMediaType.unknown(), self._loaded_bytes)
+        if self._inner is not None:
+            return PyDaftFile._from_file_reference(self._inner)
+        raise ValueError("File must either contain bytes or a file reference")
 
     def __str__(self) -> str:
         return self._inner.__str__()
@@ -76,7 +86,12 @@ class File:
         return False
 
     def size(self) -> int:
-        return PyDaftFile._from_file_reference(self._inner).size()
+        if self._loaded_bytes is not None:
+            return len(self._loaded_bytes)
+        if self._inner is not None:
+            return PyDaftFile._from_file_reference(self._inner).size()
+
+        raise ValueError("File must either contain bytes or a file reference")
 
     def mime_type(self) -> str:
         """Attempts to determine the MIME type of the file.
