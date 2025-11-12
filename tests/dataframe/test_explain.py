@@ -41,6 +41,8 @@ def test_explain_with_empty_scantask(input_df):
     input_df.limit(0).explain(True, file=string_io)
     expected = """
 
+* Limit: 0
+|
 * ScanTaskSource:
 |   Num Scan Tasks = 0
 |   Estimated Scan Bytes = 0

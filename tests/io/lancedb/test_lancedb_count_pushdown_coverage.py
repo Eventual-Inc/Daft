@@ -61,6 +61,7 @@ class TestLanceCountResultFunction:
                 mock_pushdowns.aggregation_count_mode.return_value = CountMode.Valid
                 mock_pushdowns.aggregation_required_column_names.return_value = ["count"]
                 mock_pushdowns.columns = None
+                mock_pushdowns.limit = None
 
                 with patch.object(scan_op, "_create_regular_scan_tasks") as mock_regular_scan:
                     mock_regular_scan.return_value = iter([])
