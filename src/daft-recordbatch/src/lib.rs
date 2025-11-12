@@ -959,11 +959,10 @@ impl RecordBatch {
                         .await?,
                     );
                 }
-                let mut noop_metrics_collector   = NoopMetricsCollector;
                 if python_udf.is_async() {
-                    python_udf.call_async(args.as_slice(), &mut noop_metrics_collector).await
+                    python_udf.call_async(args.as_slice(), metrics).await
                 } else {
-                    python_udf.call(args.as_slice(), &mut noop_metrics_collector)
+                    python_udf.call(args.as_slice(), metrics)
                 }
             }
             Expr::Subquery(_subquery) => Err(DaftError::ComputeError(
