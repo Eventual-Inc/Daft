@@ -15,7 +15,7 @@ from daft.event_loop import get_or_init_event_loop
 from daft.recordbatch import MicroPartition
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterator
+    from collections.abc import AsyncGenerator, Iterator
 
     from daft.context import DaftContext
     from daft.logical.builder import LogicalPlanBuilder
@@ -44,7 +44,7 @@ class NativeExecutor:
             part_id: [part.micropartition()._micropartition for part in parts] for part_id, parts in psets.items()
         }
 
-        async def run_executor() -> AsyncIterator[PyMicroPartition]:
+        async def run_executor() -> AsyncGenerator[PyMicroPartition, None]:
             result_handle = self._executor.run(
                 local_physical_plan,
                 psets_mp,
@@ -52,17 +52,22 @@ class NativeExecutor:
                 results_buffer_size,
                 context,
             )
-            async for batch in result_handle:
-                yield batch
-            _ = await result_handle.finish()
+
+            try:
+                async for batch in result_handle:
+                    yield batch
+            finally:
+                _ = await result_handle.finish()
 
         event_loop = get_or_init_event_loop()
-        async_iter = run_executor()
+        async_exec = run_executor()
         while True:
-            part = event_loop.run(async_iter.__anext__())  # type: ignore
+            part = event_loop.run(async_exec.asend(None))  # codespell:ignore asend
             if part is None:
                 break
             yield LocalMaterializedResult(MicroPartition._from_pymicropartition(part))
+        # Execution exception handling
+        event_loop.run(async_exec.aclose())
 
     def pretty_print(
         self,
