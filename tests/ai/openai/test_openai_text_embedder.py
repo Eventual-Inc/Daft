@@ -9,7 +9,7 @@ pytest.importorskip("openai")
 from unittest.mock import AsyncMock, Mock, patch
 
 import numpy as np
-from openai import RateLimitError
+from openai import NOT_GIVEN, RateLimitError
 from openai.types.create_embedding_response import CreateEmbeddingResponse
 from openai.types.embedding import Embedding as OpenAIEmbedding
 
@@ -107,7 +107,7 @@ def test_embed_text_single_input(mock_text_embedder, mock_client):
         input=["Hello world"],
         model="text-embedding-3-small",
         encoding_format="float",
-        dimensions=None,
+        dimensions=NOT_GIVEN,
     )
 
 
@@ -135,7 +135,7 @@ def test_embed_text_multiple_inputs(mock_text_embedder, mock_client):
         input=["Hello", "World", "Test"],
         model="text-embedding-3-small",
         encoding_format="float",
-        dimensions=None,
+        dimensions=NOT_GIVEN,
     )
 
 
