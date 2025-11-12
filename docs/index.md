@@ -500,9 +500,9 @@ Start local, scale global—without changing a line of code. Daft's Rust-powered
 
 !!! tip "Looking to get started with Daft ASAP?"
 
-    The Daft Guide is a useful resource to take deeper dives into specific Daft concepts, but if you are ready to jump into code you may wish to take a look at these resources:
+    If you are ready to jump into code, take a look at these resources:
 
-    1. [Quickstart](quickstart.md): Itching to run some Daft code? Hit the ground running with our 10 minute quickstart notebook.
+    1. [Quickstart](quickstart.md): Itching to run some Daft code? Hit the ground running with our 10 minute quickstart.
 
     2. [Examples](examples/index.md): See Daft in action with use cases across text, images, audio, and more.
 
