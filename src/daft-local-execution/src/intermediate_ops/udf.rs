@@ -82,18 +82,19 @@ pub(crate) fn remap_used_cols(expr: BoundExpr) -> (BoundExpr, Vec<usize>) {
 }
 
 /// Common parameters for UDF handle and operator
-struct UdfParams {
-    expr: BoundExpr,
-    udf_properties: UDFProperties,
-    passthrough_columns: Vec<BoundExpr>,
-    output_schema: SchemaRef,
-    required_cols: Vec<usize>,
+#[derive(Clone)]
+// TODO(universalmind303): remove the pub(crate) and combine this with `adaptive_batching_udf.rs`
+pub(crate) struct UdfParams {
+    pub(crate) expr: BoundExpr,
+    pub(crate) udf_properties: UDFProperties,
+    pub(crate) passthrough_columns: Vec<BoundExpr>,
+    pub(crate) output_schema: SchemaRef,
+    pub(crate) required_cols: Vec<usize>,
 }
-
 pub(crate) struct UdfHandle {
-    params: Arc<UdfParams>,
-    udf_expr: BoundExpr,
-    worker_idx: usize,
+    pub(crate) params: Arc<UdfParams>,
+    pub(crate) udf_expr: BoundExpr,
+    pub(crate) worker_idx: usize,
     // Optional PyObject handle to external UDF worker.
     // Required for ActorPoolUDFs
     // Optional for stateless UDFs
@@ -101,21 +102,27 @@ pub(crate) struct UdfHandle {
     //   - If excessive GIL contention is detected, the UDF will be moved to an external worker
     // Second bool indicates if the UDF was initialized
     #[cfg(feature = "python")]
-    handle: Option<Py<PyAny>>,
+    pub(crate) handle: Option<Py<PyAny>>,
+    pub(crate) udf_initialized: bool,
 }
 
 impl UdfHandle {
-    fn no_handle(params: Arc<UdfParams>, udf_expr: BoundExpr, worker_idx: usize) -> Self {
+    pub(crate) fn no_handle(
+        params: Arc<UdfParams>,
+        udf_expr: BoundExpr,
+        worker_idx: usize,
+    ) -> Self {
         Self {
             params,
             udf_expr,
             worker_idx,
             #[cfg(feature = "python")]
             handle: None,
+            udf_initialized: false,
         }
     }
 
-    fn create_handle(&mut self) -> DaftResult<()> {
+    pub(crate) fn create_handle(&mut self) -> DaftResult<()> {
         #[cfg(feature = "python")]
         {
             let py_expr = PyExpr::from(self.udf_expr.inner().clone());
@@ -142,7 +149,7 @@ impl UdfHandle {
     }
 
     #[cfg(feature = "python")]
-    fn eval_input_with_handle(
+    pub(crate) fn eval_input_with_handle(
         &self,
         input: RecordBatch,
         handle: &pyo3::Py<pyo3::PyAny>,
@@ -178,21 +185,17 @@ impl UdfHandle {
     }
 
     #[cfg(feature = "python")]
-    fn eval_input_inline(&mut self, func_input: RecordBatch) -> DaftResult<Series> {
-        use daft_dsl::functions::python::initialize_udfs;
-
-        // Only actually initialized the first time
-        self.udf_expr = BoundExpr::new_unchecked(initialize_udfs(self.udf_expr.inner().clone())?);
+    pub(crate) fn eval_input_inline(&self, func_input: RecordBatch) -> DaftResult<Series> {
         func_input.eval_expression(&self.udf_expr)
     }
 
     #[cfg(not(feature = "python"))]
-    fn eval_input(&mut self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
+    pub(crate) fn eval_input(&self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
         panic!("Cannot evaluate a UDF without compiling for Python");
     }
 
     #[cfg(feature = "python")]
-    fn eval_input(&mut self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
+    pub(crate) fn eval_input(&self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
         let input_batches = input.get_tables()?;
         let mut output_batches = Vec::with_capacity(input_batches.len());
 
@@ -226,7 +229,7 @@ impl UdfHandle {
         )))
     }
 
-    fn teardown(&self) -> DaftResult<()> {
+    pub(crate) fn teardown(&self) -> DaftResult<()> {
         #[cfg(feature = "python")]
         {
             let Some(handle) = &self.handle else {
@@ -266,11 +269,11 @@ pub(crate) struct UdfState {
 }
 
 pub(crate) struct UdfOperator {
-    params: Arc<UdfParams>,
-    worker_count: AtomicUsize,
-    concurrency: usize,
-    memory_request: u64,
-    input_schema: SchemaRef,
+    pub(crate) params: Arc<UdfParams>,
+    pub(crate) worker_count: AtomicUsize,
+    pub(crate) concurrency: usize,
+    pub(crate) memory_request: u64,
+    pub(crate) input_schema: SchemaRef,
 }
 
 impl UdfOperator {
@@ -345,6 +348,7 @@ impl IntermediateOperator for UdfOperator {
     type State = UdfState;
 
     #[instrument(skip_all, name = "UdfOperator::execute")]
+    #[cfg(feature = "python")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
@@ -355,6 +359,14 @@ impl IntermediateOperator for UdfOperator {
         let fut = task_spawner.spawn_with_memory_request(
             memory_request,
             async move {
+                if !state.udf_handle.udf_initialized {
+                    state.udf_handle.udf_expr =
+                        BoundExpr::new_unchecked(daft_dsl::functions::python::initialize_udfs(
+                            state.udf_handle.udf_expr.inner().clone(),
+                        )?);
+                    state.udf_handle.udf_initialized = true;
+                }
+
                 let res = state
                     .udf_handle
                     .eval_input(input)
@@ -364,6 +376,16 @@ impl IntermediateOperator for UdfOperator {
             Span::current(),
         );
         fut.into()
+    }
+
+    #[cfg(not(feature = "python"))]
+    fn execute(
+        &self,
+        input: Arc<MicroPartition>,
+        mut state: Self::State,
+        task_spawner: &ExecutionTaskSpawner,
+    ) -> IntermediateOpExecuteResult<Self> {
+        unimplemented!("UDF execution not supported without Python feature")
     }
 
     fn name(&self) -> NodeName {

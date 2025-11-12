@@ -1,3 +1,4 @@
+pub mod adaptive_batching_udf;
 pub mod anti_semi_hash_join_probe;
 pub mod async_udf;
 pub mod base;

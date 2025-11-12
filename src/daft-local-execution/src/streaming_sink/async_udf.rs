@@ -67,8 +67,8 @@ impl AsyncUdfSink {
 }
 
 pub struct AsyncUdfState {
-    udf_expr: BoundExpr,
     task_set: TaskSet<DaftResult<RecordBatch>>,
+    udf_expr: BoundExpr,
     udf_initialized: bool,
 }
 
@@ -228,8 +228,8 @@ impl StreamingSink for AsyncUdfSink {
 
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(AsyncUdfState {
-            udf_expr: self.params.expr.clone(),
             task_set: TaskSet::new(),
+            udf_expr: self.params.expr.clone(),
             udf_initialized: false,
         })
     }
