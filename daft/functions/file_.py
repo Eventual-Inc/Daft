@@ -13,10 +13,8 @@ def file(url: Expression, io_config: IOConfig | None = None) -> Expression:
     """Converts a string containing a file reference to a `daft.File` reference.
 
     Args:
-        url (StringExpression):
-            If the input is a string, it is assumed to be a file path and is converted to a `daft.File`.
+        url (StringExpression): the url of the file
         io_config (IOConfig, default=None): The IO configuration to use.
-
 
     Returns:
         Expression (File Expression): An expression containing the file reference.
@@ -29,14 +27,12 @@ def video_file(url: Expression, verify: bool = False, io_config: IOConfig | None
     """Converts either a string containing a file reference, or a binary column to a `daft.VideoFile` reference.
 
     Args:
-        url (String or Binary Expression):
-            If the input is a string, it is assumed to be a file path and is converted to a `daft.File`.
+        url (String Expression): the url of the file
         verify:
             If True, verify that the file exists and is a video file.
             If **ANY** files are not videos, this will produce an error.
 
         io_config (IOConfig, default=None): The IO configuration to use.
-
 
     Returns:
         Expression (File[Video] Expression): An expression containing the file reference.
