@@ -165,7 +165,7 @@ Daft will handle the asynchronous execution of the function under the hood, so i
 Example:
 ```python
 @daft.func
-def my_api_call(prompt: str) -> str:
+async def my_api_call(prompt: str) -> str:
     response = await make_api_call(prompt)
     return response.text
 ```
