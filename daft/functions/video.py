@@ -2,27 +2,32 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import daft
-from daft.file import VideoMetadata
 from daft.udf.udf_v2 import Func
 
 if TYPE_CHECKING:
-    import PIL
-
     from daft import Expression
 
 
 def get_metadata_impl(
     file: daft.VideoFile,
-) -> VideoMetadata:
+) -> Any:
     return file.metadata()
 
 
 video_metadata_fn = Func._from_func(
     get_metadata_impl,
-    return_dtype=daft.DataType.infer_from_type(VideoMetadata),
+    return_dtype=daft.DataType.struct(
+        {
+            "width": daft.DataType.int64(),
+            "height": daft.DataType.int64(),
+            "fps": daft.DataType.float64(),
+            "frame_count": daft.DataType.int64(),
+            "time_base": daft.DataType.float64(),
+        }
+    ),
     unnest=False,
     use_process=None,
     is_batch=False,
@@ -46,9 +51,7 @@ def video_metadata(
     return video_metadata_fn(file_expr)
 
 
-def keyframes_impl(
-    file: daft.VideoFile, *, start_time: float = 0, end_time: float | None = None
-) -> list[PIL.Image.Image]:
+def keyframes_impl(file: daft.VideoFile, *, start_time: float = 0, end_time: float | None = None) -> Any:
     return list(file.keyframes(start_time, end_time))
 
 
@@ -80,4 +83,4 @@ def video_keyframes(
     Returns:
     Expression (List Expression): List of keyframes.
     """
-    return video_keyframes_fn(file_expr, start_time=start_time, end_time=end_time)  # type: ignore
+    return video_keyframes_fn(file_expr, start_time=start_time, end_time=end_time)
