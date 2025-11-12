@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextvars
+import warnings
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
@@ -14,40 +15,19 @@ _CURRENT_METRICS: contextvars.ContextVar[OperatorMetrics | None] = contextvars.C
 )
 
 
-class _MetricBase:
-    __slots__ = ("_name",)
-
-    def __init__(self, name: str) -> None:
-        if not isinstance(name, str) or not name:
-            raise ValueError("Metric name must be a non-empty string")
-        self._name = name
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-
-class Counter(_MetricBase):
-    def increment(self, amount: int = 1) -> None:
-        metrics = _require_metrics()
-        metrics.inc_counter(self._name, amount)
-
-
-def counter(name: str) -> Counter:
-    return Counter(name)
-
-
 def increment_counter(name: str, amount: int = 1) -> None:
-    counter(name).increment(amount)
+    if not isinstance(name, str) or not name:
+        raise ValueError("Metric name must be a non-empty string")
 
-
-def _require_metrics() -> OperatorMetrics:
     metrics = _CURRENT_METRICS.get()
     if metrics is None:
-        raise RuntimeError(
-            "Custom UDF metrics can only be used inside an active metrics context; the engine should establish this automatically."
+        warnings.warn(
+            "Custom UDF metrics will only be recorded during execution within a UDF function or class method.",
+            RuntimeWarning,
         )
-    return metrics
+        return
+
+    metrics.inc_counter(name, amount)
 
 
 @contextmanager
@@ -61,7 +41,5 @@ def _metrics_context() -> Generator[OperatorMetrics, None, None]:
 
 
 __all__ = [
-    "Counter",
-    "counter",
     "increment_counter",
 ]
