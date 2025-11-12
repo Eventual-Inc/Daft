@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, call, patch
 
 import pytest
 
 pytest.importorskip("openai")
 
+from openai.types.completion_usage import CompletionUsage
+from openai.types.responses import ResponseUsage
 from pydantic import BaseModel
 
 from daft.ai.openai.protocols.prompter import OpenAIPrompter, OpenAIPrompterDescriptor
@@ -157,6 +159,73 @@ def test_openai_prompter_plain_text_response():
             model="gpt-4o-mini",
             input=[{"role": "user", "content": [{"type": "input_text", "text": "Hello, world!"}]}],
         )
+
+    run_async(_test())
+
+
+def test_openai_prompter_records_usage_metrics_responses_api():
+    """Ensure token/request counters fire for Responses API usage."""
+
+    async def _test():
+        mock_client = AsyncMock()
+        usage = ResponseUsage.model_construct(input_tokens=3, output_tokens=5, total_tokens=8)
+        mock_response = Mock()
+        mock_response.output_text = "Metrics test response."
+        mock_response.usage = usage
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
+
+        prompter = OpenAIPrompter(
+            provider_options={"api_key": "test-key"},
+            model="gpt-4o-mini",
+        )
+        prompter.llm = mock_client
+
+        with patch("daft.ai.openai.protocols.prompter.increment_counter") as mock_counter:
+            result = await prompter.prompt(("Record metrics",))
+
+        assert result == "Metrics test response."
+        assert mock_counter.call_args_list == [
+            call(OpenAIPrompter.INPUT_TOKENS_COUNTER_NAME, 3),
+            call(OpenAIPrompter.OUTPUT_TOKENS_COUNTER_NAME, 5),
+            call(OpenAIPrompter.TOTAL_TOKENS_COUNTER_NAME, 8),
+            call(OpenAIPrompter.REQUESTS_COUNTER_NAME),
+        ]
+
+    run_async(_test())
+
+
+def test_openai_prompter_records_usage_metrics_chat_completions():
+    """Ensure token/request counters fire for Chat Completions usage."""
+
+    async def _test():
+        mock_client = AsyncMock()
+        usage = CompletionUsage.model_construct(prompt_tokens=4, completion_tokens=6, total_tokens=10)
+        mock_choice = Mock()
+        mock_message = Mock()
+        mock_message.content = "Chat metrics response."
+        mock_choice.message = mock_message
+        mock_response = Mock()
+        mock_response.choices = [mock_choice]
+        mock_response.usage = usage
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        prompter = OpenAIPrompter(
+            provider_options={"api_key": "test-key"},
+            model="gpt-4o-mini",
+            use_chat_completions=True,
+        )
+        prompter.llm = mock_client
+
+        with patch("daft.ai.openai.protocols.prompter.increment_counter") as mock_counter:
+            result = await prompter.prompt(("Chat metrics",))
+
+        assert result == "Chat metrics response."
+        assert mock_counter.call_args_list == [
+            call(OpenAIPrompter.INPUT_TOKENS_COUNTER_NAME, 4),
+            call(OpenAIPrompter.OUTPUT_TOKENS_COUNTER_NAME, 6),
+            call(OpenAIPrompter.TOTAL_TOKENS_COUNTER_NAME, 10),
+            call(OpenAIPrompter.REQUESTS_COUNTER_NAME),
+        ]
 
     run_async(_test())
 
