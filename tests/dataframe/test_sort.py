@@ -481,3 +481,9 @@ def test_top_k_second_level_sorting(sort_keys, desc, nulls_first, expected):
     )
     result = df.sort(by=sort_keys, desc=desc, nulls_first=nulls_first).limit(6)
     assert result.to_pydict() == expected
+
+
+def test_literal_sorting(make_df):
+    df = make_df({"A": [1, 2, 3, 4, 5]})
+    result = df.sort(by=daft.lit(1))
+    assert result.to_pydict() == {"A": [1, 2, 3, 4, 5]}
