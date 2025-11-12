@@ -1,4 +1,5 @@
 [dependencies]
+common-py-serde = {path = "../py-serde", default-features = false}
 indicatif = "0.17"
 serde = {workspace = true}
 smallvec = {workspace = true, features = ["serde"]}

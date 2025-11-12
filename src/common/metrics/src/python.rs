@@ -1,8 +1,14 @@
 use std::{collections::HashMap, sync::Arc};
 
+use common_py_serde::impl_bincode_py_state_serialization;
 use pyo3::{Bound, IntoPyObject, PyAny, PyResult, Python, pyclass, pymethods};
+use serde::{Deserialize, Serialize};
 
-use crate::{Stat, ops::NodeInfo};
+use crate::{
+    Stat,
+    operator_metrics::{MetricsCollector, OperatorMetrics},
+    ops::NodeInfo,
+};
 
 #[pyclass(eq, eq_int)]
 #[derive(PartialEq, Eq)]
@@ -65,3 +71,25 @@ impl From<Arc<NodeInfo>> for PyNodeInfo {
         Self { node_info }
     }
 }
+
+#[pyclass(module = "daft.daft", name = "OperatorMetrics")]
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct PyOperatorMetrics {
+    pub inner: OperatorMetrics,
+}
+
+#[pymethods]
+impl PyOperatorMetrics {
+    #[new]
+    pub fn new() -> Self {
+        Self {
+            inner: OperatorMetrics::default(),
+        }
+    }
+
+    pub fn inc_counter(&mut self, name: &str, value: u64) {
+        self.inner.inc_counter(name, value);
+    }
+}
+
+impl_bincode_py_state_serialization!(PyOperatorMetrics);

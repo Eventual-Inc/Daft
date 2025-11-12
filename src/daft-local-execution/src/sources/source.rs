@@ -153,7 +153,7 @@ impl TreeDisplay for SourceNode {
 
                     writeln!(display).unwrap();
                     for (name, value) in rt_result {
-                        writeln!(display, "{} = {}", name.capitalize(), value).unwrap();
+                        writeln!(display, "{} = {}", name.as_str().capitalize(), value).unwrap();
                     }
                 }
             }

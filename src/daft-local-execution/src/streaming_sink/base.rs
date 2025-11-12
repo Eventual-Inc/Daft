@@ -233,7 +233,7 @@ impl<Op: StreamingSink + 'static> TreeDisplay for StreamingSinkNode<Op> {
                 if matches!(level, DisplayLevel::Verbose) {
                     let rt_result = self.runtime_stats.snapshot();
                     for (name, value) in rt_result {
-                        writeln!(display, "{} = {}", name.capitalize(), value).unwrap();
+                        writeln!(display, "{} = {}", name.as_str().capitalize(), value).unwrap();
                     }
                 }
             }

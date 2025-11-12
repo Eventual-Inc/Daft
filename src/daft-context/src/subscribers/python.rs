@@ -106,7 +106,7 @@ impl Subscriber for PySubscriberWrapper {
                 .map(|(node_id, stats)| {
                     let stat_map = stats
                         .into_iter()
-                        .map(|(name, stat)| (*name, stat.clone().into_py_contents(py).unwrap()))
+                        .map(|(name, stat)| (name, stat.clone().into_py_contents(py).unwrap()))
                         .collect::<HashMap<_, _>>();
 
                     (node_id, stat_map)
