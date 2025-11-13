@@ -1,5 +1,6 @@
 use std::{
     any::Any,
+    collections::HashMap,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -25,12 +26,23 @@ use ve_tos_rust_sdk::{
         tos::{AsyncRuntime, TosClientImpl},
     },
     credential::{CommonCredentials, CommonCredentialsProvider},
-    error::TosError,
+    error::{GenericError, TosError},
     object::{
         GetObjectInput, GetObjectOutput, HeadObjectInput, HeadObjectOutput, ListObjectsType2Input,
         ListObjectsType2Output, PutObjectFromBufferInput,
     },
 };
+
+macro_rules! set_retry_header {
+    ($request:expr, $attempt:expr, $max_retries:expr) => {
+        if $attempt > 0 {
+            $request.set_request_header(HashMap::from([(
+                HEADER_SDK_RETRY_COUNT.to_string(),
+                format!("attempt={}; max={}", $attempt, $max_retries),
+            )]));
+        }
+    };
+}
 
 use crate::{
     FileMetadata, GetRange, GetResult, IOStatsRef, InvalidRangeRequestSnafu, ObjectSource, Result,
@@ -41,6 +53,16 @@ use crate::{
 
 const DELIMITER: &str = "/";
 const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
+const DEFAULT_RETRYABLE_ERROR_MSGS: &[&str] = &[
+    "RequestTimeout",
+    "InternalError",
+    "ServiceUnavailable",
+    "Throttling",
+    "ConnectionError",
+];
+pub(crate) const BASE_DELAY_MS: u64 = 100;
+pub(crate) const MAX_DELAY_MS: u64 = 10000;
+pub(crate) const HEADER_SDK_RETRY_COUNT: &str = "x-sdk-retry-count";
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -144,21 +166,22 @@ impl TosSource {
         error_converter: impl Fn(TosError) -> E,
     ) -> Result<T, E>
     where
-        F: Fn() -> Fut,
+        F: Fn(u32) -> Fut,
         Fut: Future<Output = Result<T, TosError>>,
         E: From<Error>,
     {
         let mut last_error = None;
 
         for attempt in 0..=max_retries {
-            match operation().await {
+            match operation(attempt).await {
                 Ok(result) => return Ok(result),
                 Err(error) => {
                     last_error = Some(error.clone());
 
-                    if Self::is_retryable_error(&error) {
+                    let (retry_after, need_retry) = Self::is_retryable_error(&error);
+                    if need_retry {
+                        let delay = Self::cal_sleep_duration(attempt, retry_after).await;
                         if attempt < max_retries {
-                            let delay = Duration::from_millis(100 * (attempt + 1) as u64);
                             log::warn!(
                                 "TOS {} operation failed for {} (attempt {}/{}): {}. Retrying in {:?}",
                                 operation_name,
@@ -190,32 +213,62 @@ impl TosSource {
         .into())
     }
 
-    fn is_retryable_error(error: &TosError) -> bool {
-        let error_msg = error.to_string().to_lowercase();
-
-        if error_msg.contains("timeout")
-            || error_msg.contains("connection")
-            || error_msg.contains("network")
-            || error_msg.contains("reset")
-            || error_msg.contains("broken pipe")
-            || error_msg.contains("connection refused")
-        {
-            return true;
+    async fn cal_sleep_duration(attempt: u32, retry_after: isize) -> Duration {
+        let mut delay = BASE_DELAY_MS * 2u64.pow(attempt + 1);
+        if delay > MAX_DELAY_MS {
+            delay = MAX_DELAY_MS;
         }
-
-        // Rate limiting and server errors
-        if error_msg.contains("429")  // Too Many Requests
-            || error_msg.contains("500")  // Internal Server Error
-            || error_msg.contains("502")  // Bad Gateway
-            || error_msg.contains("503")  // Service Unavailable
-            || error_msg.contains("504")  // Gateway Timeout
-            || error_msg.contains("throttl")
-        // Throttling
-        {
-            return true;
+        let retry_after = retry_after as u64 * 1000;
+        if retry_after > delay {
+            delay = retry_after;
         }
+        Duration::from_millis(delay)
+    }
 
-        false
+    // Returns the number of retries to wait before retrying the operation, and whether the operation is retryable.
+    fn is_retryable_error(error: &TosError) -> (isize, bool) {
+        match error {
+            TosError::TosClientError { cause, .. } => {
+                if let Some(error) = cause.as_ref() {
+                    match error {
+                        GenericError::HttpRequestError(_) | GenericError::IoError(_) => (0, true),
+                        GenericError::DefaultError(msg) => {
+                            if DEFAULT_RETRYABLE_ERROR_MSGS
+                                .iter()
+                                .any(|&s| msg.contains(s))
+                            {
+                                (0, true)
+                            } else {
+                                (0, false)
+                            }
+                        }
+                        _ => (0, false),
+                    }
+                } else {
+                    (0, false)
+                }
+            }
+            TosError::TosServerError {
+                status_code,
+                header,
+                ..
+            } => {
+                let retry_after = header
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case("retry-after"))
+                    .and_then(|(_, v)| v.parse::<isize>().ok())
+                    .unwrap_or(0);
+
+                let should_retry = *status_code >= 500
+                    || *status_code == 429
+                    || *status_code == 408
+                    || DEFAULT_RETRYABLE_ERROR_MSGS
+                        .iter()
+                        .any(|&s| error.to_string().contains(s));
+
+                (retry_after, should_retry)
+            }
+        }
     }
 
     pub async fn get_client(config: &TosConfig) -> Result<Arc<Self>> {
@@ -296,15 +349,28 @@ impl TosSource {
         range: Option<GetRange>,
     ) -> Result<GetResult> {
         let (bucket, key) = Self::parse_tos_url(uri, false)?;
-        let mut request = GetObjectInput::new(bucket, key);
-        if let Some(range) = range {
+
+        if let Some(range) = range.as_ref() {
             range.validate().context(InvalidRangeRequestSnafu)?;
-            request.set_range(range.to_string());
         }
 
         let response: GetObjectOutput = self
             .retry_operation(
-                || self.client.get_object(&request),
+                |attempt| {
+                    let bucket = bucket.clone();
+                    let key = key.clone();
+                    let range = range.clone();
+                    let client = &self.client;
+                    let max_retries = self.config.max_retries;
+                    async move {
+                        let mut request = GetObjectInput::new(bucket, key);
+                        if let Some(ref range) = range {
+                            request.set_range(range.to_string());
+                        }
+                        set_retry_header!(request, attempt, max_retries);
+                        client.get_object(&request).await
+                    }
+                },
                 "get_object",
                 uri,
                 self.config.max_retries,
@@ -348,10 +414,20 @@ impl TosSource {
 
     async fn put_impl(&self, _permit: OwnedSemaphorePermit, uri: &str, data: Bytes) -> Result<()> {
         let (bucket, key) = Self::parse_tos_url(uri, false)?;
-        let request = PutObjectFromBufferInput::new_with_content(bucket, key, data);
 
         self.retry_operation(
-            || self.client.put_object_from_buffer(&request),
+            |attempt| {
+                let bucket = bucket.clone();
+                let key = key.clone();
+                let data = data.clone();
+                let client = &self.client;
+                let max_retries = self.config.max_retries;
+                async move {
+                    let mut request = PutObjectFromBufferInput::new_with_content(bucket, key, data);
+                    set_retry_header!(request, attempt, max_retries);
+                    client.put_object_from_buffer(&request).await
+                }
+            },
             "put_object",
             uri,
             self.config.max_retries,
@@ -367,11 +443,20 @@ impl TosSource {
 
     async fn get_size_impl(&self, _permit: OwnedSemaphorePermit, uri: &str) -> Result<usize> {
         let (bucket, key) = Self::parse_tos_url(uri, false)?;
-        let request = HeadObjectInput::new(bucket, key);
 
         let response: HeadObjectOutput = self
             .retry_operation(
-                || self.client.head_object(&request),
+                |attempt| {
+                    let bucket = bucket.clone();
+                    let key = key.clone();
+                    let client = &self.client;
+                    let max_retries = self.config.max_retries;
+                    async move {
+                        let mut request = HeadObjectInput::new(bucket, key);
+                        set_retry_header!(request, attempt, max_retries);
+                        client.head_object(&request).await
+                    }
+                },
                 "head_object",
                 uri,
                 self.config.max_retries,
@@ -394,24 +479,34 @@ impl TosSource {
         continuation_token: Option<String>,
         page_size: Option<i32>,
     ) -> Result<LSResult> {
-        let mut request = ListObjectsType2Input::new(bucket);
-        request.set_prefix(key);
-
-        if let Some(delimiter) = delimiter.as_ref() {
-            request.set_delimiter(delimiter);
-        }
-
-        if let Some(continuation_token) = continuation_token.as_ref() {
-            request.set_continuation_token(continuation_token);
-        }
-
-        if let Some(page_size) = page_size {
-            request.set_max_keys(page_size as isize);
-        }
+        let bucket = bucket.to_string();
+        let key = key.to_string();
 
         let result = self
             .retry_operation(
-                || self.client.list_objects_type2(&request),
+                |attempt| {
+                    let bucket = bucket.clone();
+                    let key = key.clone();
+                    let delimiter = delimiter.clone();
+                    let continuation_token = continuation_token.clone();
+                    let client = &self.client;
+                    let max_retries = self.config.max_retries;
+                    async move {
+                        let mut request = ListObjectsType2Input::new(&bucket);
+                        request.set_prefix(&key);
+                        if let Some(ref delimiter) = delimiter {
+                            request.set_delimiter(delimiter);
+                        }
+                        if let Some(ref continuation_token) = continuation_token {
+                            request.set_continuation_token(continuation_token);
+                        }
+                        if let Some(page_size) = page_size {
+                            request.set_max_keys(page_size as isize);
+                        }
+                        set_retry_header!(request, attempt, max_retries);
+                        client.list_objects_type2(&request).await
+                    }
+                },
                 "list_objects_type2",
                 &format!("tos://{bucket}/{key}"),
                 self.config.max_retries,
