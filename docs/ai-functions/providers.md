@@ -6,11 +6,8 @@ This guide covers:
 
 - [Quick provider setup](#quick-provider-setup)
 - [Setting named providers within sessions](#setting-a-named-openai-provider-within-a-session)
-- [Working with multiple providers](#explicit-usage-with-multiple-providers)
+- [Working with multiple providers](#end-to-end-usage-with-multiple-providers)
 
-!!! warning "Early Development"
-
-    These APIs are early in their development. Please feel free to [open a feature request and file issues](https://github.com/Eventual-Inc/Daft/issues/new/choose) if you see opportunities for improvements. We're always looking for inputs from the community!
 
 ## Quick provider setup
 
@@ -62,7 +59,9 @@ sess.set_provider("OpenRouter")
 provider = sess.get_provider("OpenRouter")
 ```
 
-## Explicit Usage with Multiple Providers
+Your can then specify the `name` of the provider in the
+
+## End-to-End Usage with Multiple Providers
 
 For complex workflows, you might need to use different providers for different tasks—for example, using GPT-5 for validation while using a cheaper model for initial classification. Daft makes it easy to manage multiple providers in a single session.
 
@@ -158,7 +157,7 @@ This example demonstrates:
 
 ## More Resources
 
-- **[AI Functions Overview](../modalities/index.md)** - Learn about available AI functions and usage patterns
-- **[Working with Text](../modalities/text.md)** - Text processing and embeddings
-- **[Working with Images](../modalities/images.md)** - Image processing and embeddings
-- **[Contributing AI Functions](../contributing/contributing-ai-functions.md)** - Add new providers or AI functions
+- **[AI Functions Overview](overview.md)**
+- **[Embedding Text and Images](embed.md)**
+- **[Classify Text and Images](classify.md)**
+- **[Contributing AI Functions](../contributing/contributing-ai-functions.md)**

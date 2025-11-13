@@ -4,8 +4,8 @@ Run prompts, embeddings, and model scoring over large datasets, then stream the 
 
 ## When to use Daft for batch inference
 
-- **You need to run models over your data:** Express inference on a column (e.g., [`llm_generate`](#example-text-generation-with-openai), [`embed_text`](../modalities/text.md#how-to-use-the-embed_text-function), [`embed_image`](../modalities/images.md#generate-image-embeddings)) and let Daft handle batching, concurrency, and backpressure.
-- **You have data that are large objects in cloud storage:** Daft has [record-setting](https://www.daft.ai/blog/announcing-daft-02) performance when reading from and writing to S3, and provides flexible APIs for working with [URLs and Files](../modalities/urls.md).
+- **You need to run models over your data:** Express inference on a column (e.g., [`prompt`](#example-prompt-gpt-5-with-openai), [`embed_text`](../ai-functions/embed.md#text-embeddings), [`embed_image`](../ai-functions/embed.md#image-embeddings)) and let Daft handle batching, concurrency, and backpressure.
+- **You have data that is large objects in cloud storage:** Daft has [record-setting](https://www.daft.ai/blog/announcing-daft-02) performance when reading from and writing to S3, and provides flexible APIs for working with [URLs and Files](../modalities/urls.md).
 - **You're working with multimodal data:** Daft supports datatypes like [images](../modalities/images.md) and [videos](../modalities/videos.md), and supports the ability to define [custom data sources and sinks](../connectors/custom.md) and [custom functions over this data](../custom-code/udfs.md).
 - **You want end-to-end pipelines where data sizes expand and shrink:** For example, downloading images from URLs, decoding them, then embedding them; [Daft streams across stages to keep memory well-behaved](https://www.daft.ai/blog/processing-300k-images-without-oom).
 
@@ -17,24 +17,21 @@ Daft provides first-class APIs for model inference. Under the hood, Daft pipelin
 
 ![Daft Pipeline Visualization](daft-pipeline-visualization.png)
 
-## Example: Text generation with OpenAI
+## Example: Prompt GPT-5 with OpenAI
 
-=== "🐍 Python"
 ```python
 import daft
-from daft.functions import llm_generate
+from daft.functions import prompt
 
 (
     daft.read_huggingface("fka/awesome-chatgpt-prompts")
     .with_column( # Generate model outputs in a new column
         "output",
-        llm_generate(
+        prompt(
             daft.col("prompt"),
-            model="gpt-4o",           # Any chat/completions-capable model
-            provider="openai",        # Switch providers by changing this; e.g. to "vllm"
-            api_key="...",            # Pass via environment variable or secret manager
-            temperature=0.2,
-            max_tokens=256,
+            model="gpt-5",           # Any chat/completions-capable model
+            provider="openai",       # Switch providers by changing this; e.g. to "vllm"
+            max_output_tokens=256,   # OpenAI Provider uses Responses API by default
         ),
     )
     .write_parquet("output.parquet/", write_mode="overwrite")  # Write to Parquet as the pipeline runs
@@ -43,13 +40,12 @@ from daft.functions import llm_generate
 
 What this does:
 
-- Uses [`llm_generate()`][daft.functions.llm_generate] to express inference.
+- Uses [`prompt()`](../ai-functions/prompt.md) to express inference.
 - Streams rows through OpenAI concurrently while reading from Hugging Face and writing to Parquet.
 - Requires no explicit async, batching, rate limiting, or retry code in your script.
 
 ## Example: Local text embedding with LM Studio
 
-=== "🐍 Python"
 ```python
 import daft
 from daft.ai.provider import load_provider
@@ -78,7 +74,7 @@ import daft
 daft.context.set_runner_ray()  # Enable Daft's distributed runner
 ```
 
-Daft partitions the data, schedules remote execution, and orchestrates your workload across the cluster-no pipeline rewrites.
+Daft partitions the data, schedules remote execution, and orchestrates your workload across the cluster. No pipeline rewrites.
 
 ## Patterns that work well
 
