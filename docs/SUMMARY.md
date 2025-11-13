@@ -55,7 +55,7 @@
         * [Observability](optimization/observability.md)
     * Contributing
         * [Overview](contributing-to-daft.md)
-        * [Adding AI Functions and Providers](contributing/contributing-ai-functions.md)
+        * [Contributing AI Functions](contributing/contributing-ai-functions.md)
     * [Sessions, Catalogs, and Tables](configuration/sessions-usage.md)
     * [Roadmap](roadmap.md)
     * [Benchmarks](benchmarks/index.md)

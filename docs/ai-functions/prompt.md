@@ -29,6 +29,8 @@ A key strength of Daft is its ability to parallelize data processing on structur
 
 The `prompt` function enables you to call language models on DataFrame columns, making it easy to scale LLM operations across thousands or millions of rows with automatic batching and parallelization.
 
+The default provider for `prompt` is **OpenAI**. This means you can use OpenAI's latest models without specifying a provider. Just make sure your `OPENAI_API_KEY` environment variable is set and an OpenAIProvider will be created and attached to your `daft.Session` for you.
+
 ```python
 import daft
 from daft.functions import prompt
@@ -65,8 +67,6 @@ df.show()
 ## Prompt Basics
 
 The `prompt` function supports a wide range of tasks, from simple text generation to complex agentic workflows with tool calling. Daft's native multimodal data handling and scalable execution make it easy to process large datasets efficiently. This section covers core patterns for working with prompts, including templates, parameters, and model configuration.
-
-The default provider for `prompt` is **OpenAI**. This means you can use OpenAI's latest models without specifying a provider. Just make sure your `OPENAI_API_KEY` environment variable is set and an OpenAIProvider will be created and attached to your `daft.Session` for you.
 
 !!! note
     The default endpoint for OpenAI providers is `v1/responses`. You can pass `use_chat_completions=True` as an option to use the Chat Completions API instead of the new Responses API.
@@ -129,9 +129,7 @@ df.show(format="fancy", max_width=120)
 
 ### Building Prompt Templates with the `format` function
 
-In addition to passing plain strings, you can build dynamic prompt templates using Daft's `format` function. This works similarly to Python's `format`, but uses positional arguments with Daft expressions for fully lazy evaluation.
-
-Another way to define prompt templates is with user defined functions. Either column expressions or string literals can be passed to any input argument for more flexible composition.
+In addition to passing plain strings, you can build dynamic prompt templates using Daft's `format` function. This works similarly to Python's `format`, but works with Daft expressions. You can also define prompt templates with user-defined functions. With `@daft.func` you can pass in expressions or plain python strings for more flexible composition.
 
 ```python
 import daft
@@ -320,7 +318,7 @@ df = daft.from_pydict({
 # Decode the image and file paths
 df = df.with_column(
     "my_image",
-    daft.functions.decode_image(daft.col("my_image").url.download())
+    daft.functions.decode_image(daft.col("my_image").download())
 )
 
 df = df.with_column(
@@ -365,7 +363,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Discover PDF files from HuggingFace
-df = daft.from_glob_path("hf://datasets/Eventual-Inc/sample-files/papers")
+df = daft.from_glob_path("hf://datasets/Eventual-Inc/sample-files/papers/*.pdf")
 
 df = (
     df

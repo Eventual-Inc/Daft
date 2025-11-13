@@ -154,7 +154,11 @@ query = daft.from_pydict({
 # Embed the query
 query = query.with_column(
     "query_embedding",
-    embed_text(daft.col("query_text"), provider="openai", model="text-embedding-3-small")
+    embed_text(
+        daft.col("query_text"),
+        provider="openai",             # Requires OPENAI_API_KEY
+        model="text-embedding-3-small"
+    )
 )
 
 # Cross join to compare query against all documents
