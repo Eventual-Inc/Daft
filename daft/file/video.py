@@ -25,10 +25,10 @@ class VideoFile(File):
         instance._inner = reference
         return instance
 
-    def __init__(self, str_or_bytes: str | bytes, io_config: IOConfig | None = None) -> None:
+    def __init__(self, url: str, io_config: IOConfig | None = None) -> None:
         if not av.module_available():
             raise ImportError("The 'av' module is required to create video files.")
-        super().__init__(str_or_bytes, io_config, MediaType.video())
+        super().__init__(url, io_config, MediaType.video())
 
     def __post_init__(self) -> None:
         if not self.is_video():

@@ -102,8 +102,7 @@ class OpenAIPrompter(Prompter):
     @_process_message.register
     def _process_bytes_message(self, msg: bytes) -> dict[str, Any]:
         """Handle bytes messages by converting to File and processing."""
-        daft_file = File(msg)
-        mime_type, encoded_content = self._encode_file(daft_file)
+        mime_type, encoded_content = self._encode_bytes(msg)
 
         if mime_type.startswith("image/"):
             return self._build_image_message(encoded_content)
@@ -140,6 +139,17 @@ class OpenAIPrompter(Prompter):
             base64_string = base64.b64encode(bio.getvalue()).decode("utf-8")
             encoded_content = f"data:image/png;base64,{base64_string}"
             return self._build_image_message(encoded_content)
+
+    def _encode_bytes(self, msg: bytes) -> tuple[str, str]:
+        import base64
+
+        from daft.daft import guess_mimetype_from_content
+
+        maybe_mime_type = guess_mimetype_from_content(msg)
+        mime_type = maybe_mime_type if maybe_mime_type else "application/octet-stream"
+        base64_string = base64.b64encode(msg).decode("utf-8")
+        encoded_content = f"data:{mime_type};base64,{base64_string}"
+        return mime_type, encoded_content
 
     def _encode_file(self, file_obj: File) -> tuple[str, str]:
         import base64

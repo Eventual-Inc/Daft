@@ -35,11 +35,6 @@ impl ScalarUDF for File {
         Ok(match input.data_type() {
             DataType::File(MediaType::Unknown) => input,
             DataType::File(MediaType::Video) => input.cast(&DataType::File(MediaType::Unknown))?,
-
-            DataType::Binary => {
-                FileArray::<MediaTypeUnknown>::new_from_data_array(input.name(), input.binary()?)
-                    .into_series()
-            }
             DataType::Utf8 => FileArray::<MediaTypeUnknown>::new_from_reference_array(
                 input.name(),
                 input.utf8()?,
@@ -114,30 +109,12 @@ impl ScalarUDF for VideoFile {
                 }
                 files.into_series()
             }
-            DataType::Binary => {
-                let bin = input.binary()?;
-
-                let data = bin.into_iter().map(|data| {
-                    data.map(|data| {
-                        let file_ref =
-                            FileReference::new_from_data(MediaType::Video, data.to_vec());
-                        if verify {
-                            verify_file(file_ref)
-                        } else {
-                            Ok(file_ref)
-                        }
-                    })
-                    .transpose()
-                });
-                FileArray::<MediaTypeVideo>::new_from_file_references(input.name(), data)?
-                    .into_series()
-            }
             DataType::Utf8 => {
                 let utf8 = input.utf8()?;
                 // TODO(universalmind303): refactor this to be async once we have async scalar fns.
                 let data = utf8.into_iter().map(|data| {
                     data.map(|data| {
-                        let file_ref = FileReference::new_from_reference(
+                        let file_ref = FileReference::new(
                             MediaType::Video,
                             data.to_string(),
                             io_config.clone(),
