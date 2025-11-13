@@ -9,8 +9,6 @@ Daft is built to work comfortably with images. This guide shows you how to accom
 
 It also explains some concepts on [Dynamic execution for multimodal workloads](#dynamic-execution-for-multimodal-workloads) to improve your mental model of how the Daft engine works.
 
-The full list of image functions can be found at the [Image Functions](../api/functions.md#image-functions) section of the API Reference.
-
 ## Quickstart
 
 To setup this example, let's read a Parquet file from a public S3 bucket containing sample dog owners, use [`daft.col()`][daft.expressions.col] with the [`df.with_column`][daft.DataFrame.with_column] method to create a new column `full_name`, and join the contents from the `last_name` column to the `first_name` column. Then, let's create a `dogs` DataFrame from a Python dictionary and use [`df.join`][daft.DataFrame.join] to join this with our dataframe of owners:
