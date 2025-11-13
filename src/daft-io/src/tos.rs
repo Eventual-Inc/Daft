@@ -53,13 +53,8 @@ use crate::{
 
 const DELIMITER: &str = "/";
 const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
-const DEFAULT_RETRYABLE_ERROR_MSGS: &[&str] = &[
-    "RequestTimeout",
-    "InternalError",
-    "ServiceUnavailable",
-    "Throttling",
-    "ConnectionError",
-];
+const DEFAULT_RETRYABLE_ERROR_MSGS: &[&str] =
+    &["timeout", "broken pipe", "throttl", "qpslimit", "ratelimit"];
 pub(crate) const BASE_DELAY_MS: u64 = 100;
 pub(crate) const MAX_DELAY_MS: u64 = 10000;
 pub(crate) const HEADER_SDK_RETRY_COUNT: &str = "x-sdk-retry-count";
@@ -235,7 +230,7 @@ impl TosSource {
                         GenericError::DefaultError(msg) => {
                             if DEFAULT_RETRYABLE_ERROR_MSGS
                                 .iter()
-                                .any(|&s| msg.contains(s))
+                                .any(|&s| msg.to_lowercase().contains(s))
                             {
                                 (0, true)
                             } else {
@@ -264,7 +259,7 @@ impl TosSource {
                     || *status_code == 408
                     || DEFAULT_RETRYABLE_ERROR_MSGS
                         .iter()
-                        .any(|&s| error.to_string().contains(s));
+                        .any(|&s| error.to_string().to_lowercase().contains(s));
 
                 (retry_after, should_retry)
             }
