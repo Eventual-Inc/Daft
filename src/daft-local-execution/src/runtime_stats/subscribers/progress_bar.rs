@@ -203,7 +203,11 @@ impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
     }
 
     async fn finish(mut self: Box<Self>) -> DaftResult<()> {
-        if !self.persist_on_finish {
+        if self.persist_on_finish {
+            for bar in &self.pbars {
+                bar.finish();
+            }
+        } else {
             self.pbars.clear();
             self.multi_progress.clear()?;
         }
