@@ -127,13 +127,22 @@ class DataType:
         )
 
     @classmethod
-    def infer_from_type(cls, t: type | GenericAlias | UnionType) -> DataType:
+    def infer_from_type(
+        # ruff: noqa: UP045 (we explicitly want ito use typing.Optional, not `(T | None)`)
+        cls,
+        t: type | GenericAlias | UnionType | typing.Optional[type | GenericAlias | UnionType],
+    ) -> DataType:
         """Infer Daft DataType from a Python type."""
         # NOTE: Make sure this matches the logic in `Literal::from_pyobj` in Rust
 
-        assert isinstance(
-            t, (type, GenericAlias, UnionType)
-        ), f"Input to DataType.infer_from_type must be a type, found: {t}"
+        def is_optional(
+            annotation: type | GenericAlias | UnionType | typing.Optional[type | GenericAlias | UnionType],
+        ) -> bool:
+            return typing.get_origin(annotation) is typing.Union and type(None) in typing.get_args(annotation)
+
+        assert isinstance(t, (type, GenericAlias, UnionType)) or is_optional(t), (
+            f"Input to DataType.infer_from_type must be a type, found: {t}"
+        )
 
         import datetime
         import decimal
@@ -148,15 +157,19 @@ class DataType:
         origin: type = origin_or_none if origin_or_none is not None else t  # type: ignore
         args = typing.get_args(t)
 
-        def extract_non_none_type(tp: type | GenericAlias | UnionType) -> Any:
+        def extract_non_none_type(tp: Any) -> Any:
+            # 3.11+ (typing.Union[T1, T2, ...])
             if isinstance(tp, UnionType):
                 args = typing.get_args(tp)
-                non_none_args = [arg for arg in args if arg is not NoneType and arg is not type(None)]
+            # 3.10 (typing.Optional[T])
+            elif is_optional(tp):
+                args = (tp.__args__[0],)
+            non_none_args = [arg for arg in args if arg is not NoneType and arg is not type(None)]
 
-                if len(non_none_args) == 1:
-                    return non_none_args[0]
-                elif len(non_none_args) > 1:
-                    return Any
+            if len(non_none_args) == 1:
+                return non_none_args[0]
+            elif len(non_none_args) > 1:
+                return Any
 
             return tp
 
@@ -179,7 +192,9 @@ class DataType:
 
             return issubclass(origin, type_obj)
 
-        if isinstance(t, UnionType):
+        if is_optional(t):
+            return extract_non_none_type(t)
+        elif isinstance(t, UnionType):
             return cls.infer_from_type(extract_non_none_type(t))
         if check_type(type(None)):
             return cls.null()

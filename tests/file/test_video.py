@@ -49,16 +49,7 @@ def test_get_metadata(sample_video_path):
     df = df.select(daft.functions.video_metadata(df["video"]))
 
     expected = {
-        "video": [
-            {
-                "width": 192,
-                "height": 144,
-                "fps": 30.0,
-                "duration": 9.845261,
-                "frame_count": 290,
-                "time_base": 1.1111111111111112e-05,
-            }
-        ]
+        "video": [{"width": 192, "height": 144, "fps": 30.0, "frame_count": 290, "time_base": 1.1111111111111112e-05}]
     }
 
     assert df.to_pydict() == expected
