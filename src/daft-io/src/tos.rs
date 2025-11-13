@@ -175,8 +175,8 @@ impl TosSource {
 
                     let (retry_after, need_retry) = Self::is_retryable_error(&error);
                     if need_retry {
-                        let delay = Self::cal_sleep_duration(attempt, retry_after).await;
                         if attempt < max_retries {
+                            let delay = Self::cal_sleep_duration(attempt, retry_after).await;
                             log::warn!(
                                 "TOS {} operation failed for {} (attempt {}/{}): {}. Retrying in {:?}",
                                 operation_name,
@@ -213,7 +213,11 @@ impl TosSource {
         if delay > MAX_DELAY_MS {
             delay = MAX_DELAY_MS;
         }
-        let retry_after = retry_after as u64 * 1000;
+        let retry_after = if retry_after > 0 {
+            retry_after as u64 * 1000
+        } else {
+            0
+        };
         if retry_after > delay {
             delay = retry_after;
         }
