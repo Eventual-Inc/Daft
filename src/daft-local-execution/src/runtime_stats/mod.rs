@@ -40,10 +40,11 @@ use crate::{
     },
 };
 
+pub(crate) const PROGRESS_BAR_ENV_VAR: &str = "DAFT_PROGRESS_BAR";
+
 fn should_enable_progress_bar() -> bool {
-    let progress_var_name = "DAFT_PROGRESS_BAR";
-    if let Ok(val) = std::env::var(progress_var_name) {
-        matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+    if let Ok(val) = std::env::var(PROGRESS_BAR_ENV_VAR) {
+        matches!(val.trim().to_lowercase().as_str(), "1" | "true" | "persist")
     } else {
         true // Return true when env var is not set
     }

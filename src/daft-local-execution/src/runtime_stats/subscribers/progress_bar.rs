@@ -13,7 +13,7 @@ use log::Log;
 
 use crate::{
     PythonPrintTarget, STDOUT,
-    runtime_stats::{CPU_US_KEY, subscribers::RuntimeStatsSubscriber},
+    runtime_stats::{CPU_US_KEY, PROGRESS_BAR_ENV_VAR, subscribers::RuntimeStatsSubscriber},
 };
 
 /// Convert statistics to a message for progress bars
@@ -201,8 +201,14 @@ impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
     }
 
     async fn finish(mut self: Box<Self>) -> DaftResult<()> {
-        self.pbars.clear();
-        self.multi_progress.clear()?;
+        let persist_progress_bar = std::env::var(PROGRESS_BAR_ENV_VAR)
+            .map(|val| val.trim().eq_ignore_ascii_case("persist"))
+            .unwrap_or(false);
+
+        if !persist_progress_bar {
+            self.pbars.clear();
+            self.multi_progress.clear()?;
+        }
         Ok(())
     }
 }
