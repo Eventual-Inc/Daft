@@ -4,10 +4,11 @@ use std::{
 };
 
 use common_runtime::get_io_runtime;
-use opentelemetry::{KeyValue, global, trace::TracerProvider};
+use opentelemetry::{KeyValue, global, logs::LoggerProvider, trace::TracerProvider};
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
     Resource,
+    logs::SdkLoggerProvider,
     metrics::PeriodicReader,
     trace::{Sampler, SdkTracerProvider},
 };
@@ -19,6 +20,10 @@ static GLOBAL_TRACER_PROVIDER: LazyLock<
 
 static GLOBAL_METER_PROVIDER: LazyLock<
     Mutex<Option<opentelemetry_sdk::metrics::SdkMeterProvider>>,
+> = LazyLock::new(|| Mutex::new(None));
+
+pub static GLOBAL_LOGGER_PROVIDER: LazyLock<
+    Mutex<Option<opentelemetry_sdk::logs::SdkLoggerProvider>>,
 > = LazyLock::new(|| Mutex::new(None));
 
 const OTEL_EXPORTER_OTLP_ENDPOINT: &str = "DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT";
@@ -41,12 +46,37 @@ pub fn init_opentelemetry_providers() {
     ioruntime.block_on_current_thread(async {
         init_otlp_metrics_provider(&otlp_endpoint).await;
         init_otlp_tracer_provider(&otlp_endpoint).await;
+        init_otlp_logger_provider(&otlp_endpoint).await;
     });
 }
 
 pub fn flush_opentelemetry_providers() {
     flush_oltp_tracer_provider();
     flush_oltp_metrics_provider();
+    flush_oltp_logger_provider();
+}
+
+async fn init_otlp_logger_provider(otlp_endpoint: &str) {
+    let mut lg = GLOBAL_LOGGER_PROVIDER.lock().unwrap();
+    assert!(lg.is_none(), "Expected logger provider to be None on init");
+
+    let resource = Resource::builder()
+        .with_attribute(KeyValue::new("service.name", "daft"))
+        .build();
+
+    let log_exporter = opentelemetry_otlp::LogExporter::builder()
+        .with_tonic()
+        .with_endpoint(otlp_endpoint)
+        .with_timeout(Duration::from_secs(10))
+        .build()
+        .expect("Failed to build OTLP logger exporter for tracing");
+
+    let logger_provider: SdkLoggerProvider = opentelemetry_sdk::logs::SdkLoggerProvider::builder()
+        .with_batch_exporter(log_exporter)
+        .with_resource(resource)
+        .build();
+
+    *lg = Some(logger_provider);
 }
 
 async fn init_otlp_metrics_provider(otlp_endpoint: &str) {
@@ -85,6 +115,15 @@ pub fn flush_oltp_metrics_provider() {
         && let Err(e) = meter_provider.force_flush()
     {
         eprintln!("Failed to flush OTLP metrics provider: {}", e);
+    }
+}
+
+pub fn flush_oltp_logger_provider() {
+    let lg = GLOBAL_LOGGER_PROVIDER.lock().unwrap();
+    if let Some(logger_provider) = lg.as_ref()
+        && let Err(e) = logger_provider.force_flush()
+    {
+        eprintln!("Failed to flush OTLP logger provider: {}", e);
     }
 }
 

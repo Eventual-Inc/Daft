@@ -1,8 +1,13 @@
-use std::{fmt::Display, num::NonZeroUsize, sync::Arc};
+use std::{collections::HashMap, fmt::Display, num::NonZeroUsize, sync::Arc};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use itertools::Itertools;
+use log::{error, log};
+use opentelemetry::{
+    Key, StringValue, Value,
+    logs::{AnyValue, LogRecord, Logger, LoggerProvider},
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -11,7 +16,6 @@ use crate::{
     operator_metrics::MetricsCollector,
     python_udf::PyScalarFn,
 };
-
 #[allow(clippy::too_many_arguments)]
 pub fn row_wise_udf(
     name: &str,
@@ -64,6 +68,18 @@ impl Display for RowWisePyFn {
         let children_str = self.args.iter().map(|expr| expr.to_string()).join(", ");
 
         write!(f, "{}({})", self.function_name, children_str)
+    }
+}
+
+pub fn emit_error(error: &DaftError) {
+    let lg = common_tracing::GLOBAL_LOGGER_PROVIDER.lock().unwrap();
+    if let Some(logger_provider) = lg.as_ref() {
+        let logger = logger_provider.logger("python-udf-error");
+        let mut log_record = logger.create_log_record();
+        log_record.add_attribute("source", "udf");
+        log_record.set_body(format!("ROHIT LOGGED AN ERROR: {error}").into());
+        logger.emit(log_record);
+        error!("Emit error ran");
     }
 }
 
@@ -241,6 +257,7 @@ impl RowWisePyFn {
                             match on_error {
                                 OnError::Raise => res = Err(e),
                                 OnError::Log => {
+                                    emit_error(&e);
                                     log::warn!("Retrying function call after error: {}", e);
                                     res = Ok(Literal::Null);
                                 }
