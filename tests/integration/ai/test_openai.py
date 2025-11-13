@@ -24,6 +24,9 @@ from daft.ai.openai.protocols.prompter import OpenAIPrompter
 from daft.daft import PyMicroPartition, PyNodeInfo
 from daft.functions.ai import embed_text, prompt
 from daft.subscribers import StatType, Subscriber
+from tests.conftest import get_tests_daft_runner_name
+
+RUNNER_IS_NATIVE = get_tests_daft_runner_name() == "native"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -118,6 +121,10 @@ def _collect_prompt_metrics(subscriber: PromptMetricsSubscriber) -> dict[str, in
 
 
 def _assert_prompt_metrics_recorded(metrics: dict[str, int]) -> None:
+    if not RUNNER_IS_NATIVE:
+        # Ray runner does not support metrics collection yet
+        return
+
     required = {
         OpenAIPrompter.REQUESTS_COUNTER_NAME,
         OpenAIPrompter.INPUT_TOKENS_COUNTER_NAME,
