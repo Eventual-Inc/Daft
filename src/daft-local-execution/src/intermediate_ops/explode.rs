@@ -50,15 +50,15 @@ impl RuntimeStats for ExplodeStats {
         let rows_out = self.rows_out.load(ordering);
 
         let amplification = if rows_in == 0 {
-            100.
+            1.
         } else {
-            (rows_out as f64 / rows_in as f64) * 100.0
+            rows_out as f64 / rows_in as f64
         };
         snapshot![
             CPU_US_KEY; Stat::Duration(Duration::from_micros(cpu_us)),
             ROWS_IN_KEY; Stat::Count(rows_in),
             ROWS_OUT_KEY; Stat::Count(rows_out),
-            "amplification"; Stat::Percent(amplification),
+            "amplification"; Stat::Float(amplification),
         ]
     }
 
