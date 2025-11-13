@@ -173,7 +173,7 @@ df = (
     .with_column(
         "answer2",
         prompt(
-            answer_in_another_language_func(daft.col("text"), daft.lit("Spanish")),
+            answer_in_another_language_func(daft.lit("Spanish"), daft.col("text")),
             model="google/gemma-3-4b",
             provider="lm_studio"
         )
