@@ -59,7 +59,7 @@ sess.set_provider("OpenRouter")
 provider = sess.get_provider("OpenRouter")
 ```
 
-Your can then specify the `name` of the provider in the
+You can then specify the `name` of the provider in the
 
 ## End-to-End Usage with Multiple Providers
 
