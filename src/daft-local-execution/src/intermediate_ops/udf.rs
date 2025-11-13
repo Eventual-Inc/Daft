@@ -9,9 +9,7 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use common_metrics::{
-    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshotSend, ops::NodeType,
-};
+use common_metrics::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, ops::NodeType};
 use common_resource_request::ResourceRequest;
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
@@ -102,7 +100,7 @@ impl RuntimeStats for UdfRuntimeStats {
         self
     }
 
-    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         let counters = self.custom_counters.lock().unwrap();
         let mut entries = SmallVec::with_capacity(3 + counters.len());
 
@@ -120,7 +118,7 @@ impl RuntimeStats for UdfRuntimeStats {
             entries.push((name.clone().into(), Stat::Count(counter.load(ordering))));
         }
 
-        StatSnapshotSend(entries)
+        StatSnapshot(entries)
     }
 
     fn add_rows_in(&self, rows: u64) {

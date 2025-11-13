@@ -14,7 +14,7 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{NodeID, StatSnapshotSend};
+use common_metrics::{NodeID, StatSnapshot};
 use common_runtime::RuntimeTask;
 use daft_context::Subscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
@@ -79,7 +79,7 @@ impl RuntimeStatsManagerHandle {
 pub struct RuntimeStatsManager {
     node_tx: Arc<mpsc::UnboundedSender<(usize, bool)>>,
     finish_tx: oneshot::Sender<()>,
-    stats_manager_task: RuntimeTask<Vec<(usize, StatSnapshotSend)>>,
+    stats_manager_task: RuntimeTask<Vec<(usize, StatSnapshot)>>,
 }
 
 impl std::fmt::Debug for RuntimeStatsManager {
@@ -230,7 +230,7 @@ impl RuntimeStatsManager {
         RuntimeStatsManagerHandle(self.node_tx.clone())
     }
 
-    pub async fn finish(self) -> Vec<(usize, StatSnapshotSend)> {
+    pub async fn finish(self) -> Vec<(usize, StatSnapshot)> {
         self.finish_tx
             .send(())
             .expect("The finish_tx channel was closed");
@@ -344,7 +344,7 @@ mod tests {
 
     use async_trait::async_trait;
     use common_error::DaftResult;
-    use common_metrics::{CPU_US_KEY, NodeID, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshotSend};
+    use common_metrics::{CPU_US_KEY, NodeID, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot};
     use tokio::time::{Duration, sleep};
 
     use super::*;
@@ -352,7 +352,7 @@ mod tests {
     #[derive(Debug)]
     struct MockState {
         total_calls: AtomicU64,
-        event: Mutex<Option<StatSnapshotSend>>,
+        event: Mutex<Option<StatSnapshot>>,
     }
 
     impl MockState {
@@ -360,7 +360,7 @@ mod tests {
             self.total_calls.load(std::sync::atomic::Ordering::SeqCst)
         }
 
-        fn get_latest_event(&self) -> StatSnapshotSend {
+        fn get_latest_event(&self) -> StatSnapshot {
             self.event.lock().unwrap().clone().expect("No event")
         }
     }
@@ -395,7 +395,7 @@ mod tests {
             Ok(())
         }
 
-        async fn handle_event(&self, events: &[(NodeID, StatSnapshotSend)]) -> DaftResult<()> {
+        async fn handle_event(&self, events: &[(NodeID, StatSnapshot)]) -> DaftResult<()> {
             self.state
                 .total_calls
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -510,7 +510,7 @@ mod tests {
             async fn finalize_node(&self, _: NodeID) -> DaftResult<()> {
                 Ok(())
             }
-            async fn handle_event(&self, _: &[(NodeID, StatSnapshotSend)]) -> DaftResult<()> {
+            async fn handle_event(&self, _: &[(NodeID, StatSnapshot)]) -> DaftResult<()> {
                 Err(common_error::DaftError::InternalError(
                     "Test error".to_string(),
                 ))

@@ -3,7 +3,7 @@ pub(crate) mod query;
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::{NodeID, StatSnapshotSend};
+use common_metrics::{NodeID, StatSnapshot};
 
 #[async_trait]
 pub trait RuntimeStatsSubscriber: Send + Sync + std::fmt::Debug {
@@ -15,7 +15,7 @@ pub trait RuntimeStatsSubscriber: Send + Sync + std::fmt::Debug {
     /// Called when a node finishes.
     async fn finalize_node(&self, node_id: NodeID) -> DaftResult<()>;
     /// Called each time the manager ticks and when a node finishes.
-    async fn handle_event(&self, events: &[(NodeID, StatSnapshotSend)]) -> DaftResult<()>;
+    async fn handle_event(&self, events: &[(NodeID, StatSnapshot)]) -> DaftResult<()>;
     /// Called when the entire pipeline finishes.
     async fn finish(self: Box<Self>) -> DaftResult<()>;
 }

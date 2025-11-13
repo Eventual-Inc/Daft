@@ -2,7 +2,7 @@ use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
 use common_error::DaftResult;
-use common_metrics::StatSnapshotRecv;
+use common_metrics::StatSnapshot;
 use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::PyLocalPhysicalPlan;
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
@@ -88,7 +88,7 @@ impl TaskResultHandle for RayTaskResultHandle {
 
             match ray_task_result {
                 Ok(RayTaskResult::Success(ray_part_refs, stats_serialized)) => {
-                    let stats: Vec<(usize, StatSnapshotRecv)> =
+                    let stats: Vec<(usize, StatSnapshot)> =
                         bincode::decode_from_slice(&stats_serialized, bincode::config::legacy())
                             .expect("Failed to deserialize stats")
                             .0;

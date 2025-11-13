@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use common_metrics::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshotSend, snapshot};
+use common_metrics::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, snapshot};
 use opentelemetry::{KeyValue, global, metrics::Meter};
 
 // ----------------------- Wrappers for Runtime Stat Values ----------------------- //
@@ -40,13 +40,13 @@ impl Counter {
 pub trait RuntimeStats: Send + Sync + std::any::Any {
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync>;
     /// Create a snapshot of the current statistics.
-    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend;
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot;
     /// Get a snapshot of the current statistics. Doesn't need to be completely accurate.
-    fn snapshot(&self) -> StatSnapshotSend {
+    fn snapshot(&self) -> StatSnapshot {
         self.build_snapshot(Ordering::Relaxed)
     }
     /// Get a snapshot of the final statistics. Must be accurate.
-    fn flush(&self) -> StatSnapshotSend {
+    fn flush(&self) -> StatSnapshot {
         self.build_snapshot(Ordering::SeqCst)
     }
 
@@ -82,7 +82,7 @@ impl RuntimeStats for DefaultRuntimeStats {
         self
     }
 
-    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         snapshot![
             CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
             ROWS_IN_KEY; Stat::Count(self.rows_in.load(ordering)),

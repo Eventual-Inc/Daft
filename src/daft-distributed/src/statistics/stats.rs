@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use common_error::DaftResult;
-use common_metrics::{CPU_US_KEY, QueryID, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshotRecv};
+use common_metrics::{CPU_US_KEY, QueryID, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot};
 use opentelemetry::{
     KeyValue, global,
     metrics::{Counter, Meter, UpDownCounter},
@@ -77,7 +77,7 @@ impl DefaultRuntimeStats {
         self.active_tasks.add(-1, self.node_kv.as_slice());
     }
 
-    fn handle_swordfish_node_stats(&self, stats: &StatSnapshotRecv) {
+    fn handle_swordfish_node_stats(&self, stats: &StatSnapshot) {
         let stats = stats
             .iter()
             .map(|(k, v)| (k.to_string(), v.clone()))

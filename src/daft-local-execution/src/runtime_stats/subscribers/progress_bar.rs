@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use common_error::DaftResult;
 use common_logging::GLOBAL_LOGGER;
 use common_metrics::{
-    CPU_US_KEY, NodeID, StatSnapshotSend,
+    CPU_US_KEY, NodeID, StatSnapshot,
     ops::{NodeCategory, NodeInfo},
 };
 use indicatif::{ProgressDrawTarget, ProgressStyle};
@@ -14,7 +14,7 @@ use log::Log;
 use crate::{PythonPrintTarget, STDOUT, runtime_stats::subscribers::RuntimeStatsSubscriber};
 
 /// Convert statistics to a message for progress bars
-fn event_to_message(event: &StatSnapshotSend) -> String {
+fn event_to_message(event: &StatSnapshot) -> String {
     event
         .iter()
         .filter(|(name, _)| *name != CPU_US_KEY)
@@ -193,7 +193,7 @@ impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
         Ok(())
     }
 
-    async fn handle_event(&self, events: &[(NodeID, StatSnapshotSend)]) -> DaftResult<()> {
+    async fn handle_event(&self, events: &[(NodeID, StatSnapshot)]) -> DaftResult<()> {
         for (node_id, event) in events {
             let pb = self.pbars.get(*node_id).unwrap();
             pb.set_message(event_to_message(event));
@@ -320,7 +320,7 @@ mod python {
             Ok(())
         }
 
-        async fn handle_event(&self, events: &[(NodeID, StatSnapshotSend)]) -> DaftResult<()> {
+        async fn handle_event(&self, events: &[(NodeID, StatSnapshot)]) -> DaftResult<()> {
             for (node_id, event) in events {
                 let pb_id = self.node_id_to_pb_id.get(node_id).unwrap();
                 self.update_bar(*pb_id, &event_to_message(event))?;

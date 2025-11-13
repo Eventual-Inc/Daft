@@ -53,7 +53,7 @@ impl RuntimeStatsSubscriber for SubscriberWrapper {
 
     async fn handle_event(
         &self,
-        events: &[(NodeID, common_metrics::StatSnapshotSend)],
+        events: &[(NodeID, common_metrics::StatSnapshot)],
     ) -> DaftResult<()> {
         let all_node_stats = events
             .iter()

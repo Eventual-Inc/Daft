@@ -4,7 +4,7 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{CPU_US_KEY, Stat, StatSnapshotSend, ops::NodeType, snapshot};
+use common_metrics::{CPU_US_KEY, Stat, StatSnapshot, ops::NodeType, snapshot};
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
@@ -120,7 +120,7 @@ impl RuntimeStats for HashJoinBuildRuntimeStats {
         self
     }
 
-    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         snapshot![
             CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
             "rows inserted"; Stat::Count(self.rows_in.load(ordering)),

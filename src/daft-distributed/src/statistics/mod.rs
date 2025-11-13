@@ -6,7 +6,7 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::StatSnapshotRecv;
+use common_metrics::StatSnapshot;
 
 use crate::{
     pipeline_node::NodeID,
@@ -29,7 +29,7 @@ pub(crate) enum TaskEvent {
     },
     Completed {
         context: TaskContext,
-        stats: Vec<(usize, StatSnapshotRecv)>,
+        stats: Vec<(usize, StatSnapshot)>,
     },
     Failed {
         context: TaskContext,

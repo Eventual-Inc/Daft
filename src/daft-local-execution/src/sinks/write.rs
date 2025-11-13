@@ -4,7 +4,7 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{CPU_US_KEY, ROWS_IN_KEY, Stat, StatSnapshotSend, ops::NodeType, snapshot};
+use common_metrics::{CPU_US_KEY, ROWS_IN_KEY, Stat, StatSnapshot, ops::NodeType, snapshot};
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -64,7 +64,7 @@ impl RuntimeStats for WriteStats {
         self
     }
 
-    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         snapshot![
             CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
             ROWS_IN_KEY; Stat::Count(self.rows_in.load(ordering)),

@@ -8,7 +8,7 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, ROWS_OUT_KEY, Stat, StatSnapshotSend,
+    CPU_US_KEY, ROWS_OUT_KEY, Stat, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot,
 };
@@ -57,7 +57,7 @@ impl RuntimeStats for SourceStats {
         self
     }
 
-    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         snapshot![
             CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
             ROWS_OUT_KEY; Stat::Count(self.rows_out.load(ordering)),
@@ -156,7 +156,7 @@ impl TreeDisplay for SourceNode {
 
                     writeln!(display).unwrap();
                     for (name, value) in rt_result {
-                        writeln!(display, "{} = {}", name.as_str().capitalize(), value).unwrap();
+                        writeln!(display, "{} = {}", name.as_ref().capitalize(), value).unwrap();
                     }
                 }
             }
