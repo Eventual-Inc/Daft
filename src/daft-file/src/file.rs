@@ -5,7 +5,7 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use daft_core::file::{DataOrReference, FileReference};
+use daft_core::file::FileReference;
 use daft_io::{GetRange, IOConfig, IOStatsRef, ObjectSource};
 use daft_schema::media_type::MediaType;
 use url::Url;
@@ -19,49 +19,41 @@ pub struct DaftFile {
 // The python wrapper should handle blocking, but the core implementation should be fully async.
 impl DaftFile {
     pub async fn load(file_ref: FileReference, download_small_files: bool) -> DaftResult<Self> {
-        match file_ref.inner {
-            DataOrReference::Reference(path, io_conf) => {
-                let media_type = file_ref.media_type;
-                let io_client = daft_io::get_io_client(true, io_conf.unwrap_or_default())?;
+        let media_type = file_ref.media_type;
+        let io_client = daft_io::get_io_client(true, file_ref.io_config.unwrap_or_default())?;
 
-                let (source, path) = io_client
-                    .get_source_and_path(&path)
-                    .await
-                    .map_err(DaftError::from)?;
-                // getting the size is pretty cheap, so we do it upfront
-                // we grab the size upfront so we can use it to determine if we are at the end of the file
-                let file_size = source
-                    .get_size(&path, None)
-                    .await
-                    .map_err(|e| DaftError::ComputeError(e.to_string()))?;
-                let supports_range = source
-                    .supports_range(&path)
-                    .await
-                    .map_err(|e| DaftError::ComputeError(e.to_string()))?;
+        let (source, path) = io_client
+            .get_source_and_path(&file_ref.url)
+            .await
+            .map_err(DaftError::from)?;
+        // getting the size is pretty cheap, so we do it upfront
+        // we grab the size upfront so we can use it to determine if we are at the end of the file
+        let file_size = source
+            .get_size(&path, None)
+            .await
+            .map_err(|e| DaftError::ComputeError(e.to_string()))?;
+        let supports_range = source
+            .supports_range(&path)
+            .await
+            .map_err(|e| DaftError::ComputeError(e.to_string()))?;
 
-                // Default to 16MB buffer
-                const DEFAULT_BUFFER_SIZE: usize = 16 * 1024 * 1024;
+        // Default to 16MB buffer
+        const DEFAULT_BUFFER_SIZE: usize = 16 * 1024 * 1024;
 
-                let reader = ObjectSourceReader::new(source, path, None, file_size);
-                if !supports_range || (file_size <= DEFAULT_BUFFER_SIZE && download_small_files) {
-                    let buf = reader.read_full_content().await?;
+        let reader = ObjectSourceReader::new(source, path, None, file_size);
+        if !supports_range || (file_size <= DEFAULT_BUFFER_SIZE && download_small_files) {
+            let buf = reader.read_full_content().await?;
 
-                    Ok(Self::from_bytes(media_type, buf))
-                } else {
-                    // we wrap it in a BufReader so we are not making so many network requests for each byte read
-                    let buffered_reader = BufReader::with_capacity(DEFAULT_BUFFER_SIZE, reader);
+            Ok(Self::from_bytes(media_type, buf))
+        } else {
+            // we wrap it in a BufReader so we are not making so many network requests for each byte read
+            let buffered_reader = BufReader::with_capacity(DEFAULT_BUFFER_SIZE, reader);
 
-                    Ok(Self {
-                        media_type,
-                        cursor: Some(FileCursor::ObjectReader(buffered_reader)),
-                        position: 0,
-                    })
-                }
-            }
-            DataOrReference::Data(items) => Ok(Self::from_bytes(
-                file_ref.media_type,
-                Arc::unwrap_or_clone(items),
-            )),
+            Ok(Self {
+                media_type,
+                cursor: Some(FileCursor::ObjectReader(buffered_reader)),
+                position: 0,
+            })
         }
     }
 
@@ -77,19 +69,12 @@ impl DaftFile {
         path: String,
         io_conf: Option<IOConfig>,
     ) -> DaftResult<Self> {
-        Self::load_blocking(
-            FileReference {
-                media_type,
-                inner: DataOrReference::Reference(path, io_conf.map(Arc::new)),
-            },
-            true,
-        )
+        Self::load_blocking(FileReference::new(media_type, path, io_conf), true)
     }
 
     pub fn from_bytes(media_type: MediaType, bytes: Vec<u8>) -> Self {
         Self {
             media_type,
-
             cursor: Some(FileCursor::Memory(Cursor::new(bytes))),
             position: 0,
         }
@@ -369,7 +354,9 @@ fn guess_mimetype_from_url(url: &str) -> Option<String> {
     Some(mime.to_string())
 }
 
-fn guess_mimetype_from_content<R: Read + Seek>(reader: &mut R) -> std::io::Result<Option<String>> {
+pub(crate) fn guess_mimetype_from_content<R: Read + Seek>(
+    reader: &mut R,
+) -> std::io::Result<Option<String>> {
     let mut buffer = [0; 16]; // Extended for more formats
     let original_pos = reader.stream_position()?;
 
