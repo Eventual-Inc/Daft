@@ -315,8 +315,8 @@ def test_infer_from_jaxtyping(dtype_class, expected_dtype, shape_spec, expected_
         (PIL.Image.new("RGB", (10, 20)), dt.image(ImageMode.RGB)),
         (PIL.Image.new("RGBA", (10, 20)), dt.image(ImageMode.RGBA)),
         (Series.from_pylist([1, 2, 3]), dt.list(dt.int64())),
-        (File(b"1234"), dt.file(MediaType.unknown())),
-        (VideoFile(b"1234"), dt.file(MediaType.video())),
+        (File("hello.txt"), dt.file(MediaType.unknown())),
+        (VideoFile("hello.mp4"), dt.file(MediaType.video())),
         (object(), dt.python()),
         # Nested lists
         ([[1, 2], [3, 4]], dt.list(dt.list(dt.int64()))),

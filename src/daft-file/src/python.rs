@@ -1,5 +1,5 @@
 use std::{
-    io::{Read, Seek, SeekFrom},
+    io::{Cursor, Read, Seek, SeekFrom},
     ops::{Deref, DerefMut},
     sync::{
         Arc,
@@ -249,9 +249,16 @@ impl PyDaftFile {
     }
 }
 
+#[pyfunction]
+fn guess_mimetype_from_content(mut bytes: Vec<u8>) -> PyResult<Option<String>> {
+    let mut cursor = Cursor::new(&mut bytes);
+    Ok(crate::guess_mimetype_from_content(&mut cursor)?)
+}
+
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyDaftFile>()?;
     parent.add_class::<PyFileReference>()?;
+    parent.add_function(wrap_pyfunction!(guess_mimetype_from_content, parent)?)?;
 
     Ok(())
 }

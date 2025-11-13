@@ -48,14 +48,9 @@ class File:
         return instance
 
     def __init__(
-        self, str_or_bytes: str | bytes, io_config: IOConfig | None = None, media_type: MediaType = MediaType.unknown()
+        self, url: str, io_config: IOConfig | None = None, media_type: MediaType = MediaType.unknown()
     ) -> None:
-        if isinstance(str_or_bytes, str):
-            self._inner = PyFileReference._from_tuple((media_type._media_type, str_or_bytes, io_config))  # type: ignore
-        elif isinstance(str_or_bytes, bytes):
-            self._inner = PyFileReference._from_tuple((media_type._media_type, str_or_bytes, io_config))  # type: ignore
-        else:
-            raise TypeError("str_or_bytes must be a string or bytes")
+        self._inner = PyFileReference._from_tuple((media_type._media_type, url, io_config))  # type: ignore
 
     def open(self) -> PyDaftFile:
         return PyDaftFile._from_file_reference(self._inner)
