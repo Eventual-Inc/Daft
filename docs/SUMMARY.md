@@ -3,10 +3,13 @@
     * [Quickstart](quickstart.md)
     * [Installation](install.md)
     * AI Functions
-        * [Functions](ai-functions/index.md)
+        * [Overview](ai-functions/overview.md)
+        * [Prompt](ai-functions/prompt.md)
+        * [Embed](ai-functions/embed.md)
+        * [Classify](ai-functions/classify.md)
         * [Providers](ai-functions/providers.md)
     * Modalities
-        * [Modalities](modalities/index.md)
+        * [Overview](modalities/overview.md)
         * [Text](modalities/text.md)
         * [Images](modalities/images.md)
         * [Audio](modalities/audio.md)
@@ -51,8 +54,8 @@
         * [Partitioning and Batching](optimization/partitioning.md)
         * [Observability](optimization/observability.md)
     * Contributing
-        * [Contributing](contributing-to-daft.md)
-        * [AI Functions](contributing/contributing-ai-functions.md)
+        * [Overview](contributing-to-daft.md)
+        * [Contributing AI Functions](contributing/contributing-ai-functions.md)
     * [Sessions, Catalogs, and Tables](configuration/sessions-usage.md)
     * [Roadmap](roadmap.md)
     * [Benchmarks](benchmarks/index.md)
