@@ -1,17 +1,79 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use common_error::DaftResult;
-use common_metrics::ops::NodeType;
+use common_metrics::{Stat, StatSnapshotSend, ops::NodeType, snapshot};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_functions_list::explode;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
+use opentelemetry::{KeyValue, global};
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::NodeName,
+    runtime_stats::{CPU_US_KEY, Counter, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats},
+};
+
+pub struct ExplodeStats {
+    cpu_us: Counter,
+    rows_in: Counter,
+    rows_out: Counter,
+    node_kv: Vec<KeyValue>,
+}
+
+impl ExplodeStats {
+    pub fn new(id: usize) -> Self {
+        let meter = global::meter("daft.local.node_stats");
+        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+
+        Self {
+            cpu_us: Counter::new(&meter, CPU_US_KEY.into()),
+            rows_in: Counter::new(&meter, ROWS_IN_KEY.into()),
+            rows_out: Counter::new(&meter, ROWS_OUT_KEY.into()),
+            node_kv,
+        }
+    }
+}
+
+impl RuntimeStats for ExplodeStats {
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
+    fn build_snapshot(&self, ordering: std::sync::atomic::Ordering) -> StatSnapshotSend {
+        let cpu_us = self.cpu_us.load(ordering);
+        let rows_in = self.rows_in.load(ordering);
+        let rows_out = self.rows_out.load(ordering);
+
+        let amplification = if rows_in == 0 {
+            100.
+        } else {
+            (rows_out as f64 / rows_in as f64) * 100.0
+        };
+        snapshot![
+            CPU_US_KEY; Stat::Duration(Duration::from_micros(cpu_us)),
+            ROWS_IN_KEY; Stat::Count(rows_in),
+            ROWS_OUT_KEY; Stat::Count(rows_out),
+            "amplification"; Stat::Percent(amplification),
+        ]
+    }
+
+    fn add_rows_in(&self, rows: u64) {
+        self.rows_in.add(rows, self.node_kv.as_slice());
+    }
+
+    fn add_rows_out(&self, rows: u64) {
+        self.rows_out.add(rows, self.node_kv.as_slice());
+    }
+
+    fn add_cpu_us(&self, cpu_us: u64) {
+        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
+    }
+}
 
 pub struct ExplodeOperator {
     to_explode: Arc<Vec<BoundExpr>>,
@@ -72,5 +134,9 @@ impl IntermediateOperator for ExplodeOperator {
 
     fn op_type(&self) -> NodeType {
         NodeType::Explode
+    }
+
+    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(ExplodeStats::new(id))
     }
 }
