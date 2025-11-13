@@ -1,8 +1,13 @@
-use std::{fmt::Display, num::NonZeroUsize, sync::Arc};
+use std::{collections::HashMap, fmt::Display, num::NonZeroUsize, sync::Arc};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use itertools::Itertools;
+use log::{error, log};
+use opentelemetry::{
+    Key, StringValue, Value,
+    logs::{AnyValue, LogRecord, Logger, LoggerProvider},
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -241,6 +246,44 @@ impl RowWisePyFn {
                             match on_error {
                                 OnError::Raise => res = Err(e),
                                 OnError::Log => {
+                                    let lg = common_tracing::GLOBAL_LOGGER_PROVIDER.lock().unwrap();
+                                    if let Some(logger_provider) = lg.as_ref() {
+                                        let logger = logger_provider.logger("python-udf-error");
+                                        let mut log_record = logger.create_log_record();
+                                        log_record.add_attribute("source", "udf");
+
+                                        if let DaftError::PyO3Error(py_err) = &e {
+                                            let traceback = py_err.traceback(py);
+
+                                            let tb = PyModule::import(py, "traceback").unwrap();
+                                            let formatted = tb
+                                                .call_method1(
+                                                    "format_exception",
+                                                    (
+                                                        py_err.get_type(py), // exception type
+                                                        py_err.value(py),    // exception value
+                                                        traceback,           // traceback
+                                                    ),
+                                                )
+                                                .unwrap();
+
+                                            let formatted =
+                                                formatted.extract::<Vec<String>>().unwrap();
+
+                                            let formatted = formatted
+                                                .into_iter()
+                                                .map(|s| AnyValue::from(s))
+                                                .collect();
+                                            let formatted = AnyValue::ListAny(Box::new(formatted));
+                                            log_record.add_attribute("traceback", formatted);
+                                        }
+
+                                        log_record
+                                            .set_body(format!("ROHIT LOGGED AN ERROR: {e}").into());
+                                        logger.emit(log_record);
+                                        error!("Emit error ran");
+                                    }
+
                                     log::warn!("Retrying function call after error: {}", e);
                                     res = Ok(Literal::Null);
                                 }
