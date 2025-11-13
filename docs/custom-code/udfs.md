@@ -1,13 +1,12 @@
 # Legacy User-Defined Functions (UDFs)
 
-A key piece of functionality in Daft is the ability to flexibly define custom functions that can run computations on any data in your dataframe. This section walks you through the different types of UDFs that Daft allows you to run.
-
 !!! warning "New UDFs"
-    Daft now offers a new UDF interface via the `@daft.func` and `@daft.cls` decorators. This new API is currently in active development and provides a cleaner interface for many use cases, with features like type inference, async functions, and generator functions.
+    Daft now offers a new UDF interface via the `@daft.func` and `@daft.cls` decorators. This new API is a replacement for the legacy `@daft.udf` decorator documented on this page. The legacy API is still supported, but will be deprecated and removed in a future release.
 
-    While it is still being refined, this new API represents the direction we're moving toward, with the goal of eventually phasing out the legacy `@daft.udf` decorator documented on this page. For new projects, consider trying them out first, and fall back to `@daft.udf` if you need advanced features that are not yet supported by the new API.
+    Check out the docs for the [new UDFs](func.md) for more details, as well as the [migration guide](migration.md) to help you migrate your code to the new API.
 
-    Check out the docs for the [new UDFs](func.md) for more details.
+
+A key piece of functionality in Daft is the ability to flexibly define custom functions that can run computations on any data in your dataframe. This section walks you through the different types of UDFs that Daft allows you to run.
 
 Let's first create a dataframe that will be used as a running example throughout this tutorial!
 
