@@ -1376,9 +1376,12 @@ wheels = [
 name = "daft"
 source = { editable = "." }
 dependencies = [
+    { name = "click" },
     { name = "fsspec" },
     { name = "packaging" },
     { name = "pyarrow" },
+    { name = "questionary" },
+    { name = "rich" },
     { name = "tqdm" },
     { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
@@ -1610,6 +1613,7 @@ lint = [
 requires-dist = [
     { name = "av", marker = "extra == 'video'", specifier = ">=15.0.0" },
     { name = "boto3", marker = "extra == 'aws'" },
+    { name = "click", specifier = ">=8.2.1" },
     { name = "clickhouse-connect", marker = "extra == 'clickhouse'" },
     { name = "connectorx", marker = "extra == 'sql'", specifier = ">=0.4.4" },
     { name = "daft", extras = ["aws", "azure", "clickhouse", "deltalake", "gcp", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "postgres", "ray", "sentence-transformers", "spark", "sql", "transformers", "turbopuffer", "unity", "video"], marker = "extra == 'all'" },
@@ -1634,8 +1638,10 @@ requires-dist = [
     { name = "pyiceberg", marker = "extra == 'iceberg'", specifier = ">=0.7.0,<0.9.1" },
     { name = "pylance", marker = "extra == 'lance'" },
     { name = "pyspark", marker = "extra == 'spark'", specifier = "==3.5.5" },
+    { name = "questionary", specifier = ">=2.1.1" },
     { name = "ray", extras = ["data", "client"], marker = "sys_platform == 'win32' and extra == 'ray'", specifier = ">=2.10.0" },
     { name = "ray", extras = ["data", "client"], marker = "sys_platform != 'win32' and extra == 'ray'", specifier = ">=2.0.0" },
+    { name = "rich", specifier = ">=13.9.4" },
     { name = "sentence-transformers", marker = "extra == 'transformers'" },
     { name = "sqlalchemy", marker = "extra == 'sql'" },
     { name = "sqlglot", marker = "extra == 'sql'" },
@@ -7511,6 +7517,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/fd/25/5c147307de546b502c9373688ce5b25dc22288d23a1ebebe5d587bf77610/pyzmq-27.0.2-pp311-pypy311_pp73-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:f3dba49ff037d02373a9306b58d6c1e0be031438f822044e8767afccfdac4c6b", size = 567459, upload-time = "2025-08-21T04:23:03.593Z" },
     { url = "https://files.pythonhosted.org/packages/71/06/0dc56ffc615c8095cd089c9b98ce5c733e990f09ce4e8eea4aaf1041a532/pyzmq-27.0.2-pp311-pypy311_pp73-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:de84e1694f9507b29e7b263453a2255a73e3d099d258db0f14539bad258abe41", size = 747088, upload-time = "2025-08-21T04:23:05.334Z" },
     { url = "https://files.pythonhosted.org/packages/06/f6/4a50187e023b8848edd3f0a8e197b1a7fb08d261d8c60aae7cb6c3d71612/pyzmq-27.0.2-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:f0944d65ba2b872b9fcece08411d6347f15a874c775b4c3baae7f278550da0fb", size = 544639, upload-time = "2025-08-21T04:23:07.279Z" },
+]
+
+[[package]]
+name = "questionary"
+version = "2.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "prompt-toolkit" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f6/45/eafb0bba0f9988f6a2520f9ca2df2c82ddfa8d67c95d6625452e97b204a5/questionary-2.1.1.tar.gz", hash = "sha256:3d7e980292bb0107abaa79c68dd3eee3c561b83a0f89ae482860b181c8bd412d", size = 25845, upload-time = "2025-08-28T19:00:20.851Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3c/26/1062c7ec1b053db9e499b4d2d5bc231743201b74051c973dadeac80a8f43/questionary-2.1.1-py3-none-any.whl", hash = "sha256:a51af13f345f1cdea62347589fbb6df3b290306ab8930713bfae4d475a7d4a59", size = 36753, upload-time = "2025-08-28T19:00:19.56Z" },
 ]
 
 [[package]]
