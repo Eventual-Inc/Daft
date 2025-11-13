@@ -9,9 +9,9 @@ use common_py_serde::impl_bincode_py_state_serialization;
 use daft_dsl::ExprRef;
 use daft_logical_plan::InMemoryInfo;
 #[cfg(feature = "python")]
-use daft_logical_plan::{DataSinkInfo, DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
+use daft_logical_plan::{DataSinkInfo, DeltaLakeCatalogInfo, IcebergCatalogInfo};
 #[cfg(feature = "python")]
-use daft_physical_plan::ops::{DeltaLakeWrite, IcebergWrite, LanceWrite};
+use daft_physical_plan::ops::{DeltaLakeWrite, IcebergWrite};
 use daft_physical_plan::{
     PhysicalPlan, PhysicalPlanRef, QueryStageOutput, logical_to_physical,
     ops::{
@@ -239,30 +239,6 @@ fn deltalake_write(
                 .map(|cfg| common_io_config::python::IOConfig {
                     config: cfg.clone(),
                 }),
-        ))?;
-    Ok(py_iter.into())
-}
-#[allow(clippy::too_many_arguments)]
-#[cfg(feature = "python")]
-fn lance_write(
-    py: Python,
-    upstream_iter: pyo3::Py<pyo3::PyAny>,
-    lance_info: &LanceCatalogInfo,
-) -> PyResult<pyo3::Py<pyo3::PyAny>> {
-    let py_iter = py
-        .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
-        .getattr(pyo3::intern!(py, "write_lance"))?
-        .call1((
-            upstream_iter,
-            &lance_info.path,
-            lance_info.mode.clone(),
-            lance_info
-                .io_config
-                .as_ref()
-                .map(|cfg| common_io_config::python::IOConfig {
-                    config: cfg.clone(),
-                }),
-            lance_info.kwargs.clone_ref(py),
         ))?;
     Ok(py_iter.into())
 }
@@ -1018,16 +994,6 @@ fn physical_plan_to_partition_tasks(
             py,
             physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?,
             delta_lake_info,
-        ),
-        #[cfg(feature = "python")]
-        PhysicalPlan::LanceWrite(LanceWrite {
-            schema: _,
-            lance_info,
-            input,
-        }) => lance_write(
-            py,
-            physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?,
-            lance_info,
         ),
         #[cfg(feature = "python")]
         PhysicalPlan::DataSink(DataSink {

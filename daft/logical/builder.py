@@ -406,23 +406,6 @@ class LogicalPlanBuilder:
         )
         return LogicalPlanBuilder(builder)
 
-    def write_lance(
-        self,
-        path: str | pathlib.Path,
-        mode: str,
-        io_config: IOConfig,
-        kwargs: dict[str, Any] | None,
-    ) -> LogicalPlanBuilder:
-        columns_name = self.schema().column_names()
-        builder = self._builder.lance_write(
-            str(path),
-            columns_name,
-            mode,
-            io_config,
-            kwargs,
-        )
-        return LogicalPlanBuilder(builder)
-
     def write_datasink(self, name: str, sink: DataSink[Any]) -> LogicalPlanBuilder:
         builder = self._builder.datasink_write(name, sink)
         return LogicalPlanBuilder(builder)

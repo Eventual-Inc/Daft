@@ -64,8 +64,6 @@ pub enum LocalPhysicalPlan {
     #[cfg(feature = "python")]
     CatalogWrite(CatalogWrite),
     #[cfg(feature = "python")]
-    LanceWrite(LanceWrite),
-    #[cfg(feature = "python")]
     DataSink(DataSink),
     WindowPartitionOnly(WindowPartitionOnly),
     WindowPartitionAndOrderBy(WindowPartitionAndOrderBy),
@@ -133,7 +131,6 @@ impl LocalPhysicalPlan {
             | Self::VLLMProject(VLLMProject { stats_state, .. }) => stats_state,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { stats_state, .. })
-            | Self::LanceWrite(LanceWrite { stats_state, .. })
             | Self::DistributedActorPoolProject(DistributedActorPoolProject {
                 stats_state, ..
             })
@@ -716,24 +713,6 @@ impl LocalPhysicalPlan {
     }
 
     #[cfg(feature = "python")]
-    pub fn lance_write(
-        input: LocalPhysicalPlanRef,
-        lance_info: daft_logical_plan::LanceCatalogInfo,
-        data_schema: SchemaRef,
-        file_schema: SchemaRef,
-        stats_state: StatsState,
-    ) -> LocalPhysicalPlanRef {
-        Self::LanceWrite(LanceWrite {
-            input,
-            lance_info,
-            data_schema,
-            file_schema,
-            stats_state,
-        })
-        .arced()
-    }
-
-    #[cfg(feature = "python")]
     pub fn data_sink(
         input: LocalPhysicalPlanRef,
         data_sink_info: daft_logical_plan::DataSinkInfo,
@@ -837,8 +816,6 @@ impl LocalPhysicalPlan {
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
-            Self::LanceWrite(LanceWrite { file_schema, .. }) => file_schema,
-            #[cfg(feature = "python")]
             Self::DataSink(DataSink { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
             Self::DistributedActorPoolProject(DistributedActorPoolProject { schema, .. }) => schema,
@@ -916,8 +893,6 @@ impl LocalPhysicalPlan {
             }
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { input, .. }) => vec![input.clone()],
-            #[cfg(feature = "python")]
-            Self::LanceWrite(LanceWrite { input, .. }) => vec![input.clone()],
             #[cfg(feature = "python")]
             Self::DataSink(DataSink { input, .. }) => vec![input.clone()],
             #[cfg(feature = "python")]
@@ -1239,20 +1214,6 @@ impl LocalPhysicalPlan {
                 }) => Self::catalog_write(
                     new_child.clone(),
                     catalog_type.clone(),
-                    data_schema.clone(),
-                    file_schema.clone(),
-                    stats_state.clone(),
-                ),
-                #[cfg(feature = "python")]
-                Self::LanceWrite(LanceWrite {
-                    lance_info,
-                    data_schema,
-                    file_schema,
-                    stats_state,
-                    ..
-                }) => Self::lance_write(
-                    new_child.clone(),
-                    lance_info.clone(),
                     data_schema.clone(),
                     file_schema.clone(),
                     stats_state.clone(),
@@ -1676,16 +1637,6 @@ pub struct CommitWrite {
 pub struct CatalogWrite {
     pub input: LocalPhysicalPlanRef,
     pub catalog_type: daft_logical_plan::CatalogType<BoundExpr>,
-    pub data_schema: SchemaRef,
-    pub file_schema: SchemaRef,
-    pub stats_state: StatsState,
-}
-
-#[cfg(feature = "python")]
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LanceWrite {
-    pub input: LocalPhysicalPlanRef,
-    pub lance_info: daft_logical_plan::LanceCatalogInfo,
     pub data_schema: SchemaRef,
     pub file_schema: SchemaRef,
     pub stats_state: StatsState,

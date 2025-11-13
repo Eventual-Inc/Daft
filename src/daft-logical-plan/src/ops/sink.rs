@@ -51,7 +51,6 @@ impl Sink {
                         ]
                     }
                     CatalogType::DeltaLake(_) => vec![Field::new("add_action", DataType::Python)],
-                    CatalogType::Lance(_) => vec![Field::new("fragments", DataType::Python)],
                 }
             }
             #[cfg(feature = "python")]
@@ -104,10 +103,6 @@ impl Sink {
                 CatalogType::DeltaLake(deltalake_info) => {
                     res.push(format!("Sink: DeltaLake({})", deltalake_info.path));
                     res.extend(deltalake_info.multiline_display());
-                }
-                CatalogType::Lance(lance_info) => {
-                    res.push(format!("Sink: Lance({})", lance_info.path));
-                    res.extend(lance_info.multiline_display());
                 }
             },
             #[cfg(feature = "python")]

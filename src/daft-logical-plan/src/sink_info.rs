@@ -43,7 +43,6 @@ pub struct CatalogInfo<E = ExprRef> {
 pub enum CatalogType<E = ExprRef> {
     Iceberg(IcebergCatalogInfo<E>),
     DeltaLake(DeltaLakeCatalogInfo<E>),
-    Lance(LanceCatalogInfo),
 }
 
 #[cfg(feature = "python")]
@@ -113,36 +112,6 @@ where
                 partition_cols.iter().map(|e| e.to_string()).join(", ")
             ));
         }
-        match &self.io_config {
-            None => res.push("IOConfig = None".to_string()),
-            Some(io_config) => res.push(format!("IOConfig = {}", io_config)),
-        }
-        res
-    }
-}
-
-#[cfg(feature = "python")]
-#[derive(Educe, Debug, Clone, Serialize, Deserialize)]
-#[educe(PartialEq, Eq, Hash)]
-pub struct LanceCatalogInfo {
-    pub path: String,
-    pub mode: String,
-    pub io_config: Option<IOConfig>,
-    #[serde(
-        serialize_with = "serialize_py_object",
-        deserialize_with = "deserialize_py_object"
-    )]
-    #[educe(PartialEq(ignore))]
-    #[educe(Hash(ignore))]
-    pub kwargs: Arc<pyo3::Py<pyo3::PyAny>>,
-}
-
-#[cfg(feature = "python")]
-impl LanceCatalogInfo {
-    pub fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec![];
-        res.push(format!("Table Name = {}", self.path));
-        res.push(format!("Mode = {}", self.mode));
         match &self.io_config {
             None => res.push("IOConfig = None".to_string()),
             Some(io_config) => res.push(format!("IOConfig = {}", io_config)),
@@ -268,7 +237,6 @@ impl CatalogType {
             Self::DeltaLake(delta_lake_catalog_info) => Ok(CatalogType::DeltaLake(
                 delta_lake_catalog_info.bind(schema)?,
             )),
-            Self::Lance(lance_catalog_info) => Ok(CatalogType::Lance(lance_catalog_info)),
         }
     }
 }

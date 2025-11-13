@@ -480,29 +480,6 @@ def write_deltalake(
     return visitors.to_metadata()
 
 
-def write_lance(
-    mp: MicroPartition,
-    base_path: str,
-    mode: str,
-    io_config: IOConfig | None,
-    kwargs: dict[str, Any] | None,
-) -> MicroPartition:
-    import lance
-
-    from daft.io.object_store_options import io_config_to_storage_options
-
-    io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
-    storage_options = io_config_to_storage_options(io_config, base_path)
-
-    arrow_table = mp.to_arrow()
-
-    fragments = lance.fragment.write_fragments(arrow_table, base_path, mode, storage_options=storage_options, **kwargs)
-
-    mp = MicroPartition.from_pydict({"fragments": fragments})
-
-    return mp
-
-
 def _retry_with_backoff(
     func: Callable[[], Any],
     path: str,
