@@ -13,7 +13,7 @@ use log::Log;
 
 use crate::{
     PythonPrintTarget, STDOUT,
-    runtime_stats::{CPU_US_KEY, PROGRESS_BAR_ENV_VAR, subscribers::RuntimeStatsSubscriber},
+    runtime_stats::{CPU_US_KEY, subscribers::RuntimeStatsSubscriber},
 };
 
 /// Convert statistics to a message for progress bars
@@ -93,10 +93,11 @@ struct IndicatifProgressBarManager {
     multi_progress: indicatif::MultiProgress,
     pbars: Vec<indicatif::ProgressBar>,
     total: usize,
+    persist_on_finish: bool,
 }
 
 impl IndicatifProgressBarManager {
-    fn new(node_infos: &[Arc<NodeInfo>]) -> Self {
+    fn new(node_infos: &[Arc<NodeInfo>], persist_on_finish: bool) -> Self {
         let multi_progress = indicatif::MultiProgress::new();
 
         if cfg!(feature = "python") {
@@ -118,6 +119,7 @@ impl IndicatifProgressBarManager {
             multi_progress,
             pbars: Vec::new(),
             total,
+            persist_on_finish,
         };
 
         for node_info in node_infos {
@@ -201,11 +203,7 @@ impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
     }
 
     async fn finish(mut self: Box<Self>) -> DaftResult<()> {
-        let persist_progress_bar = std::env::var(PROGRESS_BAR_ENV_VAR)
-            .map(|val| val.trim().eq_ignore_ascii_case("persist"))
-            .unwrap_or(false);
-
-        if !persist_progress_bar {
+        if !self.persist_on_finish {
             self.pbars.clear();
             self.multi_progress.clear()?;
         }
@@ -215,19 +213,28 @@ impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
 
 pub const MAX_PIPELINE_NAME_LEN: usize = 22;
 
-pub fn make_progress_bar_manager(node_infos: &[Arc<NodeInfo>]) -> Box<dyn RuntimeStatsSubscriber> {
+pub fn make_progress_bar_manager(
+    node_infos: &[Arc<NodeInfo>],
+    persist_on_finish: bool,
+) -> Box<dyn RuntimeStatsSubscriber> {
     #[cfg(feature = "python")]
     {
         if python::in_notebook() {
             Box::new(python::TqdmProgressBarManager::new(node_infos))
         } else {
-            Box::new(IndicatifProgressBarManager::new(node_infos))
+            Box::new(IndicatifProgressBarManager::new(
+                node_infos,
+                persist_on_finish,
+            ))
         }
     }
 
     #[cfg(not(feature = "python"))]
     {
-        Box::new(IndicatifProgressBarManager::new(node_infos))
+        Box::new(IndicatifProgressBarManager::new(
+            node_infos,
+            persist_on_finish,
+        ))
     }
 }
 

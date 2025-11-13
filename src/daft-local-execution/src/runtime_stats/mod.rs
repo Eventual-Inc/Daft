@@ -42,11 +42,34 @@ use crate::{
 
 pub(crate) const PROGRESS_BAR_ENV_VAR: &str = "DAFT_PROGRESS_BAR";
 
-fn should_enable_progress_bar() -> bool {
-    if let Ok(val) = std::env::var(PROGRESS_BAR_ENV_VAR) {
-        matches!(val.trim().to_lowercase().as_str(), "1" | "true" | "persist")
-    } else {
-        true // Return true when env var is not set
+#[derive(Debug, Clone, Copy)]
+struct ProgressBarConfig {
+    enabled: bool,
+    persist_on_finish: bool,
+}
+
+impl ProgressBarConfig {
+    fn from_env() -> Self {
+        match std::env::var(PROGRESS_BAR_ENV_VAR) {
+            Ok(val) => match val.trim().to_lowercase().as_str() {
+                "1" | "true" => Self {
+                    enabled: true,
+                    persist_on_finish: false,
+                },
+                "persist" => Self {
+                    enabled: true,
+                    persist_on_finish: true,
+                },
+                _ => Self {
+                    enabled: false,
+                    persist_on_finish: false,
+                },
+            },
+            Err(_) => Self {
+                enabled: true,
+                persist_on_finish: false,
+            },
+        }
     }
 }
 
@@ -120,8 +143,12 @@ impl RuntimeStatsManager {
             )?));
         }
 
-        if should_enable_progress_bar() {
-            subscribers.push(make_progress_bar_manager(&node_infos));
+        let progress_bar_config = ProgressBarConfig::from_env();
+        if progress_bar_config.enabled {
+            subscribers.push(make_progress_bar_manager(
+                &node_infos,
+                progress_bar_config.persist_on_finish,
+            ));
         }
 
         let throttle_interval = Duration::from_millis(200);
