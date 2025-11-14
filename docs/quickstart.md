@@ -113,6 +113,41 @@ For quick experimentation, let's create a smaller version of the dataframe:
 
 Now we have a manageable dataset of 5 products that we can use to explore Daft's features without waiting for the entire dataset to process.
 
+### Downloading Images
+
+Let's extract and download product images. The `images` column contains a string representation of a list of URLs. We'll extract the first URL and download it:
+
+=== "🐍 Python"
+
+    ```python
+    # Extract the first image URL from the string using regex
+    # The pattern looks for the first URL within single quotes
+    df = df.with_column(
+        "first_image_url",
+        daft.functions.regexp_extract(
+            df["images"],
+            r"'([^']+)'",  # Extract content between single quotes
+            1  # Get the first capture group
+        )
+    )
+
+    # Download the image data
+    df = df.with_column(
+        "image_data",
+        df["first_image_url"].url.download(on_error="null")
+    )
+
+    # Check what we have
+    df.select("name", "price", "first_image_url").show(3)
+    ```
+
+This demonstrates Daft's multimodal capabilities:
+- **Pattern extraction**: Use `regexp_extract()` to parse structured text
+- **URL handling**: Download content directly with `.url.download()`
+- **Error handling**: Use `on_error="null"` to gracefully handle failed downloads
+
+The downloaded image data is now ready for further processing, such as running image classification models, extracting embeddings, or performing transformations.
+
 ### What's Next?
 
 Now that you have a basic sense of Daft's functionality and features, here are some more resources to help you get the most out of Daft:
