@@ -22,6 +22,22 @@ You can install Daft using `pip`. Run the following command in your terminal or 
 
 <!-- For more advanced installation options, please see [Installation](install.md). -->
 
+### Load Your Data
+
+Let's start by loading an e-commerce dataset from Hugging Face. [This dataset](https://huggingface.co/datasets/UniqueData/asos-e-commerce-dataset) contains over 30,000 products from ASOS, including product names, prices, descriptions, and images.
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+
+    df = daft.read_huggingface("UniqueData/asos-e-commerce-dataset")
+    ```
+
+!!! note "Load from anywhere"
+
+    Daft can load data from many sources including [S3](connectors/aws.md), [Iceberg](connectors/iceberg.md), [Delta Lake](connectors/delta_lake.md), [Hudi](connectors/hudi.md), and [more](connectors/index.md). We're using Hugging Face here as a demonstration.
+
 ### What's Next?
 
 Now that you have a basic sense of Daft's functionality and features, here are some more resources to help you get the most out of Daft:
