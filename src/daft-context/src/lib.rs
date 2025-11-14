@@ -213,5 +213,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::get_context, parent)?)?;
     parent.add_class::<python::PyDaftContext>()?;
     parent.add_class::<python::PyQueryMetadata>()?;
+    parent.add_class::<python::PyQueryResult>()?;
     Ok(())
 }

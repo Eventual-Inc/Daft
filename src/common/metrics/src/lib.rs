@@ -10,7 +10,7 @@ pub use operator_metrics::{MetricsCollector, NoopMetricsCollector, OperatorMetri
 #[cfg(feature = "python")]
 use pyo3::types::PyModule;
 #[cfg(feature = "python")]
-use pyo3::{Bound, PyResult};
+use pyo3::{Bound, PyResult, pyclass};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 pub use smallvec::smallvec;
@@ -23,6 +23,15 @@ pub type QueryID = Arc<str>;
 pub type QueryPlan = Arc<str>;
 /// Unique identifier for a node in the execution plan.
 pub type NodeID = usize;
+
+#[pyclass(module = "daft.daft", eq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum QueryState {
+    Running,
+    Finished,
+    Canceled,
+    Failed,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value")]
@@ -195,5 +204,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<StatType>()?;
     parent.add_class::<PyNodeInfo>()?;
     parent.add_class::<PyOperatorMetrics>()?;
+    parent.add_class::<QueryState>()?;
     Ok(())
 }

@@ -11,6 +11,8 @@ from daft.daft import (
     IOConfig,
     LocalPhysicalPlan,
     PyQueryMetadata,
+    PyQueryResult,
+    QueryState,
     set_compute_runtime_num_worker_threads,
 )
 from daft.execution.native_executor import NativeExecutor
@@ -25,6 +27,7 @@ from daft.runners.partitioning import (
 )
 from daft.runners.runner import LOCAL_PARTITION_SET_CACHE, Runner
 from daft.scarf_telemetry import track_runner_on_scarf
+from daft.errors import UDFException
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -115,8 +118,18 @@ class NativeRunner(Runner[MicroPartition]):
             for result in results_gen:
                 ctx._notify_result_out(query_id, result.partition())
                 yield result
-        finally:
-            ctx._notify_query_end(query_id)
+        except KeyboardInterrupt as e:
+            query_result = PyQueryResult(QueryState.Canceled, "Query canceled by the user.")
+            ctx._notify_query_end(query_id, query_result)
+            return
+        except UDFException as e:
+            err_msg = "Error in query {}: {}[{}] (ignored)".format(query_id, e.original_exception, type(e))
+            query_result = PyQueryResult(QueryState.Failed, err_msg)
+            ctx._notify_query_end(query_id, query_result)
+            return
+        else:
+            query_result = PyQueryResult(QueryState.Finished, "")
+            ctx._notify_query_end(query_id, query_result)
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None

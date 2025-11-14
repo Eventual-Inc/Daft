@@ -1,11 +1,15 @@
 use std::sync::Arc;
 
 use common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
+use common_metrics::QueryState;
 use daft_core::python::PySchema;
 use daft_micropartition::python::PyMicroPartition;
 use pyo3::prelude::*;
 
-use crate::{DaftContext, subscribers, subscribers::QueryMetadata};
+use crate::{
+    DaftContext, subscribers,
+    subscribers::{QueryMetadata, QueryResult},
+};
 
 #[pyclass(frozen)]
 #[derive(Clone)]
@@ -28,6 +32,31 @@ impl PyQueryMetadata {
     #[getter]
     pub fn unoptimized_plan(&self) -> String {
         self.0.unoptimized_plan.to_string()
+    }
+}
+
+#[pyclass(frozen)]
+#[derive(Clone, Debug)]
+pub struct PyQueryResult(pub(crate) Arc<QueryResult>);
+
+#[pymethods]
+impl PyQueryResult {
+    // Query Result contains the final state of a query, and if there is any error, contains an error message
+    #[new]
+    #[pyo3(signature = (query_state, error_message))]
+    fn __new__(query_state: QueryState, error_message: Option<String>) -> Self {
+        Self(Arc::new(QueryResult {
+            query_state,
+            error_message,
+        }))
+    }
+    #[getter]
+    pub fn query_state(&self) -> QueryState {
+        self.0.query_state.clone().into()
+    }
+    #[getter]
+    pub fn error_message(&self) -> Option<String> {
+        self.0.error_message.clone()
     }
 }
 
@@ -120,7 +149,13 @@ impl PyDaftContext {
         Ok(())
     }
 
-    pub fn notify_query_end(&self, py: Python, query_id: String) -> PyResult<()> {
+    pub fn notify_query_end(
+        &self,
+        py: Python,
+        query_id: String,
+        query_result: PyQueryResult,
+    ) -> PyResult<()> {
+        println!("Query Result {:?}", query_result);
         py.detach(|| self.inner.notify_query_end(query_id.into()))?;
         Ok(())
     }
