@@ -630,7 +630,19 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
         }
 
         maybe_set_loader_value!(profile_name, &config.profile_name);
-        maybe_set_loader_value!(endpoint_url, &config.endpoint_url);
+
+        // Ensure endpoint URL has trailing slash for proper path construction with S3-compatible services.
+        // E.g., Supabase provides https://[project_ref].storage.supabase.co/storage/v1/s3
+        // but we need to add a trailing slash to the endpoint url so that the path is properly constructed.
+        let endpoint_url = config.endpoint_url.as_ref().map(|url| {
+            if url.ends_with('/') {
+                url.clone()
+            } else {
+                format!("{}/", url)
+            }
+        });
+        maybe_set_loader_value!(endpoint_url, &endpoint_url);
+
         maybe_set_loader_value!(identity_cache, identity_cache);
         maybe_set_loader_value!(region, region);
 
