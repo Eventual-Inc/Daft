@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-"""Quickstart example for Daft - multimodal data processing."""
-
 from __future__ import annotations
 
 import daft
