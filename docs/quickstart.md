@@ -38,6 +38,58 @@ Let's start by loading an e-commerce dataset from Hugging Face. [This dataset](h
 
     Daft can load data from many sources including [S3](connectors/aws.md), [Iceberg](connectors/iceberg.md), [Delta Lake](connectors/delta_lake.md), [Hudi](connectors/hudi.md), and [more](connectors/index.md). We're using Hugging Face here as a demonstration.
 
+### Inspect Your Data
+
+Now let's take a look at what we loaded. You can inspect the DataFrame by simply printing it:
+
+=== "🐍 Python"
+
+    ```python
+    df
+    ```
+
+This displays the schema (column names and types) but you'll notice the message "(No data to display: Dataframe not materialized)". This is because **Daft is lazy by default** - it doesn't actually load or process your data until you explicitly tell it to. This allows Daft to optimize your entire workflow before executing anything.
+
+To actually view your data, you have two options:
+
+**Option 1: Preview with `.show()`** - View the first few rows:
+
+=== "🐍 Python"
+
+    ```python
+    df.show(2)
+    ```
+
+```
+╭───────────────────┬───────────────────┬────────────┬───────────────────┬──────────────────╮
+│ url               ┆ name              ┆      …     ┆ description       ┆ images           │
+│ ---               ┆ ---               ┆            ┆ ---               ┆ ---              │
+│ String            ┆ String            ┆ (5 hidden) ┆ String            ┆ String           │
+╞═══════════════════╪═══════════════════╪════════════╪═══════════════════╪══════════════════╡
+│ https://www.asos. ┆ New Look trench   ┆ …          ┆ [{'Product        ┆ ['https://images │
+│ com/stradiva…     ┆ coat in camel     ┆            ┆ Details': 'Coats  ┆ .asos-media.c…   │
+│                   ┆                   ┆            ┆ &…                ┆                  │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ https://www.asos. ┆ New Look trench   ┆ …          ┆ [{'Product        ┆ ['https://images │
+│ com/stradiva…     ┆ coat in camel     ┆            ┆ Details': 'Coats  ┆ .asos-media.c…   │
+│                   ┆                   ┆            ┆ &…                ┆                  │
+╰───────────────────┴───────────────────┴────────────┴───────────────────┴──────────────────╯
+
+(Showing first 2 rows)
+```
+
+This materializes and displays just the first 2 rows, which is perfect for quickly inspecting your data without loading the entire dataset.
+
+**Option 2: Materialize with `.collect()`** - Load the entire dataset:
+
+=== "🐍 Python"
+
+    ```python
+    # df.collect()
+    ```
+
+This would materialize the entire DataFrame (all 30,845 rows in this case) into memory. Use `.collect()` when you need to work with the full dataset in memory.
+
 ### What's Next?
 
 Now that you have a basic sense of Daft's functionality and features, here are some more resources to help you get the most out of Daft:
