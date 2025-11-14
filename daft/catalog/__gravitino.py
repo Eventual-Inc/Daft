@@ -153,7 +153,7 @@ class GravitinoTable(Table):
             try:
                 return read_iceberg(
                     table=self._inner.table_uri,
-                    snapshot_id=options.get("current-snapshot-id"),
+                    snapshot_id=options.get("snapshot_id"),
                     io_config=self._inner.io_config,
                 )
             except ImportError as e:

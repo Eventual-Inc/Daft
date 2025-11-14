@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import dataclasses
+import re
 import warnings
 from typing import Any, Literal
 from urllib.parse import urlparse
 
 import requests
 
-from daft.io import AzureConfig, IOConfig, S3Config
+from daft.io import AzureConfig, GravitinoConfig, IOConfig, S3Config
 
 
 @dataclasses.dataclass(frozen=True)
@@ -76,8 +77,6 @@ def _io_config_from_storage_location(storage_location: str, properties: dict[str
 
         # Try to extract region from endpoint URL if not explicitly provided
         if not region_name and endpoint_url:
-            import re
-
             # Match patterns like "s3.ap-northeast-1.amazonaws.com" or "s3-ap-northeast-1.amazonaws.com"
             region_match = re.search(r"s3[.-]([a-z0-9-]+)\.amazonaws\.com", endpoint_url)
             if region_match:
@@ -411,8 +410,6 @@ class GravitinoClient:
         Returns an IOConfig with only the Gravitino configuration from this client.
         S3 and other storage credentials are handled per-fileset by the Gravitino source.
         """
-        from daft.io import GravitinoConfig
-
         gravitino_config = GravitinoConfig(
             endpoint=self._endpoint,
             metalake_name=self._metalake_name,

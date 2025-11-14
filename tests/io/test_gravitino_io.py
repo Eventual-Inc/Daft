@@ -242,25 +242,13 @@ class TestGravitinoIOLiveServer:
 
         try:
             # Attempt to read the file
-            print(f"PYTHON DEBUG: About to call daft.read_parquet with gvfs_url: {gvfs_url}")
-            # print(f"PYTHON DEBUG: Passing gravitino_only_config: {gravitino_only_config}")
             df = daft.read_parquet(gvfs_url, io_config=gravitino_only_config)
             result = df.collect()
 
             # Basic validation that we got some data
             assert len(result) > 0
-            print(f"Successfully read {len(result)} rows from {gvfs_url}")
 
         except Exception as e:
-            import traceback
-
-            print("\n Exception occurred in test_read_live_gvfs_file:")
-            print(f"Exception type: {type(e).__name__}")
-            print(f"Exception message: {e!s}")
-            print(f"URL being tested: {gvfs_url}")
-            print("Note: This is expected when no Gravitino server is running or fileset doesn't exist")
-            print("Full traceback:")
-            traceback.print_exc()
             pytest.skip(f"Live server test failed (expected if no live server/data): {type(e).__name__}: {e}")
 
     def test_list_live_gvfs_directory(self, gravitino_only_config):
@@ -269,48 +257,24 @@ class TestGravitinoIOLiveServer:
         gvfs_dir = os.environ.get("GRAVITINO_TEST_DIR", "gvfs://fileset/s3_fileset_catalog3/test_schema/test_fileset/")
 
         try:
-            print(f"PYTHON DEBUG: About to call daft.read_parquet with gvfs_url: {gvfs_dir}")
-            # print(f"PYTHON DEBUG: Passing gravitino_only_config: {gravitino_only_config}")
             # Attempt to list files in the directory
             files = daft.from_glob_path(gvfs_dir + "**/*.parquet", io_config=gravitino_only_config)
             result = files.collect()
 
-            print(f"Found {len(result)} files in {gvfs_dir}")
-            print(f"PYTHON DEBUG: files collection: {result}")
-
             # Use Daft's URL function to read the files from the "path" column
             if len(result) > 0:
-                print("\nReading files using Daft's URL function from path column...")
-
                 # Add a column that reads the parquet files from the path column
                 files_with_data = files.with_column(
                     "data", daft.functions.download(files["path"], io_config=gravitino_only_config)
                 )
 
-                print(f"PYTHON DEBUG: files_with_data schema: {files_with_data.schema()}")
-
                 # Collect the result to see the data
                 files_data_result = files_with_data.collect()
-                print(f"Successfully read data from {len(files_data_result)} files using URL function")
 
-                # Show some info about the downloaded data
-                files_data_dict = files_data_result.to_pydict()
-                for i, (path, data) in enumerate(zip(files_data_dict["path"], files_data_dict["data"])):
-                    print(f"  File {i+1}: {path}")
-                    print(f"    Data size: {len(data) if data else 0} bytes")
-                    if data and len(data) > 0:
-                        print(f"    First 50 bytes: {data[:50]}")
-            else:
-                print("No files found to read with URL function")
+                # Validate that we successfully read data
+                assert len(files_data_result) > 0
 
         except Exception as e:
-            import traceback
-
-            print("\n Exception occurred in test_list_live_gvfs_directory:")
-            print(f"Exception type: {type(e).__name__}")
-            print(f"Exception message: {e!s}")
-            print("Full traceback:")
-            traceback.print_exc()
             pytest.skip(f"Live server test failed (expected if no test data): {type(e).__name__}: {e}")
 
 
