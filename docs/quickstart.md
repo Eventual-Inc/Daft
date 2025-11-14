@@ -8,9 +8,7 @@ todo(docs): Add link to notebook to DIY (notebook is in mkdocs dir, but idk how 
 todo(docs): What does the actual output look like for some of these examples? should we update it visually?
 -->
 
-In this quickstart, you will learn the basics of Daft's DataFrame and SQL API and the features that set it apart from frameworks like Pandas, PySpark, Dask, and Ray.
-
-<!-- You will build a database of dog owners and their fluffy companions and see how you can use Daft to download images from URLs, run an ML classifier and call custom UDFs, all within an interactive DataFrame interface. Woof! 🐶 -->
+Daft is the best multimodal data processing engine that allows you to load data from anywhere, transform it with a powerful DataFrame API and AI functions, and store it in your destination of choice. In this quickstart, you'll see what this looks like in practice with a realistic e-commerce data workflow.
 
 ### Install Daft
 
@@ -24,488 +22,131 @@ You can install Daft using `pip`. Run the following command in your terminal or 
 
 <!-- For more advanced installation options, please see [Installation](install.md). -->
 
-### Create Your First DataFrame in Daft
+### Load Your Data
 
-See also [I/O API Docs](api/io.md). Let's create a DataFrame from a dictionary of columns:
+Let's start by loading an e-commerce dataset from Hugging Face. [This dataset](https://huggingface.co/datasets/UniqueData/asos-e-commerce-dataset) contains over 30,000 products from ASOS, including product names, prices, descriptions, and images.
 
 === "🐍 Python"
+
     ```python
     import daft
 
-    df = daft.from_pydict({
-        "A": [1, 2, 3, 4],
-        "B": [1.5, 2.5, 3.5, 4.5],
-        "C": [True, True, False, False],
-        "D": [None, None, None, None],
-    })
-
-    df
+    df = daft.read_huggingface("UniqueData/asos-e-commerce-dataset")
     ```
 
-``` {title="Output"}
+!!! note "Load from anywhere"
 
-╭───────┬─────────┬─────────┬──────╮
-│ A     ┆ B       ┆ C       ┆ D    │
-│ ---   ┆ ---     ┆ ---     ┆ ---  │
-│ Int64 ┆ Float64 ┆ Boolean ┆ Null │
-╞═══════╪═════════╪═════════╪══════╡
-│ 1     ┆ 1.5     ┆ true    ┆ None │
-├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-│ 2     ┆ 2.5     ┆ true    ┆ None │
-├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-│ 3     ┆ 3.5     ┆ false   ┆ None │
-├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-│ 4     ┆ 4.5     ┆ false   ┆ None │
-╰───────┴─────────┴─────────┴──────╯
+    Daft can load data from many sources including [S3](connectors/aws.md), [Iceberg](connectors/iceberg.md), [Delta Lake](connectors/delta_lake.md), [Hudi](connectors/hudi.md), and [more](connectors/index.md). We're using Hugging Face here as a demonstration.
 
-(Showing first 4 of 4 rows)
+### Inspect Your Data
 
-```
-
-You just created your first DataFrame!
-
-### Read From a Data Source
-
-Daft supports both local paths as well as paths to object storage such as AWS S3:
-
-- CSV files: [`daft.read_csv("s3://path/to/bucket/*.csv")`][daft.read_csv]
-- Parquet files: [`daft.read_parquet("/path/*.parquet")`][daft.read_parquet]
-- JSON line-delimited files: [`daft.read_json("/path/*.json")`][daft.read_json]
-- Files on disk: [`daft.from_glob_path("/path/*.jpeg")`][daft.from_glob_path]
-
-!!! tip "Note"
-
-    To work with other formats like [Delta Lake](connectors/delta_lake.md) and [Iceberg](connectors/iceberg.md), check out their respective pages.
-
-Let’s read in a Parquet file from a public S3 bucket. Note that this Parquet file is partitioned on the column `country`. This will be important later on.
-
-<!-- todo(docs - jay): SQL equivalent? -->
-
+Now let's take a look at what we loaded. You can inspect the DataFrame by simply printing it:
 
 === "🐍 Python"
+
     ```python
-
-    # Set IO Configurations to use anonymous data access mode
-    daft.set_planning_config(default_io_config=daft.io.IOConfig(s3=daft.io.S3Config(anonymous=True)))
-
-    df = daft.read_parquet("s3://daft-public-data/tutorials/10-min/sample-data-dog-owners-partitioned.pq/**")
     df
     ```
 
-```{title="Output"}
-
-╭────────────┬───────────┬───────┬──────┬─────────┬─────────╮
-│ first_name ┆ last_name ┆ age   ┆ DoB  ┆ country ┆ has_dog │
-│ ---        ┆ ---       ┆ ---   ┆ ---  ┆ ---     ┆ ---     │
-│ Utf8       ┆ Utf8      ┆ Int64 ┆ Date ┆ Utf8    ┆ Boolean │
-╰────────────┴───────────┴───────┴──────┴─────────┴─────────╯
+```
+╭────────┬────────┬────────────┬─────────────┬────────╮
+│ url    ┆ name   ┆      …     ┆ description ┆ images │
+│ ---    ┆ ---    ┆            ┆ ---         ┆ ---    │
+│ String ┆ String ┆ (5 hidden) ┆ String      ┆ String │
+╰────────┴────────┴────────────┴─────────────┴────────╯
 
 (No data to display: Dataframe not materialized)
-
 ```
 
-Why does it say `(No data to display: Dataframe not materialized)` and where are the rows?
+You see the above output because **Daft is lazy by default** - it displays the schema (column names and types) but doesn't actually load or process your data until you explicitly tell it to. This allows Daft to optimize your entire workflow before executing anything.
 
-### Execute Your DataFrame and View Data
+To actually view your data, you have two options:
 
-Daft is **lazy** by default. This means that the contents will not be computed (“materialized”) unless you explicitly tell Daft to do so. This is best practice for working with larger-than-memory datasets and parallel/distributed architectures.
-
-The file we have just loaded only has 5 rows. You can materialize the whole DataFrame in memory easily using the [`df.collect()`][daft.DataFrame.collect] method:
-
-<!-- todo(docs - jay): How does SQL materialize the DataFrame? -->
+**Option 1: Preview with `.show()`** - View the first few rows:
 
 === "🐍 Python"
 
     ```python
-    df.collect()
+    df.show(2)
     ```
 
-```{title="Output"}
+```
+╭───────────────────┬───────────────────┬────────────┬───────────────────┬──────────────────╮
+│ url               ┆ name              ┆      …     ┆ description       ┆ images           │
+│ ---               ┆ ---               ┆            ┆ ---               ┆ ---              │
+│ String            ┆ String            ┆ (5 hidden) ┆ String            ┆ String           │
+╞═══════════════════╪═══════════════════╪════════════╪═══════════════════╪══════════════════╡
+│ https://www.asos. ┆ New Look trench   ┆ …          ┆ [{'Product        ┆ ['https://images │
+│ com/stradiva…     ┆ coat in camel     ┆            ┆ Details': 'Coats  ┆ .asos-media.c…   │
+│                   ┆                   ┆            ┆ &…                ┆                  │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ https://www.asos. ┆ New Look trench   ┆ …          ┆ [{'Product        ┆ ['https://images │
+│ com/stradiva…     ┆ coat in camel     ┆            ┆ Details': 'Coats  ┆ .asos-media.c…   │
+│                   ┆                   ┆            ┆ &…                ┆                  │
+╰───────────────────┴───────────────────┴────────────┴───────────────────┴──────────────────╯
 
-╭────────────┬───────────┬───────┬────────────┬────────────────┬─────────╮
-│ first_name ┆ last_name ┆ age   ┆ DoB        ┆ country        ┆ has_dog │
-│ ---        ┆ ---       ┆ ---   ┆ ---        ┆ ---            ┆ ---     │
-│ Utf8       ┆ Utf8      ┆ Int64 ┆ Date       ┆ Utf8           ┆ Boolean │
-╞════════════╪═══════════╪═══════╪════════════╪════════════════╪═════════╡
-│ Shandra    ┆ Shamas    ┆ 57    ┆ 1967-01-02 ┆ United Kingdom ┆ true    │
-├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Zaya       ┆ Zaphora   ┆ 40    ┆ 1984-04-07 ┆ United Kingdom ┆ true    │
-├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Wolfgang   ┆ Winter    ┆ 23    ┆ 2001-02-12 ┆ Germany        ┆ None    │
-├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Ernesto    ┆ Evergreen ┆ 34    ┆ 1990-04-03 ┆ Canada         ┆ true    │
-├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ James      ┆ Jale      ┆ 62    ┆ 1962-03-24 ┆ Canada         ┆ true    │
-╰────────────┴───────────┴───────┴────────────┴────────────────┴─────────╯
-
-(Showing first 5 of 5 rows)
+(Showing first 2 rows)
 ```
 
-To view just the first few rows, you can use the [`df.show()`][daft.DataFrame.show] method:
+This materializes and displays just the first 2 rows, which is perfect for quickly inspecting your data without loading the entire dataset.
+
+**Option 2: Materialize with `.collect()`** - Load the entire dataset:
 
 === "🐍 Python"
 
     ```python
-    df.show(3)
+    # df.collect()
     ```
 
-```{title="Output"}
+This would materialize the entire DataFrame (all 30,845 rows in this case) into memory. Use `.collect()` when you need to work with the full dataset in memory.
 
-╭────────────┬───────────┬───────┬────────────┬────────────────┬─────────╮
-│ first_name ┆ last_name ┆ age   ┆ DoB        ┆ country        ┆ has_dog │
-│ ---        ┆ ---       ┆ ---   ┆ ---        ┆ ---            ┆ ---     │
-│ Utf8       ┆ Utf8      ┆ Int64 ┆ Date       ┆ Utf8           ┆ Boolean │
-╞════════════╪═══════════╪═══════╪════════════╪════════════════╪═════════╡
-│ Shandra    ┆ Shamas    ┆ 57    ┆ 1967-01-02 ┆ United Kingdom ┆ true    │
-├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Zaya       ┆ Zaphora   ┆ 40    ┆ 1984-04-07 ┆ United Kingdom ┆ true    │
-├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Wolfgang   ┆ Winter    ┆ 23    ┆ 2001-02-12 ┆ Germany        ┆ None    │
-╰────────────┴───────────┴───────┴────────────┴────────────────┴─────────╯
+### Working with a Smaller Dataset
 
-(Showing first 3 of 5 rows)
-
-```
-
-Now let's take a look at some common DataFrame operations.
-
-### Select Columns
-
-<!-- todo(docs - jay): SQL equivalent? -->
-
-You can **select** specific columns from your DataFrame with the [`df.select()`][daft.DataFrame.select] method:
+For quick experimentation, let's create a smaller version of the dataframe:
 
 === "🐍 Python"
 
     ```python
-    df.select("first_name", "has_dog").show()
+    # Limit to just 5 rows for faster iteration
+    df = df.limit(5)
     ```
 
-```{title="Output"}
+Now we have a manageable dataset of 5 products that we can use to explore Daft's features without waiting for the entire dataset to process.
 
-╭────────────┬─────────╮
-│ first_name ┆ has_dog │
-│ ---        ┆ ---     │
-│ Utf8       ┆ Boolean │
-╞════════════╪═════════╡
-│ Shandra    ┆ true    │
-├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Zaya       ┆ true    │
-├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Ernesto    ┆ true    │
-├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ James      ┆ true    │
-├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Wolfgang   ┆ None    │
-╰────────────┴─────────╯
+### Downloading Images
 
-(Showing first 5 of 5 rows)
-
-```
-### Select Rows
-
-You can **filter** rows using the [`df.where()`][daft.DataFrame.where] method that takes an Logical Expression predicate input. In this case, we call the [`df.col()`][daft.col] method that refers to the column with the provided name `age`:
+Let's extract and download product images. The `images` column contains a string representation of a list of URLs. We'll extract the first URL and download it:
 
 === "🐍 Python"
 
     ```python
-    df.where(daft.col("age") >= 40).show()
-    ```
-
-```{title="Output"}
-╭────────────┬───────────┬───────┬────────────┬────────────────┬─────────╮
-│ first_name ┆ last_name ┆ age   ┆ DoB        ┆ country        ┆ has_dog │
-│ ---        ┆ ---       ┆ ---   ┆ ---        ┆ ---            ┆ ---     │
-│ Utf8       ┆ Utf8      ┆ Int64 ┆ Date       ┆ Utf8           ┆ Boolean │
-╞════════════╪═══════════╪═══════╪════════════╪════════════════╪═════════╡
-│ Shandra    ┆ Shamas    ┆ 57    ┆ 1967-01-02 ┆ United Kingdom ┆ true    │
-├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Zaya       ┆ Zaphora   ┆ 40    ┆ 1984-04-07 ┆ United Kingdom ┆ true    │
-├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ James      ┆ Jale      ┆ 62    ┆ 1962-03-24 ┆ Canada         ┆ true    │
-╰────────────┴───────────┴───────┴────────────┴────────────────┴─────────╯
-
-(Showing first 3 of 3 rows)
-```
-
-Filtering can give you powerful optimization when you are working with partitioned files or tables. Daft will use the predicate to read only the necessary partitions, skipping any data that is not relevant.
-
-!!! tip "Note"
-
-    As mentioned earlier that our Parquet file is partitioned on the `country` column, this means that queries with a `country` predicate will benefit from query optimization.
-
-### Exclude Data
-
-You can **limit** the number of rows in a DataFrame by calling the [`df.limit()`][daft.DataFrame.limit] method:
-
-=== "🐍 Python"
-
-    ```python
-    df.limit(2).show()
-    ```
-
-```{title="Output"}
-╭────────────┬───────────┬───────┬────────────┬─────────┬─────────╮
-│ first_name ┆ last_name ┆ age   ┆ DoB        ┆ country ┆ has_dog │
-│ ---        ┆ ---       ┆ ---   ┆ ---        ┆ ---     ┆ ---     │
-│ Utf8       ┆ Utf8      ┆ Int64 ┆ Date       ┆ Utf8    ┆ Boolean │
-╞════════════╪═══════════╪═══════╪════════════╪═════════╪═════════╡
-│ Wolfgang   ┆ Winter    ┆ 23    ┆ 2001-02-12 ┆ Germany ┆ None    │
-├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Ernesto    ┆ Evergreen ┆ 34    ┆ 1990-04-03 ┆ Canada  ┆ true    │
-╰────────────┴───────────┴───────┴────────────┴─────────┴─────────╯
-
-(Showing first 2 of 2 rows)
-```
-
-To **drop** columns from the DataFrame, use the [`df.exclude()`][daft.DataFrame.exclude] method.
-
-=== "🐍 Python"
-
-    ```python
-    df.exclude("DoB").show()
-    ```
-
-```{title="Output"}
-╭────────────┬───────────┬───────┬────────────────┬─────────╮
-│ first_name ┆ last_name ┆ age   ┆ country        ┆ has_dog │
-│ ---        ┆ ---       ┆ ---   ┆ ---            ┆ ---     │
-│ Utf8       ┆ Utf8      ┆ Int64 ┆ Utf8           ┆ Boolean │
-╞════════════╪═══════════╪═══════╪════════════════╪═════════╡
-│ Ernesto    ┆ Evergreen ┆ 34    ┆ Canada         ┆ true    │
-├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ James      ┆ Jale      ┆ 62    ┆ Canada         ┆ true    │
-├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Shandra    ┆ Shamas    ┆ 57    ┆ United Kingdom ┆ true    │
-├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Zaya       ┆ Zaphora   ┆ 40    ┆ United Kingdom ┆ true    │
-├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Wolfgang   ┆ Winter    ┆ 23    ┆ Germany        ┆ None    │
-╰────────────┴───────────┴───────┴────────────────┴─────────╯
-
-(Showing first 5 of 5 rows)
-```
-
-
-### Transform Columns with Expressions
-
-[Expressions](api/expressions.md) are an API for defining computation that needs to happen over columns. For example, use the [`daft.col()`][daft.col] expressions together with the [`with_column`][daft.DataFrame.with_column] method to create a new column called `full_name`, joining the contents from the `last_name` column with the `first_name` column:
-
-=== "🐍 Python"
-
-    ```python
-    df = df.with_column("full_name", daft.col("first_name") + " " + daft.col("last_name"))
-    df.select("full_name", "age", "country", "has_dog").show()
-    ```
-
-```{title="Output"}
-╭───────────────────┬───────┬────────────────┬─────────╮
-│ full_name         ┆ age   ┆ country        ┆ has_dog │
-│ ---               ┆ ---   ┆ ---            ┆ ---     │
-│ Utf8              ┆ Int64 ┆ Utf8           ┆ Boolean │
-╞═══════════════════╪═══════╪════════════════╪═════════╡
-│ Wolfgang Winter   ┆ 23    ┆ Germany        ┆ None    │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Shandra Shamas    ┆ 57    ┆ United Kingdom ┆ true    │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Zaya Zaphora      ┆ 40    ┆ United Kingdom ┆ true    │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Ernesto Evergreen ┆ 34    ┆ Canada         ┆ true    │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ James Jale        ┆ 62    ┆ Canada         ┆ true    │
-╰───────────────────┴───────┴────────────────┴─────────╯
-
-(Showing first 5 of 5 rows)
-```
-
-Alternatively, you can also run your column transformation using Expressions directly inside your [`df.select()`][daft.DataFrame.select] method*:
-
-=== "🐍 Python"
-
-    ```python
-    df.select((daft.col("first_name").alias("full_name") + " " + daft.col("last_name")), "age", "country", "has_dog").show()
-    ```
-
-```{title="Output"}
-╭───────────────────┬───────┬────────────────┬─────────╮
-│ full_name         ┆ age   ┆ country        ┆ has_dog │
-│ ---               ┆ ---   ┆ ---            ┆ ---     │
-│ Utf8              ┆ Int64 ┆ Utf8           ┆ Boolean │
-╞═══════════════════╪═══════╪════════════════╪═════════╡
-│ Shandra Shamas    ┆ 57    ┆ United Kingdom ┆ true    │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Zaya Zaphora      ┆ 40    ┆ United Kingdom ┆ true    │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Wolfgang Winter   ┆ 23    ┆ Germany        ┆ None    │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Ernesto Evergreen ┆ 34    ┆ Canada         ┆ true    │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ James Jale        ┆ 62    ┆ Canada         ┆ true    │
-╰───────────────────┴───────┴────────────────┴─────────╯
-
-(Showing first 5 of 5 rows)
-```
-
-### Transform Columns with Custom Logic
-
-We strive to have a comprehensive expression library, but inevitably you will need to write some custom logic to transform your data, such as inference, tokenization or otherwise. We try to make integrating custom logic into daft as seamless as possible.
-
-
-=== "Tokenizing a Sentence using HuggingFace Transformers"
-
-    ```python
-    import daft
-    from transformers import AutoTokenizer
-    tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
-
-    @daft.func
-    def tokenize(s: str) -> list[int]:
-        return tokenizer.encode(s)
-
-    df = daft.from_pydict({
-        "text": [
-            "This is a test sentence.",
-            "Another example of a sentence to tokenize.",
-            "Daft is a fast DataFrame library for Python.",
-        ]
-    })
-
-    df = df.select(tokenize(df["text"])).collect()
-    ```
-
-```{title="Output"}
-╭────────────────────────────────╮
-│ text                           │
-│ ---                            │
-│ List[Int64]                    │
-╞════════════════════════════════╡
-│ [101, 2023, 2003, 1037, 3231,… │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ [101, 2178, 2742, 1997, 1037,… │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ [101, 4830, 6199, 2003, 1037,… │
-╰────────────────────────────────╯
-```
-
-=== "Sentiment Analysis with OpenAI"
-
-    ```python
-    import daft
-    import openai
-    import os
-    client = openai.AsyncClient(api_key=os.environ["OPENAI_API_KEY"])
-
-    async def analyze_sentiment(text):
-        response = await client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "Classify the sentiment as positive, negative, or neutral."},
-                {"role": "user", "content": text}
-            ],
-            max_tokens=10
+    # Extract the first image URL from the string using regex
+    # The pattern looks for the first URL within single quotes
+    df = df.with_column(
+        "first_image_url",
+        daft.functions.regexp_extract(
+            df["images"],
+            r"'([^']+)'",  # Extract content between single quotes
+            1  # Get the first capture group
         )
-        return response.choices[0].message.content.strip()
-
-    # if you have an existing function, you can still easily plug it in to daft.
-    # You just need to wrap it in a `daft.func`
-    daft_analyze_sentiment = daft.func(
-        analyze_sentiment,
-        return_dtype=str # daft needs type information
     )
 
+    # Download the image data
+    df = df.with_column(
+        "image_data",
+        df["first_image_url"].url.download(on_error="null")
+    )
 
-    df = daft.from_pydict({
-        "review": [
-            "I absolutely loved this product!",
-            "The service was terrible and I'm disappointed.",
-            "It works as expected, nothing special."
-        ]
-    })
-
-    df = df.with_column("sentiment", daft_analyze_sentiment(df["review"])).collect()
+    # Check what we have
+    df.select("name", "price", "first_image_url").show(3)
     ```
 
-```{title="Output"}
-╭────────────────────────────────┬───────────╮
-│ review                         ┆ sentiment │
-│ ---                            ┆ ---       │
-│ Utf8                           ┆ Utf8      │
-╞════════════════════════════════╪═══════════╡
-│ I absolutely loved this produ… ┆ positive  │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-│ The service was terrible and … ┆ Negative  │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-│ It works as expected, nothing… ┆ Neutral   │
-╰────────────────────────────────┴───────────╯
-```
+This demonstrates Daft's multimodal capabilities:
+- **Pattern extraction**: Use `regexp_extract()` to parse structured text
+- **URL handling**: Download content directly with `.url.download()`
+- **Error handling**: Use `on_error="null"` to gracefully handle failed downloads
 
-
-### Sort Data
-
-You can **sort** a DataFrame with the [`df.sort()`][daft.DataFrame.sort], in this example we chose to sort in ascending order:
-
-=== "🐍 Python"
-
-    ```python
-    df.sort(daft.col("age"), desc=False).show()
-    ```
-
-```{title="Output"}
-╭────────────┬───────────┬───────┬────────────┬────────────────┬─────────┬───────────────────╮
-│ first_name ┆ last_name ┆ age   ┆ DoB        ┆ country        ┆ has_dog ┆ full_name         │
-│ ---        ┆ ---       ┆ ---   ┆ ---        ┆ ---            ┆ ---     ┆ ---               │
-│ Utf8       ┆ Utf8      ┆ Int64 ┆ Date       ┆ Utf8           ┆ Boolean ┆ Utf8              │
-╞════════════╪═══════════╪═══════╪════════════╪════════════════╪═════════╪═══════════════════╡
-│ Wolfgang   ┆ Winter    ┆ 23    ┆ 2001-02-12 ┆ Germany        ┆ None    ┆ Wolfgang Winter   │
-├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ Ernesto    ┆ Evergreen ┆ 34    ┆ 1990-04-03 ┆ Canada         ┆ true    ┆ Ernesto Evergreen │
-├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ Zaya       ┆ Zaphora   ┆ 40    ┆ 1984-04-07 ┆ United Kingdom ┆ true    ┆ Zaya Zaphora      │
-├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ Shandra    ┆ Shamas    ┆ 57    ┆ 1967-01-02 ┆ United Kingdom ┆ true    ┆ Shandra Shamas    │
-├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ James      ┆ Jale      ┆ 62    ┆ 1962-03-24 ┆ Canada         ┆ true    ┆ James Jale        │
-╰────────────┴───────────┴───────┴────────────┴────────────────┴─────────┴───────────────────╯
-
-(Showing first 5 of 5 rows)
-```
-
-### Group and Aggregate Data
-
-You can **group** and **aggregate** your data using the [`df.groupby()`][daft.DataFrame.groupby] and the [`df.agg()`][daft.DataFrame.agg] methods. A groupby aggregation operation over a dataset happens in 2 steps:
-
-1. Split the data into groups based on some criteria using [`df.groupby()`][daft.DataFrame.groupby]
-2. Specify how to aggregate the data for each group using [`df.agg()`][daft.DataFrame.agg]
-
-=== "🐍 Python"
-
-    ```python
-    grouped = df.groupby("country").agg(
-        daft.col("age").mean().alias("avg_age"),
-        daft.col("has_dog").count()
-    ).show()
-    ```
-
-```{title="Output"}
-╭────────────────┬─────────┬─────────╮
-│ country        ┆ avg_age ┆ has_dog │
-│ ---            ┆ ---     ┆ ---     │
-│ Utf8           ┆ Float64 ┆ UInt64  │
-╞════════════════╪═════════╪═════════╡
-│ United Kingdom ┆ 48.5    ┆ 2       │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Canada         ┆ 48      ┆ 2       │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ Germany        ┆ 23      ┆ 0       │
-╰────────────────┴─────────┴─────────╯
-
-(Showing first 3 of 3 rows)
-```
-
-!!! tip "Note"
-
-    The [`df.alias()`][daft.Expression.alias] method renames the given column.
-
+The downloaded image data is now ready for further processing, such as running image classification models, extracting embeddings, or performing transformations.
 
 ### What's Next?
 
