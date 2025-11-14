@@ -122,27 +122,24 @@ class TestGravitinoIOIntegration:
 
     def test_read_gvfs_url_with_mock(self, mock_gravitino_client, gravitino_io_config):
         """Test reading from gvfs URL with mocked Gravitino client."""
-        # Create a temporary parquet file to simulate the underlying storage
-        with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp_file:
+        # Create a temporary directory with parquet files to simulate the underlying storage
+        with tempfile.TemporaryDirectory() as tmp_dir:
             # Create a simple DataFrame and save it
             df = daft.from_pydict({"id": [1, 2, 3], "value": ["a", "b", "c"]})
-            df.write_parquet(tmp_file.name)
+            parquet_path = os.path.join(tmp_dir, "data.parquet")
+            df.write_parquet(parquet_path)
 
-            # Mock the storage location to point to our temp file
-            mock_gravitino_client.load_fileset.return_value.fileset_info.storage_location = f"file://{tmp_file.name}"
+            # Mock the storage location to point to our temp directory
+            mock_gravitino_client.load_fileset.return_value.fileset_info.storage_location = f"file://{tmp_dir}"
 
-            try:
-                # This would normally fail without a real Gravitino server
-                # but we're testing the URL parsing and config handling
-                gvfs_url = "gvfs://fileset/test_catalog/test_schema/test_fileset/data.parquet"
+            # This would normally fail without a real Gravitino server
+            # but we're testing the URL parsing and config handling
+            gvfs_url = "gvfs://fileset/test_catalog/test_schema/test_fileset/data.parquet"
 
-                # Test that the URL format is correct
-                assert gvfs_url.startswith("gvfs://fileset/")
-                parts = gvfs_url.replace("gvfs://fileset/", "").split("/")
-                assert len(parts) >= 4  # catalog/schema/fileset/path
-
-            finally:
-                os.unlink(tmp_file.name)
+            # Test that the URL format is correct
+            assert gvfs_url.startswith("gvfs://fileset/")
+            parts = gvfs_url.replace("gvfs://fileset/", "").split("/")
+            assert len(parts) >= 4  # catalog/schema/fileset/path
 
     def test_list_gvfs_directory_with_mock(self, mock_gravitino_client, gravitino_io_config):
         """Test listing files in a gvfs directory with mocked client."""
