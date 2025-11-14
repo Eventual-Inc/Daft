@@ -20,13 +20,17 @@ from pydantic import BaseModel, Field
 
 import daft
 import daft.context
-from daft.ai.openai.protocols.prompter import OpenAIPrompter
 from daft.daft import PyMicroPartition, PyNodeInfo
 from daft.functions.ai import embed_text, prompt
 from daft.subscribers import StatType, Subscriber
 from tests.conftest import get_tests_daft_runner_name
 
 RUNNER_IS_NATIVE = get_tests_daft_runner_name() == "native"
+
+REQUESTS_COUNTER_NAME = "requests"
+INPUT_TOKENS_COUNTER_NAME = "input tokens"
+OUTPUT_TOKENS_COUNTER_NAME = "output tokens"
+TOTAL_TOKENS_COUNTER_NAME = "total tokens"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -102,10 +106,10 @@ def _collect_prompt_metrics(subscriber: PromptMetricsSubscriber) -> dict[str, in
         return {}
 
     tracked_names = {
-        OpenAIPrompter.REQUESTS_COUNTER_NAME,
-        OpenAIPrompter.INPUT_TOKENS_COUNTER_NAME,
-        OpenAIPrompter.OUTPUT_TOKENS_COUNTER_NAME,
-        OpenAIPrompter.TOTAL_TOKENS_COUNTER_NAME,
+        REQUESTS_COUNTER_NAME,
+        INPUT_TOKENS_COUNTER_NAME,
+        OUTPUT_TOKENS_COUNTER_NAME,
+        TOTAL_TOKENS_COUNTER_NAME,
     }
     aggregated: defaultdict[str, int] = defaultdict(int)
     query_id = subscriber.query_ids[-1]
@@ -126,17 +130,17 @@ def _assert_prompt_metrics_recorded(metrics: dict[str, int]) -> None:
         return
 
     required = {
-        OpenAIPrompter.REQUESTS_COUNTER_NAME,
-        OpenAIPrompter.INPUT_TOKENS_COUNTER_NAME,
-        OpenAIPrompter.OUTPUT_TOKENS_COUNTER_NAME,
-        OpenAIPrompter.TOTAL_TOKENS_COUNTER_NAME,
+        REQUESTS_COUNTER_NAME,
+        INPUT_TOKENS_COUNTER_NAME,
+        OUTPUT_TOKENS_COUNTER_NAME,
+        TOTAL_TOKENS_COUNTER_NAME,
     }
 
     for name in required:
         assert name in metrics, f"Expected metric '{name}' to be recorded."
         assert metrics[name] >= 0
 
-    assert metrics[OpenAIPrompter.REQUESTS_COUNTER_NAME] >= 1
+    assert metrics[REQUESTS_COUNTER_NAME] >= 1
 
 
 @pytest.fixture()
