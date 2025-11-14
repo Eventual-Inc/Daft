@@ -1,7 +1,9 @@
 use std::{sync::Arc, time::Duration};
 
 use common_error::DaftResult;
-use common_metrics::{Stat, StatSnapshotSend, ops::NodeType, snapshot};
+use common_metrics::{
+    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, ops::NodeType, snapshot,
+};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_functions_list::explode;
 use daft_micropartition::MicroPartition;
@@ -15,7 +17,7 @@ use super::intermediate_op::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::NodeName,
-    runtime_stats::{CPU_US_KEY, Counter, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats},
+    runtime_stats::{Counter, RuntimeStats},
 };
 
 pub struct ExplodeStats {
@@ -44,7 +46,7 @@ impl RuntimeStats for ExplodeStats {
         self
     }
 
-    fn build_snapshot(&self, ordering: std::sync::atomic::Ordering) -> StatSnapshotSend {
+    fn build_snapshot(&self, ordering: std::sync::atomic::Ordering) -> StatSnapshot {
         let cpu_us = self.cpu_us.load(ordering);
         let rows_in = self.rows_in.load(ordering);
         let rows_out = self.rows_out.load(ordering);
