@@ -76,7 +76,8 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         return isinstance(self, SupportsPushdownFilters)
 
     def can_absorb_limit(self) -> bool:
-        return True
+        # FIXME(zhenchao) Enabling can_absorb_limit currently will cause GlobalLimit to be erased.
+        return False
 
     def can_absorb_select(self) -> bool:
         return True
@@ -137,37 +138,37 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             pushdowns.aggregation is not None
             and pushdowns.aggregation_count_mode() is not None
             and pushdowns.aggregation_required_column_names()
+            and pushdowns.limit is not None
         ):
             count_mode = pushdowns.aggregation_count_mode()
-            fields = pushdowns.aggregation_required_column_names()
-
             if count_mode not in self.supported_count_modes():
                 logger.warning(
                     "Count mode %s is not supported for pushdown, falling back to original logic",
                     count_mode,
                 )
                 yield from self._create_regular_scan_tasks(pushdowns, required_columns)
-                return
-
-            filters = self._combine_filters_to_arrow()
-
-            new_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(fields[0], pa.uint64())]))
-            yield ScanTask.python_factory_func_scan_task(
-                module=_lancedb_count_result_function.__module__,
-                func_name=_lancedb_count_result_function.__name__,
-                func_args=(self._ds, fields[0], filters),
-                schema=new_schema._schema,
-                num_rows=1,
-                size_bytes=None,
-                pushdowns=pushdowns,
-                stats=None,
-                source_type=self.name(),
-            )
+            else:
+                yield from self._create_count_rows_scan_task(pushdowns)
         # Check if there is a limit pushdown and no filters
         elif pushdowns.limit is not None and self._pushed_filters is None and pushdowns.filters is None:
             yield from self._create_scan_tasks_with_limit_and_no_filters(pushdowns, required_columns)
         else:
             yield from self._create_regular_scan_tasks(pushdowns, required_columns)
+
+    def _create_count_rows_scan_task(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
+        fields = pushdowns.aggregation_required_column_names()
+        new_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(fields[0], pa.uint64())]))
+        yield ScanTask.python_factory_func_scan_task(
+            module=_lancedb_count_result_function.__module__,
+            func_name=_lancedb_count_result_function.__name__,
+            func_args=(self._ds, fields[0], self._combine_filters_to_arrow()),
+            schema=new_schema._schema,
+            num_rows=1,
+            size_bytes=None,
+            pushdowns=pushdowns,
+            stats=None,
+            source_type=self.name(),
+        )
 
     def _create_scan_tasks_with_limit_and_no_filters(
         self, pushdowns: PyPushdowns, required_columns: Optional[list[str]]

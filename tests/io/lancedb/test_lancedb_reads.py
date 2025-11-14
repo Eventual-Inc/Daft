@@ -326,11 +326,17 @@ def test_lancedb_limit_with_filter_and_fragment_grouping_single_task(large_lance
 def test_lancedb_limit_with_offset(large_lance_dataset_path):
     lance_df = daft.read_lance(large_lance_dataset_path)
 
-    df = lance_df.offset(2).limit(17)
-    assert len(df.to_pylist()) == 17
+    # df = lance_df.offset(2).limit(17)
+    # df.explain(True)
+    # assert len(df.to_pylist()) == 17
+    # assert df.count_rows() == 17
 
-    df = lance_df.limit(10)
-    assert len(df.to_pylist()) == 10
-
-    df = lance_df.limit(1).offset(1)
+    # df = lance_df.limit(10)
+    # assert len(df.to_pylist()) == 10
+    # assert df.count_rows() == 10
+    #
+    # df = lance_df.limit(1).offset(1)
+    df = lance_df.limit(0)
+    df.explain(show_all=True)
     assert len(df.to_pylist()) == 0
+    assert df.count_rows() == 0

@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import lance
 import pytest
 
 import daft
 from daft import DataType, col
 
 
-@pytest.fixture
-def input_df():
+@pytest.fixture(params=["memory", "parquet", "iceberg", "lance"], scope="session")
+def input_df(request, tmp_path_factory):
     df = daft.range(start=0, end=1024, partitions=100)
     df = df.with_columns(
         {
@@ -15,7 +16,19 @@ def input_df():
             "email": df["id"].apply(func=lambda x: f"user_{x}@getdaft.io", return_dtype=DataType.string()),
         }
     )
-    return df
+
+    path = str(tmp_path_factory.mktemp(request.param))
+    if request.param == "parquet":
+        df.write_parquet(path)
+        return daft.read_parquet(path)
+    elif request.param == "iceberg":
+        df.write_iceberg(path)
+        return daft.read_iceberg(path)
+    elif request.param == "lance":
+        lance.write_dataset(df.to_arrow(), uri=path)
+        return daft.read_lance(path)
+    else:
+        return df
 
 
 def test_negative_limit(input_df):
