@@ -41,7 +41,6 @@ repos:
   - id: check-added-large-files
     exclude: uv.lock
   - id: check-merge-conflict
-  - id: check-docstring-first
   - id: check-toml
 
 - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks

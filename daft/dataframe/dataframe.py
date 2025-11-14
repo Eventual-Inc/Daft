@@ -1691,6 +1691,63 @@ class DataFrame:
 
         return df_to_write.write_sink(sink)
 
+    @DataframePublicAPI
+    def write_sql(
+        self,
+        table_name: str,
+        conn: Union[str, Callable[[], Any]],
+        *,
+        mode: Literal["append", "overwrite"],  # NOTE: keep this aligned with daft.io.sql.SQL_SINK_MODES.
+        # NOTE:                                        Must do so manually because Python doesn't support circular imports.
+    ) -> "DataFrame":
+        """Write a DataFrame into a relational database table.
+
+        Supports PostgreSQL and SQLite databases. This is still an experimental feature. Support for 
+        additional databases is ongoing.
+
+        Args:
+            table_name: Name of the target SQL table to write to.
+            conn: Connection string (URL) or a callable that returns a SQLAlchemy connection.
+                Examples of connection strings:
+                - PostgreSQL: "postgresql://user:password@localhost:5432/mydb"
+                - SQLite: "sqlite:///path/to/database.db"
+            mode: Write mode for the operation. One of:
+                - "append": Append data to an existing table.
+                - "overwrite": Drop the table, if it exists, and create a new table with new data.
+
+        Returns:
+            DataFrame: A new DataFrame containing metadata about the write operation
+                (rows_written, bytes_written, table_name).
+
+        Note:
+            This call is **blocking** and will execute the DataFrame when called.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"id": [1, 2, 3], "name": ["Alice", "Bob", "Charlie"]})
+            >>>
+            >>> # Write to SQLite
+            >>> result_df = df.write_sql("users", conn="sqlite:///users.db", mode="overwrite")  # doctest: +SKIP
+            >>>
+            >>> # Write to PostgreSQL
+            >>> result_df = df.write_sql(
+            ...     "users", conn="postgresql://user:password@localhost:5432/mydb", mode="append"
+            ... )  # doctest: +SKIP
+            >>>
+            >>> result_df.show()  # doctest: +SKIP
+            ╭──────────────┬──────────────┬────────────╮
+            │ rows_written ┆ bytes_written┆ table_name │
+            │ ---          ┆ ---          ┆ ---        │
+            │ UInt64       ┆ UInt64       ┆ String     │
+            ╞══════════════╪══════════════╪════════════╡
+            │ 3            ┆ 48           ┆ users      │
+            ╰──────────────┴──────────────┴────────────╯
+        """
+        from daft.io.sql import SQLDataSink
+
+        sink = SQLDataSink(table_name=table_name, connection=conn, mode=mode, schema=self.schema())
+        return self.write_sink(sink)
+
     ###
     # DataFrame operations
     ###
