@@ -23,7 +23,8 @@ impl Counter {
         name: Cow<'static, str>,
         description: Option<Cow<'static, str>>,
     ) -> Self {
-        let builder = meter.u64_counter(name);
+        let normalized_name = format!("daft.{}", name.replace(' ', "_").to_lowercase());
+        let builder = meter.u64_counter(normalized_name);
         let builder = if let Some(description) = description {
             builder.with_description(description)
         } else {

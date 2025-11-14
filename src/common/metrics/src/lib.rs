@@ -96,7 +96,7 @@ impl IntoIterator for StatSnapshot {
 #[macro_export(local_inner_macros)]
 macro_rules! snapshot {
     ($($name:expr; $value:expr),* $(,)?) => {
-        StatSnapshot(smallvec![
+        common_metrics::StatSnapshot(smallvec![
             $( ($name.into(), $value) ),*
         ])
     };

@@ -36,6 +36,12 @@ class ComplexResponse(BaseModel):
     sentiment: str
 
 
+REQUESTS_COUNTER_NAME = "requests"
+INPUT_TOKENS_COUNTER_NAME = "input tokens"
+OUTPUT_TOKENS_COUNTER_NAME = "output tokens"
+TOTAL_TOKENS_COUNTER_NAME = "total tokens"
+
+
 def test_openai_provider_get_prompter_default():
     """Test that the provider returns a prompter descriptor with default settings."""
     provider = OpenAIProvider(api_key="test-key")
@@ -135,6 +141,20 @@ def test_openai_prompter_instantiate():
     assert isinstance(prompter, Prompter)
     assert prompter.model == "gpt-4o-mini"
     assert prompter.return_format is None
+    assert prompter.provider_name == "openai"
+
+
+def test_openai_prompter_descriptor_custom_provider_name():
+    """Test that descriptor forwards custom provider name."""
+    descriptor = OpenAIPrompterDescriptor(
+        provider_name="azure-openai",
+        provider_options={"api_key": "test-key"},
+        model_name="gpt-4o-mini",
+        model_options={},
+    )
+
+    prompter = descriptor.instantiate()
+    assert prompter.provider_name == "azure-openai"
 
 
 def test_openai_prompter_plain_text_response():
@@ -184,11 +204,16 @@ def test_openai_prompter_records_usage_metrics_responses_api():
             result = await prompter.prompt(("Record metrics",))
 
         assert result == "Metrics test response."
+        expected_attrs = {
+            "model": "gpt-4o-mini",
+            "protocol": "prompt",
+            "provider": "openai",
+        }
         assert mock_counter.call_args_list == [
-            call(OpenAIPrompter.INPUT_TOKENS_COUNTER_NAME, 3),
-            call(OpenAIPrompter.OUTPUT_TOKENS_COUNTER_NAME, 5),
-            call(OpenAIPrompter.TOTAL_TOKENS_COUNTER_NAME, 8),
-            call(OpenAIPrompter.REQUESTS_COUNTER_NAME),
+            call(INPUT_TOKENS_COUNTER_NAME, 3, attributes=expected_attrs),
+            call(OUTPUT_TOKENS_COUNTER_NAME, 5, attributes=expected_attrs),
+            call(TOTAL_TOKENS_COUNTER_NAME, 8, attributes=expected_attrs),
+            call(REQUESTS_COUNTER_NAME, attributes=expected_attrs),
         ]
 
     run_async(_test())
@@ -220,14 +245,43 @@ def test_openai_prompter_records_usage_metrics_chat_completions():
             result = await prompter.prompt(("Chat metrics",))
 
         assert result == "Chat metrics response."
+        expected_attrs = {
+            "model": "gpt-4o-mini",
+            "protocol": "prompt",
+            "provider": "openai",
+        }
         assert mock_counter.call_args_list == [
-            call(OpenAIPrompter.INPUT_TOKENS_COUNTER_NAME, 4),
-            call(OpenAIPrompter.OUTPUT_TOKENS_COUNTER_NAME, 6),
-            call(OpenAIPrompter.TOTAL_TOKENS_COUNTER_NAME, 10),
-            call(OpenAIPrompter.REQUESTS_COUNTER_NAME),
+            call(INPUT_TOKENS_COUNTER_NAME, 4, attributes=expected_attrs),
+            call(OUTPUT_TOKENS_COUNTER_NAME, 6, attributes=expected_attrs),
+            call(TOTAL_TOKENS_COUNTER_NAME, 10, attributes=expected_attrs),
+            call(REQUESTS_COUNTER_NAME, attributes=expected_attrs),
         ]
 
     run_async(_test())
+
+
+def test_openai_prompter_record_usage_metrics_custom_provider():
+    """_record_usage_metrics should tag metrics with the configured provider."""
+    prompter = OpenAIPrompter(
+        provider_name="azure-openai",
+        provider_options={"api_key": "test-key"},
+        model="gpt-4o-mini",
+    )
+
+    with patch("daft.ai.openai.protocols.prompter.increment_counter") as mock_counter:
+        prompter._record_usage_metrics(1, 2, 3)
+
+    expected_attrs = {
+        "model": "gpt-4o-mini",
+        "protocol": "prompt",
+        "provider": "azure-openai",
+    }
+    assert mock_counter.call_args_list == [
+        call(INPUT_TOKENS_COUNTER_NAME, 1, attributes=expected_attrs),
+        call(OUTPUT_TOKENS_COUNTER_NAME, 2, attributes=expected_attrs),
+        call(TOTAL_TOKENS_COUNTER_NAME, 3, attributes=expected_attrs),
+        call(REQUESTS_COUNTER_NAME, attributes=expected_attrs),
+    ]
 
 
 def test_openai_prompter_structured_output():
@@ -965,7 +1019,12 @@ def test_openai_prompter_chat_completions_structured_output():
         assert result.confidence == 0.95
         mock_client.chat.completions.parse.assert_called_once_with(
             model="gpt-4o-mini",
-            messages=[{"role": "user", "content": [{"type": "text", "text": "Is this a test?"}]}],
+            messages=[
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "Is this a test?"}],
+                }
+            ],
             response_format=SimpleResponse,
         )
 
@@ -1079,7 +1138,12 @@ def test_openai_prompter_chat_completions_with_generation_config():
         assert result == "Response with custom config."
         mock_client.chat.completions.create.assert_called_once_with(
             model="gpt-4o-mini",
-            messages=[{"role": "user", "content": [{"type": "text", "text": "Tell me a story"}]}],
+            messages=[
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "Tell me a story"}],
+                }
+            ],
             temperature=0.8,
             max_tokens=50,
         )

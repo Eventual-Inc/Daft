@@ -14,6 +14,7 @@ use std::{
 };
 
 use common_error::DaftResult;
+pub use common_metrics::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY};
 use common_metrics::{NodeID, StatSnapshot};
 use common_runtime::RuntimeTask;
 use daft_context::Subscriber;
