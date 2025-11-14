@@ -138,8 +138,24 @@ Let's extract and download product images. The `Image` column contains pipe-sepa
     )
 
     # Check what we have
-    df.select("Product Name", "first_image_url").show(3)
+    df.select("Product Name", "first_image_url", "image_data").show(3)
     ```
+
+```
+╭────────────────────────────────┬────────────────────────────────┬────────────────────────────────╮
+│ Product Name                   ┆ first_image_url                ┆ image_data                     │
+│ ---                            ┆ ---                            ┆ ---                            │
+│ String                         ┆ String                         ┆ Binary                         │
+╞════════════════════════════════╪════════════════════════════════╪════════════════════════════════╡
+│ DB Longboards CoreFlex Crossb… ┆ https://images-na.ssl-images-… ┆ b"\xff\xd8\xff\xe0\x00\x10JFI… │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Electronic Snap Circuits Mini… ┆ https://images-na.ssl-images-… ┆ b"\xff\xd8\xff\xe0\x00\x10JFI… │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 3Doodler Create Flexy 3D Prin… ┆ https://images-na.ssl-images-… ┆ b"\xff\xd8\xff\xe0\x00\x10JFI… │
+╰────────────────────────────────┴────────────────────────────────┴────────────────────────────────╯
+
+(Showing first 3 rows)
+```
 
 This demonstrates Daft's multimodal capabilities:
 - **Pattern extraction**: Use `regexp_extract()` to parse structured text
