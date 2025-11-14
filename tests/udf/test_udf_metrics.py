@@ -183,6 +183,57 @@ def test_udf_metrics_direct_udf_call_warns() -> None:
     assert result == 2
 
 
+def test_increment_counter_metadata_propagation(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, tuple[str, int, str | None, dict[str, str] | None]] = {}
+
+    def fake_inc_counter(
+        self: Any,
+        name: str,
+        amount: int,
+        *,
+        description: str | None = None,
+        attributes: dict[str, str] | None = None,
+    ) -> None:
+        captured["call"] = (name, amount, description, attributes)
+
+    monkeypatch.setattr(metrics.OperatorMetrics, "inc_counter", fake_inc_counter)
+
+    with metrics._metrics_context():
+        metrics.increment_counter(
+            "custom counter",
+            amount=5,
+            description="Counts custom things",
+            attributes={"kind": "test"},
+        )
+
+    assert captured["call"] == (
+        "custom counter",
+        5,
+        "Counts custom things",
+        {"kind": "test"},
+    )
+
+
+def test_increment_counter_rejects_non_string_description() -> None:
+    with pytest.raises(ValueError, match="Metric description must be a string"):
+        metrics.increment_counter("bad description", description=123)  # type: ignore[arg-type]
+
+
+def test_increment_counter_rejects_non_mapping_attributes() -> None:
+    with pytest.raises(ValueError, match="Metric attributes must be a mapping"):
+        metrics.increment_counter("bad attrs", attributes=[("k", "v")])  # type: ignore[arg-type]
+
+
+def test_increment_counter_rejects_invalid_attribute_key() -> None:
+    with pytest.raises(ValueError, match="attribute keys"):
+        metrics.increment_counter("bad key", attributes={"": "value"})
+
+
+def test_increment_counter_rejects_invalid_attribute_value() -> None:
+    with pytest.raises(ValueError, match="attribute values"):
+        metrics.increment_counter("bad value", attributes={"key": 1})  # type: ignore[arg-type]
+
+
 @pytest.mark.parametrize("num_udfs", [1, 2])
 @pytest.mark.parametrize("batch_size", [None, 1, 4])
 @pytest.mark.parametrize("use_process", [False, True])

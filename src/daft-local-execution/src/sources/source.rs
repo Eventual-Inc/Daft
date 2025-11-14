@@ -42,8 +42,8 @@ impl SourceStats {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, "cpu_us".into()),
-            rows_out: Counter::new(&meter, "rows_out".into()),
+            cpu_us: Counter::new(&meter, "cpu_us".into(), None),
+            rows_out: Counter::new(&meter, "rows_out".into(), None),
             io_stats: IOStatsRef::default(),
 
             node_kv,

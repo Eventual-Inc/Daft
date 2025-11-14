@@ -40,10 +40,10 @@ impl WriteStats {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, "cpu_us".into()),
-            rows_in: Counter::new(&meter, "rows_in".into()),
-            rows_written: Counter::new(&meter, "rows_written".into()),
-            bytes_written: Counter::new(&meter, "bytes_written".into()),
+            cpu_us: Counter::new(&meter, "cpu_us".into(), None),
+            rows_in: Counter::new(&meter, "rows_in".into(), None),
+            rows_written: Counter::new(&meter, "rows_written".into(), None),
+            bytes_written: Counter::new(&meter, "bytes_written".into(), None),
 
             node_kv,
         }

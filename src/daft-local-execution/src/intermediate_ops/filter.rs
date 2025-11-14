@@ -32,9 +32,9 @@ impl FilterStats {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY.into()),
-            rows_in: Counter::new(&meter, ROWS_IN_KEY.into()),
-            rows_out: Counter::new(&meter, ROWS_OUT_KEY.into()),
+            cpu_us: Counter::new(&meter, CPU_US_KEY.into(), None),
+            rows_in: Counter::new(&meter, ROWS_IN_KEY.into(), None),
+            rows_out: Counter::new(&meter, ROWS_OUT_KEY.into(), None),
             node_kv,
         }
     }

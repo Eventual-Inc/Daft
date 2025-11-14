@@ -1,11 +1,12 @@
 use std::{
+    borrow::Cow,
     collections::HashMap,
     sync::{Arc, Mutex, atomic::Ordering},
     time::Duration,
 };
 
 use common_error::DaftResult;
-use common_metrics::{Stat, StatSnapshotSend, ops::NodeType};
+use common_metrics::{Stat, StatSnapshotSend, operator_metrics::OperatorCounter, ops::NodeType};
 use daft_core::{prelude::SchemaRef, series::Series};
 use daft_dsl::{
     expr::bound_expr::BoundExpr, functions::python::UDFProperties,
@@ -91,9 +92,9 @@ impl AsyncUdfRuntimeStats {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY.into()),
-            rows_in: Counter::new(&meter, ROWS_IN_KEY.into()),
-            rows_out: Counter::new(&meter, ROWS_OUT_KEY.into()),
+            cpu_us: Counter::new(&meter, CPU_US_KEY.into(), None),
+            rows_in: Counter::new(&meter, ROWS_IN_KEY.into(), None),
+            rows_out: Counter::new(&meter, ROWS_OUT_KEY.into(), None),
             custom_counters: Mutex::new(HashMap::new()),
             node_kv,
             meter,
@@ -102,14 +103,27 @@ impl AsyncUdfRuntimeStats {
 
     fn update_metrics(&self, metrics: OperatorMetrics) {
         let mut counters = self.custom_counters.lock().unwrap();
-        for (name, value) in metrics {
+        for (name, counter_data) in metrics {
+            let OperatorCounter {
+                value,
+                description,
+                attributes,
+            } = counter_data;
+
+            let mut key_values = self.node_kv.clone();
+            key_values.extend(attributes.into_iter().map(|(k, v)| KeyValue::new(k, v)));
+
             match counters.get_mut(name.as_str()) {
-                Some(counter) => {
-                    counter.add(value, self.node_kv.as_slice());
+                Some(existing) => {
+                    existing.add(value, key_values.as_slice());
                 }
                 None => {
-                    let counter = Counter::new(&self.meter, name.clone().into());
-                    counter.add(value, self.node_kv.as_slice());
+                    let counter = Counter::new(
+                        &self.meter,
+                        name.clone().into(),
+                        description.map(Cow::Owned),
+                    );
+                    counter.add(value, key_values.as_slice());
                     counters.insert(name.into(), counter);
                 }
             }

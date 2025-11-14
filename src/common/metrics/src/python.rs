@@ -4,11 +4,7 @@ use common_py_serde::impl_bincode_py_state_serialization;
 use pyo3::{Bound, IntoPyObject, PyAny, PyResult, Python, pyclass, pymethods};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    Stat,
-    operator_metrics::{MetricsCollector, OperatorMetrics},
-    ops::NodeInfo,
-};
+use crate::{Stat, operator_metrics::OperatorMetrics, ops::NodeInfo};
 
 #[pyclass(eq, eq_int)]
 #[derive(PartialEq, Eq)]
@@ -87,8 +83,15 @@ impl PyOperatorMetrics {
         }
     }
 
-    pub fn inc_counter(&mut self, name: &str, value: u64) {
-        self.inner.inc_counter(name, value);
+    #[pyo3(signature = (name, value, *, description=None, attributes=None))]
+    pub fn inc_counter(
+        &mut self,
+        name: &str,
+        value: u64,
+        description: Option<&str>,
+        attributes: Option<HashMap<String, String>>,
+    ) {
+        self.inner.inc_counter(name, value, description, attributes);
     }
 }
 

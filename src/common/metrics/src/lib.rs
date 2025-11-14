@@ -6,7 +6,9 @@ pub mod python;
 use std::{ops::Index, slice, sync::Arc, time::Duration};
 
 use indicatif::{HumanBytes, HumanCount, HumanDuration, HumanFloatCount};
-pub use operator_metrics::{MetricsCollector, NoopMetricsCollector, OperatorMetrics};
+pub use operator_metrics::{
+    MetricsCollector, NoopMetricsCollector, OperatorCounter, OperatorMetrics,
+};
 #[cfg(feature = "python")]
 use pyo3::types::PyModule;
 #[cfg(feature = "python")]
