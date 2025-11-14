@@ -38,7 +38,9 @@ pub mod range;
 use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
-pub use common_io_config::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config, TosConfig, GravitinoConfig};
+pub use common_io_config::{
+    AzureConfig, GCSConfig, GravitinoConfig, HTTPConfig, IOConfig, S3Config, TosConfig,
+};
 use futures::{FutureExt, stream::BoxStream};
 use object_io::StreamingRetryParams;
 pub use object_io::{FileMetadata, FileType, GetResult, ObjectSource};
