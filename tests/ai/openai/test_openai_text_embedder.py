@@ -6,6 +6,7 @@ import pytest
 
 pytest.importorskip("openai")
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import numpy as np
@@ -426,6 +427,31 @@ def test_protocol_compliance():
     assert isinstance(text_embedder, TextEmbedder)
     assert hasattr(text_embedder, "embed_text")
     assert callable(text_embedder.embed_text)
+
+
+def test_embed_text_records_usage_metrics(mock_text_embedder, mock_client):
+    """Ensure that token/usage metrics are recorded."""
+    mock_usage = SimpleNamespace(prompt_tokens=10, total_tokens=12)
+    mock_response = Mock(spec=CreateEmbeddingResponse)
+    mock_embedding = Mock(spec=OpenAIEmbedding)
+    mock_embedding.embedding = np.array([0.1, 0.2, 0.3] * 512, dtype=np.float32)
+    mock_response.data = [mock_embedding]
+    mock_response.usage = mock_usage
+    mock_client.embeddings.create.return_value = mock_response
+
+    with patch("daft.ai.openai.protocols.text_embedder.increment_counter") as mock_counter:
+        result = run(mock_text_embedder.embed_text(["Hello world"]))
+
+    assert len(result) == 1
+    attrs = {
+        "model": "text-embedding-3-small",
+        "protocol": "embed",
+        "provider": "openai",
+    }
+    mock_counter.assert_any_call("prompt tokens", 10, attributes=attrs)
+    mock_counter.assert_any_call("total tokens", 12, attributes=attrs)
+    mock_counter.assert_any_call("requests", attributes=attrs)
+    assert mock_counter.call_count == 3
 
 
 def test_embed_text_batch_rate_limit_fallback(mock_text_embedder, mock_client):
