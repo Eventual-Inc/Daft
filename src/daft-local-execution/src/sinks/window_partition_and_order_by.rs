@@ -181,7 +181,7 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                         WindowExpr::Agg(agg_expr) => {
                                             let new_col = partition
                                                 .eval_expression(&BoundExpr::new_unchecked(
-                                                    Arc::new(Expr::Agg(agg_expr.clone())),
+                                                    Arc::new(Expr::Agg(*agg_expr.clone())),
                                                 ))?
                                                 .broadcast(partition.len())?
                                                 .rename(name.clone());

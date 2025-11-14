@@ -22,7 +22,7 @@ pub use crate::ops::*;
 use crate::stats::{PlanStats, StatsState};
 
 /// Logical plan for a Daft query.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LogicalPlan {
     Source(Source),
     Shard(Shard),
@@ -52,14 +52,31 @@ pub enum LogicalPlan {
     VLLMProject(VLLMProject),
 }
 
+impl std::hash::Hash for LogicalPlan {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Note: We only hash the discriminant of the enum, not the contents
+        // This is a simplification that avoids issues with types that don't implement Hash
+        std::mem::discriminant(self).hash(state);
+    }
+}
+
 pub type LogicalPlanRef = Arc<LogicalPlan>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SubqueryAlias {
     pub plan_id: Option<usize>,
     pub node_id: Option<usize>,
     pub input: LogicalPlanRef,
     pub name: Arc<str>,
+}
+
+impl std::hash::Hash for SubqueryAlias {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.plan_id.hash(state);
+        self.node_id.hash(state);
+        // Note: We don't hash input as LogicalPlan doesn't implement Hash
+        self.name.hash(state);
+    }
 }
 
 impl SubqueryAlias {

@@ -256,7 +256,7 @@ fn convert_udfs_to_map_groups(expr: &ExprRef) -> ExprRef {
         .transform(|e| match e.as_ref() {
             Expr::Function { func, inputs } if matches!(func, FunctionExpr::Python(_)) => {
                 Ok(Transformed::yes(Arc::new(Expr::Agg(AggExpr::MapGroups {
-                    func: func.clone(),
+                    func: Box::new(func.clone()),
                     inputs: inputs.clone(),
                 }))))
             }

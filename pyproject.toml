@@ -108,8 +108,7 @@ dev = [
   "pyarrow==20.0.0",
   "pyarrow-stubs==19.4",
   # Ray
-  "ray[data, client]==2.48.0; python_version >= '3.13' or platform_system != \"Linux\" or platform_machine != \"x86_64\"",
-  "ray[data, client]==2.34.0; python_version < '3.13' and platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+  "ray[data, client]>=2.49.0",
   # Lance
   "pylance>=0.37.0",
   # Iceberg
@@ -190,7 +189,7 @@ lint = [
 [tool.codespell]
 check-filenames = true
 check-hidden = true
-ignore-words-list = "crate,arithmetics,ser,acter,MOR"
+ignore-words-list = "crate,arithmetics,ser,acter,MOR,NotIn"
 # Feel free to un-skip examples, and experimental, you will just need to
 # work through many typos (--write-changes and --interactive will help)
 skip = "tests/series/*,target,.git,.venv,venv,data,*.csv,*.csv.*,*.html,*.json,*.jsonl,*.pdf,*.txt,*.ipynb,*.tiktoken,*.sql,tests/table/utf8/*,tests/table/binary/*,*.warc,tests/ai/*"
