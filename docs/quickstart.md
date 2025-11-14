@@ -100,6 +100,19 @@ This materializes and displays just the first 2 rows, which is perfect for quick
 
 This would materialize the entire DataFrame (all 30,845 rows in this case) into memory. Use `.collect()` when you need to work with the full dataset in memory.
 
+### Working with a Smaller Dataset
+
+For quick experimentation, let's create a smaller version of the dataframe:
+
+=== "🐍 Python"
+
+    ```python
+    # Limit to just 5 rows for faster iteration
+    df = df.limit(5)
+    ```
+
+Now we have a manageable dataset of 5 products that we can use to explore Daft's features without waiting for the entire dataset to process.
+
 ### What's Next?
 
 Now that you have a basic sense of Daft's functionality and features, here are some more resources to help you get the most out of Daft:
