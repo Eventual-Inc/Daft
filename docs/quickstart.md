@@ -8,9 +8,7 @@ todo(docs): Add link to notebook to DIY (notebook is in mkdocs dir, but idk how 
 todo(docs): What does the actual output look like for some of these examples? should we update it visually?
 -->
 
-In this quickstart, you will learn the basics of Daft's DataFrame and SQL API and the features that set it apart from frameworks like Pandas, PySpark, Dask, and Ray.
-
-<!-- You will build a database of dog owners and their fluffy companions and see how you can use Daft to download images from URLs, run an ML classifier and call custom UDFs, all within an interactive DataFrame interface. Woof! 🐶 -->
+Daft is the best multimodal data processing engine that allows you to load data from anywhere, transform it with a powerful DataFrame API and AI functions, and store it in your destination of choice. In this quickstart, you'll see what this looks like in practice with a realistic e-commerce data workflow.
 
 ### Install Daft
 
