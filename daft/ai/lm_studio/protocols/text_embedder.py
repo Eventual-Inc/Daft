@@ -60,4 +60,5 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
         return OpenAITextEmbedder(
             client=AsyncOpenAI(**self.provider_options),
             model=self.model_name,
+            provider_name=self.get_provider(),
         )
