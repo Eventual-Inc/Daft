@@ -34,7 +34,7 @@ all = ["daft[aws, azure, clickhouse, deltalake, gcp, hudi, huggingface, iceberg,
 aws = ["boto3"]
 azure = []
 clickhouse = ["clickhouse_connect"]
-deltalake = ["deltalake"]
+deltalake = ["deltalake <= 1.2.1"]
 gcp = []
 hudi = ["pyarrow >= 8.0.0"]
 huggingface = ["huggingface-hub"]
@@ -118,7 +118,7 @@ dev = [
   "tenacity==8.2.3",
   # Delta Lake
   "deltalake==0.5.8; platform_system == \"Windows\"",
-  "deltalake==1.0.2; platform_system != \"Windows\"",
+  "deltalake==1.2.1; platform_system != \"Windows\"",
   # Databricks
   "databricks-sdk==0.12.0",
   "unitycatalog==0.1.1",
