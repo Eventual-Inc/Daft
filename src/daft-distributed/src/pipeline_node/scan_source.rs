@@ -165,6 +165,11 @@ impl PipelineNodeImpl for ScanSourceNode {
                 format!("Num Scan Tasks = {num_scan_tasks}"),
                 format!("Estimated Scan Bytes = {total_bytes}"),
             ];
+
+            if num_scan_tasks == 0 {
+                return s;
+            }
+
             #[cfg(feature = "python")]
             if let FileFormatConfig::Database(config) =
                 scan.scan_tasks[0].file_format_config().as_ref()
@@ -180,21 +185,34 @@ impl PipelineNodeImpl for ScanSourceNode {
 
         let mut s = base_display(self);
         if !verbose {
-            // We're only going to display the pushdowns and schema for the first scan task.
-            let pushdown = self.scan_tasks[0].pushdowns();
-            if !pushdown.is_empty() {
-                s.push(pushdown.display_as(DisplayLevel::Compact));
+            if self.scan_tasks.is_empty() {
+                let pushdown = &self.pushdowns;
+                if !pushdown.is_empty() {
+                    s.push(pushdown.display_as(DisplayLevel::Compact));
+                }
+
+                let schema = &self.config.schema;
+                s.push(format!(
+                    "Schema: {{{}}}",
+                    schema.display_as(DisplayLevel::Compact)
+                ));
+            } else {
+                // We're only going to display the pushdowns and schema for the first scan task.
+                let pushdown = &self.scan_tasks[0].pushdowns();
+                if !pushdown.is_empty() {
+                    s.push(pushdown.display_as(DisplayLevel::Compact));
+                }
+
+                let schema = &self.scan_tasks[0].schema();
+                s.push(format!(
+                    "Schema: {{{}}}",
+                    schema.display_as(DisplayLevel::Compact)
+                ));
             }
 
-            let schema = self.scan_tasks[0].schema();
-            s.push(format!(
-                "Schema: {{{}}}",
-                schema.display_as(DisplayLevel::Compact)
-            ));
+            s.push("Scan Tasks: [".to_string());
 
             let tasks = self.scan_tasks.iter();
-
-            s.push("Scan Tasks: [".to_string());
             for (i, st) in tasks.enumerate() {
                 if i < 3 || i >= self.scan_tasks.len() - 3 {
                     s.push(st.as_ref().display_as(DisplayLevel::Compact));
