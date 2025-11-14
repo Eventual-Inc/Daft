@@ -227,6 +227,11 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
 def try_autoscale(bundles: list[dict[str, int]]) -> None:
     from ray.autoscaler.sdk import request_resources
 
+    if not bundles:
+        clear_autoscaling_requests()
+        logger.debug("The number of bundles to scale up is 0.")
+        return
+
     request_resources(
         bundles=bundles,
     )
@@ -327,3 +332,16 @@ class FlotillaRunner:
             if materialized_result is None:
                 break
             yield materialized_result
+
+
+def clear_autoscaling_requests() -> None:
+    import time as _time
+
+    from ray.autoscaler.sdk import request_resources
+
+    for i in range(1, 3):
+        try:
+            request_resources(bundles=[])
+        except Exception as e:
+            logger.warning("Failed to clear autoscaling requests: %s, retry %d", e, i)
+            _time.sleep(0.1)

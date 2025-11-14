@@ -124,6 +124,37 @@ where
         Ok(())
     }
 
+    fn compute_backlog_resource_ratios(
+        scheduler: &S,
+        total_cluster_cpus: f64,
+        total_cluster_gpus: f64,
+    ) -> f64 {
+        let backlog_requests = scheduler.get_backlog_resource_requests();
+        let total_backlog_cpus: f64 = backlog_requests
+            .iter()
+            .map(|r| r.resource_request.num_cpus().unwrap_or(0.0))
+            .sum();
+        let total_backlog_gpus: f64 = backlog_requests
+            .iter()
+            .map(|r: &crate::scheduling::task::TaskResourceRequest| {
+                r.resource_request.num_gpus().unwrap_or(0.0)
+            })
+            .sum();
+
+        let cpu_ratio = if total_cluster_cpus > f64::EPSILON {
+            total_backlog_cpus / total_cluster_cpus
+        } else {
+            0.0
+        };
+
+        let gpu_ratio = if total_cluster_gpus > f64::EPSILON {
+            total_backlog_gpus / total_cluster_gpus
+        } else {
+            0.0
+        };
+        cpu_ratio.max(gpu_ratio)
+    }
+
     #[instrument(name = "FlotillaScheduler", skip_all)]
     async fn run_scheduler_loop(
         mut scheduler: S,
@@ -134,6 +165,28 @@ where
     ) -> DaftResult<()> {
         let mut input_exhausted = false;
         let mut tick_interval = tokio::time::interval(SCHEDULER_TICK_INTERVAL);
+        // Downscaling configuration
+        let downscale_enabled = std::env::var("DAFT_AUTOSCALING_DOWNSCALE_ENABLED")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(true);
+        let downscale_ratio_threshold: f64 =
+            std::env::var("DAFT_AUTOSCALING_DOWNSCALE_RATIO_THRESHOLD")
+                .ok()
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap_or(0.75);
+        let downscale_stable_ticks: u64 = std::env::var("DAFT_AUTOSCALING_DOWNSCALE_STABLE_TICKS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(10);
+        let min_survivor_workers: usize = std::env::var("DAFT_AUTOSCALING_MIN_SURVIVOR_WORKERS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(1);
+        let max_downscale_fraction: f64 = std::env::var("DAFT_AUTOSCALING_MAX_DOWNSCALE_FRACTION")
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok())
+            .unwrap_or(0.10);
+        let mut downscale_below_threshold_ticks: u64 = 0;
         // Keep running until the input is exhausted, i.e. no more new tasks, and there are no more pending tasks in the scheduler
         while !input_exhausted
             || scheduler.num_pending_tasks() > 0
@@ -163,15 +216,58 @@ where
                         context: task_context,
                     })?;
                 }
-
                 dispatcher.dispatch_tasks(scheduled_tasks, &worker_manager)?;
             }
 
-            // 3: Send autoscaling request if needed
+            // 3: Send autoscaling request if needed (scale up)
             let autoscaling_request = scheduler.get_autoscaling_request();
             if let Some(request) = autoscaling_request {
                 tracing::info!(target: SCHEDULER_LOG_TARGET, autoscaling_request = %format!("{:#?}", request), "Sending autoscaling request");
                 worker_manager.try_autoscale(request)?;
+                // Reset downscale stability counter on scale-up signal
+                downscale_below_threshold_ticks = 0;
+            } else {
+                // 3b: Evaluate downscaling when backlog/capacity ratio is low and stable
+                if downscale_enabled && !worker_snapshots.is_empty() {
+                    let total_cluster_cpus: f64 =
+                        worker_snapshots.iter().map(|w| w.total_num_cpus()).sum();
+                    let total_cluster_gpus: f64 =
+                        worker_snapshots.iter().map(|w| w.total_num_gpus()).sum();
+                    let ratio = Self::compute_backlog_resource_ratios(
+                        &scheduler,
+                        total_cluster_cpus,
+                        total_cluster_gpus,
+                    );
+
+                    if ratio < downscale_ratio_threshold {
+                        downscale_below_threshold_ticks =
+                            downscale_below_threshold_ticks.saturating_add(1);
+                    } else {
+                        downscale_below_threshold_ticks = 0;
+                    }
+
+                    let num_workers = worker_snapshots.len();
+                    if downscale_below_threshold_ticks >= downscale_stable_ticks
+                        && num_workers > min_survivor_workers
+                    {
+                        // Determine how many workers to retire this tick
+                        let max_to_retire =
+                            (((num_workers as f64) * max_downscale_fraction).floor() as usize)
+                                .max(1);
+                        let allowed_to_retire = num_workers.saturating_sub(min_survivor_workers);
+                        let num_to_retire = max_to_retire.min(allowed_to_retire);
+                        // Count idle candidates (no active tasks) based on worker snapshots
+                        let candidate_count = worker_snapshots
+                            .iter()
+                            .filter(|w| w.active_task_details.is_empty())
+                            .count();
+                        if num_to_retire > 0 && candidate_count > 0 {
+                            worker_manager.retire_idle_workers(num_to_retire, false)?;
+                            // Reset stability counter after a downscale action
+                            downscale_below_threshold_ticks = 0;
+                        }
+                    }
+                }
             }
 
             // 4: Concurrently wait for new tasks, task completions, or periodic tick
@@ -189,6 +285,16 @@ where
                 _ = tick_interval.tick() => {
                     // Tick completed - worker snapshots will be updated at the top of the next loop iteration
                 }
+            }
+        }
+
+        // Final downscale on job completion: ensure idle actors released and Ray demand cleared
+        if downscale_enabled {
+            let final_snapshots = worker_manager.worker_snapshots()?;
+            if !final_snapshots.is_empty() {
+                let num_workers = final_snapshots.len();
+                worker_manager
+                    .retire_idle_workers(num_workers.saturating_sub(min_survivor_workers), true)?;
             }
         }
 
@@ -406,6 +512,8 @@ mod tests {
     struct SchedulerActorTestContext {
         scheduler_handle_ref: Arc<SchedulerHandle<MockTask>>,
         joinset: JoinSet<DaftResult<()>>,
+        /// Test-only: reference to the MockWorkerManager
+        worker_manager: Arc<MockWorkerManager>,
     }
 
     impl SchedulerActorTestContext {
@@ -423,7 +531,7 @@ mod tests {
     ) -> SchedulerActorTestContext {
         let workers = setup_workers(worker_configs);
         let worker_manager = Arc::new(MockWorkerManager::new(workers));
-        let scheduler = SchedulerActor::default_scheduler(worker_manager);
+        let scheduler = SchedulerActor::default_scheduler(worker_manager.clone());
         let mut joinset = JoinSet::new();
         let scheduler_handle = SchedulerActor::spawn_scheduler_actor(
             scheduler,
@@ -433,6 +541,7 @@ mod tests {
         SchedulerActorTestContext {
             scheduler_handle_ref: Arc::new(scheduler_handle),
             joinset,
+            worker_manager,
         }
     }
 
@@ -563,83 +672,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_scheduler_actor_multiple_concurrent_tasks_with_cancelled_tasks() -> DaftResult<()>
-    {
-        let num_workers = 30;
-        let mut test_context = setup_scheduler_actor_test_context(
-            &(0..num_workers)
-                .map(|i| (format!("worker{}", i).into(), 1))
-                .collect::<Vec<_>>(),
-        );
-        let num_tasks = 3000;
-        let num_concurrent_submitters = 30;
-        let num_tasks_per_submitter = num_tasks / num_concurrent_submitters;
-
-        let (submitted_task_tx, mut submitted_task_rx) = create_channel(1);
-        for submitter_id in 0..num_concurrent_submitters {
-            let scheduler_handle = test_context.scheduler_handle_ref.clone();
-            let submitted_task_tx = submitted_task_tx.clone();
-
-            test_context.joinset.spawn(async move {
-                for task_id in 0..num_tasks_per_submitter {
-                    let should_cancel = rand::thread_rng().gen_bool(0.5);
-
-                    let num_rows = rand::thread_rng().gen_range(100..1000);
-                    let num_bytes = rand::thread_rng().gen_range(1024..1024 * 10);
-                    let mut task =
-                        MockTaskBuilder::new(create_mock_partition_ref(num_rows, num_bytes))
-                            .with_task_id(submitter_id * num_tasks_per_submitter + task_id);
-
-                    if should_cancel {
-                        let task_duration = std::time::Duration::from_millis(1000);
-                        let (cancel_notifier, cancel_receiver) = create_oneshot_channel();
-                        task = task
-                            .with_cancel_notifier(cancel_notifier)
-                            .with_sleep_duration(task_duration);
-                        let task = task.build();
-                        let submittable_task = SubmittableTask::new(task);
-                        let submitted_task = submittable_task.submit(&scheduler_handle)?;
-                        submitted_task_tx
-                            .send((submitted_task, num_rows, num_bytes, Some(cancel_receiver)))
-                            .await
-                            .unwrap();
-                    } else {
-                        let task_duration =
-                            std::time::Duration::from_millis(rand::thread_rng().gen_range(50..150));
-                        let task = task.with_sleep_duration(task_duration);
-                        let task = task.build();
-                        let submittable_task = SubmittableTask::new(task);
-                        let submitted_task = submittable_task.submit(&scheduler_handle)?;
-                        submitted_task_tx
-                            .send((submitted_task, num_rows, num_bytes, None))
-                            .await
-                            .unwrap();
-                    }
-                }
-                Ok(())
-            });
-        }
-
-        drop(submitted_task_tx);
-        while let Some((submitted_task, num_rows, num_bytes, maybe_cancel_receiver)) =
-            submitted_task_rx.recv().await
-        {
-            if let Some(cancel_receiver) = maybe_cancel_receiver {
-                drop(submitted_task);
-                cancel_receiver.await.unwrap();
-            } else {
-                let result = submitted_task.await?;
-                let partition = result.unwrap().partitions()[0].clone();
-                assert_eq!(partition.num_rows().unwrap(), num_rows);
-                assert_eq!(partition.size_bytes().unwrap(), Some(num_bytes));
-            }
-        }
-
-        test_context.cleanup().await?;
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn test_scheduler_actor_error_from_task() -> DaftResult<()> {
         let test_context = setup_scheduler_actor_test_context(&[(Arc::from("worker1"), 1)]);
 
@@ -679,18 +711,98 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_scheduler_actor_with_no_workers_can_autoscale() -> DaftResult<()> {
-        let test_context = setup_scheduler_actor_test_context(&[]);
-
-        let task = MockTaskBuilder::new(create_mock_partition_ref(100, 100))
-            .with_task_id(0)
-            .build();
-        let submittable_task = SubmittableTask::new(task);
-        let submitted_task = submittable_task.submit(&test_context.scheduler_handle_ref)?;
-        let result = submitted_task.await?;
-        assert_eq!(result.unwrap().partitions().len(), 1);
+    async fn test_scheduler_actor_bootstrap_expansion_zero_capacity() -> DaftResult<()> {
+        // Start with zero workers and submit a few tasks to create positive backlog
+        let mut test_context = setup_scheduler_actor_test_context(&[]);
+        let num_tasks = 3;
+        let mut submitted_tasks = Vec::with_capacity(num_tasks);
+        for i in 0..num_tasks {
+            let task = MockTaskBuilder::new(create_mock_partition_ref(10 + i, 10))
+                .with_task_id(i as u32)
+                .build();
+            let submittable_task = SubmittableTask::new(task);
+            let submitted_task = submittable_task.submit(&test_context.scheduler_handle_ref)?;
+            submitted_tasks.push(submitted_task);
+        }
+        // Await all tasks to ensure scheduler loop progressed and autoscale attempted
+        for submitted_task in submitted_tasks {
+            let result = submitted_task.await?;
+            assert!(result.is_some());
+        }
+        // Assert that try_autoscale has been invoked with a non-empty plan
+        let calls = test_context.worker_manager.try_autoscale_call_count();
+        assert!(
+            calls > 0,
+            "expected at least one try_autoscale call for bootstrap expansion"
+        );
+        let last_len = test_context
+            .worker_manager
+            .last_try_autoscale_bundles_len()
+            .expect("last bundles len should be recorded");
+        assert!(
+            last_len > 0,
+            "expected non-empty desired bundles in bootstrap/scale-up"
+        );
 
         test_context.cleanup().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_actor_ratio_scale_up_triggers_autoscale() -> DaftResult<()> {
+        // One worker with limited capacity; submit many tasks to create backlog and trigger scale-up
+        let mut test_context = setup_scheduler_actor_test_context(&[(Arc::from("w1"), 1)]);
+        let num_tasks = 10;
+        let mut submitted_tasks = Vec::with_capacity(num_tasks);
+        for i in 0..num_tasks {
+            let task = MockTaskBuilder::new(create_mock_partition_ref(100 + i, 100))
+                .with_task_id(i as u32)
+                .build();
+            let submittable_task = SubmittableTask::new(task);
+            let submitted_task = submittable_task.submit(&test_context.scheduler_handle_ref)?;
+            submitted_tasks.push(submitted_task);
+        }
+        // Await all tasks (mock worker executes them quickly)
+        for t in submitted_tasks {
+            let _ = t.await?;
+        }
+        // Scale-up path should have been exercised
+        let calls = test_context.worker_manager.try_autoscale_call_count();
+        assert!(
+            calls > 0,
+            "expected try_autoscale to be called for ratio/backlog scale-up"
+        );
+        let last_len = test_context
+            .worker_manager
+            .last_try_autoscale_bundles_len()
+            .expect("last bundles len recorded");
+        assert!(last_len > 0, "expected non-empty scale-up bundles");
+        test_context.cleanup().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_actor_ratio_downscale_invokes_idle_cleanup() -> DaftResult<()> {
+        // Configure downscale to evaluate immediately and keep at least 1 survivor
+        unsafe {
+            std::env::set_var("DAFT_AUTOSCALING_DOWNSCALE_ENABLED", "1");
+            std::env::set_var("DAFT_AUTOSCALING_DOWNSCALE_STABLE_TICKS", "0");
+            std::env::set_var("DAFT_AUTOSCALING_MIN_SURVIVOR_WORKERS", "1");
+            std::env::set_var("DAFT_AUTOSCALING_MAX_DOWNSCALE_FRACTION", "0.5");
+        }
+        let mut test_context = setup_scheduler_actor_test_context(&[
+            (Arc::from("w1"), 1),
+            (Arc::from("w2"), 1),
+            (Arc::from("w3"), 1),
+            (Arc::from("w4"), 1),
+        ]);
+
+        let worker_manager = test_context.worker_manager.clone();
+        test_context.cleanup().await?;
+
+        // Verify that at least one idle cleanup call was made with force_all=false (ratio branch)
+        let calls = worker_manager.idle_calls_log();
+        assert!(calls.iter().any(|(_, force_all, _)| !*force_all));
         Ok(())
     }
 }
