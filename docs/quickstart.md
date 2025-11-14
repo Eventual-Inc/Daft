@@ -24,14 +24,14 @@ You can install Daft using `pip`. Run the following command in your terminal or 
 
 ### Load Your Data
 
-Let's start by loading an e-commerce dataset from Hugging Face. [This dataset](https://huggingface.co/datasets/UniqueData/asos-e-commerce-dataset) contains over 30,000 products from ASOS, including product names, prices, descriptions, and images.
+Let's start by loading an e-commerce dataset from Hugging Face. [This dataset](https://huggingface.co/datasets/calmgoose/amazon-product-data-2020) contains 10,000 Amazon products from diverse categories including electronics, toys, home goods, and more. Each product includes details like names, prices, descriptions, technical specifications, and product images.
 
 === "🐍 Python"
 
     ```python
     import daft
 
-    df = daft.read_huggingface("UniqueData/asos-e-commerce-dataset")
+    df = daft.read_huggingface("calmgoose/amazon-product-data-2020")
     ```
 
 !!! note "Load from anywhere"
