@@ -48,7 +48,17 @@ Now let's take a look at what we loaded. You can inspect the DataFrame by simply
     df
     ```
 
-This displays the schema (column names and types) but you'll notice the message "(No data to display: Dataframe not materialized)". This is because **Daft is lazy by default** - it doesn't actually load or process your data until you explicitly tell it to. This allows Daft to optimize your entire workflow before executing anything.
+```
+╭────────┬────────┬────────────┬─────────────┬────────╮
+│ url    ┆ name   ┆      …     ┆ description ┆ images │
+│ ---    ┆ ---    ┆            ┆ ---         ┆ ---    │
+│ String ┆ String ┆ (5 hidden) ┆ String      ┆ String │
+╰────────┴────────┴────────────┴─────────────┴────────╯
+
+(No data to display: Dataframe not materialized)
+```
+
+You see the above output because **Daft is lazy by default** - it displays the schema (column names and types) but doesn't actually load or process your data until you explicitly tell it to. This allows Daft to optimize your entire workflow before executing anything.
 
 To actually view your data, you have two options:
 
