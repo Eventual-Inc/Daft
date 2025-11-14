@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties};
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{partitioning::translate_clustering_spec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
@@ -113,6 +113,7 @@ impl PipelineNodeImpl for UDFNode {
         let udf_properties = self.udf_properties.clone();
         let passthrough_columns = self.passthrough_columns.clone();
         let schema = self.config.schema.clone();
+        let node_id = self.context.node_id;
         let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
             LocalPhysicalPlan::udf_project(
                 input,
@@ -121,6 +122,10 @@ impl PipelineNodeImpl for UDFNode {
                 passthrough_columns.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
+                },
             )
         };
 
