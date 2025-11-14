@@ -98,8 +98,12 @@ impl UDFProject {
                         .join(", ")
                 }
             ),
-            format!("Concurrency = {:?}", self.udf_properties.concurrency),
+            format!(
+                "Properties = {{ {} }}",
+                self.udf_properties.multiline_display(false).join(", ")
+            ),
         ];
+
         if let Some(resource_request) = &self.udf_properties.resource_request {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
@@ -107,9 +111,11 @@ impl UDFProject {
                 multiline_display.join(", ")
             ));
         }
+
         if let StatsState::Materialized(stats) = &self.stats_state {
             res.push(format!("Stats = {}", stats));
         }
+
         res
     }
 }

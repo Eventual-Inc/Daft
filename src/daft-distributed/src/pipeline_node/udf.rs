@@ -90,7 +90,12 @@ impl PipelineNodeImpl for UDFNode {
                 "Passthrough Columns = [{}]",
                 self.passthrough_columns.iter().join(", ")
             ),
+            format!(
+                "Properties = {{ {} }}",
+                self.udf_properties.multiline_display(false).join(", ")
+            ),
         ];
+
         if let Some(resource_request) = &self.udf_properties.resource_request {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
@@ -100,6 +105,7 @@ impl PipelineNodeImpl for UDFNode {
         } else {
             res.push("Resource request = None".to_string());
         }
+
         res
     }
 

@@ -732,7 +732,7 @@ mod tests {
               UDF: foo
               Expr = py_udf(col(a)) as b
               Passthrough Columns = col(a)
-              Concurrency = Some(8)
+              Properties = { concurrency = 8, async = false, scalar = false }
               Resource request = { num_cpus = 8, num_gpus = 1 }
                 Project: col(a)
                   DummyScanOperator
@@ -767,24 +767,24 @@ mod tests {
               UDF: foo
               Expr = py_udf(col(__TruncateRootUDF_0-3-0__)) as b_prime
               Passthrough Columns = col(__TruncateRootUDF_0-2-0__), col(__TruncateRootUDF_0-3-0__), col(a), col(b), col(a_prime)
-              Concurrency = Some(8)
+              Properties = { concurrency = 8, async = false, scalar = false }
               Resource request = { num_cpus = 8, num_gpus = 1 }
                 UDF: foo
                 Expr = py_udf(col(__TruncateRootUDF_0-2-0__)) as a_prime
                 Passthrough Columns = col(__TruncateRootUDF_0-2-0__), col(__TruncateRootUDF_0-3-0__), col(a), col(b)
-                Concurrency = Some(8)
+                Properties = { concurrency = 8, async = false, scalar = false }
                 Resource request = { num_cpus = 8, num_gpus = 1 }
                   Project: col(__TruncateRootUDF_0-2-0__), col(__TruncateRootUDF_0-3-0__), col(a), col(b)
                     Project: col(a), col(b), col(__TruncateRootUDF_0-2-0__), col(__TruncateRootUDF_0-3-0__)
                       UDF: foo
                       Expr = py_udf(col(b)) as __TruncateRootUDF_0-3-0__
                       Passthrough Columns = col(a), col(b), col(__TruncateRootUDF_0-2-0__)
-                      Concurrency = Some(8)
+                      Properties = { concurrency = 8, async = false, scalar = false }
                       Resource request = { num_cpus = 8, num_gpus = 1 }
                         UDF: foo
                         Expr = py_udf(col(a)) as __TruncateRootUDF_0-2-0__
                         Passthrough Columns = col(a), col(b)
-                        Concurrency = Some(8)
+                        Properties = { concurrency = 8, async = false, scalar = false }
                         Resource request = { num_cpus = 8, num_gpus = 1 }
                           Project: col(a), col(b)
                             DummyScanOperator
@@ -816,14 +816,14 @@ Project: col(a), col(b)
   UDF: foo
   Expr = py_udf(col(__TruncateRootUDF_0-1-0__)) as b
   Passthrough Columns = col(__TruncateRootUDF_0-1-0__), col(a)
-  Concurrency = Some(8)
+  Properties = { concurrency = 8, async = false, scalar = false }
   Resource request = { num_cpus = 8, num_gpus = 1 }
     Project: col(__TruncateRootUDF_0-1-0__), col(a)
       Project: col(a), col(__TruncateRootUDF_0-1-0__)
         UDF: foo
         Expr = py_udf(col(a)) as __TruncateRootUDF_0-1-0__
         Passthrough Columns = col(a)
-        Concurrency = Some(8)
+        Properties = { concurrency = 8, async = false, scalar = false }
         Resource request = { num_cpus = 8, num_gpus = 1 }
           Project: col(a)
             DummyScanOperator
@@ -842,13 +842,13 @@ Project: col(a), col(b)
 UDF: foo
 Expr = py_udf(col(__TruncateRootUDF_0-1-0__)) as b
 Passthrough Columns = col(a)
-Concurrency = Some(8)
+Properties = { concurrency = 8, async = false, scalar = false }
 Resource request = { num_cpus = 8, num_gpus = 1 }
   Project: col(__TruncateRootUDF_0-1-0__), col(a)
     UDF: foo
     Expr = py_udf(col(a)) as __TruncateRootUDF_0-1-0__
     Passthrough Columns = col(a)
-    Concurrency = Some(8)
+    Properties = { concurrency = 8, async = false, scalar = false }
     Resource request = { num_cpus = 8, num_gpus = 1 }
       DummyScanOperator
       File schema = a#Utf8
@@ -878,14 +878,14 @@ Project: col(a)
   UDF: foo
   Expr = py_udf(col(__TruncateRootUDF_0-0-0__)) as a
   Passthrough Columns = col(__TruncateRootUDF_0-0-0__)
-  Concurrency = Some(8)
+  Properties = { concurrency = 8, async = false, scalar = false }
   Resource request = { num_cpus = 8, num_gpus = 1 }
     Project: col(__TruncateRootUDF_0-0-0__)
       Project: col(__TruncateRootUDF_0-0-0__)
         UDF: foo
         Expr = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
         Passthrough Columns = col(a)
-        Concurrency = Some(8)
+        Properties = { concurrency = 8, async = false, scalar = false }
         Resource request = { num_cpus = 8, num_gpus = 1 }
           Project: col(a)
             DummyScanOperator
@@ -901,12 +901,12 @@ Project: col(a)
 UDF: foo
 Expr = py_udf(col(__TruncateRootUDF_0-0-0__)) as a
 Passthrough Columns = None
-Concurrency = Some(8)
+Properties = { concurrency = 8, async = false, scalar = false }
 Resource request = { num_cpus = 8, num_gpus = 1 }
   UDF: foo
   Expr = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
   Passthrough Columns = None
-  Concurrency = Some(8)
+  Properties = { concurrency = 8, async = false, scalar = false }
   Resource request = { num_cpus = 8, num_gpus = 1 }
     DummyScanOperator
     File schema = a#Utf8
@@ -942,19 +942,19 @@ Project: col(c)
   UDF: foo
   Expr = py_udf(col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)) as c
   Passthrough Columns = col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)
-  Concurrency = Some(8)
+  Properties = { concurrency = 8, async = false, scalar = false }
   Resource request = { num_cpus = 8, num_gpus = 1 }
     Project: col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)
       Project: col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)
         UDF: foo
         Expr = py_udf(col(b)) as __TruncateRootUDF_0-0-1__
         Passthrough Columns = col(a), col(b), col(__TruncateRootUDF_0-0-0__)
-        Concurrency = Some(8)
+        Properties = { concurrency = 8, async = false, scalar = false }
         Resource request = { num_cpus = 8, num_gpus = 1 }
           UDF: foo
           Expr = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
           Passthrough Columns = col(a), col(b)
-          Concurrency = Some(8)
+          Properties = { concurrency = 8, async = false, scalar = false }
           Resource request = { num_cpus = 8, num_gpus = 1 }
             Project: col(a), col(b)
               DummyScanOperator
@@ -971,17 +971,17 @@ Project: col(c)
 UDF: foo
 Expr = py_udf(col(__TruncateRootUDF_0-0-0__), col(__TruncateRootUDF_0-0-1__)) as c
 Passthrough Columns = None
-Concurrency = Some(8)
+Properties = { concurrency = 8, async = false, scalar = false }
 Resource request = { num_cpus = 8, num_gpus = 1 }
   UDF: foo
   Expr = py_udf(col(b)) as __TruncateRootUDF_0-0-1__
   Passthrough Columns = col(__TruncateRootUDF_0-0-0__)
-  Concurrency = Some(8)
+  Properties = { concurrency = 8, async = false, scalar = false }
   Resource request = { num_cpus = 8, num_gpus = 1 }
     UDF: foo
     Expr = py_udf(col(a)) as __TruncateRootUDF_0-0-0__
     Passthrough Columns = col(b)
-    Concurrency = Some(8)
+    Properties = { concurrency = 8, async = false, scalar = false }
     Resource request = { num_cpus = 8, num_gpus = 1 }
       DummyScanOperator
       File schema = a#Utf8, b#Utf8
@@ -1017,7 +1017,7 @@ Project: col(c)
   UDF: foo
   Expr = py_udf(col(__TruncateRootUDF_0-0-0__)) as c
   Passthrough Columns = col(__TruncateRootUDF_0-0-0__)
-  Concurrency = Some(8)
+  Properties = { concurrency = 8, async = false, scalar = false }
   Resource request = { num_cpus = 8, num_gpus = 1 }
     Project: col(__TruncateRootUDF_0-0-0__)
       Project: col(__TruncateRootUDF_0-0-0__)
@@ -1026,12 +1026,12 @@ Project: col(c)
             UDF: foo
             Expr = py_udf(col(b)) as __TruncateAnyUDFChildren_1-0-1__
             Passthrough Columns = col(a), col(b), col(__TruncateAnyUDFChildren_1-0-0__)
-            Concurrency = Some(8)
+            Properties = { concurrency = 8, async = false, scalar = false }
             Resource request = { num_cpus = 8, num_gpus = 1 }
               UDF: foo
               Expr = py_udf(col(a)) as __TruncateAnyUDFChildren_1-0-0__
               Passthrough Columns = col(a), col(b)
-              Concurrency = Some(8)
+              Properties = { concurrency = 8, async = false, scalar = false }
               Resource request = { num_cpus = 8, num_gpus = 1 }
                 Project: col(a), col(b)
                   DummyScanOperator
@@ -1048,18 +1048,18 @@ Project: col(c)
 UDF: foo
 Expr = py_udf(col(__TruncateRootUDF_0-0-0__)) as c
 Passthrough Columns = None
-Concurrency = Some(8)
+Properties = { concurrency = 8, async = false, scalar = false }
 Resource request = { num_cpus = 8, num_gpus = 1 }
   Project: col(__TruncateAnyUDFChildren_1-0-0__) + col(__TruncateAnyUDFChildren_1-0-1__) as __TruncateRootUDF_0-0-0__
     UDF: foo
     Expr = py_udf(col(b)) as __TruncateAnyUDFChildren_1-0-1__
     Passthrough Columns = col(__TruncateAnyUDFChildren_1-0-0__)
-    Concurrency = Some(8)
+    Properties = { concurrency = 8, async = false, scalar = false }
     Resource request = { num_cpus = 8, num_gpus = 1 }
       UDF: foo
       Expr = py_udf(col(a)) as __TruncateAnyUDFChildren_1-0-0__
       Passthrough Columns = col(b)
-      Concurrency = Some(8)
+      Properties = { concurrency = 8, async = false, scalar = false }
       Resource request = { num_cpus = 8, num_gpus = 1 }
         DummyScanOperator
         File schema = a#Int64, b#Int64
@@ -1094,7 +1094,7 @@ Project: col(a), col(c)
   UDF: foo
   Expr = py_udf(col(__TruncateRootUDF_0-1-0__)) as c
   Passthrough Columns = col(__TruncateRootUDF_0-1-0__), col(a)
-  Concurrency = Some(8)
+  Properties = { concurrency = 8, async = false, scalar = false }
   Resource request = { num_cpus = 8, num_gpus = 1 }
     Project: col(__TruncateRootUDF_0-1-0__), col(a)
       Project: col(a), col(__TruncateRootUDF_0-1-0__)
@@ -1103,7 +1103,7 @@ Project: col(a), col(c)
             UDF: foo
             Expr = py_udf(col(a)) as __TruncateAnyUDFChildren_1-1-0__
             Passthrough Columns = col(a)
-            Concurrency = Some(8)
+            Properties = { concurrency = 8, async = false, scalar = false }
             Resource request = { num_cpus = 8, num_gpus = 1 }
               Project: col(a)
                 DummyScanOperator
@@ -1138,7 +1138,7 @@ Project: col(a), col(c)
               UDF: foo
               Expr = py_udf(col(a)) as __TruncateAnyUDFChildren_0-1-0__
               Passthrough Columns = col(a)
-              Concurrency = Some(8)
+              Properties = { concurrency = 8, async = false, scalar = false }
               Resource request = { num_cpus = 8, num_gpus = 1 }
                 Project: col(a)
                   DummyScanOperator
@@ -1182,7 +1182,7 @@ Project: col(a), col(c)
         UDF: foo
         Expr = py_udf(col(c)) as udf_results
         Passthrough Columns = None
-        Concurrency = Some(8)
+        Properties = { concurrency = 8, async = false, scalar = false }
         Resource request = { num_cpus = 8, num_gpus = 1 }
           DummyScanOperator
           File schema = a#Int64, b#Boolean, c#Int64
@@ -1238,12 +1238,12 @@ Project: col(a), col(c)
         UDF: foo
         Expr = py_udf(col(a)) as udf_results_1
         Passthrough Columns = col(udf_results_0)
-        Concurrency = Some(8)
+        Properties = { concurrency = 8, async = false, scalar = false }
         Resource request = { num_cpus = 8, num_gpus = 1 }
           UDF: foo
           Expr = py_udf(col(a)) as udf_results_0
           Passthrough Columns = col(a)
-          Concurrency = Some(8)
+          Properties = { concurrency = 8, async = false, scalar = false }
           Resource request = { num_cpus = 8, num_gpus = 1 }
             DummyScanOperator
             File schema = a#Int64, b#Boolean, c#Int64
@@ -1310,7 +1310,7 @@ Project: col(a), col(c)
                 UDF: foo
                 Expr = py_udf(col(c)) as udf_results
                 Passthrough Columns = col(a), col(b), col(c)
-                Concurrency = Some(8)
+                Properties = { concurrency = 8, async = false, scalar = false }
                 Resource request = { num_cpus = 8, num_gpus = 1 }
                   Project: col(a), col(b), col(c)
                     DummyScanOperator
@@ -1337,7 +1337,7 @@ Project: col(a), col(c)
             UDF: foo
             Expr = py_udf(col(a)) as __SplitUDFsFromFilters_udf_0__
             Passthrough Columns = col(a)
-            Concurrency = None
+            Properties = { batch_size = 32, async = false, scalar = false }
               DummyScanOperator
               File schema = a#Int64
               Partitioning keys = []
@@ -1371,7 +1371,7 @@ Project: col(a), col(c)
               UDF: foo
               Expr = py_udf(col(a)) as __TruncateAnyUDFChildren_0-1-0__
               Passthrough Columns = col(a)
-              Concurrency = Some(8)
+              Properties = { concurrency = 8, async = false, scalar = false }
               Resource request = { num_cpus = 8, num_gpus = 1 }
                 DummyScanOperator
                 File schema = a#Int64

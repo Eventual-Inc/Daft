@@ -408,4 +408,38 @@ impl UDFProperties {
     pub fn is_actor_pool_udf(&self) -> bool {
         self.concurrency.is_some()
     }
+
+    #[must_use]
+    pub fn multiline_display(&self, include_resource_properties: bool) -> Vec<String> {
+        let mut properties = vec![];
+
+        if include_resource_properties && let Some(resource_request) = &self.resource_request {
+            properties.extend(resource_request.multiline_display());
+        }
+
+        if let Some(batch_size) = &self.batch_size {
+            properties.push(format!("batch_size = {}", batch_size));
+        }
+
+        if let Some(concurrency) = &self.concurrency {
+            properties.push(format!("concurrency = {}", concurrency));
+        }
+
+        if let Some(use_process) = &self.use_process {
+            properties.push(format!("use_process = {}", use_process));
+        }
+
+        if let Some(max_retries) = &self.max_retries {
+            properties.push(format!("max_retries = {}", max_retries));
+        }
+
+        if let Some(on_error) = &self.on_error {
+            properties.push(format!("on_error = {}", on_error));
+        }
+
+        properties.push(format!("async = {}", &self.is_async));
+        properties.push(format!("scalar = {}", &self.is_scalar));
+
+        properties
+    }
 }
