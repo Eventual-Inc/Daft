@@ -6,8 +6,7 @@ import warnings
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-import requests
-
+from daft.dependencies import requests
 from daft.io import AzureConfig, GravitinoConfig, IOConfig, S3Config
 
 
