@@ -46,16 +46,16 @@ impl OperatorMetrics {
             Some(entry) => {
                 entry.value += value;
 
+                // If the description is not set, set it if it is provided
                 if entry.description.is_none()
                     && let Some(desc) = description
                 {
                     entry.description = Some(desc.to_string());
                 }
 
-                if entry.attributes.is_empty()
-                    && let Some(attrs) = attributes
-                {
-                    entry.attributes = attrs;
+                // Extend the attributes if they are provided
+                if let Some(attrs) = attributes {
+                    entry.attributes.extend(attrs);
                 }
             }
             None => {
