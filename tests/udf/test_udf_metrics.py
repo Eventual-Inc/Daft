@@ -183,22 +183,8 @@ def test_udf_metrics_direct_udf_call_warns() -> None:
     assert result == 2
 
 
-def test_increment_counter_metadata_propagation(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, tuple[str, int, str | None, dict[str, str] | None]] = {}
-
-    def fake_inc_counter(
-        self: Any,
-        name: str,
-        amount: int,
-        *,
-        description: str | None = None,
-        attributes: dict[str, str] | None = None,
-    ) -> None:
-        captured["call"] = (name, amount, description, attributes)
-
-    monkeypatch.setattr(metrics.OperatorMetrics, "inc_counter", fake_inc_counter)
-
-    with metrics._metrics_context():
+def test_increment_counter_metadata_propagation() -> None:
+    with metrics._metrics_context() as operator_metrics:
         metrics.increment_counter(
             "custom counter",
             amount=5,
@@ -206,12 +192,26 @@ def test_increment_counter_metadata_propagation(monkeypatch: pytest.MonkeyPatch)
             attributes={"kind": "test"},
         )
 
-    assert captured["call"] == (
-        "custom counter",
-        5,
-        "Counts custom things",
-        {"kind": "test"},
-    )
+    counters = operator_metrics.snapshot()
+    assert counters["custom counter"] == [
+        {
+            "value": 5,
+            "description": "Counts custom things",
+            "attributes": {"kind": "test"},
+        }
+    ]
+
+
+def test_increment_counter_same_name_different_attributes() -> None:
+    with metrics._metrics_context() as operator_metrics:
+        metrics.increment_counter("custom counter", amount=1, attributes={"kind": "test-a"})
+        metrics.increment_counter("custom counter", amount=2, attributes={"kind": "test-b"})
+
+    counters = operator_metrics.snapshot()
+    assert counters["custom counter"] == [
+        {"value": 1, "description": None, "attributes": {"kind": "test-a"}},
+        {"value": 2, "description": None, "attributes": {"kind": "test-b"}},
+    ]
 
 
 def test_increment_counter_rejects_non_string_description() -> None:

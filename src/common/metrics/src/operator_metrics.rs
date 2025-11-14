@@ -31,7 +31,7 @@ impl OperatorCounter {
 
 #[derive(Default, Clone, Serialize, Deserialize)]
 pub struct OperatorMetrics {
-    counters: HashMap<String, OperatorCounter>,
+    counters: HashMap<String, Vec<OperatorCounter>>,
 }
 
 impl OperatorMetrics {
@@ -42,37 +42,76 @@ impl OperatorMetrics {
         description: Option<&str>,
         attributes: Option<HashMap<String, String>>,
     ) {
+        let attrs = attributes.unwrap_or_default();
         match self.counters.get_mut(name) {
-            Some(entry) => {
-                entry.value += value;
-
-                // If the description is not set, set it if it is provided
-                if entry.description.is_none()
-                    && let Some(desc) = description
+            Some(counters) => {
+                if let Some(counter) = counters
+                    .iter_mut()
+                    .find(|counter| counter.attributes == attrs)
                 {
-                    entry.description = Some(desc.to_string());
-                }
+                    counter.value += value;
 
-                // Extend the attributes if they are provided
-                if let Some(attrs) = attributes {
-                    entry.attributes.extend(attrs);
+                    if counter.description.is_none()
+                        && let Some(desc) = description
+                    {
+                        counter.description = Some(desc.to_string());
+                    }
+                } else {
+                    counters.push(OperatorCounter::new(value, description, attrs));
                 }
             }
             None => {
                 self.counters.insert(
                     name.to_string(),
-                    OperatorCounter::new(value, description, attributes.unwrap_or_default()),
+                    vec![OperatorCounter::new(value, description, attrs)],
                 );
             }
         }
+    }
+
+    pub fn snapshot(&self) -> HashMap<String, Vec<OperatorCounter>> {
+        self.counters.clone()
     }
 }
 
 impl IntoIterator for OperatorMetrics {
     type Item = (String, OperatorCounter);
-    type IntoIter = std::collections::hash_map::IntoIter<String, OperatorCounter>;
+    type IntoIter = OperatorMetricsIntoIter;
     fn into_iter(self) -> Self::IntoIter {
-        self.counters.into_iter()
+        OperatorMetricsIntoIter {
+            outer: self.counters.into_iter(),
+            current: None,
+        }
+    }
+}
+
+pub struct OperatorMetricsIntoIter {
+    outer: std::collections::hash_map::IntoIter<String, Vec<OperatorCounter>>,
+    current: Option<(String, std::vec::IntoIter<OperatorCounter>)>,
+}
+
+impl Iterator for OperatorMetricsIntoIter {
+    type Item = (String, OperatorCounter);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some((name, inner_iter)) = &mut self.current
+                && let Some(counter) = inner_iter.next()
+            {
+                return Some((name.clone(), counter));
+            }
+
+            match self.outer.next() {
+                Some((name, counters)) => {
+                    if counters.len() == 1 {
+                        return Some((name, counters.into_iter().next().unwrap()));
+                    } else {
+                        self.current = Some((name, counters.into_iter()));
+                    }
+                }
+                None => return None,
+            }
+        }
     }
 }
 
