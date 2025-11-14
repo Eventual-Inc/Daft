@@ -23,14 +23,14 @@ class TestGravitinoIntegration:
         """Test that Catalog.from_gravitino() works."""
         # Create a Gravitino client
         client = GravitinoClient(
-            endpoint="http://localhost:8090", metalake_name="test_metalake", auth_type="simple", username="admin"
+            endpoint="http://localhost:8090", metalake_name="metalake_demo", auth_type="simple", username="admin"
         )
 
         # Create catalog from Gravitino client
         catalog = Catalog.from_gravitino(client)
 
         assert catalog is not None
-        assert catalog.name == "gravitino_test_metalake"
+        assert catalog.name == "gravitino_metalake_demo"
         assert "GravitinoCatalog" in str(type(catalog))
 
     def test_table_from_gravitino(self):
@@ -58,7 +58,7 @@ class TestGravitinoIntegration:
     def test_catalog_has_table_method(self):
         """Test catalog has_table method works."""
         client = GravitinoClient(
-            endpoint="http://localhost:8090", metalake_name="test_metalake", auth_type="simple", username="admin"
+            endpoint="http://localhost:8090", metalake_name="metalake_demo", auth_type="simple", username="admin"
         )
 
         catalog = Catalog.from_gravitino(client)
@@ -71,7 +71,7 @@ class TestGravitinoIntegration:
     def test_catalog_list_tables_method(self):
         """Test catalog list_tables method works."""
         client = GravitinoClient(
-            endpoint="http://localhost:8090", metalake_name="test_metalake", auth_type="simple", username="admin"
+            endpoint="http://localhost:8090", metalake_name="metalake_demo", auth_type="simple", username="admin"
         )
 
         catalog = Catalog.from_gravitino(client)
@@ -86,7 +86,7 @@ class TestGravitinoIntegration:
         from daft.catalog import NotFoundError
 
         client = GravitinoClient(
-            endpoint="http://localhost:8090", metalake_name="test_metalake", auth_type="simple", username="admin"
+            endpoint="http://localhost:8090", metalake_name="metalake_demo", auth_type="simple", username="admin"
         )
 
         catalog = Catalog.from_gravitino(client)
@@ -147,10 +147,10 @@ def test_standalone_integration():
     try:
         # Test basic factory methods
         client = GravitinoClient(
-            endpoint="http://localhost:8090", metalake_name="test_metalake", auth_type="simple", username="admin"
+            endpoint="http://localhost:8090", metalake_name="metalake_demo", auth_type="simple", username="admin"
         )
         catalog = Catalog.from_gravitino(client)
-        print(f"✓ Created catalog: {catalog}")
+        print(f"Created catalog: {catalog}")
 
         # Test table creation
         table_info = GravitinoTableInfo(
@@ -165,19 +165,19 @@ def test_standalone_integration():
 
         gravitino_table = GravitinoTable(table_info=table_info, table_uri="s3://test-bucket/path/", io_config=None)
         table = Table.from_gravitino(gravitino_table)
-        print(f"✓ Created table: {table}")
+        print(f"Created table: {table}")
 
         # Test catalog methods
         has_table = catalog.has_table("nonexistent.table")
-        print(f"✓ has_table() works: {has_table}")
+        print(f"has_table() works: {has_table}")
 
         tables = catalog.list_tables()
-        print(f"✓ list_tables() works: found {len(tables)} tables")
+        print(f"list_tables() works: found {len(tables)} tables")
 
-        print("\n✅ All integration tests passed!")
+        print("\n All integration tests passed!")
 
     except Exception as e:
-        print(f"\n❌ Integration test failed: {e}")
+        print(f"\n Integration test failed: {e}")
         import traceback
 
         traceback.print_exc()

@@ -50,9 +50,9 @@ class TestGravitinoLiveServer:
         print(f"Available catalogs: {catalogs}")
         assert isinstance(catalogs, list)
         if catalogs:
-            print(f"✓ Found {len(catalogs)} catalog(s)")
+            print(f" Found {len(catalogs)} catalog(s)")
         else:
-            print("⚠️  No catalogs found - you may need to create a catalog first")
+            print("No catalogs found - you may need to create a catalog first")
 
     def test_catalog_operations(self, daft_catalog):
         """Test basic catalog operations."""
@@ -64,10 +64,10 @@ class TestGravitinoLiveServer:
         assert isinstance(tables, list)
 
         if tables:
-            print(f"✓ Found {len(tables)} table(s)")
+            print(f"Found {len(tables)} table(s)")
             return tables
         else:
-            print("⚠️  No tables found - you may need to create tables first")
+            print("No tables found - you may need to create tables first")
             return []
 
     def test_read_iceberg_table(self, daft_catalog):
@@ -89,12 +89,12 @@ class TestGravitinoLiveServer:
 
         # Get the table object
         table = daft_catalog.get_table(table_name)
-        print(f"✓ Successfully loaded table: {table.name}")
+        print(f"Successfully loaded table: {table.name}")
 
         # Read the table into a DataFrame
         try:
             df = table.read()
-            print("✓ Successfully read table into DataFrame")
+            print("Successfully read table into DataFrame")
             print(f"DataFrame schema: {df.schema()}")
 
             # Show the data
@@ -107,7 +107,7 @@ class TestGravitinoLiveServer:
             return df
 
         except Exception as e:
-            print(f"❌ Failed to read table: {e}")
+            print(f" Failed to read table: {e}")
             # Don't fail the test, just report the issue
             pytest.skip(f"Could not read table {table_name}: {e}")
 
@@ -124,7 +124,7 @@ class TestGravitinoLiveServer:
         try:
             # Test reading with snapshot_id option (if supported)
             df = table.read()  # Default read without options
-            print(f"✓ Read table without options: {len(df.schema())} columns")
+            print(f"Read table without options: {len(df.schema())} columns")
 
             # You can add snapshot_id if you know a specific snapshot
             # df_snapshot = table.read(snapshot_id="some-snapshot-id")
@@ -144,7 +144,7 @@ class TestGravitinoLiveServer:
         try:
             # Read directly through catalog
             df = daft_catalog.read_table(table_name)
-            print("✓ Successfully read table directly through catalog")
+            print("Successfully read table directly through catalog")
             print(f"Schema: {df.schema()}")
             df.show(5)  # Show first 5 rows
 
@@ -154,7 +154,7 @@ class TestGravitinoLiveServer:
 
 def test_complete_workflow():
     """Standalone test function demonstrating the complete workflow."""
-    print("🧪 Testing complete Gravitino workflow with live server...\n")
+    print("Testing complete Gravitino workflow with live server...\n")
 
     try:
         # Step 1: Create Gravitino client
@@ -165,7 +165,7 @@ def test_complete_workflow():
             auth_type="simple",
             username="admin",
         )
-        print("✓ Connected to Gravitino server")
+        print("Connected to Gravitino server")
 
         # Step 2: List catalogs
         print("\nStep 2: Listing catalogs...")
@@ -173,13 +173,13 @@ def test_complete_workflow():
         print(f"Available catalogs: {catalogs}")
 
         if not catalogs:
-            print("⚠️  No catalogs found. Please create a catalog in Gravitino first.")
+            print("No catalogs found. Please create a catalog in Gravitino first.")
             return
 
         # Step 3: Create Daft catalog
         print("\nStep 3: Creating Daft catalog...")
         catalog = Catalog.from_gravitino(client)
-        print(f"✓ Created Daft catalog: {catalog.name}")
+        print(f"Created Daft catalog: {catalog.name}")
 
         # Step 4: List tables
         print("\nStep 4: Listing tables...")
@@ -187,7 +187,7 @@ def test_complete_workflow():
         print(f"Available tables: {tables}")
 
         if not tables:
-            print("⚠️  No tables found. Please create an Iceberg table in Gravitino first.")
+            print("  No tables found. Please create an Iceberg table in Gravitino first.")
             print("\nTo create a test table, you can use Gravitino's REST API or web UI:")
             print("1. Create a catalog (e.g., 'iceberg_catalog')")
             print("2. Create a schema (e.g., 'test_schema')")
@@ -198,35 +198,35 @@ def test_complete_workflow():
         tbl_name = "catalog_iceberg.sales.customers"
         print(f"\nStep 5: Reading table '{tbl_name}'...")
         table = catalog.get_table(str(tbl_name))
-        print(f"✓ Loaded table: {table.name}")
+        print(f"Loaded table: {table.name}")
 
         # Step 6: Read into DataFrame and show
         print("\nStep 6: Reading table data...")
         try:
             df = table.read()
-            print("✓ Successfully read table into DataFrame")
+            print("Successfully read table into DataFrame")
             print(f"Schema: {df.schema()}")
             print(f"Number of columns: {len(df.schema())}")
 
             print("\nTable contents:")
             df.show(10)
 
-            print("\n✅ Complete workflow successful!")
+            print("\n Complete workflow successful!")
         except ImportError as e:
             if "pyiceberg" in str(e):
-                print(f"\n⚠️  PyIceberg dependency missing: {e}")
-                print("💡 To fix this, install: pip install 'daft[iceberg]' or pip install pyiceberg")
-                print("✅ Workflow completed successfully up to table reading")
+                print(f"\n  PyIceberg dependency missing: {e}")
+                print(" To fix this, install: pip install 'daft[iceberg]' or pip install pyiceberg")
+                print(" Workflow completed successfully up to table reading")
             else:
                 raise
 
     except Exception as e:
-        print(f"\n❌ Workflow failed: {e}")
+        print(f"\nWorkflow failed: {e}")
         import traceback
 
         traceback.print_exc()
 
-        print("\n💡 Troubleshooting tips:")
+        print("\n Troubleshooting tips:")
         print("1. Make sure Gravitino server is running on localhost:8090")
         print("2. Check that the metalake name is correct (default: 'metalake_demo')")
         print("3. Ensure you have at least one catalog and table configured")

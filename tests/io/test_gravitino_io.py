@@ -249,12 +249,12 @@ class TestGravitinoIOLiveServer:
 
             # Basic validation that we got some data
             assert len(result) > 0
-            print(f"✓ Successfully read {len(result)} rows from {gvfs_url}")
+            print(f"Successfully read {len(result)} rows from {gvfs_url}")
 
         except Exception as e:
             import traceback
 
-            print("\n❌ Exception occurred in test_read_live_gvfs_file:")
+            print("\n Exception occurred in test_read_live_gvfs_file:")
             print(f"Exception type: {type(e).__name__}")
             print(f"Exception message: {e!s}")
             print(f"URL being tested: {gvfs_url}")
@@ -275,12 +275,12 @@ class TestGravitinoIOLiveServer:
             files = daft.from_glob_path(gvfs_dir + "**/*.parquet", io_config=gravitino_only_config)
             result = files.collect()
 
-            print(f"✓ Found {len(result)} files in {gvfs_dir}")
+            print(f"Found {len(result)} files in {gvfs_dir}")
             print(f"PYTHON DEBUG: files collection: {result}")
 
             # Use Daft's URL function to read the files from the "path" column
             if len(result) > 0:
-                print("\n📖 Reading files using Daft's URL function from path column...")
+                print("\nReading files using Daft's URL function from path column...")
 
                 # Add a column that reads the parquet files from the path column
                 files_with_data = files.with_column(
@@ -291,7 +291,7 @@ class TestGravitinoIOLiveServer:
 
                 # Collect the result to see the data
                 files_data_result = files_with_data.collect()
-                print(f"✓ Successfully read data from {len(files_data_result)} files using URL function")
+                print(f"Successfully read data from {len(files_data_result)} files using URL function")
 
                 # Show some info about the downloaded data
                 files_data_dict = files_data_result.to_pydict()
@@ -306,7 +306,7 @@ class TestGravitinoIOLiveServer:
         except Exception as e:
             import traceback
 
-            print("\n❌ Exception occurred in test_list_live_gvfs_directory:")
+            print("\n Exception occurred in test_list_live_gvfs_directory:")
             print(f"Exception type: {type(e).__name__}")
             print(f"Exception message: {e!s}")
             print("Full traceback:")
@@ -316,25 +316,25 @@ class TestGravitinoIOLiveServer:
 
 if __name__ == "__main__":
     # Run basic tests
-    print("🧪 Testing Gravitino I/O configuration...")
+    print("Testing Gravitino I/O configuration...")
 
     config_test = TestGravitinoIOConfig()
     config_test.test_gravitino_config_creation()
     config_test.test_gravitino_config_in_io_config()
-    print("✓ Configuration tests passed")
+    print("Configuration tests passed")
 
     url_test = TestGravitinoURLParsing()
     url_test.test_valid_gvfs_urls()
     url_test.test_invalid_gvfs_urls()
-    print("✓ URL parsing tests passed")
+    print("URL parsing tests passed")
 
     error_test = TestGravitinoIOErrors()
     error_test.test_missing_endpoint_error()
     error_test.test_missing_metalake_error()
     error_test.test_invalid_auth_type()
-    print("✓ Error handling tests passed")
+    print("Error handling tests passed")
 
-    print("\n🎉 All basic Gravitino I/O tests passed!")
+    print("\n All basic Gravitino I/O tests passed!")
     print("\nTo run integration tests:")
     print("1. Start a Gravitino server on localhost:8090")
     print("2. Set GRAVITINO_TEST_SERVER=1")
