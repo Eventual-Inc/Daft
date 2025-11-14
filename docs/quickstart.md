@@ -165,15 +165,16 @@ Let's extract and download product images. The `Image` column contains pipe-sepa
 
 !!! note "Visual Display in Notebooks"
 
-    In Jupyter notebooks, the `image` column will display actual thumbnail images instead of `<Image>` text! The `image_data` column shows the raw binary data, while the decoded `image` column renders as visual thumbnails.
+    In Jupyter notebooks, the `image` column will display actual thumbnail images instead of `<Image>` text. The `image_data` column shows the raw binary data.
 
 This demonstrates Daft's multimodal capabilities:
-- **Pattern extraction**: Use `regexp_extract()` to parse structured text
+
+- **Native regex support**: Use `regexp_extract()` to parse structured text with Rust-powered regex
 - **URL handling**: Download content directly with `.url.download()`
 - **Image decoding**: Convert binary data to images with `decode_image()` for visual display
 - **Error handling**: Use `on_error="null"` to gracefully handle failed downloads
 
-The decoded images are now ready for further processing, such as running image classification models, extracting embeddings, or performing transformations. In Jupyter notebooks, you get the added benefit of seeing the actual images inline!
+The decoded images are now ready for further processing, such as running image classification models, extracting embeddings, or performing transformations.
 
 ### What's Next?
 
