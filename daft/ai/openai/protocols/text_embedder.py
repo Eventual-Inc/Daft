@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from openai import NOT_GIVEN, AsyncOpenAI, OpenAIError, RateLimitError
+from openai.types.create_embedding_response import Usage
 
 from daft import DataType
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
@@ -218,8 +219,13 @@ class OpenAITextEmbedder(TextEmbedder):
                 raise ex
 
     def _record_usage_metrics(self, response: CreateEmbeddingResponse) -> None:
-        prompt_tokens = response.usage.prompt_tokens
-        total_tokens = response.usage.total_tokens
+        usage = getattr(response, "usage", None)
+        if usage is None or not isinstance(usage, Usage):
+            return
+
+        prompt_tokens = usage.prompt_tokens
+        total_tokens = usage.total_tokens
+
         attrs = {
             "model": self._model,
             "protocol": "embed",

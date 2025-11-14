@@ -6,12 +6,11 @@ import pytest
 
 pytest.importorskip("openai")
 
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import numpy as np
 from openai import NOT_GIVEN, RateLimitError
-from openai.types.create_embedding_response import CreateEmbeddingResponse
+from openai.types.create_embedding_response import CreateEmbeddingResponse, Usage
 from openai.types.embedding import Embedding as OpenAIEmbedding
 
 from daft import DataType
@@ -431,12 +430,11 @@ def test_protocol_compliance():
 
 def test_embed_text_records_usage_metrics(mock_text_embedder, mock_client):
     """Ensure that token/usage metrics are recorded."""
-    mock_usage = SimpleNamespace(prompt_tokens=10, total_tokens=12)
     mock_response = Mock(spec=CreateEmbeddingResponse)
+    mock_response.usage = Usage(prompt_tokens=10, total_tokens=12)
     mock_embedding = Mock(spec=OpenAIEmbedding)
     mock_embedding.embedding = np.array([0.1, 0.2, 0.3] * 512, dtype=np.float32)
     mock_response.data = [mock_embedding]
-    mock_response.usage = mock_usage
     mock_client.embeddings.create.return_value = mock_response
 
     with patch("daft.ai.openai.protocols.text_embedder.increment_counter") as mock_counter:
