@@ -18,13 +18,14 @@ use super::intermediate_op::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::NodeName,
-    runtime_stats::{Counter, RuntimeStats},
+    runtime_stats::{Counter, Gauge, RuntimeStats},
 };
 
 pub struct FilterStats {
     cpu_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
+    selectivity: Gauge,
     node_kv: Vec<KeyValue>,
 }
 
@@ -37,8 +38,19 @@ impl FilterStats {
             cpu_us: Counter::new(&meter, CPU_US_KEY.into(), None),
             rows_in: Counter::new(&meter, ROWS_IN_KEY.into(), None),
             rows_out: Counter::new(&meter, ROWS_OUT_KEY.into(), None),
+            selectivity: Gauge::new(&meter, "selectivity".into(), None),
             node_kv,
         }
+    }
+
+    fn update_selectivity(&self, rows_in: u64, rows_out: u64) {
+        let selectivity = if rows_in == 0 {
+            100.0
+        } else {
+            (rows_out as f64 / rows_in as f64) * 100.0
+        };
+        self.selectivity
+            .update(selectivity, self.node_kv.as_slice());
     }
 }
 
@@ -51,12 +63,8 @@ impl RuntimeStats for FilterStats {
         let cpu_us = self.cpu_us.load(ordering);
         let rows_in = self.rows_in.load(ordering);
         let rows_out = self.rows_out.load(ordering);
+        let selectivity = self.selectivity.load(ordering);
 
-        let selectivity = if rows_in == 0 {
-            100.0
-        } else {
-            (rows_out as f64 / rows_in as f64) * 100.0
-        };
         snapshot![
             CPU_US_KEY; Stat::Duration(Duration::from_micros(cpu_us)),
             ROWS_IN_KEY; Stat::Count(rows_in),
@@ -67,10 +75,12 @@ impl RuntimeStats for FilterStats {
 
     fn add_rows_in(&self, rows: u64) {
         self.rows_in.add(rows, self.node_kv.as_slice());
+        self.update_selectivity(rows, self.rows_out.load(Ordering::Relaxed));
     }
 
     fn add_rows_out(&self, rows: u64) {
         self.rows_out.add(rows, self.node_kv.as_slice());
+        self.update_selectivity(self.rows_in.load(Ordering::Relaxed), rows);
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {

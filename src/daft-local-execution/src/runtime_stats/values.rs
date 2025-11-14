@@ -7,6 +7,7 @@ use std::{
     time::Duration,
 };
 
+use atomic_float::AtomicF64;
 use common_metrics::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, snapshot};
 use opentelemetry::{KeyValue, global, metrics::Meter};
 
@@ -23,7 +24,7 @@ impl Counter {
         name: Cow<'static, str>,
         description: Option<Cow<'static, str>>,
     ) -> Self {
-        let normalized_name = format!("daft.{}", name.replace(' ', "_").to_lowercase());
+        let normalized_name = normalize_name(name);
         let builder = meter.u64_counter(normalized_name);
         let builder = if let Some(description) = description {
             builder.with_description(description)
@@ -44,6 +45,44 @@ impl Counter {
     pub fn load(&self, ordering: Ordering) -> u64 {
         self.value.load(ordering)
     }
+}
+
+pub struct Gauge {
+    value: AtomicF64,
+    otel: opentelemetry::metrics::Gauge<f64>,
+}
+
+impl Gauge {
+    pub fn new(
+        meter: &Meter,
+        name: Cow<'static, str>,
+        description: Option<Cow<'static, str>>,
+    ) -> Self {
+        let normalized_name = normalize_name(name);
+        let builder = meter.f64_gauge(normalized_name);
+        let builder = if let Some(description) = description {
+            builder.with_description(description)
+        } else {
+            builder
+        };
+        Self {
+            value: AtomicF64::new(f64::NAN),
+            otel: builder.build(),
+        }
+    }
+
+    pub fn update(&self, value: f64, key_values: &[KeyValue]) {
+        self.value.store(value, Ordering::Relaxed);
+        self.otel.record(value, key_values);
+    }
+
+    pub fn load(&self, ordering: Ordering) -> f64 {
+        self.value.load(ordering)
+    }
+}
+
+fn normalize_name(name: Cow<'static, str>) -> String {
+    format!("daft.{}", name.replace(' ', "_").to_lowercase())
 }
 
 // ----------------------- General Traits for Runtime Stat Collection ----------------------- //
