@@ -20,7 +20,6 @@ use crate::{
     },
     plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
     python::ray::RayTaskResult,
-    statistics::StatisticsSubscriber,
 };
 
 #[pyclass(module = "daft.daft", frozen)]
@@ -148,7 +147,6 @@ impl PyDistributedPhysicalPlanRunner {
 
     fn run_plan(
         &self,
-        py: Python,
         plan: &PyDistributedPhysicalPlan,
         psets: HashMap<String, Vec<RayPartitionRef>>,
         ctx: &PyContextState,
@@ -167,9 +165,6 @@ impl PyDistributedPhysicalPlanRunner {
 
         let ctx: &ContextState = ctx.into();
         let subscribers = ctx.subscribers.values().cloned().collect();
-
-        let subscribers: Vec<Box<dyn StatisticsSubscriber>> =
-            vec![Box::new(FlotillaProgressBar::try_new(py)?)];
 
         let plan_result = self.runner.run_plan(&plan.plan, psets, subscribers)?;
         let part_stream = PythonPartitionRefStream {

@@ -1,10 +1,7 @@
 use common_error::DaftResult;
 use pyo3::{Py, PyAny, PyResult, Python, types::PyAnyMethods};
 
-use crate::{
-    scheduling::task::TaskContext,
-    statistics::{StatisticsSubscriber, TaskEvent},
-};
+use crate::{scheduling::task::TaskContext, statistics::TaskEvent};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct BarId(i64);
@@ -19,7 +16,7 @@ pub(crate) struct FlotillaProgressBar {
     progress_bar_pyobject: Py<PyAny>,
 }
 
-impl ProgressBar {
+impl FlotillaProgressBar {
     pub fn try_new(py: Python) -> PyResult<Self> {
         let progress_bar_module = py.import(pyo3::intern!(py, "daft.runners.progress_bar"))?;
         let progress_bar_class = progress_bar_module.getattr(pyo3::intern!(py, "ProgressBar"))?;
@@ -59,14 +56,7 @@ impl ProgressBar {
         });
     }
 
-impl Drop for FlotillaProgressBar {
-    fn drop(&mut self) {
-        self.close();
-    }
-}
-
-impl StatisticsSubscriber for FlotillaProgressBar {
-    fn handle_event(&mut self, event: &TaskEvent) -> DaftResult<()> {
+    pub fn handle_event(&self, event: &TaskEvent) -> DaftResult<()> {
         match event {
             TaskEvent::Submitted { context, name } => {
                 self.make_bar_or_update_total(BarId::from(context), name)?;
@@ -89,7 +79,7 @@ impl StatisticsSubscriber for FlotillaProgressBar {
     }
 }
 
-impl Drop for ProgressBar {
+impl Drop for FlotillaProgressBar {
     fn drop(&mut self) {
         self.close();
     }

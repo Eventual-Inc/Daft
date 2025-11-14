@@ -11,6 +11,7 @@ use common_error::DaftResult;
 use common_metrics::QueryID;
 use common_partitioning::PartitionRef;
 use common_treenode::{TreeNode, TreeNodeRecursion};
+use daft_context::Subscribers;
 use futures::{Stream, StreamExt};
 
 use super::{DistributedPhysicalPlan, PlanResult, QueryIdx};
@@ -24,7 +25,7 @@ use crate::{
         task::{SwordfishTask, TaskID},
         worker::{Worker, WorkerManager},
     },
-    statistics::{StatisticsManager, StatisticsSubscriber},
+    statistics::StatisticsManager,
     utils::{
         channel::{Sender, create_channel},
         joinset::{JoinSet, create_join_set},
@@ -151,7 +152,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         self: &Arc<Self>,
         plan: &DistributedPhysicalPlan,
         psets: HashMap<String, Vec<PartitionRef>>,
-        subscribers: Vec<Box<dyn StatisticsSubscriber>>,
+        subscribers: Vec<Arc<Subscribers>>,
     ) -> DaftResult<PlanResult> {
         let query_idx = plan.idx();
         let query_id = plan.query_id();
