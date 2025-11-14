@@ -1,4 +1,4 @@
-use std::{collections::HashMap, num::NonZeroUsize, str::FromStr};
+use std::{num::NonZeroUsize, str::FromStr};
 
 use daft_dsl::functions::python::OnError;
 
