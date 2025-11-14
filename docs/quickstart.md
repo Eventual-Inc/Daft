@@ -102,31 +102,31 @@ This would materialize the entire DataFrame (all 10,000 rows in this case) into 
 
 ### Working with a Smaller Dataset
 
-For quick experimentation, let's create a smaller version of the dataframe:
+For quick experimentation, let's create a smaller, simplified version of the dataframe with just the essential columns:
 
 === "🐍 Python"
 
     ```python
-    # Limit to just 5 rows for faster iteration
-    df = df.limit(5)
+    # Select only the columns we need and limit to 5 rows for faster iteration
+    df = df.select("Product Name", "About Product", "Image").limit(5)
     ```
 
-Now we have a manageable dataset of 5 products that we can use to explore Daft's features without waiting for the entire dataset to process.
+Now we have a manageable dataset of 5 products with just the product name, description, and image URLs. This simplified dataset lets us explore Daft's features without the overhead of unnecessary columns.
 
 ### Downloading Images
 
-Let's extract and download product images. The `images` column contains a string representation of a list of URLs. We'll extract the first URL and download it:
+Let's extract and download product images. The `Image` column contains pipe-separated URLs. We'll extract the first URL and download it:
 
 === "🐍 Python"
 
     ```python
-    # Extract the first image URL from the string using regex
-    # The pattern looks for the first URL within single quotes
+    # Extract the first image URL from the pipe-separated list
+    # The pattern captures everything before the first pipe or the entire string if no pipe
     df = df.with_column(
         "first_image_url",
         daft.functions.regexp_extract(
-            df["images"],
-            r"'([^']+)'",  # Extract content between single quotes
+            df["Image"],
+            r"^([^|]+)",  # Extract everything before the first pipe
             1  # Get the first capture group
         )
     )
@@ -138,7 +138,7 @@ Let's extract and download product images. The `images` column contains a string
     )
 
     # Check what we have
-    df.select("name", "price", "first_image_url").show(3)
+    df.select("Product Name", "first_image_url").show(3)
     ```
 
 This demonstrates Daft's multimodal capabilities:
