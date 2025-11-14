@@ -27,20 +27,23 @@ use tos::TosSource;
 use unity::UnitySource;
 #[cfg(test)]
 mod integrations;
+pub mod mpu;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod range;
+pub mod utils;
 
 use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 pub use common_io_config::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config, TosConfig};
 use futures::{FutureExt, stream::BoxStream};
+pub use mpu::{ObjectMultipartWriter, ObjectPartBuffer};
 use object_io::StreamingRetryParams;
-pub use object_io::{FileMetadata, FileType, GetResult, ObjectSource};
+pub use object_io::{FileMetadata, FileType, GetResult, MultipartObjectSource, ObjectSource};
 #[cfg(feature = "python")]
 pub use python::register_modules;
-pub use s3_like::{S3LikeSource, S3MultipartWriter, S3PartBuffer, s3_config_from_env};
+pub use s3_like::{S3LikeSource, s3_config_from_env};
 use snafu::{Snafu, prelude::*};
 pub use stats::{IOStatsContext, IOStatsRef};
 use url::ParseError;

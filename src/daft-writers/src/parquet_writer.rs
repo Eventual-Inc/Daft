@@ -22,7 +22,7 @@ use parquet::{
 
 use crate::{
     AsyncFileWriter, WriteResult,
-    storage_backend::{FileStorageBackend, S3StorageBackend, StorageBackend},
+    storage_backend::{FileStorageBackend, ObjectStorageBackend, StorageBackend},
     utils::build_filename,
 };
 
@@ -35,8 +35,7 @@ pub(crate) fn native_parquet_writer_supported(
 ) -> DaftResult<bool> {
     let (source_type, _) = parse_url(root_dir)?;
     match source_type {
-        SourceType::File => {}
-        SourceType::S3 => {}
+        SourceType::File | SourceType::S3 | SourceType::Tos => {}
         _ => return Ok(false),
     }
     // TODO(desmond): Currently we do not support extension and timestamp types.
@@ -109,12 +108,12 @@ pub(crate) fn create_native_parquet_writer(
                 storage_backend,
             )))
         }
-        SourceType::S3 => {
-            let (scheme, _, _) = daft_io::s3_like::parse_s3_url(root_dir.as_ref())?;
+        SourceType::S3 | SourceType::Tos => {
+            let (scheme, _, _) = daft_io::utils::parse_object_url(root_dir.as_ref())?;
             let io_config = io_config.ok_or_else(|| {
                 DaftError::InternalError("IO config is required for S3 writes".to_string())
             })?;
-            let storage_backend = S3StorageBackend::new(scheme, io_config);
+            let storage_backend = ObjectStorageBackend::new(scheme, io_config);
             Ok(Box::new(ParquetWriter::new(
                 filename,
                 writer_properties,

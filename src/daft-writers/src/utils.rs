@@ -20,7 +20,7 @@ pub(crate) fn build_filename(
 
     match source_type {
         SourceType::File => build_local_file_path(root_dir, partition_path, filename),
-        SourceType::S3 => build_s3_path(root_dir, partition_path, filename),
+        SourceType::S3 | SourceType::Tos => build_object_path(root_dir, partition_path, filename),
         _ => Err(DaftError::ValueError(format!(
             "Unsupported source type: {:?}",
             source_type
@@ -97,9 +97,13 @@ fn build_local_file_path(
     Ok(dir.join(filename))
 }
 
-/// Helper function to build the path to an S3 url.
-fn build_s3_path(root_dir: &str, partition_path: PathBuf, filename: String) -> DaftResult<PathBuf> {
-    let (_scheme, bucket, key) = daft_io::s3_like::parse_s3_url(root_dir)?;
+/// Helper function to build the object path.
+fn build_object_path(
+    root_dir: &str,
+    partition_path: PathBuf,
+    filename: String,
+) -> DaftResult<PathBuf> {
+    let (_scheme, bucket, key) = daft_io::utils::parse_object_url(root_dir)?;
     let key = Path::new(&key).join(partition_path).join(filename);
     Ok(PathBuf::from(format!("{}/{}", bucket, key.display())))
 }

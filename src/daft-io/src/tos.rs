@@ -17,7 +17,7 @@ use tokio::{
     sync::{OwnedSemaphorePermit, Semaphore},
 };
 use tokio_stream::Stream;
-use url::{ParseError, Position, Url};
+use url::ParseError;
 use ve_tos_rust_sdk::{
     asynchronous::{
         object::ObjectAPI,
@@ -37,9 +37,9 @@ use crate::{
     SourceType,
     object_io::{FileType, LSResult},
     stream_utils::io_stats_on_bytestream,
+    utils::{DELIMITER, parse_object_url},
 };
 
-const DELIMITER: &str = "/";
 const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
 
 #[derive(Debug, Snafu)]
@@ -259,34 +259,24 @@ impl TosSource {
     }
 
     fn parse_tos_url(url: &str, allow_empty_key: bool) -> Result<(String, String)> {
-        let parsed = Url::parse(url).with_context(|_| InvalidUrlSnafu {
-            path: url.to_string(),
-        })?;
+        let (scheme, bucket, key) = parse_object_url(url)?;
 
-        if parsed.scheme() != "tos" {
+        if scheme != "tos" {
             return Err(Error::UnSupportedScheme {
-                scheme: parsed.scheme().to_string(),
+                scheme,
                 path: url.to_string(),
             }
             .into());
         }
 
-        let bucket = parsed.host_str().ok_or_else(|| Error::InvalidUrl {
-            path: parsed.to_string(),
-            source: ParseError::EmptyHost,
-        })?;
-
-        let bucket_scheme_len = parsed[..Position::AfterHost].len();
-        let key = url[bucket_scheme_len..].trim_start_matches(DELIMITER);
-
         if !allow_empty_key && key.is_empty() {
             return Err(super::Error::NotAFile {
-                path: parsed.to_string(),
+                path: url.to_string(),
             }
             .into());
         }
 
-        Ok((bucket.to_string(), key.to_string()))
+        Ok((bucket, key))
     }
 
     async fn get_impl(
@@ -452,6 +442,10 @@ impl TosSource {
 
 #[async_trait]
 impl ObjectSource for TosSource {
+    fn source_type(&self) -> SourceType {
+        SourceType::Tos
+    }
+
     async fn supports_range(&self, _: &str) -> Result<bool> {
         Ok(true)
     }
