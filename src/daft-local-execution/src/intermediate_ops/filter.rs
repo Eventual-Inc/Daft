@@ -74,13 +74,13 @@ impl RuntimeStats for FilterStats {
     }
 
     fn add_rows_in(&self, rows: u64) {
-        self.rows_in.add(rows, self.node_kv.as_slice());
-        self.update_selectivity(rows, self.rows_out.load(Ordering::Relaxed));
+        let rows_in = self.rows_in.add(rows, self.node_kv.as_slice());
+        self.update_selectivity(rows_in, self.rows_out.load(Ordering::Relaxed));
     }
 
     fn add_rows_out(&self, rows: u64) {
-        self.rows_out.add(rows, self.node_kv.as_slice());
-        self.update_selectivity(self.rows_in.load(Ordering::Relaxed), rows);
+        let rows_out = self.rows_out.add(rows, self.node_kv.as_slice());
+        self.update_selectivity(self.rows_in.load(Ordering::Relaxed), rows_out);
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {

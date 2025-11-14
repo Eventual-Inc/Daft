@@ -37,9 +37,10 @@ impl Counter {
         }
     }
 
-    pub fn add(&self, value: u64, key_values: &[KeyValue]) {
-        self.value.fetch_add(value, Ordering::Relaxed);
+    pub fn add(&self, value: u64, key_values: &[KeyValue]) -> u64 {
+        let prev = self.value.fetch_add(value, Ordering::Relaxed);
         self.otel.add(value, key_values);
+        prev + value
     }
 
     pub fn load(&self, ordering: Ordering) -> u64 {
