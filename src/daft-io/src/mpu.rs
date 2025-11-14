@@ -218,8 +218,8 @@ impl ObjectMultipartWriter {
         // Complete the multipart upload with the completed parts.
         self.source_client
             .complete_multipart(
-                &self.key.clone(),
                 &self.bucket.clone(),
+                &self.key.clone(),
                 &self.upload_id.clone(),
                 completed_parts,
             )

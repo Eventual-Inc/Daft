@@ -50,10 +50,12 @@ pub(crate) fn create_native_json_writer(
                 storage_backend,
             )))
         }
-        SourceType::S3 | SourceType::Tos => {
+        SourceType::S3 => {
             let (scheme, _, _) = daft_io::utils::parse_object_url(root_dir.as_ref())?;
             let io_config = io_config.ok_or_else(|| {
-                DaftError::InternalError("IO config is required for S3 writes".to_string())
+                DaftError::InternalError(
+                    "IO config is required for writing data to object store.".to_string(),
+                )
             })?;
             let storage_backend = ObjectStorageBackend::new(scheme, io_config);
             Ok(Box::new(JsonWriter::new(
