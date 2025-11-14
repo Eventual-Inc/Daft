@@ -66,6 +66,47 @@ mod py {
         Ok(to_rtn)
     }
 
+    /// Writes bytes to a URL (including gvfs:// URLs)
+    #[pyfunction(signature = (
+        path,
+        data,
+        multithreaded_io=None,
+        io_config=None
+    ))]
+    fn io_put(
+        py: Python,
+        path: String,
+        data: Vec<u8>,
+        multithreaded_io: Option<bool>,
+        io_config: Option<common_io_config::python::IOConfig>,
+    ) -> PyResult<()> {
+        let multithreaded_io = multithreaded_io.unwrap_or(true);
+        let io_stats = IOStatsContext::new(format!("io_put for {path}"));
+        let io_stats_handle = io_stats;
+
+        let result: DaftResult<()> = py.detach(|| {
+            let io_client = get_io_client(
+                multithreaded_io,
+                io_config.unwrap_or_default().config.into(),
+            )?;
+            let runtime_handle = get_io_runtime(multithreaded_io);
+
+            runtime_handle.block_on_current_thread(async {
+                let source = io_client.get_source(&path).await?;
+                let bytes = bytes::Bytes::from(data);
+                source.put(&path, bytes, Some(io_stats_handle)).await?;
+                Ok(())
+            })
+        });
+
+        result.map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Failed to write to {path}: {e}"
+            ))
+        })?;
+        Ok(())
+    }
+
     /// Creates an S3Config from the current environment, auto-discovering variables such as
     /// credentials, regions and more.
     #[pyfunction]
@@ -80,6 +121,7 @@ mod py {
     pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
         common_io_config::python::register_modules(parent)?;
         parent.add_function(wrap_pyfunction!(io_glob, parent)?)?;
+        parent.add_function(wrap_pyfunction!(io_put, parent)?)?;
         parent.add_function(wrap_pyfunction!(s3_config_from_env, parent)?)?;
         Ok(())
     }

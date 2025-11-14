@@ -142,6 +142,8 @@ plugins:
       catalogs/s3tables.md: connectors/s3tables.md
       integrations/unity_catalog.md: connectors/unity_catalog.md
       catalogs/unity_catalog.md: connectors/unity_catalog.md
+      integrations/gravitino.md: connectors/gravitino.md
+      catalogs/gravitino.md: connectors/gravitino.md
       integrations.md: connectors/index.md
       io/index.md: connectors/index.md
       sql_overview.md: sql/index.md
