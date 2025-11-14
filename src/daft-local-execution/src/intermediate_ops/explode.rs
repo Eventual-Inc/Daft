@@ -1,7 +1,9 @@
 use std::{sync::Arc, time::Duration};
 
 use common_error::DaftResult;
-use common_metrics::{Stat, StatSnapshot, ops::NodeType, snapshot};
+use common_metrics::{
+    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, ops::NodeType, snapshot,
+};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_functions_list::explode;
 use daft_micropartition::MicroPartition;
@@ -15,7 +17,7 @@ use super::intermediate_op::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::NodeName,
-    runtime_stats::{CPU_US_KEY, Counter, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats},
+    runtime_stats::{Counter, RuntimeStats},
 };
 
 pub struct ExplodeStats {
