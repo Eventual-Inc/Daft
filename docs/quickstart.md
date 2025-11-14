@@ -49,11 +49,11 @@ Now let's take a look at what we loaded. You can inspect the DataFrame by simply
     ```
 
 ```
-╭────────┬────────┬────────────┬─────────────┬────────╮
-│ url    ┆ name   ┆      …     ┆ description ┆ images │
-│ ---    ┆ ---    ┆            ┆ ---         ┆ ---    │
-│ String ┆ String ┆ (5 hidden) ┆ String      ┆ String │
-╰────────┴────────┴────────────┴─────────────┴────────╯
+╭─────────┬──────────────┬──────────┬────────────┬──────────┬─────────────┬──────────────────╮
+│ Uniq Id ┆ Product Name ┆ Category ┆      …     ┆ Variants ┆ Product Url ┆ Is Amazon Seller │
+│ ---     ┆ ---          ┆ ---      ┆            ┆ ---      ┆ ---         ┆ ---              │
+│ String  ┆ String       ┆ String   ┆ (9 hidden) ┆ String   ┆ String      ┆ String           │
+╰─────────┴──────────────┴──────────┴────────────┴──────────┴─────────────┴──────────────────╯
 
 (No data to display: Dataframe not materialized)
 ```
@@ -71,19 +71,19 @@ To actually view your data, you have two options:
     ```
 
 ```
-╭───────────────────┬───────────────────┬────────────┬───────────────────┬──────────────────╮
-│ url               ┆ name              ┆      …     ┆ description       ┆ images           │
-│ ---               ┆ ---               ┆            ┆ ---               ┆ ---              │
-│ String            ┆ String            ┆ (5 hidden) ┆ String            ┆ String           │
-╞═══════════════════╪═══════════════════╪════════════╪═══════════════════╪══════════════════╡
-│ https://www.asos. ┆ New Look trench   ┆ …          ┆ [{'Product        ┆ ['https://images │
-│ com/stradiva…     ┆ coat in camel     ┆            ┆ Details': 'Coats  ┆ .asos-media.c…   │
-│                   ┆                   ┆            ┆ &…                ┆                  │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ https://www.asos. ┆ New Look trench   ┆ …          ┆ [{'Product        ┆ ['https://images │
-│ com/stradiva…     ┆ coat in camel     ┆            ┆ Details': 'Coats  ┆ .asos-media.c…   │
-│                   ┆                   ┆            ┆ &…                ┆                  │
-╰───────────────────┴───────────────────┴────────────┴───────────────────┴──────────────────╯
+╭──────────────────┬──────────────────┬──────────────────┬────────────┬──────────────────┬─────────────────┬───────────╮
+│ Uniq Id          ┆ Product Name     ┆ Category         ┆      …     ┆ Variants         ┆ Product Url     ┆ Is Amazon │
+│ ---              ┆ ---              ┆ ---              ┆            ┆ ---              ┆ ---             ┆ Seller    │
+│ String           ┆ String           ┆ String           ┆ (9 hidden) ┆ String           ┆ String          ┆ ---       │
+│                  ┆                  ┆                  ┆            ┆                  ┆                 ┆ String    │
+╞══════════════════╪══════════════════╪══════════════════╪════════════╪══════════════════╪═════════════════╪═══════════╡
+│ 4c69b61db1fc16e7 ┆ DB Longboards    ┆ Sports &         ┆ …          ┆ https://www.amaz ┆ https://www.ama ┆ Y         │
+│ 013b43fc926e5…   ┆ CoreFlex Crossb… ┆ Outdoors |       ┆            ┆ on.com/DB-Lon…   ┆ zon.com/DB-Lon… ┆           │
+│                  ┆                  ┆ Outdoor R…       ┆            ┆                  ┆                 ┆           │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+│ 66d49bbed043f5be ┆ Electronic Snap  ┆ Toys & Games |   ┆ …          ┆ None             ┆ https://www.ama ┆ Y         │
+│ 260fa9f7fbff5…   ┆ Circuits Mini…   ┆ Learning & Edu…  ┆            ┆                  ┆ zon.com/Electr… ┆           │
+╰──────────────────┴──────────────────┴──────────────────┴────────────┴──────────────────┴─────────────────┴───────────╯
 
 (Showing first 2 rows)
 ```
@@ -98,7 +98,7 @@ This materializes and displays just the first 2 rows, which is perfect for quick
     # df.collect()
     ```
 
-This would materialize the entire DataFrame (all 30,845 rows in this case) into memory. Use `.collect()` when you need to work with the full dataset in memory.
+This would materialize the entire DataFrame (all 10,000 rows in this case) into memory. Use `.collect()` when you need to work with the full dataset in memory.
 
 ### Working with a Smaller Dataset
 
