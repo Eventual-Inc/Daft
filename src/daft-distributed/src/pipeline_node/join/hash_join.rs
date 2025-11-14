@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{JoinType, partitioning::HashClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
@@ -99,6 +99,10 @@ impl HashJoinNode {
             self.join_type,
             self.config.schema.clone(),
             StatsState::NotMaterialized,
+            LocalNodeContext {
+                origin_node_id: Some(self.node_id() as usize),
+                additional: None,
+            },
         );
 
         let mut psets = left_task.task().psets().clone();

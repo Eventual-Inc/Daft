@@ -71,9 +71,10 @@ where
             match value {
                 Some(value) => {
                     urls_arr.push(Some(value.url));
-                    let io_config = value
-                        .io_config
-                        .map(|c| bincode::serialize(&c).expect("Failed to serialize IOConfig"));
+                    let io_config = value.io_config.map(|c| {
+                        bincode::serde::encode_to_vec(&c, bincode::config::legacy())
+                            .expect("Failed to serialize IOConfig")
+                    });
                     io_conf_arr.push(io_config);
                 }
                 None => {
@@ -105,8 +106,10 @@ where
         io_config: Option<IOConfig>,
     ) -> Self {
         let sa_field = Field::new("literal", DataType::File(T::get_type()).to_physical());
-        let io_conf: Option<Vec<u8>> =
-            io_config.map(|c| bincode::serialize(&c).expect("Failed to serialize IOConfig"));
+        let io_conf: Option<Vec<u8>> = io_config.map(|c| {
+            bincode::serde::encode_to_vec(&c, bincode::config::legacy())
+                .expect("Failed to serialize IOConfig")
+        });
         let io_conf = BinaryArray::from_iter("io_config", std::iter::repeat_n(io_conf, urls.len()));
 
         let io_conf = io_conf

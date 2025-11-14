@@ -202,7 +202,13 @@ where
         let io_config = io_config_array.get(idx);
         let io_config: Option<common_io_config::IOConfig> = {
             io_config
-                .map(bincode::deserialize)
+                .map(|serialized| {
+                    bincode::serde::decode_from_slice::<common_io_config::IOConfig, _>(
+                        serialized,
+                        bincode::config::legacy(),
+                    )
+                    .map(|out| out.0)
+                })
                 .transpose()
                 .ok()
                 .flatten()

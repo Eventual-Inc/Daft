@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_py_serde::PyObjectWrapper;
 use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties, python::PyExpr};
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
@@ -201,6 +201,7 @@ impl ActorUDF {
 
         let batch_size = self.udf_properties.batch_size;
         let schema = self.config.schema.clone();
+        let node_id = self.node_id();
         append_plan_to_existing_task(
             submittable_task,
             &(self.clone() as Arc<dyn PipelineNodeImpl>),
@@ -212,6 +213,10 @@ impl ActorUDF {
                     memory_request,
                     schema.clone(),
                     StatsState::NotMaterialized,
+                    LocalNodeContext {
+                        origin_node_id: Some(node_id as usize),
+                        additional: None,
+                    },
                 )
             },
         )
