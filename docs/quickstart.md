@@ -172,7 +172,6 @@ This demonstrates Daft's multimodal capabilities:
 - **Native regex support**: Use `regexp_extract()` to parse structured text with Rust-powered regex
 - **URL handling**: Download content directly with `.url.download()`
 - **Image decoding**: Convert binary data to images with `decode_image()` for visual display
-- **Error handling**: Use `on_error="null"` to gracefully handle failed downloads
 
 The decoded images are now ready for further processing, such as running image classification models, extracting embeddings, or performing transformations.
 
