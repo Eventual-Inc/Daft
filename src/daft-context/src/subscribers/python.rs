@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::{QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo, python::PyNodeInfo};
+use common_metrics::{QueryID, QueryPlan, StatSnapshot, ops::NodeInfo, python::PyNodeInfo};
 use daft_micropartition::{MicroPartitionRef, python::PyMicroPartition};
 use pyo3::{IntoPyObject, Py, PyAny, Python, intern};
 
@@ -98,18 +98,20 @@ impl Subscriber for PySubscriberWrapper {
     async fn on_exec_emit_stats(
         &self,
         query_id: QueryID,
-        stats: &[(NodeID, StatSnapshotView)],
+        stats: &[(NodeID, StatSnapshot)],
     ) -> DaftResult<()> {
         Python::attach(|py| {
             let stats_map = stats
                 .iter()
                 .map(|(node_id, stats)| {
                     let stat_map = stats
-                        .into_iter()
-                        .map(|(name, stat)| (*name, stat.clone().into_py_contents(py).unwrap()))
+                        .iter()
+                        .map(|(name, stat)| {
+                            (name.to_string(), stat.clone().into_py_contents(py).unwrap())
+                        })
                         .collect::<HashMap<_, _>>();
 
-                    (node_id, stat_map)
+                    (*node_id, stat_map)
                 })
                 .collect::<HashMap<_, _>>();
             let py_stats = stats_map.into_pyobject(py)?;

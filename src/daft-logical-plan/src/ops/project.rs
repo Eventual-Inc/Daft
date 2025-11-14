@@ -536,6 +536,10 @@ fn replace_column_with_semantic_id_aggexpr(
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Sum, |_| e)
         }
+        AggExpr::Product(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::Product, |_| e)
+        }
         AggExpr::ApproxPercentile(ApproxPercentileParams {
             ref child,
             ref percentiles,

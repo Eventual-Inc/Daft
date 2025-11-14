@@ -30,6 +30,11 @@ def sum(expr: Expression) -> Expression:
     return Expression._from_pyexpr(expr._expr.sum())
 
 
+def product(expr: Expression) -> Expression:
+    """Calculates the product of the values in the expression."""
+    return Expression._from_pyexpr(expr._expr.product())
+
+
 def approx_count_distinct(expr: Expression) -> Expression:
     """Calculates the approximate number of non-`NULL` distinct values in the expression.
 

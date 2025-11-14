@@ -539,12 +539,12 @@ impl ToFromProto for ir::functions::python::RuntimePyObject {
     where
         Self: Sized,
     {
-        Ok(bincode::deserialize(&message.object)?)
+        Ok(bincode::serde::decode_from_slice(&message.object, bincode::config::legacy())?.0)
     }
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
         Ok(Self::Message {
-            object: bincode::serialize(self)?,
+            object: bincode::serde::encode_to_vec(self, bincode::config::legacy())?,
         })
     }
 }

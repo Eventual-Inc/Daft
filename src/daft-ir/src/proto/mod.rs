@@ -142,8 +142,10 @@ pub enum ProtoError {
     NotImplemented(String),
     #[error("ProtoError::NotOptimized({0})")]
     NotOptimized(String),
-    #[error("ProtoError::Bincode({0})")]
-    Bincode(#[from] Box<bincode::ErrorKind>),
+    #[error("ProtoError::BincodeEncode({0})")]
+    BincodeEncode(#[from] bincode::error::EncodeError),
+    #[error("ProtoError::BincodeDecode({0})")]
+    BincodeDecode(#[from] bincode::error::DecodeError),
     #[error("ProtoError::DaftError({0}")]
     Daft(#[from] common_error::DaftError),
 }

@@ -7,7 +7,7 @@ use daft_core::prelude::*;
 pub use row_wise::{RowWisePyFn, row_wise_udf};
 use serde::{Deserialize, Serialize};
 
-use crate::ExprRef;
+use crate::{ExprRef, operator_metrics::MetricsCollector};
 
 #[derive(derive_more::Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[display("{_0}")]
@@ -23,17 +23,21 @@ impl PyScalarFn {
             | Self::Batch(BatchPyFn { function_name, .. }) => function_name,
         }
     }
-    pub fn call(&self, args: &[Series]) -> DaftResult<Series> {
+    pub fn call(&self, args: &[Series], metrics: &mut dyn MetricsCollector) -> DaftResult<Series> {
         match self {
-            Self::RowWise(func) => func.call(args),
-            Self::Batch(func) => func.call(args),
+            Self::RowWise(func) => func.call(args, metrics),
+            Self::Batch(func) => func.call(args, metrics),
         }
     }
 
-    pub async fn call_async(&self, args: &[Series]) -> DaftResult<Series> {
+    pub async fn call_async(
+        &self,
+        args: &[Series],
+        metrics: &mut dyn MetricsCollector,
+    ) -> DaftResult<Series> {
         match self {
-            Self::RowWise(func) => func.call_async(args).await,
-            Self::Batch(func) => func.call_async(args).await,
+            Self::RowWise(func) => func.call_async(args, metrics).await,
+            Self::Batch(func) => func.call_async(args, metrics).await,
         }
     }
 

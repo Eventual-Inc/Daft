@@ -100,7 +100,9 @@ class Provider(ABC):
         """Returns the provider's name."""
         ...
 
-    def get_text_embedder(self, model: str | None = None, **options: Any) -> TextEmbedderDescriptor:
+    def get_text_embedder(
+        self, model: str | None = None, dimensions: int | None = None, **options: Any
+    ) -> TextEmbedderDescriptor:
         """Returns a TextEmbedderDescriptor for this provider."""
         raise not_implemented_err(self, method="embed_text")
 

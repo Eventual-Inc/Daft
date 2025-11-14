@@ -876,10 +876,21 @@ impl PyMicroPartition {
         metadata_bytes: &[u8],
         statistics_bytes: &[u8],
     ) -> PyResult<Self> {
-        let schema = bincode::deserialize::<Schema>(schema_bytes).unwrap();
-        let scan_task = bincode::deserialize::<ScanTask>(loading_scan_task_bytes).unwrap();
-        let metadata = bincode::deserialize::<TableMetadata>(metadata_bytes).unwrap();
-        let statistics = bincode::deserialize::<Option<TableStatistics>>(statistics_bytes).unwrap();
+        let config = bincode::config::legacy();
+        let schema: Schema = bincode::serde::decode_from_slice(schema_bytes, config)
+            .unwrap()
+            .0;
+        let scan_task: ScanTask =
+            bincode::serde::decode_from_slice(loading_scan_task_bytes, config)
+                .unwrap()
+                .0;
+        let metadata: TableMetadata = bincode::serde::decode_from_slice(metadata_bytes, config)
+            .unwrap()
+            .0;
+        let statistics: Option<TableStatistics> =
+            bincode::serde::decode_from_slice(statistics_bytes, config)
+                .unwrap()
+                .0;
 
         Ok(MicroPartition {
             schema: Arc::new(schema),
@@ -898,9 +909,17 @@ impl PyMicroPartition {
         metadata_bytes: &[u8],
         statistics_bytes: &[u8],
     ) -> PyResult<Self> {
-        let schema = bincode::deserialize::<Schema>(schema_bytes).unwrap();
-        let metadata = bincode::deserialize::<TableMetadata>(metadata_bytes).unwrap();
-        let statistics = bincode::deserialize::<Option<TableStatistics>>(statistics_bytes).unwrap();
+        let config = bincode::config::legacy();
+        let schema: Schema = bincode::serde::decode_from_slice(schema_bytes, config)
+            .unwrap()
+            .0;
+        let metadata: TableMetadata = bincode::serde::decode_from_slice(metadata_bytes, config)
+            .unwrap()
+            .0;
+        let statistics: Option<TableStatistics> =
+            bincode::serde::decode_from_slice(statistics_bytes, config)
+                .unwrap()
+                .0;
 
         let tables = table_objs
             .into_iter()
@@ -924,11 +943,20 @@ impl PyMicroPartition {
         &self,
         py: Python,
     ) -> PyResult<(pyo3::Py<pyo3::PyAny>, pyo3::Py<pyo3::PyAny>)> {
-        let schema_bytes = PyBytes::new(py, &bincode::serialize(&self.inner.schema).unwrap());
+        let config = bincode::config::legacy();
+        let schema_bytes = PyBytes::new(
+            py,
+            &bincode::serde::encode_to_vec(&self.inner.schema, config).unwrap(),
+        );
 
-        let py_metadata_bytes =
-            PyBytes::new(py, &bincode::serialize(&self.inner.metadata).unwrap());
-        let py_stats_bytes = PyBytes::new(py, &bincode::serialize(&self.inner.statistics).unwrap());
+        let py_metadata_bytes = PyBytes::new(
+            py,
+            &bincode::serde::encode_to_vec(&self.inner.metadata, config).unwrap(),
+        );
+        let py_stats_bytes = PyBytes::new(
+            py,
+            &bincode::serde::encode_to_vec(&self.inner.statistics, config).unwrap(),
+        );
 
         let guard = self.inner.state.lock().unwrap();
         if let TableState::Loaded(tables) = &*guard {
@@ -952,7 +980,8 @@ impl PyMicroPartition {
                     .into(),
             ))
         } else if let TableState::Unloaded(params) = &*guard {
-            let py_params_bytes = PyBytes::new(py, &bincode::serialize(params).unwrap());
+            let py_params_bytes =
+                PyBytes::new(py, &bincode::serde::encode_to_vec(params, config).unwrap());
             Ok((
                 Self::type_object(py)
                     .getattr(pyo3::intern!(py, "_from_unloaded_table_state"))?

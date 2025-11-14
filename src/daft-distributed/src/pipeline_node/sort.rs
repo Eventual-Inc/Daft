@@ -2,7 +2,7 @@ use std::{future, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::{LocalPhysicalPlan, SamplingMethod};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, SamplingMethod};
 use daft_logical_plan::{
     partitioning::{RangeRepartitionConfig, RepartitionSpec},
     stats::StatsState,
@@ -134,6 +134,7 @@ pub(crate) fn create_sample_tasks(
             let sample_by = sample_by.clone();
             let input_schema = input_schema.clone();
             let sample_schema = sample_schema.clone();
+            let node_id = pipeline_node.node_id();
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((context, task_id_counter.next())),
                 vec![mo],
@@ -146,12 +147,20 @@ pub(crate) fn create_sample_tasks(
                         false,
                         None,
                         StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
                     );
                     LocalPhysicalPlan::project(
                         sample,
                         sample_by,
                         sample_schema,
                         StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
                     )
                 },
                 None,
@@ -177,6 +186,7 @@ pub(crate) fn create_range_repartition_tasks(
     scheduler_handle: &SchedulerHandle<SwordfishTask>,
 ) -> DaftResult<Vec<SubmittedTask>> {
     let context = pipeline_node.context();
+    let node_id = pipeline_node.node_id();
     materialized_outputs
         .into_iter()
         .map(|mo| {
@@ -201,6 +211,10 @@ pub(crate) fn create_range_repartition_tasks(
                         num_partitions,
                         input_schema,
                         StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
                     )
                 },
                 None,
@@ -277,6 +291,8 @@ impl SortNode {
             return Ok(());
         }
 
+        let node_id = self.node_id();
+
         if materialized_outputs.len() == 1 {
             let self_clone = self.clone();
             let task = make_new_task_from_materialized_outputs(
@@ -291,6 +307,10 @@ impl SortNode {
                         self_clone.descending.clone(),
                         self_clone.nulls_first.clone(),
                         StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
                     )
                 },
                 None,
@@ -363,6 +383,10 @@ impl SortNode {
                         self_clone.descending.clone(),
                         self_clone.nulls_first.clone(),
                         StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(self_clone.node_id() as usize),
+                            additional: None,
+                        },
                     )
                 },
                 None,

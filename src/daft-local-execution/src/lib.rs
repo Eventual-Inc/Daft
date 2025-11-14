@@ -10,7 +10,6 @@ mod sinks;
 mod sources;
 mod state_bridge;
 mod streaming_sink;
-
 use std::{
     future::Future,
     pin::Pin,
@@ -332,9 +331,8 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    use run::{LocalPartitionStream, PyNativeExecutor};
+    use run::PyNativeExecutor;
 
     parent.add_class::<PyNativeExecutor>()?;
-    parent.add_class::<LocalPartitionStream>()?;
     Ok(())
 }

@@ -1013,6 +1013,16 @@ class Expression:
 
         return sum(self)
 
+    def product(self) -> Expression:
+        """Calculates the product of the values in the expression.
+
+        Tip: See Also
+            [`daft.functions.product`](https://docs.daft.ai/en/stable/api/functions/product/)
+        """
+        from daft.functions import product
+
+        return product(self)
+
     def approx_count_distinct(self) -> Expression:
         """Calculates the approximate number of non-`NULL` distinct values in the expression.
 

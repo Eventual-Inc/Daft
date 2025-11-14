@@ -6,6 +6,7 @@ use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
 use daft_core::prelude::SchemaRef;
+use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
@@ -49,8 +50,8 @@ pub(crate) trait IntermediateOperator: Send + Sync {
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Self::State>;
-    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::default())
+    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(DefaultRuntimeStats::new(id))
     }
     /// The maximum number of concurrent workers that can be spawned for this operator.
     /// Each worker will has its own IntermediateOperatorState.
@@ -92,14 +93,17 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         plan_stats: StatsState,
         ctx: &RuntimeContext,
         output_schema: SchemaRef,
+        context: &LocalNodeContext,
     ) -> Self {
+        let name: Arc<str> = intermediate_op.name().into();
         let info = ctx.next_node_info(
-            Arc::from(intermediate_op.name()),
+            name,
             intermediate_op.op_type(),
             NodeCategory::Intermediate,
             output_schema,
+            context,
         );
-        let runtime_stats = intermediate_op.make_runtime_stats();
+        let runtime_stats = intermediate_op.make_runtime_stats(info.id);
         let morsel_size_requirement = intermediate_op
             .morsel_size_requirement()
             .unwrap_or_default();
@@ -201,7 +205,7 @@ impl<Op: IntermediateOperator + 'static> TreeDisplay for IntermediateNode<Op> {
                     writeln!(display).unwrap();
                     let rt_result = self.runtime_stats.snapshot();
                     for (name, value) in rt_result {
-                        writeln!(display, "{} = {}", name.capitalize(), value).unwrap();
+                        writeln!(display, "{} = {}", name.as_ref().capitalize(), value).unwrap();
                     }
                 }
             }

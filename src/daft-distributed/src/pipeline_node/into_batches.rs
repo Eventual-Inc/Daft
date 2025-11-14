@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
@@ -104,6 +104,10 @@ impl IntoBatchesNode {
                                 group_size,
                                 true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
                                 StatsState::NotMaterialized,
+                                LocalNodeContext {
+                                    origin_node_id: Some(self_clone.node_id() as usize),
+                                    additional: None,
+                                },
                             )
                         },
                         None,
@@ -128,6 +132,10 @@ impl IntoBatchesNode {
                         current_group_size,
                         true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
                         StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(self_clone.node_id() as usize),
+                            additional: None,
+                        },
                     )
                 },
                 None,
@@ -161,12 +169,17 @@ impl PipelineNodeImpl for IntoBatchesNode {
     ) -> SubmittableTaskStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
         let self_clone = self.clone();
+        let node_id = self_clone.node_id();
         let local_into_batches_node = input_node.pipeline_instruction(self.clone(), move |input| {
             LocalPhysicalPlan::into_batches(
                 input,
                 self_clone.batch_size,
                 false, // No need strict batch sizes for the child tasks, as we coalesce them later on.
                 StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
+                },
             )
         });
 

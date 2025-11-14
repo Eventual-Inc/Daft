@@ -56,7 +56,8 @@ def udf_event_loop(
 
             input_bytes = transport.read_and_release(name, size)
             input = RecordBatch.from_ipc_stream(input_bytes)
-            evaluated = input.eval_expression_list(expression_projection)
+
+            evaluated, metrics = input.eval_expression_list_with_metrics(expression_projection)
 
             output_bytes = evaluated.to_ipc_stream()
             out_name, out_size = transport.write_and_close(output_bytes)
@@ -66,7 +67,7 @@ def udf_event_loop(
             sys.stdout.flush()
             sys.stderr.flush()
 
-            conn.send((_SUCCESS, out_name, out_size))
+            conn.send((_SUCCESS, out_name, out_size, metrics))
     except UDFException as e:
         exc = e.__cause__
         assert exc is not None
@@ -100,7 +101,10 @@ def udf_event_loop(
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
-        print("Usage: python -m daft.execution.udf_worker <socket_path> <secret>", file=sys.stderr)
+        print(
+            "Usage: python -m daft.execution.udf_worker <socket_path> <secret>",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     socket_path = sys.argv[1]

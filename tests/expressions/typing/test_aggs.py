@@ -31,6 +31,7 @@ def test_comparable_aggs(unary_data_fixture, op):
     "op",
     [
         pytest.param(lambda x: x.sum(), id="sum"),
+        pytest.param(lambda x: x.product(), id="product"),
         pytest.param(lambda x: x.mean(), id="mean"),
     ],
 )
@@ -53,6 +54,21 @@ def test_decimal_sum(decimal_unary_data_fixture):
 
     def op(x):
         return x.sum()
+
+    assert_typing_resolve_vs_runtime_behavior(
+        data=(decimal_unary_data_fixture,),
+        expr=op(col(arg.name())),
+        run_kernel=lambda: op(arg),
+        resolvable=True,
+    )
+
+
+def test_decimal_product(decimal_unary_data_fixture):
+    """Test product aggregation for decimal types."""
+    arg = decimal_unary_data_fixture
+
+    def op(x):
+        return x.product()
 
     assert_typing_resolve_vs_runtime_behavior(
         data=(decimal_unary_data_fixture,),

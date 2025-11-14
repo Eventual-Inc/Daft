@@ -2,6 +2,7 @@ use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
 use common_error::DaftResult;
+use common_metrics::StatSnapshot;
 use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::PyLocalPhysicalPlan;
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
@@ -17,7 +18,7 @@ use crate::{
 #[pyclass(module = "daft.daft", name = "RayTaskResult")]
 #[derive(Clone)]
 pub(crate) enum RayTaskResult {
-    Success(Vec<RayPartitionRef>),
+    Success(Vec<RayPartitionRef>, Vec<u8>),
     WorkerDied(),
     WorkerUnavailable(),
 }
@@ -25,8 +26,8 @@ pub(crate) enum RayTaskResult {
 #[pymethods]
 impl RayTaskResult {
     #[staticmethod]
-    fn success(ray_part_refs: Vec<RayPartitionRef>) -> Self {
-        Self::Success(ray_part_refs)
+    fn success(ray_part_refs: Vec<RayPartitionRef>, stats_serialized: Vec<u8>) -> Self {
+        Self::Success(ray_part_refs, stats_serialized)
     }
 
     #[staticmethod]
@@ -86,7 +87,11 @@ impl TaskResultHandle for RayTaskResultHandle {
             let ray_task_result = fut.await;
 
             match ray_task_result {
-                Ok(RayTaskResult::Success(ray_part_refs)) => {
+                Ok(RayTaskResult::Success(ray_part_refs, stats_serialized)) => {
+                    let stats: Vec<(usize, StatSnapshot)> =
+                        bincode::decode_from_slice(&stats_serialized, bincode::config::legacy())
+                            .expect("Failed to deserialize stats")
+                            .0;
                     let materialized_output = MaterializedOutput::new(
                         ray_part_refs
                             .into_iter()
@@ -97,6 +102,7 @@ impl TaskResultHandle for RayTaskResultHandle {
 
                     TaskStatus::Success {
                         result: materialized_output,
+                        stats,
                     }
                 }
                 Ok(RayTaskResult::WorkerDied()) => TaskStatus::WorkerDied,

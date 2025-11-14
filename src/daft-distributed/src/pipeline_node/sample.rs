@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
@@ -91,6 +91,7 @@ impl PipelineNodeImpl for SampleNode {
         let fraction = self.fraction;
         let with_replacement = self.with_replacement;
         let seed = self.seed;
+        let node_id = self.node_id();
         let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
             LocalPhysicalPlan::sample(
                 input,
@@ -98,6 +99,10 @@ impl PipelineNodeImpl for SampleNode {
                 with_replacement,
                 seed,
                 StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
+                },
             )
         };
 

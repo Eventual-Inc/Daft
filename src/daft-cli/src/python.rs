@@ -51,14 +51,14 @@ fn run_dashboard(py: Python, args: DashboardArgs) {
     let socket_addr = SocketAddr::from((args.addr, args.port));
 
     // Set the subscriber for the detached run
-    tracing_subscriber::registry()
+    let _ = tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::builder()
                 .with_default_directive(filter)
                 .from_env_lossy(),
         )
         .with(tracing_subscriber::fmt::layer())
-        .init();
+        .try_init();
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()

@@ -2,6 +2,7 @@ use std::{cmp::Ordering, collections::HashMap, fmt::Debug, future::Future, sync:
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftError;
+use common_metrics::StatSnapshot;
 use common_partitioning::PartitionRef;
 use common_resource_request::ResourceRequest;
 use daft_local_plan::LocalPhysicalPlanRef;
@@ -293,8 +294,13 @@ impl Task for SwordfishTask {
 
 #[derive(Debug)]
 pub(crate) enum TaskStatus {
-    Success { result: MaterializedOutput },
-    Failed { error: DaftError },
+    Success {
+        result: MaterializedOutput,
+        stats: Vec<(usize, StatSnapshot)>,
+    },
+    Failed {
+        error: DaftError,
+    },
     Cancelled,
     WorkerDied,
     WorkerUnavailable,
@@ -558,6 +564,7 @@ pub(super) mod tests {
                 }
                 TaskStatus::Success {
                     result: task.task_result,
+                    stats: vec![],
                 }
             }
         }

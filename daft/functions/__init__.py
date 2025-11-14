@@ -19,6 +19,7 @@ from .agg import (
     list_agg,
     list_agg_distinct,
     string_agg,
+    product,
 )
 from .binary import encode, try_encode, compress, try_compress, decode, try_decode, decompress, try_decompress
 from .bitwise import bitwise_and, bitwise_or, bitwise_xor, shift_left, shift_right
@@ -353,6 +354,7 @@ __all__ = [
     "partition_iceberg_truncate",
     "partition_months",
     "partition_years",
+    "product",
     "prompt",
     "quarter",
     "radians",

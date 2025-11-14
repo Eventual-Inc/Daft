@@ -95,22 +95,25 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |       region_name: None
 |       endpoint_url: None
 |       key_id: None
-|       session_token: None,
+|       session_token: None
 |       access_key: None
 |       credentials_provider: None
 |       buffer_time: None
-|       max_connections: 32,
-|       retry_initial_backoff_ms: 1000,
-|       connect_timeout_ms: 30000,
-|       read_timeout_ms: 30000,
-|       num_tries: 25,
-|       retry_mode: Some("adaptive"),
-|       anonymous: false,
-|       use_ssl: true,
-|       verify_ssl: true,
+|       max_connections: 32
+|       retry_initial_backoff_ms: 1000
+|       connect_timeout_ms: 30000
+|       read_timeout_ms: 30000
+|       num_tries: 25
+|       retry_mode: Some("adaptive")
+|       anonymous: false
+|       use_ssl: true
+|       verify_ssl: true
 |       check_hostname_ssl: true
 |       requester_pays: false
 |       force_virtual_addressing: false
+|       multipart_size: 8388608
+|       multipart_max_concurrency: 100
+|       custom_retry_msgs:[]
 |   AzureConfig
 |       storage_account: None
 |       access_key: None
@@ -136,7 +139,21 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |   Retry initial backoff ms = 1000
 |   Connect timeout ms = 30000
 |   Read timeout ms = 30000
-|   Max retries = 5))) as {id_placeholder}, col(0: data)
+|   Max retries = 5
+|   TosConfig
+|       region: None
+|       endpoint: None
+|       access_key: None
+|       secret_key: ***
+|       security_token: ***
+|       anonymous: false
+|       max_retries: 3
+|       retry_timeout_ms: 30000
+|       connect_timeout_ms: 10000
+|       read_timeout_ms: 30000
+|       max_concurrent_requests: 50
+|       max_connections_per_io_thread: 50
+|   ))) as {id_placeholder}, col(0: data)
 |   Batch Size = Range(0, 10]
 |
 * InMemorySource:

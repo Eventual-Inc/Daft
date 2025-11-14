@@ -109,7 +109,7 @@ impl<W: Worker> Dispatcher<W> {
                 match task_result {
                     Ok(task_status) => match task_status {
                         // Task completed successfully, send the result to the result_tx
-                        TaskStatus::Success { result } => {
+                        TaskStatus::Success { result, .. } => {
                             if result_tx.send(Ok(Some(result))).is_err() {
                                 tracing::error!(target: DISPATCHER_LOG_TARGET, error = "Failed to send result of task to result_tx", task_context = ?task.task_context());
                             }

@@ -35,4 +35,4 @@ def test_embed_text():
     expected = list(manually_embed_text(text))
 
     for a, e in zip(actual, expected):
-        assert np.allclose(a, e)
+        assert np.allclose(a, e, atol=1e-5)

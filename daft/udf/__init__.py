@@ -6,6 +6,7 @@ import sys
 from typing import ParamSpec
 
 from .legacy import udf, UDF
+from . import metrics
 from .udf_v2 import Func, mark_cls_method, wrap_cls
 
 P = ParamSpec("P")
@@ -509,4 +510,4 @@ class _MethodDecorator:
 method = _MethodDecorator()
 
 
-__all__ = ["UDF", "udf"]
+__all__ = ["UDF", "metrics", "udf"]

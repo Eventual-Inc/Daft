@@ -16,7 +16,7 @@ use common_error::DaftResult;
 use common_metrics::QueryID;
 use common_partitioning::PartitionRef;
 use common_treenode::ConcreteTreeNode;
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{InMemoryInfo, partitioning::ClusteringSpecRef, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt, stream::BoxStream};
@@ -350,7 +350,7 @@ impl Stream for SubmittableTaskStream {
 pub(crate) fn make_in_memory_scan_from_materialized_outputs(
     materialized_outputs: &[MaterializedOutput],
     schema: SchemaRef,
-    cache_key: String,
+    node_id: NodeID,
 ) -> DaftResult<LocalPhysicalPlanRef> {
     let num_partitions = materialized_outputs.len();
     let mut total_size_bytes = 0;
@@ -363,7 +363,7 @@ pub(crate) fn make_in_memory_scan_from_materialized_outputs(
 
     let info = InMemoryInfo::new(
         schema,
-        cache_key,
+        node_id.to_string(),
         None,
         num_partitions,
         total_size_bytes,
@@ -371,8 +371,14 @@ pub(crate) fn make_in_memory_scan_from_materialized_outputs(
         None,
         None,
     );
-    let in_memory_source_plan =
-        LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
+    let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
+        info,
+        StatsState::NotMaterialized,
+        LocalNodeContext {
+            origin_node_id: Some(node_id as usize),
+            additional: None,
+        },
+    );
     Ok(in_memory_source_plan)
 }
 
@@ -390,7 +396,7 @@ where
     let in_memory_source_plan = make_in_memory_scan_from_materialized_outputs(
         &materialized_outputs,
         input_schema,
-        node.node_id().to_string(),
+        node.node_id(),
     )?;
     let partition_refs = materialized_outputs
         .into_iter()

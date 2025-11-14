@@ -187,8 +187,8 @@ async fn exec_op_end(
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ExecEmitStatsArgsSend<'a> {
-    pub stats: Vec<(usize, HashMap<&'a str, Stat>)>,
+pub struct ExecEmitStatsArgsSend {
+    pub stats: Vec<(usize, HashMap<String, Stat>)>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

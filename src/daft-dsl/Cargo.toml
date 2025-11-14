@@ -7,6 +7,7 @@ common-macros = {path = "../common/macros"}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 common-resource-request = {path = "../common/resource-request", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
+common-metrics = {path = "../common/metrics", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
 derive_more = {workspace = true}
@@ -30,7 +31,8 @@ python = [
   "daft-core/python",
   "common-treenode/python",
   "common-py-serde/python",
-  "common-resource-request/python"
+  "common-resource-request/python",
+  "common-metrics/python"
 ]
 test-utils = []
 

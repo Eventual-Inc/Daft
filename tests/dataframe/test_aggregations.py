@@ -57,6 +57,7 @@ def test_agg_global(make_df, repartition_nparts, with_morsel_size):
     daft_df = daft_df.agg(
         [
             col("values").sum().alias("sum"),
+            col("values").product().alias("product"),
             col("values").mean().alias("mean"),
             col("values").min().alias("min"),
             col("values").max().alias("max"),
@@ -67,6 +68,7 @@ def test_agg_global(make_df, repartition_nparts, with_morsel_size):
     )
     expected = {
         "sum": [3],
+        "product": [2],
         "mean": [1.5],
         "min": [1],
         "max": [2],
@@ -110,6 +112,7 @@ def test_agg_global_all_null(make_df, repartition_nparts, with_morsel_size):
     daft_df = daft_df.where(col("id") != 0).agg(
         [
             col("values").sum().alias("sum"),
+            col("values").product().alias("product"),
             col("values").mean().alias("mean"),
             col("values").min().alias("min"),
             col("values").max().alias("max"),
@@ -120,6 +123,7 @@ def test_agg_global_all_null(make_df, repartition_nparts, with_morsel_size):
     )
     expected = {
         "sum": [None],
+        "product": [None],
         "mean": [None],
         "min": [None],
         "max": [None],
@@ -160,6 +164,7 @@ def test_agg_global_empty(make_df):
     daft_df = daft_df.where(col("id") != 0).agg(
         [
             col("values").sum().alias("sum"),
+            col("values").product().alias("product"),
             col("values").mean().alias("mean"),
             col("values").min().alias("min"),
             col("values").max().alias("max"),
@@ -170,6 +175,7 @@ def test_agg_global_empty(make_df):
     )
     expected = {
         "sum": [None],
+        "product": [None],
         "mean": [None],
         "min": [None],
         "max": [None],
@@ -211,6 +217,7 @@ def test_agg_groupby(make_df, repartition_nparts, with_morsel_size):
     daft_df = daft_df.groupby("group").agg(
         [
             col("values").sum().alias("sum"),
+            col("values").product().alias("product"),
             col("values").mean().alias("mean"),
             col("values").min().alias("min"),
             col("values").max().alias("max"),
@@ -222,6 +229,7 @@ def test_agg_groupby(make_df, repartition_nparts, with_morsel_size):
     expected = {
         "group": [1, 2],
         "sum": [3, 6],
+        "product": [2, 8],
         "mean": [1.5, 3],
         "min": [1, 2],
         "max": [2, 4],
@@ -274,6 +282,7 @@ def test_agg_groupby_all_null(make_df, repartition_nparts, with_morsel_size):
     daft_df = daft_df.groupby(col("group")).agg(
         [
             col("values").sum().alias("sum"),
+            col("values").product().alias("product"),
             col("values").mean().alias("mean"),
             col("values").min().alias("min"),
             col("values").max().alias("max"),
@@ -286,6 +295,7 @@ def test_agg_groupby_all_null(make_df, repartition_nparts, with_morsel_size):
     expected = {
         "group": [1, 2],
         "sum": [None, None],
+        "product": [None, None],
         "mean": [None, None],
         "min": [None, None],
         "max": [None, None],

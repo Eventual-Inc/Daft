@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Any
 
 from daft.ai.provider import Provider
@@ -49,8 +50,15 @@ class TransformersProvider(Provider):
             model_options=model_options,  # type: ignore
         )
 
-    def get_text_embedder(self, model: str | None = None, **options: Any) -> TextEmbedderDescriptor:
+    def get_text_embedder(
+        self, model: str | None = None, dimensions: int | None = None, **options: Any
+    ) -> TextEmbedderDescriptor:
         from daft.ai.transformers.protocols.text_embedder import TransformersTextEmbedderDescriptor
+
+        if dimensions is not None:
+            warnings.warn(
+                f"embed_text dimensions was specified but provider {self.name} currently ignores this property: see https://github.com/Eventual-Inc/Daft/issues/5555"
+            )
 
         return TransformersTextEmbedderDescriptor(model or self.DEFAULT_TEXT_EMBEDDER, options)
 

@@ -405,6 +405,11 @@ pub async fn s3_config_from_env() -> super::Result<S3Config> {
             .await;
     let creds = provide_credentials_with_retry(&credentials_provider).await?;
 
+    // Support configure retry error messages via system environment variable
+    let retry_error_msgs = std::env::var("DAFT_S3_RETRY_ERROR_MSGS")
+        .map(|s| s.split(',').map(|s| s.to_string()).collect::<Vec<_>>())
+        .unwrap_or_default();
+
     Ok(if let Some(creds) = creds {
         S3Config {
             key_id: Some(creds.access_key_id().to_string()),
@@ -412,12 +417,14 @@ pub async fn s3_config_from_env() -> super::Result<S3Config> {
             session_token: creds.session_token().map(|t| t.to_string().into()),
             region_name,
             anonymous: false,
+            custom_retry_msgs: retry_error_msgs,
             ..Default::default()
         }
     } else {
         S3Config {
             region_name,
             anonymous: true,
+            custom_retry_msgs: retry_error_msgs,
             ..Default::default()
         }
     })
@@ -639,33 +646,46 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
     let force_path_style = config.endpoint_url.is_some() && !config.force_virtual_addressing;
     builder = builder.force_path_style(force_path_style);
 
-    let retry_unexpected_eof = {
-        #[derive(Debug)]
-        struct RetryUnexpectedEof;
+    // Add custom retry classifier for customized retry messages
+    if !config.custom_retry_msgs.is_empty() {
+        let custom_retrier = {
+            let custom_retry_msgs = config.custom_retry_msgs.clone();
+            #[derive(Debug)]
+            struct RetryCustomRetrier {
+                retried_msgs: Vec<String>,
+            }
 
-        impl ClassifyRetry for RetryUnexpectedEof {
-            fn classify_retry(&self, ctx: &InterceptorContext) -> RetryAction {
-                if let Some(Err(err)) = ctx.output_or_error()
-                    && format!("{err:?}").contains("UnexpectedEof")
-                {
-                    RetryAction::server_error()
-                } else {
+            impl ClassifyRetry for RetryCustomRetrier {
+                fn classify_retry(&self, ctx: &InterceptorContext) -> RetryAction {
+                    if let Some(Err(err)) = ctx.output_or_error() {
+                        let error_str = format!("{err:?}");
+                        for msg in &self.retried_msgs {
+                            if error_str.contains(msg) {
+                                log::warn!(
+                                    "Triggering retry for error: {error_str} with msg: {msg}"
+                                );
+                                return RetryAction::server_error();
+                            }
+                        }
+                    }
                     RetryAction::NoActionIndicated
+                }
+
+                fn name(&self) -> &'static str {
+                    "RetryCustomRetrier"
+                }
+
+                fn priority(&self) -> RetryClassifierPriority {
+                    RetryClassifierPriority::transient_error_classifier()
                 }
             }
 
-            fn name(&self) -> &'static str {
-                "RetryUnexpectedEof"
+            RetryCustomRetrier {
+                retried_msgs: custom_retry_msgs,
             }
-
-            fn priority(&self) -> RetryClassifierPriority {
-                RetryClassifierPriority::transient_error_classifier()
-            }
-        }
-
-        RetryUnexpectedEof
-    };
-    builder = builder.retry_classifier(retry_unexpected_eof);
+        };
+        builder = builder.retry_classifier(custom_retrier);
+    }
 
     let builder_copy = builder.clone();
     let mut s3_conf = builder.build();

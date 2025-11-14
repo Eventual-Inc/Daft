@@ -106,16 +106,14 @@ impl PushDownLimit {
                                     SourceInfo::Physical(new_external_info).into(),
                                 ))
                                 .into();
-                                let out_plan = if external_info
-                                    .scan_state
-                                    .get_scan_op()
-                                    .0
-                                    .can_absorb_limit()
-                                {
-                                    new_source
-                                } else {
-                                    plan.with_new_children(&[new_source]).into()
-                                };
+                                let out_plan =
+                                    if external_info.scan_state.get_scan_op().0.can_absorb_limit()
+                                        && offset.is_none()
+                                    {
+                                        new_source
+                                    } else {
+                                        plan.with_new_children(&[new_source]).into()
+                                    };
                                 Ok(Transformed::yes(out_plan))
                             }
                             SourceInfo::PlaceHolder(..) => {
