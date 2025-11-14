@@ -95,7 +95,7 @@ class NativeRunner(Runner[MicroPartition]):
         # Optimize the logical plan.
         ctx._notify_query_start(query_id, PyQueryMetadata(output_schema._schema, repr(builder)))
         ctx._notify_optimization_start(query_id)
-        builder = builder.optimize()
+        builder = builder.optimize(ctx.daft_execution_config)
         ctx._notify_optimization_end(query_id, repr(builder))
 
         # NOTE: ENABLE FOR DAFT-PROTO TESTING
@@ -111,11 +111,12 @@ class NativeRunner(Runner[MicroPartition]):
             {"query_id": query_id},
         )
 
-        for result in results_gen:
-            ctx._notify_result_out(query_id, result.partition())
-            yield result
-
-        ctx._notify_query_end(query_id)
+        try:
+            for result in results_gen:
+                ctx._notify_result_out(query_id, result.partition())
+                yield result
+        finally:
+            ctx._notify_query_end(query_id)
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None

@@ -2,6 +2,7 @@ use std::{cmp::Ordering, collections::HashMap, fmt::Debug, future::Future, sync:
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftError;
+use common_metrics::StatSnapshot;
 use common_partitioning::PartitionRef;
 use common_resource_request::ResourceRequest;
 use daft_local_plan::LocalPhysicalPlanRef;
@@ -15,7 +16,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub(crate) struct TaskResourceRequest {
-    resource_request: ResourceRequest,
+    pub resource_request: ResourceRequest,
 }
 
 impl TaskResourceRequest {
@@ -42,10 +43,14 @@ pub(crate) type TaskName = String;
 #[derive(Clone, PartialEq, Eq, Hash, Default)]
 #[allow(clippy::struct_field_names)]
 pub(crate) struct TaskContext {
+    /// The query index that the task belongs to.
     pub query_idx: QueryIdx,
-    pub node_id: NodeID,
+    /// The ID of the last operator / node in the task's pipeline.
+    /// This gives us a general indication of what portion of the query this task is related to.
+    pub last_node_id: NodeID,
+    /// The task ID
     pub task_id: TaskID,
-    pub logical_node_ids: Vec<NodeID>,
+    pub node_ids: Vec<NodeID>,
 }
 
 impl TaskContext {
@@ -53,18 +58,18 @@ impl TaskContext {
         query_idx: QueryIdx,
         node_id: NodeID,
         task_id: TaskID,
-        logical_node_ids: Vec<NodeID>,
+        node_ids: Vec<NodeID>,
     ) -> Self {
         Self {
             query_idx,
-            node_id,
+            last_node_id: node_id,
             task_id,
-            logical_node_ids,
+            node_ids,
         }
     }
 
-    pub fn add_logical_node_id(&mut self, logical_node_id: NodeID) {
-        self.logical_node_ids.push(logical_node_id);
+    pub fn add_node_id(&mut self, node_id: NodeID) {
+        self.node_ids.push(node_id);
     }
 }
 
@@ -72,8 +77,8 @@ impl std::fmt::Debug for TaskContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "TaskContext(query_idx = {}, node_id = {}, task_id = {})",
-            self.query_idx, self.node_id, self.task_id
+            "TaskContext(query_idx = {}, last_node_id = {}, task_id = {})",
+            self.query_idx, self.last_node_id, self.task_id
         )
     }
 }
@@ -84,10 +89,7 @@ impl From<(&PipelineNodeContext, TaskID)> for TaskContext {
             node_context.query_idx,
             node_context.node_id,
             task_id,
-            node_context
-                .logical_node_id
-                .map(|id| vec![id])
-                .unwrap_or_default(),
+            vec![node_context.node_id],
         )
     }
 }
@@ -109,8 +111,8 @@ pub(crate) trait Task: Send + Sync + Clone + Debug + 'static {
     }
 
     #[allow(dead_code)]
-    fn node_id(&self) -> NodeID {
-        self.task_context().node_id
+    fn last_node_id(&self) -> NodeID {
+        self.task_context().last_node_id
     }
 
     fn task_name(&self) -> TaskName;
@@ -192,9 +194,9 @@ impl PartialOrd for SwordfishTaskPriority {
 impl Ord for SwordfishTaskPriority {
     fn cmp(&self, other: &Self) -> Ordering {
         // Rules for swordfish task priority:
-        // 1. Plan ID: Lower plan_id, higher priority
-        // 2. Node ID: Higher node_id, higher priority
-        // 3. Task ID: Lower task_id, higher priority
+        // 1. Query Idx: Lower query_idx, higher priority
+        // 2. Node ID:   Higher node_id, higher priority
+        // 3. Task ID:   Lower task_id, higher priority
         other
             .query_idx
             .cmp(&self.query_idx)
@@ -284,7 +286,7 @@ impl Task for SwordfishTask {
     fn priority(&self) -> impl TaskPriority {
         SwordfishTaskPriority {
             query_idx: self.task_context.query_idx,
-            node_id: self.task_context.node_id,
+            node_id: self.task_context.last_node_id,
             task_id: self.task_context.task_id,
         }
     }
@@ -292,8 +294,13 @@ impl Task for SwordfishTask {
 
 #[derive(Debug)]
 pub(crate) enum TaskStatus {
-    Success { result: MaterializedOutput },
-    Failed { error: DaftError },
+    Success {
+        result: MaterializedOutput,
+        stats: Vec<(usize, StatSnapshot)>,
+    },
+    Failed {
+        error: DaftError,
+    },
     Cancelled,
     WorkerDied,
     WorkerUnavailable,
@@ -562,6 +569,7 @@ pub(super) mod tests {
                 }
                 TaskStatus::Success {
                     result: task.task_result,
+                    stats: vec![],
                 }
             }
         }
@@ -581,9 +589,9 @@ pub(super) mod tests {
     #[test]
     fn test_swordfish_task_priority_ordering() {
         // Test cases for priority ordering:
-        // Lower plan_id, higher stage_id, higher node_id, lower task_id should have higher priority
+        // Lower query_idx, higher stage_id, higher node_id, lower task_id should have higher priority
 
-        // Test 1: Different plan_ids (lower plan_id should have higher priority)
+        // Test 1: Different query_idxs (lower query_idx should have higher priority)
         let task1 = SwordfishTaskPriority {
             query_idx: 1,
             node_id: 1,
@@ -594,9 +602,9 @@ pub(super) mod tests {
             node_id: 1,
             task_id: 1,
         };
-        assert!(task1 > task2); // plan_id 1 < plan_id 2, so task1 has higher priority (larger in ordering)
+        assert!(task1 > task2); // query_idx 1 < query_idx 2, so task1 has higher priority (larger in ordering)
 
-        // Test 2: Same plan_id, different task_ids (higher task_id should have higher priority)
+        // Test 2: Same query_idx, different task_ids (higher task_id should have higher priority)
         let task1 = SwordfishTaskPriority {
             query_idx: 1,
             node_id: 2,
@@ -609,7 +617,7 @@ pub(super) mod tests {
         };
         assert!(task1 > task2); // node_id 2 > node_id 1, so task1 has higher priority (larger in ordering)
 
-        // Test 3: Same plan_id and node_id, different task_ids (lower task_id should have higher priority)
+        // Test 3: Same query_idx and node_id, different task_ids (lower task_id should have higher priority)
         let task1 = SwordfishTaskPriority {
             query_idx: 1,
             node_id: 1,
@@ -633,7 +641,7 @@ pub(super) mod tests {
             node_id: 1,
             task_id: 1,
         };
-        assert!(task1 > task2); // task1 has lower plan_id, so it has higher priority (larger in ordering)
+        assert!(task1 > task2); // task1 has lower query_idx, so it has higher priority (larger in ordering)
 
         // Test 5: Equality
         let task1 = SwordfishTaskPriority {
@@ -681,10 +689,10 @@ pub(super) mod tests {
 
         // Pop tasks in order (BinaryHeap is a max heap, so highest priority comes out first)
         // Expected order (highest priority to lowest priority):
-        // 1. plan_id=1, stage_id=1, node_id=2, task_id=3 (higher node_id = higher priority = larger in heap)
-        // 2. plan_id=1, stage_id=1, node_id=1, task_id=1 (lower task_id = higher priority = larger in heap)
-        // 3. plan_id=1, stage_id=1, node_id=1, task_id=2 (higher task_id = lower priority = smaller in heap)
-        // 4. plan_id=2, stage_id=1, node_id=1, task_id=1 (higher plan_id = lowest priority = smallest in heap)
+        // 1. query_idx=1, stage_id=1, node_id=2, task_id=3 (higher node_id = higher priority = larger in heap)
+        // 2. query_idx=1, stage_id=1, node_id=1, task_id=1 (lower task_id = higher priority = larger in heap)
+        // 3. query_idx=1, stage_id=1, node_id=1, task_id=2 (higher task_id = lower priority = smaller in heap)
+        // 4. query_idx=2, stage_id=1, node_id=1, task_id=1 (higher query_idx = lowest priority = smallest in heap)
 
         assert_eq!(
             heap.pop().unwrap(),

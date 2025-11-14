@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use daft_core::prelude::{DataType, Field, Schema, TimeUnit};
 use sqlparser::{
     ast::{ArrayElemTypeDef, ExactNumberInfo, StructField, TimezoneInfo},
-    dialect::GenericDialect,
+    dialect::{Dialect, DuckDbDialect, GenericDialect},
+    keywords::Keyword,
     parser::{Parser, ParserOptions},
-    tokenizer::Tokenizer,
+    tokenizer::{Token, Tokenizer},
 };
 
 use crate::{
@@ -15,8 +16,23 @@ use crate::{
 
 /// Parses a SQL string as a daft DataType
 pub fn try_parse_dtype<S: AsRef<str>>(s: S) -> SQLPlannerResult<DataType> {
-    let tokens = Tokenizer::new(&GenericDialect {}, s.as_ref()).tokenize()?;
-    let mut parser = Parser::new(&GenericDialect {})
+    let s_str = s.as_ref();
+    let tokens = Tokenizer::new(&GenericDialect {}, s_str).tokenize()?;
+
+    let non_whitespace_tokens: Vec<&Token> = tokens
+        .iter()
+        .filter(|token| !matches!(token, Token::Whitespace(_)))
+        .collect();
+
+    let uses_paren_syntax = is_struct_with_parens(&non_whitespace_tokens);
+
+    let dialect: &dyn Dialect = if uses_paren_syntax {
+        &DuckDbDialect {}
+    } else {
+        &GenericDialect {}
+    };
+
+    let mut parser = Parser::new(dialect)
         .with_options(ParserOptions {
             trailing_commas: true,
             ..Default::default()
@@ -24,6 +40,28 @@ pub fn try_parse_dtype<S: AsRef<str>>(s: S) -> SQLPlannerResult<DataType> {
         .with_tokens(tokens);
     let dtype = parser.parse_data_type()?;
     sql_dtype_to_dtype(&dtype)
+}
+
+fn is_struct_with_parens(tokens: &[&Token]) -> bool {
+    if tokens.len() < 2 {
+        return false;
+    }
+
+    let is_struct_type = matches!(
+        tokens[0],
+        Token::Word(word) if word.keyword == Keyword::STRUCT
+    );
+
+    if !is_struct_type {
+        return false;
+    }
+
+    tokens.windows(2).any(|window| {
+        matches!(
+            (window[0], window[1]),
+            (Token::Word(word), Token::LParen) if word.keyword == Keyword::STRUCT
+        )
+    })
 }
 
 /// Parses a SQL map of name-type pairs into a new Schema
@@ -169,10 +207,6 @@ pub(crate) fn sql_dtype_to_dtype(dtype: &sqlparser::ast::DataType) -> SQLPlanner
         // struct
         // ---------------------------------
         SQLDataType::Struct(fields, _brackets) => {
-            // TODO: https://github.com/Eventual-Inc/Daft/issues/4448
-            // if matches!(brackets, StructBracketKind::AngleBrackets) {
-            //     use_instead!(dtype, "STRUCT(fields...)")
-            // }
             let fields = fields
                 .iter()
                 .enumerate()
@@ -275,7 +309,7 @@ pub(crate) fn timeunit_from_precision(prec: Option<u64>) -> SQLPlannerResult<Tim
 
 #[cfg(test)]
 mod test {
-    use daft_core::prelude::{DataType, ImageMode};
+    use daft_core::prelude::{DataType, Field, ImageMode};
     use rstest::rstest;
 
     #[rstest]
@@ -345,15 +379,22 @@ mod test {
             10
         )
     )]
-    // TODO: https://github.com/Eventual-Inc/Daft/issues/4448
-    // #[case(
-    //     "struct(a bool, b int, c string)",
-    //     DataType::Struct(vec![
-    //         Field::new("a", DataType::Boolean),
-    //         Field::new("b", DataType::Int32),
-    //         Field::new("c", DataType::Utf8),
-    //     ])
-    // )]
+    #[case(
+        "struct(a bool, b int, c string)",
+        DataType::Struct(vec![
+            Field::new("a", DataType::Boolean),
+            Field::new("b", DataType::Int32),
+            Field::new("c", DataType::Utf8),
+        ])
+    )]
+    #[case(
+        "struct<a bool, b int, c string>",
+        DataType::Struct(vec![
+            Field::new("a", DataType::Boolean),
+            Field::new("b", DataType::Int32),
+            Field::new("c", DataType::Utf8),
+        ])
+    )]
     fn test_sql_datatype(#[case] sql: &str, #[case] expected: DataType) {
         let result = super::try_parse_dtype(sql).unwrap();
         assert_eq!(result, expected);

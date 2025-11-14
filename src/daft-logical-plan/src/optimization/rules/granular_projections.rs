@@ -1,21 +1,20 @@
-use std::{any::TypeId, collections::HashSet, sync::Arc};
+use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_dsl::{
     Expr,
-    functions::{BuiltinScalarFn, scalar::ScalarFn},
+    functions::{BuiltinScalarFn, BuiltinScalarFnVariant, scalar::ScalarFn},
     resolved_col,
 };
-use daft_functions_uri::download::UrlDownload;
 use itertools::Itertools;
 
 use super::OptimizerRule;
 use crate::{LogicalPlan, ops::Project};
 
 /// This rule will split projections into multiple projections such that expressions that
-/// need their own granular morsel sizing will be isolated. Right now, those would be
-/// URL downloads, but this may be extended in the future to other functions and Python UDFs.
+/// need their own granular morsel sizing will be isolated. Right now it will be any async function that has a preferred batch size,
+/// such as URL downloads, but this may be extended in the future to other functions and Python UDFs.
 ///
 /// Example of Original Plan:
 ///     3) Sink
@@ -47,7 +46,7 @@ impl SplitGranularProjection {
         // As well as good testing
         matches!(
             expr,
-            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. })) if udf.as_ref().type_id() == TypeId::of::<UrlDownload>()
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func: BuiltinScalarFnVariant::Async(f), inputs })) if f.preferred_batch_size(inputs.clone()).ok().flatten().is_some()
         )
     }
 
@@ -213,6 +212,8 @@ impl SplitGranularProjection {
 #[cfg(test)]
 mod tests {
 
+    use std::any::TypeId;
+
     use common_scan_info::Pushdowns;
     use daft_dsl::{Column, ExprRef, Operator, ResolvedColumn, lit};
     use daft_functions_binary::{BinaryDecode, Codec};
@@ -252,7 +253,7 @@ mod tests {
             Pushdowns::default(),
         )
         .with_columns(vec![
-            BuiltinScalarFn::new(UrlDownload, vec![resolved_col("url")]).into(),
+            BuiltinScalarFn::new_async(UrlDownload, vec![resolved_col("url")]).into(),
         ])
         .unwrap()
         .build();
@@ -279,7 +280,7 @@ mod tests {
             ExprRef::from(BuiltinScalarFn::new(
                 BinaryDecode,
                 vec![
-                    BuiltinScalarFn::new(UrlDownload, vec![resolved_col("url")]).into(),
+                    BuiltinScalarFn::new_async(UrlDownload, vec![resolved_col("url")]).into(),
                     lit(Codec::Utf8),
                 ],
             ))
@@ -319,7 +320,7 @@ mod tests {
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. })) if udf.as_ref().type_id() == TypeId::of::<BinaryDecode>()
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func, .. })) if func.type_id() == TypeId::of::<BinaryDecode>()
         ));
 
         // Check that the top level project has a single child, which is a project
@@ -340,7 +341,7 @@ mod tests {
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. })) if udf.as_ref().type_id() == TypeId::of::<UrlDownload>()
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func, .. })) if func.type_id() == TypeId::of::<UrlDownload>()
         ));
 
         // Check that the bottom level project has a single child, which is a source node
@@ -366,8 +367,11 @@ mod tests {
         .select(vec![
             Arc::new(Expr::BinaryOp {
                 op: Operator::Plus,
-                left: BuiltinScalarFn::new(UrlDownload, vec![capitalize(resolved_col("url"))])
-                    .into(),
+                left: BuiltinScalarFn::new_async(
+                    UrlDownload,
+                    vec![capitalize(resolved_col("url"))],
+                )
+                .into(),
                 right: resolved_col("extra"),
             })
             .alias("url_data"),
@@ -430,7 +434,7 @@ mod tests {
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. })) if udf.as_ref().type_id() == TypeId::of::<UrlDownload>()
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func, .. })) if func.type_id() == TypeId::of::<UrlDownload>()
         ));
 
         // Check that the middle level project has a single child, which is a project
@@ -451,7 +455,7 @@ mod tests {
         };
         assert!(matches!(
             func.as_ref(),
-            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, .. })) if udf.as_ref().type_id() == TypeId::of::<Capitalize>()
+            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func, .. })) if func.type_id() == TypeId::of::<Capitalize>()
         ));
 
         // Check that the bottom level project has a single child, which is a source node

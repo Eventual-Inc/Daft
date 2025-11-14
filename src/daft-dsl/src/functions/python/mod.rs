@@ -1,7 +1,7 @@
 mod runtime_py_object;
 mod udf;
 
-use std::sync::Arc;
+use std::{num::NonZeroUsize, str::FromStr, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
@@ -9,12 +9,52 @@ use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use itertools::Itertools;
 #[cfg(feature = "python")]
-use pyo3::{
-    Bound, IntoPyObject, PyObject, PyResult, Python,
-    types::{PyDict, PyTuple},
-};
+use pyo3::{Bound, Py, PyAny, PyResult, Python, call::PyCallArgs, types::PyDict};
 pub use runtime_py_object::RuntimePyObject;
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
+pub enum OnError {
+    #[default]
+    Raise,
+    Log,
+    Ignore,
+}
+impl std::fmt::Display for OnError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Raise => write!(f, "raise"),
+            Self::Log => write!(f, "log"),
+            Self::Ignore => write!(f, "ignore"),
+        }
+    }
+}
+
+impl OnError {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Raise => "raise",
+            Self::Log => "log",
+            Self::Ignore => "ignore",
+        }
+    }
+}
+
+impl FromStr for OnError {
+    type Err = DaftError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "raise" => Ok(Self::Raise),
+            "log" => Ok(Self::Log),
+            "ignore" => Ok(Self::Ignore),
+            _ => Err(DaftError::ValueError(format!(
+                "Invalid on_error value: {}",
+                s
+            ))),
+        }
+    }
+}
 
 use super::FunctionExpr;
 #[cfg(feature = "python")]
@@ -38,7 +78,7 @@ pub enum MaybeInitializedUDF {
 #[derive(Debug, Clone)]
 pub struct WrappedUDFClass {
     #[cfg(feature = "python")]
-    pub inner: Arc<PyObject>,
+    pub inner: Arc<Py<PyAny>>,
 }
 
 #[cfg(feature = "python")]
@@ -50,7 +90,7 @@ impl WrappedUDFClass {
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<PyExpr>
     where
-        A: IntoPyObject<'py, Target = PyTuple>,
+        A: PyCallArgs<'py>,
     {
         let o = self.inner.call(py, args, kwargs)?;
         let inner = o.getattr(py, "_expr")?;
@@ -60,7 +100,7 @@ impl WrappedUDFClass {
     }
 
     pub fn name(&self) -> PyResult<String> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let s: String = self.inner.getattr(py, "name")?.extract(py)?;
             Ok(if s.contains('.') {
                 s.split('.').next_back().unwrap().to_string()
@@ -80,7 +120,7 @@ pub struct LegacyPythonUDF {
     pub return_dtype: DataType,
     pub resource_request: Option<ResourceRequest>,
     pub batch_size: Option<usize>,
-    pub concurrency: Option<usize>,
+    pub concurrency: Option<NonZeroUsize>,
     pub use_process: Option<bool>,
 }
 
@@ -98,7 +138,7 @@ impl LegacyPythonUDF {
             return_dtype: DataType::Int64,
             resource_request: None,
             batch_size: None,
-            concurrency: Some(4),
+            concurrency: Some(NonZeroUsize::new(4).unwrap()),
             use_process: None,
         }
     }
@@ -114,7 +154,7 @@ pub fn udf(
     init_args: RuntimePyObject,
     resource_request: Option<ResourceRequest>,
     batch_size: Option<usize>,
-    concurrency: Option<usize>,
+    concurrency: Option<NonZeroUsize>,
     use_process: Option<bool>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
@@ -204,9 +244,9 @@ pub fn try_get_udf_name(expr: &ExprRef) -> Option<String> {
 #[cfg(feature = "python")]
 fn py_udf_initialize(
     py: Python<'_>,
-    func: Arc<pyo3::PyObject>,
-    init_args: Arc<pyo3::PyObject>,
-) -> DaftResult<pyo3::PyObject> {
+    func: Arc<Py<PyAny>>,
+    init_args: Arc<Py<PyAny>>,
+) -> DaftResult<Py<PyAny>> {
     Ok(func.call_method1(
         py,
         pyo3::intern!(py, "initialize"),
@@ -230,7 +270,7 @@ pub fn initialize_udfs(expr: ExprRef) -> DaftResult<ExprRef> {
                 ),
             inputs,
         } => {
-            let initialized_func = Python::with_gil(|py| {
+            let initialized_func = Python::attach(|py| {
                 py_udf_initialize(py, inner.clone().unwrap(), init_args.clone().unwrap())
             })?;
 
@@ -254,8 +294,12 @@ pub struct UDFProperties {
     pub name: String,
     pub resource_request: Option<ResourceRequest>,
     pub batch_size: Option<usize>,
-    pub concurrency: Option<usize>,
+    pub concurrency: Option<NonZeroUsize>,
     pub use_process: Option<bool>,
+    pub max_retries: Option<usize>,
+    pub is_async: bool,
+    pub is_scalar: bool,
+    pub on_error: Option<OnError>,
 }
 
 impl UDFProperties {
@@ -284,6 +328,10 @@ impl UDFProperties {
                         batch_size: *batch_size,
                         concurrency: *concurrency,
                         use_process: *use_process,
+                        max_retries: None,
+                        is_async: false,
+                        on_error: None,
+                        is_scalar: false,
                     });
                 }
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
@@ -291,6 +339,9 @@ impl UDFProperties {
                     gpus,
                     max_concurrency,
                     use_process,
+                    max_retries,
+                    on_error,
+                    is_async,
                     ..
                 }))) => {
                     num_udfs += 1;
@@ -304,6 +355,10 @@ impl UDFProperties {
                         batch_size: None,
                         concurrency: *max_concurrency,
                         use_process: *use_process,
+                        max_retries: *max_retries,
+                        is_async: *is_async,
+                        on_error: Some(*on_error),
+                        is_scalar: true,
                     });
                 }
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
@@ -312,6 +367,9 @@ impl UDFProperties {
                     max_concurrency,
                     use_process,
                     batch_size,
+                    max_retries,
+                    on_error,
+                    is_async,
                     ..
                 }))) => {
                     num_udfs += 1;
@@ -325,6 +383,10 @@ impl UDFProperties {
                         batch_size: *batch_size,
                         concurrency: *max_concurrency,
                         use_process: *use_process,
+                        max_retries: *max_retries,
+                        is_async: *is_async,
+                        on_error: Some(*on_error),
+                        is_scalar: false,
                     });
                 }
                 _ => {}

@@ -10,21 +10,21 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_metrics::QueryID;
 use common_partitioning::PartitionRef;
-use daft_logical_plan::LogicalPlanRef;
+use common_treenode::{TreeNode, TreeNodeRecursion};
 use futures::{Stream, StreamExt};
 
-use super::{DistributedPhysicalPlan, QueryIdx, PlanResult};
+use super::{DistributedPhysicalPlan, PlanResult, QueryIdx};
 use crate::{
     pipeline_node::{
-        MaterializedOutput, SubmittableTaskStream, logical_plan_to_pipeline_node,
-        materialize::materialize_all_pipeline_outputs,
+        DistributedPipelineNode, MaterializedOutput, SubmittableTaskStream,
+        logical_plan_to_pipeline_node, materialize::materialize_all_pipeline_outputs,
     },
     scheduling::{
         scheduler::{SchedulerHandle, spawn_scheduler_actor},
         task::{SwordfishTask, TaskID},
         worker::{Worker, WorkerManager},
     },
-    statistics::{StatisticsManagerRef},
+    statistics::{StatisticsManager, StatisticsSubscriber},
     utils::{
         channel::{Sender, create_channel},
         joinset::{JoinSet, create_join_set},
@@ -79,15 +79,19 @@ impl PlanExecutionContext {
 }
 
 #[derive(Clone)]
-pub(crate) struct QueryConfig {
-    pub query_id: QueryID,
+pub(crate) struct PlanConfig {
     pub query_idx: QueryIdx,
+    pub query_id: QueryID,
     pub config: Arc<DaftExecutionConfig>,
 }
 
-impl QueryConfig {
-    pub fn new(query_id: QueryID, query_idx: QueryIdx, config: Arc<DaftExecutionConfig>) -> Self {
-        Self { query_id, query_idx, config }
+impl PlanConfig {
+    pub fn new(query_idx: QueryIdx, query_id: QueryID, config: Arc<DaftExecutionConfig>) -> Self {
+        Self {
+            query_idx,
+            query_id,
+            config,
+        }
     }
 }
 
@@ -125,22 +129,14 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
 
     async fn execute_plan(
         &self,
-        query_config: QueryConfig,
-        logical_plan: LogicalPlanRef,
-        psets: HashMap<String, Vec<PartitionRef>>,
+        pipeline_node: DistributedPipelineNode,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
         sender: Sender<MaterializedOutput>,
-        statistics_manager: StatisticsManagerRef,
     ) -> DaftResult<()> {
         let mut plan_context = PlanExecutionContext::new(scheduler_handle.clone());
-        let query_id = query_config.query_id.clone();
 
-        let head_pipeline_node =
-            logical_plan_to_pipeline_node(query_config, logical_plan.clone(), Arc::new(psets))?;
-
-        statistics_manager.handle_start(query_id.clone())?;
-        let head_running_node = head_pipeline_node.produce_tasks(&mut plan_context);
-        let running_stage = RunningPlan::new(head_running_node, plan_context);
+        let running_node = pipeline_node.produce_tasks(&mut plan_context);
+        let running_stage = RunningPlan::new(running_node, plan_context);
 
         let mut materialized_result_stream = running_stage.materialize(scheduler_handle);
         while let Some(result) = materialized_result_stream.next().await {
@@ -148,7 +144,6 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
                 break;
             }
         }
-        statistics_manager.handle_finish(query_id).await?;
         Ok(())
     }
 
@@ -156,17 +151,28 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         self: &Arc<Self>,
         plan: &DistributedPhysicalPlan,
         psets: HashMap<String, Vec<PartitionRef>>,
-        statistics_manager: StatisticsManagerRef,
+        subscribers: Vec<Box<dyn StatisticsSubscriber>>,
     ) -> DaftResult<PlanResult> {
+        let query_idx = plan.idx();
         let query_id = plan.query_id();
-        let query_idx = plan.query_idx();
         let config = plan.execution_config().clone();
         let logical_plan = plan.logical_plan().clone();
-        let plan_config = QueryConfig::new(query_id, query_idx, config);
+        let plan_config = PlanConfig::new(query_idx, query_id.clone(), config);
+
+        let pipeline_node =
+            logical_plan_to_pipeline_node(plan_config, logical_plan, Arc::new(psets))?;
+
+        // Extract runtime stats from pipeline nodes to create the StatisticsManager
+        let mut runtime_stats = HashMap::new();
+        pipeline_node.apply(|node| {
+            runtime_stats.insert(node.node_id(), node.runtime_stats());
+            Ok(TreeNodeRecursion::Continue)
+        })?;
+
+        let statistics_manager = StatisticsManager::new(runtime_stats, subscribers);
 
         let runtime = get_or_init_runtime();
         let (result_sender, result_receiver) = create_channel(1);
-
         let this = self.clone();
 
         let joinset = runtime.block_on_current_thread(async move {
@@ -178,15 +184,11 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
             );
 
             joinset.spawn(async move {
-                this.execute_plan(
-                    plan_config,
-                    logical_plan,
-                    psets,
-                    scheduler_handle,
-                    result_sender,
-                    statistics_manager,
-                )
-                .await
+                statistics_manager.handle_start(query_id.clone())?;
+                this.execute_plan(pipeline_node, scheduler_handle, result_sender)
+                    .await?;
+                statistics_manager.handle_finish(query_id.clone()).await?;
+                Ok(())
             });
             joinset
         });

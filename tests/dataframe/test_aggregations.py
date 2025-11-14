@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from io import StringIO
 
 import numpy as np
 import pyarrow as pa
@@ -56,6 +57,7 @@ def test_agg_global(make_df, repartition_nparts, with_morsel_size):
     daft_df = daft_df.agg(
         [
             col("values").sum().alias("sum"),
+            col("values").product().alias("product"),
             col("values").mean().alias("mean"),
             col("values").min().alias("min"),
             col("values").max().alias("max"),
@@ -66,6 +68,7 @@ def test_agg_global(make_df, repartition_nparts, with_morsel_size):
     )
     expected = {
         "sum": [3],
+        "product": [2],
         "mean": [1.5],
         "min": [1],
         "max": [2],
@@ -109,6 +112,7 @@ def test_agg_global_all_null(make_df, repartition_nparts, with_morsel_size):
     daft_df = daft_df.where(col("id") != 0).agg(
         [
             col("values").sum().alias("sum"),
+            col("values").product().alias("product"),
             col("values").mean().alias("mean"),
             col("values").min().alias("min"),
             col("values").max().alias("max"),
@@ -119,6 +123,7 @@ def test_agg_global_all_null(make_df, repartition_nparts, with_morsel_size):
     )
     expected = {
         "sum": [None],
+        "product": [None],
         "mean": [None],
         "min": [None],
         "max": [None],
@@ -159,6 +164,7 @@ def test_agg_global_empty(make_df):
     daft_df = daft_df.where(col("id") != 0).agg(
         [
             col("values").sum().alias("sum"),
+            col("values").product().alias("product"),
             col("values").mean().alias("mean"),
             col("values").min().alias("min"),
             col("values").max().alias("max"),
@@ -169,6 +175,7 @@ def test_agg_global_empty(make_df):
     )
     expected = {
         "sum": [None],
+        "product": [None],
         "mean": [None],
         "min": [None],
         "max": [None],
@@ -210,6 +217,7 @@ def test_agg_groupby(make_df, repartition_nparts, with_morsel_size):
     daft_df = daft_df.groupby("group").agg(
         [
             col("values").sum().alias("sum"),
+            col("values").product().alias("product"),
             col("values").mean().alias("mean"),
             col("values").min().alias("min"),
             col("values").max().alias("max"),
@@ -221,6 +229,7 @@ def test_agg_groupby(make_df, repartition_nparts, with_morsel_size):
     expected = {
         "group": [1, 2],
         "sum": [3, 6],
+        "product": [2, 8],
         "mean": [1.5, 3],
         "min": [1, 2],
         "max": [2, 4],
@@ -273,6 +282,7 @@ def test_agg_groupby_all_null(make_df, repartition_nparts, with_morsel_size):
     daft_df = daft_df.groupby(col("group")).agg(
         [
             col("values").sum().alias("sum"),
+            col("values").product().alias("product"),
             col("values").mean().alias("mean"),
             col("values").min().alias("min"),
             col("values").max().alias("max"),
@@ -285,6 +295,7 @@ def test_agg_groupby_all_null(make_df, repartition_nparts, with_morsel_size):
     expected = {
         "group": [1, 2],
         "sum": [None, None],
+        "product": [None, None],
         "mean": [None, None],
         "min": [None, None],
         "max": [None, None],
@@ -1014,19 +1025,17 @@ def test_join_followed_by_groupby(make_df, repartition_nparts, with_morsel_size)
     assert sorted_result == expected
 
 
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() != "ray" or get_context().daft_execution_config.use_legacy_ray_runner is True,
-    reason="Legacy ray runner does not support skipping shuffles on already partitioned data",
-)
-def test_join_on_hash_partitioned_df_does_not_shuffle(capsys):
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Tests Flotilla-specific behavior")
+def test_join_on_hash_partitioned_df_does_not_shuffle():
     df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
     df = df.repartition(2, "a")
     df = df.groupby("a").agg(col("b").sum())
 
-    df.explain(True)
-    captured = capsys.readouterr()
+    plan_io = StringIO()
+    df.explain(True, file=plan_io)
+    captured = plan_io.getvalue()
 
     # Assert that "Repartition" only shows up 3 times in the explain output, logical + optimized + physical
     assert (
-        captured.out.count("Repartition") == 3
-    ), f"Expected 'Repartition' to appear 3 times, got {captured.out.count('Repartition')}\n{captured.out}"
+        captured.count("Repartition") == 3
+    ), f"Expected 'Repartition' to appear 3 times, got {captured.count('Repartition')}\n{captured}"

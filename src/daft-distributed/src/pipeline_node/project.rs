@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{partitioning::translate_clustering_spec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
@@ -10,7 +10,7 @@ use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
     },
-    plan::{QueryConfig, PlanExecutionContext},
+    plan::{PlanConfig, PlanExecutionContext},
 };
 
 pub(crate) struct ProjectNode {
@@ -25,17 +25,16 @@ impl ProjectNode {
 
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
-        plan_config: &QueryConfig,
+        plan_config: &PlanConfig,
         projection: Vec<BoundExpr>,
         schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -102,12 +101,17 @@ impl PipelineNodeImpl for ProjectNode {
 
         let projection = self.projection.clone();
         let schema = self.config.schema.clone();
+        let node_id = self.node_id();
         let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
             LocalPhysicalPlan::project(
                 input,
                 projection.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
+                },
             )
         };
 

@@ -1,5 +1,6 @@
 use std::sync::{
-    Arc, atomic::{AtomicU16, Ordering}
+    Arc,
+    atomic::{AtomicU16, Ordering},
 };
 
 use common_daft_config::DaftExecutionConfig;
@@ -20,15 +21,18 @@ use crate::{
 };
 
 mod runner;
-pub(crate) use runner::{QueryConfig, PlanExecutionContext, PlanRunner, TaskIDCounter};
+pub(crate) use runner::{PlanConfig, PlanExecutionContext, PlanRunner, TaskIDCounter};
 
-static QUERY_COUNTER: AtomicU16 = AtomicU16::new(0);
+/// Internal scheduler counter for the # of queries executed so far.
+static QUERY_IDX_COUNTER: AtomicU16 = AtomicU16::new(0);
+/// Index of a query in the scheduler.
+/// Lower indexes (aka earlier queries) should have priority in scheduling.
 pub(crate) type QueryIdx = u16;
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct DistributedPhysicalPlan {
-    query_id: QueryID,
     query_idx: QueryIdx,
+    query_id: QueryID,
     logical_plan: Arc<LogicalPlan>,
     config: Arc<DaftExecutionConfig>,
 }
@@ -42,21 +46,19 @@ impl DistributedPhysicalPlan {
         let logical_plan = builder.build();
 
         Ok(Self {
+            query_idx: QUERY_IDX_COUNTER.fetch_add(1, Ordering::Relaxed),
             query_id,
-            query_idx: QUERY_COUNTER.fetch_add(1, Ordering::SeqCst),
             logical_plan,
             config,
         })
     }
 
-    /// Unique query id
-    pub fn query_id(&self) -> QueryID {
-        self.query_id.clone()
+    pub fn idx(&self) -> QueryIdx {
+        self.query_idx
     }
 
-    /// Local query index based on # of queries run before
-    pub fn query_idx(&self) -> QueryIdx {
-        self.query_idx
+    pub fn query_id(&self) -> QueryID {
+        self.query_id.clone()
     }
 
     pub fn logical_plan(&self) -> &daft_logical_plan::LogicalPlanRef {

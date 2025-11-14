@@ -1,33 +1,36 @@
 use common_error::DaftResult;
-use pyo3::{PyObject, PyResult, Python, types::PyAnyMethods};
+use pyo3::{Py, PyAny, PyResult, Python, types::PyAnyMethods};
 
-use crate::{scheduling::task::TaskContext, statistics::TaskEvent};
+use crate::{
+    scheduling::task::TaskContext,
+    statistics::{StatisticsSubscriber, TaskEvent},
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct BarId(i64);
 
 impl From<&TaskContext> for BarId {
     fn from(task_context: &TaskContext) -> Self {
-        Self(((task_context.query_idx as i64) << 32) | (task_context.node_id as i64))
+        Self(((task_context.query_idx as i64) << 32) | (task_context.last_node_id as i64))
     }
 }
 
-pub struct ProgressBar {
-    progress_bar_pyobject: PyObject,
+pub(crate) struct FlotillaProgressBar {
+    progress_bar_pyobject: Py<PyAny>,
 }
 
 impl ProgressBar {
     pub fn try_new(py: Python) -> PyResult<Self> {
         let progress_bar_module = py.import(pyo3::intern!(py, "daft.runners.progress_bar"))?;
         let progress_bar_class = progress_bar_module.getattr(pyo3::intern!(py, "ProgressBar"))?;
-        let progress_bar = progress_bar_class.call1((true,))?.extract::<PyObject>()?;
+        let progress_bar = progress_bar_class.call1((true,))?.extract::<Py<PyAny>>()?;
         Ok(Self {
             progress_bar_pyobject: progress_bar,
         })
     }
 
     fn make_bar_or_update_total(&self, bar_id: BarId, bar_name: &str) -> PyResult<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let progress_bar = self
                 .progress_bar_pyobject
                 .getattr(py, pyo3::intern!(py, "make_bar_or_update_total"))?;
@@ -37,7 +40,7 @@ impl ProgressBar {
     }
 
     fn update_bar(&self, bar_id: BarId) -> PyResult<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let progress_bar = self
                 .progress_bar_pyobject
                 .getattr(py, pyo3::intern!(py, "update_bar"))?;
@@ -47,7 +50,7 @@ impl ProgressBar {
     }
 
     fn close(&self) {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let progress_bar = self
                 .progress_bar_pyobject
                 .getattr(py, pyo3::intern!(py, "close"))
@@ -56,23 +59,29 @@ impl ProgressBar {
         });
     }
 
-    pub fn handle_event(&self, event: &TaskEvent) -> DaftResult<()> {
+impl Drop for FlotillaProgressBar {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
+impl StatisticsSubscriber for FlotillaProgressBar {
+    fn handle_event(&mut self, event: &TaskEvent) -> DaftResult<()> {
         match event {
-            TaskEvent::TaskSubmitted { context, name } => {
+            TaskEvent::Submitted { context, name } => {
                 self.make_bar_or_update_total(BarId::from(context), name)?;
                 Ok(())
             }
             // For progress bar we don't care if it is scheduled, for now.
-            TaskEvent::TaskScheduled { .. } => Ok(()),
-            TaskEvent::TaskStarted { .. } => Ok(()), // Progress bar doesn't need to handle task start separately
-            TaskEvent::TaskCompleted { context } => {
+            TaskEvent::Scheduled { .. } => Ok(()),
+            TaskEvent::Completed { context, .. } => {
                 self.update_bar(BarId::from(context))?;
                 Ok(())
             }
             // We don't care about failed tasks as they will be retried
-            TaskEvent::TaskFailed { .. } => Ok(()),
+            TaskEvent::Failed { .. } => Ok(()),
             // We consider cancelled tasks as finished tasks
-            TaskEvent::TaskCancelled { context } => {
+            TaskEvent::Cancelled { context } => {
                 self.update_bar(BarId::from(context))?;
                 Ok(())
             }

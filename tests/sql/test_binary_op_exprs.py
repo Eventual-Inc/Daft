@@ -61,38 +61,34 @@ def test_unsupported_div_floor():
 
     bindings = {"df": df}
 
+    _assert_sql_raise("SELECT A // C FROM df", bindings, "TypeError Cannot perform floor divide on types: Int64, Bool")
+
+    _assert_sql_raise("SELECT C // A FROM df", bindings, "TypeError Cannot perform floor divide on types: Bool, Int64")
+
     _assert_sql_raise(
-        "SELECT A // C FROM df", bindings, "TypeError Cannot perform floor divide on types: Int64, Boolean"
+        "SELECT B // C FROM df", bindings, "TypeError Cannot perform floor divide on types: Float64, Bool"
     )
 
     _assert_sql_raise(
-        "SELECT C // A FROM df", bindings, "TypeError Cannot perform floor divide on types: Boolean, Int64"
-    )
-
-    _assert_sql_raise(
-        "SELECT B // C FROM df", bindings, "TypeError Cannot perform floor divide on types: Float64, Boolean"
-    )
-
-    _assert_sql_raise(
-        "SELECT B // C FROM df", bindings, "TypeError Cannot perform floor divide on types: Float64, Boolean"
+        "SELECT B // C FROM df", bindings, "TypeError Cannot perform floor divide on types: Float64, Bool"
     )
 
     _assert_df_op_raise(
         lambda: df.select(daft.col("A") // daft.col("C")).collect(),
-        "Cannot perform floor divide on types: Int64, Boolean",
+        "Cannot perform floor divide on types: Int64, Bool",
     )
 
     _assert_df_op_raise(
         lambda: df.select(daft.col("C") // daft.col("A")).collect(),
-        "Cannot perform floor divide on types: Boolean, Int64",
+        "Cannot perform floor divide on types: Bool, Int64",
     )
 
     _assert_df_op_raise(
         lambda: df.select(daft.col("B") // daft.col("C")).collect(),
-        "Cannot perform floor divide on types: Float64, Boolean",
+        "Cannot perform floor divide on types: Float64, Bool",
     )
 
     _assert_df_op_raise(
         lambda: df.select(daft.col("C") // daft.col("B")).collect(),
-        "Cannot perform floor divide on types: Boolean, Float64",
+        "Cannot perform floor divide on types: Bool, Float64",
     )

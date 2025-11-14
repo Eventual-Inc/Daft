@@ -21,7 +21,6 @@ comfy-table = {workspace = true}
 common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
-common-file = {path = "../common/file", default-features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
 common-image = {workspace = true}
 common-io-config = {path = "../common/io-config", default-features = false}
@@ -54,10 +53,7 @@ pyo3 = {workspace = true, optional = true}
 rand = "0.9.1"
 serde = {workspace = true}
 sketches-ddsketch = {workspace = true}
-
-[dependencies.xxhash-rust]
-features = ["xxh3", "const_xxh3", "xxh64"]
-version = "0.8.5"
+xxhash-rust = {workspace = true}
 
 [dev-dependencies]
 rstest = {workspace = true}
@@ -67,7 +63,6 @@ python = [
   "common-arrow-ffi/python",
   "common-display/python",
   "common-error/python",
-  "common-file/python",
   "common-image/python",
   "common-io-config/python",
   "common-ndarray/python",

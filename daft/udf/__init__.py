@@ -3,18 +3,17 @@ from __future__ import annotations
 from typing import Any, overload, Callable, TypeVar, TYPE_CHECKING
 import sys
 
-if sys.version_info < (3, 10):
-    from typing_extensions import ParamSpec
-else:
-    from typing import ParamSpec
+from typing import ParamSpec
 
 from .legacy import udf, UDF
+from . import metrics
 from .udf_v2 import Func, mark_cls_method, wrap_cls
 
 P = ParamSpec("P")
 T = TypeVar("T")
 
 if TYPE_CHECKING:
+    from typing import Literal
     from daft.datatype import DataTypeLike
 
 
@@ -26,6 +25,8 @@ class _FuncDecorator:
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
         use_process: bool | None = None,
+        max_retries: int | None = None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Callable[[Callable[P, T]], Func[P, T, None]]: ...
     @overload
     def __call__(
@@ -35,6 +36,8 @@ class _FuncDecorator:
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
         use_process: bool | None = None,
+        max_retries: int | None = None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Func[P, T, None]: ...
 
     def __call__(
@@ -44,6 +47,8 @@ class _FuncDecorator:
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
         use_process: bool | None = None,
+        max_retries: int | None = None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Callable[[Callable[P, T]], Func[P, T, None]] | Func[P, T, None]:
         """Decorator to convert a Python function into a Daft user-defined function.
 
@@ -141,21 +146,17 @@ class _FuncDecorator:
             ...     await asyncio.sleep(1)
             ...     return a + b
             >>>
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> df = daft.from_pydict({"x": [1], "y": [2]})
             >>> df.select(my_sum(df["x"], df["y"])).collect()
             ╭───────╮
             │ x     │
             │ ---   │
             │ Int64 │
             ╞═══════╡
-            │ 5     │
-            ├╌╌╌╌╌╌╌┤
-            │ 7     │
-            ├╌╌╌╌╌╌╌┤
-            │ 9     │
+            │ 3     │
             ╰───────╯
             <BLANKLINE>
-            (Showing first 3 of 3 rows)
+            (Showing first 1 of 1 rows)
 
             Decorating a generator function
 
@@ -172,7 +173,7 @@ class _FuncDecorator:
             ╭───────┬─────────╮
             │ id    ┆ value   │
             │ ---   ┆ ---     │
-            │ Int64 ┆ Utf8    │
+            │ Int64 ┆ String  │
             ╞═══════╪═════════╡
             │ 0     ┆ None    │
             ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
@@ -200,23 +201,25 @@ class _FuncDecorator:
             ...     return {"int": val * 2, "str": str(val) * 2}
             >>> df = daft.from_pydict({"x": [1, 2, 3]})
             >>> df.select(my_multi_return(df["x"])).collect()
-            ╭───────┬──────╮
-            │ int   ┆ str  │
-            │ ---   ┆ ---  │
-            │ Int64 ┆ Utf8 │
-            ╞═══════╪══════╡
-            │ 2     ┆ 11   │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-            │ 4     ┆ 22   │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-            │ 6     ┆ 33   │
-            ╰───────┴──────╯
+            ╭───────┬────────╮
+            │ int   ┆ str    │
+            │ ---   ┆ ---    │
+            │ Int64 ┆ String │
+            ╞═══════╪════════╡
+            │ 2     ┆ 11     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 4     ┆ 22     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 6     ┆ 33     │
+            ╰───────┴────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
 
         def partial_func(fn: Callable[P, T]) -> Func[P, T, None]:
-            return Func._from_func(fn, return_dtype, unnest, use_process, False, None)
+            return Func._from_func(
+                fn, return_dtype, unnest, use_process, False, None, max_retries=max_retries, on_error=on_error
+            )
 
         return partial_func if fn is None else partial_func(fn)
 
@@ -227,6 +230,8 @@ class _FuncDecorator:
         unnest: bool = False,
         use_process: bool | None = None,
         batch_size: int | None = None,
+        max_retries: int | None = None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Callable[[Callable[P, T]], Func[P, T, None]]:
         """Decorator to convert a Python function into a Daft user-defined batch function.
 
@@ -299,7 +304,7 @@ class _FuncDecorator:
         """
 
         def partial_func(fn: Callable[P, T]) -> Func[P, T, None]:
-            return Func._from_func(fn, return_dtype, unnest, use_process, True, batch_size)
+            return Func._from_func(fn, return_dtype, unnest, use_process, True, batch_size, max_retries, on_error)
 
         return partial_func
 
@@ -309,11 +314,22 @@ func = _FuncDecorator()
 
 @overload
 def cls(
-    *, gpus: int = 0, use_process: bool | None = None, max_concurrency: int | None = None
+    *,
+    gpus: int = 0,
+    use_process: bool | None = None,
+    max_concurrency: int | None = None,
+    max_retries: int | None = None,
+    on_error: Literal["raise", "log", "ignore"] | None = None,
 ) -> Callable[[type], type]: ...
 @overload
 def cls(
-    class_: type, *, gpus: int = 0, use_process: bool | None = None, max_concurrency: int | None = None
+    class_: type,
+    *,
+    gpus: int = 0,
+    use_process: bool | None = None,
+    max_concurrency: int | None = None,
+    max_retries: int | None = None,
+    on_error: Literal["raise", "log", "ignore"] | None = None,
 ) -> type: ...
 def cls(
     class_: type | None = None,
@@ -321,6 +337,8 @@ def cls(
     gpus: int = 0,
     use_process: bool | None = None,
     max_concurrency: int | None = None,
+    max_retries: int | None = None,
+    on_error: Literal["raise", "log", "ignore"] | None = None,
 ) -> type | Callable[[type], type]:
     """Decorator to convert a Python class into a Daft user-defined class.
 
@@ -363,32 +381,29 @@ def cls(
 
         >>> import daft
         >>> from daft import DataType
-        >>> @daft.cls
-        ... class MyModel:
-        ...     def __init__(self, model_path: str):
-        ...         self.model = some_slow_initialization_step(model_path)
+        >>> @daft.cls # doctest: +SKIP
+        >>> class MyModel:  # doctest: +SKIP
+        ...     def __init__(self, model_path: str):  # doctest: +SKIP
+        ...         self.model = some_slow_initialization_step(model_path)  # doctest: +SKIP
         ...
         ...     # no decoration is equivalent to `@daft.method` (default arguments)
-        ...     def generate(self, prompt: str) -> str:
-        ...         return self.model(prompt)
+        ...     def generate(self, prompt: str) -> str:  # doctest: +SKIP
+        ...         return self.model(prompt)  # doctest: +SKIP
         ...
         ...     # decorate with `@daft.method` to override default arguments
-        ...     @daft.method(return_dtype=DataType.list(DataType.string()))
-        ...     def classify(self, value: str):
-        ...         return self.model.classify(value)
+        ...     @daft.method(return_dtype=DataType.list(DataType.string()))  # doctest: +SKIP
+        ...     def classify(self, value: str):  # doctest: +SKIP
+        ...         return self.model.classify(value)  # doctest: +SKIP
         ...
         ...     # batch method
-        ...     @daft.method.batch(return_dtype=DataType.list(DataType.string()))
-        ...     def batch_classify(self, value: daft.Series):
-        ...         return self.model.batch_classify(value)
-        >>>
+        ...     @daft.method.batch(return_dtype=DataType.list(DataType.string()))  # doctest: +SKIP
+        ...     def batch_classify(self, value: daft.Series):  # doctest: +SKIP
+        ...         return self.model.batch_classify(value)  # doctest: +SKIP
         >>> # Specify the initialization arguments for the class. `__init__` will not be called yet.
-        >>> my_model = MyModel("path/to/model")
-        >>>
-        >>> df = daft.from_pydict({"prompt": ["hello", "world", "daft"]})
-        >>>
+        >>> my_model = MyModel("path/to/model")  # doctest: +SKIP
+        >>> df = daft.from_pydict({"prompt": ["hello", "world", "daft"]})  # doctest: +SKIP
         >>> # Use class methods as Daft functions.
-        >>> df = df.with_columns(
+        >>> df = df.with_columns(  # doctest: +SKIP
         ...     {
         ...         "generated": my_model.generate(df["prompt"]),
         ...         "classified": my_model.classify(df["prompt"]),
@@ -398,7 +413,7 @@ def cls(
     """
 
     def partial_cls(c: type) -> type:
-        return wrap_cls(c, gpus, use_process, max_concurrency)
+        return wrap_cls(c, gpus, use_process, max_concurrency, max_retries, on_error)
 
     return partial_cls if class_ is None else partial_cls(class_)
 
@@ -409,6 +424,8 @@ class _MethodDecorator:
         self, *, return_dtype: DataTypeLike | None = None, unnest: bool = False
     ) -> Callable[[Callable[P, T]], Callable[P, T]]: ...
     @overload
+    def __call__(self, method: Callable[P, T], *, return_dtype: DataTypeLike | None = None) -> Callable[P, T]: ...
+    @overload
     def __call__(self, method: Callable[P, T]) -> Callable[P, T]: ...
     def __call__(
         self,
@@ -416,6 +433,8 @@ class _MethodDecorator:
         *,
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
+        max_retries: int | None = None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Callable[P, T] | Callable[[Callable[P, T]], Callable[P, T]]:
         """Decorator to convert a Python method into a Daft user-defined function. This should be used in a class that is decorated with `@daft.cls`.
 
@@ -433,17 +452,41 @@ class _MethodDecorator:
         """
 
         def partial_method(m: Callable[P, T]) -> Callable[P, T]:
-            return mark_cls_method(m, return_dtype, unnest, False, None)
+            return mark_cls_method(m, return_dtype, unnest, False, None, max_retries, on_error)
 
         return partial_method if method is None else partial_method(method)
 
+    @overload
     def batch(
         self,
         *,
-        return_dtype: DataTypeLike,
+        return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
         batch_size: int | None = None,
-    ) -> Callable[[Callable[P, T]], Callable[P, T]]:
+        max_retries: int | None = None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
+    ) -> Callable[[Callable[P, T]], Callable[P, T]]: ...
+    @overload
+    def batch(
+        self,
+        method: Callable[P, T],
+        *,
+        return_dtype: DataTypeLike | None = None,
+        unnest: bool = False,
+        batch_size: int | None = None,
+        max_retries: int | None = None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
+    ) -> Callable[P, T]: ...
+    def batch(
+        self,
+        method: Callable[P, T] | None = None,
+        *,
+        return_dtype: DataTypeLike | None = None,
+        unnest: bool = False,
+        batch_size: int | None = None,
+        max_retries: int | None = None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
+    ) -> Callable[P, T] | Callable[[Callable[P, T]], Callable[P, T]]:
         """Decorator to convert a Python method into a Daft user-defined batch function. This should be used in a class that is decorated with `@daft.cls`.
 
         Args:
@@ -459,12 +502,12 @@ class _MethodDecorator:
         """
 
         def partial_method(m: Callable[P, T]) -> Callable[P, T]:
-            return mark_cls_method(m, return_dtype, unnest, True, batch_size)
+            return mark_cls_method(m, return_dtype, unnest, True, batch_size, max_retries, on_error)
 
-        return partial_method
+        return partial_method if method is None else partial_method(method)
 
 
 method = _MethodDecorator()
 
 
-__all__ = ["UDF", "udf"]
+__all__ = ["UDF", "metrics", "udf"]

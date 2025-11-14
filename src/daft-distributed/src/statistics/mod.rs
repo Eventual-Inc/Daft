@@ -1,64 +1,81 @@
-#[cfg(feature = "python")]
-pub mod progress_bar;
+pub(crate) mod stats;
 
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use common_error::DaftResult;
-use common_metrics::QueryID;
-use daft_context::{Subscriber as _, Subscribers};
+use common_metrics::{QueryID, StatSnapshot};
 use futures::future;
-#[cfg(feature = "python")]
-pub use progress_bar::ProgressBar;
 
-use crate::scheduling::task::{TaskContext, TaskName, TaskStatus};
+use crate::{
+    pipeline_node::NodeID,
+    scheduling::task::{TaskContext, TaskName, TaskStatus},
+    statistics::stats::RuntimeStats,
+};
+
+const STATISTICS_LOG_TARGET: &str = "DaftStatisticsManager";
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-#[allow(clippy::enum_variant_names)]
 pub(crate) enum TaskEvent {
-    TaskSubmitted {
+    Submitted {
         context: TaskContext,
         name: TaskName,
     },
 
-    TaskScheduled {
+    Scheduled {
         context: TaskContext,
     },
-    TaskCompleted {
+    Completed {
         context: TaskContext,
+        stats: Vec<(usize, StatSnapshot)>,
     },
-    TaskStarted {
-        context: TaskContext,
-    },
-    TaskFailed {
+    Failed {
         context: TaskContext,
         reason: String,
     },
-    TaskCancelled {
+    Cancelled {
         context: TaskContext,
     },
+}
+
+impl TaskEvent {
+    pub fn context(&self) -> &TaskContext {
+        match self {
+            Self::Submitted { context, .. } => context,
+            Self::Scheduled { context, .. } => context,
+            Self::Completed { context, .. } => context,
+            Self::Failed { context, .. } => context,
+            Self::Cancelled { context, .. } => context,
+        }
+    }
 }
 
 impl From<(TaskContext, &DaftResult<TaskStatus>)> for TaskEvent {
     fn from((context, task_result): (TaskContext, &DaftResult<TaskStatus>)) -> Self {
         match task_result {
             Ok(task_status) => match task_status {
-                TaskStatus::Success { .. } => Self::TaskCompleted { context },
-                TaskStatus::Failed { error } => Self::TaskFailed {
+                TaskStatus::Success { stats, .. } => Self::Completed {
+                    context,
+                    stats: stats.clone(),
+                },
+                TaskStatus::Failed { error } => Self::Failed {
                     context,
                     reason: error.to_string(),
                 },
-                TaskStatus::Cancelled => Self::TaskCancelled { context },
-                TaskStatus::WorkerDied => Self::TaskFailed {
+                TaskStatus::Cancelled => Self::Cancelled { context },
+                TaskStatus::WorkerDied => Self::Failed {
                     context,
                     reason: "Worker died".to_string(),
                 },
-                TaskStatus::WorkerUnavailable => Self::TaskFailed {
+                TaskStatus::WorkerUnavailable => Self::Failed {
                     context,
                     reason: "Worker unavailable".to_string(),
                 },
             },
-            Err(error) => Self::TaskFailed {
+            Err(error) => Self::Failed {
                 context,
                 reason: error.to_string(),
             },
@@ -66,34 +83,44 @@ impl From<(TaskContext, &DaftResult<TaskStatus>)> for TaskEvent {
     }
 }
 
+pub trait StatisticsSubscriber: Send + Sync + 'static {
+    fn on_exec_start(&mut self, query_id: QueryID) -> DaftResult<()>;
+    fn on_exec_end(&mut self, query_id: QueryID) -> DaftResult<()>;
+    fn handle_event(&mut self, event: &TaskEvent) -> DaftResult<()>;
+}
+
 pub type StatisticsManagerRef = Arc<StatisticsManager>;
 
 #[derive(Default)]
 pub struct StatisticsManager {
-    /// Ray progress bar
-    #[cfg(feature = "python")]
-    pbar: Mutex<Option<ProgressBar>>,
-    /// Global subscribers
-    subscribers: Vec<Arc<Subscribers>>,
+    runtime_stats: HashMap<NodeID, Arc<dyn RuntimeStats>>,
+    subscribers: Mutex<Vec<Box<dyn StatisticsSubscriber>>>,
 }
 
 impl StatisticsManager {
-    #[cfg(feature = "python")]
     pub fn new(
-        pbar: Option<ProgressBar>,
-        subscribers: Vec<Arc<Subscribers>>,
+        runtime_stats: HashMap<NodeID, Arc<dyn RuntimeStats>>,
+        subscribers: Vec<Box<dyn StatisticsSubscriber>>,
     ) -> StatisticsManagerRef {
         Arc::new(Self {
-            pbar: Mutex::new(pbar),
-            subscribers,
+            runtime_stats,
+            subscribers: Mutex::new(subscribers),
         })
     }
 
-    #[cfg(feature = "python")]
     pub fn handle_event(&self, event: TaskEvent) -> DaftResult<()> {
-        let mut pbar = self.pbar.lock().unwrap();
-        if let Some(pbar) = pbar.as_mut() {
-            pbar.handle_event(&event)?;
+        for node_id in &event.context().node_ids {
+            let runtime_stats = self
+                .runtime_stats
+                .get(node_id)
+                .expect("No runtime stats found for node");
+            runtime_stats.handle_task_event(&event)?;
+        }
+
+        let mut subscribers = self.subscribers.lock().unwrap();
+        for (i, subscriber) in subscribers.iter_mut().enumerate() {
+            tracing::info!(target: STATISTICS_LOG_TARGET, "StatisticsManager calling subscriber {}", i);
+            subscriber.handle_event(&event)?;
         }
         Ok(())
     }
@@ -104,16 +131,18 @@ impl StatisticsManager {
     }
 
     pub fn handle_start(&self, query_id: QueryID) -> DaftResult<()> {
-        for subscriber in &self.subscribers {
-            subscriber.on_exec_start(query_id.clone(), &[])?;
+        let mut subscribers = self.subscribers.lock().unwrap();
+        for subscriber in subscribers.iter_mut() {
+            subscriber.on_exec_start(query_id.clone())?;
         }
         Ok(())
     }
 
     pub async fn handle_finish(&self, query_id: QueryID) -> DaftResult<()> {
+        let mut subscribers = self.subscribers.lock().unwrap();
         future::try_join_all(
-            self.subscribers
-                .iter()
+            subscribers
+                .iter_mut()
                 .map(|subscriber| subscriber.on_exec_end(query_id.clone())),
         )
         .await?;

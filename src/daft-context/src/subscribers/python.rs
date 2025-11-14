@@ -2,10 +2,10 @@ use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::{QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo, python::PyNodeInfo};
+use common_metrics::{QueryID, QueryPlan, StatSnapshot, ops::NodeInfo, python::PyNodeInfo};
+use common_partitioning::{PartitionRef, python::PyPartitionRef};
 use common_py_serde::PyObjectWrapper;
-use daft_micropartition::partitioning::{PartitionRef, python::PyPartitionRef};
-use pyo3::{IntoPyObject, PyObject, Python, intern};
+use pyo3::{IntoPyObject, Py, PyAny, Python, intern};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -18,11 +18,11 @@ use crate::{
 pub struct PySubscriberWrapper(pub(crate) PyObjectWrapper);
 
 impl PySubscriberWrapper {
-    pub fn new(inner: PyObject) -> Self {
+    pub fn new(inner: Py<PyAny>) -> Self {
         Self(PyObjectWrapper(Arc::new(inner)))
     }
 
-    pub fn inner(&self) -> &PyObject {
+    pub fn inner(&self) -> &Py<PyAny> {
         &self.0.0
     }
 }
@@ -30,7 +30,7 @@ impl PySubscriberWrapper {
 #[async_trait]
 impl Subscriber for PySubscriberWrapper {
     fn on_query_start(&self, query_id: QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             self.inner().call_method1(
                 py,
                 intern!(py, "on_query_start"),
@@ -41,7 +41,7 @@ impl Subscriber for PySubscriberWrapper {
     }
 
     fn on_query_end(&self, query_id: QueryID) -> DaftResult<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             self.inner()
                 .call_method1(py, intern!(py, "on_query_end"), (query_id.to_string(),))?;
             Ok(())
@@ -49,7 +49,7 @@ impl Subscriber for PySubscriberWrapper {
     }
 
     fn on_result_out(&self, query_id: QueryID, result: PartitionRef) -> DaftResult<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             self.inner().call_method1(
                 py,
                 intern!(py, "on_result_out"),
@@ -60,7 +60,7 @@ impl Subscriber for PySubscriberWrapper {
     }
 
     fn on_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             self.inner().call_method1(
                 py,
                 intern!(py, "on_optimization_start"),
@@ -71,7 +71,7 @@ impl Subscriber for PySubscriberWrapper {
     }
 
     fn on_optimization_end(&self, query_id: QueryID, optimized_plan: QueryPlan) -> DaftResult<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             self.inner().call_method1(
                 py,
                 intern!(py, "on_optimization_end"),
@@ -82,7 +82,7 @@ impl Subscriber for PySubscriberWrapper {
     }
 
     fn on_exec_start(&self, query_id: QueryID, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let py_node_infos = node_infos
                 .iter()
                 .map(|node_info| PyNodeInfo::from(node_info.clone()))
@@ -97,7 +97,7 @@ impl Subscriber for PySubscriberWrapper {
     }
 
     async fn on_exec_operator_start(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             self.inner().call_method1(
                 py,
                 intern!(py, "on_exec_operator_start"),
@@ -110,18 +110,20 @@ impl Subscriber for PySubscriberWrapper {
     async fn on_exec_emit_stats(
         &self,
         query_id: QueryID,
-        stats: &[(NodeID, StatSnapshotView)],
+        stats: &[(NodeID, StatSnapshot)],
     ) -> DaftResult<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let stats_map = stats
                 .iter()
                 .map(|(node_id, stats)| {
                     let stat_map = stats
-                        .into_iter()
-                        .map(|(name, stat)| (*name, stat.clone().into_py_contents(py).unwrap()))
+                        .iter()
+                        .map(|(name, stat)| {
+                            (name.to_string(), stat.clone().into_py_contents(py).unwrap())
+                        })
                         .collect::<HashMap<_, _>>();
 
-                    (node_id, stat_map)
+                    (*node_id, stat_map)
                 })
                 .collect::<HashMap<_, _>>();
             let py_stats = stats_map.into_pyobject(py)?;
@@ -136,7 +138,7 @@ impl Subscriber for PySubscriberWrapper {
     }
 
     async fn on_exec_operator_end(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             self.inner().call_method1(
                 py,
                 intern!(py, "on_exec_operator_end"),
@@ -147,7 +149,7 @@ impl Subscriber for PySubscriberWrapper {
     }
 
     async fn on_exec_end(&self, query_id: QueryID) -> DaftResult<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             self.inner()
                 .call_method1(py, intern!(py, "on_exec_end"), (query_id.to_string(),))?;
             Ok(())

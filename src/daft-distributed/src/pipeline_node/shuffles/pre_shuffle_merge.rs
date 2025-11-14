@@ -10,7 +10,7 @@ use crate::{
         PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream,
         make_in_memory_task_from_materialized_outputs,
     },
-    plan::{QueryConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
@@ -31,17 +31,16 @@ impl PreShuffleMergeNode {
 
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
-        plan_config: &QueryConfig,
+        plan_config: &PlanConfig,
         pre_shuffle_merge_threshold: usize,
         schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -140,6 +139,7 @@ impl PreShuffleMergeNode {
                     let task = make_in_memory_task_from_materialized_outputs(
                         TaskContext::from((self.context(), task_id_counter.next())),
                         materialized_outputs,
+                        self_clone.config.schema.clone(),
                         &(self_clone as Arc<dyn PipelineNodeImpl>),
                         Some(SchedulingStrategy::WorkerAffinity {
                             worker_id,
@@ -162,6 +162,7 @@ impl PreShuffleMergeNode {
                 let task = make_in_memory_task_from_materialized_outputs(
                     TaskContext::from((self.context(), task_id_counter.next())),
                     materialized_outputs,
+                    self_clone.config.schema.clone(),
                     &(self_clone as Arc<dyn PipelineNodeImpl>),
                     Some(SchedulingStrategy::WorkerAffinity {
                         worker_id,

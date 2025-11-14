@@ -2,25 +2,34 @@
 
 import { SWRConfig } from "swr";
 import React, { useEffect, useState } from "react";
-import { QuerySummaryMap, QueriesContext, QuerySummary } from "@/hooks/use-queries";
+import {
+  QuerySummaryMap,
+  QueriesContext,
+  QuerySummary,
+} from "@/hooks/use-queries";
+import { useNotifications } from "./notifications-provider";
+import { toHumanReadableDuration } from "@/lib/utils";
 
 // ---------------------- Utils ---------------------- //
+
+/**
+ * Get the dashboard server's URL
+ */
+export function dashboardUrl(): string {
+  // For same-port deployment (Axum serving both frontend and API)
+  if (process.env.NODE_ENV !== "development" && typeof window !== "undefined") {
+    return window.location.origin;
+  } else {
+    // Default fallback for development
+    return "http://localhost:3238";
+  }
+}
 
 /**
  * Get the API base URL from environment variables or use default
  */
 export function genApiUrl(path: string): string {
-  let base;
-
-  // For same-port deployment (Axum serving both frontend and API)
-  if (typeof window !== "undefined") {
-    base = window.location.origin; // Uses current host and port
-  } else {
-    // Default fallback for development
-    base = "http://localhost:3238";
-  }
-
-  return new URL(path, base).toString();
+  return new URL(path, dashboardUrl()).toString();
 }
 
 /**
@@ -37,6 +46,7 @@ export function fetcher(
 // ---------------------- Server Provider ---------------------- //
 
 export function ServerProvider({ children }: { children: React.ReactNode }) {
+  const { onQueryStart, onQueryEnd } = useNotifications();
   const [queries, setQueries] = useState<QuerySummaryMap | null>(null);
 
   // TODO: Play around with useSWRSubscription again
@@ -55,6 +65,43 @@ export function ServerProvider({ children }: { children: React.ReactNode }) {
     });
     es.addEventListener("status_update", event => {
       const queryUpdate: QuerySummary = JSON.parse(event.data);
+
+      if (onQueryStart && queryUpdate.status.status === "Pending") {
+        if (Notification.permission === "granted") {
+          const notification = new Notification("Query Started", {
+            body: `Query "${queryUpdate.id}" has started`,
+            icon: "/favicon.ico",
+            badge: "/favicon.ico",
+            requireInteraction: false,
+          });
+
+          notification.onclick = () => {
+            window.focus();
+            notification.close();
+          };
+        } else {
+          console.warn("Notification permission not granted");
+        }
+      }
+
+      if (onQueryEnd && queryUpdate.status.status === "Finished") {
+        if (Notification.permission === "granted") {
+          const notification = new Notification("Query Finished", {
+            body: `Query "${queryUpdate.id}" has finished in ${toHumanReadableDuration(queryUpdate.status.duration_sec)}`,
+            icon: "/favicon.ico",
+            badge: "/favicon.ico",
+            requireInteraction: false,
+          });
+
+          notification.onclick = () => {
+            window.focus();
+            notification.close();
+          };
+        } else {
+          console.warn("Notification permission not granted");
+        }
+      }
+
       setQueries(prev => {
         return { ...prev, [queryUpdate.id]: queryUpdate };
       });
@@ -63,7 +110,7 @@ export function ServerProvider({ children }: { children: React.ReactNode }) {
     return () => {
       es.close();
     };
-  }, [setQueries]);
+  }, [setQueries, onQueryStart, onQueryEnd]);
 
   return (
     <SWRConfig

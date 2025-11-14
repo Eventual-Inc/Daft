@@ -14,9 +14,8 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::NodeID;
+use common_metrics::{NodeID, StatSnapshot};
 use common_runtime::RuntimeTask;
-use common_tracing::should_enable_opentelemetry;
 use daft_context::Subscribers;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_micropartition::MicroPartition;
@@ -24,25 +23,26 @@ use futures::future;
 use itertools::Itertools;
 use kanal::SendError;
 use tokio::{
-    runtime::{Handle, Runtime},
+    runtime::Handle,
     sync::{mpsc, oneshot},
     time::interval,
 };
 use tracing::{Instrument, instrument::Instrumented};
-pub use values::{CPU_US_KEY, DefaultRuntimeStats, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats};
+pub use values::{Counter, DefaultRuntimeStats, RuntimeStats};
 
 use crate::{
     channel::{Receiver, Sender},
     pipeline::PipelineNode,
     runtime_stats::subscribers::{
-        RuntimeStatsSubscriber, opentelemetry::OpenTelemetrySubscriber,
-        progress_bar::make_progress_bar_manager, query::SubscriberWrapper,
+        RuntimeStatsSubscriber, progress_bar::make_progress_bar_manager, query::SubscriberWrapper,
     },
 };
 
 fn should_enable_progress_bar() -> bool {
-    let progress_var_name = "DAFT_PROGRESS_BAR";
-    if let Ok(val) = std::env::var(progress_var_name) {
+    if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+        return false;
+    }
+    if let Ok(val) = std::env::var("DAFT_PROGRESS_BAR") {
         matches!(val.trim().to_lowercase().as_str(), "1" | "true")
     } else {
         true // Return true when env var is not set
@@ -79,7 +79,7 @@ impl RuntimeStatsManagerHandle {
 pub struct RuntimeStatsManager {
     node_tx: Arc<mpsc::UnboundedSender<(usize, bool)>>,
     finish_tx: oneshot::Sender<()>,
-    stats_manager_task: RuntimeTask<()>,
+    stats_manager_task: RuntimeTask<Vec<(usize, StatSnapshot)>>,
 }
 
 impl std::fmt::Debug for RuntimeStatsManager {
@@ -97,34 +97,25 @@ impl RuntimeStatsManager {
     ) -> DaftResult<Self> {
         // Construct mapping between node id and their node info and runtime stats
         let mut node_stats_map = HashMap::new();
-        let mut node_infos = HashMap::new();
+        let mut node_info_map = HashMap::new();
         let _ = pipeline.apply(|node| {
             let node_info = node.node_info();
             let runtime_stats = node.runtime_stats();
             node_stats_map.insert(node_info.id, runtime_stats);
-            node_infos.insert(node_info.id, node_info);
+            node_info_map.insert(node_info.id, node_info);
             Ok(TreeNodeRecursion::Continue)
         });
-
-        let total_nodes = node_infos.len();
-        let node_infos = (0..total_nodes)
-            .map(|id| node_infos.get(&id).unwrap().clone())
-            .collect::<Vec<_>>();
 
         let mut subscribers: Vec<Box<dyn RuntimeStatsSubscriber>> = Vec::new();
         for subscriber in query_subscribers {
             subscribers.push(Box::new(SubscriberWrapper::try_new(
                 subscriber,
-                &node_infos,
+                &node_info_map,
             )?));
         }
 
         if should_enable_progress_bar() {
-            subscribers.push(make_progress_bar_manager(&node_infos));
-        }
-
-        if should_enable_opentelemetry() {
-            subscribers.push(Box::new(OpenTelemetrySubscriber::new(&node_infos)));
+            subscribers.push(make_progress_bar_manager(&node_info_map));
         }
 
         let throttle_interval = Duration::from_millis(200);
@@ -156,16 +147,6 @@ impl RuntimeStatsManager {
             loop {
                 tokio::select! {
                     biased;
-                    _ = &mut finish_rx => {
-                        if !active_nodes.is_empty() {
-                            log::debug!(
-                                "RuntimeStatsManager finished with active nodes {{{}}}",
-                                active_nodes.iter().map(|id: &usize| id.to_string()).join(", ")
-                            );
-                        }
-                        break;
-                    }
-
                     Some((node_id, is_initialize)) = node_rx.recv() => {
                         if is_initialize && active_nodes.insert(node_id) {
                             for res in future::join_all(subscribers.iter().map(|subscriber| subscriber.initialize_node(node_id))).await {
@@ -189,6 +170,16 @@ impl RuntimeStatsManager {
                         }
                     }
 
+                    _ = &mut finish_rx => {
+                        if !active_nodes.is_empty() {
+                            log::error!(
+                                "RuntimeStatsManager finished with active nodes {{{}}}",
+                                active_nodes.iter().map(|id: &usize| id.to_string()).join(", ")
+                            );
+                        }
+                        break;
+                    }
+
                     _ = interval.tick() => {
                         if active_nodes.is_empty() {
                             continue;
@@ -199,6 +190,7 @@ impl RuntimeStatsManager {
                             let event = runtime_stats.snapshot();
                             snapshot_container.push((*node_id, event));
                         }
+
                         for res in future::join_all(subscribers.iter().map(|subscriber| {
                             subscriber.handle_event(snapshot_container.as_slice())
                         })).await {
@@ -211,13 +203,25 @@ impl RuntimeStatsManager {
                 }
             }
 
-            for res in future::join_all(subscribers.into_iter().map(|subscriber| {
-                subscriber.finish()
-            })).await {
+            for res in future::join_all(
+                subscribers
+                    .into_iter()
+                    .map(|subscriber| subscriber.finish()),
+            )
+            .await
+            {
                 if let Err(e) = res {
                     log::error!("Failed to flush subscriber: {}", e);
                 }
             }
+
+            // Return the final stat snapshot for all nodes
+            let mut final_snapshot = Vec::new();
+            for (node_id, runtime_stats) in &node_stats_map {
+                let event = runtime_stats.flush();
+                final_snapshot.push((*node_id, event));
+            }
+            final_snapshot
         };
 
         let task_handle = RuntimeTask::new(handle, event_loop);
@@ -232,15 +236,13 @@ impl RuntimeStatsManager {
         RuntimeStatsManagerHandle(self.node_tx.clone())
     }
 
-    pub fn finish(self, runtime: &Runtime) {
+    pub async fn finish(self) -> Vec<(usize, StatSnapshot)> {
         self.finish_tx
             .send(())
             .expect("The finish_tx channel was closed");
-        runtime.block_on(async move {
-            self.stats_manager_task
-                .await
-                .expect("The finish_tx channel was closed");
-        });
+        self.stats_manager_task
+            .await
+            .expect("The finish_tx channel was closed")
     }
 }
 
@@ -348,7 +350,7 @@ mod tests {
 
     use async_trait::async_trait;
     use common_error::DaftResult;
-    use common_metrics::{NodeID, Stat, StatSnapshotSend};
+    use common_metrics::{CPU_US_KEY, NodeID, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot};
     use tokio::time::{Duration, sleep};
 
     use super::*;
@@ -356,7 +358,7 @@ mod tests {
     #[derive(Debug)]
     struct MockState {
         total_calls: AtomicU64,
-        event: Mutex<Option<StatSnapshotSend>>,
+        event: Mutex<Option<StatSnapshot>>,
     }
 
     impl MockState {
@@ -364,7 +366,7 @@ mod tests {
             self.total_calls.load(std::sync::atomic::Ordering::SeqCst)
         }
 
-        fn get_latest_event(&self) -> StatSnapshotSend {
+        fn get_latest_event(&self) -> StatSnapshot {
             self.event.lock().unwrap().clone().expect("No event")
         }
     }
@@ -399,7 +401,7 @@ mod tests {
             Ok(())
         }
 
-        async fn handle_event(&self, events: &[(NodeID, StatSnapshotSend)]) -> DaftResult<()> {
+        async fn handle_event(&self, events: &[(NodeID, StatSnapshot)]) -> DaftResult<()> {
             self.state
                 .total_calls
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -419,7 +421,7 @@ mod tests {
         let mock_subscriber = Box::new(MockSubscriber::new());
         let mock_state = mock_subscriber.state.clone();
 
-        let node_stat = Arc::new(DefaultRuntimeStats::default()) as Arc<dyn RuntimeStats>;
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0)) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
@@ -452,7 +454,7 @@ mod tests {
         );
         assert_eq!(
             mock_state.get_latest_event()[1],
-            (ROWS_IN_KEY, Stat::Count(200))
+            (ROWS_IN_KEY.into(), Stat::Count(200))
         );
 
         // Wait for throttle interval to pass, then send another event
@@ -467,7 +469,7 @@ mod tests {
         );
         assert_eq!(
             mock_state.get_latest_event()[1],
-            (ROWS_IN_KEY, Stat::Count(500))
+            (ROWS_IN_KEY.into(), Stat::Count(500))
         );
     }
 
@@ -478,7 +480,7 @@ mod tests {
         let state1 = subscriber1.state.clone();
         let state2 = subscriber2.state.clone();
 
-        let node_stat = Arc::new(DefaultRuntimeStats::default()) as Arc<dyn RuntimeStats>;
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0)) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
@@ -514,7 +516,7 @@ mod tests {
             async fn finalize_node(&self, _: NodeID) -> DaftResult<()> {
                 Ok(())
             }
-            async fn handle_event(&self, _: &[(NodeID, StatSnapshotSend)]) -> DaftResult<()> {
+            async fn handle_event(&self, _: &[(NodeID, StatSnapshot)]) -> DaftResult<()> {
                 Err(common_error::DaftError::InternalError(
                     "Test error".to_string(),
                 ))
@@ -528,7 +530,7 @@ mod tests {
         let mock_subscriber = Box::new(MockSubscriber::new());
         let state = mock_subscriber.state.clone();
 
-        let node_stat = Arc::new(DefaultRuntimeStats::default()) as Arc<dyn RuntimeStats>;
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0)) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
@@ -548,22 +550,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_runtime_stats_context_operations() {
-        let node_stat = Arc::new(DefaultRuntimeStats::default());
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0));
 
         // Test initial state
         let stats = node_stat.snapshot();
-        assert_eq!(stats[1], (ROWS_IN_KEY, Stat::Count(0)));
-        assert_eq!(stats[2], (ROWS_OUT_KEY, Stat::Count(0)));
+        assert_eq!(stats[1], (ROWS_IN_KEY.into(), Stat::Count(0)));
+        assert_eq!(stats[2], (ROWS_OUT_KEY.into(), Stat::Count(0)));
 
         // Test incremental updates
         node_stat.add_rows_in(100);
         node_stat.add_rows_in(50);
         let stats = node_stat.snapshot();
-        assert_eq!(stats[1], (ROWS_IN_KEY, Stat::Count(150)));
+        assert_eq!(stats[1], (ROWS_IN_KEY.into(), Stat::Count(150)));
 
         node_stat.add_rows_out(75);
         let stats = node_stat.snapshot();
-        assert_eq!(stats[2], (ROWS_OUT_KEY, Stat::Count(75)));
+        assert_eq!(stats[2], (ROWS_OUT_KEY.into(), Stat::Count(75)));
     }
 
     #[tokio::test(start_paused = true)]
@@ -571,7 +573,7 @@ mod tests {
         let mock_subscriber = Box::new(MockSubscriber::new());
         let state = mock_subscriber.state.clone();
 
-        let node_stat = Arc::new(DefaultRuntimeStats::default()) as Arc<dyn RuntimeStats>;
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0)) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
@@ -593,7 +595,7 @@ mod tests {
         // Now we should get an event
         assert_eq!(state.get_total_calls(), 1);
         let event = state.get_latest_event();
-        assert_eq!(event[1], (ROWS_IN_KEY, Stat::Count(100)));
+        assert_eq!(event[1], (ROWS_IN_KEY.into(), Stat::Count(100)));
     }
 
     #[tokio::test(start_paused = true)]
@@ -603,7 +605,7 @@ mod tests {
 
         // Use 500ms for the throttle interval.
         let throttle_interval = Duration::from_millis(500);
-        let node_stat = Arc::new(DefaultRuntimeStats::default()) as Arc<dyn RuntimeStats>;
+        let node_stat = Arc::new(DefaultRuntimeStats::new(0)) as Arc<dyn RuntimeStats>;
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
             vec![mock_subscriber],
@@ -630,9 +632,9 @@ mod tests {
         let event = state.get_latest_event();
         assert_eq!(
             event[0],
-            (CPU_US_KEY, Stat::Duration(Duration::from_millis(1)))
+            (CPU_US_KEY.into(), Stat::Duration(Duration::from_millis(1)))
         );
-        assert_eq!(event[1], (ROWS_IN_KEY, Stat::Count(100)));
-        assert_eq!(event[2], (ROWS_OUT_KEY, Stat::Count(50)));
+        assert_eq!(event[1], (ROWS_IN_KEY.into(), Stat::Count(100)));
+        assert_eq!(event[2], (ROWS_OUT_KEY.into(), Stat::Count(50)));
     }
 }

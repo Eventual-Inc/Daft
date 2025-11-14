@@ -29,19 +29,19 @@ def value_counts(list_expr: Expression) -> Expression:
         >>> from daft.functions import value_counts
         >>> df = daft.from_pydict({"letters": [["a", "b", "a"], ["b", "c", "b", "c"]]})
         >>> df.with_column("value_counts", value_counts(df["letters"])).collect()
-        ╭──────────────┬───────────────────╮
-        │ letters      ┆ value_counts      │
-        │ ---          ┆ ---               │
-        │ List[Utf8]   ┆ Map[Utf8: UInt64] │
-        ╞══════════════╪═══════════════════╡
-        │ [a, b, a]    ┆ [{key: a,         │
-        │              ┆ value: 2,         │
-        │              ┆ }, {key: …        │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ [b, c, b, c] ┆ [{key: b,         │
-        │              ┆ value: 2,         │
-        │              ┆ }, {key: …        │
-        ╰──────────────┴───────────────────╯
+        ╭──────────────┬─────────────────────╮
+        │ letters      ┆ value_counts        │
+        │ ---          ┆ ---                 │
+        │ List[String] ┆ Map[String: UInt64] │
+        ╞══════════════╪═════════════════════╡
+        │ [a, b, a]    ┆ [{key: a,           │
+        │              ┆ value: 2,           │
+        │              ┆ }, {key: …          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [b, c, b, c] ┆ [{key: b,           │
+        │              ┆ value: 2,           │
+        │              ┆ }, {key: …          │
+        ╰──────────────┴─────────────────────╯
         <BLANKLINE>
         (Showing first 2 of 2 rows)
     """
@@ -160,19 +160,19 @@ def list_bool_and(list_expr: Expression) -> Expression:
         >>> from daft.functions import list_bool_and
         >>> df = daft.from_pydict({"values": [[True, True], [True, False], [None, None], []]})
         >>> df.with_column("result", list_bool_and(df["values"])).collect()
-        ╭───────────────┬─────────╮
-        │ values        ┆ result  │
-        │ ---           ┆ ---     │
-        │ List[Boolean] ┆ Boolean │
-        ╞═══════════════╪═════════╡
-        │ [true, true]  ┆ true    │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ [true, false] ┆ false   │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ [None, None]  ┆ None    │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ []            ┆ None    │
-        ╰───────────────┴─────────╯
+        ╭───────────────┬────────╮
+        │ values        ┆ result │
+        │ ---           ┆ ---    │
+        │ List[Bool]    ┆ Bool   │
+        ╞═══════════════╪════════╡
+        │ [true, true]  ┆ true   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ [true, false] ┆ false  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ [None, None]  ┆ None   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ []            ┆ None   │
+        ╰───────────────┴────────╯
         <BLANKLINE>
         (Showing first 4 of 4 rows)
     """
@@ -198,19 +198,19 @@ def list_bool_or(list_expr: Expression) -> Expression:
         >>> from daft.functions import list_bool_or
         >>> df = daft.from_pydict({"values": [[True, False], [False, False], [None, None], []]})
         >>> df.with_column("result", list_bool_or(df["values"])).collect()
-        ╭────────────────┬─────────╮
-        │ values         ┆ result  │
-        │ ---            ┆ ---     │
-        │ List[Boolean]  ┆ Boolean │
-        ╞════════════════╪═════════╡
-        │ [true, false]  ┆ true    │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ [false, false] ┆ false   │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ [None, None]   ┆ None    │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ []             ┆ None    │
-        ╰────────────────┴─────────╯
+        ╭────────────────┬────────╮
+        │ values         ┆ result │
+        │ ---            ┆ ---    │
+        │ List[Bool]     ┆ Bool   │
+        ╞════════════════╪════════╡
+        │ [true, false]  ┆ true   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ [false, false] ┆ false  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ [None, None]   ┆ None   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ []             ┆ None   │
+        ╰────────────────┴────────╯
         <BLANKLINE>
         (Showing first 4 of 4 rows)
     """
@@ -323,7 +323,7 @@ def list_map(list_expr: Expression, mapper: Expression) -> Expression:
         ╭──────────────┬─────────────────────╮
         │ letters      ┆ letters_capitalized │
         │ ---          ┆ ---                 │
-        │ List[Utf8]   ┆ List[Utf8]          │
+        │ List[String] ┆ List[String]        │
         ╞══════════════╪═════════════════════╡
         │ [a, b, a]    ┆ [A, B, A]           │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -364,23 +364,23 @@ def explode(list_expr: Expression) -> Expression:
         >>> df = daft.from_pydict({"id": [1, 2, 3], "sentence": ["lorem ipsum", "foo bar baz", "hi"]})
         >>>
         >>> df.with_column("word", explode(df["sentence"].split(" "))).show()
-        ╭───────┬─────────────┬───────╮
-        │ id    ┆ sentence    ┆ word  │
-        │ ---   ┆ ---         ┆ ---   │
-        │ Int64 ┆ Utf8        ┆ Utf8  │
-        ╞═══════╪═════════════╪═══════╡
-        │ 1     ┆ lorem ipsum ┆ lorem │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 1     ┆ lorem ipsum ┆ ipsum │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 2     ┆ foo bar baz ┆ foo   │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 2     ┆ foo bar baz ┆ bar   │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 2     ┆ foo bar baz ┆ baz   │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 3     ┆ hi          ┆ hi    │
-        ╰───────┴─────────────┴───────╯
+        ╭───────┬─────────────┬────────╮
+        │ id    ┆ sentence    ┆ word   │
+        │ ---   ┆ ---         ┆ ---    │
+        │ Int64 ┆ String      ┆ String │
+        ╞═══════╪═════════════╪════════╡
+        │ 1     ┆ lorem ipsum ┆ lorem  │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 1     ┆ lorem ipsum ┆ ipsum  │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2     ┆ foo bar baz ┆ foo    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2     ┆ foo bar baz ┆ bar    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2     ┆ foo bar baz ┆ baz    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 3     ┆ hi          ┆ hi     │
+        ╰───────┴─────────────┴────────╯
         <BLANKLINE>
         (Showing first 6 of 6 rows)
 
@@ -390,23 +390,23 @@ def explode(list_expr: Expression) -> Expression:
         ...     explode(df["sentence"].split(" ")).alias("word"),
         ...     explode(df["sentence"].capitalize().split(" ")).alias("capitalized_word"),
         ... ).show()
-        ╭───────┬──────────────────╮
-        │ word  ┆ capitalized_word │
-        │ ---   ┆ ---              │
-        │ Utf8  ┆ Utf8             │
-        ╞═══════╪══════════════════╡
-        │ lorem ┆ Lorem            │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ ipsum ┆ ipsum            │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ foo   ┆ Foo              │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ bar   ┆ bar              │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ baz   ┆ baz              │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ hi    ┆ Hi               │
-        ╰───────┴──────────────────╯
+        ╭────────┬──────────────────╮
+        │ word   ┆ capitalized_word │
+        │ ---    ┆ ---              │
+        │ String ┆ String           │
+        ╞════════╪══════════════════╡
+        │ lorem  ┆ Lorem            │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ ipsum  ┆ ipsum            │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ foo    ┆ Foo              │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ bar    ┆ bar              │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ baz    ┆ baz              │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ hi     ┆ Hi               │
+        ╰────────┴──────────────────╯
         <BLANKLINE>
         (Showing first 6 of 6 rows)
         >>>

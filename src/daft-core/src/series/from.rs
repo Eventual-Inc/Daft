@@ -44,7 +44,7 @@ impl Series {
 
                 use crate::python::PySeries;
 
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     let pylist = PyList::new(py, arr.iter().map(|obj| obj.0.as_ref())).unwrap();
                     PySeries::from_pylist(&pylist, Some(name), None)
                         .unwrap()

@@ -2,13 +2,13 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, InMemoryInfo, stats::StatsState};
 
 use super::{PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream};
 use crate::{
     pipeline_node::{DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig},
-    plan::{QueryConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SubmittableTask,
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
@@ -28,16 +28,15 @@ impl InMemorySourceNode {
 
     pub fn new(
         node_id: NodeID,
-        plan_config: &QueryConfig,
+        plan_config: &PlanConfig,
         info: InMemoryInfo,
         input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
-        logical_node_id: Option<NodeID>,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            logical_node_id,
         );
 
         let num_partitions = input_psets.values().map(|pset| pset.len()).sum::<usize>();
@@ -99,8 +98,14 @@ impl InMemorySourceNode {
             None,
             None,
         );
-        let in_memory_source_plan =
-            LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
+        let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
+            info,
+            StatsState::NotMaterialized,
+            LocalNodeContext {
+                origin_node_id: Some(self.node_id() as usize),
+                additional: None,
+            },
+        );
         let psets = HashMap::from([(self.info.cache_key.clone(), partition_refs.clone())]);
         let task = SwordfishTask::new(
             task_context,

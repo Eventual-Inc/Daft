@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use common_metrics::python::PyOperatorMetrics;
 use daft_core::{
     join::JoinType,
     prelude::*,
@@ -36,7 +37,7 @@ impl PyRecordBatch {
 
     pub fn eval_expression_list(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
         let converted_exprs = BoundExpr::bind_all(&exprs, &self.record_batch.schema)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .record_batch
                 .eval_expression_list(converted_exprs.as_slice())?
@@ -44,13 +45,30 @@ impl PyRecordBatch {
         })
     }
 
+    pub fn eval_expression_list_with_metrics(
+        &self,
+        py: Python,
+        exprs: Vec<PyExpr>,
+    ) -> PyResult<(Self, PyOperatorMetrics)> {
+        let converted_exprs = BoundExpr::bind_all(&exprs, &self.record_batch.schema)?;
+        let record_batch = self.record_batch.clone();
+        py.detach(move || {
+            let mut metrics_collector = PyOperatorMetrics::new();
+            let evaluated = record_batch.eval_expression_list_with_metrics(
+                converted_exprs.as_slice(),
+                &mut metrics_collector.inner,
+            )?;
+            PyResult::Ok((evaluated.into(), metrics_collector))
+        })
+    }
+
     pub fn take(&self, py: Python, idx: &PySeries) -> PyResult<Self> {
-        py.allow_threads(|| Ok(self.record_batch.take(&idx.series)?.into()))
+        py.detach(|| Ok(self.record_batch.take(&idx.series)?.into()))
     }
 
     pub fn filter(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
         let converted_exprs = BoundExpr::bind_all(&exprs, &self.record_batch.schema)?;
-        py.allow_threads(|| Ok(self.record_batch.filter(converted_exprs.as_slice())?.into()))
+        py.detach(|| Ok(self.record_batch.filter(converted_exprs.as_slice())?.into()))
     }
 
     pub fn sort(
@@ -61,7 +79,7 @@ impl PyRecordBatch {
         nulls_first: Vec<bool>,
     ) -> PyResult<Self> {
         let converted_exprs = BoundExpr::bind_all(&sort_keys, &self.record_batch.schema)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .record_batch
                 .sort(
@@ -81,7 +99,7 @@ impl PyRecordBatch {
         nulls_first: Vec<bool>,
     ) -> PyResult<PySeries> {
         let converted_exprs = BoundExpr::bind_all(&sort_keys, &self.record_batch.schema)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .record_batch
                 .argsort(
@@ -107,7 +125,7 @@ impl PyRecordBatch {
             })
             .collect::<DaftResult<Vec<_>>>()?;
         let converted_group_by = BoundExpr::bind_all(&group_by, &self.record_batch.schema)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .record_batch
                 .agg(converted_to_agg.as_slice(), converted_group_by.as_slice())?
@@ -126,7 +144,7 @@ impl PyRecordBatch {
         let converted_group_by = BoundExpr::bind_all(&group_by, &self.record_batch.schema)?;
         let converted_pivot_col = BoundExpr::try_new(pivot_col, &self.record_batch.schema)?;
         let converted_values_col = BoundExpr::try_new(values_col, &self.record_batch.schema)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .record_batch
                 .pivot(
@@ -150,7 +168,7 @@ impl PyRecordBatch {
         let left_exprs = BoundExpr::bind_all(&left_on, &self.record_batch.schema)?;
         let right_exprs = BoundExpr::bind_all(&right_on, &self.record_batch.schema)?;
         let null_equals_nulls = vec![false; left_exprs.len()];
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .record_batch
                 .hash_join(
@@ -174,7 +192,7 @@ impl PyRecordBatch {
     ) -> PyResult<Self> {
         let left_exprs = BoundExpr::bind_all(&left_on, &self.record_batch.schema)?;
         let right_exprs = BoundExpr::bind_all(&right_on, &self.record_batch.schema)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .record_batch
                 .sort_merge_join(
@@ -190,7 +208,7 @@ impl PyRecordBatch {
     pub fn explode(&self, py: Python, to_explode: Vec<PyExpr>) -> PyResult<Self> {
         let converted_to_explode = BoundExpr::bind_all(&to_explode, &self.record_batch.schema)?;
 
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .record_batch
                 .explode(converted_to_explode.as_slice())?
@@ -227,7 +245,7 @@ impl PyRecordBatch {
             )));
         }
         let num = num as usize;
-        py.allow_threads(|| Ok(self.record_batch.head(num)?.into()))
+        py.detach(|| Ok(self.record_batch.head(num)?.into()))
     }
 
     #[pyo3(signature = (fraction, with_replacement, seed=None))]
@@ -248,7 +266,7 @@ impl PyRecordBatch {
                 "Can not sample table with fraction greater than 1.0: {fraction}"
             )));
         }
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .record_batch
                 .sample_by_fraction(fraction, with_replacement, seed)?
@@ -269,7 +287,7 @@ impl PyRecordBatch {
                 "Can not sample table with negative size: {size}"
             )));
         }
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .record_batch
                 .sample(size as usize, with_replacement, seed)?
@@ -284,7 +302,7 @@ impl PyRecordBatch {
             )));
         }
         let num = num as usize;
-        py.allow_threads(|| Ok(self.record_batch.quantiles(num)?.into()))
+        py.detach(|| Ok(self.record_batch.quantiles(num)?.into()))
     }
 
     pub fn partition_by_hash(
@@ -299,7 +317,7 @@ impl PyRecordBatch {
             )));
         }
         let exprs = BoundExpr::bind_all(&exprs, &self.record_batch.schema)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .record_batch
                 .partition_by_hash(exprs.as_slice(), num_partitions as usize)?
@@ -326,7 +344,7 @@ impl PyRecordBatch {
                 "Can not have seed has negative number: {seed}"
             )));
         }
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .record_batch
                 .partition_by_random(num_partitions as usize, seed as u64)?
@@ -344,7 +362,7 @@ impl PyRecordBatch {
         descending: Vec<bool>,
     ) -> PyResult<Vec<Self>> {
         let exprs = BoundExpr::bind_all(&partition_keys, &self.record_batch.schema)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .record_batch
                 .partition_by_range(
@@ -364,7 +382,7 @@ impl PyRecordBatch {
         partition_keys: Vec<PyExpr>,
     ) -> PyResult<(Vec<Self>, Self)> {
         let exprs = BoundExpr::bind_all(&partition_keys, &self.record_batch.schema)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             let (tables, values) = self.record_batch.partition_by_value(exprs.as_slice())?;
             let pyrecordbatches = tables
                 .into_iter()
@@ -381,7 +399,7 @@ impl PyRecordBatch {
         partition_num: u64,
         column_name: &str,
     ) -> PyResult<Self> {
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .record_batch
                 .add_monotonically_increasing_id(partition_num, 0, column_name)?
@@ -413,7 +431,7 @@ impl PyRecordBatch {
     #[staticmethod]
     pub fn concat(py: Python, tables: Vec<Self>) -> PyResult<Self> {
         let record_batches: Vec<_> = tables.iter().map(|t| &t.record_batch).collect();
-        py.allow_threads(|| Ok(RecordBatch::concat(record_batches.as_slice())?.into()))
+        py.detach(|| Ok(RecordBatch::concat(record_batches.as_slice())?.into()))
     }
 
     pub fn slice(&self, start: i64, end: i64) -> PyResult<Self> {
@@ -509,8 +527,8 @@ impl PyRecordBatch {
         })
     }
 
-    pub fn to_arrow_record_batch(&self) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+    pub fn to_arrow_record_batch(&self) -> PyResult<pyo3::Py<pyo3::PyAny>> {
+        Python::attach(|py| {
             let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
             ffi::record_batch_to_arrow(py, &self.record_batch, pyarrow)
         })
@@ -540,12 +558,12 @@ impl PyRecordBatch {
     #[staticmethod]
     pub fn from_ipc_stream(bytes: Bound<'_, PyBytes>, py: Python) -> PyResult<Self> {
         let buffer = bytes.as_bytes();
-        let record_batch = py.allow_threads(|| RecordBatch::from_ipc_stream(buffer))?;
+        let record_batch = py.detach(|| RecordBatch::from_ipc_stream(buffer))?;
         Ok(record_batch.into())
     }
 
     pub fn to_ipc_stream<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyBytes>> {
-        let buffer = py.allow_threads(|| self.record_batch.to_ipc_stream())?;
+        let buffer = py.detach(|| self.record_batch.to_ipc_stream())?;
         let bytes = PyBytes::new(py, &buffer);
         Ok(bytes)
     }

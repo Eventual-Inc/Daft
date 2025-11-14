@@ -1324,6 +1324,7 @@ class RayRunner(Runner[ray.ObjectRef]):
 
         # Grab and freeze the current context
         ctx = get_context()
+        query_id = str(uuid.uuid4())
         daft_execution_config = ctx.daft_execution_config
         query_id = str(uuid.uuid4())
         output_schema = builder.schema()
@@ -1331,7 +1332,7 @@ class RayRunner(Runner[ray.ObjectRef]):
 
         # Optimize the logical plan.
         ctx._notify_optimization_start(query_id)
-        builder = builder.optimize()
+        builder = builder.optimize(daft_execution_config)
         ctx._notify_optimization_end(query_id, repr(builder))
 
         if daft_execution_config.use_legacy_ray_runner:

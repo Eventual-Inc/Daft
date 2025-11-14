@@ -1,11 +1,11 @@
-use std::{sync::Arc, time::SystemTime};
+use std::{collections::HashMap, sync::Arc, time::SystemTime};
 
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
-use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryPlan, Stat, StatSnapshot, ops::NodeInfo};
+use common_partitioning::PartitionRef;
 use common_runtime::get_io_runtime;
 use daft_core::prelude::SchemaRef;
-use daft_micropartition::partitioning::PartitionRef;
 use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;
 use reqwest::{Client, RequestBuilder};
@@ -173,13 +173,21 @@ impl Subscriber for DashboardSubscriber {
         let end_sec = secs_from_epoch();
         let result = RecordBatch::concat_or_empty(&results, Some(schema))?;
 
+        let results_ipc = result.to_ipc_stream()?;
+        let results_ipc = if results_ipc.len() > 1024 * 1024 * 2 {
+            // 2MB, our dashboard cap
+            None
+        } else {
+            Some(results_ipc)
+        };
+
         get_io_runtime(false).block_on_current_thread(async {
             Self::handle_request(
                 self.client
                     .post(format!("{}/engine/query/{}/end", self.url, query_id))
                     .json(&daft_dashboard::engine::FinalizeArgs {
                         end_sec,
-                        results: result.to_ipc_stream()?,
+                        results: results_ipc,
                     }),
             )
             .await?;
@@ -248,7 +256,7 @@ impl Subscriber for DashboardSubscriber {
     async fn on_exec_emit_stats(
         &self,
         query_id: QueryID,
-        stats: &[(NodeID, StatSnapshotView)],
+        stats: &[(NodeID, StatSnapshot)],
     ) -> DaftResult<()> {
         Self::handle_request(
             self.client
@@ -263,9 +271,9 @@ impl Subscriber for DashboardSubscriber {
                             (
                                 *node_id,
                                 stats
-                                    .into_iter()
-                                    .map(|(name, stat)| (*name, stat.clone()))
-                                    .collect(),
+                                    .iter()
+                                    .map(|(name, stat)| (name.to_string(), stat.clone()))
+                                    .collect::<HashMap<String, Stat>>(),
                             )
                         })
                         .collect::<Vec<_>>(),

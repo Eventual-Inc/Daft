@@ -3,11 +3,11 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_py_serde::PyObjectWrapper;
 use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties, python::PyExpr};
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
-use pyo3::{PyObject, Python, types::PyAnyMethods};
+use pyo3::{Py, PyAny, Python, types::PyAnyMethods};
 
 use super::{
     NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
@@ -15,7 +15,7 @@ use super::{
 };
 use crate::{
     pipeline_node::{DistributedPipelineNode, append_plan_to_existing_task},
-    plan::{QueryConfig, PlanExecutionContext},
+    plan::{PlanConfig, PlanExecutionContext},
     scheduling::{scheduler::SubmittableTask, task::SwordfishTask},
     utils::{
         channel::{Sender, create_channel},
@@ -37,37 +37,30 @@ impl UDFActors {
         udf_properties: &UDFProperties,
         actor_ready_timeout: usize,
     ) -> DaftResult<Vec<PyObjectWrapper>> {
-        let (task_locals, py_exprs) = Python::with_gil(|py| {
-            let task_locals = crate::utils::runtime::PYO3_ASYNC_RUNTIME_LOCALS
-                .get()
-                .expect("Python task locals not initialized")
-                .clone_ref(py);
-            let py_exprs = projection
-                .iter()
-                .map(|e| PyExpr {
-                    expr: e.inner().clone(),
-                })
-                .collect::<Vec<_>>();
-            (task_locals, py_exprs)
-        });
+        let py_exprs = projection
+            .iter()
+            .map(|e| PyExpr {
+                expr: e.inner().clone(),
+            })
+            .collect::<Vec<_>>();
         let num_actors = udf_properties
             .concurrency
             .expect("ActorUDF should have concurrency specified");
         let (gpu_request, cpu_request, memory_request) = match &udf_properties.resource_request {
             Some(resource_request) => (
                 resource_request.num_gpus().unwrap_or(0.0),
-                resource_request.num_cpus().unwrap_or(0.0),
+                resource_request.num_cpus().unwrap_or(1.0),
                 resource_request.memory_bytes().unwrap_or(0),
             ),
-            None => (0.0, 0.0, 0),
+            None => (0.0, 1.0, 0),
         };
 
-        // Use async pattern similar to DistributedActorPoolProjectOperator
-        let await_coroutine = async move {
-            let result = Python::with_gil(|py| {
+        let actor_name = udf_properties.name.clone();
+        let result =
+            common_runtime::python::execute_python_coroutine::<_, Vec<Py<PyAny>>>(move |py| {
                 let ray_actor_pool_udf_module =
                     py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
-                let coroutine = ray_actor_pool_udf_module.call_method1(
+                ray_actor_pool_udf_module.call_method1(
                     pyo3::intern!(py, "start_udf_actors"),
                     (
                         py_exprs,
@@ -76,24 +69,16 @@ impl UDFActors {
                         cpu_request,
                         memory_request,
                         actor_ready_timeout,
+                        actor_name,
                     ),
-                )?;
-                pyo3_async_runtimes::tokio::into_future(coroutine)
-            })?
-            .await?;
-            DaftResult::Ok(result)
-        };
-
-        // Execute the coroutine with proper task locals
-        let result = pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine).await?;
-        let actors = Python::with_gil(|py| {
-            result.extract::<Vec<PyObject>>(py).map(|py_objects| {
-                py_objects
-                    .into_iter()
-                    .map(|py_object| PyObjectWrapper(Arc::new(py_object)))
-                    .collect::<Vec<_>>()
+                )
             })
-        })?;
+            .await?;
+
+        let actors = result
+            .into_iter()
+            .map(|py_object| PyObjectWrapper(Arc::new(py_object)))
+            .collect::<Vec<_>>();
         Ok(actors)
     }
 
@@ -113,7 +98,7 @@ impl UDFActors {
     }
 
     fn teardown(&mut self) {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             if let Self::Initialized { actors, .. } = self {
                 for actor in actors {
                     if let Err(e) = actor.0.call_method1(py, pyo3::intern!(py, "teardown"), ()) {
@@ -140,8 +125,7 @@ impl ActorUDF {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
-        plan_config: &QueryConfig,
+        plan_config: &PlanConfig,
         projection: Vec<BoundExpr>,
         udf_properties: UDFProperties,
         schema: SchemaRef,
@@ -149,9 +133,9 @@ impl ActorUDF {
     ) -> DaftResult<Self> {
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -217,6 +201,7 @@ impl ActorUDF {
 
         let batch_size = self.udf_properties.batch_size;
         let schema = self.config.schema.clone();
+        let node_id = self.node_id();
         append_plan_to_existing_task(
             submittable_task,
             &(self.clone() as Arc<dyn PipelineNodeImpl>),
@@ -228,6 +213,10 @@ impl ActorUDF {
                     memory_request,
                     schema.clone(),
                     StatsState::NotMaterialized,
+                    LocalNodeContext {
+                        origin_node_id: Some(node_id as usize),
+                        additional: None,
+                    },
                 )
             },
         )

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
     common_py_serde::{deserialize_py_object, serialize_py_object},
-    pyo3::PyObject,
+    pyo3::{Py, PyAny},
 };
 
 #[cfg(feature = "python")]
@@ -169,7 +169,7 @@ pub enum PartitionCacheEntry {
     )]
     #[cfg(feature = "python")]
     /// in python, the partition cache is a weakvalue dictionary, so it will store the entry as long as this reference exists.
-    Python(Arc<PyObject>),
+    Python(Arc<Py<PyAny>>),
 
     Rust {
         key: String,
@@ -194,7 +194,7 @@ impl PartitionCacheEntry {
         use pyo3::Python;
 
         match self {
-            Self::Python(obj) => Python::with_gil(|py| {
+            Self::Python(obj) => Python::attach(|py| {
                 let key = obj.getattr(py, "key").unwrap();
                 key.extract::<String>(py).unwrap()
             }),

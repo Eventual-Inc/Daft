@@ -12,7 +12,7 @@ use crate::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
         PipelineNodeImpl, SubmittableTaskStream,
     },
-    plan::{QueryConfig, PlanExecutionContext},
+    plan::{PlanConfig, PlanExecutionContext},
 };
 
 pub(crate) struct ConcatNode {
@@ -27,17 +27,16 @@ impl ConcatNode {
 
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
-        plan_config: &QueryConfig,
+        plan_config: &PlanConfig,
         schema: SchemaRef,
         other: DistributedPipelineNode,
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            logical_node_id,
         );
 
         let config = PipelineNodeConfig::new(

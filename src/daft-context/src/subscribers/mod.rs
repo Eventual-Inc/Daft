@@ -7,7 +7,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshot, ops::NodeInfo};
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::partitioning::PartitionRef;
 use serde::{Deserialize, Serialize};
@@ -32,7 +32,7 @@ pub trait Subscriber:
     async fn on_exec_emit_stats(
         &self,
         query_id: QueryID,
-        stats: &[(NodeID, StatSnapshotView)],
+        stats: &[(NodeID, StatSnapshot)],
     ) -> DaftResult<()>;
     async fn on_exec_operator_end(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()>;
     async fn on_exec_end(&self, query_id: QueryID) -> DaftResult<()>;
@@ -114,7 +114,7 @@ impl Subscriber for Subscribers {
     async fn on_exec_emit_stats(
         &self,
         query_id: QueryID,
-        stats: &[(NodeID, StatSnapshotView)],
+        stats: &[(NodeID, StatSnapshot)],
     ) -> DaftResult<()> {
         match self {
             Self::Dashboard(s) => s.on_exec_emit_stats(query_id, stats).await,

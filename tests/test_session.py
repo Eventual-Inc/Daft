@@ -311,3 +311,30 @@ def test_set_provider_and_current_provider(monkeypatch):
     sess.attach_provider(mock_provider)
     sess.set_provider("mock_provider")
     assert sess.current_provider() is mock_provider
+
+
+def test_current_session_drop_table():
+    sess = Session()
+    sess.attach(
+        Catalog.from_pydict(
+            name="my_catalog",
+            tables={
+                "ns.t1": {"x": [1, 2, 3]},
+                "ns.t2": {"x": [4, 5, 6]},
+            },
+        )
+    )
+    daft.set_session(sess)
+
+    cata = daft.current_catalog()
+    assert cata.list_namespaces() == [Identifier.from_str("ns")]
+    assert cata.list_tables("ns") == [Identifier.from_str("ns.t1"), Identifier.from_str("ns.t2")]
+
+    daft.drop_table("ns.t1")
+
+    assert cata.has_namespace("ns")
+    assert not cata.has_table("ns.t1")
+    assert cata.has_table("ns.t2")
+
+    daft.drop_namespace("ns")
+    assert not cata.has_namespace("ns")

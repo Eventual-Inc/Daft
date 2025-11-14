@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from daft.daft import (
     DistributedPhysicalPlan,
@@ -20,6 +20,7 @@ from daft.daft import (
     RayTaskResult,
     set_compute_runtime_num_worker_threads,
 )
+from daft.event_loop import set_event_loop
 from daft.expressions import Expression, ExpressionsProjection
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.partitioning import (
@@ -41,6 +42,11 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+class SwordfishTaskMetadata(NamedTuple):
+    partition_metadatas: list[PartitionMetadata]
+    stats: bytes
+
+
 @ray.remote
 class RaySwordfishActor:
     """RaySwordfishActor is a ray actor that runs local physical plans on swordfish.
@@ -49,10 +55,12 @@ class RaySwordfishActor:
     """
 
     def __init__(self, num_cpus: int, num_gpus: int) -> None:
+        os.environ["DAFT_FLOTILLA_WORKER"] = "1"
         if num_gpus > 0:
             os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(num_gpus))
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
         set_compute_runtime_num_worker_threads(num_cpus)
+        set_event_loop(asyncio.get_running_loop())
 
     async def run_plan(
         self,
@@ -60,21 +68,29 @@ class RaySwordfishActor:
         exec_cfg: PyDaftExecutionConfig,
         psets: dict[str, list[ray.ObjectRef]],
         context: dict[str, str] | None,
-    ) -> AsyncGenerator[MicroPartition | list[PartitionMetadata], None]:
+    ) -> AsyncGenerator[MicroPartition | SwordfishTaskMetadata, None]:
         """Run a plan on swordfish and yield partitions."""
+        # We import PyDaftContext inside the function because PyDaftContext is not serializable.
+        from daft.daft import PyDaftContext
+
         with profile():
             psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
             psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
 
             metas = []
             native_executor = NativeExecutor()
-            async for partition in native_executor.run_async(plan, psets_mp, exec_cfg, None, context):
+            ctx = PyDaftContext()
+            ctx._daft_execution_config = exec_cfg
+            result_handle = native_executor.run(plan, psets_mp, ctx, None, context)
+            async for partition in result_handle:
                 if partition is None:
                     break
                 mp = MicroPartition._from_pymicropartition(partition)
                 metas.append(PartitionMetadata.from_table(mp))
                 yield mp
-            yield metas
+
+            stats = await result_handle.finish()
+            yield SwordfishTaskMetadata(partition_metadatas=metas, stats=stats)
 
 
 @ray.remote  # type: ignore[misc]
@@ -120,16 +136,17 @@ class RaySwordfishTaskHandle:
         try:
             await self.result_handle.completed()
             results = [result for result in self.result_handle]
-            metadatas_ref = results.pop()
+            metadata_ref = results.pop()
 
-            metadatas = await metadatas_ref
-            assert len(results) == len(metadatas)
+            task_metadata: SwordfishTaskMetadata = await metadata_ref
+            assert len(results) == len(task_metadata.partition_metadatas)
 
             return RayTaskResult.success(
                 [
-                    RayPartitionRef(result, metadata.num_rows, metadata.size_bytes)
-                    for result, metadata in zip(results, metadatas)
-                ]
+                    RayPartitionRef(result, metadata.num_rows, metadata.size_bytes or 0)
+                    for result, metadata in zip(results, task_metadata.partition_metadatas)
+                ],
+                task_metadata.stats,
             )
         except (ray.exceptions.ActorDiedError, ray.exceptions.ActorUnschedulableError):
             return RayTaskResult.worker_died()
@@ -225,6 +242,7 @@ class RemoteFlotillaRunner:
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
         self.plan_runner = DistributedPhysicalPlanRunner()
         ray._private.worker.blocking_get_inside_async_warned = True
+        set_event_loop(asyncio.get_running_loop())
 
     def run_plan(
         self,
@@ -236,8 +254,8 @@ class RemoteFlotillaRunner:
             k: [RayPartitionRef(v.partition(), v.metadata().num_rows, v.metadata().size_bytes or 0) for v in v.values()]
             for k, v in partition_sets.items()
         }
-        self.curr_plans[plan.query_idx()] = plan
-        self.curr_result_gens[plan.query_idx()] = self.plan_runner.run_plan(plan, psets, state)
+        self.curr_plans[plan.idx()] = plan
+        self.curr_result_gens[plan.idx()] = self.plan_runner.run_plan(plan, psets, state)
 
     async def get_next_partition(self, query_idx: str) -> RayMaterializedResult | None:
         from daft.runners.ray_runner import (
@@ -305,10 +323,10 @@ class FlotillaRunner:
         partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
         state: PyContextState,
     ) -> Iterator[RayMaterializedResult]:
-        query_idx = plan.query_idx()
+        plan_idx = plan.idx()
         ray.get(self.runner.run_plan.remote(plan, partition_sets, state))
         while True:
-            materialized_result = ray.get(self.runner.get_next_partition.remote(query_idx))
+            materialized_result = ray.get(self.runner.get_next_partition.remote(plan_idx))
             if materialized_result is None:
                 break
             yield materialized_result

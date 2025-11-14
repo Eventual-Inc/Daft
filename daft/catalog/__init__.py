@@ -313,6 +313,35 @@ class Catalog(ABC):
             raise ImportError("AWS Glue support not installed: pip install -U 'daft[aws]'")
 
     @staticmethod
+    def from_postgres(connection_string: str, extensions: list[str] | None = ["vector"]) -> Catalog:
+        """Create a Daft Catalog from a PostgreSQL connection string.
+
+        Args:
+            connection_string (str): a PostgreSQL connection string
+            extensions (list[str], optional): List of PostgreSQL extensions to create if they don't exist.
+                For each extension, "CREATE EXTENSION IF NOT EXISTS <extension>" will be executed.
+                Defaults to ["vector"] (pgvector extension, if available).
+
+        Returns:
+            Catalog: a new Catalog instance to a PostgreSQL database.
+
+        Warning:
+            This features is early in development and will likely experience API changes.
+
+        Examples:
+            >>> catalog = Catalog.from_postgres("postgresql://user:password@host:port/database")
+            >>> catalog = Catalog.from_postgres(
+            ...     "postgresql://user:password@host:port/database", extensions=["vector", "pg_stat_statements"]
+            ... )
+        """
+        try:
+            from daft.catalog.__postgres import PostgresCatalog
+
+            return PostgresCatalog.from_uri(connection_string, extensions)
+        except ImportError:
+            raise ImportError("PostgreSQL support not installed: pip install -U 'daft[postgres]'")
+
+    @staticmethod
     def _from_obj(obj: object) -> Catalog:
         """Returns a Daft Catalog from a supported object type or raises a ValueError."""
         for factory in (Catalog.from_iceberg, Catalog.from_unity):
@@ -325,6 +354,22 @@ class Catalog(ABC):
         raise ValueError(
             f"Unsupported catalog type: {type(obj)}; please ensure all required extra dependencies are installed."
         )
+
+    @staticmethod
+    def _validate_options(method: str, input: dict[str, Any], valid: set[str]) -> None:
+        """Validates input options against a set of valid options.
+
+        Args:
+            method (str): The method name to include in the error message
+            input (dict[str, Any]): The input options dictionary
+            valid (set[str]): Set of valid option keys
+
+        Raises:
+            ValueError: If any input options are not in the valid set
+        """
+        invalid_options = set(input.keys()) - valid
+        if invalid_options:
+            raise ValueError(f"Unsupported option(s) for {method}, found {invalid_options!s} not in {valid!s}")
 
     ###
     # create_*
@@ -796,6 +841,8 @@ class Table(ABC):
         """
         if mode == "append":
             return self.append(df, **options)
+        else:
+            return self.overwrite(df, **options)
 
     @abstractmethod
     def append(self, df: DataFrame, **options: Any) -> None:

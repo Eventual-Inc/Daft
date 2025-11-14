@@ -1,19 +1,17 @@
 use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::{Arc, atomic::Ordering},
     time::Duration,
 };
 
 use common_error::DaftResult;
-use common_metrics::{Stat, StatSnapshotSend, ops::NodeType, snapshot};
+use common_metrics::{CPU_US_KEY, ROWS_IN_KEY, Stat, StatSnapshot, ops::NodeType, snapshot};
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_writers::{AsyncFileWriter, WriteResult, WriterFactory};
+use opentelemetry::{KeyValue, global};
 use tracing::{Span, instrument};
 
 use super::blocking_sink::{
@@ -24,23 +22,40 @@ use crate::{
     ExecutionTaskSpawner,
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
     pipeline::{MorselSizeRequirement, NodeName},
-    runtime_stats::{CPU_US_KEY, ROWS_IN_KEY, RuntimeStats},
+    runtime_stats::{Counter, RuntimeStats},
 };
 
-#[derive(Default)]
 struct WriteStats {
-    cpu_us: AtomicU64,
-    rows_in: AtomicU64,
-    rows_written: AtomicU64,
-    bytes_written: AtomicU64,
+    cpu_us: Counter,
+    rows_in: Counter,
+    rows_written: Counter,
+    bytes_written: Counter,
+
+    node_kv: Vec<KeyValue>,
+}
+
+impl WriteStats {
+    pub fn new(id: usize) -> Self {
+        let meter = global::meter("daft.local.node_stats");
+        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+
+        Self {
+            cpu_us: Counter::new(&meter, "cpu_us".into(), None),
+            rows_in: Counter::new(&meter, "rows_in".into(), None),
+            rows_written: Counter::new(&meter, "rows_written".into(), None),
+            bytes_written: Counter::new(&meter, "bytes_written".into(), None),
+
+            node_kv,
+        }
+    }
 }
 
 impl WriteStats {
     fn add_write_result(&self, write_result: WriteResult) {
         self.rows_written
-            .fetch_add(write_result.rows_written as u64, Ordering::Relaxed);
+            .add(write_result.rows_written as u64, self.node_kv.as_slice());
         self.bytes_written
-            .fetch_add(write_result.bytes_written as u64, Ordering::Relaxed);
+            .add(write_result.bytes_written as u64, self.node_kv.as_slice());
     }
 }
 
@@ -49,7 +64,7 @@ impl RuntimeStats for WriteStats {
         self
     }
 
-    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         snapshot![
             CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
             ROWS_IN_KEY; Stat::Count(self.rows_in.load(ordering)),
@@ -59,7 +74,7 @@ impl RuntimeStats for WriteStats {
     }
 
     fn add_rows_in(&self, rows: u64) {
-        self.rows_in.fetch_add(rows, Ordering::Relaxed);
+        self.rows_in.add(rows, self.node_kv.as_slice());
     }
 
     // The 'rows_out' for a WriteSink is the number of files written, which we only know upon 'finalize',
@@ -67,7 +82,7 @@ impl RuntimeStats for WriteStats {
     fn add_rows_out(&self, _rows: u64) {}
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
+        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
@@ -206,8 +221,8 @@ impl BlockingSink for WriteSink {
         Ok(WriteState::new(writer))
     }
 
-    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        Arc::new(WriteStats::default())
+    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(WriteStats::new(id))
     }
 
     fn dispatch_spawner(

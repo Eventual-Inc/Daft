@@ -10,7 +10,6 @@ mod sinks;
 mod sources;
 mod state_bridge;
 mod streaming_sink;
-
 use std::{
     future::Future,
     pin::Pin,
@@ -68,18 +67,11 @@ pub(crate) struct TaskSet<T> {
     inner: tokio::task::JoinSet<T>,
 }
 
-impl<T: 'static> TaskSet<T> {
+impl<T: Send + 'static> TaskSet<T> {
     fn new() -> Self {
         Self {
             inner: tokio::task::JoinSet::new(),
         }
-    }
-
-    fn spawn_local<F>(&mut self, future: F)
-    where
-        F: std::future::Future<Output = T> + 'static,
-    {
-        self.inner.spawn_local(future);
     }
 
     fn spawn<F>(&mut self, future: F)
@@ -95,6 +87,16 @@ impl<T: 'static> TaskSet<T> {
             .join_next()
             .await
             .map(|r| r.map_err(|e| Error::JoinError { source: e }))
+    }
+
+    fn try_join_next(&mut self) -> Option<Result<T, Error>> {
+        self.inner
+            .try_join_next()
+            .map(|r| r.map_err(|e| Error::JoinError { source: e }))
+    }
+
+    fn len(&self) -> usize {
+        self.inner.len()
     }
 
     async fn shutdown(&mut self) {
@@ -143,14 +145,14 @@ impl ExecutionRuntimeContext {
         }
     }
 
-    pub fn spawn_local(
+    pub fn spawn(
         &mut self,
-        task: impl std::future::Future<Output = DaftResult<()>> + 'static,
+        task: impl std::future::Future<Output = DaftResult<()>> + Send + 'static,
         node_name: &str,
     ) {
         let node_name = node_name.to_string();
         self.worker_set
-            .spawn_local(task.with_context(|_| PipelineExecutionSnafu { node_name }));
+            .spawn(task.with_context(|_| PipelineExecutionSnafu { node_name }));
     }
 
     pub async fn join_next(&mut self) -> Option<Result<crate::Result<()>, Error>> {

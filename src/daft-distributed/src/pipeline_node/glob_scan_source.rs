@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_io_config::IOConfig;
 use common_scan_info::Pushdowns;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     pipeline_node::{NodeID, PipelineNodeImpl},
-    plan::{QueryConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SubmittableTask,
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
@@ -34,18 +34,17 @@ impl GlobScanSourceNode {
 
     pub fn new(
         node_id: NodeID,
-        plan_config: &QueryConfig,
+        plan_config: &PlanConfig,
         glob_paths: Arc<Vec<String>>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
-        logical_node_id: Option<NodeID>,
         io_config: Option<IOConfig>,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -83,6 +82,10 @@ impl GlobScanSourceNode {
             self.config.schema.clone(),
             StatsState::NotMaterialized,
             self.io_config.clone(),
+            LocalNodeContext {
+                origin_node_id: Some(self.node_id() as usize),
+                additional: None,
+            },
         );
 
         let task = SwordfishTask::new(

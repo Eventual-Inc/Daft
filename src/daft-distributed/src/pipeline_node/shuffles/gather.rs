@@ -10,7 +10,7 @@ use crate::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
         PipelineNodeImpl, SubmittableTaskStream, make_in_memory_task_from_materialized_outputs,
     },
-    plan::{QueryConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SwordfishTask, TaskContext},
@@ -30,16 +30,15 @@ impl GatherNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
-        plan_config: &QueryConfig,
+        plan_config: &PlanConfig,
         schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -75,6 +74,7 @@ impl GatherNode {
         let task = make_in_memory_task_from_materialized_outputs(
             TaskContext::from((&self_clone.context, task_id_counter.next())),
             materialized,
+            self_clone.config.schema.clone(),
             &(self_clone as Arc<dyn PipelineNodeImpl>),
             None,
         )?;

@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, TryStreamExt};
@@ -12,7 +12,7 @@ use crate::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
         PipelineNodeImpl, SubmittableTaskStream, make_in_memory_scan_from_materialized_outputs,
     },
-    plan::{QueryConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
@@ -42,8 +42,7 @@ impl BroadcastJoinNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
-        plan_config: &QueryConfig,
+        plan_config: &PlanConfig,
         left_on: Vec<BoundExpr>,
         right_on: Vec<BoundExpr>,
         null_equals_nulls: Option<Vec<bool>>,
@@ -55,9 +54,9 @@ impl BroadcastJoinNode {
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            logical_node_id,
         );
 
         // For broadcast joins, we use the receiver's clustering spec since the broadcaster
@@ -131,6 +130,10 @@ impl BroadcastJoinNode {
                 self.join_type,
                 self.config.schema.clone(),
                 StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(self.node_id() as usize),
+                    additional: None,
+                },
             );
 
             let mut psets = task.task().psets().clone();

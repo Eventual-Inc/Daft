@@ -100,7 +100,7 @@ impl IntermediateOperator for SampleOperator {
         "Sample".into()
     }
 
-    async fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self) -> DaftResult<Self::State> {
         Ok(())
     }
 

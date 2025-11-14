@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
 use super::{DistributedPipelineNode, PipelineNodeImpl, SubmittableTaskStream};
 use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
-    plan::{QueryConfig, PlanExecutionContext},
+    plan::{PlanConfig, PlanExecutionContext},
 };
 
 pub(crate) struct ExplodeNode {
@@ -23,17 +23,16 @@ impl ExplodeNode {
 
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
-        plan_config: &QueryConfig,
+        plan_config: &PlanConfig,
         to_explode: Vec<BoundExpr>,
         schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -81,12 +80,17 @@ impl PipelineNodeImpl for ExplodeNode {
         let input_node = self.child.clone().produce_tasks(plan_context);
         let to_explode = self.to_explode.clone();
         let schema = self.config.schema.clone();
+        let node_id = self.node_id();
         input_node.pipeline_instruction(self, move |input| {
             LocalPhysicalPlan::explode(
                 input,
                 to_explode.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
+                },
             )
         })
     }

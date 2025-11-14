@@ -335,7 +335,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                     DataType::Unknown => {
                         panic!("Unable to deserialize Unknown DataType");
                     }
-                    DataType::File => {
+                    DataType::File(_) => {
                         panic!("Unable to deserialize File DataType");
                     }
                 }

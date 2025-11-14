@@ -94,7 +94,6 @@ impl PyDaftExecutionConfig {
         max_sources_per_scan_task=None,
         broadcast_join_size_bytes_threshold=None,
         parquet_split_row_groups_max_files=None,
-        sort_merge_join_sort_with_aligned_boundaries=None,
         hash_join_partition_size_leniency=None,
         sample_size_for_sort=None,
         num_preview_rows=None,
@@ -103,6 +102,7 @@ impl PyDaftExecutionConfig {
         parquet_inflation_factor=None,
         csv_target_filesize=None,
         csv_inflation_factor=None,
+        json_inflation_factor=None,
         shuffle_aggregation_default_partitions=None,
         partial_aggregation_threshold=None,
         high_cardinality_aggregation_threshold=None,
@@ -119,6 +119,7 @@ impl PyDaftExecutionConfig {
         use_legacy_ray_runner=None,
         min_cpu_per_task=None,
         actor_udf_ready_timeout=None,
+        maintain_order=None,
     ))]
     fn with_config_values(
         &self,
@@ -127,7 +128,6 @@ impl PyDaftExecutionConfig {
         max_sources_per_scan_task: Option<usize>,
         broadcast_join_size_bytes_threshold: Option<usize>,
         parquet_split_row_groups_max_files: Option<usize>,
-        sort_merge_join_sort_with_aligned_boundaries: Option<bool>,
         hash_join_partition_size_leniency: Option<f64>,
         sample_size_for_sort: Option<usize>,
         num_preview_rows: Option<usize>,
@@ -136,6 +136,7 @@ impl PyDaftExecutionConfig {
         parquet_inflation_factor: Option<f64>,
         csv_target_filesize: Option<usize>,
         csv_inflation_factor: Option<f64>,
+        json_inflation_factor: Option<f64>,
         shuffle_aggregation_default_partitions: Option<usize>,
         partial_aggregation_threshold: Option<usize>,
         high_cardinality_aggregation_threshold: Option<f64>,
@@ -152,6 +153,7 @@ impl PyDaftExecutionConfig {
         use_legacy_ray_runner: Option<bool>,
         min_cpu_per_task: Option<f64>,
         actor_udf_ready_timeout: Option<usize>,
+        maintain_order: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -169,12 +171,6 @@ impl PyDaftExecutionConfig {
         }
         if let Some(parquet_split_row_groups_max_files) = parquet_split_row_groups_max_files {
             config.parquet_split_row_groups_max_files = parquet_split_row_groups_max_files;
-        }
-        if let Some(sort_merge_join_sort_with_aligned_boundaries) =
-            sort_merge_join_sort_with_aligned_boundaries
-        {
-            config.sort_merge_join_sort_with_aligned_boundaries =
-                sort_merge_join_sort_with_aligned_boundaries;
         }
         if let Some(hash_join_partition_size_leniency) = hash_join_partition_size_leniency {
             config.hash_join_partition_size_leniency = hash_join_partition_size_leniency;
@@ -199,6 +195,9 @@ impl PyDaftExecutionConfig {
         }
         if let Some(csv_inflation_factor) = csv_inflation_factor {
             config.csv_inflation_factor = csv_inflation_factor;
+        }
+        if let Some(json_inflation_factor) = json_inflation_factor {
+            config.json_inflation_factor = json_inflation_factor;
         }
         if let Some(shuffle_aggregation_default_partitions) = shuffle_aggregation_default_partitions
         {
@@ -272,6 +271,10 @@ impl PyDaftExecutionConfig {
             config.actor_udf_ready_timeout = actor_udf_ready_timeout;
         }
 
+        if let Some(maintain_order) = maintain_order {
+            config.maintain_order = maintain_order;
+        }
+
         Ok(Self {
             config: Arc::new(config),
         })
@@ -295,11 +298,6 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn get_broadcast_join_size_bytes_threshold(&self) -> PyResult<usize> {
         Ok(self.config.broadcast_join_size_bytes_threshold)
-    }
-
-    #[getter]
-    fn get_sort_merge_join_sort_with_aligned_boundaries(&self) -> PyResult<bool> {
-        Ok(self.config.sort_merge_join_sort_with_aligned_boundaries)
     }
 
     #[getter]
@@ -340,6 +338,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn get_csv_inflation_factor(&self) -> PyResult<f64> {
         Ok(self.config.csv_inflation_factor)
+    }
+
+    #[getter]
+    fn get_json_inflation_factor(&self) -> PyResult<f64> {
+        Ok(self.config.json_inflation_factor)
     }
 
     #[getter]
@@ -406,6 +409,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn actor_udf_ready_timeout(&self) -> PyResult<usize> {
         Ok(self.config.actor_udf_ready_timeout)
+    }
+
+    #[getter]
+    fn maintain_order(&self) -> PyResult<bool> {
+        Ok(self.config.maintain_order)
     }
 }
 

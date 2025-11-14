@@ -18,9 +18,9 @@ use crate::{
         logical_plan_to_pipeline_node, viz_distributed_pipeline_ascii,
         viz_distributed_pipeline_mermaid,
     },
-    plan::{DistributedPhysicalPlan, PlanResultStream, PlanRunner, QueryConfig},
+    plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
     python::ray::RayTaskResult,
-    statistics::{ProgressBar, StatisticsManager},
+    statistics::StatisticsSubscriber,
 };
 
 #[pyclass(module = "daft.daft", frozen)]
@@ -70,7 +70,7 @@ impl PyDistributedPhysicalPlan {
     #[staticmethod]
     fn from_logical_plan_builder(
         builder: &PyLogicalPlanBuilder,
-        query_id: &str,
+        query_id: String,
         config: &PyDaftExecutionConfig,
     ) -> PyResult<Self> {
         let plan = DistributedPhysicalPlan::from_logical_plan_builder(
@@ -81,20 +81,16 @@ impl PyDistributedPhysicalPlan {
         Ok(Self { plan })
     }
 
-    fn query_id(&self) -> String {
-        self.plan.query_id().to_string()
-    }
-
-    fn query_idx(&self) -> String {
-        self.plan.query_idx().to_string()
+    fn idx(&self) -> String {
+        self.plan.idx().to_string()
     }
 
     /// Visualize the distributed pipeline as ASCII text
     fn repr_ascii(&self, simple: bool) -> PyResult<String> {
         // Create pipeline nodes from the logical plan
-        let plan_config = QueryConfig::new(
+        let plan_config = PlanConfig::new(
+            self.plan.idx(),
             self.plan.query_id(),
-            self.plan.query_idx(),
             self.plan.execution_config().clone(),
         );
         let pipeline_node = logical_plan_to_pipeline_node(
@@ -109,9 +105,9 @@ impl PyDistributedPhysicalPlan {
     /// Visualize the distributed pipeline as Mermaid markdown
     fn repr_mermaid(&self, simple: bool, bottom_up: bool) -> PyResult<String> {
         // Create a pipeline node from the stage plan
-        let plan_config = QueryConfig::new(
+        let plan_config = PlanConfig::new(
+            self.plan.idx(),
             self.plan.query_id(),
-            self.plan.query_idx(),
             self.plan.execution_config().clone(),
         );
         let pipeline_node = logical_plan_to_pipeline_node(
@@ -143,8 +139,8 @@ struct PyDistributedPhysicalPlanRunner {
 #[pymethods]
 impl PyDistributedPhysicalPlanRunner {
     #[new]
-    fn new(py: Python) -> PyResult<Self> {
-        let worker_manager = RayWorkerManager::try_new(py)?;
+    fn new() -> PyResult<Self> {
+        let worker_manager = RayWorkerManager::new();
         Ok(Self {
             runner: Arc::new(PlanRunner::new(Arc::new(worker_manager))),
         })
@@ -169,14 +165,13 @@ impl PyDistributedPhysicalPlanRunner {
             })
             .collect();
 
-        let pbar = ProgressBar::try_new(py)?;
         let ctx: &ContextState = ctx.into();
         let subscribers = ctx.subscribers.values().cloned().collect();
 
-        let statistics_manager = StatisticsManager::new(Some(pbar), subscribers);
-        let plan_result = self
-            .runner
-            .run_plan(&plan.plan, psets, statistics_manager)?;
+        let subscribers: Vec<Box<dyn StatisticsSubscriber>> =
+            vec![Box::new(FlotillaProgressBar::try_new(py)?)];
+
+        let plan_result = self.runner.run_plan(&plan.plan, psets, subscribers)?;
         let part_stream = PythonPartitionRefStream {
             inner: Arc::new(Mutex::new(plan_result.into_stream())),
         };

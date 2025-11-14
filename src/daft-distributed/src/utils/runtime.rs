@@ -4,8 +4,6 @@ use common_runtime::{PoolType, Runtime, RuntimeRef};
 
 pub static RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
 pub static PYO3_RUNTIME_INITIALIZED: Once = Once::new();
-#[cfg(feature = "python")]
-pub static PYO3_ASYNC_RUNTIME_LOCALS: OnceLock<pyo3_async_runtimes::TaskLocals> = OnceLock::new();
 
 pub fn get_or_init_runtime() -> &'static Runtime {
     let runtime_ref = RUNTIME.get_or_init(|| {
@@ -26,14 +24,6 @@ pub fn get_or_init_runtime() -> &'static Runtime {
         PYO3_RUNTIME_INITIALIZED.call_once(|| {
             pyo3_async_runtimes::tokio::init_with_runtime(&runtime_ref.runtime)
                 .expect("Failed to initialize python runtime");
-            PYO3_ASYNC_RUNTIME_LOCALS.get_or_init(|| {
-                use pyo3::Python;
-
-                Python::with_gil(|py| {
-                    pyo3_async_runtimes::tokio::get_current_locals(py)
-                        .expect("Failed to get current task locals")
-                })
-            });
         });
     }
     runtime_ref
