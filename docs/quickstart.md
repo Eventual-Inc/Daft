@@ -173,7 +173,7 @@ This demonstrates Daft's multimodal capabilities:
 - **URL handling**: Download content directly with `.url.download()`
 - **Image decoding**: Convert binary data to images with `decode_image()` for visual display
 
-The decoded images are now ready for further processing, such as running image classification models, extracting embeddings, or performing transformations.
+The decoded images are now ready for further processing, such as performing transformations, running image classification models, extracting embeddings, or batch inference.
 
 ### What's Next?
 
