@@ -1,15 +1,19 @@
 use std::sync::Arc;
 
 use common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
+use common_partitioning::python::PyPartitionRef;
+use common_py_serde::impl_bincode_py_state_serialization;
 use daft_core::python::PySchema;
-use daft_micropartition::python::PyMicroPartition;
-use pyo3::prelude::*;
+use pyo3::{Py, PyAny, prelude::*};
+use serde::{Deserialize, Serialize};
+use subscribers::python::PySubscriberWrapper;
 
-use crate::{DaftContext, subscribers, subscribers::QueryMetadata};
+use crate::{ContextState, DaftContext, subscribers, subscribers::QueryMetadata};
 
-#[pyclass(frozen)]
-#[derive(Clone)]
+#[pyclass(module = "daft.daft", frozen)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PyQueryMetadata(pub(crate) Arc<QueryMetadata>);
+impl_bincode_py_state_serialization!(PyQueryMetadata);
 
 #[pymethods]
 impl PyQueryMetadata {
@@ -49,7 +53,31 @@ impl<'a> From<&'a PyQueryMetadata> for &'a Arc<QueryMetadata> {
     }
 }
 
-#[pyclass(frozen)]
+#[pyclass(module = "daft.daft", frozen)]
+#[derive(Serialize, Deserialize)]
+pub struct PyContextState(ContextState);
+
+impl_bincode_py_state_serialization!(PyContextState);
+
+impl From<ContextState> for PyContextState {
+    fn from(state: ContextState) -> Self {
+        Self(state)
+    }
+}
+
+impl From<PyContextState> for ContextState {
+    fn from(state: PyContextState) -> Self {
+        state.0
+    }
+}
+
+impl<'a> From<&'a PyContextState> for &'a ContextState {
+    fn from(state: &'a PyContextState) -> Self {
+        &state.0
+    }
+}
+
+#[pyclass(module = "daft.daft", frozen)]
 pub struct PyDaftContext {
     inner: DaftContext,
 }
@@ -93,12 +121,16 @@ impl PyDaftContext {
         py.detach(|| self.inner.set_planning_config(config.config));
     }
 
+    #[getter]
+    pub fn state(&self, py: Python) -> PyResult<PyContextState> {
+        let state = py.detach(|| self.inner.state());
+        Ok(PyContextState(state))
+    }
+
     pub fn attach_subscriber(&self, py: Python, alias: String, subscriber: Py<PyAny>) {
         py.detach(|| {
-            self.inner.attach_subscriber(
-                alias,
-                Arc::new(subscribers::python::PySubscriberWrapper(subscriber)),
-            );
+            self.inner
+                .attach_subscriber(alias, PySubscriberWrapper::new(subscriber));
         });
     }
 
@@ -129,7 +161,7 @@ impl PyDaftContext {
         &self,
         py: Python,
         query_id: String,
-        result: PyMicroPartition,
+        result: PyPartitionRef,
     ) -> PyResult<()> {
         py.detach(|| self.inner.notify_result_out(query_id.into(), result.into()))?;
         Ok(())

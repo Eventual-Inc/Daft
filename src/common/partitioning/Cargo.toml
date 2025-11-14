@@ -1,12 +1,13 @@
 [dependencies]
 common-py-serde = {path = "../py-serde", optional = true}
 pyo3 = {workspace = true, optional = true}
-common-error.workspace = true
-futures.workspace = true
-serde.workspace = true
+common-error = {workspace = true}
+futures = {workspace = true}
+serde = {workspace = true}
+daft-recordbatch = {path = "../../daft-recordbatch", default-features = false}
 
 [features]
-python = ["dep:pyo3", "common-error/python", "common-py-serde"]
+python = ["dep:pyo3", "common-error/python", "common-py-serde", "daft-recordbatch/python"]
 
 [lints]
 workspace = true

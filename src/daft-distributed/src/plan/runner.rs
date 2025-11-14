@@ -11,6 +11,7 @@ use common_error::DaftResult;
 use common_metrics::QueryID;
 use common_partitioning::PartitionRef;
 use common_treenode::{TreeNode, TreeNodeRecursion};
+use daft_context::Subscribers;
 use futures::{Stream, StreamExt};
 
 use super::{DistributedPhysicalPlan, PlanResult, QueryIdx};
@@ -24,7 +25,7 @@ use crate::{
         task::{SwordfishTask, TaskID},
         worker::{Worker, WorkerManager},
     },
-    statistics::{StatisticsManager, StatisticsSubscriber},
+    statistics::StatisticsManager,
     utils::{
         channel::{Sender, create_channel},
         joinset::{JoinSet, create_join_set},
@@ -151,13 +152,13 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         self: &Arc<Self>,
         plan: &DistributedPhysicalPlan,
         psets: HashMap<String, Vec<PartitionRef>>,
-        subscribers: Vec<Box<dyn StatisticsSubscriber>>,
+        subscribers: Vec<Arc<Subscribers>>,
     ) -> DaftResult<PlanResult> {
         let query_idx = plan.idx();
         let query_id = plan.query_id();
         let config = plan.execution_config().clone();
         let logical_plan = plan.logical_plan().clone();
-        let plan_config = PlanConfig::new(query_idx, query_id, config);
+        let plan_config = PlanConfig::new(query_idx, query_id.clone(), config);
 
         let pipeline_node =
             logical_plan_to_pipeline_node(plan_config, logical_plan, Arc::new(psets))?;
@@ -174,6 +175,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         let runtime = get_or_init_runtime();
         let (result_sender, result_receiver) = create_channel(1);
         let this = self.clone();
+
         let joinset = runtime.block_on_current_thread(async move {
             let mut joinset = create_join_set();
             let scheduler_handle = spawn_scheduler_actor(
@@ -183,8 +185,11 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
             );
 
             joinset.spawn(async move {
+                statistics_manager.handle_start(query_id.clone())?;
                 this.execute_plan(pipeline_node, scheduler_handle, result_sender)
-                    .await
+                    .await?;
+                statistics_manager.handle_finish(query_id.clone()).await?;
+                Ok(())
             });
             joinset
         });

@@ -3,13 +3,13 @@ use std::{collections::HashMap, sync::Arc};
 use async_trait::async_trait;
 use common_error::DaftResult;
 use common_metrics::{NodeID, QueryID, ops::NodeInfo};
-use daft_context::Subscriber;
+use daft_context::{Subscriber as _, Subscribers};
 
 use crate::runtime_stats::RuntimeStatsSubscriber;
 
 #[derive(Debug)]
 pub(crate) struct SubscriberWrapper {
-    inner: Arc<dyn Subscriber>,
+    inner: Arc<Subscribers>,
     query_id: QueryID,
 }
 

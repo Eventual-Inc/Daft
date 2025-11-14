@@ -16,7 +16,7 @@ use std::{
 use common_error::DaftResult;
 use common_metrics::{NodeID, StatSnapshot};
 use common_runtime::RuntimeTask;
-use daft_context::Subscriber;
+use daft_context::Subscribers;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_micropartition::MicroPartition;
 use futures::future;
@@ -93,7 +93,7 @@ impl RuntimeStatsManager {
     pub fn try_new(
         handle: &Handle,
         pipeline: &Box<dyn PipelineNode>,
-        query_subscribers: Vec<Arc<dyn Subscriber>>,
+        query_subscribers: Vec<Arc<Subscribers>>,
     ) -> DaftResult<Self> {
         // Construct mapping between node id and their node info and runtime stats
         let mut node_stats_map = HashMap::new();
@@ -203,8 +203,14 @@ impl RuntimeStatsManager {
                 }
             }
 
-            for subscriber in subscribers {
-                if let Err(e) = subscriber.finish().await {
+            for res in future::join_all(
+                subscribers
+                    .into_iter()
+                    .map(|subscriber| subscriber.finish()),
+            )
+            .await
+            {
+                if let Err(e) = res {
                     log::error!("Failed to flush subscriber: {}", e);
                 }
             }

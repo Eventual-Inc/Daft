@@ -12,7 +12,7 @@ use common_error::{DaftError, DaftResult};
 use common_metrics::StatSnapshot;
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
-use daft_context::{DaftContext, Subscriber};
+use daft_context::{DaftContext, Subscribers};
 use daft_local_plan::{LocalPhysicalPlanRef, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
@@ -201,7 +201,7 @@ impl NativeExecutor {
         local_physical_plan: &LocalPhysicalPlanRef,
         psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
         exec_cfg: Arc<DaftExecutionConfig>,
-        subscribers: Vec<Arc<dyn Subscriber>>,
+        subscribers: Vec<Arc<Subscribers>>,
         results_buffer_size: Option<usize>,
         additional_context: Option<HashMap<String, String>>,
     ) -> DaftResult<ExecutionEngineResult> {

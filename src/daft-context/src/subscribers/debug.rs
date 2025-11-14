@@ -3,21 +3,20 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use common_error::DaftResult;
 use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshot, ops::NodeInfo};
-use daft_micropartition::MicroPartitionRef;
+use common_partitioning::PartitionRef;
 use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
 
 use crate::subscribers::{QueryMetadata, Subscriber};
 
-#[derive(Debug)]
+#[derive(Default, Debug, Serialize, Deserialize)]
 pub struct DebugSubscriber {
     rows_out: DashMap<QueryID, usize>,
 }
 
 impl DebugSubscriber {
     pub fn new() -> Self {
-        Self {
-            rows_out: DashMap::new(),
-        }
+        Self::default()
     }
 }
 
@@ -45,12 +44,12 @@ impl Subscriber for DebugSubscriber {
         Ok(())
     }
 
-    fn on_result_out(&self, query_id: QueryID, result: MicroPartitionRef) -> DaftResult<()> {
+    fn on_result_out(&self, query_id: QueryID, result: PartitionRef) -> DaftResult<()> {
         *self
             .rows_out
             .get_mut(&query_id)
             .expect("Query not found")
-            .value_mut() += result.len();
+            .value_mut() += result.num_rows()?;
         Ok(())
     }
 
