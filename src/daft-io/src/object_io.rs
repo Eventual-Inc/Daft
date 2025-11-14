@@ -1,4 +1,4 @@
-use std::{any::Any, sync::Arc, time::Duration};
+use std::{any::Any, borrow::Cow, num::NonZeroI32, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -10,7 +10,7 @@ use futures::{
 use tokio::sync::OwnedSemaphorePermit;
 
 use crate::{
-    FileFormat,
+    FileFormat, SourceType,
     local::{LocalFile, collect_file},
     stats::IOStatsRef,
 };
@@ -184,11 +184,22 @@ use crate::range::GetRange;
 
 #[async_trait]
 pub trait ObjectSource: Sync + Send {
+    /// Return the type of the source.
+    fn source_type(&self) -> SourceType;
+
     /// Check if the source supports range requests.
     /// Most object sources _should_ support range requests.
     /// Many object sources backed by http servers may not support range requests.
     /// So we need to check if the source supports range requests.
     async fn supports_range(&self, uri: &str) -> super::Result<bool>;
+
+    /// Try to convert this source as a MultipartObjectSource.
+    /// Default implementation returns None, indicating multipart uploads are not supported.
+    /// Sources that support multipart uploads should override this method.
+    /// This method is used to safely cast an Arc<dyn ObjectSource> to Arc<dyn MultipartObjectSource>
+    fn as_multipart_object_source(self: Arc<Self>) -> Option<Arc<dyn MultipartObjectSource>> {
+        None
+    }
 
     /// Return the bytes with given range.
     /// Will return [`Error::InvalidRangeRequest`] if range start is greater than range end
@@ -269,4 +280,58 @@ pub trait ObjectSource: Sync + Send {
     }
 
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
+}
+
+#[derive(Debug, Clone)]
+pub struct CompletedPart {
+    pub(crate) part_number: NonZeroI32,
+    pub(crate) etag: Cow<'static, str>,
+}
+
+pub struct MultipartUploadInfo {
+    pub upload_id: Cow<'static, str>,
+}
+
+const DEFAULT_PART_SIZE: usize = 8 * 1024 * 1024;
+const DEFAULT_MAX_CONCURRENT_UPLOADS: usize = 100;
+
+#[async_trait]
+pub trait MultipartObjectSource: ObjectSource {
+    /// Return the part size for multipart uploads.
+    /// Defaults to 8 MiB.
+    fn part_size(&self) -> usize {
+        DEFAULT_PART_SIZE
+    }
+
+    /// Return the maximum number of concurrent uploads used for upload parts concurrently.
+    /// Defaults to 100.
+    fn max_concurrent_uploads(&self) -> usize {
+        DEFAULT_MAX_CONCURRENT_UPLOADS
+    }
+
+    /// Create a new multipart upload.
+    async fn create_multipart(&self, bucket: &str, key: &str)
+    -> super::Result<MultipartUploadInfo>;
+
+    /// Upload a part to object store.
+    async fn upload_multipart(
+        &self,
+        bucket: &str,
+        key: &str,
+        upload_id: &str,
+        part_number: NonZeroI32,
+        data: Bytes,
+    ) -> super::Result<CompletedPart>;
+
+    /// Complete a multipart upload.
+    async fn complete_multipart(
+        &self,
+        bucket: &str,
+        key: &str,
+        upload_id: &str,
+        completed_parts: Vec<CompletedPart>,
+    ) -> super::Result<()>;
+
+    /// Abort a multipart upload.
+    async fn abort_multipart(&self, bucket: &str, key: &str, upload_id: &str) -> super::Result<()>;
 }

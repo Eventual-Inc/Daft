@@ -14,7 +14,7 @@ use snafu::{ResultExt, Snafu};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 use super::{
-    InvalidRangeRequestSnafu, Result,
+    InvalidRangeRequestSnafu, Result, SourceType,
     object_io::{GetResult, ObjectSource},
 };
 use crate::{
@@ -140,6 +140,10 @@ pub struct LocalFile {
 
 #[async_trait]
 impl ObjectSource for LocalSource {
+    fn source_type(&self) -> SourceType {
+        SourceType::File
+    }
+
     async fn supports_range(&self, _: &str) -> super::Result<bool> {
         Ok(true)
     }

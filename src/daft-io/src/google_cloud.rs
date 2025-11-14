@@ -17,7 +17,7 @@ use snafu::{IntoError, ResultExt, Snafu};
 use tokio::sync::Semaphore;
 
 use crate::{
-    FileFormat, GetResult, InvalidRangeRequestSnafu,
+    FileFormat, GetResult, InvalidRangeRequestSnafu, SourceType,
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
     range::GetRange,
     retry::{ExponentialBackoff, RetryError},
@@ -548,6 +548,10 @@ impl GCSSource {
 
 #[async_trait]
 impl ObjectSource for GCSSource {
+    fn source_type(&self) -> SourceType {
+        SourceType::GCS
+    }
+
     async fn supports_range(&self, _: &str) -> super::Result<bool> {
         Ok(true)
     }
