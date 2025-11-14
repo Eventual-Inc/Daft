@@ -137,32 +137,43 @@ Let's extract and download product images. The `Image` column contains pipe-sepa
         df["first_image_url"].url.download(on_error="null")
     )
 
-    # Check what we have
-    df.select("Product Name", "first_image_url", "image_data").show(3)
+    # Decode images for visual display (in Jupyter notebooks, this shows actual images!)
+    df = df.with_column(
+        "image",
+        daft.functions.decode_image(df["image_data"], on_error="null")
+    )
+
+    # Check what we have - in Jupyter notebooks, the 'image' column shows actual images!
+    df.select("Product Name", "first_image_url", "image_data", "image").show(3)
     ```
 
 ```
-╭────────────────────────────────┬────────────────────────────────┬────────────────────────────────╮
-│ Product Name                   ┆ first_image_url                ┆ image_data                     │
-│ ---                            ┆ ---                            ┆ ---                            │
-│ String                         ┆ String                         ┆ Binary                         │
-╞════════════════════════════════╪════════════════════════════════╪════════════════════════════════╡
-│ DB Longboards CoreFlex Crossb… ┆ https://images-na.ssl-images-… ┆ b"\xff\xd8\xff\xe0\x00\x10JFI… │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ Electronic Snap Circuits Mini… ┆ https://images-na.ssl-images-… ┆ b"\xff\xd8\xff\xe0\x00\x10JFI… │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ 3Doodler Create Flexy 3D Prin… ┆ https://images-na.ssl-images-… ┆ b"\xff\xd8\xff\xe0\x00\x10JFI… │
-╰────────────────────────────────┴────────────────────────────────┴────────────────────────────────╯
+╭────────────────────────────────┬────────────────────────────────┬────────────────────────────────┬──────────────╮
+│ Product Name                   ┆ first_image_url                ┆ image_data                     ┆ image        │
+│ ---                            ┆ ---                            ┆ ---                            ┆ ---          │
+│ String                         ┆ String                         ┆ Binary                         ┆ Image[MIXED] │
+╞════════════════════════════════╪════════════════════════════════╪════════════════════════════════╪══════════════╡
+│ DB Longboards CoreFlex Crossb… ┆ https://images-na.ssl-images-… ┆ b"\xff\xd8\xff\xe0\x00\x10JFI… ┆ <Image>      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Electronic Snap Circuits Mini… ┆ https://images-na.ssl-images-… ┆ b"\xff\xd8\xff\xe0\x00\x10JFI… ┆ <Image>      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 3Doodler Create Flexy 3D Prin… ┆ https://images-na.ssl-images-… ┆ b"\xff\xd8\xff\xe0\x00\x10JFI… ┆ <Image>      │
+╰────────────────────────────────┴────────────────────────────────┴────────────────────────────────┴──────────────╯
 
 (Showing first 3 rows)
 ```
 
+!!! note "Visual Display in Notebooks"
+
+    In Jupyter notebooks, the `image` column will display actual thumbnail images instead of `<Image>` text! The `image_data` column shows the raw binary data, while the decoded `image` column renders as visual thumbnails.
+
 This demonstrates Daft's multimodal capabilities:
 - **Pattern extraction**: Use `regexp_extract()` to parse structured text
 - **URL handling**: Download content directly with `.url.download()`
+- **Image decoding**: Convert binary data to images with `decode_image()` for visual display
 - **Error handling**: Use `on_error="null"` to gracefully handle failed downloads
 
-The downloaded image data is now ready for further processing, such as running image classification models, extracting embeddings, or performing transformations.
+The decoded images are now ready for further processing, such as running image classification models, extracting embeddings, or performing transformations. In Jupyter notebooks, you get the added benefit of seeing the actual images inline!
 
 ### What's Next?
 
