@@ -244,7 +244,7 @@ Represents a fileset in Gravitino for file storage.
 
 ## Requirements
 
-- Apache Gravitino server (0.5.0+, with full support for 1.0+ API format)
+- Apache Gravitino server (0.9.0+)
 - Python requests library
 - PyIceberg library for reading Iceberg tables: `pip install 'daft[iceberg]'` or `pip install pyiceberg`
 - Appropriate cloud storage credentials configured in Gravitino
@@ -260,8 +260,8 @@ The client automatically detects and handles both formats for seamless compatibi
 
 ## Limitations
 
-- GCS credential vending is not yet fully implemented
-- Table creation requires manual column specification for production use
+- Credential vending is not yet implemented
+- This version directly call Gravitino RESTful API, not using Gravitino Python client
 - Some advanced Gravitino features may not be exposed through this client
 
 ## Testing
@@ -269,15 +269,9 @@ The client automatically detects and handles both formats for seamless compatibi
 Integration tests are available in `tests/catalog/test_gravitino_integration.py`. Run them with:
 
 ```bash
-# Run the standalone integration test
-python tests/catalog/test_gravitino_integration.py
+# Run the standalone test
+python tests/catalog/test_gravitino.py
 
-# Or run with pytest
-pytest tests/catalog/test_gravitino_integration.py -v
+# Or run integration test with pytest, make sure you have Gravitino server running in local
+GRAVITINO_TEST_SERVER=1 DAFT_RUNNER=native pytest tests/catalog/test_gravitino_integration.py -v
 ```
-
-## Examples
-
-See `example.py` for complete usage examples of the direct client API.
-
-For Daft catalog integration examples, see the usage sections above or the integration tests.
