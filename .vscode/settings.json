@@ -12,6 +12,5 @@
   ],
   "python.testing.unittestEnabled": false,
   "python.testing.pytestEnabled": true,
-  "makefile.configureOnOpen": false,
-  "kiroAgent.configureMCP": "Disabled"
+  "makefile.configureOnOpen": false
 }
