@@ -165,7 +165,7 @@ Let's extract and download product images. The `Image` column contains pipe-sepa
 
 !!! note "Visual Display in Notebooks"
 
-    In Jupyter notebooks, the `image` column will display actual thumbnail images instead of `<Image>` text. The `image_data` column shows the raw binary data.
+    In Jupyter notebooks, the `image` column will display actual thumbnail images instead of `<Image>` text.
 
 This demonstrates Daft's multimodal capabilities:
 
