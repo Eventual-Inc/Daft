@@ -111,10 +111,18 @@ impl Catalog for PyCatalogWrapper {
         })
     }
 
-    fn list_tables(&self, pattern: Option<&str>) -> CatalogResult<Vec<Identifier>> {
+    fn list_tables(
+        &self,
+        namespace: Option<&Identifier>,
+        pattern: Option<&str>,
+    ) -> CatalogResult<Vec<Identifier>> {
         Python::attach(|py| {
             let catalog = self.0.bind(py);
-            let namespaces_py = catalog.call_method1(intern!(py, "_list_tables"), (pattern,))?;
+            let namespace = namespace
+                .map(|ns| PyIdentifier(ns.clone()).to_pyobj(py))
+                .transpose()?;
+            let namespaces_py =
+                catalog.call_method1(intern!(py, "_list_tables"), (namespace, pattern))?;
             Ok(namespaces_py
                 .cast::<PyList>()
                 .expect("Catalog._list_tables must return a list")

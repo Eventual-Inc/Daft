@@ -496,13 +496,14 @@ impl SQLPlanner<'_> {
                     for order in &spec.order_by {
                         let parsed_expr = self.plan_expr(&order.expr)?;
                         window_spec.order_by.push(parsed_expr);
+                        let order_options = order.options;
                         window_spec
                             .descending
-                            .push(order.asc.is_some_and(|asc| !asc));
+                            .push(order_options.asc.is_some_and(|asc| !asc));
                         window_spec.nulls_first.push(
-                            order
+                            order_options
                                 .nulls_first
-                                .unwrap_or_else(|| order.asc.is_some_and(|asc| !asc)),
+                                .unwrap_or_else(|| order_options.asc.is_some_and(|asc| !asc)),
                         );
                     }
                 }

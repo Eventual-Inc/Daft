@@ -12,6 +12,7 @@ use indexmap::IndexMap;
 use crate::{
     Catalog, Identifier, Table, TableRef,
     error::{CatalogError, CatalogResult},
+    pattern::match_pattern,
 };
 
 type NamespaceTableMap = IndexMap<Option<String>, IndexMap<String, Arc<MemoryTable>>>;
@@ -223,30 +224,48 @@ impl Catalog for MemoryCatalog {
             .collect())
     }
 
-    fn list_tables(&self, pattern: Option<&str>) -> CatalogResult<Vec<Identifier>> {
+    fn list_tables(
+        &self,
+        namespace: Option<&Identifier>,
+        pattern: Option<&str>,
+    ) -> CatalogResult<Vec<Identifier>> {
         let tables = self.tables.read().unwrap();
-        if let Some(pat) = pattern {
-            if let Some(namespace_tables) = tables.get(&Some(pat.to_string())) {
-                Ok(namespace_tables
-                    .keys()
-                    .map(|table_name| Identifier::new(vec![pat, table_name]))
-                    .collect())
-            } else {
-                Ok(vec![])
-            }
-        } else {
-            Ok(tables
+
+        let namespace_str = namespace.map(|ns| match ns.qualifier() {
+            Some(q) => format!("{}.{}", q.join("."), ns.name()),
+            None => ns.name().to_string(),
+        });
+
+        let ns_table_pairs = match &namespace_str {
+            Some(ns) => tables
+                .get(&Some(ns.clone()))
+                .map(|namespace_tables| {
+                    namespace_tables
+                        .keys()
+                        .map(|table_name| (Some(ns.clone()), table_name.clone()))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default(),
+            None => tables
                 .iter()
                 .flat_map(|(namespace, namespace_tables)| {
                     namespace_tables
                         .keys()
-                        .map(move |table_name| match namespace {
-                            Some(ns) => Identifier::new(vec![ns, table_name]),
-                            None => Identifier::simple(table_name),
-                        })
+                        .map(move |table_name| (namespace.clone(), table_name.clone()))
                 })
-                .collect())
-        }
+                .collect(),
+        };
+
+        let result = ns_table_pairs
+            .into_iter()
+            .filter(|(_, table_name)| pattern.is_none_or(|pat| match_pattern(table_name, pat)))
+            .map(|(namespace, table_name)| match namespace {
+                Some(ns) => Identifier::new(vec![ns, table_name]),
+                None => Identifier::simple(table_name),
+            })
+            .collect();
+
+        Ok(result)
     }
 
     #[cfg(feature = "python")]

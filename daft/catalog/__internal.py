@@ -56,8 +56,9 @@ class _RustCatalog(Catalog):
     def _list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
         return [Identifier._from_pyidentifier(ident) for ident in self.inner.list_namespaces(pattern)]
 
-    def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
-        return [Identifier._from_pyidentifier(ident) for ident in self.inner.list_tables(pattern)]
+    def _list_tables(self, namespace: Identifier | None = None, pattern: str | None = None) -> list[Identifier]:
+        ns_id = namespace._ident if namespace else None
+        return [Identifier._from_pyidentifier(ident) for ident in self.inner.list_tables(ns_id, pattern)]
 
 
 class _RustTable(Table):

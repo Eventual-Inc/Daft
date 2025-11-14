@@ -268,7 +268,7 @@ class S3Catalog(Catalog):
         except Exception as e:
             raise ValueError(f"Failed to list namespaces: {e}")
 
-    def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
+    def _list_tables(self, namespace: Identifier | None = None, pattern: str | None = None) -> list[Identifier]:
         # base request
         req = {
             "tableBucketARN": self._table_bucket_arn,
@@ -278,14 +278,10 @@ class S3Catalog(Catalog):
         def to_ident(table_summary: TableSummaryTypeDef) -> Identifier:
             return Identifier(*table_summary["namespace"], table_summary["name"])
 
-        # we must split the pattern and use the last part as the table preefix.
-        if pattern:
-            parts = pattern.split(".")
-            if len(parts) == 1:
-                req["namespace"] = parts[0]
-            else:
-                req["namespace"] = ".".join(parts[:-1])
-                req["prefix"] = parts[-1]
+        if namespace:
+            req["namespace"] = ".".join(namespace)
+            if pattern:
+                req["prefix"] = pattern
 
         # loop each page
         try:

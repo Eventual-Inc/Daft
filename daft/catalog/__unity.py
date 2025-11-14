@@ -79,29 +79,27 @@ class UnityCatalog(Catalog):
     def _list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
         raise NotImplementedError("Unity list_namespaces not yet supported.")
 
-    def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
-        if pattern is None or pattern == "":
+    def _list_tables(self, namespace: Identifier | None = None, pattern: str | None = None) -> list[Identifier]:
+        if namespace:
+            if len(namespace) == 1:
+                catalog_name = namespace[0]
+                schemas = self._inner.list_schemas(catalog_name)
+                table_names = [tbl for schema in schemas for tbl in self._inner.list_tables(schema)]
+            elif len(namespace) == 2:
+                schema_name = f"{namespace[0]}.{namespace[1]}"
+                table_names = self._inner.list_tables(schema_name)
+            else:
+                raise ValueError(
+                    f"UnityCatalog namespace must have 1 or 2 parts (catalog or catalog.schema), got: {namespace}"
+                )
+            return [Identifier.from_str(tbl) for tbl in table_names]
+        else:
             return [
                 Identifier.from_str(tbl)
                 for cat in self._inner.list_catalogs()
                 for schema in self._inner.list_schemas(cat)
                 for tbl in self._inner.list_tables(schema)
             ]
-        num_namespaces = pattern.count(".")
-        if num_namespaces == 0:
-            catalog_name = pattern
-            return [
-                Identifier.from_str(tbl)
-                for schema in self._inner.list_schemas(catalog_name)
-                for tbl in self._inner.list_tables(schema)
-            ]
-        elif num_namespaces == 1:
-            schema_name = pattern
-            return [Identifier.from_str(tbl) for tbl in self._inner.list_tables(schema_name)]
-        else:
-            raise ValueError(
-                f"Unrecognized catalog name or schema name, expected a '.'-separated namespace but received: {pattern}"
-            )
 
     ###
     # has_.*
