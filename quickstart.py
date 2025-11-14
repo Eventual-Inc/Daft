@@ -31,7 +31,7 @@ df = df.with_column(
 
 # Download the image data
 print("\nDownloading images...")
-df = df.with_column("image_data", df["first_image_url"].url.download(on_error="null"))
+df = df.with_column("image_data", daft.functions.download(df["first_image_url"], on_error="null"))
 
 # Collect the dataframe to materialize everything
 print("\nCollecting dataframe...")
