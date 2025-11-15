@@ -21,7 +21,7 @@ You can install Daft using `pip`. Run the following command in your terminal or 
 === "🐍 Python"
 
     ```python
-    pip install daft
+    pip install -U "daft[openai]"  # Includes OpenAI extras needed for this quickstart
     ```
 
 <!-- For more advanced installation options, please see [Installation](install.md). -->
