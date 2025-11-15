@@ -187,7 +187,9 @@ This demonstrates Daft's multimodal capabilities:
 
 The decoded images are now ready for further processing.
 
-### Analyzing Images with AI
+### Batch AI Inference on Images
+
+Let's use AI to analyze product materials at scale. Daft automatically parallelizes AI operations across your local machine's cores, making it efficient to process multiple images concurrently.
 
 Let's suppose you want to create a new column that shows if each product is made of wood or not. This might be useful for, for example, a filtering feature on your website.
 
@@ -201,7 +203,7 @@ Let's suppose you want to create a new column that shows if each product is made
     class WoodAnalysis(BaseModel):
         is_wooden: bool = Field(description="Whether the product appears to be made of wood")
 
-    # Run the AI prompt on each image
+    # Run AI inference on each image - Daft automatically batches and parallelizes this
     # Note: You can pass api_key explicitly here, or set the OPENAI_API_KEY environment variable
     df = df.with_column(
         "wood_analysis",
@@ -247,13 +249,93 @@ Let's suppose you want to create a new column that shows if each product is made
 
 The AI successfully analyzes each product image to determine if it's made of wood. Notice that the longboard is correctly identified as wooden (true), while the electronic circuits, design studio, puzzle, and 3D printing filament are identified as not wooden (false).
 
+### Expanding the Analysis
+
+Now let's scale up our analysis to get meaningful insights. We'll analyze the first 100 products from the original dataset to see how many are made of wood:
+
+=== "🐍 Python"
+
+    ```python
+    from pydantic import BaseModel, Field
+    from daft.functions import prompt
+
+    # Define a simple structured output model (same as before)
+    class WoodAnalysis(BaseModel):
+        is_wooden: bool = Field(description="Whether the product appears to be made of wood")
+
+    # Start fresh with the first 100 products
+    df_large = df_original.select("Product Name", "About Product", "Image").limit(100)
+
+    # Apply the same image processing pipeline
+    # 1. Extract first image URL
+    df_large = df_large.with_column(
+        "first_image_url",
+        daft.functions.regexp_extract(
+            df_large["Image"],
+            r"^([^|]+)",
+            1
+        )
+    )
+
+    # 2. Download images
+    df_large = df_large.with_column(
+        "image_data",
+        df_large["first_image_url"].url.download(on_error="null")
+    )
+
+    # 3. Decode images
+    df_large = df_large.with_column(
+        "image",
+        daft.functions.decode_image(df_large["image_data"], on_error="null")
+    )
+
+    # 4. Run AI analysis on all 100 products
+    # Note: You can pass api_key explicitly here, or set the OPENAI_API_KEY environment variable
+    df_large = df_large.with_column(
+        "wood_analysis",
+        prompt(
+            ["Is this product made of wood? Look at the material.", df_large["image"]],
+            return_format=WoodAnalysis,
+            model="gpt-4o-mini",  # Using mini for cost-efficiency
+            provider="openai",
+            api_key="your-openai-api-key-here"  # Or omit this to use OPENAI_API_KEY env var
+        )
+    )
+
+    # 5. Extract the boolean value
+    df_large = df_large.with_column(
+        "is_wooden",
+        df_large["wood_analysis"]["is_wooden"]
+    )
+
+    # Count wooden products
+    wooden_count = df_large.where(df_large["is_wooden"] == True).count_rows()
+    total_count = df_large.count_rows()
+
+    print(f"Out of {total_count} products analyzed:")
+    print(f"  - {wooden_count} are made of wood")
+    print(f"  - {total_count - wooden_count} are not made of wood")
+    print(f"  - Percentage of wooden products: {(wooden_count / total_count * 100):.1f}%")
+    ```
+
+```
+Out of 100 products analyzed:
+  - 4 are made of wood
+  - 96 are not made of wood
+  - Percentage of wooden products: 4.0%
+```
+
+!!! note "Results May Vary"
+
+    AI models are non-deterministic, so you may see slightly different numbers when running this analysis.
+
 ### What's Next?
 
 Now that you have a basic sense of Daft's functionality and features, here are some more resources to help you get the most out of Daft:
 
-!!! tip "Try this on Kubernetes"
+!!! tip "Scaling Further"
 
-    Want to run this example on Kubernetes? Check out our [Kubernetes quickstart](distributed/kubernetes.md).
+    This same pipeline can process thousands or millions of products by leveraging Daft's distributed computing capabilities. Check out our [distributed computing guide](distributed/index.md) to run this analysis at scale on Ray or Kubernetes clusters.
 
 **Work with your favorite table and catalog formats**:
 
