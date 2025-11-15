@@ -24,6 +24,14 @@ You can install Daft using `pip`. Run the following command in your terminal or 
     pip install -U "daft[openai]"  # Includes OpenAI extras needed for this quickstart
     ```
 
+Additionally, install these packages for image processing (used later in this quickstart):
+
+=== "🐍 Python"
+
+    ```python
+    pip install numpy pillow
+    ```
+
 <!-- For more advanced installation options, please see [Installation](install.md). -->
 
 ### Load Your Data
