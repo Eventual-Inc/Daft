@@ -182,7 +182,7 @@ Let's extract and download product images. The `Image` column contains pipe-sepa
 This demonstrates Daft's multimodal capabilities:
 
 - **Native regex support**: Use `regexp_extract()` to parse structured text with Rust-powered regex
-- **URL handling**: Download content directly with `.url.download()`
+- **URL handling**: Download content directly with`daft.functions.download()`
 - **Image decoding**: Convert binary data to images with `decode_image()` for visual display
 
 The decoded images are now ready for further processing.
