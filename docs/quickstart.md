@@ -225,6 +225,28 @@ Let's suppose you want to create a new column that shows if each product is made
     df.select("Product Name", "image", "is_wooden").show()
     ```
 
+```
+╭────────────────────────────────┬──────────────┬───────────╮
+│ Product Name                   ┆ image        ┆ is_wooden │
+│ ---                            ┆ ---          ┆ ---       │
+│ String                         ┆ Image[MIXED] ┆ Bool      │
+╞════════════════════════════════╪══════════════╪═══════════╡
+│ DB Longboards CoreFlex Crossb… ┆ <Image>      ┆ true      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+│ Electronic Snap Circuits Mini… ┆ <Image>      ┆ false     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+│ Guillow Airplane Design Studio ┆ <Image>      ┆ false     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+│ Woodstock- Collage 500 pc Puz… ┆ <Image>      ┆ false     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+│ 3Doodler Create Flexy 3D Prin… ┆ <Image>      ┆ false     │
+╰────────────────────────────────┴──────────────┴───────────╯
+
+(Showing first 5 of 5 rows)
+```
+
+The AI successfully analyzes each product image to determine if it's made of wood. Notice that the longboard is correctly identified as wooden (true), while the electronic circuits, design studio, puzzle, and 3D printing filament are identified as not wooden (false).
+
 ### What's Next?
 
 Now that you have a basic sense of Daft's functionality and features, here are some more resources to help you get the most out of Daft:
