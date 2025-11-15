@@ -43,7 +43,7 @@ Let's start by loading an e-commerce dataset from Hugging Face. [This dataset](h
     ```python
     import daft
 
-    df = daft.read_huggingface("calmgoose/amazon-product-data-2020")
+    df_original = daft.read_huggingface("calmgoose/amazon-product-data-2020")
     ```
 
 !!! note "Load from anywhere"
@@ -57,7 +57,7 @@ Now let's take a look at what we loaded. You can inspect the DataFrame by simply
 === "🐍 Python"
 
     ```python
-    df
+    df_original
     ```
 
 ```
@@ -79,7 +79,7 @@ To actually view your data, you have two options:
 === "🐍 Python"
 
     ```python
-    df.show(2)
+    df_original.show(2)
     ```
 
 ```
@@ -107,7 +107,7 @@ This materializes and displays just the first 2 rows, which is perfect for quick
 === "🐍 Python"
 
     ```python
-    # df.collect()
+    # df_original.collect()
     ```
 
 This would materialize the entire DataFrame (all 10,000 rows in this case) into memory. Use `.collect()` when you need to work with the full dataset in memory.
@@ -120,7 +120,7 @@ For quick experimentation, let's create a smaller, simplified version of the dat
 
     ```python
     # Select only the columns we need and limit to 5 rows for faster iteration
-    df = df.select("Product Name", "About Product", "Image").limit(5)
+    df = df_original.select("Product Name", "About Product", "Image").limit(5)
     ```
 
 Now we have a manageable dataset of 5 products with just the product name, description, and image URLs. This simplified dataset lets us explore Daft's features without the overhead of unnecessary columns.
