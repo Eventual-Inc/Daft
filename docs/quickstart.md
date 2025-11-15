@@ -280,7 +280,7 @@ Now let's scale up our analysis to get meaningful insights. We'll analyze the fi
     # 2. Download images
     df_large = df_large.with_column(
         "image_data",
-        df_large["first_image_url"].url.download(on_error="null")
+        daft.functions.download(df_large["first_image_url"], on_error="null")
     )
 
     # 3. Decode images
