@@ -112,7 +112,7 @@ We'll define a `FasterWhisperTranscriber` class and decorate it with `@daft.cls(
 - We input a `daft.File` and return a dictionary that will be materialized as a `daft.DataType.struct()`
 - Faster-whisper supports reading files directly, so we use `daft.File` for simplified preprocessing
 
-Note: Jump to the bottom of this notebook to see how [`TranscriptionResult`]() is defined.
+Note: Jump to the bottom of this document to see how [`TranscriptionResult`]() is defined.
 
 ```python
 @daft.cls()
