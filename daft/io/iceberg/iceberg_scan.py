@@ -116,11 +116,14 @@ def iceberg_partition_spec_to_fields(
 
 
 class IcebergScanOperator(ScanOperator):
-    def __init__(self, iceberg_table: Table, snapshot_id: int | None, storage_config: StorageConfig) -> None:
+    def __init__(
+        self, iceberg_table: Table, snapshot_id: int | None, storage_config: StorageConfig, ignore_error: bool = False
+    ) -> None:
         super().__init__()
         self._table = iceberg_table
         self._snapshot_id = snapshot_id
         self._storage_config = storage_config
+        self._ignore_error = ignore_error
 
         iceberg_schema = (
             iceberg_table.schema()
@@ -227,7 +230,7 @@ class IcebergScanOperator(ScanOperator):
             file_format = file.file_format
             if file_format == "PARQUET":
                 file_format_config = FileFormatConfig.from_parquet_config(
-                    ParquetSourceConfig(field_id_mapping=self._field_id_mapping)
+                    ParquetSourceConfig(field_id_mapping=self._field_id_mapping, ignore_error=self._ignore_error)
                 )
             else:
                 # TODO: Support ORC and AVRO when we can read it
