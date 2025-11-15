@@ -192,7 +192,7 @@ Instructions for the model can also be added via the `system_message` argument w
 {"role": "system", "content": "You are an expert Chinese translation interpreter"}
 ```
 
-For instance, if we wanted to call OpenAI via the Chat Completions endpoint, specifying `temperature` and `max_tokens` we would define a script like:
+For instance, if we wanted to call OpenAI via the Chat Completions endpoint, specifying `temperature` and `max_tokens` we would write:
 
 ```python
 import daft
@@ -271,7 +271,6 @@ df = df.with_column(
 )
 ```
 
-
 **See also**: [Providers Overview](providers.md).
 
 ### Tools
@@ -281,7 +280,6 @@ The easiest way to get started with tool calling is to use OpenAI's built-in too
 ```python
 import daft
 from daft.functions import prompt
-from datetime import datetime
 
 df = daft.from_pydict({
     "query": [
@@ -297,17 +295,24 @@ df = df.with_column(
         tools=[{"type": "web_search"}],
     )
 )
-
-df.write_csv(f"../.data/prompt/oai_web_search_{str(datetime.now())}")
 ```
 
 ## Multimodal Inputs
 
-Daft is purpose-built for multimodal AI workloads. The `prompt` function accepts text, images, and files as a list of expressions in the `messages` parameter, making it easy to work with mixed content types.
+Daft is purpose-built for multimodal AI workloads. The `prompt` function accepts text, images, and files as a list of expressions in the `messages` parameter, making it easy to work with mixed content types. The following script demonstrates how you can pass a `list[daft.Expression]` to `messages` and daft will automatically format the inputs into user content parts for you.
 
 ```python
+# /// script
+# description = "Multimodal prompting with images and PDFs using OpenAI"
+# requires-python = ">=3.10, <3.13"
+# dependencies = ["daft>=0.6.13", "openai", "numpy", "python-dotenv", "pillow"]
+# ///
+import os
+from dotenv import load_dotenv
 import daft
-from daft.functions import prompt
+from daft.functions import prompt, download, decode_image, file
+
+load_dotenv()
 
 df = daft.from_pydict({
     "prompt": ["What's in this image and file?"],
@@ -318,13 +323,14 @@ df = daft.from_pydict({
 # Decode the image and file paths
 df = df.with_column(
     "my_image",
-    daft.functions.decode_image(daft.col("my_image").download())
+    decode_image(download(daft.col("my_image")))
 )
 
 df = df.with_column(
     "my_file",
-    daft.functions.file(daft.col("my_file"))
+    file(daft.col("my_file"))
 )
+
 
 # Prompt Usage for GPT-5 Responses
 df = df.with_column(
@@ -332,14 +338,15 @@ df = df.with_column(
     prompt(
         messages=[daft.col("prompt"), daft.col("my_image"), daft.col("my_file")],
         system_message="You are a helpful assistant.",
-        model="gpt-5-2025-08-07",
+        model="gpt-5-mini",
         provider="openai",
-        reasoning={"effort": "high"},  # Adjust reasoning level
-        tools=[{"type": "web_search"}],  # Leverage internal OpenAI Tools
     )
 )
+
+print(df.to_pydict())
 ```
 
+The headers at the top of this example specify the exact dependencies for a [uv script](https://docs.astral.sh/uv/guides/scripts/). You can just copy/paste the contents into a file and `uv run yourfile.py` to run the code with no setup besides a `.env` file for your `OPENAI_API_KEY`.
 
 ### Working with Files
 
@@ -411,13 +418,9 @@ df.show(format="fancy", max_width=80)
 
 #### Text Files (Markdown, HTML, CSV)
 
-While OpenAI's native API only supports PDFs directly, attempting to pass other file types like Markdown, CSV, or HTML will throw errors like:
+As it turns out OpenAI's native API only supports PDFs. Attempting to pass other file types like Markdown, CSV, or HTML will throw errors like `Invalid input: Expected file type to be a supported format: .pdf but got .jsonl”`. To work around this, Daft automatically extracts content from any `text/*` MIME type file and injects it into the prompt with XML-wrapped tags. This makes for powerful context provisioning capabilities, particularly for code or documentation.
 
-```
-Invalid input: Expected file type to be a supported format: .pdf but got .jsonl”
-```
-
-To work around this, Daft automatically extracts content from any `text/*` MIME type file and injects it into the prompt with XML-wrapped tags. For example, to use Markdown files as context:
+For example, to use Markdown files as context:
 
 ```python
 import daft
