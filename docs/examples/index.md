@@ -1,278 +1,309 @@
 # Examples
 
-For more examples, check out our new [daft-examples](https://www.github.com/Eventual-Inc/daft-examples) repository!
 
-<div class="examples-grid">
-  <div class="example-card">
-   <a href="./common-crawl-daft-tutorial" class="example-image-link">
-   <div class="example-image">
-       <img src="../img/common-crawl-daft-tutorial-cover.png" alt="Common Crawl with Daft">
-        <div class="example-overlay">
-        <h3>Using Common Crawl with Daft</h3>
-        <p>Use Daft to embed the web!</p>
-        </div>
-    </div>
-    </a>
-  </div>
+<div class="container">
 
-  <div class="example-card">
-    <a href="./document-processing" class="example-image-link">
-      <div class="example-image">
-        <img src="../img/document-processing-cover.jpg" alt="Document Processing">
-        <div class="example-overlay example-overlay-dark">
-          <h3>Document Processing</h3>
-          <p>Load PDFs from S3, extract text, run layout analysis, and compute embeddings</p>
-        </div>
+  <!-- Feature Card -->
+  <a href="./voice_ai_analytics" class="card feature-card">
+      <div class="card-header">
+          <div class="card-tag">TRANSCRIPTION</div>
+          <div class="card-spacer"></div>
       </div>
-    </a>
-  </div>
-
-  <div class="example-card">
-    <a href="./audio-transcription" class="example-image-link">
-      <div class="example-image">
-        <img src="../img/audio-transcription-cover.jpg" alt="Audio Transcription">
-        <div class="example-overlay">
-          <h3>Audio Transcription with Whisper</h3>
-          <p>Effortlessly convert audio to text at scale</p>
-        </div>
+      <div class="card-title">
+          <p>Voice AI Analytics with Faster-Whisper and embed_text</p>
       </div>
-    </a>
-  </div>
-
-  <div class="example-card">
-    <a href="./minhash-dedupe" class="example-image-link">
-      <div class="example-image">
-        <img src="../img/minhash-dedupe-cover.png" alt="MinHash Deduplication" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-        <div class="example-placeholder" style="display: none; background: linear-gradient(135deg, #36d1dc 0%, #5b86e5 100%);">
-          <span>📃</span>
-        </div>
-        <div class="example-overlay">
-          <h3>MinHash Deduplication on Common Crawl</h3>
-          <p>Deduplicate web text at scale with MinHash, LSH, and Connected Components.</p>
-        </div>
+      <div class="card-body"></div>
+      <div class="card-description">
+          <p>Transcribe audio files into segments with timestamps and embed content. </p>
       </div>
-    </a>
-  </div>
+  </a>
 
-  <div class="example-card">
-    <a href="./text-embeddings" class="example-image-link">
-      <div class="example-image">
-        <img src="../img/text-embeddings-cover.jpg" alt="Text Embeddings" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-        <div class="example-placeholder" style="display: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-          <span>📊</span>
-        </div>
-        <div class="example-overlay">
-          <h3>Text Embeddings for Turbopuffer</h3>
-          <p>Generate embeddings on text to store in vector databases</p>
-        </div>
+  <!-- HTML/TEXT Card -->
+  <a href="./minhash-dedupe" class="card html-text-card">
+      <div class="card-header">
+          <div class="card-tag">HTML/TEXT</div>
+          <div class="card-spacer"></div>
       </div>
-    </a>
-  </div>
+      <div class="card-title card-title-standard">
+          <p>MinHash Deduplication on Common Crawl</p>
+      </div>
+      <div class="card-description card-description-standard">
+          <p>Clean web text at scale with MinHash, LSH Banding, and Connected Components.</p>
+      </div>
+  </a>
 
-  <div class="example-card">
-    <a href="./llms-red-pajamas" class="example-image-link">
-      <div class="example-image">
-        <img src="../img/llms-red-pajamas-cover.jpg" alt="LLMs on Red Pajamas" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-        <div class="example-placeholder" style="display: none; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
-          <span>🤖</span>
-        </div>
-        <div class="example-overlay">
-          <h3>LLMs on Hugging Face Datasets</h3>
-          <p>Load Red Pajamas dataset and perform similarity search</p>
-        </div>
+  <!-- Documents Card -->
+  <a href="./common-crawl-daft-tutorial" class="card documents-card">
+      <div class="card-header">
+          <div class="card-tag">COMMON CRAWL</div>
+          <div class="card-spacer"></div>
       </div>
-    </a>
-  </div>
+      <div class="card-title card-title-standard">
+          <p>Getting Started with Common Crawl</p>
+      </div>
+      <div class="card-description card-description-standard">
+          <p>Daft provides a simple, performant, and responsible way to access Common Crawl data.</p>
+      </div>
+  </a>
 
-  <div class="example-card">
-    <a href="./image-generation" class="example-image-link">
-      <div class="example-image">
-        <img src="../img/image-generation-cover.jpg" alt="Image Generation" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-        <div class="example-placeholder" style="display: none; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
-          <span>🎨</span>
-        </div>
-        <div class="example-overlay example-overlay-dark">
-          <h3>Generate Images with Stable Diffusion</h3>
-          <p>Using text prompts with deep learning models</p>
-        </div>
+  <!-- Audio Card -->
+  <a href="./audio-transcription" class="card audio-card">
+      <div class="card-header">
+          <div class="card-tag">AUDIO</div>
+          <div class="card-spacer"></div>
       </div>
-    </a>
-  </div>
+      <div class="card-title card-title-standard">
+          <p>Audio Transcription with Whisper</p>
+      </div>
+      <div class="card-description card-description-standard">
+          <p>Effortlessly transcribe audio to text at scale</p>
+      </div>
+  </a>
 
-  <div class="example-card">
-    <a href="./querying-images" class="example-image-link">
-      <div class="example-image">
-        <img src="../img/querying-images-cover.jpg" alt="Image Querying" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-        <div class="example-placeholder" style="display: none; background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
-          <span>🔍</span>
-        </div>
-        <div class="example-overlay">
-          <h3>Query Images</h3>
-          <p>Retrieve the top N "reddest" images from the Open Images dataset</p>
-        </div>
+  <!-- Text Embeddings Card -->
+  <a href="./text-embeddings" class="card text-embeddings-card">
+      <div class="card-header">
+          <div class="card-tag">TEXT EMBEDDINGS</div>
+          <div class="card-spacer"></div>
       </div>
-    </a>
-  </div>
+      <div class="card-title card-title-standard">
+          <p>Build a 100% GPU Utilization Text Embedding Pipeline featuring spaCy and Turbopuffer</p>
+      </div>
+      <div class="card-description card-description-standard">
+          <p>Generate and store millions of text embeddings in vector databases using distributed GPU processing and state-of-the-art models.</p>
+      </div>
+  </a>
 
-  <div class="example-card">
-    <a href="./mnist" class="example-image-link">
-      <div class="example-image">
-        <img src="../img/mnist-cover.jpg" alt="MNIST Classification" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-        <div class="example-placeholder" style="display: none; background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);">
-          <span>🔢</span>
-        </div>
-        <div class="example-overlay">
-          <h3>MNIST Digit Classification</h3>
-          <p>Run classification with deep learning</p>
-        </div>
+  <!-- Inference Card -->
+  <a href="./image-generation" class="card inference-card">
+      <div class="card-header">
+          <div class="card-tag">INFERENCE</div>
+          <div class="card-spacer"></div>
       </div>
-    </a>
-  </div>
+      <div class="card-title card-title-standard">
+          <p>Generate Images with Stable Diffusion</p>
+      </div>
+      <div class="card-description card-description-standard">
+          <p>Open Source image generation model on your own GPUs using Daft UDFs</p>
+      </div>
+  </a>
 
-  <div class="example-card">
-    <a href="./window-functions" class="example-image-link">
-      <div class="example-image">
-        <img src="../img/window-functions-cover.jpg" alt="Window Functions" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-        <div class="example-placeholder" style="display: none; background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);">
-          <span>📈</span>
-        </div>
-        <div class="example-overlay">
-          <h3>Window Functions</h3>
-          <p>Efficient window functions for ranking, computing deltas, and tracking cumulative sums</p>
-        </div>
+  <!-- Window Functions Card -->
+  <a href="./window-functions" class="card window-functions-card">
+      <div class="card-header">
+          <div class="card-tag">WINDOW FUNCTIONS</div>
+          <div class="card-spacer"></div>
       </div>
-    </a>
-  </div>
+      <div class="card-title card-title-standard">
+          <p>Window Functions: The Great Chocolate Race</p>
+      </div>
+      <div class="card-description card-description-standard">
+          <p>Transforming complex analytical challenges into elegant solutions</p>
+      </div>
+  </a>
+
+  <!-- Datasets Card -->
+  <a href="./llms-red-pajamas" class="card datasets-card">
+      <div class="card-header">
+          <div class="card-tag">DATASETS</div>
+          <div class="card-spacer"></div>
+      </div>
+      <div class="card-title card-title-standard">
+          <p>Running LLMs on the Red Pajamas Dataset</p>
+      </div>
+      <div class="card-description card-description-standard">
+          <p>Perform similarity search on Stack Exchange questions using language models and embeddings.</p>
+      </div>
+  </a>
 
 </div>
 
 <style>
-.examples-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.5rem;
-  margin: 0.5rem 0;
-}
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
 
-.example-card {
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  background: white;
-}
+    body {
+        background: rgba(255, 255, 255, 0.05);
+        min-height: 100vh;
+        padding: 12px;
+    }
 
-.example-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-}
+    .container {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-rows: repeat(4, minmax(0, 1fr));
+        gap: 24px;
+        width: 100%;
+        height: calc(100vh - 24px);
+    }
 
-.example-image {
-  position: relative;
-  height: 380px;
-  overflow: hidden;
-}
+    .card {
+        background: #141519;
+        border: 2px solid magenta;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        overflow: hidden;
+        text-decoration: none;
+        color: inherit;
+        transition: transform 0.2s ease;
+    }
 
-.example-image img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.3s ease;
-}
+    .card:hover {
+        transform: translateY(-2px);
+        text-decoration: none;
+    }
 
-.example-placeholder {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 3rem;
-  color: white;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-}
+    .card-header {
+        display: flex;
+        align-items: stretch;
+        gap: 10px;
+        flex-shrink: 0;
+        width: 100%;
+        overflow: hidden;
+    }
 
-.example-image::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 1;
-  pointer-events: none;
-}
+    .card-tag {
+        background: magenta;
+        padding: 15px 12px;
+        font-family: 'Roboto Mono', monospace;
+        font-size: 16px;
+        color: black;
+        white-space: nowrap;
+        line-height: 0;
+        display: flex;
+        align-items: center;
+    }
 
-.example-card:hover .example-image img {
-  transform: scale(1.05);
-}
+    .card-spacer {
+        flex: 1;
+        min-width: 1px;
+        min-height: 1px;
+    }
 
-.example-image-link {
-  display: block;
-  text-decoration: none;
-  color: inherit;
-  cursor: pointer;
-}
+    .card-title {
+        padding: 10px 24px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
 
-.example-image-link:hover {
-  text-decoration: none;
-  color: inherit;
-}
+    .card-title p {
+        font-family: 'Roboto Mono', monospace;
+        font-weight: 400;
+        font-size: 20px;
+        color: white;
+        line-height: normal;
+    }
 
-.example-overlay {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 12%, rgba(0, 0, 0, 0.4) 35%, rgba(0, 0, 0, 0) 65%);
-  color: white;
-  padding: 1.5rem 1rem 1rem;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  z-index: 2;
-}
+    .card-description {
+        padding: 10px 24px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
 
-.example-overlay h3 {
-  margin: 0 0 0.5rem 0;
-  font-size: 1rem;
-  font-weight: 600;
-}
+    .card-description p {
+        font-family: 'Roboto Mono', monospace;
+        font-weight: 400;
+        font-size: 16px;
+        color: #bababa;
+        line-height: normal;
+    }
 
-.example-overlay p {
-  margin: 0;
-  font-size: 0.8rem;
-  opacity: 0.9;
-  line-height: 1.4;
-}
+    /* Specific card sizing */
+    .card-title-standard {
+        height: 181px;
+    }
 
-.example-overlay-dark {
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 12%, rgba(0, 0, 0, 0.6) 35%, rgba(0, 0, 0, 0) 65%);
-}
+    .card-description-standard {
+        height: 100px;
+    }
 
-@media (max-width: 768px) {
-  .examples-grid {
-    grid-template-columns: 1fr;
-    gap: 1.5rem;
-  }
+    /* Feature card specific styles */
+    .feature-card {
+        grid-area: 1 / 1 / span 2 / span 2;
+    }
 
-  .example-image {
-    height: 180px;
-  }
+    .feature-card .card-title p {
+        font-size: 28px;
+    }
 
-  .example-overlay {
-    padding: 1rem 0.75rem 0.75rem;
-  }
+    .feature-card .card-body {
+        flex: 1;
+        min-height: 1px;
+        min-width: 1px;
+    }
 
-  .example-overlay h3 {
-    font-size: 1rem;
-  }
+    .feature-card .card-description {
+        height: 80px;
+        justify-content: space-between;
+    }
 
-  .example-overlay p {
-    font-size: 0.65rem;
-  }
-}
+    .feature-card .card-description p {
+        flex: 1;
+        min-height: 1px;
+        min-width: 1px;
+    }
+
+    /* Grid positioning */
+    .audio-card {
+        grid-area: 3 / 1;
+    }
+
+    .text-embeddings-card {
+        grid-area: 3 / 2 / auto / span 2;
+    }
+
+    .documents-card {
+        grid-area: 2 / 3;
+    }
+
+    .html-text-card {
+        grid-area: 1 / 3;
+    }
+
+    .inference-card {
+        grid-area: 4 / 1;
+    }
+
+    .window-functions-card {
+        grid-area: 4 / 2;
+    }
+
+    .datasets-card {
+        grid-area: 4 / 3;
+    }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+        .container {
+            grid-template-columns: 1fr;
+            grid-template-rows: auto;
+            height: auto;
+            padding: 12px 12px;
+        }
+
+        .card {
+            grid-area: auto !important;
+        }
+
+        .feature-card .card-title p {
+            font-size: 24px;
+        }
+
+        .card-title p {
+            font-size: 18px;
+        }
+    }
 </style>
+
+
+!!! Note
+    For more examples, check out our new [daft-examples](https://www.github.com/Eventual-Inc/daft-examples) repository!
