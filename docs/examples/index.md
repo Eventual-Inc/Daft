@@ -306,4 +306,4 @@
 
 
 !!! Note
-    For more examples, check out our new [daft-examples](https://www.github.com/Eventual-Inc/daft-examples) repository!
+    For more examples, check out our new [daft-examples](https://github.com/Eventual-Inc/daft-examples) repository!
