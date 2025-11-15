@@ -60,7 +60,7 @@ Now let's take a look at what we loaded. You can inspect the DataFrame by simply
     df_original
     ```
 
-```
+``` {title="Output"}
 ╭─────────┬──────────────┬──────────┬────────────┬──────────┬─────────────┬──────────────────╮
 │ Uniq Id ┆ Product Name ┆ Category ┆      …     ┆ Variants ┆ Product Url ┆ Is Amazon Seller │
 │ ---     ┆ ---          ┆ ---      ┆            ┆ ---      ┆ ---         ┆ ---              │
@@ -82,7 +82,7 @@ To actually view your data, you have two options:
     df_original.show(2)
     ```
 
-```
+``` {title="Output"}
 ╭──────────────────┬──────────────────┬──────────────────┬────────────┬──────────────────┬─────────────────┬───────────╮
 │ Uniq Id          ┆ Product Name     ┆ Category         ┆      …     ┆ Variants         ┆ Product Url     ┆ Is Amazon │
 │ ---              ┆ ---              ┆ ---              ┆            ┆ ---              ┆ ---             ┆ Seller    │
@@ -159,7 +159,7 @@ Let's extract and download product images. The `Image` column contains pipe-sepa
     df.select("Product Name", "first_image_url", "image_data", "image").show(3)
     ```
 
-```
+``` {title="Output"}
 ╭────────────────────────────────┬────────────────────────────────┬────────────────────────────────┬──────────────╮
 │ Product Name                   ┆ first_image_url                ┆ image_data                     ┆ image        │
 │ ---                            ┆ ---                            ┆ ---                            ┆ ---          │
@@ -227,7 +227,7 @@ Let's suppose you want to create a new column that shows if each product is made
     df.select("Product Name", "image", "is_wooden").show()
     ```
 
-```
+``` {title="Output"}
 ╭────────────────────────────────┬──────────────┬───────────╮
 │ Product Name                   ┆ image        ┆ is_wooden │
 │ ---                            ┆ ---          ┆ ---       │
@@ -318,7 +318,7 @@ Now let's scale up our analysis to get meaningful insights. We'll analyze the fi
     print(f"  - Percentage of wooden products: {(wooden_count / total_count * 100):.1f}%")
     ```
 
-```
+``` {title="Output"}
 Out of 100 products analyzed:
   - 4 are made of wood
   - 96 are not made of wood
