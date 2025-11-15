@@ -175,6 +175,44 @@ This demonstrates Daft's multimodal capabilities:
 
 The decoded images are now ready for further processing.
 
+### Analyzing Images with AI
+
+Let's suppose you want to create a new column that shows if each product is made of wood or not. This might be useful for, for example, a filtering feature on your website.
+
+=== "🐍 Python"
+
+    ```python
+    from pydantic import BaseModel, Field
+    from daft.functions import prompt
+
+    # Define a simple structured output model
+    class WoodAnalysis(BaseModel):
+        is_wooden: bool = Field(description="Whether the product appears to be made of wood")
+
+    # Run the AI prompt on each image
+    # Note: You can pass api_key explicitly here, or set the OPENAI_API_KEY environment variable
+    df = df.with_column(
+        "wood_analysis",
+        prompt(
+            ["Is this product made of wood? Look at the material.", df["image"]],
+            return_format=WoodAnalysis,
+            model="gpt-4o-mini",  # Using mini for cost-efficiency
+            provider="openai",
+            api_key="your-openai-api-key-here"  # Or omit this to use OPENAI_API_KEY env var
+        )
+    )
+
+    # Extract the boolean value from the structured output
+    # The result is a struct, so we extract the 'is_wooden' field
+    df = df.with_column(
+        "is_wooden",
+        df["wood_analysis"]["is_wooden"]
+    )
+
+    # View results
+    df.select("Product Name", "image", "is_wooden").show()
+    ```
+
 ### What's Next?
 
 Now that you have a basic sense of Daft's functionality and features, here are some more resources to help you get the most out of Daft:
