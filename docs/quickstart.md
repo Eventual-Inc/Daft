@@ -146,7 +146,7 @@ Let's extract and download product images. The `Image` column contains pipe-sepa
     # Download the image data
     df = df.with_column(
         "image_data",
-        df["first_image_url"].url.download(on_error="null")
+        daft.functions.download(df["first_image_url"], on_error="null")
     )
 
     # Decode images for visual display (in Jupyter notebooks, this shows actual images!)
