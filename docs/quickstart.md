@@ -10,6 +10,10 @@ todo(docs): What does the actual output look like for some of these examples? sh
 
 Daft is the best multimodal data processing engine that allows you to load data from anywhere, transform it with a powerful DataFrame API and AI functions, and store it in your destination of choice. In this quickstart, you'll see what this looks like in practice with a realistic e-commerce data workflow.
 
+### Requirements
+
+Daft requires **Python 3.10 or higher**.
+
 ### Install Daft
 
 You can install Daft using `pip`. Run the following command in your terminal or notebook:
