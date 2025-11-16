@@ -19,6 +19,7 @@ from daft.gravitino import GravitinoClient, GravitinoTable, GravitinoTableInfo
 class TestGravitinoIntegration:
     """Integration tests for Gravitino catalog functionality."""
 
+    @pytest.mark.integration()
     def test_catalog_from_gravitino(self):
         """Test that Catalog.from_gravitino() works."""
         # Create a Gravitino client
@@ -55,6 +56,7 @@ class TestGravitinoIntegration:
         assert table.name == "test_table"
         assert "GravitinoTable" in str(type(table))
 
+    @pytest.mark.integration()
     def test_catalog_has_table_method(self):
         """Test catalog has_table method works."""
         client = GravitinoClient(
@@ -68,6 +70,7 @@ class TestGravitinoIntegration:
         assert isinstance(result, bool)
         assert result is False  # Should be False for nonexistent table
 
+    @pytest.mark.integration()
     def test_catalog_list_tables_method(self):
         """Test catalog list_tables method works."""
         client = GravitinoClient(
@@ -81,6 +84,7 @@ class TestGravitinoIntegration:
         assert isinstance(tables, list)
         # Should be empty list when no server is running
 
+    @pytest.mark.integration()
     def test_catalog_get_table_not_found(self):
         """Test catalog get_table raises NotFoundError for nonexistent table."""
         from daft.catalog import NotFoundError
