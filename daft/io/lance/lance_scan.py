@@ -182,6 +182,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         assert self._pushed_filters is None, "Expected no filters when creating scan tasks with limit and no filters"
         assert pushdowns.limit is not None, "Expected a limit when creating scan tasks with limit and no filters"
 
+        open_kwargs = getattr(self._ds, "_daft_open_kwargs", None)
         fragments = self._ds.get_fragments()
         remaining_limit = pushdowns.limit
 
@@ -203,7 +204,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 yield ScanTask.python_factory_func_scan_task(
                     module=_lancedb_table_factory_function.__module__,
                     func_name=_lancedb_table_factory_function.__name__,
-                    func_args=(self._ds, [fragment.fragment_id], required_columns, None, rows_to_scan),
+                    func_args=(self._ds.uri, open_kwargs, [fragment.fragment_id], required_columns, None, rows_to_scan),
                     schema=self.schema()._schema,
                     num_rows=rows_to_scan,
                     size_bytes=None,
@@ -233,7 +234,8 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     module=_lancedb_table_factory_function.__module__,
                     func_name=_lancedb_table_factory_function.__name__,
                     func_args=(
-                        self._ds,
+                        self._ds.uri,
+                        open_kwargs,
                         [fragment.fragment_id],
                         required_columns,
                         pushed_expr,
