@@ -238,19 +238,18 @@ impl PipelineNodeImpl for ActorUDF {
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         use itertools::Itertools;
-        let mut res = vec![];
-        res.push("ActorUDF:".to_string());
-        res.push(format!(
-            "Projection = [{}]",
-            self.projection.iter().map(|e| e.to_string()).join(", ")
-        ));
-        res.push(format!("UDF = {}", self.udf_properties.name));
-        res.push(format!(
-            "Concurrency = {}",
-            self.udf_properties
-                .concurrency
-                .expect("ActorUDF should have concurrency specified")
-        ));
+        let mut res = vec![
+            format!("ActorUDF: {}", self.udf_properties.name),
+            format!(
+                "Projection = [{}]",
+                self.projection.iter().map(|e| e.to_string()).join(", ")
+            ),
+            format!(
+                "Properties = {{ {} }}",
+                self.udf_properties.multiline_display(false).join(", ")
+            ),
+        ];
+
         if let Some(resource_request) = &self.udf_properties.resource_request {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
@@ -260,6 +259,7 @@ impl PipelineNodeImpl for ActorUDF {
         } else {
             res.push("Resource request = None".to_string());
         }
+
         res
     }
 

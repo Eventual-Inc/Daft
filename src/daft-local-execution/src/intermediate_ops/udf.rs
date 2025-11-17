@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
+    num::NonZeroUsize,
     sync::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
@@ -528,8 +529,20 @@ impl IntermediateOperator for UdfOperator {
                 "Passthrough Columns = [{}]",
                 self.params.passthrough_columns.iter().join(", ")
             ),
-            format!("Concurrency = {}", self.concurrency),
+            format!(
+                "Properties = {{ {} }}",
+                UDFProperties {
+                    concurrency: Some(
+                        NonZeroUsize::new(self.concurrency)
+                            .expect("UDF concurrency is always >= 1")
+                    ),
+                    ..self.params.udf_properties.clone()
+                }
+                .multiline_display(false)
+                .join(", ")
+            ),
         ];
+
         if let Some(resource_request) = &self.params.udf_properties.resource_request {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
@@ -539,6 +552,7 @@ impl IntermediateOperator for UdfOperator {
         } else {
             res.push("Resource request = None".to_string());
         }
+
         res
     }
 
