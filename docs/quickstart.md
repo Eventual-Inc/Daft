@@ -298,7 +298,7 @@ Now let's scale up our analysis to get meaningful insights. We'll analyze the fi
             return_format=WoodAnalysis,
             model="gpt-4o-mini",  # Using mini for cost-efficiency
             provider="openai",
-           # Ensure OPENAI_API_KEY is set
+            api_key="your-openai-api-key-here"  # Or omit this to use OPENAI_API_KEY env var
         )
     )
 
