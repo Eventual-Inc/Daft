@@ -46,11 +46,11 @@ def main():
 
     # Write output
     {% if output_data_source == "Parquet" %}
-    df.write_parquet("output.parquet", write_mode="overwrite")
+    df.write_parquet("output.parquet")
     {% elif output_data_source == "CSV" %}
-    df.write_csv("output.csv", write_mode="overwrite")
+    df.write_csv("output.csv")
     {% elif output_data_source == "JSON" %}
-    df.write_json("output.json", write_mode="overwrite")
+    df.write_json("output.jsonl")
     {% elif output_data_source == "Turbopuffer" %}
     # Prepare dataframe for Turbopuffer: id and vector columns
     {% if data_source == "Raw Files" %}
@@ -69,11 +69,11 @@ def main():
     df.write_turbopuffer("your_namespace", api_key="your_api_key")
     {% elif output_data_source == "Iceberg" %}
     # TODO: Configure Iceberg table
-    # df.write_iceberg(table, mode="append")
+    # df.write_iceberg(table)
     {% elif output_data_source == "Delta Lake" %}
-    df.write_deltalake("output_path", mode="overwrite")
+    df.write_deltalake("output_path")
     {% elif output_data_source == "Lance" %}
-    df.write_lance("output.lance", mode="overwrite")
+    df.write_lance("output.lance")
     {% elif output_data_source == "Clickhouse" %}
     # TODO: Configure Clickhouse connection
     # df.write_clickhouse("table_name", host="localhost", port=8123)

@@ -400,6 +400,8 @@ def _generate_pydantic_model() -> str | None:
 @click.help_option("-h", "--help")  # type: ignore[misc]
 def init() -> None:
     """Initialize a new Daft project."""
+    os.environ["DAFT_PROGRESS_BAR"] = "0"
+
     console.print("[bold green]Initializing Daft project...[/bold green]")
     console.print()
 
