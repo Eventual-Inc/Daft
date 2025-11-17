@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from daft.datatype import MediaType
 from daft.dependencies import librosa, np, sf
@@ -50,7 +50,7 @@ class AudioFile(File):
         with self.open() as f:
             return sf.SoundFile(f)
 
-    def resample(self, sample_rate: int) -> np.ndarray:
+    def resample(self, sample_rate: int) -> np.ndarray[Any]:
         """Resample the audio file to the given sample rate.
 
         Args:
