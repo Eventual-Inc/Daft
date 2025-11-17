@@ -135,7 +135,7 @@ def _assert_embed_metrics_recorded(metrics: dict[str, int]) -> None:
         return
 
     required = {
-        "prompt tokens",
+        "input tokens",
         "total tokens",
         "requests",
     }

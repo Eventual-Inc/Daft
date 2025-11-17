@@ -446,7 +446,7 @@ def test_embed_text_records_usage_metrics(mock_text_embedder, mock_client):
         "protocol": "embed",
         "provider": "openai",
     }
-    mock_counter.assert_any_call("prompt tokens", 10, attributes=attrs)
+    mock_counter.assert_any_call("input tokens", 10, attributes=attrs)
     mock_counter.assert_any_call("total tokens", 12, attributes=attrs)
     mock_counter.assert_any_call("requests", attributes=attrs)
     assert mock_counter.call_count == 3
