@@ -50,6 +50,16 @@ class AudioFile(File):
         with self.open() as f:
             return sf.SoundFile(f)
 
+    def to_numpy(self) -> np.ndarray[Any, Any]:
+        """Convert the audio file to a numpy array.
+
+        Returns:
+            np.ndarray[Any, Any]: The audio data as a numpy array.
+
+        """
+        with self._open_soundfile() as af:
+            return af.read()
+
     def resample(self, sample_rate: int) -> np.ndarray[Any, Any]:
         """Resample the audio file to the given sample rate.
 
@@ -62,11 +72,10 @@ class AudioFile(File):
         """
         if not librosa.module_available():
             raise ImportError("The 'librosa' module is required to resample audio files.")
-        with self.open() as f:
-            with sf.SoundFile(f) as af:
-                data = af.read()
-                if af.samplerate != sample_rate:
-                    resampled_data = librosa.resample(data, orig_sr=af.samplerate, target_sr=sample_rate)
-                    return resampled_data
-                else:
-                    return data
+        with self._open_soundfile() as af:
+            data = af.read()
+            if af.samplerate != sample_rate:
+                resampled_data = librosa.resample(data, orig_sr=af.samplerate, target_sr=sample_rate)
+                return resampled_data
+            else:
+                return data
