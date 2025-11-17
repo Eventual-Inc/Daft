@@ -1,5 +1,7 @@
 use std::{
+    borrow::Cow,
     collections::HashMap,
+    num::NonZeroUsize,
     sync::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
@@ -9,7 +11,10 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use common_metrics::{Stat, StatSnapshotSend, ops::NodeType};
+use common_metrics::{
+    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, operator_metrics::OperatorCounter,
+    ops::NodeType,
+};
 use common_resource_request::ResourceRequest;
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
@@ -40,7 +45,7 @@ use super::intermediate_op::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{MorselSizeRequirement, NodeName},
-    runtime_stats::{CPU_US_KEY, Counter, ROWS_IN_KEY, ROWS_OUT_KEY, RuntimeStats},
+    runtime_stats::{Counter, RuntimeStats},
 };
 
 /// Given an expression, extract the indexes of used columns and remap them to
@@ -100,7 +105,7 @@ impl RuntimeStats for UdfRuntimeStats {
         self
     }
 
-    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         let counters = self.custom_counters.lock().unwrap();
         let mut entries = SmallVec::with_capacity(3 + counters.len());
 
@@ -118,7 +123,7 @@ impl RuntimeStats for UdfRuntimeStats {
             entries.push((name.clone().into(), Stat::Count(counter.load(ordering))));
         }
 
-        StatSnapshotSend(entries)
+        StatSnapshot(entries)
     }
 
     fn add_rows_in(&self, rows: u64) {
@@ -140,9 +145,9 @@ impl UdfRuntimeStats {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY.into()),
-            rows_in: Counter::new(&meter, ROWS_IN_KEY.into()),
-            rows_out: Counter::new(&meter, ROWS_OUT_KEY.into()),
+            cpu_us: Counter::new(&meter, CPU_US_KEY.into(), None),
+            rows_in: Counter::new(&meter, ROWS_IN_KEY.into(), None),
+            rows_out: Counter::new(&meter, ROWS_OUT_KEY.into(), None),
             custom_counters: Mutex::new(HashMap::new()),
             node_kv,
             meter,
@@ -151,14 +156,27 @@ impl UdfRuntimeStats {
 
     fn update_metrics(&self, metrics: OperatorMetrics) {
         let mut counters = self.custom_counters.lock().unwrap();
-        for (name, value) in metrics {
+        for (name, counter_data) in metrics {
+            let OperatorCounter {
+                value,
+                description,
+                attributes,
+            } = counter_data;
+
+            let mut key_values = self.node_kv.clone();
+            key_values.extend(attributes.into_iter().map(|(k, v)| KeyValue::new(k, v)));
+
             match counters.get_mut(name.as_str()) {
-                Some(counter) => {
-                    counter.add(value, self.node_kv.as_slice());
+                Some(existing) => {
+                    existing.add(value, key_values.as_slice());
                 }
                 None => {
-                    let counter = Counter::new(&self.meter, name.clone().into());
-                    counter.add(value, self.node_kv.as_slice());
+                    let counter = Counter::new(
+                        &self.meter,
+                        name.clone().into(),
+                        description.map(Cow::Owned),
+                    );
+                    counter.add(value, key_values.as_slice());
                     counters.insert(name.into(), counter);
                 }
             }
@@ -511,8 +529,20 @@ impl IntermediateOperator for UdfOperator {
                 "Passthrough Columns = [{}]",
                 self.params.passthrough_columns.iter().join(", ")
             ),
-            format!("Concurrency = {}", self.concurrency),
+            format!(
+                "Properties = {{ {} }}",
+                UDFProperties {
+                    concurrency: Some(
+                        NonZeroUsize::new(self.concurrency)
+                            .expect("UDF concurrency is always >= 1")
+                    ),
+                    ..self.params.udf_properties.clone()
+                }
+                .multiline_display(false)
+                .join(", ")
+            ),
         ];
+
         if let Some(resource_request) = &self.params.udf_properties.resource_request {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
@@ -522,6 +552,7 @@ impl IntermediateOperator for UdfOperator {
         } else {
             res.push("Resource request = None".to_string());
         }
+
         res
     }
 

@@ -359,7 +359,7 @@ def classify_image(
         ...             daft.col("image_resized"),
         ...             labels=["bulbasaur", "catapie", "voltorb", "electrode"],
         ...             provider="transformers",
-        ...             model="google/vit-base-patch16-224",
+        ...             model="openai/clip-vit-base-patch32",
         ...         ),
         ...     )
         ... )

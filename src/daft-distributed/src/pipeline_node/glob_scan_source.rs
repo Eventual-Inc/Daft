@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_io_config::IOConfig;
 use common_scan_info::Pushdowns;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
@@ -82,6 +82,10 @@ impl GlobScanSourceNode {
             self.config.schema.clone(),
             StatsState::NotMaterialized,
             self.io_config.clone(),
+            LocalNodeContext {
+                origin_node_id: Some(self.node_id() as usize),
+                additional: None,
+            },
         );
 
         let task = SwordfishTask::new(

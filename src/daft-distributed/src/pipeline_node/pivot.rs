@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
@@ -114,6 +114,10 @@ impl PipelineNodeImpl for PivotNode {
                 false,
                 self_clone.config.schema.clone(),
                 StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(self_clone.node_id() as usize),
+                    additional: None,
+                },
             )
         };
 
