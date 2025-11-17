@@ -25,7 +25,7 @@ jobs:
       with:
         tool-cache: false
         android: true
-        dotnet: true
+        dotnet: false
         haskell: true
         large-packages: false
         docker-images: false
