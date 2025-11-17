@@ -132,7 +132,8 @@ exclude = [
   "assets/",
   "tools/",
   "*.md",
-  "codecov.yml"
+  "codecov.yml",
+  "mkdocs.yml"
 ]
 
 [package.metadata.cargo-machete]
