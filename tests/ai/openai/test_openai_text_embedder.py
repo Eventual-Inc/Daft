@@ -437,7 +437,7 @@ def test_embed_text_records_usage_metrics(mock_text_embedder, mock_client):
     mock_response.data = [mock_embedding]
     mock_client.embeddings.create.return_value = mock_response
 
-    with patch("daft.ai.openai.protocols.text_embedder.increment_counter") as mock_counter:
+    with patch("daft.ai.metrics.increment_counter") as mock_counter:
         result = run(mock_text_embedder.embed_text(["Hello world"]))
 
     assert len(result) == 1
