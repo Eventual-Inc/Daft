@@ -1657,7 +1657,14 @@ class PyShowOptions:
     pass
 
 class OperatorMetrics:
-    def inc_counter(self, name: str, value: int) -> None: ...
+    def inc_counter(
+        self,
+        name: str,
+        value: int,
+        *,
+        description: str | None = None,
+        attributes: dict[str, str] | None = None,
+    ) -> None: ...
 
 class PyRecordBatch:
     def schema(self) -> PySchema: ...
