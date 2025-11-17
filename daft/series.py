@@ -440,9 +440,19 @@ class Series:
         return self._eval_expressions("log", base=base)
 
     def pow(self, exp: float) -> Series:
+        """The elementwise exponentiation of a series.
+
+        Args:
+            exp: The exponent to raise each element to.
+        """
         return self._eval_expressions("pow", exp=exp)
 
     def power(self, exp: float) -> Series:
+        """The elementwise exponentiation of a series.
+
+        Args:
+            exp: The exponent to raise each element to.
+        """
         return self._eval_expressions("power", exp=exp)
 
     def ln(self) -> Series:

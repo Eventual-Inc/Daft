@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 class ProviderImportError(ImportError):
     def __init__(self, dependencies: list[str]):
         deps = ", ".join(f"'{d}'" for d in dependencies)
-        super().__init__(f"Missing required dependencies: {deps}. " f"Please install {deps} to use this provider.")
+        super().__init__(f"Missing required dependencies: {deps}. Please install {deps} to use this provider.")
 
 
 def load_lm_studio(name: str | None = None, **options: Any) -> Provider:

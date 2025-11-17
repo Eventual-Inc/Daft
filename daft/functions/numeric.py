@@ -200,7 +200,7 @@ def pow(base: Expression, expr: Expression) -> Expression:
 
 def power(base: Expression, expr: Expression) -> Expression:
     """The base^expr of a numeric expression."""
-    return Expression._call_builtin_scalar_fn("pow", base, expr)
+    return Expression._call_builtin_scalar_fn("power", base, expr)
 
 
 def exp(expr: Expression) -> Expression:

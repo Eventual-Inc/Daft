@@ -667,6 +667,64 @@ def test_table_log1p_bad_input() -> None:
         table.eval_expression_list([col("a").log1p()])
 
 
+def test_table_numeric_pow() -> None:
+    table = MicroPartition.from_pydict({"a": [0.1, 0.01, 1.5, 3, None], "b": [1, 10, 100, None, None]})
+    exprs = [0.01, 0.1, 1, 2, 10]
+    for expr in exprs:
+        pow_table = table.eval_expression_list([col("a").pow(expr), col("b").pow(expr)])
+        assert lists_close_with_nones(
+            [math.pow(v, expr) if v is not None else v for v in table.get_column_by_name("a").to_pylist()],
+            pow_table.get_column_by_name("a").to_pylist(),
+        )
+        assert lists_close_with_nones(
+            [math.pow(v, expr) if v is not None else v for v in table.get_column_by_name("b").to_pylist()],
+            pow_table.get_column_by_name("b").to_pylist(),
+        )
+
+
+def test_table_pow_bad_input() -> None:
+    table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
+    table2 = MicroPartition.from_pydict({"a": [1, 10, 100]})
+
+    with pytest.raises(ValueError, match="Expected input to compute pow to be numeric, got Utf8"):
+        table.eval_expression_list([col("a").pow(1)])
+
+    with pytest.raises(ValueError, match="Expected input to compute pow to be numeric, got Utf8"):
+        table.eval_expression_list([col("a").pow(0.1)])
+
+    with pytest.raises(ValueError, match='DaftError::ValueError Expected floating point number, received: "c"'):
+        table2.eval_expression_list([col("a").pow("c")])
+
+
+def test_table_numeric_power() -> None:
+    table = MicroPartition.from_pydict({"a": [0.1, 0.01, 1.5, 3, None], "b": [1, 10, 100, None, None]})
+    exprs = [0.01, 0.1, 1, 2, 10]
+    for expr in exprs:
+        power_table = table.eval_expression_list([col("a").power(expr), col("b").power(expr)])
+        assert lists_close_with_nones(
+            [math.pow(v, expr) if v is not None else v for v in table.get_column_by_name("a").to_pylist()],
+            power_table.get_column_by_name("a").to_pylist(),
+        )
+        assert lists_close_with_nones(
+            [math.pow(v, expr) if v is not None else v for v in table.get_column_by_name("b").to_pylist()],
+            power_table.get_column_by_name("b").to_pylist(),
+        )
+
+
+def test_table_power_bad_input() -> None:
+    table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
+    table2 = MicroPartition.from_pydict({"a": [1, 10, 100]})
+
+    with pytest.raises(ValueError, match="Expected input to compute power to be numeric, got Utf8"):
+        table.eval_expression_list([col("a").power(1)])
+
+    with pytest.raises(ValueError, match="Expected input to compute power to be numeric, got Utf8"):
+        table.eval_expression_list([col("a").power(0.1)])
+
+    with pytest.raises(ValueError, match='DaftError::ValueError Expected floating point number, received: "c"'):
+        table2.eval_expression_list([col("a").power("c")])
+
+
 def test_table_expm1() -> None:
     table = MicroPartition.from_pydict({"a": [0.1, 0.01, None], "b": [1, 10, None]})
     expm1_table = table.eval_expression_list([col("a").expm1(), col("b").expm1()])
