@@ -104,7 +104,7 @@ jobs:
       with:
         tool-cache: false
         android: true
-        dotnet: false
+        dotnet: true
         haskell: true
         large-packages: false
         docker-images: false
@@ -366,7 +366,7 @@ jobs:
       with:
         tool-cache: false
         android: true
-        dotnet: false
+        dotnet: true
         haskell: true
         large-packages: false
         docker-images: false
@@ -641,7 +641,7 @@ jobs:
       with:
         tool-cache: false
         android: true
-        dotnet: false
+        dotnet: true
         haskell: true
         large-packages: false
         docker-images: false
