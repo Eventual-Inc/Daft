@@ -247,11 +247,15 @@ Let's suppose you want to create a new column that shows if each product is made
 (Showing first 5 of 5 rows)
 ```
 
-The AI successfully analyzes each product image to determine if it's made of wood. Notice that the longboard is correctly identified as wooden (true), while the electronic circuits, design studio, puzzle, and 3D printing filament are identified as not wooden (false).
+The AI analyzes each product image to determine if it's made of wood. Notice that the longboard is identified as wooden (true), while the electronic circuits, design studio, puzzle, and 3D printing filament are identified as not wooden (false).
+
+!!! note "Improving Accuracy"
+
+    Looking at the actual product data, the longboard is made of bamboo and fiberglass, not wood. However, this is exactly what a human might categorize from the image alone! To improve accuracy, you could feed additional context to the AI like the product name, category, and description alongside the image. This example demonstrates how to get started with image-based analysis.
 
 ### Expanding the Analysis
 
-Now let's scale up our analysis to get meaningful insights. We'll analyze the first 100 products from the original dataset to see how many are made of wood:
+Now, suppose you're satisfied with the results from your small subset and want to scale up. Instead of analyzing just 5 products, let's run the same analysis on 100 products to get more meaningful insights:
 
 === "🐍 Python"
 
