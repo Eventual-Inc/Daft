@@ -165,9 +165,6 @@ codegen-units = 1
 inherits = "release"
 lto = 'fat'
 
-[profile.release]
-strip = "symbols"
-
 [profile.rust-analyzer]
 inherits = "dev"
 
