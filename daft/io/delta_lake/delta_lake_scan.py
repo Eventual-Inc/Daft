@@ -187,10 +187,21 @@ class DeltaLakeScanOperator(ScanOperator):
         limit_files = pushdowns.limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None
         rows_left = pushdowns.limit if pushdowns.limit is not None else 0
         scan_tasks = []
-        is_partitioned = (
-            "partition_values" in add_actions.schema.names
-            and add_actions.schema.field("partition_values").type.num_fields > 0
-        ) or ("partition" in add_actions.schema.names and add_actions.schema.field("partition").type.num_fields > 0)
+
+        # Determine which partition field name is used in the schema
+        # Deltalake versions <1.2.0 use "partition_values", >=1.2.0 use "partition"
+        partition_field_name = None
+        if "partition_values" in add_actions.schema.names:
+            partition_field = add_actions.schema.field("partition_values")
+            if partition_field.type.num_fields > 0:
+                partition_field_name = "partition_values"
+        elif "partition" in add_actions.schema.names:
+            partition_field = add_actions.schema.field("partition")
+            if partition_field.type.num_fields > 0:
+                partition_field_name = "partition"
+
+        is_partitioned = partition_field_name is not None
+
         for task_idx in range(add_actions.num_rows):
             if limit_files and rows_left <= 0:
                 break
@@ -215,16 +226,8 @@ class DeltaLakeScanOperator(ScanOperator):
             file_format_config = FileFormatConfig.from_parquet_config(ParquetSourceConfig())
 
             if is_partitioned:
-                dtype = (
-                    add_actions.schema.field("partition_values").type
-                    if "partition_values" in add_actions.schema.names
-                    else add_actions.schema.field("partition").type
-                )
-                part_values = (
-                    add_actions["partition_values"][task_idx]
-                    if "partition_values" in add_actions.schema.names
-                    else add_actions["partition"][task_idx]
-                )
+                dtype = add_actions.schema.field(partition_field_name).type
+                part_values = add_actions[partition_field_name][task_idx]
                 arrays = {}
                 for field_idx in range(dtype.num_fields):
                     field_name = dtype.field(field_idx).name
