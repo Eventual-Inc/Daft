@@ -266,12 +266,12 @@ The client automatically detects and handles both formats for seamless compatibi
 
 ## Testing
 
-Integration tests are available in `tests/catalog/test_gravitino_integration.py`. Run them with:
+Integration tests are available in `tests/integration/gravitino/test_gravitino_integration.py`. Run them with:
 
 ```bash
 # Run the standalone test
 python tests/catalog/test_gravitino.py
 
 # Or run integration test with pytest, make sure you have Gravitino server running in local
-GRAVITINO_TEST_SERVER=1 DAFT_RUNNER=native pytest tests/catalog/test_gravitino_integration.py -v
+GRAVITINO_TEST_SERVER=1 DAFT_RUNNER=native pytest tests/integration/gravitino/test_gravitino_integration.py -v -s
 ```
