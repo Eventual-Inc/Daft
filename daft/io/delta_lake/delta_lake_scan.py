@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 from urllib.error import HTTPError
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
 
 from deltalake.table import DeltaTable
@@ -196,8 +196,12 @@ class DeltaLakeScanOperator(ScanOperator):
                 break
 
             # NOTE: The paths in the transaction log consist of the post-table-uri suffix.
+            # Workaround for deltalake 1.2.x bug: paths are double-encoded in the log but single-encoded on disk.
+            # We detect double-encoding by checking for '%25' (encoded '%') and decode once if present.
             scheme = urlparse(self._table.table_uri).scheme
-            path = construct_delta_file_path(scheme, self._table.table_uri, add_actions["path"][task_idx].as_py())
+            raw_path = add_actions["path"][task_idx].as_py()
+            decoded_path = unquote(raw_path) if "%25" in raw_path else raw_path
+            path = construct_delta_file_path(scheme, self._table.table_uri, decoded_path)
 
             try:
                 record_count = add_actions["num_records"][task_idx].as_py()
