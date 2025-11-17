@@ -121,6 +121,19 @@ edition = "2024"
 name = "daft"
 publish = false
 version = "0.3.0-dev0"
+# Exclude unnecessary files from sdist
+exclude = [
+  "tests/",
+  "benchmarking/",
+  "tutorials/",
+  "k8s/",
+  "ci/",
+  "docs/",
+  "assets/",
+  "tools/",
+  "*.md",
+  "codecov.yml"
+]
 
 [package.metadata.cargo-machete]
 ignored = ["lzma-sys"]
@@ -151,6 +164,9 @@ strip = "none"  # dont strip
 codegen-units = 1
 inherits = "release"
 lto = 'fat'
+
+[profile.release]
+strip = "symbols"
 
 [profile.rust-analyzer]
 inherits = "dev"
