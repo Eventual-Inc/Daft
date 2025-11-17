@@ -208,10 +208,14 @@ class DeltaLakeScanOperator(ScanOperator):
 
             # NOTE: The paths in the transaction log consist of the post-table-uri suffix.
             # Workaround for deltalake 1.2.x: paths are double-encoded in the log but single-encoded on disk.
-            # We detect double-encoding by checking for '%25' (encoded '%') and decode once if present.
+            # We detect double-encoding by checking if unquoting changes the path and '%25' is present.
             scheme = urlparse(self._table.table_uri).scheme
             raw_path = add_actions["path"][task_idx].as_py()
-            decoded_path = unquote(raw_path) if "%25" in raw_path else raw_path
+            if "%25" in raw_path:
+                unquoted = unquote(raw_path)
+                decoded_path = unquoted if unquoted != raw_path else raw_path
+            else:
+                decoded_path = raw_path
             path = construct_delta_file_path(scheme, self._table.table_uri, decoded_path)
 
             try:
