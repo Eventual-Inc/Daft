@@ -1192,6 +1192,16 @@ jobs:
     env:
       python-version: '3.10'
     steps:
+    - name: Free Disk Space
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: false
+        android: true
+        dotnet: false
+        haskell: true
+        large-packages: false
+        docker-images: false
+        swap-storage: true
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v1
       with:
