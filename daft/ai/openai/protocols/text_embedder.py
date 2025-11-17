@@ -8,10 +8,10 @@ from openai import NOT_GIVEN, AsyncOpenAI, OpenAIError, RateLimitError
 from openai.types.create_embedding_response import Usage
 
 from daft import DataType
+from daft.ai.metrics import record_token_metrics
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
 from daft.ai.typing import EmbeddingDimensions, Options, UDFOptions
 from daft.dependencies import np
-from daft.udf.metrics import increment_counter
 
 if TYPE_CHECKING:
     from openai.types import EmbeddingModel
@@ -223,17 +223,16 @@ class OpenAITextEmbedder(TextEmbedder):
         if usage is None or not isinstance(usage, Usage):
             return
 
-        prompt_tokens = usage.prompt_tokens
+        input_tokens = usage.prompt_tokens
         total_tokens = usage.total_tokens
 
-        attrs = {
-            "model": self._model,
-            "protocol": "embed",
-            "provider": self._provider_name,
-        }
-        increment_counter("prompt tokens", prompt_tokens, attributes=attrs)
-        increment_counter("total tokens", total_tokens, attributes=attrs)
-        increment_counter("requests", attributes=attrs)
+        record_token_metrics(
+            protocol="embed",
+            model=self._model,
+            provider=self._provider_name,
+            input_tokens=input_tokens,
+            total_tokens=total_tokens,
+        )
 
 
 def chunk_text(text: str, size: int) -> list[str]:
