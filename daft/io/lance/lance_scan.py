@@ -3,7 +3,9 @@
 
 import logging
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Optional, Union
+from typing import Any, Optional, Union
+
+import lance
 
 from daft.context import get_context
 from daft.daft import CountMode, PyExpr, PyPartitionField, PyPushdowns, PyRecordBatch, ScanTask
@@ -14,10 +16,6 @@ from daft.logical.schema import Schema
 from daft.recordbatch import RecordBatch
 
 from ..pushdowns import SupportsPushdownFilters
-import lance
-
-if TYPE_CHECKING:
-    import lance
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +23,7 @@ logger = logging.getLogger(__name__)
 # TODO support fts and fast_search
 def _lancedb_table_factory_function(
     ds_uri: str,
-    open_kwargs: Optional[dict] = None,
+    open_kwargs: Optional[dict[Any, Any]] = None,
     fragment_ids: Optional[list[int]] = None,
     required_columns: Optional[list[str]] = None,
     filter: Optional["pa.compute.Expression"] = None,
@@ -42,7 +40,7 @@ def _lancedb_table_factory_function(
 
 def _lancedb_count_result_function(
     ds_uri: str,
-    open_kwargs: Optional[dict],
+    open_kwargs: Optional[dict[Any, Any]],
     required_column: str,
     filter: Optional["pa.compute.Expression"] = None,
 ) -> Iterator[PyRecordBatch]:
