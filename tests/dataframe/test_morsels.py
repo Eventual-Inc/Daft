@@ -153,6 +153,18 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |       read_timeout_ms: 30000
 |       max_concurrent_requests: 50
 |       max_connections_per_io_thread: 50
+|   UnityConfig
+|       endpoint: None
+|       token: None
+|   GravitinoConfig
+|       endpoint: None
+|       metalake_name: None
+|       auth_type:None
+|       username: None
+|       password: None
+|       token: None
+|   HuggingFaceConfig
+|   Anonymous = false
 |   ))) as {id_placeholder}, col(0: data)
 |   Batch Size = Range(0, 10]
 |
