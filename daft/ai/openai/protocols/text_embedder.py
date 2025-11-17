@@ -5,8 +5,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from openai import NOT_GIVEN, AsyncOpenAI, OpenAIError, RateLimitError
+from openai.types.create_embedding_response import Usage
 
 from daft import DataType
+from daft.ai.metrics import record_token_metrics
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
 from daft.ai.typing import EmbeddingDimensions, Options, UDFOptions
 from daft.dependencies import np
@@ -102,6 +104,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
             client=AsyncOpenAI(**self.provider_options),
             model=self.model_name,
             dimensions=self.dimensions,
+            provider_name=self.provider_name,
         )
 
 
@@ -118,11 +121,19 @@ class OpenAITextEmbedder(TextEmbedder):
     _model: str
     _dimensions: int | None
 
-    def __init__(self, client: AsyncOpenAI, model: str, dimensions: int | None = None, zero_on_failure: bool = False):
+    def __init__(
+        self,
+        client: AsyncOpenAI,
+        model: str,
+        dimensions: int | None = None,
+        zero_on_failure: bool = False,
+        provider_name: str = "openai",
+    ):
         self._client = client
         self._model = model
         self._zero_on_failure = zero_on_failure
         self._dimensions = dimensions
+        self._provider_name = provider_name
 
     async def embed_text(self, text: list[str]) -> list[Embedding]:
         embeddings: list[Embedding] = []
@@ -180,6 +191,7 @@ class OpenAITextEmbedder(TextEmbedder):
                 encoding_format="float",
                 dimensions=self._dimensions or NOT_GIVEN,
             )
+            self._record_usage_metrics(response)
             return [np.array(embedding.embedding) for embedding in response.data]
         except RateLimitError:
             # fall back to individual calls when rate limited
@@ -197,6 +209,7 @@ class OpenAITextEmbedder(TextEmbedder):
                 encoding_format="float",
                 dimensions=self._dimensions or NOT_GIVEN,
             )
+            self._record_usage_metrics(response)
             return np.array(response.data[0].embedding)
         except Exception as ex:
             if self._zero_on_failure:
@@ -204,6 +217,22 @@ class OpenAITextEmbedder(TextEmbedder):
                 return np.zeros(size, dtype=np.float32)
             else:
                 raise ex
+
+    def _record_usage_metrics(self, response: CreateEmbeddingResponse) -> None:
+        usage = getattr(response, "usage", None)
+        if usage is None or not isinstance(usage, Usage):
+            return
+
+        input_tokens = usage.prompt_tokens
+        total_tokens = usage.total_tokens
+
+        record_token_metrics(
+            protocol="embed",
+            model=self._model,
+            provider=self._provider_name,
+            input_tokens=input_tokens,
+            total_tokens=total_tokens,
+        )
 
 
 def chunk_text(text: str, size: int) -> list[str]:

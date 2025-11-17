@@ -215,7 +215,7 @@ def test_openai_prompter_records_usage_metrics_responses_api():
         prompter = create_prompter()
         prompter.llm = mock_client
 
-        with patch("daft.ai.openai.protocols.prompter.increment_counter") as mock_counter:
+        with patch("daft.ai.metrics.increment_counter") as mock_counter:
             result = await prompter.prompt(("Record metrics",))
 
         assert result == "Metrics test response."
@@ -252,7 +252,7 @@ def test_openai_prompter_records_usage_metrics_chat_completions():
         prompter = create_prompter(use_chat_completions=True)
         prompter.llm = mock_client
 
-        with patch("daft.ai.openai.protocols.prompter.increment_counter") as mock_counter:
+        with patch("daft.ai.metrics.increment_counter") as mock_counter:
             result = await prompter.prompt(("Chat metrics",))
 
         assert result == "Chat metrics response."
@@ -275,7 +275,7 @@ def test_openai_prompter_record_usage_metrics_custom_provider():
     """_record_usage_metrics should tag metrics with the configured provider."""
     prompter = create_prompter(provider_name="azure-openai")
 
-    with patch("daft.ai.openai.protocols.prompter.increment_counter") as mock_counter:
+    with patch("daft.ai.metrics.increment_counter") as mock_counter:
         prompter._record_usage_metrics(1, 2, 3)
 
     expected_attrs = {
