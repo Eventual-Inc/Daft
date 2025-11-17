@@ -15,7 +15,7 @@ pub trait RuntimeStats: Send + Sync + 'static {
 
 #[allow(clippy::struct_field_names)]
 pub struct DefaultRuntimeStats {
-    node_id: NodeID,
+    pub node_id: NodeID,
     pub node_kv: Vec<KeyValue>,
 
     active_tasks: UpDownCounter<i64>,
