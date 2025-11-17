@@ -210,3 +210,11 @@ def test_show_with_many_columns():
  A   B   C   D   E   F   G   H   I   J    K    L    M    N    O    P    Q    R    S    T    U    V    W    X    Y    Z  
 ---+---+---+---+---+---+---+---+---+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----
  1   2   3   4   5   6   7   8   9   10   11   12   13   14   15   16   17   18   19   20   21   22   23   24   25   26 """[1:]
+
+
+def test_show_empty_dataframe_no_error_thrown():
+    # Construct an empty DataFrame and ensure preview construction does not error
+    df = daft.from_pydict({"A": []})
+    preview = df._construct_show_preview(8)
+    assert len(preview.partition) == 0
+    assert preview.total_rows == 0

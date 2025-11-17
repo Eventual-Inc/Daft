@@ -4053,7 +4053,7 @@ class DataFrame:
                 if seen >= n:
                     break
 
-            preview_partition = MicroPartition.concat(tables)
+            preview_partition = MicroPartition.concat_or_empty(tables, self.schema())
             if len(preview_partition) > n:
                 preview_partition = preview_partition.slice(0, n)
             elif len(preview_partition) < n:
