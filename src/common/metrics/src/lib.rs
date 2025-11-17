@@ -7,7 +7,9 @@ use std::{ops::Index, sync::Arc, time::Duration};
 
 use bincode::{Decode, Encode};
 use indicatif::{HumanBytes, HumanCount, HumanDuration, HumanFloatCount};
-pub use operator_metrics::{MetricsCollector, NoopMetricsCollector, OperatorMetrics};
+pub use operator_metrics::{
+    MetricsCollector, NoopMetricsCollector, OperatorCounter, OperatorMetrics,
+};
 #[cfg(feature = "python")]
 use pyo3::types::PyModule;
 #[cfg(feature = "python")]
@@ -94,7 +96,7 @@ impl IntoIterator for StatSnapshot {
 #[macro_export(local_inner_macros)]
 macro_rules! snapshot {
     ($($name:expr; $value:expr),* $(,)?) => {
-        StatSnapshot(smallvec![
+        common_metrics::StatSnapshot(smallvec![
             $( ($name.into(), $value) ),*
         ])
     };
