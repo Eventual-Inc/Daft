@@ -207,7 +207,7 @@ class DeltaLakeScanOperator(ScanOperator):
                 break
 
             # NOTE: The paths in the transaction log consist of the post-table-uri suffix.
-            # Workaround for deltalake 1.2.x bug: paths are double-encoded in the log but single-encoded on disk.
+            # Workaround for deltalake 1.2.x: paths are double-encoded in the log but single-encoded on disk.
             # We detect double-encoding by checking for '%25' (encoded '%') and decode once if present.
             scheme = urlparse(self._table.table_uri).scheme
             raw_path = add_actions["path"][task_idx].as_py()
