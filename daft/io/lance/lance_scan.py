@@ -3,7 +3,10 @@
 
 import logging
 from collections.abc import Iterator
-from typing import Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
+
+if TYPE_CHECKING:
+    import lance
 
 from daft.context import get_context
 from daft.daft import CountMode, PyExpr, PyPartitionField, PyPushdowns, PyRecordBatch, ScanTask
@@ -27,7 +30,12 @@ def _lancedb_table_factory_function(
     filter: Optional["pa.compute.Expression"] = None,
     limit: Optional[int] = None,
 ) -> Iterator[PyRecordBatch]:
-    import lance
+    try:
+        import lance
+    except ImportError as e:
+        raise ImportError(
+            "Unable to import the `lance` package, please ensure that Daft is installed with the lance extra dependency: `pip install daft[lance]`"
+        ) from e
 
     # Attempt to import lance and reconstruct with best-effort kwargs
     ds = lance.dataset(ds_uri, **(open_kwargs or {}))
@@ -45,7 +53,12 @@ def _lancedb_count_result_function(
     filter: Optional["pa.compute.Expression"] = None,
 ) -> Iterator[PyRecordBatch]:
     """Use LanceDB's API to count rows and return a record batch with the count result."""
-    import lance
+    try:
+        import lance
+    except ImportError as e:
+        raise ImportError(
+            "Unable to import the `lance` package, please ensure that Daft is installed with the lance extra dependency: `pip install daft[lance]`"
+        ) from e
 
     # Attempt to reconstruct with best-effort kwargs
     ds = lance.dataset(ds_uri, **(open_kwargs or {}))
@@ -60,8 +73,6 @@ def _lancedb_count_result_function(
 
 
 class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
-    import lance
-
     def __init__(self, ds: "lance.LanceDataset", fragment_group_size: Optional[int] = None):
         self._ds = ds
         self._pushed_filters: Union[list[PyExpr], None] = None
