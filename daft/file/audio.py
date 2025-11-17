@@ -50,7 +50,7 @@ class AudioFile(File):
         with self.open() as f:
             return sf.SoundFile(f)
 
-    def resample(self, sample_rate: int) -> np.ndarray[Any]:
+    def resample(self, sample_rate: int) -> np.ndarray[Any, Any]:
         """Resample the audio file to the given sample rate.
 
         Args:
