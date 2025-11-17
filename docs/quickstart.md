@@ -36,7 +36,7 @@ Additionally, install these packages for image processing (used later in this qu
 
 ### Load Your Data
 
-Let's start by loading an e-commerce dataset from Hugging Face. [This dataset](https://huggingface.co/datasets/calmgoose/amazon-product-data-2020) contains 10,000 Amazon products from diverse categories including electronics, toys, home goods, and more. Each product includes details like names, prices, descriptions, technical specifications, and product images.
+Let's start by loading an e-commerce dataset from Hugging Face. [This dataset](https://huggingface.co/datasets/calmgoose/amazon-product-data-2020) contains 10,000+ Amazon products from diverse categories including electronics, toys, home goods, and more. Each product includes details like names, prices, descriptions, technical specifications, and product images.
 
 === "🐍 Python"
 
@@ -110,7 +110,7 @@ This materializes and displays just the first 2 rows, which is perfect for quick
     # df_original.collect()
     ```
 
-This would materialize the entire DataFrame (all 10,000 rows in this case) into memory. Use `.collect()` when you need to work with the full dataset in memory.
+This would materialize the entire DataFrame (all 10,000+ rows in this case) into memory. Use `.collect()` when you need to work with the full dataset in memory.
 
 ### Working with a Smaller Dataset
 
