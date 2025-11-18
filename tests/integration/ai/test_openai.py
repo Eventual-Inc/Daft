@@ -422,7 +422,7 @@ def test_prompt_with_image_from_file(session, metrics):
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("use_chat_completions", [False, True])
-def test_prompt_with_image_structured_output(session, use_chat_completions, prompt_metrics):
+def test_prompt_with_image_structured_output(session, use_chat_completions, metrics):
     """Test prompt function with image input and structured output."""
     import numpy as np
 
@@ -453,7 +453,7 @@ def test_prompt_with_image_structured_output(session, use_chat_completions, prom
     )
 
     analyses = df.to_pydict()["analysis"]
-    _assert_prompt_metrics_recorded(prompt_metrics())
+    _assert_prompt_metrics_recorded(metrics())
 
     # Verify structured output
     assert len(analyses) == 1
@@ -470,7 +470,7 @@ def test_prompt_with_image_structured_output(session, use_chat_completions, prom
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("use_chat_completions", [False, True])
-def test_prompt_with_text_document(session, use_chat_completions, prompt_metrics):
+def test_prompt_with_text_document(session, use_chat_completions, metrics):
     """Test prompt function with plain text document input."""
     import tempfile
 
@@ -499,7 +499,7 @@ def test_prompt_with_text_document(session, use_chat_completions, prompt_metrics
         )
 
         answers = df.to_pydict()["answer"]
-        _assert_prompt_metrics_recorded(prompt_metrics())
+        _assert_prompt_metrics_recorded(metrics())
 
         assert len(answers) == 1
         for answer in answers:
@@ -516,7 +516,7 @@ def test_prompt_with_text_document(session, use_chat_completions, prompt_metrics
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("use_chat_completions", [False, True])
-def test_prompt_with_pdf_document(session, use_chat_completions, prompt_metrics):
+def test_prompt_with_pdf_document(session, use_chat_completions, metrics):
     """Test prompt function with PDF file input."""
     import tempfile
 
@@ -553,7 +553,7 @@ def test_prompt_with_pdf_document(session, use_chat_completions, prompt_metrics)
         )
 
         answers = df.to_pydict()["answer"]
-        _assert_prompt_metrics_recorded(prompt_metrics())
+        _assert_prompt_metrics_recorded(metrics())
 
         # Basic sanity checks
         assert len(answers) == 1
@@ -575,7 +575,7 @@ def test_prompt_with_pdf_document(session, use_chat_completions, prompt_metrics)
 
 
 @pytest.mark.integration()
-def test_prompt_with_mixed_image_and_document(session, prompt_metrics):
+def test_prompt_with_mixed_image_and_document(session, metrics):
     """Test prompt function with both image and PDF document inputs."""
     import tempfile
 
@@ -617,7 +617,7 @@ def test_prompt_with_mixed_image_and_document(session, prompt_metrics):
         )
 
         answers = df.to_pydict()["answer"]
-        _assert_prompt_metrics_recorded(prompt_metrics())
+        _assert_prompt_metrics_recorded(metrics())
 
         # Basic sanity checks
         assert len(answers) == 1

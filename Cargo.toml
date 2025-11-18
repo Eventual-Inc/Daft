@@ -121,6 +121,20 @@ edition = "2024"
 name = "daft"
 publish = false
 version = "0.3.0-dev0"
+# Exclude unnecessary files from sdist
+exclude = [
+  "tests/",
+  "benchmarking/",
+  "tutorials/",
+  "k8s/",
+  "ci/",
+  "docs/",
+  "assets/",
+  "tools/",
+  "*.md",
+  "codecov.yml",
+  "mkdocs.yml"
+]
 
 [package.metadata.cargo-machete]
 ignored = ["lzma-sys"]
