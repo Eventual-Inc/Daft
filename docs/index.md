@@ -486,7 +486,7 @@ Start local, scale global—without changing a line of code. Daft's Rust-powered
 
 ## Key Features
 
-* **Native multimodal processing**: Process any data type—from structured tables to unstructured text and rich media—with native support for images, embeddings, and tensors in a single, unified framework.
+* **Native multimodal processing**: Process any data type—from structured tables to unstructured text and rich media—with native support for images, audio, video, and embeddings in a single, unified framework.
 
 * **Rust-powered performance**: Experience breakthrough speed with our Rust foundation delivering vectorized execution and non-blocking I/O that processes the same queries with 5x less memory while consistently outperforming industry standards by an order of magnitude.
 
