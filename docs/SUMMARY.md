@@ -54,7 +54,7 @@
         * [Partitioning and Batching](optimization/partitioning.md)
         * [Observability](optimization/observability.md)
     * Contributing
-        * [Overview](contributing/index.md)
+        * [Overview](contributing/overview.md)
         * [Development Guide](contributing/development.md)
         * [Contributing AI Functions](contributing/contributing-ai-functions.md)
     * [Sessions, Catalogs, and Tables](configuration/sessions-usage.md)
