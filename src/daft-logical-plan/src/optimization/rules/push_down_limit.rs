@@ -106,16 +106,14 @@ impl PushDownLimit {
                                     SourceInfo::Physical(new_external_info).into(),
                                 ))
                                 .into();
-                                let out_plan = if external_info
-                                    .scan_state
-                                    .get_scan_op()
-                                    .0
-                                    .can_absorb_limit()
-                                {
-                                    new_source
-                                } else {
-                                    plan.with_new_children(&[new_source]).into()
-                                };
+                                let out_plan =
+                                    if external_info.scan_state.get_scan_op().0.can_absorb_limit()
+                                        && offset.is_none()
+                                    {
+                                        new_source
+                                    } else {
+                                        plan.with_new_children(&[new_source]).into()
+                                    };
                                 Ok(Transformed::yes(out_plan))
                             }
                             SourceInfo::PlaceHolder(..) => {
@@ -195,7 +193,8 @@ impl PushDownLimit {
                     | LogicalPlan::MonotonicallyIncreasingId(..)
                     | LogicalPlan::SubqueryAlias(..)
                     | LogicalPlan::Window(..)
-                    | LogicalPlan::Concat(_) => Ok(Transformed::no(plan)),
+                    | LogicalPlan::Concat(_)
+                    | LogicalPlan::VLLMProject(..) => Ok(Transformed::no(plan)),
                 }
             }
             _ => Ok(Transformed::no(plan)),
@@ -356,7 +355,7 @@ mod tests {
     #[test]
     #[cfg(feature = "python")]
     fn limit_does_not_push_into_in_memory_source() -> DaftResult<()> {
-        let py_obj = Python::with_gil(|py| py.None());
+        let py_obj = Python::attach(|py| py.None());
         let schema: Arc<Schema> = Schema::new(vec![Field::new("a", DataType::Int64)]).into();
         let plan = LogicalPlanBuilder::in_memory_scan(
             "foo",

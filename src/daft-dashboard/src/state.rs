@@ -1,12 +1,16 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, LazyLock},
+    sync::{
+        Arc, LazyLock,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 use common_metrics::{NodeID, QueryID, QueryPlan, Stat, ops::NodeInfo};
 use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;
 use serde::Serialize;
+use tokio::sync::{broadcast, watch};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -23,6 +27,8 @@ pub(crate) struct OperatorInfo {
     pub stats: HashMap<String, Stat>,
 }
 
+pub(crate) type OperatorInfos = HashMap<NodeID, OperatorInfo>;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct PlanInfo {
     pub plan_start_sec: u64,
@@ -33,27 +39,38 @@ pub(crate) struct PlanInfo {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ExecInfo {
     pub exec_start_sec: u64,
-    pub operators: HashMap<NodeID, OperatorInfo>,
+    pub operators: OperatorInfos,
     // TODO: Logs
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(tag = "status")]
 pub(crate) enum QueryStatus {
-    Pending,
-    Optimizing,
+    Pending { start_sec: u64 },
+    Optimizing { plan_start_sec: u64 },
     Setup,
-    Executing,
+    Executing { exec_start_sec: u64 },
     Finalizing,
-    Finished,
+    Finished { duration_sec: u64 },
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub(crate) struct QuerySummary {
+    pub id: QueryID,
+    pub start_sec: u64,
+    pub status: QueryStatus,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "status")]
 pub(crate) enum QueryState {
     Pending,
     Optimizing {
         plan_start_sec: u64,
     },
-    Setup(PlanInfo),
+    Setup {
+        plan_info: PlanInfo,
+    },
     Executing {
         plan_info: PlanInfo,
         exec_info: ExecInfo,
@@ -68,7 +85,8 @@ pub(crate) enum QueryState {
         exec_info: ExecInfo,
         exec_end_sec: u64,
         end_sec: u64,
-        results: RecordBatch,
+        #[serde(skip_serializing)]
+        results: Option<RecordBatch>,
     },
 }
 
@@ -77,25 +95,36 @@ pub(crate) struct QueryInfo {
     pub id: QueryID,
     pub start_sec: u64,
     pub unoptimized_plan: QueryPlan,
-    pub status: QueryState,
+    pub state: QueryState,
 }
 
 impl QueryInfo {
-    pub fn summarize(&self) -> (QueryStatus, u64) {
-        match &self.status {
-            QueryState::Pending => (QueryStatus::Pending, self.start_sec),
-            QueryState::Optimizing { plan_start_sec } => (QueryStatus::Optimizing, *plan_start_sec),
-            // Pending between planning and execution
-            QueryState::Setup(plan_info) => (QueryStatus::Setup, plan_info.plan_end_sec),
-            QueryState::Executing { exec_info, .. } => {
-                (QueryStatus::Executing, exec_info.exec_start_sec)
-            }
+    pub fn status(&self) -> QueryStatus {
+        match &self.state {
+            QueryState::Pending => QueryStatus::Pending {
+                start_sec: self.start_sec,
+            },
+            QueryState::Optimizing { plan_start_sec } => QueryStatus::Optimizing {
+                plan_start_sec: *plan_start_sec,
+            },
+            // Pending between optimizing and execution
+            QueryState::Setup { .. } => QueryStatus::Setup,
+            QueryState::Executing { exec_info, .. } => QueryStatus::Executing {
+                exec_start_sec: exec_info.exec_start_sec,
+            },
             // Finalizing may take longer so just in case
-            QueryState::Finalizing { exec_end_sec, .. } => (QueryStatus::Finalizing, *exec_end_sec),
-            // Returns duration in seconds instead of start_sec
-            QueryState::Finished { end_sec, .. } => {
-                (QueryStatus::Finished, end_sec - self.start_sec)
-            }
+            QueryState::Finalizing { .. } => QueryStatus::Finalizing,
+            QueryState::Finished { end_sec, .. } => QueryStatus::Finished {
+                duration_sec: end_sec - self.start_sec,
+            },
+        }
+    }
+
+    pub fn summarize(&self) -> QuerySummary {
+        QuerySummary {
+            id: self.id.clone(),
+            start_sec: self.start_sec,
+            status: self.status(),
         }
     }
 }
@@ -105,6 +134,9 @@ pub(crate) struct DashboardState {
     // Mapping from query id to query info
     pub queries: DashMap<QueryID, QueryInfo>,
     pub dataframe_previews: DashMap<String, RecordBatch>,
+    pub clients: broadcast::Sender<(usize, QuerySummary)>,
+    pub query_clients: DashMap<QueryID, (watch::Sender<QueryInfo>, watch::Sender<OperatorInfos>)>,
+    pub event_counter: AtomicUsize,
 }
 
 impl DashboardState {
@@ -112,6 +144,10 @@ impl DashboardState {
         Self {
             queries: Default::default(),
             dataframe_previews: Default::default(),
+            // TODO: Ideally this should never drop events, we need an unbounded broadcast channel
+            clients: broadcast::Sender::new(256),
+            query_clients: Default::default(),
+            event_counter: AtomicUsize::new(0),
         }
     }
 
@@ -123,6 +159,31 @@ impl DashboardState {
 
     pub fn get_dataframe_preview(&self, id: &str) -> Option<RecordBatch> {
         self.dataframe_previews.get(id).map(|r| r.value().clone())
+    }
+
+    // -------------------- Updating Queries -------------------- //
+
+    pub fn ping_clients_on_query_update(&self, query_info: &QueryInfo) {
+        let id = self.event_counter.fetch_add(1, Ordering::SeqCst);
+
+        if let Some(query_client) = self.query_clients.get(&query_info.id) {
+            let _ = query_client.0.send(query_info.clone());
+        }
+
+        let _ = self.clients.send((id, query_info.summarize()));
+    }
+
+    pub fn ping_clients_on_operator_update(&self, query_info: &QueryInfo) {
+        let query_id = &query_info.id;
+        if let Some(query_client) = self.query_clients.get(query_id) {
+            let QueryState::Executing { exec_info, .. } = &query_info.state else {
+                tracing::error!("Query `{}` is not executing", query_id);
+                panic!("Query `{}` is not executing", query_id);
+            };
+
+            let operator_infos = exec_info.operators.clone();
+            let _ = query_client.1.send(operator_infos);
+        }
     }
 }
 

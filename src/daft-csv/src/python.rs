@@ -25,7 +25,7 @@ pub mod pylib {
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
     ) -> PyResult<PyRecordBatch> {
-        py.allow_threads(|| {
+        py.detach(|| {
             let io_stats = IOStatsContext::new(format!("read_csv: for uri {uri}"));
 
             let io_client = get_io_client(
@@ -61,7 +61,7 @@ pub mod pylib {
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
     ) -> PyResult<PySchema> {
-        py.allow_threads(|| {
+        py.detach(|| {
             let io_stats = IOStatsContext::new(format!("read_csv_schema: for uri {uri}"));
 
             let io_client = get_io_client(

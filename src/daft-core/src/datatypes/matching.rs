@@ -8,6 +8,7 @@ macro_rules! with_match_daft_types {
         macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
         use $crate::datatypes::*;
         use $crate::datatypes::DataType;
+        use $crate::file::{MediaType, UnknownFileType, VideoFileType};
 
         match $key_type {
             // Float16 => unimplemented!("Array for Float16 DataType not implemented"),
@@ -47,7 +48,9 @@ macro_rules! with_match_daft_types {
             DataType::Utf8 => __with_ty__! { Utf8Type },
             #[cfg(feature = "python")]
             DataType::Python => __with_ty__! { PythonType },
-            DataType::File => __with_ty__! { FileType },
+            DataType::File(MediaType::Unknown) => __with_ty__! { UnknownFileType },
+            DataType::File(MediaType::Video) => __with_ty__! { VideoFileType },
+
 
             // NOTE: We should not implement a default for match here, because this is meant to be
             // an exhaustive match across **all** Daft types.
@@ -358,6 +361,26 @@ macro_rules! with_match_daft_logical_primitive_types {
             DataType::Timestamp(..) => __with_ty__! { i64 },
 
             _ => panic!("no logical -> primitive conversion available for {:?}", $key_type)
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! with_match_file_types {
+    (
+        $key_type:expr
+        , |$_:tt $T:ident| $($body:tt)*
+        $(,)?
+    ) => {{
+        macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+        use $crate::datatypes::*;
+        use $crate::datatypes::DataType;
+        use $crate::file::{MediaType, MediaTypeUnknown, MediaTypeVideo};
+
+        match $key_type {
+            DataType::File(MediaType::Unknown) => __with_ty__! { MediaTypeUnknown },
+            DataType::File(MediaType::Video) => __with_ty__! { MediaTypeVideo },
+            _ => panic!("Only File Types are supported, {:?} not implemented", $key_type)
         }
     }};
 }

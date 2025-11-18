@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshot, ops::NodeInfo};
 use daft_micropartition::MicroPartitionRef;
 use dashmap::DashMap;
 
-use crate::subscribers::Subscriber;
+use crate::subscribers::{QueryMetadata, Subscriber};
 
 #[derive(Debug)]
 pub struct DebugSubscriber {
@@ -23,10 +23,11 @@ impl DebugSubscriber {
 
 #[async_trait]
 impl Subscriber for DebugSubscriber {
-    fn on_query_start(&self, query_id: QueryID, unoptimized_plan: QueryPlan) -> DaftResult<()> {
+    fn on_query_start(&self, query_id: QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()> {
         eprintln!(
             "Started query `{}` with unoptimized plan:\n{}",
-            query_id, unoptimized_plan
+            query_id,
+            metadata.unoptimized_plan.as_ref()
         );
         self.rows_out.insert(query_id, 0);
         Ok(())
@@ -85,13 +86,13 @@ impl Subscriber for DebugSubscriber {
     async fn on_exec_emit_stats(
         &self,
         query_id: QueryID,
-        stats: &[(NodeID, StatSnapshotView)],
+        stats: &[(NodeID, StatSnapshot)],
     ) -> DaftResult<()> {
         eprintln!("Emitting execution stats for query `{}`", query_id);
         for node_id in stats {
             eprintln!("  Node `{}`", node_id.0);
             for (name, stat) in node_id.1.clone() {
-                eprintln!("  - {} = {}", name, stat);
+                eprintln!("  - {} = {}", name.as_ref(), stat);
             }
         }
         Ok(())

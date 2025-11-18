@@ -2,6 +2,12 @@
 
 ## AI Benchmarks
 
+!!! info "Powered by Flotilla"
+
+    These benchmarks showcase [Flotilla](https://www.daft.ai/blog/introducing-flotilla-simplifying-multimodal-data-processing-at-scale), Daft's distributed engine optimized for multimodal data processing.
+
+    [Daft vs Spark vs Ray Data: Benchmarks for Multimodal AI Workloads](https://www.daft.ai/blog/benchmarks-for-multimodal-ai-workloads) - Full methodology and technical deep-dive.
+
 Modern AI workloads demand simple, fast, and scalable data engines. Daft is purpose-built for these workloads, excelling where traditional big data frameworks fall short.
 
 Our benchmarks show how Daft uniquely delivers on the core needs of AI data processing:
@@ -23,7 +29,7 @@ The complete benchmark code is available in our repository:
 
 Each benchmark includes implementations for Daft, Ray Data, and EMR Spark, along with cluster configurations and dependencies.
 
-**Benchmark Date**: September 22, 2024
+**Benchmark Date**: September 22, 2025
 
 **Engine Versions**: Daft 0.6.2, Ray Data 2.49.2, AWS EMR Spark 7.10.0
 
@@ -90,7 +96,6 @@ Each benchmark includes implementations for Daft, Ray Data, and EMR Spark, along
 | Document Embedding | 1m 54s | 14m 32s (7.6x slower) | 8m 4s (4.2x slower) |
 | Image Classification | 4m 23s | 23m 30s (5.4x slower) | 45m 7s (10.3x slower) |
 | Video Object Detection | 11m 46s | 25m 54s (2.2x slower) | 3h 36m (18.4x slower) |
-
 
 ### Logs
 

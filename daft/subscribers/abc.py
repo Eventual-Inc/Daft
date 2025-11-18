@@ -8,7 +8,7 @@ from daft.daft import StatType
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from daft.daft import PyMicroPartition, PyNodeInfo
+    from daft.daft import PyMicroPartition, PyNodeInfo, PyQueryMetadata
 
 
 class Subscriber(ABC):
@@ -23,7 +23,7 @@ class Subscriber(ABC):
     """
 
     @abstractmethod
-    def on_query_start(self, query_id: str, unoptimized_plan: str) -> None:
+    def on_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None:
         """Called when starting the run for a new query."""
         pass
 

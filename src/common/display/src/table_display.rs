@@ -140,8 +140,9 @@ pub fn make_comfy_table<S: AsRef<str>>(
                 .iter()
                 .map(|s| {
                     let mut str_val = s.str_value(i);
+                    let str_val_len = str_val.char_indices().count();
                     if let Some(max_col_width) = max_col_width
-                        && str_val.len() > max_col_width - DOTS.len()
+                        && str_val_len > max_col_width - DOTS.len()
                     {
                         str_val = format!(
                             "{}{DOTS}",
@@ -174,8 +175,9 @@ pub fn make_comfy_table<S: AsRef<str>>(
                 .iter()
                 .map(|s| {
                     let mut str_val = s.str_value(i);
+                    let str_val_len = str_val.char_indices().count();
                     if let Some(max_col_width) = max_col_width
-                        && str_val.len() > max_col_width - DOTS.len()
+                        && str_val_len > max_col_width - DOTS.len()
                     {
                         str_val = format!(
                             "{}{DOTS}",

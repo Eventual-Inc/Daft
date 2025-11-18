@@ -1,9 +1,6 @@
-# Next-Generation UDFs with `@daft.func`
+# Stateless UDFs with `@daft.func`
 
-When Daft's built-in functions aren't sufficient for your needs, the `@daft.func` decorator lets you run your own Python code over each row of data. Simply decorate a Python function, and it becomes usable in Daft DataFrame operations.
-
-!!! note "Active Development"
-    `@daft.func` is currently in active development. While it works well for many use cases, some advanced features are still only available in the legacy [`@daft.udf`](udfs.md) decorator. See the [comparison section](#comparison-to-daftudf) below for details.
+When Daft's built-in functions aren't sufficient for your needs, the `@daft.func` and `@daft.cls` decorators let you run your own Python code over each row of data. Simply decorate a Python function or class, and it becomes usable in Daft DataFrame operations.
 
 ## Quick Example
 
@@ -35,11 +32,14 @@ df.show()
 
 ## Function Variants
 
-Daft automatically detects which variant to use based on your function signature:
+Daft supports multiple function variants to optimize for different use cases:
 
 - **Row-wise** (default): Regular Python functions process one row at a time
 - **Async row-wise**: Async Python functions process rows concurrently
 - **Generator**: Generator functions produce multiple output rows per input row
+- **Batch** (`@daft.func.batch`): Process entire batches of data with `daft.Series` for high performance
+
+Daft automatically detects which variant to use for regular functions based on your function signature. For batch functions, you must use the `@daft.func.batch` decorator.
 
 ### Row-wise Functions
 
@@ -287,6 +287,109 @@ df.show()
 ╰───────╯
 ```
 
+## Batch UDFs with `@daft.func.batch`
+
+For performance-critical operations, batch UDFs process entire batches of data at once using `daft.Series` objects instead of individual values. This allows you to leverage optimized libraries like PyArrow or NumPy for efficient vectorized operations.
+
+### When to Use Batch UDFs
+
+Use batch UDFs when:
+
+- **Performance is critical**: Vectorized operations may be significantly faster than row-wise processing
+- **Working with optimized libraries**: You want to use PyArrow compute functions, NumPy operations, or other libraries that support vectorized operations on batch data
+- **Running batch inference**: You are running a model that supports batch inference
+
+### Basic Batch UDF
+
+Batch UDFs receive `daft.Series` objects as arguments and return a `daft.Series`, `list`, `numpy.ndarray`, or `pyarrow.Array`:
+
+```python
+import daft
+from daft import DataType, Series
+
+@daft.func.batch(return_dtype=DataType.int64())
+def add_series(a: Series, b: Series) -> Series:
+    import pyarrow.compute as pc
+
+    # Convert to PyArrow for efficient computation
+    a_arrow = a.to_arrow()
+    b_arrow = b.to_arrow()
+    result = pc.add(a_arrow, b_arrow)
+
+    return result
+
+df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+df = df.select(add_series(df["x"], df["y"]))
+df.show()
+```
+
+```
+╭───────╮
+│ x     │
+│ ---   │
+│ Int64 │
+╞═══════╡
+│ 5     │
+├╌╌╌╌╌╌╌┤
+│ 7     │
+├╌╌╌╌╌╌╌┤
+│ 9     │
+╰───────╯
+```
+
+### Mixing Series and Scalar Arguments
+
+Batch UDFs can accept both Series and scalar arguments. Scalar arguments are passed through without modification:
+
+```python
+@daft.func.batch(return_dtype=DataType.int64())
+def add_constant(a: Series, constant: int) -> Series:
+    import pyarrow.compute as pc
+
+    a_arrow = a.to_arrow()
+    result = pc.add(a_arrow, constant)
+    return result
+
+df = daft.from_pydict({"x": [1, 2, 3]})
+df = df.select(add_constant(df["x"], 100))
+df.show()
+```
+
+```
+╭───────╮
+│ x     │
+│ ---   │
+│ Int64 │
+╞═══════╡
+│ 101   │
+├╌╌╌╌╌╌╌┤
+│ 102   │
+├╌╌╌╌╌╌╌┤
+│ 103   │
+╰───────╯
+```
+
+### Eager Evaluation
+
+Like regular functions, batch UDFs execute immediately when called with scalars:
+
+```python
+@daft.func.batch(return_dtype=DataType.int64())
+def multiply(a: Series, b: Series) -> Series:
+    import pyarrow.compute as pc
+
+    a_arrow = a.to_arrow()
+    b_arrow = b.to_arrow()
+    result = pc.multiply(a_arrow, b_arrow)
+    return result
+
+# Lazy execution - returns Expression
+expr = multiply(df["x"], df["y"])
+
+# Eager execution - computes immediately
+result = multiply(5, 10)  # Returns 50
+```
+
 ## Advanced Features
 
 ### Unnesting Struct Returns
@@ -371,23 +474,3 @@ df.show()
 │ 2     ┆ e    │
 ╰───────┴──────╯
 ```
-
-## Comparison to @daft.udf
-
-The newer `@daft.func` decorator provides a cleaner interface for many use cases, but has some limitations compared to the legacy `@daft.udf`:
-
-| Feature | @daft.func | @daft.udf |
-|---------|------------|-----------|
-| Function UDFs | ✅ Yes | ✅ Yes |
-| Type inference from hints | ✅ Yes | ❌ No |
-| Eager evaluation mode | ✅ Yes | ❌ No |
-| Async functions | ✅ Yes | ❌ No |
-| Generator functions | ✅ Yes | ❌ No |
-| Class UDFs | ❌ No | ✅ Yes |
-| Concurrency control | ❌ No | ✅ Yes (class UDFs) |
-| Resource requests (GPUs) | ❌ No | ✅ Yes |
-| Multi-column batching | ❌ No | ✅ Yes |
-
-If the new `@daft.func` decorator is missing a feature you need, we would love to hear from you! Please open an issue on our [GitHub repository](https://github.com/Eventual-Inc/Daft/issues).
-
-See the [User-Defined Functions (UDFs)](udfs.md) documentation for details on `@daft.udf`.

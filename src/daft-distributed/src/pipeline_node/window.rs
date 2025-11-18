@@ -6,7 +6,7 @@ use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
     window_to_agg_exprs,
 };
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
@@ -57,6 +57,10 @@ impl WindowNodePartitionOnly {
             StatsState::NotMaterialized,
             self.agg_exprs.clone(),
             self.base.aliases.clone(),
+            LocalNodeContext {
+                origin_node_id: Some(self.base.context.node_id as usize),
+                additional: None,
+            },
         )
     }
 
@@ -95,6 +99,10 @@ impl WindowNodePartitionAndOrderBy {
             StatsState::NotMaterialized,
             self.window_exprs.clone(),
             self.base.aliases.clone(),
+            LocalNodeContext {
+                origin_node_id: Some(self.base.context.node_id as usize),
+                additional: None,
+            },
         )
     }
 
@@ -145,6 +153,10 @@ impl WindowNodePartitionAndDynamicFrame {
             StatsState::NotMaterialized,
             self.agg_exprs.clone(),
             self.base.aliases.clone(),
+            LocalNodeContext {
+                origin_node_id: Some(self.base.context.node_id as usize),
+                additional: None,
+            },
         )
     }
 
@@ -195,6 +207,10 @@ impl WindowNodeOrderByOnly {
             StatsState::NotMaterialized,
             self.window_exprs.clone(),
             self.base.aliases.clone(),
+            LocalNodeContext {
+                origin_node_id: Some(self.base.context.node_id as usize),
+                additional: None,
+            },
         )
     }
 
@@ -233,7 +249,6 @@ impl WindowNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         partition_by: Vec<BoundExpr>,
         order_by: Vec<BoundExpr>,
@@ -247,12 +262,10 @@ impl WindowNode {
         child: DistributedPipelineNode,
     ) -> DaftResult<Self> {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,

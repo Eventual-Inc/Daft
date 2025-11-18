@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
@@ -27,7 +27,6 @@ impl SampleNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         fraction: f64,
         with_replacement: bool,
@@ -36,12 +35,10 @@ impl SampleNode {
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -94,6 +91,7 @@ impl PipelineNodeImpl for SampleNode {
         let fraction = self.fraction;
         let with_replacement = self.with_replacement;
         let seed = self.seed;
+        let node_id = self.node_id();
         let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
             LocalPhysicalPlan::sample(
                 input,
@@ -101,6 +99,10 @@ impl PipelineNodeImpl for SampleNode {
                 with_replacement,
                 seed,
                 StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
+                },
             )
         };
 

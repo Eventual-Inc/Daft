@@ -14,6 +14,7 @@ from daft.daft import get_context as _get_context
 if TYPE_CHECKING:
     from collections.abc import Generator
 
+    from daft.daft import PyQueryMetadata
     from daft.runners.partitioning import PartitionT
     from daft.runners.runner import Runner
     from daft.subscribers import Subscriber
@@ -94,8 +95,8 @@ class DaftContext:
         """
         self._ctx.detach_subscriber(alias)
 
-    def _notify_query_start(self, query_id: str, unoptimized_plan: str) -> None:
-        self._ctx.notify_query_start(query_id, unoptimized_plan)
+    def _notify_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None:
+        self._ctx.notify_query_start(query_id, metadata)
 
     def _notify_query_end(self, query_id: str) -> None:
         self._ctx.notify_query_end(query_id)
@@ -236,7 +237,6 @@ def set_execution_config(
     max_sources_per_scan_task: int | None = None,
     broadcast_join_size_bytes_threshold: int | None = None,
     parquet_split_row_groups_max_files: int | None = None,
-    sort_merge_join_sort_with_aligned_boundaries: bool | None = None,
     hash_join_partition_size_leniency: float | None = None,
     sample_size_for_sort: int | None = None,
     num_preview_rows: int | None = None,
@@ -245,6 +245,7 @@ def set_execution_config(
     parquet_inflation_factor: float | None = None,
     csv_target_filesize: int | None = None,
     csv_inflation_factor: float | None = None,
+    json_inflation_factor: float | None = None,
     shuffle_aggregation_default_partitions: int | None = None,
     partial_aggregation_threshold: int | None = None,
     high_cardinality_aggregation_threshold: float | None = None,
@@ -261,6 +262,7 @@ def set_execution_config(
     use_legacy_ray_runner: bool | None = None,
     min_cpu_per_task: float | None = None,
     actor_udf_ready_timeout: int | None = None,
+    maintain_order: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -280,9 +282,6 @@ def set_execution_config(
         broadcast_join_size_bytes_threshold: If one side of a join is smaller than this threshold, a broadcast join will be used.
             Default is 10 MiB.
         parquet_split_row_groups_max_files: Maximum number of files to read in which the row group splitting should happen. (Defaults to 10)
-        sort_merge_join_sort_with_aligned_boundaries: Whether to use a specialized algorithm for sorting both sides of a
-            sort-merge join such that they have aligned boundaries. This can lead to a faster merge-join at the cost of
-            more skewed sorted join inputs, increasing the risk of OOMs.
         hash_join_partition_size_leniency: If the left side of a hash join is already correctly partitioned and the right side isn't,
             and the ratio between the left and right size is at least this value, then the right side is repartitioned to have an equal
             number of partitions as the left. Defaults to 0.5.
@@ -295,6 +294,7 @@ def set_execution_config(
         parquet_inflation_factor: Inflation Factor of parquet files (In-Memory-Size / File-Size) ratio. Defaults to 3.0
         csv_target_filesize: Target File Size when writing out CSV Files. Defaults to 512MB
         csv_inflation_factor: Inflation Factor of CSV files (In-Memory-Size / File-Size) ratio. Defaults to 0.5
+        json_inflation_factor: Inflation Factor of JSON files (In-Memory-Size / File-Size) ratio. Defaults to 0.25
         shuffle_aggregation_default_partitions: Maximum number of partitions to create when performing aggregations on the Ray Runner. Defaults to 200, unless the number of input partitions is less than 200.
         partial_aggregation_threshold: Threshold for performing partial aggregations on the Native Runner. Defaults to 10000 rows.
         high_cardinality_aggregation_threshold: Threshold selectivity for performing high cardinality aggregations on the Native Runner. Defaults to 0.8.
@@ -310,7 +310,8 @@ def set_execution_config(
         native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
         use_legacy_ray_runner: Whether to use the legacy ray runner. Defaults to `False`.
         min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 0.5.
-        actor_udf_ready_timeout: Timeout for UDF actors to be ready. Defaults to 60 seconds.
+        actor_udf_ready_timeout: Timeout for UDF actors to be ready. Defaults to 120 seconds.
+        maintain_order: Whether to maintain order during execution. Defaults to True. Some blocking sink operators (e.g. write_parquet) won't respect this flag and will always keep maintain_order as false, and propagate to child operators. It's useful to set this to False for running df.collect() when no ordering is required.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -323,7 +324,6 @@ def set_execution_config(
             max_sources_per_scan_task=max_sources_per_scan_task,
             broadcast_join_size_bytes_threshold=broadcast_join_size_bytes_threshold,
             parquet_split_row_groups_max_files=parquet_split_row_groups_max_files,
-            sort_merge_join_sort_with_aligned_boundaries=sort_merge_join_sort_with_aligned_boundaries,
             hash_join_partition_size_leniency=hash_join_partition_size_leniency,
             sample_size_for_sort=sample_size_for_sort,
             num_preview_rows=num_preview_rows,
@@ -332,6 +332,7 @@ def set_execution_config(
             parquet_inflation_factor=parquet_inflation_factor,
             csv_target_filesize=csv_target_filesize,
             csv_inflation_factor=csv_inflation_factor,
+            json_inflation_factor=json_inflation_factor,
             shuffle_aggregation_default_partitions=shuffle_aggregation_default_partitions,
             partial_aggregation_threshold=partial_aggregation_threshold,
             high_cardinality_aggregation_threshold=high_cardinality_aggregation_threshold,
@@ -348,6 +349,7 @@ def set_execution_config(
             use_legacy_ray_runner=use_legacy_ray_runner,
             min_cpu_per_task=min_cpu_per_task,
             actor_udf_ready_timeout=actor_udf_ready_timeout,
+            maintain_order=maintain_order,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config

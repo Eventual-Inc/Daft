@@ -67,13 +67,14 @@ class MermaidFormatter:
             )
             output += "\n"
 
-            builder = builder.optimize()
+            execution_config = get_context().daft_execution_config
+            builder = builder.optimize(execution_config)
             output += builder._builder.repr_mermaid(
                 display_opts.with_subgraph_options(name="Optimized LogicalPlan", subgraph_id="optimized")
             )
             output += "\n"
             if get_or_create_runner().name != "native":
-                physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
+                physical_plan_scheduler = builder.to_physical_plan_scheduler(execution_config)
                 output += physical_plan_scheduler._scheduler.repr_mermaid(
                     display_opts.with_subgraph_options(name="Physical Plan", subgraph_id="physical")
                 )
@@ -83,7 +84,7 @@ class MermaidFormatter:
                 native_executor = NativeExecutor()
                 output += native_executor._executor.repr_mermaid(
                     builder._builder,
-                    get_context().daft_execution_config,
+                    execution_config,
                     display_opts.with_subgraph_options(name="Physical Plan", subgraph_id="physical"),
                 )
             output += "\n"

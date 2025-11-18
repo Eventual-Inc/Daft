@@ -52,7 +52,7 @@ def test_warc_target_uri_column():
 
     schema_fields = {field.name: field.dtype for field in df.schema()}
     assert "WARC-Target-URI" in schema_fields
-    assert str(schema_fields["WARC-Target-URI"]) == "Utf8"
+    assert str(schema_fields["WARC-Target-URI"]) == "String"
 
     # Test that warcinfo records have null WARC-Target-URI.
     warcinfo_records = df.filter(df["WARC-Type"] == "warcinfo")

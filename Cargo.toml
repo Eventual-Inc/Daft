@@ -1,7 +1,6 @@
 [dependencies]
 common-daft-config = {path = "src/common/daft-config", default-features = false}
 common-display = {path = "src/common/display", default-features = false}
-common-file = {path = "src/common/file", default-features = false}
 common-file-formats = {path = "src/common/file-formats", default-features = false}
 common-hashable-float-wrapper = {path = "src/common/hashable-float-wrapper", default-features = false}
 common-logging = {path = "src/common/logging", default-features = false}
@@ -73,7 +72,6 @@ python = [
   "common-display/python",
   "common-partitioning/python",
   "common-resource-request/python",
-  "common-file/python",
   "common-file-formats/python",
   "common-scan-info/python",
   "common-system-info/python",
@@ -123,6 +121,20 @@ edition = "2024"
 name = "daft"
 publish = false
 version = "0.3.0-dev0"
+# Exclude unnecessary files from sdist
+exclude = [
+  "tests/",
+  "benchmarking/",
+  "tutorials/",
+  "k8s/",
+  "ci/",
+  "docs/",
+  "assets/",
+  "tools/",
+  "*.md",
+  "codecov.yml",
+  "mkdocs.yml"
+]
 
 [package.metadata.cargo-machete]
 ignored = ["lzma-sys"]
@@ -244,7 +256,6 @@ comfy-table = "7.1.1"
 common-daft-config = {path = "src/common/daft-config"}
 common-display = {path = "src/common/display", default-features = false}
 common-error = {path = "src/common/error", default-features = false}
-common-file = {path = "src/common/file"}
 common-file-formats = {path = "src/common/file-formats"}
 common-image = {path = "src/common/image", default-features = false}
 common-metrics = {path = "src/common/metrics"}
@@ -295,10 +306,10 @@ ndarray = "0.16.1"
 num-derive = "0.4.2"
 num-format = "0.4.4"
 num-traits = "0.2"
-numpy = "0.25.0"
-opentelemetry = {version = "0.29", features = ["trace", "metrics"]}
-opentelemetry-otlp = {version = "0.29", features = ["grpc-tonic"]}
-opentelemetry_sdk = "0.29"
+numpy = "0.27"
+opentelemetry = {version = "0.31", features = ["trace", "metrics"]}
+opentelemetry-otlp = {version = "0.31", features = ["grpc-tonic"]}
+opentelemetry_sdk = "0.31"
 parking_lot = "0.12.3"
 path_macro = "1.0.0"
 pretty_assertions = "1.4.1"
@@ -314,7 +325,7 @@ serde_json = "1.0.145"
 sha1 = "0.11.0-pre.4"
 simdutf8 = "0.1.5"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
-smallvec = {version = "1.15.1", features = ["serde"]}
+smallvec = {version = "1.15.1", features = ["serde", "impl_bincode"]}
 snafu = {version = "0.7.4", features = ["futures"]}
 spark-connect = {path = "src/generated/spark-connect", default-features = false}
 sqlparser = "0.51.0"
@@ -343,14 +354,15 @@ typed-builder = "0.20.0"
 typetag = "0.2.18"
 url = "2.4.0"
 uuid = {version = "1.18.1", features = ["v4"]}
-xxhash-rust = "0.8.12"
+xxhash-rust = {version = "0.8.15", features = ["const_xxh3", "const_xxh64", "const_xxh32", "xxh64", "xxh3", "xxh32"]}
 
 [workspace.dependencies.arrow2]
 features = ["serde_types"]
 path = "src/arrow2"
 
 [workspace.dependencies.bincode]
-version = "1.3.3"
+version = "2.0.1"
+features = ["derive", "serde"]
 
 [workspace.dependencies.derive_more]
 features = ["display", "from"]
@@ -365,20 +377,19 @@ features = ['async']
 path = "src/parquet-format-safe"
 
 [workspace.dependencies.parquet2]
-# branch = "sammy/owned-page-stream"
 features = ['async']
 path = "src/parquet2"
 
 [workspace.dependencies.pyo3]
-features = ["extension-module", "multiple-pymethods", "abi3-py39", "indexmap", "chrono", "chrono-tz"]
-version = "0.25.1"
+features = ["extension-module", "multiple-pymethods", "abi3-py310", "indexmap", "chrono", "chrono-tz"]
+version = "0.27.1"
 
 [workspace.dependencies.pyo3-async-runtimes]
 features = ["attributes", "tokio-runtime"]
-version = "0.25"
+version = "0.27"
 
 [workspace.dependencies.pyo3-log]
-version = "0.12.1"
+version = "0.13"
 
 [workspace.dependencies.serde]
 features = ["derive", "rc"]

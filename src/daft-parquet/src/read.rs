@@ -1235,8 +1235,11 @@ mod tests {
 
         runtime_handle.block_within_async_context(async move {
             let metadata = read_parquet_metadata(&file, io_client, None, None).await?;
-            let serialized = bincode::serialize(&metadata).unwrap();
-            let deserialized = bincode::deserialize::<FileMetaData>(&serialized).unwrap();
+            let config = bincode::config::legacy();
+            let serialized = bincode::serde::encode_to_vec(&metadata, config).unwrap();
+            let deserialized: FileMetaData = bincode::serde::decode_from_slice(&serialized, config)
+                .unwrap()
+                .0;
             assert_eq!(metadata, deserialized);
             Ok(())
         })?

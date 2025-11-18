@@ -8,7 +8,7 @@ use daft_core::{
         growable::{Growable, make_growable},
         ops::arrow2::comparison::build_is_equal,
     },
-    datatypes::try_mean_aggregation_supertype,
+    datatypes::{try_mean_aggregation_supertype, try_sum_supertype},
     kernels::search_sorted::build_is_valid,
     prelude::{
         AsArrow, BooleanArray, CountMode, DataType, Field, Int64Array, MapArray, UInt64Array,
@@ -956,7 +956,7 @@ macro_rules! impl_aggs_list_array {
     ($la:ident, $agg_helper:ident) => {
         impl ListArrayAggExtension for $la {
             fn sum(&self) -> DaftResult<Series> {
-                $agg_helper(self, |s| s.sum(None), |dtype| Ok(dtype.clone()))
+                $agg_helper(self, |s| s.sum(None), try_sum_supertype)
             }
 
             fn mean(&self) -> DaftResult<Series> {

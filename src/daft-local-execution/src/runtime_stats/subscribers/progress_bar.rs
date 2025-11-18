@@ -1,23 +1,20 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use common_error::DaftResult;
 use common_logging::GLOBAL_LOGGER;
 use common_metrics::{
-    NodeID, StatSnapshotSend,
+    CPU_US_KEY, NodeID, StatSnapshot,
     ops::{NodeCategory, NodeInfo},
 };
 use indicatif::{ProgressDrawTarget, ProgressStyle};
 use itertools::Itertools;
 use log::Log;
 
-use crate::{
-    PythonPrintTarget, STDOUT,
-    runtime_stats::{CPU_US_KEY, subscribers::RuntimeStatsSubscriber},
-};
+use crate::{PythonPrintTarget, STDOUT, runtime_stats::subscribers::RuntimeStatsSubscriber};
 
 /// Convert statistics to a message for progress bars
-fn event_to_message(event: &StatSnapshotSend) -> String {
+fn event_to_message(event: &StatSnapshot) -> String {
     event
         .iter()
         .filter(|(name, _)| *name != CPU_US_KEY)
@@ -96,7 +93,7 @@ struct IndicatifProgressBarManager {
 }
 
 impl IndicatifProgressBarManager {
-    fn new(node_infos: &[Arc<NodeInfo>]) -> Self {
+    fn new(node_info_map: &HashMap<NodeID, Arc<NodeInfo>>) -> Self {
         let multi_progress = indicatif::MultiProgress::new();
 
         if cfg!(feature = "python") {
@@ -112,7 +109,7 @@ impl IndicatifProgressBarManager {
         multi_progress.set_move_cursor(true);
         multi_progress.set_draw_target(ProgressDrawTarget::stderr_with_hz(10));
 
-        let total = node_infos.len();
+        let total = node_info_map.len();
 
         let mut manager = Self {
             multi_progress,
@@ -120,7 +117,11 @@ impl IndicatifProgressBarManager {
             total,
         };
 
-        for node_info in node_infos {
+        // For Swordfish only, so node ids should be consecutive
+        for node_id in 0..total {
+            let node_info = node_info_map
+                .get(&node_id)
+                .expect("Expected node info for all node ids in range 0..total");
             manager.make_new_bar(node_info.as_ref());
         }
 
@@ -192,7 +193,7 @@ impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
         Ok(())
     }
 
-    async fn handle_event(&self, events: &[(NodeID, StatSnapshotSend)]) -> DaftResult<()> {
+    async fn handle_event(&self, events: &[(NodeID, StatSnapshot)]) -> DaftResult<()> {
         for (node_id, event) in events {
             let pb = self.pbars.get(*node_id).unwrap();
             pb.set_message(event_to_message(event));
@@ -209,19 +210,21 @@ impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
 
 pub const MAX_PIPELINE_NAME_LEN: usize = 22;
 
-pub fn make_progress_bar_manager(node_infos: &[Arc<NodeInfo>]) -> Box<dyn RuntimeStatsSubscriber> {
+pub fn make_progress_bar_manager(
+    node_info_map: &HashMap<NodeID, Arc<NodeInfo>>,
+) -> Box<dyn RuntimeStatsSubscriber> {
     #[cfg(feature = "python")]
     {
         if python::in_notebook() {
-            Box::new(python::TqdmProgressBarManager::new(node_infos))
+            Box::new(python::TqdmProgressBarManager::new(node_info_map))
         } else {
-            Box::new(IndicatifProgressBarManager::new(node_infos))
+            Box::new(IndicatifProgressBarManager::new(node_info_map))
         }
     }
 
     #[cfg(not(feature = "python"))]
     {
-        Box::new(IndicatifProgressBarManager::new(node_infos))
+        Box::new(IndicatifProgressBarManager::new(node_info_map))
     }
 }
 
@@ -230,12 +233,12 @@ mod python {
     use std::collections::HashMap;
 
     use common_metrics::ops::NodeInfo;
-    use pyo3::{PyObject, Python, types::PyAnyMethods};
+    use pyo3::{Python, types::PyAnyMethods};
 
     use super::*;
 
     pub fn in_notebook() -> bool {
-        pyo3::Python::with_gil(|py| {
+        pyo3::Python::attach(|py| {
             py.import(pyo3::intern!(py, "daft.utils"))
                 .and_then(|m| m.getattr(pyo3::intern!(py, "in_notebook")))
                 .and_then(|m| m.call0())
@@ -246,20 +249,24 @@ mod python {
 
     #[derive(Clone, Debug)]
     pub struct TqdmProgressBarManager {
-        inner: Arc<PyObject>,
+        inner: Arc<pyo3::Py<pyo3::PyAny>>,
         node_id_to_pb_id: HashMap<usize, usize>,
     }
 
     impl TqdmProgressBarManager {
-        pub fn new(node_infos: &[Arc<NodeInfo>]) -> Self {
+        pub fn new(node_info_map: &HashMap<NodeID, Arc<NodeInfo>>) -> Self {
             let mut node_id_to_pb_id = HashMap::new();
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let module = py.import("daft.runners.progress_bar")?;
                 let progress_bar_class = module.getattr("SwordfishProgressBar")?;
                 let pb_object = progress_bar_class.call0()?;
 
-                for node_info in node_infos {
+                // For Swordfish only, so node ids should be consecutive
+                for node_id in 0..node_info_map.len() {
+                    let node_info = node_info_map
+                        .get(&node_id)
+                        .expect("Expected node info for all node ids in range 0..total");
                     let bar_format = format!(
                         "🗡️ 🐟 {prefix}: {{elapsed}} {{desc}}",
                         prefix = node_info.name
@@ -280,7 +287,7 @@ mod python {
         }
 
         fn update_bar(&self, pb_id: usize, message: &str) -> DaftResult<()> {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 self.inner
                     .call_method1(py, "update_bar", (pb_id, message))?;
                 DaftResult::Ok(())
@@ -288,7 +295,7 @@ mod python {
         }
 
         fn close_bar(&self, pb_id: usize) -> DaftResult<()> {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 self.inner.call_method1(py, "close_bar", (pb_id,))?;
                 DaftResult::Ok(())
             })
@@ -313,7 +320,7 @@ mod python {
             Ok(())
         }
 
-        async fn handle_event(&self, events: &[(NodeID, StatSnapshotSend)]) -> DaftResult<()> {
+        async fn handle_event(&self, events: &[(NodeID, StatSnapshot)]) -> DaftResult<()> {
             for (node_id, event) in events {
                 let pb_id = self.node_id_to_pb_id.get(node_id).unwrap();
                 self.update_bar(*pb_id, &event_to_message(event))?;

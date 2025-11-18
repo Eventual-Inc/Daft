@@ -225,7 +225,7 @@ def test_binary_concat_edge_cases() -> None:
 def test_binary_concat_errors() -> None:
     # Test concat with incompatible type (string)
     table = MicroPartition.from_pydict({"a": [b"hello", b"world"], "b": ["foo", "bar"]})
-    with pytest.raises(Exception, match="Cannot add types: Utf8, Binary"):
+    with pytest.raises(Exception, match="Cannot add types: String, Binary"):
         table.eval_expression_list([col("a").binary.concat(col("b"))])
 
     # Test concat with incompatible type (integer)
@@ -240,7 +240,7 @@ def test_binary_concat_errors() -> None:
 
     # Test concat with incompatible type (boolean)
     table = MicroPartition.from_pydict({"a": [b"hello", b"world"], "b": [True, False]})
-    with pytest.raises(Exception, match="Cannot infer supertypes for addition on types: Binary, Boolean"):
+    with pytest.raises(Exception, match="Cannot infer supertypes for addition on types: Binary, Bool"):
         table.eval_expression_list([col("a").binary.concat(col("b"))])
 
     # Test concat with wrong number of arguments

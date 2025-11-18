@@ -1,10 +1,12 @@
 use std::{cmp::Ordering, collections::VecDeque, sync::Arc};
 
 use common_error::DaftResult;
-use daft_local_plan::LocalPhysicalPlan;
+use common_metrics::QueryID;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
+use opentelemetry::{global, metrics::Counter};
 
 use super::{
     DistributedPipelineNode, MaterializedOutput, PipelineNodeImpl, SubmittableTaskStream,
@@ -18,6 +20,10 @@ use crate::{
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SwordfishTask, TaskContext},
+    },
+    statistics::{
+        TaskEvent,
+        stats::{DefaultRuntimeStats, RuntimeStats},
     },
     utils::channel::{Sender, create_channel},
 };
@@ -68,12 +74,46 @@ impl LimitState {
     }
 }
 
+pub struct LimitStats {
+    default_stats: DefaultRuntimeStats,
+    /// Number of rows emitted by the LIMIT, assuming no failed tasks.
+    /// TODO: Handle failed tasks by tracking both an active_rows_out and completed_rows_out
+    /// active_rows_out is immediately incremented when we produce the related task and pass it downstream.
+    /// completed_rows_out only increments when the downstream task completes successfully.
+    active_rows_out: Counter<u64>,
+}
+
+impl LimitStats {
+    fn new(node_id: NodeID, query_id: QueryID) -> Self {
+        let meter = global::meter("daft.distributed.node_stats");
+        Self {
+            default_stats: DefaultRuntimeStats::new_impl(&meter, node_id, query_id),
+            active_rows_out: meter
+                .u64_counter("daft.distributed.node_stats.active_rows_out")
+                .build(),
+        }
+    }
+
+    fn add_active_rows_out(&self, rows: u64) {
+        self.active_rows_out
+            .add(rows, self.default_stats.node_kv.as_slice());
+    }
+}
+
+impl RuntimeStats for LimitStats {
+    fn handle_task_event(&self, event: &TaskEvent) -> DaftResult<()> {
+        // We currently don't track completion for active_rows_out, so just pass to default stats
+        self.default_stats.handle_task_event(event)
+    }
+}
+
 pub(crate) struct LimitNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     limit: usize,
     offset: Option<usize>,
     child: DistributedPipelineNode,
+    stats: Arc<LimitStats>,
 }
 
 impl LimitNode {
@@ -81,7 +121,6 @@ impl LimitNode {
 
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         limit: usize,
         offset: Option<usize>,
@@ -89,12 +128,10 @@ impl LimitNode {
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -107,6 +144,7 @@ impl LimitNode {
             limit,
             offset,
             child,
+            stats: Arc::new(LimitStats::new(node_id, plan_config.query_id.clone())),
         }
     }
 
@@ -120,6 +158,7 @@ impl LimitNode {
         limit_state: &mut LimitState,
         task_id_counter: &TaskIDCounter,
     ) -> DaftResult<Vec<SubmittableTask<SwordfishTask>>> {
+        let node_id = self.node_id();
         let mut downstream_tasks = vec![];
         for next_input in materialized_output.split_into_materialized_outputs() {
             let mut num_rows = next_input.num_rows()?;
@@ -138,9 +177,11 @@ impl LimitNode {
             let task = match num_rows.cmp(&limit_state.remaining_take()) {
                 Ordering::Less | Ordering::Equal => {
                     limit_state.decrement_take(num_rows);
+                    self.stats.add_active_rows_out(num_rows as u64);
                     make_new_task_from_materialized_outputs(
                         TaskContext::from((&self.context, task_id_counter.next())),
                         vec![next_input],
+                        self.config.schema.clone(),
                         &(self.clone() as Arc<dyn PipelineNodeImpl>),
                         move |input| {
                             if skip_num_rows > 0 {
@@ -149,6 +190,10 @@ impl LimitNode {
                                     num_rows as u64,
                                     Some(skip_num_rows as u64),
                                     StatsState::NotMaterialized,
+                                    LocalNodeContext {
+                                        origin_node_id: Some(node_id as usize),
+                                        additional: None,
+                                    },
                                 )
                             } else {
                                 input
@@ -162,6 +207,7 @@ impl LimitNode {
                     let task = make_new_task_from_materialized_outputs(
                         TaskContext::from((&self.context, task_id_counter.next())),
                         vec![next_input],
+                        self.config.schema.clone(),
                         &(self.clone() as Arc<dyn PipelineNodeImpl>),
                         move |input| {
                             LocalPhysicalPlan::limit(
@@ -169,11 +215,16 @@ impl LimitNode {
                                 remaining as u64,
                                 Some(skip_num_rows as u64),
                                 StatsState::NotMaterialized,
+                                LocalNodeContext {
+                                    origin_node_id: Some(node_id as usize),
+                                    additional: None,
+                                },
                             )
                         },
                         None,
                     )?;
                     limit_state.decrement_take(remaining);
+                    self.stats.add_active_rows_out(remaining as u64);
                     task
                 }
             };
@@ -192,6 +243,7 @@ impl LimitNode {
         scheduler_handle: SchedulerHandle<SwordfishTask>,
         task_id_counter: TaskIDCounter,
     ) -> DaftResult<()> {
+        let node_id = self.node_id();
         let mut limit_state = LimitState::new(self.limit, self.offset);
         let mut max_concurrent_tasks = 1;
         let mut input_exhausted = false;
@@ -213,6 +265,10 @@ impl LimitNode {
                                 local_limit_per_task as u64,
                                 Some(0),
                                 StatsState::NotMaterialized,
+                                LocalNodeContext {
+                                    origin_node_id: Some(node_id as usize),
+                                    additional: None,
+                                },
                             )
                         },
                     );
@@ -278,6 +334,10 @@ impl PipelineNodeImpl for LimitNode {
             Some(o) => vec![format!("Limit: Num Rows = {}, Offset = {}", self.limit, o)],
             None => vec![format!("Limit: {}", self.limit)],
         }
+    }
+
+    fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
+        self.stats.clone()
     }
 
     fn produce_tasks(

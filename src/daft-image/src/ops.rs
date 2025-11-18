@@ -42,7 +42,7 @@ impl ImageOps for ImageArray {
 
     fn resize(&self, w: u32, h: u32) -> DaftResult<Self> {
         let result = resize_images(self, w, h);
-        image_array_from_img_buffers(self.name(), result.as_slice(), self.image_mode())
+        image_array_from_img_buffers(self.name(), result.into_iter(), self.image_mode())
     }
 
     fn crop(&self, bboxes: &FixedSizeListArray) -> DaftResult<ImageArray> {
@@ -58,7 +58,7 @@ impl ImageOps for ImageArray {
             }))
         };
         let result = crop_images(self, &mut bboxes_iterator);
-        image_array_from_img_buffers(self.name(), result.as_slice(), self.image_mode())
+        image_array_from_img_buffers(self.name(), result.into_iter(), self.image_mode())
     }
 
     fn resize_to_fixed_shape_image_array(
@@ -72,10 +72,8 @@ impl ImageOps for ImageArray {
     }
 
     fn to_mode(&self, mode: ImageMode) -> DaftResult<Self> {
-        let buffers: Vec<Option<CowImage>> = ImageBufferIter::new(self)
-            .map(|img| img.map(|img| img.into_mode(mode)))
-            .collect();
-        image_array_from_img_buffers(self.name(), &buffers, Some(mode))
+        let buffers = ImageBufferIter::new(self).map(|img| img.map(|img| img.into_mode(mode)));
+        image_array_from_img_buffers(self.name(), buffers, Some(mode))
     }
 
     fn attribute(&self, attr: ImageProperty) -> DaftResult<DataArray<UInt32Type>> {
@@ -131,7 +129,7 @@ impl ImageOps for FixedShapeImageArray {
         };
         let result = crop_images(self, &mut bboxes_iterator);
 
-        image_array_from_img_buffers(self.name(), result.as_slice(), Some(*self.image_mode()))
+        image_array_from_img_buffers(self.name(), result.into_iter(), Some(*self.image_mode()))
     }
 
     fn resize_to_fixed_shape_image_array(

@@ -5,7 +5,14 @@ import uuid
 from typing import TYPE_CHECKING
 
 from daft.context import get_context
-from daft.daft import FileFormatConfig, FileInfos, IOConfig, LocalPhysicalPlan, set_compute_runtime_num_worker_threads
+from daft.daft import (
+    FileFormatConfig,
+    FileInfos,
+    IOConfig,
+    LocalPhysicalPlan,
+    PyQueryMetadata,
+    set_compute_runtime_num_worker_threads,
+)
 from daft.execution.native_executor import NativeExecutor
 from daft.filesystem import glob_path_with_stats
 from daft.recordbatch import MicroPartition
@@ -83,11 +90,12 @@ class NativeRunner(Runner[MicroPartition]):
         # NOTE: Freeze and use this same execution config for the entire execution
         ctx = get_context()
         query_id = str(uuid.uuid4())
+        output_schema = builder.schema()
 
         # Optimize the logical plan.
-        ctx._notify_query_start(query_id, repr(builder))
+        ctx._notify_query_start(query_id, PyQueryMetadata(output_schema._schema, repr(builder)))
         ctx._notify_optimization_start(query_id)
-        builder = builder.optimize()
+        builder = builder.optimize(ctx.daft_execution_config)
         ctx._notify_optimization_end(query_id, repr(builder))
 
         # NOTE: ENABLE FOR DAFT-PROTO TESTING
@@ -103,11 +111,12 @@ class NativeRunner(Runner[MicroPartition]):
             {"query_id": query_id},
         )
 
-        for result in results_gen:
-            ctx._notify_result_out(query_id, result.partition())
-            yield result
-
-        ctx._notify_query_end(query_id)
+        try:
+            for result in results_gen:
+                ctx._notify_result_out(query_id, result.partition())
+                yield result
+        finally:
+            ctx._notify_query_end(query_id)
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None

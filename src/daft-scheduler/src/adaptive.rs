@@ -36,13 +36,13 @@ impl AdaptivePhysicalPlanScheduler {
         py: Python,
         cfg: PyDaftExecutionConfig,
     ) -> PyResult<Self> {
-        py.allow_threads(|| {
+        py.detach(|| {
             let logical_plan = logical_plan_builder.builder.build();
             Ok(Self::new(logical_plan, cfg.config.clone()))
         })
     }
     pub fn next(&mut self, py: Python) -> PyResult<(Option<usize>, PhysicalPlanScheduler)> {
-        py.allow_threads(|| {
+        py.detach(|| {
             let output = self.planner.next_stage()?;
             let sid = output.stage_id();
             Ok((sid, output.into()))
@@ -57,13 +57,13 @@ impl AdaptivePhysicalPlanScheduler {
         &mut self,
         stage_id: usize,
         partition_key: &str,
-        cache_entry: PyObject,
+        cache_entry: pyo3::Py<pyo3::PyAny>,
         num_partitions: usize,
         size_bytes: usize,
         num_rows: usize,
         py: Python,
     ) -> PyResult<()> {
-        py.allow_threads(|| {
+        py.detach(|| {
             let in_memory_info = InMemoryInfo::new(
                 Schema::empty().into(), // TODO thread in schema from in memory scan
                 partition_key.into(),

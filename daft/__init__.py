@@ -16,7 +16,7 @@ if "COV_CORE_SOURCE" in os.environ:
         import sys
 
         sys.stderr.write(
-            "pytest-cov: Failed to setup subprocess coverage. " "Environ: {!r} " "Exception: {!r}\n".format(
+            "pytest-cov: Failed to setup subprocess coverage. Environ: {!r} Exception: {!r}\n".format(
                 {k: v for k, v in os.environ.items() if k.startswith("COV_CORE")}, exc
             )
         )
@@ -77,7 +77,7 @@ from daft.convert import (
 from daft.daft import ImageFormat, ImageMode, ImageProperty, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.schema import Schema
-from daft.datatype import DataType, TimeUnit
+from daft.datatype import DataType, TimeUnit, MediaType
 from daft.expressions import Expression, col, element, list_, lit, interval, struct, coalesce
 from daft.series import Series
 from daft.session import (
@@ -121,7 +121,7 @@ from daft.session import (
     set_session,
     write_table,
 )
-from daft.udf import udf, _DaftFuncDecorator as func
+from daft.udf import udf, func, cls, method, metrics
 from daft.io import (
     DataCatalogTable,
     DataCatalogType,
@@ -145,7 +145,7 @@ from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_run
 from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
-from daft.file import File
+from daft.file import File, VideoFile
 
 import daft.context as context
 import daft.io as io
@@ -166,18 +166,21 @@ __all__ = [
     "ImageFormat",
     "ImageMode",
     "ImageProperty",
+    "MediaType",
     "ResourceRequest",
     "Schema",
     "Series",
     "Session",
     "Table",
     "TimeUnit",
+    "VideoFile",
     "Window",
     "attach",
     "attach_catalog",
     "attach_function",
     "attach_provider",
     "attach_table",
+    "cls",
     "coalesce",
     "col",
     "context",
@@ -224,6 +227,8 @@ __all__ = [
     "list_catalogs",
     "list_tables",
     "lit",
+    "method",
+    "metrics",
     "planning_config_ctx",
     "range",
     "read_csv",

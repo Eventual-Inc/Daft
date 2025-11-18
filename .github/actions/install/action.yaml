@@ -4,7 +4,7 @@ inputs:
   python_version:
     description: The version of python to install
     required: false
-    default: '3.9'
+    default: '3.10'
 runs:
   using: composite
   steps:

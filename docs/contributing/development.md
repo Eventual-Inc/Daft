@@ -127,18 +127,26 @@ We run test suites across Python and Rust. Python tests focus on high-level Data
 
 ### Python tests
 
-Our python tests are located in the `tests` directory, you can run all the tests at once with `make tests`.
+Our python tests are located in the `tests` directory, you can run all the tests at once with `make test`.
 
-To run specific tests, set the runner for the tests in the environment and then run the tests directly using [pytest](https://docs.pytest.org/en/stable/how-to/usage.html).
+To run specific tests, set the runner for the tests in the environment and then run the tests directly using [pytest](https://docs.pytest.org/en/stable/how-to/usage.html) or `make test EXTRA_ARGS="..."` as follows:
 
-```
-DAFT_RUNNER=native pytest tests/dataframe/test_limit.py::test_limit
+```bash
+# Using pytest
+DAFT_RUNNER=native pytest tests/dataframe/test_limit_offset.py::test_limit
+
+# Using make test
+DAFT_RUNNER=native make test EXTRA_ARGS="tests/dataframe/test_limit_offset.py::test_limit"
 ```
 
 To enable debug logs from tests, set the `--log-cli-level` option, as well as disable capturing.
 
-```
-DAFT_RUNNER=native pytest tests/dataframe/test_limit.py::test_limit -s --log-cli-level=DEBUG
+```bash
+# Using pytest
+DAFT_RUNNER=native pytest tests/dataframe/test_limit_offset.py::test_limit -s --log-cli-level=DEBUG
+
+# Using make test
+DAFT_RUNNER=native make test EXTRA_ARGS="tests/dataframe/test_limit_offset.py::test_limit -s --log-cli-level=DEBUG"
 ```
 
 
@@ -316,7 +324,7 @@ Add Series method in `daft/series.py`:
 For series, It just delegates out to the expression implementation, so we can just call the helper method `_eval_expressions`
 
 ```py
-  def to_uppercase(self) -> Series:
+def to_uppercase(self) -> Series:
     return self._eval_expressions("upper")
 ```
 
@@ -324,15 +332,15 @@ and for functions with additional arguments:
 
 ```py
 def extract_all(self, pattern: Series, index: int = 0) -> Series:
-  # Pass scalar values as kwargs
-  return self._eval_expressions("extract_all", pattern, index=index)
+    # Pass scalar values as kwargs
+    return self._eval_expressions("extract_all", pattern, index=index)
 ```
 
 #### Docstring Template
 
 We follow [Google style](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html) python docstrings.
 
-``` py
+```py
 def method(args) -> return:
     """Summary of method
 

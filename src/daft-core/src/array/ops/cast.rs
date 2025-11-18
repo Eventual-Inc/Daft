@@ -36,6 +36,7 @@ use crate::{
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
     },
+    file::{DaftMediaType, MediaTypeUnknown, MediaTypeVideo},
     lit::Literal,
     series::{IntoSeries, Series},
     utils::display::display_time64,
@@ -45,7 +46,7 @@ use crate::{
 #[cfg(feature = "python")]
 impl Series {
     fn cast_to_python(&self) -> DaftResult<Self> {
-        let py_values = Python::with_gil(|py| {
+        let py_values = Python::attach(|py| {
             use pyo3::IntoPyObjectExt;
 
             self.to_literals()
@@ -545,9 +546,20 @@ impl DurationArray {
     }
 }
 
-impl FileArray {
+impl<T> FileArray<T>
+where
+    T: DaftMediaType,
+{
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        use daft_schema::media_type::MediaType::*;
         match dtype {
+            DataType::File(media_type) => match (media_type, T::get_type()) {
+                (Unknown, Unknown) | (Video, Video) => Ok(self.clone().into_series()),
+                (Unknown, Video) => Ok(self.clone().change_type::<MediaTypeVideo>().into_series()),
+                (Video, Unknown) => {
+                    Ok(self.clone().change_type::<MediaTypeUnknown>().into_series())
+                }
+            },
             DataType::Null => {
                 Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
             }
@@ -601,7 +613,7 @@ impl PythonArray {
 
         // TODO: optimize this.
         // Currently this does PythonArray -> Vec<Literal> -> Series -> Series::cast
-        let literals = Python::with_gil(|py| {
+        let literals = Python::attach(|py| {
             self.values()
                 .iter()
                 .map(|ob| Literal::from_pyobj(ob.bind(py), Some(dtype)))

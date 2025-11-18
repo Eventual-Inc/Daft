@@ -1,24 +1,24 @@
 use std::sync::Arc;
 
 use common_error::DaftError;
-use pyo3::{IntoPyObjectExt, PyObject, PyResult, Python, pyfunction};
+use pyo3::{IntoPyObjectExt, PyResult, Python, pyfunction};
 
 use crate::runners::{self, DAFT_RUNNER, NativeRunner, RayRunner, Runner, RunnerConfig};
 
 #[pyfunction]
-pub fn get_runner(py: Python) -> PyResult<Option<PyObject>> {
-    let runner = py.allow_threads(|| DAFT_RUNNER.get().cloned());
+pub fn get_runner(py: Python) -> PyResult<Option<pyo3::Py<pyo3::PyAny>>> {
+    let runner = py.detach(|| DAFT_RUNNER.get().cloned());
     Ok(runner.map(|r| r.to_pyobj(py)))
 }
 
 #[pyfunction]
-pub fn get_or_create_runner(py: Python) -> PyResult<PyObject> {
-    let runner = py.allow_threads(runners::get_or_create_runner)?;
+pub fn get_or_create_runner(py: Python) -> PyResult<pyo3::Py<pyo3::PyAny>> {
+    let runner = py.detach(runners::get_or_create_runner)?;
     Ok(runner.to_pyobj(py))
 }
 
 #[pyfunction]
-pub fn get_or_infer_runner_type(py: Python) -> PyResult<PyObject> {
+pub fn get_or_infer_runner_type(py: Python) -> PyResult<pyo3::Py<pyo3::PyAny>> {
     match runners::DAFT_RUNNER.get() {
         Some(runner) => match runner.as_ref() {
             Runner::Ray(_) => RayRunner::NAME,
@@ -50,7 +50,7 @@ pub fn set_runner_ray(
     noop_if_initialized: Option<bool>,
     max_task_backlog: Option<usize>,
     force_client_mode: Option<bool>,
-) -> PyResult<PyObject> {
+) -> PyResult<pyo3::Py<pyo3::PyAny>> {
     let noop_if_initialized = noop_if_initialized.unwrap_or(false);
 
     let runner_type = runners::get_runner_type_from_env();
@@ -79,7 +79,10 @@ pub fn set_runner_ray(
 }
 
 #[pyfunction(signature = (num_threads = None))]
-pub fn set_runner_native(py: Python, num_threads: Option<usize>) -> PyResult<PyObject> {
+pub fn set_runner_native(
+    py: Python,
+    num_threads: Option<usize>,
+) -> PyResult<pyo3::Py<pyo3::PyAny>> {
     let runner_type = runners::get_runner_type_from_env();
     if !runner_type.is_empty() && runner_type != NativeRunner::NAME {
         log::warn!(

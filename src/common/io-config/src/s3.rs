@@ -40,6 +40,7 @@ pub struct S3Config {
     pub profile_name: Option<String>,
     pub multipart_size: u64,
     pub multipart_max_concurrency: u32,
+    pub custom_retry_msgs: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -191,6 +192,12 @@ impl S3Config {
         if let Some(name) = &self.profile_name {
             res.push(format!("Profile Name = {name}"));
         }
+        if !self.custom_retry_msgs.is_empty() {
+            res.push(format!(
+                "Custom retry messages = {:?}",
+                self.custom_retry_msgs
+            ));
+        }
         res
     }
 }
@@ -222,6 +229,7 @@ impl Default for S3Config {
             profile_name: None,
             multipart_size: 8 * 1024 * 1024, // 8MB
             multipart_max_concurrency: 100,
+            custom_retry_msgs: vec![],
         }
     }
 }
@@ -234,22 +242,25 @@ impl Display for S3Config {
     region_name: {:?}
     endpoint_url: {:?}
     key_id: {:?}
-    session_token: {:?},
+    session_token: {:?}
     access_key: {:?}
     credentials_provider: {:?}
     buffer_time: {:?}
-    max_connections: {},
-    retry_initial_backoff_ms: {},
-    connect_timeout_ms: {},
-    read_timeout_ms: {},
-    num_tries: {:?},
-    retry_mode: {:?},
-    anonymous: {},
-    use_ssl: {},
-    verify_ssl: {},
+    max_connections: {}
+    retry_initial_backoff_ms: {}
+    connect_timeout_ms: {}
+    read_timeout_ms: {}
+    num_tries: {:?}
+    retry_mode: {:?}
+    anonymous: {}
+    use_ssl: {}
+    verify_ssl: {}
     check_hostname_ssl: {}
     requester_pays: {}
-    force_virtual_addressing: {}",
+    force_virtual_addressing: {}
+    multipart_size: {:?}
+    multipart_max_concurrency: {:?}
+    custom_retry_msgs: {:?}",
             self.region_name,
             self.endpoint_url,
             self.key_id,
@@ -268,7 +279,10 @@ impl Display for S3Config {
             self.verify_ssl,
             self.check_hostname_ssl,
             self.requester_pays,
-            self.force_virtual_addressing
+            self.force_virtual_addressing,
+            self.multipart_size,
+            self.multipart_max_concurrency,
+            self.custom_retry_msgs
         )?;
         Ok(())
     }

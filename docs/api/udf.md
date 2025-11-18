@@ -20,14 +20,20 @@ Learn more about [UDFs](../custom-code/udfs.md) in Daft User Guide.
     options:
         filters: ["!^_", "__call__"]
 
-## `@daft.func` (Next-Generation UDFs)
+## New UDFs
 
-`@daft.func` is a next-generation interface for creating user-defined functions (UDFs) in Daft. It provides a streamlined way to turn Python functions into Daft operations that work seamlessly with DataFrame expressions.
+`@daft.func` and `@daft.cls` are the new interface for creating user-defined functions in Daft. They provide a streamlined way to turn Python functions into Daft operations that work seamlessly with DataFrame expressions.
 
-Learn more about [`@daft.func`](../custom-code/func.md) in Daft User Guide.
+Learn more in the [User Guide](../custom-code/func.md).
 
 ::: daft.func
 
-::: daft.udf.row_wise.RowWiseUdf
+::: daft.udf._FuncDecorator
 
-::: daft.udf.generator.GeneratorUdf
+::: daft.cls
+
+::: daft.method
+
+::: daft.udf._MethodDecorator
+
+::: daft.udf.udf_v2.Func

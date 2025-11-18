@@ -7,11 +7,9 @@ use daft_dsl::{
         bound_col,
         bound_expr::{BoundAggExpr, BoundExpr},
     },
-    is_partition_compatible,
 };
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{
-    ClusteringSpec,
     partitioning::{HashRepartitionConfig, RepartitionSpec},
     stats::StatsState,
 };
@@ -52,7 +50,6 @@ impl AggregateNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         group_by: Vec<BoundExpr>,
         aggs: Vec<BoundAggExpr>,
@@ -60,12 +57,10 @@ impl AggregateNode {
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::node_name(&group_by),
-            vec![child.node_id()],
-            vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             output_schema,
@@ -137,6 +132,10 @@ impl PipelineNodeImpl for AggregateNode {
                     self_clone.aggs.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
+                    LocalNodeContext {
+                        origin_node_id: Some(self_clone.node_id() as usize),
+                        additional: None,
+                    },
                 )
             } else {
                 LocalPhysicalPlan::hash_aggregate(
@@ -145,6 +144,10 @@ impl PipelineNodeImpl for AggregateNode {
                     self_clone.group_by.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
+                    LocalNodeContext {
+                        origin_node_id: Some(self_clone.node_id() as usize),
+                        additional: None,
+                    },
                 )
             }
         })
@@ -234,17 +237,15 @@ impl LogicalPlanToPipelineNodeTranslator {
     fn gen_without_pre_agg(
         &mut self,
         input_node: DistributedPipelineNode,
-        logical_node_id: Option<NodeID>,
         group_by: Vec<BoundExpr>,
         aggregations: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
         partition_by: Vec<BoundExpr>,
     ) -> DaftResult<DistributedPipelineNode> {
         let shuffle = if partition_by.is_empty() {
-            self.gen_gather_node(logical_node_id, input_node)
+            self.gen_gather_node(input_node)
         } else {
             self.gen_shuffle_node(
-                logical_node_id,
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
                     None,
                     partition_by.into_iter().map(|e| e.into()).collect(),
@@ -256,7 +257,6 @@ impl LogicalPlanToPipelineNodeTranslator {
 
         Ok(AggregateNode::new(
             self.get_next_pipeline_node_id(),
-            logical_node_id,
             &self.plan_config,
             group_by,
             aggregations,
@@ -271,14 +271,12 @@ impl LogicalPlanToPipelineNodeTranslator {
     fn gen_with_pre_agg(
         &mut self,
         input_node: DistributedPipelineNode,
-        logical_node_id: Option<NodeID>,
         split_details: GroupByAggSplit,
         output_schema: SchemaRef,
     ) -> DaftResult<DistributedPipelineNode> {
         let num_partitions = input_node.config().clustering_spec.num_partitions();
         let initial_agg = AggregateNode::new(
             self.get_next_pipeline_node_id(),
-            logical_node_id,
             &self.plan_config,
             split_details.first_stage_group_by,
             split_details.first_stage_aggs,
@@ -295,10 +293,9 @@ impl LogicalPlanToPipelineNodeTranslator {
                 .shuffle_aggregation_default_partitions,
         );
         let shuffle = if split_details.partition_by.is_empty() {
-            self.gen_gather_node(logical_node_id, initial_agg)
+            self.gen_gather_node(initial_agg)
         } else {
             self.gen_shuffle_node(
-                logical_node_id,
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
                     Some(num_partitions),
                     split_details
@@ -315,7 +312,6 @@ impl LogicalPlanToPipelineNodeTranslator {
         // Third stage re-agg to compute the final result
         let final_aggregation = AggregateNode::new(
             self.get_next_pipeline_node_id(),
-            logical_node_id,
             &self.plan_config,
             split_details.second_stage_group_by,
             split_details.second_stage_aggs,
@@ -327,7 +323,6 @@ impl LogicalPlanToPipelineNodeTranslator {
         // Last stage project to get the final result
         Ok(ProjectNode::new(
             self.get_next_pipeline_node_id(),
-            logical_node_id,
             &self.plan_config,
             split_details.final_exprs,
             output_schema,
@@ -349,31 +344,14 @@ impl LogicalPlanToPipelineNodeTranslator {
     pub fn gen_agg_nodes(
         &mut self,
         input_node: DistributedPipelineNode,
-        logical_node_id: Option<NodeID>,
         group_by: Vec<BoundExpr>,
         aggregations: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
         partition_by: Vec<BoundExpr>,
     ) -> DaftResult<DistributedPipelineNode> {
-        let input_clustering_spec = &input_node.config().clustering_spec;
-        // If there is only one partition, or the input is already partitioned by the group_by columns,
-        // then we can just do a single stage aggregation and skip the shuffle.
-        let is_hash_partitioned_by_group_by =
-            matches!(input_clustering_spec.as_ref(), ClusteringSpec::Hash(_))
-                && !group_by.is_empty()
-                && is_partition_compatible(
-                    BoundExpr::bind_all(
-                        &input_clustering_spec.partition_by(),
-                        &input_node.config().schema,
-                    )?
-                    .iter()
-                    .map(|e| e.inner()),
-                    group_by.iter().map(|e| e.inner()),
-                );
-        if input_clustering_spec.num_partitions() == 1 || is_hash_partitioned_by_group_by {
+        if Self::needs_hash_repartition(&input_node, &group_by)? {
             return Ok(AggregateNode::new(
                 self.get_next_pipeline_node_id(),
-                logical_node_id,
                 &self.plan_config,
                 group_by,
                 aggregations,
@@ -407,14 +385,13 @@ impl LogicalPlanToPipelineNodeTranslator {
         {
             self.gen_without_pre_agg(
                 input_node,
-                logical_node_id,
                 group_by,
                 aggregations,
                 output_schema,
                 partition_by,
             )
         } else {
-            self.gen_with_pre_agg(input_node, logical_node_id, split_details, output_schema)
+            self.gen_with_pre_agg(input_node, split_details, output_schema)
         }
     }
 }

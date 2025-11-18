@@ -73,11 +73,11 @@ def test_truncated_repr():
     without_escape = ANSI_ESCAPE.sub("", out_repr)
     assert (
         without_escape.replace("\r", "")
-        == """╭───────┬─────────┬────────┬─────────╮
-│ int   ┆ float   ┆ string ┆ bool    │
-│ ---   ┆ ---     ┆ ---    ┆ ---     │
-│ Int64 ┆ Float64 ┆ Utf8   ┆ Boolean │
-╰───────┴─────────┴────────┴─────────╯
+        == """╭───────┬─────────┬────────┬──────╮
+│ int   ┆ float   ┆ string ┆ bool │
+│ ---   ┆ ---     ┆ ---    ┆ ---  │
+│ Int64 ┆ Float64 ┆ String ┆ Bool │
+╰───────┴─────────┴────────┴──────╯
 """
     )
 
@@ -88,7 +88,7 @@ def test_truncated_repr_html():
     assert (
         out_repr
         == f"""<table class="dataframe">
-<thead><tr><th {SCHEMA_TH_STYLE}>int<br />Int64</th><th {SCHEMA_TH_STYLE}>float<br />Float64</th><th {SCHEMA_TH_STYLE}>string<br />Utf8</th><th {SCHEMA_TH_STYLE}>bool<br />Boolean</th></tr></thead>
+<thead><tr><th {SCHEMA_TH_STYLE}>int<br />Int64</th><th {SCHEMA_TH_STYLE}>float<br />Float64</th><th {SCHEMA_TH_STYLE}>string<br />String</th><th {SCHEMA_TH_STYLE}>bool<br />Bool</th></tr></thead>
 </table>"""
     )
 
@@ -106,9 +106,9 @@ def test_repr():
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
 │ float       ┆ Float64 │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ string      ┆ Utf8    │
+│ string      ┆ String  │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-│ bool        ┆ Boolean │
+│ bool        ┆ Bool    │
 ╰─────────────┴─────────╯
 """
     )
@@ -124,8 +124,8 @@ def test_repr_html():
 <tbody>
 <tr><td {SCHEMA_TD_STYLE}>int</td><td {SCHEMA_TD_STYLE}>Int64</td></tr>
 <tr><td {SCHEMA_TD_STYLE}>float</td><td {SCHEMA_TD_STYLE}>Float64</td></tr>
-<tr><td {SCHEMA_TD_STYLE}>string</td><td {SCHEMA_TD_STYLE}>Utf8</td></tr>
-<tr><td {SCHEMA_TD_STYLE}>bool</td><td {SCHEMA_TD_STYLE}>Boolean</td></tr>
+<tr><td {SCHEMA_TD_STYLE}>string</td><td {SCHEMA_TD_STYLE}>String</td></tr>
+<tr><td {SCHEMA_TD_STYLE}>bool</td><td {SCHEMA_TD_STYLE}>Bool</td></tr>
 </tbody>
 </table>"""
     )
