@@ -12,7 +12,7 @@ def test_to_struct():
             "b": ["a", "b", "c", "", "e", None, None],
         }
     )
-    res = df.eval_expression_list([daft.struct(col("a"), col("b"))]).to_pydict()
+    res = df.eval_expression_list([daft.functions.to_struct(col("a"), col("b"))]).to_pydict()
     assert res["struct"] == [
         {"a": 1, "b": "a"},
         {"a": 2, "b": "b"},
@@ -31,7 +31,7 @@ def test_to_struct_subexpr():
             "b": ["a", "b", "c", "", "e", None, None],
         }
     )
-    res = df.eval_expression_list([daft.struct(col("a") * 2, col("b").str.upper())]).to_pydict()
+    res = df.eval_expression_list([daft.functions.to_struct(col("a") * 2, daft.functions.upper(col("b")))]).to_pydict()
     assert res["struct"] == [
         {"a": 2, "b": "A"},
         {"a": 4, "b": "B"},
@@ -50,7 +50,7 @@ def test_to_struct_strs():
             "b": ["a", "b", "c", "", "e", None, None],
         }
     )
-    res = df.eval_expression_list([daft.struct("a", "b")]).to_pydict()
+    res = df.eval_expression_list([daft.functions.to_struct(col("a"), col("b"))]).to_pydict()
     assert res["struct"] == [
         {"a": 1, "b": "a"},
         {"a": 2, "b": "b"},

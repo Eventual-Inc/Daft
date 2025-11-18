@@ -43,9 +43,9 @@ def test_dataloading_from_glue_iceberg(pytestconfig):
         WHERE
             supercategory = 'person'
     """)
-    df = df.with_column("image", df["bucket_url"].url.download().image.decode())
-    df = df.with_column("cropped", df["image"].image.crop(df["bbox"]))
-    df = df.with_column("thumbnail", df["cropped"].image.resize(64, 64))
+    df = df.with_column("image", daft.functions.decode_image(daft.functions.download(df["bucket_url"])))
+    df = df.with_column("cropped", daft.functions.crop(df["image"], df["bbox"]))
+    df = df.with_column("thumbnail", daft.functions.resize(df["cropped"], 64, 64))
     df = df.with_column("image_tensor", df["thumbnail"]).select("id", "annotation_id", "image_tensor").limit(100)
 
     df.collect()

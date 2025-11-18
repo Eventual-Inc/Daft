@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+import daft
 from daft.expressions import col, lit
 from daft.recordbatch import MicroPartition
 
@@ -13,15 +14,15 @@ CONTAINS_DATA = ["x_foo_x", "y_foo_y", "z_bar_z"]
 @pytest.mark.parametrize(
     ["expr", "data"],
     [
-        (col("col").str.endswith("foo"), ENDSWITH_DATA),
-        (col("col").str.endswith(lit("foo")), ENDSWITH_DATA),
-        (col("col").str.endswith(col("emptystrings") + lit("foo")), ENDSWITH_DATA),
-        (col("col").str.startswith("foo"), STARTSWITH_DATA),
-        (col("col").str.startswith(lit("foo")), STARTSWITH_DATA),
-        (col("col").str.startswith(col("emptystrings") + lit("foo")), STARTSWITH_DATA),
-        (col("col").str.contains("foo"), CONTAINS_DATA),
-        (col("col").str.contains(lit("foo")), CONTAINS_DATA),
-        (col("col").str.contains(col("emptystrings") + lit("foo")), CONTAINS_DATA),
+        (daft.functions.endswith(col("col"), "foo"), ENDSWITH_DATA),
+        (daft.functions.endswith(col("col"), lit("foo")), ENDSWITH_DATA),
+        (daft.functions.endswith(col("col"), col("emptystrings") + lit("foo")), ENDSWITH_DATA),
+        (daft.functions.startswith(col("col"), "foo"), STARTSWITH_DATA),
+        (daft.functions.startswith(col("col"), lit("foo")), STARTSWITH_DATA),
+        (daft.functions.startswith(col("col"), col("emptystrings") + lit("foo")), STARTSWITH_DATA),
+        (daft.functions.contains(col("col"), "foo"), CONTAINS_DATA),
+        (daft.functions.contains(col("col"), lit("foo")), CONTAINS_DATA),
+        (daft.functions.contains(col("col"), col("emptystrings") + lit("foo")), CONTAINS_DATA),
     ],
 )
 def test_utf8_substrs(expr, data):

@@ -4,7 +4,8 @@ import pytest
 
 import daft
 from daft import DataType as dt
-from daft import col, list_, lit
+from daft import col, lit
+from daft.functions import to_list as list_
 
 
 def test_list_constructor_empty():
@@ -39,14 +40,14 @@ def test_list_constructor_with_lit_last():
 
 def test_list_constructor_multi_column():
     df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-    df = df.select(list_("x", "y").alias("fwd"), list_("y", "x").alias("rev"))
+    df = df.select(list_(col("x"), col("y")).alias("fwd"), list_(col("y"), col("x")).alias("rev"))
     assert df.to_pydict() == {"fwd": [[1, 4], [2, 5], [3, 6]], "rev": [[4, 1], [5, 2], [6, 3]]}
 
 
 def test_list_constructor_different_lengths():
     with pytest.raises(Exception, match="Expected all columns to be of the same length"):
         df = daft.from_pydict({"x": [1, 2], "y": [3]})
-        df = df.select(list_("x", "y"))
+        df = df.select(list_(col("x"), col("y")))
 
 
 def test_list_constructor_singleton():
@@ -57,13 +58,13 @@ def test_list_constructor_singleton():
 
 def test_list_constructor_homogeneous():
     df = daft.from_pydict({"x": [1, 2, 3]})
-    df = df.select(list_("x", col("x") * 2, col("x") * 3).alias("homogeneous"))
+    df = df.select(list_(col("x"), col("x") * 2, col("x") * 3).alias("homogeneous"))
     assert df.to_pydict() == {"homogeneous": [[1, 2, 3], [2, 4, 6], [3, 6, 9]]}
 
 
 def test_list_constructor_heterogeneous():
     df = daft.from_pydict({"x": [1, 2, 3], "y": [True, True, False]})
-    df = df.select(list_("x", "y").alias("heterogeneous"))
+    df = df.select(list_(col("x"), col("y")).alias("heterogeneous"))
     assert df.to_pydict() == {"heterogeneous": [[1, 1], [2, 1], [3, 0]]}
 
 

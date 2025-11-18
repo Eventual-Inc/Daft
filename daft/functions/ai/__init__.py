@@ -2,24 +2,15 @@
 
 from __future__ import annotations
 
-import inspect
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from daft import (
-    DataType,
-    Expression,
-    Series,
-    col,
-    udf,
-    current_session,
-    current_provider,
-)
-from daft.ai.provider import Provider, ProviderType, load_provider, PROVIDERS
-from daft.functions.misc import when
+from daft.ai.provider import Provider, ProviderType, load_provider
+from daft.datatype import DataType
+from daft.expressions import Expression
+from daft.session import current_provider, current_session
 from daft.udf import cls as daft_cls, method
 
 if TYPE_CHECKING:
-    from typing import Literal
     from pydantic import BaseModel
     from daft.ai.typing import Label
 
@@ -211,7 +202,8 @@ def embed_image(
 
     # Decorate the __call__ method with @daft.method to specify return_dtype
     _ImageEmbedderExpression.__call__ = method.batch(  # type: ignore[method-assign] # type: ignore[method-assign] # type: ignore[method-assign]
-        method=_ImageEmbedderExpression.__call__, return_dtype=image_embedder.get_dimensions().as_dtype()
+        method=_ImageEmbedderExpression.__call__,
+        return_dtype=image_embedder.get_dimensions().as_dtype(),
     )
 
     wrapped_cls = daft_cls(

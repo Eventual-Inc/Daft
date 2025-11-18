@@ -72,50 +72,58 @@ def test_utf8_exprs():
     actual = daft.sql(sql).collect()
     expected = (
         df.select(
-            col("a").str.endswith("a").alias("ends_with_a"),
-            col("a").str.startswith("a").alias("starts_with_a"),
-            col("a").str.contains("a").alias("contains_a"),
-            col("a").str.split(" ").alias("split_a"),
-            col("a").str.match("ba.").alias("match_a"),
-            col("a").str.extract("ba.").alias("extract_a"),
-            col("a").str.extract_all("ba.").alias("extract_all_a"),
-            col("a").str.split(r"\s+", regex=True).alias("regexp_split_a"),
-            col("a").str.replace("ba.", "foo", regex=True).alias("replace_a"),
-            col("a").str.length().alias("length_a"),
-            col("a").str.length_bytes().alias("length_bytes_a"),
-            col("a").str.lower().alias("lower_a"),
-            col("a").str.lstrip().alias("lstrip_a"),
-            col("a").str.rstrip().alias("rstrip_a"),
-            col("a").str.reverse().alias("reverse_a"),
-            col("a").str.capitalize().alias("capitalize_a"),
-            col("a").str.left(4).alias("left_a"),
-            col("a").str.right(4).alias("right_a"),
-            col("a").str.find("a").alias("find_a"),
-            col("a").str.rpad(10, "<").alias("rpad_a"),
-            col("a").str.lpad(10, ">").alias("lpad_a"),
-            col("a").str.repeat(2).alias("repeat_a"),
-            col("a").str.like("a%").alias("like_a"),
-            col("a").str.ilike("a%").alias("ilike_a"),
-            col("a").str.substr(1, 3).alias("substring_a"),
-            col("a").str.count_matches("a").alias("count_matches_a_0"),
-            col("a").str.count_matches("a", case_sensitive=True).alias("count_matches_a_1"),
-            col("a").str.count_matches("a", case_sensitive=False, whole_words=False).alias("count_matches_a_2"),
-            col("a").str.count_matches("a", case_sensitive=True, whole_words=True).alias("count_matches_a_3"),
-            col("a").str.normalize().alias("normalize_a"),
-            col("a").str.normalize(remove_punct=True).alias("normalize_remove_punct_a"),
-            col("a").str.normalize(remove_punct=True, lowercase=True).alias("normalize_remove_punct_lower_a"),
-            col("a")
-            .str.normalize(remove_punct=True, lowercase=True, white_space=True)
-            .alias("normalize_remove_punct_lower_ws_a"),
-            col("a").str.tokenize_encode("r50k_base").alias("tokenize_encode_a"),
-            col("a").str.tokenize_encode("r50k_base").str.tokenize_decode("r50k_base").alias("tokenize_decode_a"),
-            col("a").str.concat("---").alias("concat_a"),
-            daft.lit("--")
-            .str.concat(col("a"))
-            .str.concat(col("a"))
-            .str.concat(col("a"))
-            .str.concat("--")
-            .alias("concat_multi_a"),
+            daft.functions.endswith(col("a"), "a").alias("ends_with_a"),
+            daft.functions.startswith(col("a"), "a").alias("starts_with_a"),
+            daft.functions.contains(col("a"), "a").alias("contains_a"),
+            daft.functions.split(col("a"), " ").alias("split_a"),
+            daft.functions.regexp(col("a"), "ba.").alias("match_a"),
+            daft.functions.regexp_extract(col("a"), "ba.").alias("extract_a"),
+            daft.functions.regexp_extract_all(col("a"), "ba.").alias("extract_all_a"),
+            daft.functions.regexp_split(col("a"), r"\s+").alias("regexp_split_a"),
+            daft.functions.regexp_replace(col("a"), "ba.", "foo").alias("replace_a"),
+            daft.functions.length(col("a")).alias("length_a"),
+            daft.functions.length_bytes(col("a")).alias("length_bytes_a"),
+            daft.functions.lower(col("a")).alias("lower_a"),
+            daft.functions.lstrip(col("a")).alias("lstrip_a"),
+            daft.functions.rstrip(col("a")).alias("rstrip_a"),
+            daft.functions.reverse(col("a")).alias("reverse_a"),
+            daft.functions.capitalize(col("a")).alias("capitalize_a"),
+            daft.functions.left(col("a"), 4).alias("left_a"),
+            daft.functions.right(col("a"), 4).alias("right_a"),
+            daft.functions.find(col("a"), "a").alias("find_a"),
+            daft.functions.rpad(col("a"), 10, "<").alias("rpad_a"),
+            daft.functions.lpad(col("a"), 10, ">").alias("lpad_a"),
+            daft.functions.repeat(col("a"), 2).alias("repeat_a"),
+            daft.functions.like(col("a"), "a%").alias("like_a"),
+            daft.functions.ilike(col("a"), "a%").alias("ilike_a"),
+            daft.functions.substr(col("a"), 1, 3).alias("substring_a"),
+            daft.functions.count_matches(col("a"), "a").alias("count_matches_a_0"),
+            daft.functions.count_matches(col("a"), "a", case_sensitive=True).alias("count_matches_a_1"),
+            daft.functions.count_matches(col("a"), "a", case_sensitive=False, whole_words=False).alias(
+                "count_matches_a_2"
+            ),
+            daft.functions.count_matches(col("a"), "a", case_sensitive=True, whole_words=True).alias(
+                "count_matches_a_3"
+            ),
+            daft.functions.normalize(col("a")).alias("normalize_a"),
+            daft.functions.normalize(col("a"), remove_punct=True).alias("normalize_remove_punct_a"),
+            daft.functions.normalize(col("a"), remove_punct=True, lowercase=True).alias(
+                "normalize_remove_punct_lower_a"
+            ),
+            daft.functions.normalize(col("a"), remove_punct=True, lowercase=True, white_space=True).alias(
+                "normalize_remove_punct_lower_ws_a"
+            ),
+            daft.functions.tokenize_encode(col("a"), "r50k_base").alias("tokenize_encode_a"),
+            daft.functions.tokenize_decode(daft.functions.tokenize_encode(col("a"), "r50k_base"), "r50k_base").alias(
+                "tokenize_decode_a"
+            ),
+            daft.functions.concat(col("a"), "---").alias("concat_a"),
+            daft.functions.concat(
+                daft.functions.concat(
+                    daft.functions.concat(daft.functions.concat(daft.lit("--"), col("a")), col("a")), col("a")
+                ),
+                "--",
+            ).alias("concat_multi_a"),
         )
         .collect()
         .to_pydict()

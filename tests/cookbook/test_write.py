@@ -99,13 +99,13 @@ def test_parquet_write_with_partitioning_readback_values(tmp_path, with_morsel_s
     "exp,key,answer",
     [
         (
-            daft.col("date").partitioning.days(),
+            daft.functions.partition_days(daft.col("date")),
             "date_days",
             [date(2024, 1, 1), date(2024, 2, 1), date(2024, 3, 1), date(2024, 4, 1), date(2024, 5, 1)],
         ),
-        (daft.col("date").partitioning.hours(), "date_hours", [473352, 474096, 474792, 475536, 476256]),
-        (daft.col("date").partitioning.months(), "date_months", [648, 649, 650, 651, 652]),
-        (daft.col("date").partitioning.years(), "date_years", [54]),
+        (daft.functions.partition_hours(daft.col("date")), "date_hours", [473352, 474096, 474792, 475536, 476256]),
+        (daft.functions.partition_months(daft.col("date")), "date_months", [648, 649, 650, 651, 652]),
+        (daft.functions.partition_years(daft.col("date")), "date_years", [54]),
     ],
 )
 def test_parquet_write_with_iceberg_date_partitioning(exp, key, answer, tmp_path, with_morsel_size):
@@ -131,8 +131,8 @@ def test_parquet_write_with_iceberg_date_partitioning(exp, key, answer, tmp_path
 @pytest.mark.parametrize(
     "exp,key,answer",
     [
-        (daft.col("id").partitioning.iceberg_bucket(10), "id_bucket", [0, 3, 5, 6, 8]),
-        (daft.col("id").partitioning.iceberg_truncate(10), "id_trunc", [0, 10, 20, 40]),
+        (daft.functions.partition_iceberg_bucket(daft.col("id"), 10), "id_bucket", [0, 3, 5, 6, 8]),
+        (daft.functions.partition_iceberg_truncate(daft.col("id"), 10), "id_trunc", [0, 10, 20, 40]),
     ],
 )
 def test_parquet_write_with_iceberg_bucket_and_trunc(exp, key, answer, tmp_path, with_morsel_size):

@@ -120,7 +120,7 @@ def test_repr_functions_sign() -> None:
 
 def test_repr_functions_signum() -> None:
     a = col("a")
-    y = a.signum()
+    y = a.sign()
     repr_out = repr(y)
     assert repr_out == "sign(col(a))"
     copied = copy.deepcopy(y)
@@ -138,7 +138,7 @@ def test_repr_functions_negate() -> None:
 
 def test_repr_functions_negative() -> None:
     a = col("a")
-    y = a.negative()
+    y = a.negate()
     repr_out = repr(y)
     assert repr_out == "negative(col(a))"
     copied = copy.deepcopy(y)
@@ -297,7 +297,9 @@ def test_repr_functions_arcsinh() -> None:
 
 def test_repr_functions_unix_date() -> None:
     a = col("a")
-    y = a.dt.unix_date()
+    from daft.functions import unix_date
+
+    y = unix_date(a)
     repr_out = repr(y)
     assert repr_out == "unix_date(col(a))"
     copied = copy.deepcopy(y)
@@ -306,7 +308,9 @@ def test_repr_functions_unix_date() -> None:
 
 def test_repr_functions_day() -> None:
     a = col("a")
-    y = a.dt.day()
+    from daft.functions import day
+
+    y = day(a)
     repr_out = repr(y)
     assert repr_out == "day(col(a))"
     copied = copy.deepcopy(y)
@@ -315,7 +319,9 @@ def test_repr_functions_day() -> None:
 
 def test_repr_functions_month() -> None:
     a = col("a")
-    y = a.dt.month()
+    from daft.functions import month
+
+    y = month(a)
     repr_out = repr(y)
     assert repr_out == "month(col(a))"
     copied = copy.deepcopy(y)
@@ -324,7 +330,9 @@ def test_repr_functions_month() -> None:
 
 def test_repr_functions_quarter() -> None:
     a = col("a")
-    y = a.dt.quarter()
+    from daft.functions import quarter
+
+    y = quarter(a)
     repr_out = repr(y)
     assert repr_out == "quarter(col(a))"
     copied = copy.deepcopy(y)
@@ -333,7 +341,9 @@ def test_repr_functions_quarter() -> None:
 
 def test_repr_functions_year() -> None:
     a = col("a")
-    y = a.dt.year()
+    from daft.functions import year
+
+    y = year(a)
     repr_out = repr(y)
     assert repr_out == "year(col(a))"
     copied = copy.deepcopy(y)
@@ -342,7 +352,9 @@ def test_repr_functions_year() -> None:
 
 def test_repr_functions_day_of_week() -> None:
     a = col("a")
-    y = a.dt.day_of_week()
+    from daft.functions import day_of_week
+
+    y = day_of_week(a)
     repr_out = repr(y)
     assert repr_out == "day_of_week(col(a))"
     copied = copy.deepcopy(y)
@@ -351,7 +363,9 @@ def test_repr_functions_day_of_week() -> None:
 
 def test_repr_functions_day_of_month() -> None:
     a = col("a")
-    y = a.dt.day_of_month()
+    from daft.functions import day_of_month
+
+    y = day_of_month(a)
     repr_out = repr(y)
     assert repr_out == "day_of_month(col(a))"
     copied = copy.deepcopy(y)
@@ -360,7 +374,9 @@ def test_repr_functions_day_of_month() -> None:
 
 def test_repr_functions_day_of_year() -> None:
     a = col("a")
-    y = a.dt.day_of_year()
+    from daft.functions import day_of_year
+
+    y = day_of_year(a)
     repr_out = repr(y)
     assert repr_out == "day_of_year(col(a))"
     copied = copy.deepcopy(y)
@@ -369,7 +385,9 @@ def test_repr_functions_day_of_year() -> None:
 
 def test_repr_functions_week_of_year() -> None:
     a = col("a")
-    y = a.dt.week_of_year()
+    from daft.functions import week_of_year
+
+    y = week_of_year(a)
     repr_out = repr(y)
     assert repr_out == "week_of_year(col(a))"
     copied = copy.deepcopy(y)
@@ -450,7 +468,9 @@ def test_repr_functions_minhash_2() -> None:
 
 def test_repr_functions_tokenize_encode() -> None:
     a = col("a")
-    y = a.str.tokenize_encode("cl100k_base")
+    from daft.functions import tokenize_encode
+
+    y = tokenize_encode(a, "cl100k_base")
     repr_out = repr(y)
     assert repr_out == 'tokenize_encode(col(a), lit("cl100k_base"))'
     copied = copy.deepcopy(y)
@@ -459,7 +479,9 @@ def test_repr_functions_tokenize_encode() -> None:
 
 def test_repr_functions_tokenize_decode() -> None:
     a = col("a")
-    y = a.str.tokenize_decode("cl100k_base")
+    from daft.functions import tokenize_decode
+
+    y = tokenize_decode(a, "cl100k_base")
     repr_out = repr(y)
     assert repr_out == 'tokenize_decode(col(a), lit("cl100k_base"))'
     copied = copy.deepcopy(y)
@@ -477,7 +499,9 @@ def test_expr_structurally_equal() -> None:
 def test_str_concat_delegation() -> None:
     a = col("a")
     b = "foo"
-    c = a.str.concat(b)
+    from daft.functions import concat
+
+    c = concat(a, b)
     expected = a + lit(b)
     assert expr_structurally_equal(c, expected)
     output = repr(c)
@@ -486,21 +510,27 @@ def test_str_concat_delegation() -> None:
 
 def test_float_is_nan() -> None:
     a = col("a")
-    c = a.float.is_nan()
+    from daft.functions import is_nan
+
+    c = is_nan(a)
     output = repr(c)
     assert output == "is_nan(col(a))"
 
 
 def test_float_is_inf() -> None:
     a = col("a")
-    c = a.float.is_inf()
+    from daft.functions import is_inf
+
+    c = is_inf(a)
     output = repr(c)
     assert output == "is_inf(col(a))"
 
 
 def test_float_not_nan() -> None:
     a = col("a")
-    c = a.float.not_nan()
+    from daft.functions import not_nan
+
+    c = not_nan(a)
     output = repr(c)
     assert output == "not_nan(col(a))"
 
@@ -651,7 +681,7 @@ def test_list_value_counts():
     )
 
     # Apply list_value_counts operation
-    result = mp.eval_expression_list([col("list_col").list.value_counts().alias("value_counts")])
+    result = mp.eval_expression_list([daft.functions.value_counts(col("list_col")).alias("value_counts")])
     value_counts = result.to_pydict()["value_counts"]
 
     # Expected output
@@ -663,12 +693,12 @@ def test_list_value_counts():
     # Test with empty input (no proper type -> should raise error)
     empty_mp = MicroPartition.from_pydict({"list_col": []})
     with pytest.raises(ValueError):
-        empty_mp.eval_expression_list([col("list_col").list.value_counts().alias("value_counts")])
+        empty_mp.eval_expression_list([daft.functions.value_counts(col("list_col")).alias("value_counts")])
 
     # Test with empty input (no proper type -> should raise error)
     none_mp = MicroPartition.from_pydict({"list_col": [None, None, None]})
     with pytest.raises(ValueError):
-        none_mp.eval_expression_list([col("list_col").list.value_counts().alias("value_counts")])
+        none_mp.eval_expression_list([daft.functions.value_counts(col("list_col")).alias("value_counts")])
 
 
 def test_list_value_counts_nested():
@@ -687,7 +717,7 @@ def test_list_value_counts_nested():
     )
 
     # Apply list_value_counts operation and expect an exception
-    result = mp.eval_expression_list([col("nested_list_col").list.value_counts().alias("value_counts")])
+    result = mp.eval_expression_list([daft.functions.value_counts(col("nested_list_col")).alias("value_counts")])
     result_dict = result.to_pydict()
 
     assert result_dict["value_counts"] == [
@@ -721,7 +751,7 @@ def test_list_value_counts_fixed_size():
     df = df.with_column("fixed_list", col("fixed_list").cast(DataType.fixed_size_list(DataType.int64(), 3)))
 
     # Get value counts
-    result = df.with_column("value_counts", col("fixed_list").list.value_counts())
+    result = df.with_column("value_counts", daft.functions.value_counts(col("fixed_list")))
 
     # Verify the value counts
     result_dict = result.to_pydict()
@@ -742,7 +772,7 @@ def test_list_value_counts_degenerate():
     empty_mp = MicroPartition.from_pydict({"empty_list_col": pa.array([], type=pa.list_(pa.string()))})
 
     # Apply list_value_counts operation
-    result = empty_mp.eval_expression_list([col("empty_list_col").list.value_counts().alias("value_counts")])
+    result = empty_mp.eval_expression_list([daft.functions.value_counts(col("empty_list_col")).alias("value_counts")])
 
     # Check the result
     assert result.to_pydict() == {"value_counts": []}
@@ -750,7 +780,9 @@ def test_list_value_counts_degenerate():
     # Test with null values
     null_mp = MicroPartition.from_pydict({"null_list_col": pa.array([None, None], type=pa.list_(pa.string()))})
 
-    result_null = null_mp.eval_expression_list([col("null_list_col").list.value_counts().alias("value_counts")])
+    result_null = null_mp.eval_expression_list(
+        [daft.functions.value_counts(col("null_list_col")).alias("value_counts")]
+    )
 
     # Check the result for null values
     assert result_null.to_pydict() == {"value_counts": [[], []]}

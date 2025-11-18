@@ -9,7 +9,7 @@ from tests.recordbatch.image.conftest import MODE_TO_NUM_CHANNELS
 @pytest.mark.parametrize("attr", ["width", "height", "channel", "mode"])
 def test_image_attribute_mixed_shape(mixed_shape_data_fixture, attr):
     table = daft.from_pydict({"images": mixed_shape_data_fixture})
-    table = table.with_column(attr, daft.col("images").image.attribute(attr))
+    table = table.with_column(attr, daft.functions.image_attribute(daft.col("images"), attr))
     values = table.to_pydict()[attr]
 
     image_dtype = mixed_shape_data_fixture.datatype()
@@ -33,14 +33,14 @@ def test_image_direct_attribute_methods(mixed_shape_data_fixture):
 
     table = table.with_columns(
         {
-            "width": table["images"].image.width(),
-            "height": table["images"].image.height(),
-            "channel": table["images"].image.channel(),
-            "mode": table["images"].image.mode(),
-            "width_old": table["images"].image.attribute("width"),
-            "height_old": table["images"].image.attribute("height"),
-            "channel_old": table["images"].image.attribute("channel"),
-            "mode_old": table["images"].image.attribute("mode"),
+            "width": daft.functions.image_width(table["images"]),
+            "height": daft.functions.image_height(table["images"]),
+            "channel": daft.functions.image_channel(table["images"]),
+            "mode": daft.functions.image_mode(table["images"]),
+            "width_old": daft.functions.image_attribute(table["images"], "width"),
+            "height_old": daft.functions.image_attribute(table["images"], "height"),
+            "channel_old": daft.functions.image_attribute(table["images"], "channel"),
+            "mode_old": daft.functions.image_attribute(table["images"], "mode"),
         }
     )
 

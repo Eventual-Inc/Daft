@@ -156,8 +156,10 @@ def test_table_numeric_sign(fun: str) -> None:
     my_schema = pa.schema([pa.field("uint8", pa.uint8())])
     table_Unsign = MicroPartition.from_arrow(pa.Table.from_arrays([pa.array([None, 0, 1, 2, 3])], schema=my_schema))
 
-    sign_table = table.eval_expression_list([getattr(col("a"), fun)(), getattr(col("b"), fun)()])
-    unsign_sign_table = table_Unsign.eval_expression_list([getattr(col("uint8"), fun)()])
+    # signum is deprecated, use sign instead
+    actual_fun = "sign" if fun == "signum" else fun
+    sign_table = table.eval_expression_list([getattr(col("a"), actual_fun)(), getattr(col("b"), actual_fun)()])
+    unsign_sign_table = table_Unsign.eval_expression_list([getattr(col("uint8"), actual_fun)()])
 
     def checkSign(val):
         if val < 0:
@@ -189,10 +191,12 @@ def test_table_numeric_sign(fun: str) -> None:
 def test_table_sign_bad_input(fun: str) -> None:
     table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
 
-    mapping = {"negate": "negative", "signum": "sign"}
+    mapping = {"negate": "negate", "signum": "sign", "negative": "negate"}
     true_fun = mapping[fun] if fun in mapping else fun
-    with pytest.raises(ValueError, match=f"Expected input to {true_fun} to be numeric"):
-        table.eval_expression_list([getattr(col("a"), fun)()])
+    # The error message uses "negative" even though the function is "negate"
+    error_msg = "negative" if fun in ("negate", "negative") else true_fun
+    with pytest.raises(ValueError, match=f"Expected input to {error_msg} to be numeric"):
+        table.eval_expression_list([getattr(col("a"), true_fun)()])
 
 
 @pytest.mark.parametrize(
@@ -209,7 +213,9 @@ def test_table_numeric_negative(fun: str) -> None:
             "b": [-1.7, -1.5, -1.3, 0.3, 0.7, None, None],
         }
     )
-    sign_table = table.eval_expression_list([getattr(col("a"), fun)(), getattr(col("b"), fun)()])
+    # negative is deprecated, use negate instead
+    actual_fun = "negate" if fun == "negative" else fun
+    sign_table = table.eval_expression_list([getattr(col("a"), actual_fun)(), getattr(col("b"), actual_fun)()])
 
     # Check signed integers
     a_result = sign_table.to_pydict()["a"]

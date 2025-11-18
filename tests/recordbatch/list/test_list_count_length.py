@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+import daft
 from daft.daft import CountMode
 from daft.datatype import DataType
 from daft.expressions import col
@@ -21,32 +22,32 @@ def fixed_table():
 
 
 def test_list_length(table):
-    result = table.eval_expression_list([col("col").list.length()])
+    result = table.eval_expression_list([daft.functions.length(col("col"))])
     assert result.to_pydict() == {"col": [None, 0, 1, 1, 2, 2, 3]}
 
 
 def test_fixed_list_length(fixed_table):
-    result = fixed_table.eval_expression_list([col("col").list.length()])
+    result = fixed_table.eval_expression_list([daft.functions.length(col("col"))])
     assert result.to_pydict() == {"col": [2, 2, 2, 2, None]}
 
 
 def test_list_count(table):
-    result = table.eval_expression_list([col("col").list.count(CountMode.All)])
+    result = table.eval_expression_list([daft.functions.list_count(col("col"), CountMode.All)])
     assert result.to_pydict() == {"col": [None, 0, 1, 1, 2, 2, 3]}
 
-    result = table.eval_expression_list([col("col").list.count(CountMode.Valid)])
+    result = table.eval_expression_list([daft.functions.list_count(col("col"), CountMode.Valid)])
     assert result.to_pydict() == {"col": [None, 0, 1, 0, 2, 1, 2]}
 
-    result = table.eval_expression_list([col("col").list.count(CountMode.Null)])
+    result = table.eval_expression_list([daft.functions.list_count(col("col"), CountMode.Null)])
     assert result.to_pydict() == {"col": [None, 0, 0, 1, 0, 1, 1]}
 
 
 def test_fixed_list_count(fixed_table):
-    result = fixed_table.eval_expression_list([col("col").list.count(CountMode.All)])
+    result = fixed_table.eval_expression_list([daft.functions.list_count(col("col"), CountMode.All)])
     assert result.to_pydict() == {"col": [2, 2, 2, 2, None]}
 
-    result = fixed_table.eval_expression_list([col("col").list.count(CountMode.Valid)])
+    result = fixed_table.eval_expression_list([daft.functions.list_count(col("col"), CountMode.Valid)])
     assert result.to_pydict() == {"col": [2, 2, 1, 0, None]}
 
-    result = fixed_table.eval_expression_list([col("col").list.count(CountMode.Null)])
+    result = fixed_table.eval_expression_list([daft.functions.list_count(col("col"), CountMode.Null)])
     assert result.to_pydict() == {"col": [0, 0, 1, 2, None]}

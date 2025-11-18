@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import daft
 from daft.expressions import col
 from daft.recordbatch import MicroPartition
 
 
 def test_utf8_ilike():
     table = MicroPartition.from_pydict({"col": ["foo", None, "barBaz", "quux", "1"]})
-    result = table.eval_expression_list([col("col").str.ilike("Foo%")])
+    result = table.eval_expression_list([daft.functions.ilike(col("col"), "Foo%")])
     assert result.to_pydict() == {"col": [True, None, False, False, False]}

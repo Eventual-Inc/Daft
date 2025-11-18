@@ -9,10 +9,10 @@ import pytest
 from daft.expressions import (
     Expression,
     col,
-    list_,
     lit,
 )
 from daft.expressions.visitor import PredicateVisitor
+from daft.functions import to_list as list_
 from daft.logical.schema import DataType
 from daft.series import Series
 

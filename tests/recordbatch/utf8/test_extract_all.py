@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+import daft
 from daft.expressions import col, lit
 from daft.recordbatch import MicroPartition
 
@@ -11,10 +12,18 @@ REGEX = r"\d+"
 @pytest.mark.parametrize(
     ["expr", "data", "expected"],
     [
-        (col("col").str.extract_all(REGEX), ["1 2 3", "4 5 6", "a b c"], [["1", "2", "3"], ["4", "5", "6"], []]),
-        (col("col").str.extract_all(lit(REGEX)), ["1 2 3", "4 5 6", "a b c"], [["1", "2", "3"], ["4", "5", "6"], []]),
         (
-            col("col").str.extract_all(col("emptystrings") + lit(REGEX)),
+            daft.functions.regexp_extract_all(col("col"), REGEX),
+            ["1 2 3", "4 5 6", "a b c"],
+            [["1", "2", "3"], ["4", "5", "6"], []],
+        ),
+        (
+            daft.functions.regexp_extract_all(col("col"), lit(REGEX)),
+            ["1 2 3", "4 5 6", "a b c"],
+            [["1", "2", "3"], ["4", "5", "6"], []],
+        ),
+        (
+            daft.functions.regexp_extract_all(col("col"), col("emptystrings") + lit(REGEX)),
             ["1 2 3", "4 5 6", "a b c"],
             [["1", "2", "3"], ["4", "5", "6"], []],
         ),

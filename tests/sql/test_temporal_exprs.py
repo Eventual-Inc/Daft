@@ -29,33 +29,33 @@ def test_temporals():
     bindings = {"test": df}
 
     expected = df.select(
-        daft.col("datetimes").dt.date().alias("date"),
-        daft.col("datetimes").dt.day().alias("day"),
-        daft.col("datetimes").dt.day_of_week().alias("day_of_week"),
-        daft.col("datetimes").dt.day_of_month().alias("day_of_month"),
-        daft.col("datetimes").dt.day_of_year().alias("day_of_year"),
-        daft.col("datetimes").dt.week_of_year().alias("week_of_year"),
-        daft.col("datetimes").dt.hour().alias("hour"),
-        daft.col("datetimes").dt.minute().alias("minute"),
-        daft.col("datetimes").dt.month().alias("month"),
-        daft.col("datetimes").dt.second().alias("second"),
-        daft.col("datetimes").dt.millisecond().alias("millisecond"),
-        daft.col("datetimes").dt.microsecond().alias("microsecond"),
-        daft.col("datetimes").dt.nanosecond().alias("nanosecond"),
-        daft.col("datetimes").dt.quarter().alias("quarter"),
-        daft.col("datetimes").dt.year().alias("year"),
-        daft.col("datetimes").dt.unix_date().alias("unix_date"),
-        daft.col("datetimes").dt.to_unix_epoch().alias("to_unix_epoch"),
-        daft.col("datetimes").dt.to_unix_epoch("s").alias("to_unix_epoch_s"),
-        daft.col("datetimes").dt.to_unix_epoch("ms").alias("to_unix_epoch_ms"),
-        daft.col("datetimes").dt.to_unix_epoch("us").alias("to_unix_epoch_us"),
-        daft.col("datetimes").dt.to_unix_epoch("ns").alias("to_unix_epoch_ns"),
-        daft.col("datetimes").dt.to_unix_epoch("seconds").alias("to_unix_epoch_seconds"),
-        daft.col("datetimes").dt.to_unix_epoch("milliseconds").alias("to_unix_epoch_milliseconds"),
-        daft.col("datetimes").dt.to_unix_epoch("microseconds").alias("to_unix_epoch_microseconds"),
-        daft.col("datetimes").dt.to_unix_epoch("nanoseconds").alias("to_unix_epoch_nanoseconds"),
-        daft.col("datetimes").dt.strftime().alias("date_str"),
-        daft.col("times").dt.strftime().alias("time_str"),
+        daft.functions.date(daft.col("datetimes")).alias("date"),
+        daft.functions.day(daft.col("datetimes")).alias("day"),
+        daft.functions.day_of_week(daft.col("datetimes")).alias("day_of_week"),
+        daft.functions.day_of_month(daft.col("datetimes")).alias("day_of_month"),
+        daft.functions.day_of_year(daft.col("datetimes")).alias("day_of_year"),
+        daft.functions.week_of_year(daft.col("datetimes")).alias("week_of_year"),
+        daft.functions.hour(daft.col("datetimes")).alias("hour"),
+        daft.functions.minute(daft.col("datetimes")).alias("minute"),
+        daft.functions.month(daft.col("datetimes")).alias("month"),
+        daft.functions.second(daft.col("datetimes")).alias("second"),
+        daft.functions.millisecond(daft.col("datetimes")).alias("millisecond"),
+        daft.functions.microsecond(daft.col("datetimes")).alias("microsecond"),
+        daft.functions.nanosecond(daft.col("datetimes")).alias("nanosecond"),
+        daft.functions.quarter(daft.col("datetimes")).alias("quarter"),
+        daft.functions.year(daft.col("datetimes")).alias("year"),
+        daft.functions.unix_date(daft.col("datetimes")).alias("unix_date"),
+        daft.functions.to_unix_epoch(daft.col("datetimes")).alias("to_unix_epoch"),
+        daft.functions.to_unix_epoch(daft.col("datetimes"), "s").alias("to_unix_epoch_s"),
+        daft.functions.to_unix_epoch(daft.col("datetimes"), "ms").alias("to_unix_epoch_ms"),
+        daft.functions.to_unix_epoch(daft.col("datetimes"), "us").alias("to_unix_epoch_us"),
+        daft.functions.to_unix_epoch(daft.col("datetimes"), "ns").alias("to_unix_epoch_ns"),
+        daft.functions.to_unix_epoch(daft.col("datetimes"), "seconds").alias("to_unix_epoch_seconds"),
+        daft.functions.to_unix_epoch(daft.col("datetimes"), "milliseconds").alias("to_unix_epoch_milliseconds"),
+        daft.functions.to_unix_epoch(daft.col("datetimes"), "microseconds").alias("to_unix_epoch_microseconds"),
+        daft.functions.to_unix_epoch(daft.col("datetimes"), "nanoseconds").alias("to_unix_epoch_nanoseconds"),
+        daft.functions.strftime(daft.col("datetimes")).alias("date_str"),
+        daft.functions.strftime(daft.col("times")).alias("time_str"),
     ).collect()
 
     actual = daft.sql(
@@ -111,22 +111,22 @@ def test_extract():
     )
 
     expected = df.select(
-        daft.col("datetimes").dt.date().alias("date"),
-        daft.col("datetimes").dt.day().alias("day"),
-        daft.col("datetimes").dt.day_of_week().alias("day_of_week"),
-        daft.col("datetimes").dt.day_of_month().alias("day_of_month"),
-        daft.col("datetimes").dt.day_of_year().alias("day_of_year"),
-        daft.col("datetimes").dt.week_of_year().alias("week_of_year"),
-        daft.col("datetimes").dt.hour().alias("hour"),
-        daft.col("datetimes").dt.minute().alias("minute"),
-        daft.col("datetimes").dt.month().alias("month"),
-        daft.col("datetimes").dt.second().alias("second"),
-        daft.col("datetimes").dt.millisecond().alias("millisecond"),
-        daft.col("datetimes").dt.microsecond().alias("microsecond"),
-        daft.col("datetimes").dt.nanosecond().alias("nanosecond"),
-        daft.col("datetimes").dt.quarter().alias("quarter"),
-        daft.col("datetimes").dt.year().alias("year"),
-        daft.col("datetimes").dt.unix_date().alias("unix_date"),
+        daft.functions.date(daft.col("datetimes")).alias("date"),
+        daft.functions.day(daft.col("datetimes")).alias("day"),
+        daft.functions.day_of_week(daft.col("datetimes")).alias("day_of_week"),
+        daft.functions.day_of_month(daft.col("datetimes")).alias("day_of_month"),
+        daft.functions.day_of_year(daft.col("datetimes")).alias("day_of_year"),
+        daft.functions.week_of_year(daft.col("datetimes")).alias("week_of_year"),
+        daft.functions.hour(daft.col("datetimes")).alias("hour"),
+        daft.functions.minute(daft.col("datetimes")).alias("minute"),
+        daft.functions.month(daft.col("datetimes")).alias("month"),
+        daft.functions.second(daft.col("datetimes")).alias("second"),
+        daft.functions.millisecond(daft.col("datetimes")).alias("millisecond"),
+        daft.functions.microsecond(daft.col("datetimes")).alias("microsecond"),
+        daft.functions.nanosecond(daft.col("datetimes")).alias("nanosecond"),
+        daft.functions.quarter(daft.col("datetimes")).alias("quarter"),
+        daft.functions.year(daft.col("datetimes")).alias("year"),
+        daft.functions.unix_date(daft.col("datetimes")).alias("unix_date"),
     ).collect()
 
     actual = daft.sql("""
@@ -155,7 +155,7 @@ def test_extract():
 
 def test_date_comparison():
     date_df = daft.from_pydict({"date_str": ["2020-01-01", "2020-01-02", "2020-01-03"]})
-    date_df = date_df.with_column("date", daft.col("date_str").str.to_date("%Y-%m-%d"))
+    date_df = date_df.with_column("date", daft.functions.to_date(daft.col("date_str"), "%Y-%m-%d"))
     expected = date_df.filter(daft.col("date") == "2020-01-01").select("date").to_pydict()
     actual = daft.sql("select date from date_df where date == '2020-01-01'").to_pydict()
     assert actual == expected

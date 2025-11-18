@@ -4,6 +4,7 @@ import numpy as np
 import pyarrow as pa
 import pytest
 
+import daft
 from daft import DataType, col, lit
 from daft.recordbatch import MicroPartition
 
@@ -141,7 +142,7 @@ def test_table_filter_with_date_days() -> None:
     assert len(daft_recordbatch) == 6
     assert daft_recordbatch.column_names() == ["days", "enum"]
 
-    exprs = [col("days").dt.day() > 15]
+    exprs = [daft.functions.day(col("days")) > 15]
     new_table = daft_recordbatch.filter(exprs)
     assert len(new_table) == 2
     assert new_table.column_names() == ["days", "enum"]
@@ -164,7 +165,7 @@ def test_table_filter_with_date_months() -> None:
     assert len(daft_recordbatch) == 6
     assert daft_recordbatch.column_names() == ["days", "enum"]
 
-    exprs = [col("days").dt.month() > 5]
+    exprs = [daft.functions.month(col("days")) > 5]
     new_table = daft_recordbatch.filter(exprs)
     assert len(new_table) == 2
     assert new_table.column_names() == ["days", "enum"]
@@ -187,7 +188,7 @@ def test_table_filter_with_date_years() -> None:
     assert len(daft_recordbatch) == 6
     assert daft_recordbatch.column_names() == ["days", "enum"]
 
-    exprs = [col("days").dt.year() > 2000]
+    exprs = [daft.functions.year(col("days")) > 2000]
     new_table = daft_recordbatch.filter(exprs)
     assert len(new_table) == 2
     assert new_table.column_names() == ["days", "enum"]
@@ -211,7 +212,7 @@ def test_table_filter_with_date_days_of_week() -> None:
     assert len(daft_recordbatch) == 6
     assert daft_recordbatch.column_names() == ["days", "enum"]
 
-    exprs = [col("days").dt.day_of_week() == 2]
+    exprs = [daft.functions.day_of_week(col("days")) == 2]
     new_table = daft_recordbatch.filter(exprs)
     assert len(new_table) == 2
     assert new_table.column_names() == ["days", "enum"]
@@ -222,21 +223,21 @@ def test_table_filter_with_date_days_of_week() -> None:
 
 def test_table_float_is_nan() -> None:
     table = MicroPartition.from_pydict({"a": [1.0, np.nan, 3.0, None, float("nan")]})
-    result_table = table.eval_expression_list([col("a").float.is_nan()])
+    result_table = table.eval_expression_list([daft.functions.is_nan(col("a"))])
     # Note that null entries are _not_ treated as float NaNs.
     assert result_table.to_pydict() == {"a": [False, True, False, None, True]}
 
 
 def test_table_float_is_inf() -> None:
     table = MicroPartition.from_pydict({"a": [-np.inf, 0.0, None, float("inf")]})
-    result_table = table.eval_expression_list([col("a").float.is_inf()])
+    result_table = table.eval_expression_list([daft.functions.is_inf(col("a"))])
     # Note that null entries are _not_ treated as float NaNs.
     assert result_table.to_pydict() == {"a": [True, False, None, True]}
 
 
 def test_table_float_not_nan() -> None:
     table = MicroPartition.from_pydict({"a": [1.0, np.nan, 3.0, None, float("nan")]})
-    result_table = table.eval_expression_list([col("a").float.not_nan()])
+    result_table = table.eval_expression_list([daft.functions.not_nan(col("a"))])
     # Note that null entries are _not_ treated as float NaNs.
     assert result_table.to_pydict() == {"a": [True, False, True, None, False]}
 
@@ -245,5 +246,7 @@ def test_table_if_else() -> None:
     table = MicroPartition.from_arrow(
         pa.Table.from_pydict({"ones": [1, 1, 1], "zeros": [0, 0, 0], "pred": [True, False, None]})
     )
-    result_table = table.eval_expression_list([col("pred").if_else(col("ones"), col("zeros"))])
+    from daft.functions import when
+
+    result_table = table.eval_expression_list([when(col("pred"), col("ones")).otherwise(col("zeros"))])
     assert result_table.to_pydict() == {"ones": [1, 0, None]}

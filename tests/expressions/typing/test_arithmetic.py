@@ -122,10 +122,12 @@ def test_floor(unary_data_fixture):
 )
 def test_sign(unary_data_fixture, fun):
     arg = unary_data_fixture
+    # signum is deprecated, use sign instead; negative is deprecated, use negate instead
+    actual_fun = "sign" if fun == "signum" else ("negate" if fun == "negative" else fun)
     assert_typing_resolve_vs_runtime_behavior(
         data=(unary_data_fixture,),
-        expr=getattr(col(arg.name()), fun)(),
-        run_kernel=lambda: getattr(arg, fun)(),
+        expr=getattr(col(arg.name()), actual_fun)(),
+        run_kernel=lambda: getattr(arg, actual_fun)(),
         resolvable=is_numeric(arg.datatype()),
     )
 

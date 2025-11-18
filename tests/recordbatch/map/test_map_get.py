@@ -5,6 +5,7 @@ import datetime
 import pyarrow as pa
 import pytest
 
+import daft
 from daft.expressions import col
 from daft.recordbatch import MicroPartition
 
@@ -13,7 +14,7 @@ def test_map_get():
     data = pa.array([[(1, 2)], [], [(2, 1)]], type=pa.map_(pa.int64(), pa.int64()))
     table = MicroPartition.from_arrow(pa.table({"map_col": data}))
 
-    result = table.eval_expression_list([col("map_col").map.get(1)])
+    result = table.eval_expression_list([daft.functions.map_get(col("map_col"), 1)])
 
     assert result.to_pydict() == {"value": [2, None, None]}
 
@@ -23,7 +24,7 @@ def test_map_get_broadcasted():
     keys = pa.array([1, 3, 2], type=pa.int64())
     table = MicroPartition.from_arrow(pa.table({"map_col": data, "key": keys}))
 
-    result = table.eval_expression_list([col("map_col").map.get(col("key"))])
+    result = table.eval_expression_list([daft.functions.map_get(col("map_col"), col("key"))])
 
     assert result.to_pydict() == {"value": [2, None, 1]}
 
@@ -33,7 +34,7 @@ def test_map_get_duplicate_keys():
     data = pa.array([[(1, 2), (1, 3)]], type=pa.map_(pa.int64(), pa.int64()))
     table = MicroPartition.from_arrow(pa.table({"map_col": data}))
 
-    result = table.eval_expression_list([col("map_col").map.get(1)])
+    result = table.eval_expression_list([daft.functions.map_get(col("map_col"), 1)])
 
     assert result.to_pydict() == {"value": [2]}
 
@@ -49,8 +50,7 @@ def test_map_get_logical_type():
     )
     table = MicroPartition.from_arrow(pa.table({"map_col": data}))
 
-    map = col("map_col").map
-    result = table.eval_expression_list([map.get("foo")])
+    result = table.eval_expression_list([daft.functions.map_get(col("map_col"), "foo")])
 
     assert result.to_pydict() == {"value": [datetime.date(2022, 1, 1), datetime.date(2022, 1, 2), None]}
 
@@ -60,7 +60,7 @@ def test_map_get_bad_field():
     table = MicroPartition.from_arrow(pa.table({"map_col": data}))
 
     with pytest.raises(ValueError):
-        table.eval_expression_list([col("map_col").map.get("foo")])
+        table.eval_expression_list([daft.functions.map_get(col("map_col"), "foo")])
 
 
 def test_map_get_empty():
@@ -68,8 +68,8 @@ def test_map_get_empty():
     table = pa.table({"map_col": data})
     table = MicroPartition.from_arrow(table)
 
-    expr = col("map_col").map.get("a") == 3
+    expr = daft.functions.map_get(col("map_col"), "a") == 3
     table = table.filter([expr])
-    result = table.eval_expression_list([col("map_col").map.get("a")])
+    result = table.eval_expression_list([daft.functions.map_get(col("map_col"), "a")])
 
     assert result.to_pydict() == {"value": []}

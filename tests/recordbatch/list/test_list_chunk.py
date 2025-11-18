@@ -3,6 +3,7 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
+import daft
 from daft.datatype import DataType
 from daft.expressions import col
 from daft.recordbatch import MicroPartition
@@ -18,12 +19,12 @@ def test_list_chunk_empty_series():
 
     result = table.eval_expression_list(
         [
-            col("col").list.chunk(1).alias("col1"),
-            col("col").list.chunk(2).alias("col2"),
-            col("col").list.chunk(1000).alias("col3"),
-            col("fixed_col").list.chunk(1).alias("fixed_col1"),
-            col("fixed_col").list.chunk(2).alias("fixed_col2"),
-            col("fixed_col").list.chunk(1000).alias("fixed_col3"),
+            daft.functions.chunk(col("col"), 1).alias("col1"),
+            daft.functions.chunk(col("col"), 2).alias("col2"),
+            daft.functions.chunk(col("col"), 1000).alias("col3"),
+            daft.functions.chunk(col("fixed_col"), 1).alias("fixed_col1"),
+            daft.functions.chunk(col("fixed_col"), 2).alias("fixed_col2"),
+            daft.functions.chunk(col("fixed_col"), 1000).alias("fixed_col3"),
         ]
     )
 
@@ -58,12 +59,12 @@ def test_list_chunk():
 
     result = table.eval_expression_list(
         [
-            col("col1").list.chunk(1).alias("col1-1"),
-            col("col1").list.chunk(2).alias("col1-2"),
-            col("col1").list.chunk(3).alias("col1-3"),
-            col("col1").list.chunk(10).alias("col1-10"),  # Test chunk size > list size
-            col("col2").list.chunk(2).alias("col2-2"),
-            col("col3").list.chunk(2).alias("col3-2"),
+            daft.functions.chunk(col("col1"), 1).alias("col1-1"),
+            daft.functions.chunk(col("col1"), 2).alias("col1-2"),
+            daft.functions.chunk(col("col1"), 3).alias("col1-3"),
+            daft.functions.chunk(col("col1"), 10).alias("col1-10"),  # Test chunk size > list size
+            daft.functions.chunk(col("col2"), 2).alias("col2-2"),
+            daft.functions.chunk(col("col3"), 2).alias("col3-2"),
         ]
     )
 
@@ -122,14 +123,14 @@ def test_fixed_size_list_chunk():
 
     result = table.eval_expression_list(
         [
-            col("col1").list.chunk(2).alias("col1-2"),
-            col("col1").list.chunk(3).alias("col1-3"),
-            col("col2").list.chunk(2).alias("col2-2"),
-            col("col2").list.chunk(3).alias("col2-3"),
-            col("col3").list.chunk(2).alias("col3-2"),
-            col("col3").list.chunk(3).alias("col3-3"),  # Test chunk size > list size
-            col("col3").list.chunk(4).alias("col3-4"),  # Test chunk size > list size
-            col("col4").list.chunk(2).alias("col4-2"),
+            daft.functions.chunk(col("col1"), 2).alias("col1-2"),
+            daft.functions.chunk(col("col1"), 3).alias("col1-3"),
+            daft.functions.chunk(col("col2"), 2).alias("col2-2"),
+            daft.functions.chunk(col("col2"), 3).alias("col2-3"),
+            daft.functions.chunk(col("col3"), 2).alias("col3-2"),
+            daft.functions.chunk(col("col3"), 3).alias("col3-3"),  # Test chunk size > list size
+            daft.functions.chunk(col("col3"), 4).alias("col3-4"),  # Test chunk size > list size
+            daft.functions.chunk(col("col4"), 2).alias("col4-2"),
         ]
     )
 
@@ -153,13 +154,13 @@ def test_list_chunk_invalid_parameters():
         }
     )
     with pytest.raises(ValueError, match="Expected numeric literal for 'size'"):
-        table.eval_expression_list([col("col").list.chunk(col("size"))])
+        table.eval_expression_list([daft.functions.chunk(col("col"), col("size"))])
     with pytest.raises(ValueError, match="Expected non zero integer for 'size'"):
-        table.eval_expression_list([col("col").list.chunk(0)])
+        table.eval_expression_list([daft.functions.chunk(col("col"), 0)])
     with pytest.raises(ValueError, match="Expected positive integer for 'size'"):
-        table.eval_expression_list([col("col").list.chunk(-1)])
+        table.eval_expression_list([daft.functions.chunk(col("col"), -1)])
     with pytest.raises(ValueError, match="Expected numeric literal for 'size'"):
-        table.eval_expression_list([col("col").list.chunk(1.0)])
+        table.eval_expression_list([daft.functions.chunk(col("col"), 1.0)])
 
 
 def test_list_chunk_non_list_type():
@@ -172,8 +173,8 @@ def test_list_chunk_non_list_type():
     )
 
     with pytest.raises(ValueError):
-        table.eval_expression_list([col("structcol").list.chunk(2)])
+        table.eval_expression_list([daft.functions.chunk(col("structcol"), 2)])
     with pytest.raises(ValueError):
-        table.eval_expression_list([col("stringcol").list.chunk(2)])
+        table.eval_expression_list([daft.functions.chunk(col("stringcol"), 2)])
     with pytest.raises(ValueError):
-        table.eval_expression_list([col("intcol").list.chunk(2)])
+        table.eval_expression_list([daft.functions.chunk(col("intcol"), 2)])

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import daft
 from daft.expressions import col
 from daft.series import Series
 from tests.expressions.typing.conftest import (
@@ -14,7 +15,7 @@ def test_if_else(binary_data_fixture):
 
     assert_typing_resolve_vs_runtime_behavior(
         data=(*binary_data_fixture, predicate_series),
-        expr=col("predicate").if_else(col(lhs.name()), col(rhs.name())),
+        expr=daft.functions.when(col("predicate"), col(lhs.name())).otherwise(col(rhs.name())),
         run_kernel=lambda: predicate_series.if_else(lhs, rhs),
         resolvable=has_supertype(lhs.datatype(), rhs.datatype()),
     )

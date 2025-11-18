@@ -13,7 +13,7 @@ def test_url_download():
 
     # download one
     df_actual = daft.sql(f"SELECT url_download('{url}') as downloaded FROM df").collect().to_pydict()
-    df_expect = df.select(lit(url).url.download().alias("downloaded")).collect().to_pydict()
+    df_expect = df.select(daft.functions.download(lit(url)).alias("downloaded")).collect().to_pydict()
 
     assert df_actual == df_expect
 
@@ -44,9 +44,9 @@ def test_url_download_multi():
 
     expected = (
         df.select(
-            col("urls").url.download().alias("downloaded"),
-            col("urls").url.download(max_connections=1).alias("downloaded_single_conn"),
-            col("urls").url.download(on_error="null").alias("downloaded_ignore_errors"),
+            daft.functions.download(col("urls")).alias("downloaded"),
+            daft.functions.download(col("urls"), max_connections=1).alias("downloaded_single_conn"),
+            daft.functions.download(col("urls"), on_error="null").alias("downloaded_ignore_errors"),
         )
         .collect()
         .to_pydict()
@@ -83,9 +83,9 @@ def test_url_upload():
 
         expected = (
             df.select(
-                col("data").url.upload(daft.col("paths")).alias("uploaded"),
-                col("data").url.upload(daft.col("paths"), max_connections=1).alias("uploaded_single_conn"),
-                col("data").url.upload(daft.col("paths"), on_error="null").alias("uploaded_ignore_errors"),
+                daft.functions.upload(col("data"), daft.col("paths")).alias("uploaded"),
+                daft.functions.upload(col("data"), daft.col("paths"), max_connections=1).alias("uploaded_single_conn"),
+                daft.functions.upload(col("data"), daft.col("paths"), on_error="null").alias("uploaded_ignore_errors"),
             )
             .collect()
             .to_pydict()
@@ -119,7 +119,7 @@ def test_url_parse():
         .to_pydict()
     )
 
-    expected = df.select(col("urls").url_parse()).collect().to_pydict()
+    expected = df.select(daft.functions.parse_url(col("urls"))).collect().to_pydict()
 
     assert actual == expected
 
@@ -145,16 +145,16 @@ def test_url_parse():
     )
 
     expected_components = (
-        df.select(col("urls").url_parse())
+        df.select(daft.functions.parse_url(col("urls")))
         .select(
-            col("urls").struct.get("scheme").alias("scheme"),
-            col("urls").struct.get("host").alias("host"),
-            col("urls").struct.get("port").alias("port"),
-            col("urls").struct.get("path").alias("path"),
-            col("urls").struct.get("query").alias("query"),
-            col("urls").struct.get("fragment").alias("fragment"),
-            col("urls").struct.get("username").alias("username"),
-            col("urls").struct.get("password").alias("password"),
+            daft.functions.get(col("urls"), "scheme").alias("scheme"),
+            daft.functions.get(col("urls"), "host").alias("host"),
+            daft.functions.get(col("urls"), "port").alias("port"),
+            daft.functions.get(col("urls"), "path").alias("path"),
+            daft.functions.get(col("urls"), "query").alias("query"),
+            daft.functions.get(col("urls"), "fragment").alias("fragment"),
+            daft.functions.get(col("urls"), "username").alias("username"),
+            daft.functions.get(col("urls"), "password").alias("password"),
         )
         .collect()
         .to_pydict()
