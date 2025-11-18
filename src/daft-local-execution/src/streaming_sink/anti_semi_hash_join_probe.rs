@@ -9,7 +9,7 @@ use daft_core::{
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::ProbeState;
+use daft_recordbatch::{ProbeState, RecordBatch};
 use futures::{StreamExt, stream};
 use itertools::Itertools;
 use tracing::{Span, info_span, instrument};
@@ -38,7 +38,7 @@ impl AntiSemiProbeState {
         if let Self::Building(bridge) = self {
             let probe_state = bridge.get_state().await;
             let builder = if needs_bitmap {
-                Some(IndexBitmapBuilder::new(probe_state.get_record_batch()))
+                Some(IndexBitmapBuilder::new(probe_state.get_record_batches()))
             } else {
                 None
             };
@@ -138,8 +138,8 @@ impl AntiSemiProbeSink {
             let idx_iter = probe_state.probe_indices(&join_keys)?;
 
             for inner_iter in idx_iter.flatten() {
-                for build_row_idx in inner_iter {
-                    bitmap_builder.mark_used(build_row_idx as usize);
+                for (build_table_idx, build_row_idx) in inner_iter {
+                    bitmap_builder.mark_used(build_table_idx as usize, build_row_idx as usize);
                 }
             }
         }
@@ -157,7 +157,7 @@ impl AntiSemiProbeSink {
             .expect("at least one state should be present");
         let (first_probe_state, first_bitmap_builder) =
             first_state.get_or_await_probe_state(true).await;
-        let table = first_probe_state.get_record_batch();
+        let tables = first_probe_state.get_record_batches();
         let first_bitmap = first_bitmap_builder
             .take()
             .expect("bitmap should be set")
@@ -189,8 +189,12 @@ impl AntiSemiProbeSink {
             merged_bitmap = merged_bitmap.negate();
         }
 
-        let build_side_table =
-            table.mask_filter(&merged_bitmap.convert_to_boolean_array().into_series())?;
+        let leftovers = merged_bitmap
+            .convert_to_boolean_arrays()
+            .zip(tables.iter())
+            .map(|(bitmap, table)| table.mask_filter(&bitmap.into_series()))
+            .collect::<DaftResult<Vec<_>>>()?;
+        let build_side_table = RecordBatch::concat(&leftovers)?;
 
         Ok(Some(Arc::new(MicroPartition::new_loaded(
             build_side_table.schema.clone(),
