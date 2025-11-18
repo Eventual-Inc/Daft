@@ -295,10 +295,14 @@ class IcebergScanOperator(ScanOperator):
         """
         try:
             # Get a limited scan to check for delete files
-            iceberg_tasks = self._table.scan(
-                limit=1,  # Only need to check if any delete files exist
-                snapshot_id=self._snapshot_id,
-            ).plan_files()
+            iceberg_tasks = (
+                self._table.current_snapshot()
+                .summary.scan(
+                    limit=1,  # Only need to check if any delete files exist
+                    snapshot_id=self._snapshot_id,
+                )
+                .plan_files()
+            )
 
             # Check if any task has delete files
             for task in iceberg_tasks:

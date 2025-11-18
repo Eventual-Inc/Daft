@@ -67,7 +67,7 @@ Now let's take a look at what we loaded. You can inspect the DataFrame by simply
 │ String  ┆ String       ┆ String   ┆ (9 hidden) ┆ String   ┆ String      ┆ String           │
 ╰─────────┴──────────────┴──────────┴────────────┴──────────┴─────────────┴──────────────────╯
 
-(No data to display: Dataframe not materialized)
+(No data to display: Dataframe not materialized, use .collect() to materialize)
 ```
 
 You see the above output because **Daft is lazy by default** - it displays the schema (column names and types) but doesn't actually load or process your data until you explicitly tell it to. This allows Daft to optimize your entire workflow before executing anything.

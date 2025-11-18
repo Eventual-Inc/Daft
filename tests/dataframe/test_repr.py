@@ -24,7 +24,9 @@ def dataframe_th_style_schema() -> str:
 
 ROW_DIVIDER_REGEX = re.compile(r"╭─+┬*─*╮|├╌+┼*╌+┤")
 SHOWING_N_ROWS_REGEX = re.compile(r".*\(Showing first (\d+) of (\d+) rows\).*")
-UNMATERIALIZED_REGEX = re.compile(r".*\(No data to display: Dataframe not materialized\).*")
+UNMATERIALIZED_REGEX = re.compile(
+    r".*\(No data to display: Dataframe not materialized, use .collect() to materialize\).*"
+)
 MATERIALIZED_NO_ROWS_REGEX = re.compile(r".*\(No data to display: Materialized dataframe has no rows\).*")
 
 
@@ -123,7 +125,7 @@ def test_empty_df_repr(make_df):
 <table class="dataframe">
 <thead><tr><th {dataframe_th_style_schema()}>A<br />Int64</th><th {dataframe_th_style_schema()}>B<br />String</th></tr></thead>
 </table>
-<small>(No data to display: Dataframe not materialized)</small>
+<small>(No data to display: Dataframe not materialized, use .collect() to materialize)</small>
 </div>"""
     )
 
@@ -167,7 +169,7 @@ def test_alias_repr(make_df):
 <table class="dataframe">
 <thead><tr><th {dataframe_th_style_schema()}>A2<br />Int64</th><th {dataframe_th_style_schema()}>B<br />String</th></tr></thead>
 </table>
-<small>(No data to display: Dataframe not materialized)</small>
+<small>(No data to display: Dataframe not materialized, use .collect() to materialize)</small>
 </div>"""
     )
 
@@ -226,7 +228,7 @@ def test_repr_with_unicode(make_df, data_source):
 <table class="dataframe">
 <thead><tr><th {dataframe_th_style_schema()}>🔥<br />Int64</th><th {dataframe_th_style_schema()}>🦁<br />String</th></tr></thead>
 </table>
-<small>(No data to display: Dataframe not materialized)</small>
+<small>(No data to display: Dataframe not materialized, use .collect() to materialize)</small>
 </div>"""
     expected_html_materialized = f"""<div>
 <table class="dataframe" style="table-layout: fixed; min-width: 100%">
