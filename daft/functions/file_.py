@@ -53,7 +53,7 @@ def audio_file(url: Expression, verify: bool = False, io_config: IOConfig | None
         io_config (IOConfig, default=None): The IO configuration to use.
 
     Returns:
-        Expression (File[oaudio] Expression): An expression containing the file reference.
+        Expression (File[Audio] Expression): An expression containing the file reference.
 
     """
     return url._eval_expressions("audio_file", verify=verify, io_config=io_config)

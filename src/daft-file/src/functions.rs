@@ -186,7 +186,7 @@ impl ScalarUDF for AudioFile {
             }
         }
         Ok(match input.data_type() {
-            DataType::File(MediaType::Video) => input,
+            DataType::File(MediaType::Audio) => input,
             DataType::File(MediaType::Unknown) => {
                 let casted = input.cast(&DataType::File(MediaType::Audio))?;
                 let files = casted.file::<MediaTypeAudio>()?.clone();

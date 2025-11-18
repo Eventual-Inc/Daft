@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 class AudioFile(File):
-    """A audio-specific file interface that provides audio operations."""
+    """An audio-specific file interface that provides audio operations."""
 
     @staticmethod
     def _from_file_reference(reference: PyFileReference) -> AudioFile:
@@ -29,13 +29,13 @@ class AudioFile(File):
 
     def __post_init__(self) -> None:
         if not self.is_audio():
-            raise ValueError(f"File {self} is not a audio file")
+            raise ValueError(f"File {self} is not an audio file")
 
     def metadata(self) -> AudioMetadata:
         """Extract basic audio metadata from container headers.
 
         Returns:
-            AudioMetadata: Audio metadata object containing width, height, fps, frame_count, time_base, keyframe_pts, keyframe_indices
+            AudioMetadata: Audio metadata object containing sample_rate, channels, frames, format, subtype
 
         """
         with self.open() as f:
