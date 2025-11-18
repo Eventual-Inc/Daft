@@ -548,17 +548,6 @@ jobs:
     env:
       package-name: daft
     steps:
-    - name: Free Disk Space (Ubuntu) # only run on ubuntu
-      if: ${{ (runner.os == 'Linux') }}
-      uses: jlumbroso/free-disk-space@main
-      with:
-        tool-cache: false
-        android: true
-        dotnet: false
-        haskell: true
-        large-packages: false
-        docker-images: false
-        swap-storage: true
     - uses: actions/checkout@v4
       with:
         submodules: true
@@ -646,7 +635,8 @@ jobs:
     env:
       package-name: daft
     steps:
-    - name: Free Disk Space
+    - name: Free Disk Space (Ubuntu)
+      if: ${{ (runner.os == 'Linux') }}
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
