@@ -218,6 +218,11 @@ def _series_from_arrow_with_ray_data_extensions(
             return series.cast(DataType.from_arrow_type(array.type))
         elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, ArrowVariableShapedTensorType):
             return Series.from_numpy(array.to_numpy(zero_copy_only=False), name=name)
+    elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, tuple(_TENSOR_EXTENSION_TYPES)):
+        # Handle Ray tensor extension types that are not ArrowTensorType or ArrowVariableShapedTensorType
+        # Convert each element to numpy array to preserve shape
+        numpy_arrays = [array[i].as_py() for i in range(len(array))]
+        return Series.from_pylist(numpy_arrays, name=name)
     return Series.from_arrow(array, name)
 
 
@@ -243,7 +248,19 @@ def _micropartition_from_arrow_with_ray_data_extensions(arrow_table: pa.Table) -
         return MicroPartition._from_record_batches(
             [RecordBatch._from_pyrecordbatch(_PyRecordBatch.from_pylist_series(series_dict))]
         )
-    return MicroPartition.from_arrow(arrow_table)
+    # Use the Ray-aware function to convert all arrow types, not just non-native ones
+    # This ensures Ray extension types are properly handled
+    series_dict = dict()
+    for name, column in zip(arrow_table.column_names, arrow_table.columns):
+        series = (
+            _series_from_arrow_with_ray_data_extensions(column, name)
+            if isinstance(column, (pa.Array, pa.ChunkedArray))
+            else item_to_series(name, column)
+        )
+        series_dict[name] = series._series
+    return MicroPartition._from_record_batches(
+        [RecordBatch._from_pyrecordbatch(_PyRecordBatch.from_pylist_series(series_dict))]
+    )
 
 
 @ray.remote  # type: ignore[misc]
