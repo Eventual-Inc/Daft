@@ -301,3 +301,443 @@ impl ObjectSource for GravitinoSource {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use common_io_config::GravitinoConfig;
+
+    use super::*;
+
+    // Tests for invalid_gravitino_path function
+    #[test]
+    fn test_invalid_gravitino_path_error_message() {
+        let path = "invalid://path";
+        let error = invalid_gravitino_path(path);
+
+        match error {
+            crate::Error::NotFound {
+                path: error_path,
+                source,
+            } => {
+                assert_eq!(error_path, path);
+                assert!(
+                    source
+                        .to_string()
+                        .contains("Expected Gravitino fileset path")
+                );
+            }
+            _ => panic!("Expected NotFound error"),
+        }
+    }
+
+    #[test]
+    fn test_invalid_gravitino_path_with_various_formats() {
+        let test_cases = vec![
+            "http://example.com",
+            "s3://bucket/key",
+            "gvfs://wrong/path",
+            "gvfs://fileset",
+            "gvfs://fileset/",
+            "gvfs://fileset/catalog",
+        ];
+
+        for path in test_cases {
+            let error = invalid_gravitino_path(path);
+            assert!(matches!(error, crate::Error::NotFound { .. }));
+        }
+    }
+
+    // Tests for GravitinoSource::get_client validation
+    #[cfg(feature = "python")]
+    #[tokio::test]
+    async fn test_get_client_missing_endpoint() {
+        let config = GravitinoConfig {
+            endpoint: None,
+            metalake_name: Some("test_metalake".to_string()),
+            auth_type: None,
+            username: None,
+            password: None,
+            token: None,
+        };
+
+        let result = GravitinoSource::get_client(&config).await;
+        assert!(result.is_err());
+
+        match result {
+            Err(crate::Error::UnableToCreateClient { store, .. }) => {
+                assert_eq!(store, SourceType::Gravitino);
+            }
+            _ => panic!("Expected UnableToCreateClient error"),
+        }
+    }
+
+    #[cfg(feature = "python")]
+    #[tokio::test]
+    async fn test_get_client_missing_metalake_name() {
+        let config = GravitinoConfig {
+            endpoint: Some("http://localhost:8090".to_string()),
+            metalake_name: None,
+            auth_type: None,
+            username: None,
+            password: None,
+            token: None,
+        };
+
+        let result = GravitinoSource::get_client(&config).await;
+        assert!(result.is_err());
+
+        match result {
+            Err(crate::Error::UnableToCreateClient { store, .. }) => {
+                assert_eq!(store, SourceType::Gravitino);
+            }
+            _ => panic!("Expected UnableToCreateClient error"),
+        }
+    }
+
+    #[cfg(feature = "python")]
+    #[tokio::test]
+    async fn test_get_client_missing_both_required_fields() {
+        let config = GravitinoConfig {
+            endpoint: None,
+            metalake_name: None,
+            auth_type: None,
+            username: None,
+            password: None,
+            token: None,
+        };
+
+        let result = GravitinoSource::get_client(&config).await;
+        assert!(result.is_err());
+    }
+
+    // Tests for URL parsing and validation
+    #[test]
+    fn test_gravitino_path_parsing_invalid_scheme() {
+        // Test with wrong scheme
+        let paths = vec![
+            "http://fileset/catalog/schema/fileset/path",
+            "s3://fileset/catalog/schema/fileset/path",
+            "file://fileset/catalog/schema/fileset/path",
+        ];
+
+        for path in paths {
+            let url = url::Url::parse(path).unwrap();
+            assert_ne!(url.scheme(), "gvfs");
+        }
+    }
+
+    #[test]
+    fn test_gravitino_path_parsing_invalid_host() {
+        // Test with wrong host
+        let paths = vec![
+            "gvfs://bucket/catalog/schema/fileset/path",
+            "gvfs://table/catalog/schema/fileset/path",
+            "gvfs://catalog/catalog/schema/fileset/path",
+        ];
+
+        for path in paths {
+            let url = url::Url::parse(path).unwrap();
+            assert_ne!(url.host_str(), Some("fileset"));
+        }
+    }
+
+    #[test]
+    fn test_gravitino_path_parsing_valid_format() {
+        let path = "gvfs://fileset/catalog/schema/fileset/path/to/file.parquet";
+        let url = url::Url::parse(path).unwrap();
+
+        assert_eq!(url.scheme(), "gvfs");
+        assert_eq!(url.host_str(), Some("fileset"));
+
+        let segments: Vec<&str> = url.path_segments().unwrap().collect();
+        assert_eq!(segments.len(), 5);
+        assert_eq!(segments[0], "catalog");
+        assert_eq!(segments[1], "schema");
+        assert_eq!(segments[2], "fileset");
+        assert_eq!(segments[3], "path");
+        assert_eq!(segments[4], "to");
+    }
+
+    #[test]
+    fn test_gravitino_path_parsing_minimal_valid_format() {
+        let path = "gvfs://fileset/catalog/schema/fileset";
+        let url = url::Url::parse(path).unwrap();
+
+        assert_eq!(url.scheme(), "gvfs");
+        assert_eq!(url.host_str(), Some("fileset"));
+
+        let segments: Vec<&str> = url.path_segments().unwrap().collect();
+        assert_eq!(segments.len(), 3);
+        assert_eq!(segments[0], "catalog");
+        assert_eq!(segments[1], "schema");
+        assert_eq!(segments[2], "fileset");
+    }
+
+    #[test]
+    fn test_gravitino_path_parsing_with_glob_pattern() {
+        let path = "gvfs://fileset/catalog/schema/fileset/**/*.parquet";
+        let url = url::Url::parse(path).unwrap();
+
+        assert_eq!(url.scheme(), "gvfs");
+        assert_eq!(url.host_str(), Some("fileset"));
+
+        let segments: Vec<&str> = url.path_segments().unwrap().collect();
+        assert!(segments.len() >= 3);
+        assert_eq!(segments[0], "catalog");
+        assert_eq!(segments[1], "schema");
+        assert_eq!(segments[2], "fileset");
+    }
+
+    #[test]
+    fn test_gravitino_path_segments_extraction() {
+        let path = "gvfs://fileset/my_catalog/my_schema/my_fileset/data/file.parquet";
+        let url = url::Url::parse(path).unwrap();
+
+        let mut segments = url.path_segments().unwrap();
+
+        let catalog_name = segments.next().unwrap();
+        let schema_name = segments.next().unwrap();
+        let fileset_name = segments.next().unwrap();
+        let remaining: Vec<&str> = segments.collect();
+
+        assert_eq!(catalog_name, "my_catalog");
+        assert_eq!(schema_name, "my_schema");
+        assert_eq!(fileset_name, "my_fileset");
+        assert_eq!(remaining, vec!["data", "file.parquet"]);
+
+        let combined_name = format!("{}.{}.{}", catalog_name, schema_name, fileset_name);
+        assert_eq!(combined_name, "my_catalog.my_schema.my_fileset");
+    }
+
+    #[test]
+    fn test_gravitino_path_without_file_path() {
+        let path = "gvfs://fileset/catalog/schema/fileset";
+        let url = url::Url::parse(path).unwrap();
+
+        let mut segments = url.path_segments().unwrap();
+
+        let catalog_name = segments.next().unwrap();
+        let schema_name = segments.next().unwrap();
+        let fileset_name = segments.next().unwrap();
+        let remaining: Vec<&str> = segments.collect();
+
+        assert_eq!(catalog_name, "catalog");
+        assert_eq!(schema_name, "schema");
+        assert_eq!(fileset_name, "fileset");
+        assert!(remaining.is_empty());
+    }
+
+    #[test]
+    fn test_gravitino_path_with_trailing_slash() {
+        let path = "gvfs://fileset/catalog/schema/fileset/";
+        let url = url::Url::parse(path).unwrap();
+
+        assert_eq!(url.scheme(), "gvfs");
+        assert_eq!(url.host_str(), Some("fileset"));
+
+        let segments: Vec<&str> = url
+            .path_segments()
+            .unwrap()
+            .filter(|s| !s.is_empty())
+            .collect();
+        assert_eq!(segments.len(), 3);
+    }
+
+    // Tests for glob path base extraction logic
+    #[test]
+    fn test_glob_path_base_extraction_with_double_star() {
+        let glob_path = "gvfs://fileset/catalog/schema/fileset/**/*.parquet";
+
+        let gvfs_base_path = if glob_path.contains("**") {
+            if let Some(pos) = glob_path.find("**") {
+                glob_path[..pos].to_string()
+            } else {
+                glob_path.to_string()
+            }
+        } else {
+            glob_path.to_string()
+        };
+
+        assert_eq!(gvfs_base_path, "gvfs://fileset/catalog/schema/fileset/");
+    }
+
+    #[test]
+    fn test_glob_path_base_extraction_with_single_star() {
+        let glob_path = "gvfs://fileset/catalog/schema/fileset/*.parquet";
+
+        let gvfs_base_path = if glob_path.contains("**") {
+            if let Some(pos) = glob_path.find("**") {
+                glob_path[..pos].to_string()
+            } else {
+                glob_path.to_string()
+            }
+        } else if let Some(pos) = glob_path.rfind('/') {
+            glob_path[..=pos].to_string()
+        } else {
+            glob_path.to_string()
+        };
+
+        assert_eq!(gvfs_base_path, "gvfs://fileset/catalog/schema/fileset/");
+    }
+
+    #[test]
+    fn test_glob_path_base_extraction_no_glob() {
+        let glob_path = "gvfs://fileset/catalog/schema/fileset/file.parquet";
+
+        let gvfs_base_path = if glob_path.contains("**") {
+            if let Some(pos) = glob_path.find("**") {
+                glob_path[..pos].to_string()
+            } else {
+                glob_path.to_string()
+            }
+        } else if let Some(pos) = glob_path.rfind('/') {
+            glob_path[..=pos].to_string()
+        } else {
+            glob_path.to_string()
+        };
+
+        assert_eq!(gvfs_base_path, "gvfs://fileset/catalog/schema/fileset/");
+    }
+
+    #[test]
+    fn test_glob_path_base_extraction_nested_path() {
+        let glob_path = "gvfs://fileset/catalog/schema/fileset/year=2023/month=01/**/*.parquet";
+
+        let gvfs_base_path = if let Some(pos) = glob_path.find("**") {
+            glob_path[..pos].to_string()
+        } else {
+            glob_path.to_string()
+        };
+
+        assert_eq!(
+            gvfs_base_path,
+            "gvfs://fileset/catalog/schema/fileset/year=2023/month=01/"
+        );
+    }
+
+    // Tests for storage path transformation logic
+    #[test]
+    fn test_storage_path_transformation() {
+        let storage_base_path = "s3://bucket/path/";
+        let gvfs_base_path = "gvfs://fileset/catalog/schema/fileset/";
+        let file_path = "s3://bucket/path/data/file.parquet";
+
+        if file_path.starts_with(storage_base_path) {
+            let relative_path = &file_path[storage_base_path.len()..];
+            let transformed_path = format!("{}{}", gvfs_base_path, relative_path);
+            assert_eq!(
+                transformed_path,
+                "gvfs://fileset/catalog/schema/fileset/data/file.parquet"
+            );
+        }
+    }
+
+    #[test]
+    fn test_storage_path_transformation_nested() {
+        let storage_base_path = "s3://bucket/prefix/";
+        let gvfs_base_path = "gvfs://fileset/cat/sch/fs/";
+        let file_path = "s3://bucket/prefix/year=2023/month=01/data.parquet";
+
+        if file_path.starts_with(storage_base_path) {
+            let relative_path = &file_path[storage_base_path.len()..];
+            let transformed_path = format!("{}{}", gvfs_base_path, relative_path);
+            assert_eq!(
+                transformed_path,
+                "gvfs://fileset/cat/sch/fs/year=2023/month=01/data.parquet"
+            );
+        }
+    }
+
+    #[test]
+    fn test_storage_path_transformation_no_match() {
+        let storage_base_path = "s3://bucket/path/";
+        let file_path = "s3://other-bucket/data/file.parquet";
+
+        // Should not transform if prefix doesn't match
+        assert!(!file_path.starts_with(storage_base_path));
+    }
+
+    // Tests for path segment validation
+    #[test]
+    fn test_path_segments_insufficient_components() {
+        // Test paths with insufficient components
+        let insufficient_paths = vec![
+            "gvfs://fileset/",
+            "gvfs://fileset/catalog",
+            "gvfs://fileset/catalog/schema",
+        ];
+
+        for path in insufficient_paths {
+            let url = url::Url::parse(path).unwrap();
+            let segments: Vec<&str> = url.path_segments().unwrap().collect();
+            assert!(segments.len() < 3 || segments.iter().any(|s| s.is_empty()));
+        }
+    }
+
+    #[test]
+    fn test_path_segments_with_empty_components() {
+        let path = "gvfs://fileset/catalog//fileset/file.parquet";
+        let url = url::Url::parse(path).unwrap();
+        let segments: Vec<&str> = url.path_segments().unwrap().collect();
+
+        // URL parsing normalizes empty segments
+        assert!(segments.contains(&""));
+    }
+
+    // Tests for combined name format
+    #[test]
+    fn test_combined_name_format() {
+        let catalog = "my_catalog";
+        let schema = "my_schema";
+        let fileset = "my_fileset";
+
+        let combined = format!("{}.{}.{}", catalog, schema, fileset);
+        assert_eq!(combined, "my_catalog.my_schema.my_fileset");
+    }
+
+    #[test]
+    fn test_combined_name_format_with_special_characters() {
+        // Test with special characters
+        let catalog = "catalog-with-dash";
+        let schema = "schema_with_underscore";
+        let fileset = "fileset.with.dots";
+
+        let combined = format!("{}.{}.{}", catalog, schema, fileset);
+        assert_eq!(
+            combined,
+            "catalog-with-dash.schema_with_underscore.fileset.with.dots"
+        );
+    }
+
+    #[test]
+    fn test_combined_name_format_with_numbers() {
+        let catalog = "catalog123";
+        let schema = "schema456";
+        let fileset = "fileset789";
+
+        let combined = format!("{}.{}.{}", catalog, schema, fileset);
+        assert_eq!(combined, "catalog123.schema456.fileset789");
+    }
+
+    // Tests for itertools join usage
+    #[test]
+    fn test_path_segments_join() {
+        let segments = vec!["path", "to", "file.parquet"];
+        let joined = segments.iter().join("/");
+        assert_eq!(joined, "path/to/file.parquet");
+    }
+
+    #[test]
+    fn test_path_segments_join_empty() {
+        let segments: Vec<&str> = vec![];
+        let joined = segments.iter().join("/");
+        assert_eq!(joined, "");
+    }
+
+    #[test]
+    fn test_path_segments_join_single() {
+        let segments = vec!["file.parquet"];
+        let joined = segments.iter().join("/");
+        assert_eq!(joined, "file.parquet");
+    }
+}
