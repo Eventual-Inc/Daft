@@ -1,4 +1,3 @@
-mod progress_bar;
 pub mod ray;
 use std::{collections::HashMap, sync::Arc};
 
@@ -6,9 +5,9 @@ use common_daft_config::PyDaftExecutionConfig;
 use common_display::DisplayLevel;
 use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
+use daft_context::{ContextState, python::PyContextState};
 use daft_logical_plan::PyLogicalPlanBuilder;
 use futures::StreamExt;
-use progress_bar::FlotillaProgressBar;
 use pyo3::prelude::*;
 use ray::{RayPartitionRef, RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
 use serde::{Deserialize, Serialize};
@@ -21,10 +20,9 @@ use crate::{
     },
     plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
     python::ray::RayTaskResult,
-    statistics::StatisticsSubscriber,
 };
 
-#[pyclass(frozen)]
+#[pyclass(module = "daft.daft", frozen)]
 struct PythonPartitionRefStream {
     inner: Arc<Mutex<PlanResultStream>>,
 }
@@ -149,9 +147,9 @@ impl PyDistributedPhysicalPlanRunner {
 
     fn run_plan(
         &self,
-        py: Python,
         plan: &PyDistributedPhysicalPlan,
         psets: HashMap<String, Vec<RayPartitionRef>>,
+        ctx: &PyContextState,
     ) -> PyResult<PythonPartitionRefStream> {
         let psets = psets
             .into_iter()
@@ -165,8 +163,8 @@ impl PyDistributedPhysicalPlanRunner {
             })
             .collect();
 
-        let subscribers: Vec<Box<dyn StatisticsSubscriber>> =
-            vec![Box::new(FlotillaProgressBar::try_new(py)?)];
+        let ctx: &ContextState = ctx.into();
+        let subscribers = ctx.subscribers.values().cloned().collect();
 
         let plan_result = self.runner.run_plan(&plan.plan, psets, subscribers)?;
         let part_stream = PythonPartitionRefStream {

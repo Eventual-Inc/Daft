@@ -28,12 +28,14 @@ use daft_stats::{ColumnRangeStatistics, PartitionSpec, TableMetadata, TableStati
 use daft_warc::WarcConvertOptions;
 use futures::{Future, Stream};
 use parquet2::metadata::FileMetaData;
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{DaftCSVSnafu, DaftCoreComputeSnafu};
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum TableState {
+    #[serde(skip)]
     Unloaded(Arc<ScanTask>),
     Loaded(Arc<Vec<RecordBatch>>),
 }
@@ -66,7 +68,7 @@ impl Display for TableState {
 }
 pub type MicroPartitionRef = Arc<MicroPartition>;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MicroPartition {
     /// Schema of the MicroPartition
     ///

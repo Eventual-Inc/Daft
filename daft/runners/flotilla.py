@@ -11,6 +11,7 @@ from daft.daft import (
     DistributedPhysicalPlanRunner,
     LocalPhysicalPlan,
     NativeExecutor,
+    PyContextState,
     PyDaftExecutionConfig,
     PyMicroPartition,
     RayPartitionRef,
@@ -247,27 +248,28 @@ class RemoteFlotillaRunner:
         self,
         plan: DistributedPhysicalPlan,
         partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
+        state: PyContextState,
     ) -> None:
         psets = {
             k: [RayPartitionRef(v.partition(), v.metadata().num_rows, v.metadata().size_bytes or 0) for v in v.values()]
             for k, v in partition_sets.items()
         }
         self.curr_plans[plan.idx()] = plan
-        self.curr_result_gens[plan.idx()] = self.plan_runner.run_plan(plan, psets)
+        self.curr_result_gens[plan.idx()] = self.plan_runner.run_plan(plan, psets, state)
 
-    async def get_next_partition(self, plan_id: str) -> RayMaterializedResult | None:
+    async def get_next_partition(self, query_idx: str) -> RayMaterializedResult | None:
         from daft.runners.ray_runner import (
             PartitionMetadataAccessor,
             RayMaterializedResult,
         )
 
-        if plan_id not in self.curr_result_gens:
-            raise ValueError(f"Plan {plan_id} not found in FlotillaPlanRunner")
+        if query_idx not in self.curr_result_gens:
+            raise ValueError(f"Plan {query_idx} not found in FlotillaPlanRunner")
 
-        next_partition_ref = await self.curr_result_gens[plan_id].__anext__()
+        next_partition_ref = await self.curr_result_gens[query_idx].__anext__()
         if next_partition_ref is None:
-            self.curr_plans.pop(plan_id)
-            self.curr_result_gens.pop(plan_id)
+            self.curr_plans.pop(query_idx)
+            self.curr_result_gens.pop(query_idx)
             return None
 
         metadata_accessor = PartitionMetadataAccessor.from_metadata_list(
@@ -319,11 +321,12 @@ class FlotillaRunner:
         self,
         plan: DistributedPhysicalPlan,
         partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
+        state: PyContextState,
     ) -> Iterator[RayMaterializedResult]:
-        plan_id = plan.idx()
-        ray.get(self.runner.run_plan.remote(plan, partition_sets))
+        plan_idx = plan.idx()
+        ray.get(self.runner.run_plan.remote(plan, partition_sets, state))
         while True:
-            materialized_result = ray.get(self.runner.get_next_partition.remote(plan_id))
+            materialized_result = ray.get(self.runner.get_next_partition.remote(plan_idx))
             if materialized_result is None:
                 break
             yield materialized_result

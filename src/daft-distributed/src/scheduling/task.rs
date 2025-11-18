@@ -345,6 +345,7 @@ pub(super) mod tests {
 
     use common_error::{DaftError, DaftResult};
     use common_partitioning::Partition;
+    use daft_recordbatch::RecordBatch;
 
     use super::*;
     use crate::utils::channel::OneshotSender;
@@ -375,6 +376,10 @@ pub(super) mod tests {
 
         fn num_rows(&self) -> DaftResult<usize> {
             Ok(self.num_rows)
+        }
+
+        fn to_record_batches(&self) -> DaftResult<Vec<RecordBatch>> {
+            Ok(vec![])
         }
     }
 

@@ -1,12 +1,13 @@
+#[cfg(feature = "python")]
+pub(crate) mod progress_bar;
 pub(crate) mod stats;
 
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
-use common_metrics::StatSnapshot;
+use common_metrics::{QueryID, StatSnapshot};
+use daft_context::{Subscriber, Subscribers};
+use futures::future;
 
 use crate::{
     pipeline_node::NodeID,
@@ -91,18 +92,41 @@ pub type StatisticsManagerRef = Arc<StatisticsManager>;
 #[derive(Default)]
 pub struct StatisticsManager {
     runtime_stats: HashMap<NodeID, Arc<dyn RuntimeStats>>,
-    subscribers: Mutex<Vec<Box<dyn StatisticsSubscriber>>>,
+    subscribers: Vec<Arc<Subscribers>>,
+    #[cfg(feature = "python")]
+    progress_bar: Option<progress_bar::FlotillaProgressBar>,
 }
 
 impl StatisticsManager {
     pub fn new(
         runtime_stats: HashMap<NodeID, Arc<dyn RuntimeStats>>,
-        subscribers: Vec<Box<dyn StatisticsSubscriber>>,
+        subscribers: Vec<Arc<Subscribers>>,
     ) -> StatisticsManagerRef {
-        Arc::new(Self {
-            runtime_stats,
-            subscribers: Mutex::new(subscribers),
-        })
+        #[cfg(feature = "python")]
+        {
+            use pyo3::Python;
+
+            let progress_bar = Python::attach(|py| {
+                Some(
+                    progress_bar::FlotillaProgressBar::try_new(py)
+                        .expect("Failed to create progress bar"),
+                )
+            });
+
+            Arc::new(Self {
+                runtime_stats,
+                subscribers,
+                progress_bar,
+            })
+        }
+
+        #[cfg(not(feature = "python"))]
+        {
+            Arc::new(Self {
+                runtime_stats,
+                subscribers,
+            })
+        }
     }
 
     pub fn handle_event(&self, event: TaskEvent) -> DaftResult<()> {
@@ -114,11 +138,30 @@ impl StatisticsManager {
             runtime_stats.handle_task_event(&event)?;
         }
 
-        let mut subscribers = self.subscribers.lock().unwrap();
-        for (i, subscriber) in subscribers.iter_mut().enumerate() {
-            tracing::info!(target: STATISTICS_LOG_TARGET, "StatisticsManager calling subscriber {}", i);
-            subscriber.handle_event(&event)?;
+        #[cfg(feature = "python")]
+        {
+            if let Some(progress_bar) = &self.progress_bar {
+                progress_bar.handle_event(&event)?;
+            }
         }
+
+        Ok(())
+    }
+
+    pub fn handle_start(&self, query_id: QueryID) -> DaftResult<()> {
+        for subscriber in self.subscribers.iter() {
+            subscriber.on_exec_start(query_id.clone())?;
+        }
+        Ok(())
+    }
+
+    pub async fn handle_finish(&self, query_id: QueryID) -> DaftResult<()> {
+        future::try_join_all(
+            self.subscribers
+                .iter()
+                .map(|subscriber| subscriber.on_exec_end(query_id.clone())),
+        )
+        .await?;
         Ok(())
     }
 }

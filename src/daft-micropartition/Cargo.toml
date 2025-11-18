@@ -23,6 +23,7 @@ pyo3 = {workspace = true, optional = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tracing = {workspace = true}
+serde = {workspace = true}
 
 [features]
 python = [

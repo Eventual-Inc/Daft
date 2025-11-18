@@ -22,6 +22,9 @@ impl Partition for MicroPartition {
     fn num_rows(&self) -> DaftResult<usize> {
         Ok(self.len())
     }
+    fn to_record_batches(&self) -> DaftResult<Vec<RecordBatch>> {
+        Ok(self.get_tables()?.iter().cloned().collect())
+    }
 }
 
 // An in memory partition set

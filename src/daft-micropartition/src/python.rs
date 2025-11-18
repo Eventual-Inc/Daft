@@ -1,7 +1,9 @@
 use std::sync::{Arc, Mutex};
 
 use common_error::{DaftError, DaftResult};
-use common_partitioning::{Partition, PartitionId, PartitionSet};
+use common_partitioning::{
+    Partition, PartitionId, PartitionRef, PartitionSet, python::PyPartitionRef,
+};
 use daft_core::{
     join::JoinSide,
     prelude::*,
@@ -123,6 +125,12 @@ impl PyMicroPartition {
 
     pub fn __repr_html__(&self) -> PyResult<String> {
         todo!("[MICROPARTITION_INT] __repr_html__")
+    }
+
+    pub fn as_partition_ref(&self) -> PyResult<PyPartitionRef> {
+        let mp = self.inner.clone();
+        let partition_ref = mp as PartitionRef;
+        Ok(PyPartitionRef::new(partition_ref))
     }
 
     // Creation Methods

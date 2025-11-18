@@ -108,19 +108,19 @@ impl SortMergeJoinNode {
         task_id_counter: &TaskIDCounter,
         result_tx: &Sender<SubmittableTask<SwordfishTask>>,
     ) -> DaftResult<()> {
-        let left_cache_key = self.left.node_id().to_string();
-        let right_cache_key = self.right.node_id().to_string();
+        let left_cache_key = self.left.op.node_id().to_string();
+        let right_cache_key = self.right.op.node_id().to_string();
 
         let left_in_memory_source_plan = make_in_memory_scan_from_materialized_outputs(
             &left_partition_group,
             self.left.config().schema.clone(),
-            self.left.node_id(),
+            self.left.op.node_id(),
         )?;
 
         let right_in_memory_source_plan = make_in_memory_scan_from_materialized_outputs(
             &right_partition_group,
             self.right.config().schema.clone(),
-            self.right.node_id(),
+            self.right.op.node_id(),
         )?;
 
         let left_partition_refs = left_partition_group

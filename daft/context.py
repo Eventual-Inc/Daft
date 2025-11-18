@@ -108,11 +108,8 @@ class DaftContext:
         self._ctx.notify_optimization_end(query_id, optimized_plan)
 
     def _notify_result_out(self, query_id: str, result: PartitionT) -> None:
-        from daft.recordbatch.micropartition import MicroPartition
-
-        if not isinstance(result, MicroPartition):
-            raise ValueError("Query Managers only support the Native Runner for now")
-        self._ctx.notify_result_out(query_id, result._micropartition)
+        inner = result.as_partition_ref()
+        self._ctx.notify_result_out(query_id, inner)
 
 
 def get_context() -> DaftContext:

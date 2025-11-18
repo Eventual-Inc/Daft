@@ -1,10 +1,7 @@
 use common_error::DaftResult;
 use pyo3::{Py, PyAny, PyResult, Python, types::PyAnyMethods};
 
-use crate::{
-    scheduling::task::TaskContext,
-    statistics::{StatisticsSubscriber, TaskEvent},
-};
+use crate::{scheduling::task::TaskContext, statistics::TaskEvent};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct BarId(i64);
@@ -58,16 +55,8 @@ impl FlotillaProgressBar {
             progress_bar.call0(py).expect("Failed to call close method");
         });
     }
-}
 
-impl Drop for FlotillaProgressBar {
-    fn drop(&mut self) {
-        self.close();
-    }
-}
-
-impl StatisticsSubscriber for FlotillaProgressBar {
-    fn handle_event(&mut self, event: &TaskEvent) -> DaftResult<()> {
+    pub fn handle_event(&self, event: &TaskEvent) -> DaftResult<()> {
         match event {
             TaskEvent::Submitted { context, name } => {
                 self.make_bar_or_update_total(BarId::from(context), name)?;
@@ -87,5 +76,11 @@ impl StatisticsSubscriber for FlotillaProgressBar {
                 Ok(())
             }
         }
+    }
+}
+
+impl Drop for FlotillaProgressBar {
+    fn drop(&mut self) {
+        self.close();
     }
 }

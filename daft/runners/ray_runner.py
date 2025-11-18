@@ -20,7 +20,7 @@ import ray.experimental  # noqa: TID253
 
 from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
-from daft.daft import DistributedPhysicalPlan
+from daft.daft import DistributedPhysicalPlan, PyQueryMetadata, RayPartitionRef
 from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
 from daft.recordbatch import RecordBatch
@@ -1326,9 +1326,14 @@ class RayRunner(Runner[ray.ObjectRef]):
         ctx = get_context()
         query_id = str(uuid.uuid4())
         daft_execution_config = ctx.daft_execution_config
+        query_id = str(uuid.uuid4())
+        output_schema = builder.schema()
+        ctx._notify_query_start(query_id, PyQueryMetadata(output_schema._schema, repr(builder)))
 
         # Optimize the logical plan.
+        ctx._notify_optimization_start(query_id)
         builder = builder.optimize(daft_execution_config)
+        ctx._notify_optimization_end(query_id, repr(builder))
 
         if daft_execution_config.use_legacy_ray_runner:
             if daft_execution_config.enable_aqe:
@@ -1388,9 +1393,12 @@ class RayRunner(Runner[ray.ObjectRef]):
             if self.flotilla_plan_runner is None:
                 self.flotilla_plan_runner = FlotillaRunner()
 
-            yield from self.flotilla_plan_runner.stream_plan(
-                distributed_plan, self._part_set_cache.get_all_partition_sets()
-            )
+            for partition in self.flotilla_plan_runner.stream_plan(
+                distributed_plan, self._part_set_cache.get_all_partition_sets(), ctx._ctx.state
+            ):
+                ctx._notify_result_out(query_id, partition.to_ray_partition_ref())
+                yield partition
+            ctx._notify_query_end(query_id)
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
@@ -1457,6 +1465,9 @@ class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
 
     def _noop(self, _: ray.ObjectRef) -> None:
         return None
+
+    def to_ray_partition_ref(self) -> RayPartitionRef:
+        return RayPartitionRef(self._partition, self.metadata().num_rows, self.metadata().size_bytes)
 
 
 class PartitionMetadataAccessor:

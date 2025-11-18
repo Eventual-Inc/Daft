@@ -133,7 +133,7 @@ macro_rules! impl_bincode_py_state_serialization {
                     serialized,
                     $crate::bincode::config::legacy(),
                 )
-                .unwrap()
+                .expect("Failed to deserialize")
                 .0
             }
         }
