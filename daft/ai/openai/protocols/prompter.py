@@ -8,11 +8,11 @@ from openai import AsyncOpenAI
 from openai.types.completion_usage import CompletionUsage
 from openai.types.responses import ResponseUsage
 
+from daft.ai.metrics import record_token_metrics
 from daft.ai.protocols import Prompter, PrompterDescriptor
 from daft.ai.typing import UDFOptions
 from daft.dependencies import np
 from daft.file import File
-from daft.udf.metrics import increment_counter
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
@@ -203,15 +203,14 @@ class OpenAIPrompter(Prompter):
         output_tokens: int,
         total_tokens: int,
     ) -> None:
-        attrs = {
-            "model": self.model,
-            "protocol": "prompt",
-            "provider": self.provider_name,
-        }
-        increment_counter("input tokens", input_tokens, attributes=attrs)
-        increment_counter("output tokens", output_tokens, attributes=attrs)
-        increment_counter("total tokens", total_tokens, attributes=attrs)
-        increment_counter("requests", attributes=attrs)
+        record_token_metrics(
+            protocol="prompt",
+            model=self.model,
+            provider=self.provider_name,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+        )
 
     async def _prompt_with_chat_completions(self, messages_list: list[dict[str, Any]]) -> Any:
         """Generate responses using the Chat Completions API."""

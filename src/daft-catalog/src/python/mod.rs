@@ -2,7 +2,7 @@
 
 mod wrappers;
 
-use std::sync::Arc;
+use std::{hash::Hasher, sync::Arc};
 
 use daft_core::{lit::Literal, python::PySchema};
 use daft_logical_plan::PyLogicalPlanBuilder;
@@ -200,6 +200,14 @@ impl PyIdentifier {
 
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.0))
+    }
+
+    pub fn __hash__(&self) -> PyResult<u64> {
+        use std::{collections::hash_map::DefaultHasher, hash::Hash};
+
+        let mut hasher = DefaultHasher::new();
+        self.0.hash(&mut hasher);
+        Ok(hasher.finish())
     }
 }
 
