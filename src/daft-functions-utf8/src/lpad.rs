@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::pad::{PadPlacement, series_pad};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct LPad;
 
 #[typetag::serde]

@@ -14,7 +14,8 @@ use crate::state::{
     DashboardState, ExecInfo, OperatorInfo, OperatorStatus, PlanInfo, QueryInfo, QueryState,
 };
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct StartQueryArgs {
     pub start_sec: u64,
     pub unoptimized_plan: QueryPlan,
@@ -47,7 +48,8 @@ async fn query_start(
     StatusCode::OK
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PlanStartArgs {
     pub plan_start_sec: u64,
 }
@@ -75,7 +77,8 @@ async fn plan_start(
     StatusCode::OK
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PlanEndArgs {
     pub plan_end_sec: u64,
     pub optimized_plan: QueryPlan,
@@ -106,7 +109,8 @@ async fn plan_end(
     StatusCode::OK
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct ExecStartArgs {
     pub exec_start_sec: u64,
     pub node_infos: Vec<NodeInfo>,
@@ -186,12 +190,14 @@ async fn exec_op_end(
     StatusCode::OK
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Clone, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct ExecEmitStatsArgsSend {
     pub stats: Vec<(usize, HashMap<String, Stat>)>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct ExecEmitStatsArgsRecv {
     pub stats: Vec<(usize, HashMap<String, Stat>)>,
 }
@@ -217,7 +223,8 @@ async fn exec_emit_stats(
     StatusCode::OK
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct ExecEndArgs {
     pub exec_end_sec: u64,
 }
@@ -249,7 +256,8 @@ async fn exec_end(
     StatusCode::OK
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct FinalizeArgs {
     pub end_sec: u64,
     // IPC-serialized RecordBatch

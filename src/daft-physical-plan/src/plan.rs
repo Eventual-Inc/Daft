@@ -14,7 +14,8 @@ use super::ops::*;
 pub type PhysicalPlanRef = Arc<PhysicalPlan>;
 
 /// Physical plan for a Daft query.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub enum PhysicalPlan {
     InMemoryScan(InMemoryScan),
     TabularScan(TabularScan),
@@ -50,6 +51,12 @@ pub enum PhysicalPlan {
     LanceWrite(LanceWrite),
     #[cfg(feature = "python")]
     DataSink(DataSink),
+}
+#[cfg(not(debug_assertions))]
+impl std::fmt::Debug for PhysicalPlan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name())
+    }
 }
 
 impl PhysicalPlan {

@@ -101,7 +101,8 @@ const V_COL_R: &str = "__v_col_r";
 const V_R_CNT: &str = "__v_r_cnt";
 const V_MIN_COUNT: &str = "__min_count";
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Intersect {
     pub plan_id: Option<usize>,
     pub node_id: Option<usize>,
@@ -255,7 +256,8 @@ impl Intersect {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Union {
     pub plan_id: Option<usize>,
     pub node_id: Option<usize>,
@@ -407,7 +409,8 @@ impl Union {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Except {
     pub plan_id: Option<usize>,
     pub node_id: Option<usize>,
