@@ -492,7 +492,7 @@ Start local, scale global—without changing a line of code. Daft's Rust-powered
 
 * **Rust-powered performance**: Experience breakthrough speed with our Rust foundation delivering vectorized execution and non-blocking I/O that processes the same queries with 5x less memory while consistently outperforming industry standards by an order of magnitude.
 
-* **Universal data connectivity**: Access data anywhere it lives—cloud storage ([S3](https://aws.amazon.com/s3/), [Azure](https://azure.microsoft.com/en-us/), [GCS](https://cloud.google.com/storage)), modern table formats ([Apache Iceberg](https://iceberg.apache.org/), [Delta Lake](https://delta.io/), [Apache Hudi](https://hudi.apache.org/)), or enterprise catalogs ([Unity](https://www.unitycatalog.io/), [AWS Glue](https://aws.amazon.com/glue/))—all with zero configuration.
+* **Universal data connectivity**: Access data anywhere it lives—cloud storage ([S3](connectors/aws.md), [Azure](connectors/azure.md), [GCS](api/config.md#daft.io.GCSConfig), [Hugging Face](connectors/huggingface.md)), modern table formats ([Apache Iceberg](connectors/iceberg.md), [Delta Lake](connectors/delta_lake.md), [Apache Hudi](connectors/hudi.md)), or enterprise catalogs ([Unity Catalog](connectors/unity_catalog.md), [AWS Glue](connectors/glue.md))—all with zero configuration.
 
 * **Push your code to your data**: Bring your Python functions directly to your data with zero-copy UDFs powered by [Apache Arrow](https://arrow.apache.org/), eliminating data movement overhead and accelerating processing speeds.
 
