@@ -197,6 +197,13 @@ To run rust tests that call into Python, the `--features python` flag and libpyt
 
 Set environment variables to locate the Python library:
 
+Tip: you can run the following python command to get the full path to the pylib
+
+```sh
+python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR') + '/' + sysconfig.get_config_var('LDLIBRARY'))"
+```
+
+
 ```sh
 export PYO3_PYTHON=".venv/bin/python"
 export PYO3_PYTHON_PYLIB="/usr/lib/x86_64-linux-gnu/libpython3.11.so.1"
