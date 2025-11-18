@@ -57,7 +57,8 @@ use crate::{
 ///
 /// This builder holds the current root (sink) of the logical plan, and the building methods return
 /// a brand new builder holding a new plan; i.e., this is an immutable builder.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct LogicalPlanBuilder {
     // The current root of the logical plan in this builder.
     pub plan: Arc<LogicalPlan>,
@@ -868,6 +869,7 @@ impl LogicalPlanBuilder {
                 unoptimized_plan,
                 |new_plan, rule_batch, pass, transformed, seen| {
                     if transformed {
+
                         log::debug!(
                             "Rule batch {:?} transformed plan on pass {}, and produced {} plan:\n{}",
                             rule_batch,
@@ -1035,7 +1037,8 @@ impl LogicalPlanBuilder {
 /// as possible, converting pyo3 wrapper type arguments into their underlying Rust-native types
 /// (e.g. PySchema -> Schema).
 #[cfg_attr(feature = "python", pyclass(name = "LogicalPlanBuilder"))]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PyLogicalPlanBuilder {
     // Internal logical plan builder.
     pub builder: LogicalPlanBuilder,

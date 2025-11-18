@@ -409,8 +409,8 @@ impl<'de> Deserializer<'de> for LiteralDeserializer<'de> {
             }
 
             _ => Err(LitError::custom(format!(
-                "Invalid enum value: {:?}",
-                self.lit
+                "Invalid enum type: {:?}",
+                self.lit.get_type()
             ))),
         }
     }

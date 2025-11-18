@@ -9,7 +9,8 @@ use snafu::ResultExt;
 
 use crate::{LogicalPlan, logical_plan, logical_plan::CreationSnafu, stats::StatsState};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Sort {
     pub plan_id: Option<usize>,
     pub node_id: Option<usize>,

@@ -20,12 +20,22 @@ fn secs_from_epoch() -> u64 {
         .as_secs()
 }
 
-#[derive(Debug)]
 pub struct DashboardSubscriber {
     url: String,
     client: Client,
     runtime: RuntimeRef,
     preview_rows: DashMap<QueryID, MicroPartitionRef>,
+}
+
+impl std::fmt::Debug for DashboardSubscriber {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DashboardSubscriber")
+            .field("url", &self.url)
+            .field("client", &self.client)
+            .field("runtime", &self.runtime.runtime)
+            .field("preview_rows", &self.preview_rows)
+            .finish()
+    }
 }
 
 impl DashboardSubscriber {
