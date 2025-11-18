@@ -108,7 +108,7 @@ dev = [
   "pyarrow==20.0.0",
   "pyarrow-stubs==19.4",
   # Ray
-  "ray[data, client]>=2.49.0",
+  "ray[data, client]==2.48.0",
   # Lance
   "pylance>=0.37.0",
   # Iceberg
