@@ -203,9 +203,6 @@ python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR') + '/' + sy
 
 Set environment variables to locate the Python library:
 
-
-
-
 ```sh
 export PYO3_PYTHON=".venv/bin/python"
 export PYO3_PYTHON_PYLIB="/usr/lib/x86_64-linux-gnu/libpython3.11.so.1"
