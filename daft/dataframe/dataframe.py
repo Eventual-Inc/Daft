@@ -1639,7 +1639,7 @@ class DataFrame:
         from daft.io.huggingface.sink import HuggingFaceSink
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
-
+        assert io_config.hf is not None, "Missing HuggingFace IO Config"
         sink = HuggingFaceSink(
             repo, split, data_dir, revision, overwrite, commit_message, commit_description, io_config.hf
         )

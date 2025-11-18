@@ -862,13 +862,14 @@ class TosConfig:
 class IOConfig:
     """Configuration for the native I/O layer, e.g. credentials for accessing cloud storage systems."""
 
-    s3: S3Config
-    azure: AzureConfig
-    gcs: GCSConfig
-    http: HTTPConfig
-    unity: UnityConfig
-    hf: HuggingFaceConfig
-    tos: TosConfig
+    # FIXME by zhenchao check is None
+    s3: S3Config | None
+    azure: AzureConfig | None
+    gcs: GCSConfig | None
+    http: HTTPConfig | None
+    unity: UnityConfig | None
+    hf: HuggingFaceConfig | None
+    tos: TosConfig | None
 
     def __init__(
         self,

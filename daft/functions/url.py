@@ -37,6 +37,7 @@ def _override_io_config_max_connections(max_connections: int, io_config: IOConfi
     is correctly applied in our Rust code.
     """
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+    assert io_config.s3 is not None, "Missing S3 IO Config"
     io_config = io_config.replace(s3=io_config.s3.replace(max_connections=max_connections))
     return io_config
 
@@ -71,7 +72,7 @@ def download(
     multi_thread = _should_use_multithreading_tokio_runtime()
     io_config = _override_io_config_max_connections(max_connections, io_config)
 
-    if io_config.unity.endpoint is None:
+    if io_config.unity and io_config.unity.endpoint is None:
         try:
             from daft.catalog.__unity import UnityCatalog
         except ImportError:

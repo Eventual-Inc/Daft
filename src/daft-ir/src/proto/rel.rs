@@ -827,42 +827,44 @@ impl ToFromProto for ir::IOConfig {
     where
         Self: Sized,
     {
-        let s3 = ir::S3Config::from_proto(non_null!(message.s3))?;
-        let azure = ir::AzureConfig::from_proto(non_null!(message.azure))?;
-        let gcs = ir::GCSConfig::from_proto(non_null!(message.gcs))?;
-        let http = ir::HTTPConfig::from_proto(non_null!(message.http))?;
-        let unity = ir::UnityConfig::from_proto(non_null!(message.unity))?;
-        let hf = ir::HuggingFaceConfig::from_proto(non_null!(message.hf))?;
-        let tos = ir::TosConfig::from_proto(non_null!(message.tos))?;
-
+        let s3 = message.s3.map(ir::S3Config::from_proto).transpose()?;
+        let azure = message.azure.map(ir::AzureConfig::from_proto).transpose()?;
+        let gcs = message.gcs.map(ir::GCSConfig::from_proto).transpose()?;
+        let tos = message.tos.map(ir::TosConfig::from_proto).transpose()?;
+        let http = message.http.map(ir::HTTPConfig::from_proto).transpose()?;
+        let unity = message.unity.map(ir::UnityConfig::from_proto).transpose()?;
+        let hf = message
+            .hf
+            .map(ir::HuggingFaceConfig::from_proto)
+            .transpose()?;
         Ok(Self {
             s3,
             azure,
             gcs,
+            tos,
             http,
             unity,
             hf,
-            tos,
         })
     }
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
-        let s3 = self.s3.to_proto()?;
-        let azure = self.azure.to_proto()?;
-        let gcs = self.gcs.to_proto()?;
-        let http = self.http.to_proto()?;
-        let unity = self.unity.to_proto()?;
-        let hf = self.hf.to_proto()?;
-        let tos = self.tos.to_proto()?;
+        let s3 = self.s3.as_ref().map(|s| s.to_proto()).transpose()?;
+        let azure = self.azure.as_ref().map(|a| a.to_proto()).transpose()?;
+        let gcs = self.gcs.as_ref().map(|g| g.to_proto()).transpose()?;
+        let tos = self.tos.as_ref().map(|t| t.to_proto()).transpose()?;
+        let http = self.http.as_ref().map(|h| h.to_proto()).transpose()?;
+        let unity = self.unity.as_ref().map(|u| u.to_proto()).transpose()?;
+        let hf = self.hf.as_ref().map(|h| h.to_proto()).transpose()?;
 
         Ok(proto::IoConfig {
-            s3: Some(s3),
-            azure: Some(azure),
-            gcs: Some(gcs),
-            http: Some(http),
-            unity: Some(unity),
-            hf: Some(hf),
-            tos: Some(tos),
+            s3,
+            azure,
+            gcs,
+            tos,
+            http,
+            unity,
+            hf,
         })
     }
 }

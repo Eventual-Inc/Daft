@@ -19,10 +19,13 @@ def io_config_to_storage_options(io_config: IOConfig, table_uri: str) -> dict[st
     scheme = parsed.scheme
     if scheme == "s3" or scheme == "s3a":
         bucket = parsed.netloc
+        assert io_config.s3 is not None, "Missing S3 IO Config"
         return _s3_config_to_storage_options(io_config.s3, bucket)
     elif scheme == "gcs" or scheme == "gs":
+        assert io_config.gcs is not None, "Missing GCS IO Config"
         return _gcs_config_to_storage_options(io_config.gcs)
     elif scheme == "az" or scheme == "abfs" or scheme == "abfss":
+        assert io_config.azure is not None, "Missing Azure IO Config"
         return _azure_config_to_storage_options(io_config.azure)
     else:
         return None

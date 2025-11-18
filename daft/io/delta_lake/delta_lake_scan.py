@@ -72,37 +72,33 @@ class DeltaLakeScanOperator(ScanOperator):
         scheme = urlparse(table_uri).scheme
         if scheme == "s3" or scheme == "s3a":
             # Try to get the bucket's region.
-            if deltalake_sdk_io_config.s3.region_name is None:
+            assert deltalake_sdk_io_config.s3 is not None, "Missing S3 IO Config"
+            s3_config = deltalake_sdk_io_config.s3
+            if s3_config.region_name is None:
                 bucket_name = urlparse(table_uri).netloc
                 region = get_s3_bucket_region(bucket_name)
                 if region is not None:
-                    deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
-                        s3=deltalake_sdk_io_config.s3.replace(region_name=region)
-                    )
+                    deltalake_sdk_io_config = deltalake_sdk_io_config.replace(s3=s3_config.replace(region_name=region))
 
             # Try to get config from the environment
-            if any([deltalake_sdk_io_config.s3.key_id is None, deltalake_sdk_io_config.s3.region_name is None]):
+            if any([s3_config.key_id is None, s3_config.region_name is None]):
                 try:
                     s3_config_from_env = S3Config.from_env()
                 # Sometimes S3Config.from_env throws an error, for example on CI machines with weird metadata servers.
                 except daft.exceptions.DaftCoreException:
                     pass
                 else:
-                    if (
-                        deltalake_sdk_io_config.s3.key_id is None
-                        and deltalake_sdk_io_config.s3.access_key is None
-                        and deltalake_sdk_io_config.s3.session_token is None
-                    ):
+                    if s3_config.key_id is None and s3_config.access_key is None and s3_config.session_token is None:
                         deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
-                            s3=deltalake_sdk_io_config.s3.replace(
+                            s3=s3_config.replace(
                                 key_id=s3_config_from_env.key_id,
                                 access_key=s3_config_from_env.access_key,
                                 session_token=s3_config_from_env.session_token,
                             )
                         )
-                    if deltalake_sdk_io_config.s3.region_name is None:
+                    if s3_config.region_name is None:
                         deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
-                            s3=deltalake_sdk_io_config.s3.replace(
+                            s3=s3_config.replace(
                                 region_name=s3_config_from_env.region_name,
                             )
                         )
