@@ -20,8 +20,7 @@ use crate::kernels::BinaryArrayExtension;
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct BinaryDecode;
 
-#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash, common_macros::FunctionArgs,
-)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash, common_macros::FunctionArgs)]
 struct Args<T> {
     input: T,
     codec: Codec,
