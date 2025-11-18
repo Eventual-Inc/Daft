@@ -290,6 +290,7 @@ def _infer_filesystem(
 
         if io_config is not None:
             # TODO: look into support for other AzureConfig parameters
+            assert io_config.azure is not None, "Missing Azure IO Config"
             fsspec_fs = fsspec_fs_cls(
                 account_name=io_config.azure.storage_account,
                 account_key=io_config.azure.access_key,

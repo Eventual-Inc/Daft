@@ -8,63 +8,101 @@ use crate::{
 };
 #[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct IOConfig {
-    pub s3: S3Config,
-    pub azure: AzureConfig,
-    pub gcs: GCSConfig,
-    pub http: HTTPConfig,
-    pub unity: UnityConfig,
-    pub hf: HuggingFaceConfig,
-    pub tos: TosConfig,
+    pub s3: Option<S3Config>,
+    pub azure: Option<AzureConfig>,
+    pub gcs: Option<GCSConfig>,
+    pub tos: Option<TosConfig>,
+    pub http: Option<HTTPConfig>,
+    pub unity: Option<UnityConfig>,
+    pub hf: Option<HuggingFaceConfig>,
 }
 
 impl IOConfig {
     #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push(format!(
-            "S3 config = {{ {} }}",
-            self.s3.multiline_display().join(", ")
-        ));
-        res.push(format!(
-            "Azure config = {{ {} }}",
-            self.azure.multiline_display().join(", ")
-        ));
-        res.push(format!(
-            "GCS config = {{ {} }}",
-            self.gcs.multiline_display().join(", ")
-        ));
-        res.push(format!(
-            "HTTP config = {{ {} }}",
-            self.http.multiline_display().join(", ")
-        ));
-        res.push(format!(
-            "Unity config = {{ {} }}",
-            self.unity.multiline_display().join(", ")
-        ));
-        res.push(format!(
-            "Hugging Face config = {{ {} }}",
-            self.hf.multiline_display().join(", ")
-        ));
-        res.push(format!(
-            "TOS config = {{ {} }}",
-            self.tos.multiline_display().join(", ")
-        ));
+        if let Some(s3) = &self.s3 {
+            res.push(format!(
+                "S3 config = {{ {} }}",
+                s3.multiline_display().join(", ")
+            ));
+        }
+
+        if let Some(azure) = &self.azure {
+            res.push(format!(
+                "Azure config = {{ {} }}",
+                azure.multiline_display().join(", ")
+            ));
+        }
+
+        if let Some(gcs) = &self.gcs {
+            res.push(format!(
+                "GCS config = {{ {} }}",
+                gcs.multiline_display().join(", ")
+            ));
+        }
+
+        if let Some(tos) = &self.tos {
+            res.push(format!(
+                "TOS config = {{ {} }}",
+                tos.multiline_display().join(", ")
+            ));
+        }
+
+        if let Some(http) = &self.http {
+            res.push(format!(
+                "HTTP config = {{ {} }}",
+                http.multiline_display().join(", ")
+            ));
+        }
+
+        if let Some(unity) = &self.unity {
+            res.push(format!(
+                "Unity config = {{ {} }}",
+                unity.multiline_display().join(", ")
+            ));
+        }
+
+        if let Some(hf) = &self.hf {
+            res.push(format!(
+                "Hugging Face config = {{ {} }}",
+                hf.multiline_display().join(", ")
+            ));
+        }
+
         res
     }
 }
 
 impl Display for IOConfig {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        write!(
-            f,
-            "IOConfig:
-{}
-{}
-{}
-{}
-{}
-",
-            self.s3, self.azure, self.gcs, self.tos, self.http
-        )
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "IOConfig:")?;
+
+        if let Some(s3) = &self.s3 {
+            writeln!(f)?;
+            write!(f, "{}", s3)?;
+        }
+
+        if let Some(azure) = &self.azure {
+            writeln!(f)?;
+            write!(f, "{}", azure)?;
+        }
+
+        if let Some(gcs) = &self.gcs {
+            writeln!(f)?;
+            write!(f, "{}", gcs)?;
+        }
+
+        if let Some(tos) = &self.tos {
+            writeln!(f)?;
+            write!(f, "{}", tos)?;
+        }
+
+        if let Some(http) = &self.http {
+            writeln!(f)?;
+            write!(f, "{}", http)?;
+        }
+
+        Ok(())
     }
 }

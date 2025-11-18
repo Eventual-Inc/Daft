@@ -92,7 +92,8 @@ impl StorageBackend for S3StorageBackend {
 
     async fn create_writer(&mut self, filename: &Path) -> DaftResult<Self::Writer> {
         let filename = filename.to_string_lossy().to_string();
-        let part_size = NonZeroUsize::new(self.io_config.s3.multipart_size as usize)
+        let s3_config = self.io_config.s3.as_ref().expect("Missing S3 IO config");
+        let part_size = NonZeroUsize::new(s3_config.multipart_size as usize)
             .expect("S3 multipart part size must be non-zero");
         let (tx, mut rx) = tokio::sync::mpsc::channel(1);
 
@@ -126,7 +127,7 @@ impl StorageBackend for S3StorageBackend {
         let mut s3_multipart_writer = S3MultipartWriter::create(
             uri,
             part_size,
-            NonZeroUsize::new(self.io_config.s3.multipart_max_concurrency as usize)
+            NonZeroUsize::new(s3_config.multipart_max_concurrency as usize)
                 .expect("S3 multipart concurrent uploads per object must be non-zero"),
             s3_client,
         )

@@ -76,20 +76,34 @@ impl ConnectSession {
             mut tos,
         } = get_context().io_config();
 
-        self.s3_config_helper(&mut s3)?;
-        self.azure_config_helper(&mut azure)?;
-        self.gcs_config_helper(&mut gcs)?;
-        self.http_config_helper(&mut http)?;
-        self.tos_config_helper(&mut tos)?;
+        if let Some(cfg) = &mut s3 {
+            self.s3_config_helper(cfg)?;
+        }
+
+        if let Some(cfg) = &mut azure {
+            self.azure_config_helper(cfg)?;
+        }
+
+        if let Some(cfg) = &mut gcs {
+            self.gcs_config_helper(cfg)?;
+        }
+
+        if let Some(cfg) = &mut tos {
+            self.tos_config_helper(cfg)?;
+        }
+
+        if let Some(cfg) = &mut http {
+            self.http_config_helper(cfg)?;
+        }
 
         Ok(IOConfig {
             s3,
             azure,
             gcs,
+            tos,
             http,
             unity,
             hf,
-            tos,
         })
     }
 

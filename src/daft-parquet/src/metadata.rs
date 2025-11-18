@@ -343,7 +343,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_io::{IOClient, IOConfig};
+    use daft_io::{IOClient, IOConfig, S3Config};
 
     use super::read_parquet_metadata;
     use crate::Error;
@@ -353,8 +353,13 @@ mod tests {
         let file = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet";
         let size = 9882;
 
-        let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        let io_config = IOConfig {
+            s3: Some(S3Config {
+                anonymous: true,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         // Read metadata with actual file size.

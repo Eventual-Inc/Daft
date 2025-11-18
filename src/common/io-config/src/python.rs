@@ -202,13 +202,13 @@ impl IOConfig {
     ) -> Self {
         Self {
             config: config::IOConfig {
-                s3: s3.unwrap_or_default().config,
-                azure: azure.unwrap_or_default().config,
-                gcs: gcs.unwrap_or_default().config,
-                http: http.unwrap_or_default().config,
-                unity: unity.unwrap_or_default().config,
-                hf: hf.unwrap_or_default().config,
-                tos: tos.unwrap_or_default().config,
+                s3: s3.map(|s3| s3.config),
+                azure: azure.map(|azure| azure.config),
+                gcs: gcs.map(|gcs| gcs.config),
+                tos: tos.map(|tos| tos.config),
+                http: http.map(|http| http.config),
+                unity: unity.map(|unity| unity.config),
+                hf: hf.map(|hf| hf.config),
             },
         }
     }
@@ -236,27 +236,23 @@ impl IOConfig {
     ) -> Self {
         Self {
             config: config::IOConfig {
-                s3: s3
-                    .map(|s3| s3.config)
-                    .unwrap_or_else(|| self.config.s3.clone()),
+                s3: s3.map(|s3| s3.config).or_else(|| self.config.s3.clone()),
                 azure: azure
                     .map(|azure| azure.config)
-                    .unwrap_or_else(|| self.config.azure.clone()),
+                    .or_else(|| self.config.azure.clone()),
                 gcs: gcs
                     .map(|gcs| gcs.config)
-                    .unwrap_or_else(|| self.config.gcs.clone()),
-                http: http
-                    .map(|http| http.config)
-                    .unwrap_or_else(|| self.config.http.clone()),
-                unity: unity
-                    .map(|unity| unity.config)
-                    .unwrap_or_else(|| self.config.unity.clone()),
-                hf: hf
-                    .map(|hf| hf.config)
-                    .unwrap_or_else(|| self.config.hf.clone()),
+                    .or_else(|| self.config.gcs.clone()),
                 tos: tos
                     .map(|tos| tos.config)
-                    .unwrap_or_else(|| self.config.tos.clone()),
+                    .or_else(|| self.config.tos.clone()),
+                http: http
+                    .map(|http| http.config)
+                    .or_else(|| self.config.http.clone()),
+                unity: unity
+                    .map(|unity| unity.config)
+                    .or_else(|| self.config.unity.clone()),
+                hf: hf.map(|hf| hf.config).or_else(|| self.config.hf.clone()),
             },
         }
     }
@@ -267,55 +263,59 @@ impl IOConfig {
 
     /// Configuration to be used when accessing s3 URLs
     #[getter]
-    pub fn s3(&self) -> PyResult<S3Config> {
-        Ok(S3Config {
-            config: self.config.s3.clone(),
-        })
+    pub fn s3(&self) -> PyResult<Option<S3Config>> {
+        Ok(self
+            .config
+            .s3
+            .as_ref()
+            .map(|s3| S3Config { config: s3.clone() }))
     }
 
     /// Configuration to be used when accessing Azure URLs
     #[getter]
-    pub fn azure(&self) -> PyResult<AzureConfig> {
-        Ok(AzureConfig {
-            config: self.config.azure.clone(),
-        })
+    pub fn azure(&self) -> PyResult<Option<AzureConfig>> {
+        Ok(self.config.azure.as_ref().map(|azure| AzureConfig {
+            config: azure.clone(),
+        }))
     }
 
     /// Configuration to be used when accessing Azure URLs
     #[getter]
-    pub fn gcs(&self) -> PyResult<GCSConfig> {
-        Ok(GCSConfig {
-            config: self.config.gcs.clone(),
-        })
+    pub fn gcs(&self) -> PyResult<Option<GCSConfig>> {
+        Ok(self.config.gcs.as_ref().map(|gcs| GCSConfig {
+            config: gcs.clone(),
+        }))
     }
 
     /// Configuration to be used when accessing Azure URLs
     #[getter]
-    pub fn http(&self) -> PyResult<HTTPConfig> {
-        Ok(HTTPConfig {
-            config: self.config.http.clone(),
-        })
+    pub fn http(&self) -> PyResult<Option<HTTPConfig>> {
+        Ok(self.config.http.as_ref().map(|http| HTTPConfig {
+            config: http.clone(),
+        }))
     }
 
     #[getter]
-    pub fn unity(&self) -> PyResult<UnityConfig> {
-        Ok(UnityConfig {
-            config: self.config.unity.clone(),
-        })
+    pub fn unity(&self) -> PyResult<Option<UnityConfig>> {
+        Ok(self.config.unity.as_ref().map(|unity| UnityConfig {
+            config: unity.clone(),
+        }))
     }
 
     #[getter]
-    pub fn hf(&self) -> PyResult<HuggingFaceConfig> {
-        Ok(HuggingFaceConfig {
-            config: self.config.hf.clone(),
-        })
+    pub fn hf(&self) -> PyResult<Option<HuggingFaceConfig>> {
+        Ok(self
+            .config
+            .hf
+            .as_ref()
+            .map(|hf| HuggingFaceConfig { config: hf.clone() }))
     }
 
     #[getter]
-    pub fn tos(&self) -> PyResult<TosConfig> {
-        Ok(TosConfig {
-            config: self.config.tos.clone(),
-        })
+    pub fn tos(&self) -> PyResult<Option<TosConfig>> {
+        Ok(self.config.tos.as_ref().map(|tos| TosConfig {
+            config: tos.clone(),
+        }))
     }
 
     pub fn __hash__(&self) -> PyResult<u64> {

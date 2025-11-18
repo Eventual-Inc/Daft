@@ -42,6 +42,7 @@ class DataCatalogTable:
         """
         if self.catalog == DataCatalogType.GLUE:
             # Use boto3 to get the table from AWS Glue Data Catalog.
+            assert io_config.s3 is not None, "Missing S3 IO Config"
             glue = boto3_client_from_s3_config("glue", io_config.s3)
 
             if self.catalog_id is not None:

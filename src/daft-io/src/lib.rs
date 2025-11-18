@@ -233,31 +233,56 @@ impl IOClient {
                 // Hugging Face requires special logic around cache busting. That logic is encapsulated in the HFSource.
                 match url.domain() {
                     Some("huggingface.co") => {
-                        HFSource::get_client(&self.config.hf, &self.config.http).await?
-                            as Arc<dyn ObjectSource>
+                        HFSource::get_client(
+                            self.config
+                                .hf
+                                .as_ref()
+                                .expect("Missing HuggingFace IO Config"),
+                            self.config.http.as_ref().expect("Missing HTTP IO Config"),
+                        )
+                        .await? as Arc<dyn ObjectSource>
                     }
-                    _ => HttpSource::get_client(&self.config.http).await? as Arc<dyn ObjectSource>,
+                    _ => {
+                        HttpSource::get_client(
+                            self.config.http.as_ref().expect("Missing HTTP IO Config"),
+                        )
+                        .await? as Arc<dyn ObjectSource>
+                    }
                 }
             }
             SourceType::S3 => {
-                S3LikeSource::get_client(&self.config.s3).await? as Arc<dyn ObjectSource>
+                S3LikeSource::get_client(self.config.s3.as_ref().expect("Missing S3 IO Config"))
+                    .await? as Arc<dyn ObjectSource>
             }
             SourceType::AzureBlob => {
-                AzureBlobSource::get_client(&self.config.azure, &path).await?
-                    as Arc<dyn ObjectSource>
+                AzureBlobSource::get_client(
+                    self.config.azure.as_ref().expect("Missing Azure IO Config"),
+                    &path,
+                )
+                .await? as Arc<dyn ObjectSource>
             }
 
             SourceType::GCS => {
-                GCSSource::get_client(&self.config.gcs).await? as Arc<dyn ObjectSource>
+                GCSSource::get_client(self.config.gcs.as_ref().expect("Missing GCS IO Config"))
+                    .await? as Arc<dyn ObjectSource>
             }
             SourceType::HF => {
-                HFSource::get_client(&self.config.hf, &self.config.http).await?
-                    as Arc<dyn ObjectSource>
+                HFSource::get_client(
+                    self.config
+                        .hf
+                        .as_ref()
+                        .expect("Missing HuggingFace IO Config"),
+                    self.config.http.as_ref().expect("Missing HTTP IO Config"),
+                )
+                .await? as Arc<dyn ObjectSource>
             }
             SourceType::Unity => {
                 #[cfg(feature = "python")]
                 {
-                    UnitySource::get_client(&self.config.unity).await? as Arc<dyn ObjectSource>
+                    UnitySource::get_client(
+                        self.config.unity.as_ref().expect("Missing Unity IO Config"),
+                    )
+                    .await? as Arc<dyn ObjectSource>
                 }
                 #[cfg(not(feature = "python"))]
                 {
@@ -265,7 +290,8 @@ impl IOClient {
                 }
             }
             SourceType::Tos => {
-                TosSource::get_client(&self.config.tos).await? as Arc<dyn ObjectSource>
+                TosSource::get_client(self.config.tos.as_ref().expect("Missing TOS IO Config"))
+                    .await? as Arc<dyn ObjectSource>
             }
         };
 
