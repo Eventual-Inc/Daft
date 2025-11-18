@@ -294,7 +294,7 @@ def to_uppercase(self) -> Expression:
         (Showing first 3 of 3 rows)
 
     """
-    # Get the function frou our global `FUNCTION_REGISTRY`
+    # Get the function from our global `FUNCTION_REGISTRY`
     f = native.get_function_from_registry("to_uppercase")
     return Expression._from_pyexpr(f(self._expr))
 
