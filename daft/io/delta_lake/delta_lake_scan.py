@@ -6,7 +6,9 @@ from urllib.error import HTTPError
 from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
 
+import deltalake
 from deltalake.table import DeltaTable
+from packaging.version import parse
 
 import daft
 import daft.exceptions
@@ -190,15 +192,21 @@ class DeltaLakeScanOperator(ScanOperator):
 
         # Determine which partition field name is used in the schema
         # Deltalake versions <1.2.0 use "partition_values", >=1.2.0 use "partition"
+        is_deltalake_v1_2_or_above = parse(deltalake.__version__) >= parse("1.2.0")
+
         partition_field_name = None
-        if "partition_values" in add_actions.schema.names:
-            partition_field = add_actions.schema.field("partition_values")
-            if partition_field.type.num_fields > 0:
-                partition_field_name = "partition_values"
-        elif "partition" in add_actions.schema.names:
-            partition_field = add_actions.schema.field("partition")
-            if partition_field.type.num_fields > 0:
-                partition_field_name = "partition"
+        if is_deltalake_v1_2_or_above:
+            # Delta Lake >= 1.2.0 uses "partition"
+            if "partition" in add_actions.schema.names:
+                partition_field = add_actions.schema.field("partition")
+                if partition_field.type.num_fields > 0:
+                    partition_field_name = "partition"
+        else:
+            # Delta Lake < 1.2.0 uses "partition_values"
+            if "partition_values" in add_actions.schema.names:
+                partition_field = add_actions.schema.field("partition_values")
+                if partition_field.type.num_fields > 0:
+                    partition_field_name = "partition_values"
 
         is_partitioned = partition_field_name is not None
 
@@ -207,14 +215,15 @@ class DeltaLakeScanOperator(ScanOperator):
                 break
 
             # NOTE: The paths in the transaction log consist of the post-table-uri suffix.
-            # Workaround for deltalake 1.2.x: paths are double-encoded in the log but single-encoded on disk.
-            # We detect double-encoding by checking if unquoting changes the path and '%25' is present.
+            # Workaround for deltalake >= 1.2.0: paths are double-encoded in the log but single-encoded on disk.
             scheme = urlparse(self._table.table_uri).scheme
             raw_path = add_actions["path"][task_idx].as_py()
-            if "%25" in raw_path:
+            if is_deltalake_v1_2_or_above:
+                # For Delta Lake >= 1.2.0, decode double-encoded paths
                 unquoted = unquote(raw_path)
                 decoded_path = unquoted if unquoted != raw_path else raw_path
             else:
+                # For Delta Lake < 1.2.0, use path as-is
                 decoded_path = raw_path
             path = construct_delta_file_path(scheme, self._table.table_uri, decoded_path)
 
