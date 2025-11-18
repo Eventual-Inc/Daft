@@ -488,9 +488,9 @@ Start local, scale global—without changing a line of code. Daft's Rust-powered
 
 * **Native multimodal processing**: Process any data type—from structured tables to unstructured text and rich media—with native support for images, audio, video, and embeddings in a single, unified framework.
 
-* **Rust-powered performance**: Experience breakthrough speed with our Rust foundation delivering vectorized execution and non-blocking I/O that processes the same queries with 5x less memory while consistently outperforming industry standards by an order of magnitude.
+* **Built-in AI operations**: Transform data with AI natively: run LLM prompts with structured outputs, generate embeddings, and classify images or text using models from OpenAI, Transformers, or your own custom providers, all optimized for batch processing.
 
-* **Seamless ML ecosystem integration**: Slot directly into your existing ML workflows with zero friction—whether you're using [PyTorch](https://pytorch.org/), [NumPy](https://numpy.org/), [Pandas](https://pandas.pydata.org/), or [HuggingFace models](https://huggingface.co/models), Daft works where you work.
+* **Rust-powered performance**: Experience breakthrough speed with our Rust foundation delivering vectorized execution and non-blocking I/O that processes the same queries with 5x less memory while consistently outperforming industry standards by an order of magnitude.
 
 * **Universal data connectivity**: Access data anywhere it lives—cloud storage ([S3](https://aws.amazon.com/s3/), [Azure](https://azure.microsoft.com/en-us/), [GCS](https://cloud.google.com/storage)), modern table formats ([Apache Iceberg](https://iceberg.apache.org/), [Delta Lake](https://delta.io/), [Apache Hudi](https://hudi.apache.org/)), or enterprise catalogs ([Unity](https://www.unitycatalog.io/), [AWS Glue](https://aws.amazon.com/glue/))—all with zero configuration.
 
