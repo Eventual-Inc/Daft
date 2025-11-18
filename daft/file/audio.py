@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from typing import TYPE_CHECKING, Any
 
 from daft.datatype import MediaType
@@ -37,18 +38,15 @@ class AudioFile(File):
             AudioMetadata: Audio metadata object containing width, height, fps, frame_count, time_base, keyframe_pts, keyframe_indices
 
         """
-        with self._open_soundfile() as af:
-            return AudioMetadata(
-                sample_rate=af.samplerate,
-                channels=af.channels,
-                frames=af.frames,
-                format=af.format,
-                subtype=af.subtype,
-            )
-
-    def _open_soundfile(self) -> sf.SoundFile:
         with self.open() as f:
-            return sf.SoundFile(f)
+            with sf.SoundFile(f) as af:
+                return AudioMetadata(
+                    sample_rate=af.samplerate,
+                    channels=af.channels,
+                    frames=af.frames,
+                    format=af.format,
+                    subtype=af.subtype,
+                )
 
     def to_numpy(self) -> np.ndarray[Any, Any]:
         """Convert the audio file to a numpy array.
@@ -57,10 +55,12 @@ class AudioFile(File):
             np.ndarray[Any, Any]: The audio data as a numpy array.
 
         """
-        with self._open_soundfile() as af:
-            return af.read()
+        with self.open() as f:
+            data = f.read()
+            data, _ = sf.read(io.BytesIO(data))
+            return data  # type: ignore
 
-    def resample(self, sample_rate: int) -> np.ndarray[Any, Any]:
+    def resample(self, sample_rate: int) -> np.ndarray[Any, np.dtype[np.float64]]:
         """Resample the audio file to the given sample rate.
 
         Args:
@@ -72,10 +72,12 @@ class AudioFile(File):
         """
         if not librosa.module_available():
             raise ImportError("The 'librosa' module is required to resample audio files.")
-        with self._open_soundfile() as af:
-            data = af.read()
-            if af.samplerate != sample_rate:
-                resampled_data = librosa.resample(data, orig_sr=af.samplerate, target_sr=sample_rate)
+        with self.open() as f:
+            data = f.read()
+            data, samplerate = sf.read(io.BytesIO(data))
+
+            if samplerate != sample_rate:
+                resampled_data = librosa.resample(data, orig_sr=samplerate, target_sr=sample_rate)
                 return resampled_data
             else:
-                return data
+                return data  # type: ignore
