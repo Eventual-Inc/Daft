@@ -125,8 +125,13 @@ impl BatchPyFn {
 
                 let (result_series, operator_metrics): (PySeries, PyOperatorMetrics) =
                     result.extract()?;
-                for (key, value) in operator_metrics.inner {
-                    metrics.inc_counter(&key, value);
+                for (key, counter) in operator_metrics.inner {
+                    metrics.inc_counter(
+                        &key,
+                        counter.value,
+                        counter.description.as_deref(),
+                        Some(counter.attributes),
+                    );
                 }
 
                 PyResult::Ok(result_series.series)
@@ -271,8 +276,13 @@ impl BatchPyFn {
             Ok(coroutine)
         })
         .await?;
-        for (key, value) in operator_metrics.inner {
-            metrics.inc_counter(&key, value);
+        for (key, counter) in operator_metrics.inner {
+            metrics.inc_counter(
+                &key,
+                counter.value,
+                counter.description.as_deref(),
+                Some(counter.attributes),
+            );
         }
 
         Ok(py_series.series.rename(name))

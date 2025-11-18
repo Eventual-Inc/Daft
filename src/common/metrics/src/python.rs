@@ -1,14 +1,13 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_py_serde::impl_bincode_py_state_serialization;
-use pyo3::{Bound, IntoPyObject, PyAny, PyResult, Python, pyclass, pymethods};
+use pyo3::{
+    Bound, IntoPyObject, PyAny, PyResult, Python, pyclass, pymethods,
+    types::{PyDict, PyDictMethods, PyList, PyListMethods},
+};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    Stat,
-    operator_metrics::{MetricsCollector, OperatorMetrics},
-    ops::NodeInfo,
-};
+use crate::{Stat, operator_metrics::OperatorMetrics, ops::NodeInfo};
 
 #[pyclass(eq, eq_int)]
 #[derive(PartialEq, Eq)]
@@ -87,8 +86,34 @@ impl PyOperatorMetrics {
         }
     }
 
-    pub fn inc_counter(&mut self, name: &str, value: u64) {
-        self.inner.inc_counter(name, value);
+    #[pyo3(signature = (name, value, *, description=None, attributes=None))]
+    pub fn inc_counter(
+        &mut self,
+        name: &str,
+        value: u64,
+        description: Option<&str>,
+        attributes: Option<HashMap<String, String>>,
+    ) {
+        self.inner.inc_counter(name, value, description, attributes);
+    }
+
+    pub fn snapshot<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let result = PyDict::new(py);
+        for (name, counters) in self.inner.snapshot() {
+            let counter_list = PyList::empty(py);
+            for counter in counters {
+                let counter_entry = PyDict::new(py);
+                counter_entry.set_item("value", counter.value)?;
+                match &counter.description {
+                    Some(description) => counter_entry.set_item("description", description)?,
+                    None => counter_entry.set_item("description", py.None())?,
+                }
+                counter_entry.set_item("attributes", counter.attributes.clone())?;
+                counter_list.append(counter_entry)?;
+            }
+            result.set_item(name, counter_list)?;
+        }
+        Ok(result.into_any())
     }
 }
 

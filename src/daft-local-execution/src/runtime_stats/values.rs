@@ -18,10 +18,21 @@ pub struct Counter {
 }
 
 impl Counter {
-    pub fn new(meter: &Meter, name: Cow<'static, str>) -> Self {
+    pub fn new(
+        meter: &Meter,
+        name: Cow<'static, str>,
+        description: Option<Cow<'static, str>>,
+    ) -> Self {
+        let normalized_name = format!("daft.{}", name.replace(' ', "_").to_lowercase());
+        let builder = meter.u64_counter(normalized_name);
+        let builder = if let Some(description) = description {
+            builder.with_description(description)
+        } else {
+            builder
+        };
         Self {
             value: AtomicU64::new(0),
-            otel: meter.u64_counter(name).build(),
+            otel: builder.build(),
         }
     }
 
@@ -69,9 +80,9 @@ impl DefaultRuntimeStats {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, "cpu_us".into()),
-            rows_in: Counter::new(&meter, "rows_in".into()),
-            rows_out: Counter::new(&meter, "rows_out".into()),
+            cpu_us: Counter::new(&meter, "cpu_us".into(), None),
+            rows_in: Counter::new(&meter, "rows_in".into(), None),
+            rows_out: Counter::new(&meter, "rows_out".into(), None),
             node_kv,
         }
     }

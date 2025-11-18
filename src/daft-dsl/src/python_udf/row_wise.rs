@@ -289,8 +289,13 @@ impl RowWisePyFn {
                                 res.extract()?;
                             let literal =
                                 Literal::from_pyobj(&value_obj, Some(&self.return_dtype))?;
-                            for (key, value) in operator_metrics.inner {
-                                metrics.inc_counter(&key, value);
+                            for (key, counter) in operator_metrics.inner {
+                                metrics.inc_counter(
+                                    &key,
+                                    counter.value,
+                                    counter.description.as_deref(),
+                                    Some(counter.attributes),
+                                );
                             }
                             Ok(literal)
                         })
@@ -358,8 +363,13 @@ impl RowWisePyFn {
             Ok(coroutine)
         })
         .await?;
-        for (key, value) in operator_metrics.inner {
-            metrics.inc_counter(&key, value);
+        for (key, counter) in operator_metrics.inner {
+            metrics.inc_counter(
+                &key,
+                counter.value,
+                counter.description.as_deref(),
+                Some(counter.attributes),
+            );
         }
 
         Ok(py_series.series.rename(name))
