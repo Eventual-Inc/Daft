@@ -1,6 +1,6 @@
 # Introduction
 
-Daft is a high-performance data engine providing simple and reliable data processing for any modality and scale.
+Daft is a high-performance data engine designed for AI and multimodal workloads, providing simple, reliable data processing for images, audio, video, and structured data at any scale.
 
 <style>
   .daft-pipeline-component {
