@@ -28,7 +28,7 @@
 
 - [Window Functions: The Great Chocolate Race](window-functions.md)
 
-    Transforming complex analytical challenges into elegant solutions.
+    Explore how window functions can reduce complex joins and groupby's to just a few simple operations.
 
 - [Running LLMs on the Red Pajamas Dataset](llms-red-pajamas.md)
 
