@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 from unittest.mock import patch
 
 import pyarrow as pa
@@ -69,7 +69,9 @@ def test_importerror_when_lance_missing():
 @pytest.mark.parametrize("use_filter", [False, True])
 @pytest.mark.parametrize("use_required_cols", [False, True])
 @pytest.mark.parametrize("push_limit", [None, 3])
-def test_reconstructs_dataset_and_reads_fragments(tmp_path_factory, num_frags, use_filter, use_required_cols, push_limit):
+def test_reconstructs_dataset_and_reads_fragments(
+    tmp_path_factory, num_frags, use_filter, use_required_cols, push_limit
+):
     lance = pytest.importorskip("lance")
 
     ds_path = _build_large_lance_dataset(tmp_path_factory)
@@ -81,11 +83,11 @@ def test_reconstructs_dataset_and_reads_fragments(tmp_path_factory, num_frags, u
 
     frag_ids = [f.fragment_id for f in all_frags[:num_frags]]
 
-    required_columns: Optional[list[str]] = None
+    required_columns: list[str] | None = None
     if use_required_cols:
         required_columns = ["vector", "big_int"]
 
-    arrow_filter: Optional[pa.compute.Expression] = None
+    arrow_filter: pa.compute.Expression | None = None
     if use_filter:
         arrow_filter = pc.greater_equal(pc.field("big_int"), pc.scalar(all_frags[0].count_rows()))
 
@@ -135,7 +137,7 @@ def test_reconstructs_dataset_and_reads_fragments(tmp_path_factory, num_frags, u
     assert out_rows_by_batch == direct_rows_by_batch
 
     # Convert to pydict to compare against direct scanner
-    agg: Optional[dict[str, list]] = None
+    agg: dict[str, list] | None = None
     for py_rb in out_batches:
         rb = RecordBatch._from_pyrecordbatch(py_rb)
         pdict = rb.to_pydict()
@@ -196,3 +198,56 @@ def test_invalid_fragment_id_raises(tmp_path_factory):
         )
     # Lance typically raises ValueError for missing fragments; assert message mentions fragment
     assert "fragment" in str(ei.value).lower()
+
+
+def test_open_kwargs_version_selects_correct_version(tmp_path_factory):
+    lance = pytest.importorskip("lance")
+
+    tmp_dir = tmp_path_factory.mktemp("lance_versioned")
+
+    # v1: write initial 2 rows
+    tbl_v1 = pa.Table.from_pydict({"vector": [[0.0, 0.5], [1.0, 1.5]], "big_int": [0, 1]})
+    lance.write_dataset(tbl_v1, tmp_dir)
+
+    # v2: append 2 more rows
+    tbl_v2 = pa.Table.from_pydict({"vector": [[2.0, 2.5], [3.0, 3.5]], "big_int": [2, 3]})
+    lance.write_dataset(tbl_v2, tmp_dir, mode="append")
+
+    ds_v2 = lance.dataset(str(tmp_dir))
+    ds_v1 = lance.dataset(str(tmp_dir), version=1)
+
+    # Use v1 fragments but reconstruct via open_kwargs version=1
+    frag_ids_v1 = [f.fragment_id for f in ds_v1.get_fragments()]
+
+    out_batches = list(
+        _lancedb_table_factory_function(
+            ds_uri=ds_v2.uri,
+            open_kwargs={"version": 1},
+            fragment_ids=frag_ids_v1,
+            required_columns=["vector", "big_int"],
+            filter=None,
+            limit=None,
+        )
+    )
+
+    direct_batches_v1 = list(ds_v1.scanner(fragments=ds_v1.get_fragments(), columns=["vector", "big_int"]).to_batches())
+
+    assert len(out_batches) == len(direct_batches_v1)
+
+    # Compare content equality
+    agg: dict[str, list] | None = None
+    for py_rb in out_batches:
+        rb = RecordBatch._from_pyrecordbatch(py_rb)
+        pdict = rb.to_pydict()
+        if agg is None:
+            agg = {k: list(v) for k, v in pdict.items()}
+        else:
+            for k in agg.keys():
+                agg[k].extend(pdict[k])
+
+    assert agg is not None
+
+    expect_tbl = pa.Table.from_batches(direct_batches_v1)
+    expect_pydict = expect_tbl.to_pydict()
+
+    assert agg == expect_pydict
