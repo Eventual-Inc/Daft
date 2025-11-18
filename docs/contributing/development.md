@@ -325,7 +325,7 @@ For series, It just delegates out to the expression implementation, so we can ju
 
 ```py
 def to_uppercase(self) -> Series:
-    return self._eval_expressions("upper")
+    return self._eval_expressions("to_uppercase")
 ```
 
 and for functions with additional arguments:
