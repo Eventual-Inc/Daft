@@ -194,22 +194,11 @@ class DeltaLakeScanOperator(ScanOperator):
         # Deltalake versions <1.2.0 use "partition_values", >=1.2.0 use "partition"
         is_deltalake_v1_2_or_above = parse(deltalake.__version__) >= parse("1.2.0")
 
-        partition_field_name = None
-        if is_deltalake_v1_2_or_above:
-            # Delta Lake >= 1.2.0 uses "partition"
-            if "partition" in add_actions.schema.names:
-                partition_field = add_actions.schema.field("partition")
-                if partition_field.type.num_fields > 0:
-                    partition_field_name = "partition"
-        else:
-            # Delta Lake < 1.2.0 uses "partition_values"
-            if "partition_values" in add_actions.schema.names:
-                partition_field = add_actions.schema.field("partition_values")
-                if partition_field.type.num_fields > 0:
-                    partition_field_name = "partition_values"
-
-        is_partitioned = partition_field_name is not None
-
+        partition_field_name = "partition" if is_deltalake_v1_2_or_above else "partition_values"
+        is_partitioned = (
+            partition_field_name in add_actions.schema.names
+            and add_actions.schema.field(partition_field_name).type.num_fields > 0
+        )
         for task_idx in range(add_actions.num_rows):
             if limit_files and rows_left <= 0:
                 break
