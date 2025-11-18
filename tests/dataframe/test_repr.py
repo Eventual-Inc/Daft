@@ -25,7 +25,7 @@ def dataframe_th_style_schema() -> str:
 ROW_DIVIDER_REGEX = re.compile(r"╭─+┬*─*╮|├╌+┼*╌+┤")
 SHOWING_N_ROWS_REGEX = re.compile(r".*\(Showing first (\d+) of (\d+) rows\).*")
 UNMATERIALIZED_REGEX = re.compile(
-    r".*\(No data to display: Dataframe not materialized, use .collect() to materialize\).*"
+    r".*\(No data to display: Dataframe not materialized, use \.collect\(\) to materialize\).*"
 )
 MATERIALIZED_NO_ROWS_REGEX = re.compile(r".*\(No data to display: Materialized dataframe has no rows\).*")
 
@@ -41,7 +41,7 @@ def parse_str_table(
     lines = table.split("\n")
     assert len(lines) > 4
     assert ROW_DIVIDER_REGEX.match(lines[0])
-    assert expected_user_msg_regex.match(lines[-1])
+    assert expected_user_msg_regex.search(lines[-1])
 
     column_names = _split_table_row(lines[1])
     column_types = _split_table_row(lines[3])
@@ -61,7 +61,7 @@ def parse_html_table(
     lines = table.split("\n")
     assert lines[0].strip() == "<div>"
     assert lines[-1].strip() == "</div>"
-    assert expected_user_msg_regex.match(lines[-2].strip())
+    assert expected_user_msg_regex.search(lines[-2].strip())
 
     html_table = lines[1:-2]
 
@@ -281,11 +281,12 @@ class MyObj:
 
 
 def test_repr_html_custom_hooks():
-    PIL = pytest.importorskip("PIL")
+    pytest.importorskip("PIL")
+    from PIL import Image
 
     td_style = dataframe_td_style(3)
 
-    img = PIL.Image.fromarray(np.ones((3, 3)).astype(np.uint8))
+    img = Image.fromarray(np.ones((3, 3)).astype(np.uint8))
     arr = np.ones((3, 3))
 
     df = daft.from_pydict(
