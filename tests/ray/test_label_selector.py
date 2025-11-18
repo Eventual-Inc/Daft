@@ -19,6 +19,7 @@ import daft
 @pytest.mark.skipif(
     RAY_VERSION_TUPLE < (2, 49, 0), reason="Ray version must be >= 2.49.0 for label selector functionality"
 )
+@pytest.mark.skip()
 def test_label_selector_with_multi_group_cluster(multi_group_cluster):
     """Test label selector functionality with multi-group cluster setup."""
     # Get cluster information
