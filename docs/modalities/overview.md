@@ -1,14 +1,6 @@
 # Daft is built to work with **any modality**.
 
-In modern AI systems, data isn’t just numbers in tables anymore - it shows up as text, images, audio, PDFs, embeddings, and beyond. **Modalities** are not *types* of data, but data with different *meanings* and *intentions* around what you want to do with the data.
-
-> An image isn’t just pixel values — it's visual meaning you can extract features from, or transform into embeddings.
-
-> A PDF isn’t just a blob of bytes — it's structured text and images.
-
-> A URL isn’t just a string — it's a pointer to data stored somewhere.
-
-Handling diverse modalities unlocks more value from more sources. And by using a single engine, you can process them all—seamlessly and efficiently—in a single pipeline. Easy to develop, and even easier to run at scale.
+In modern AI systems, data isn’t just numbers in tables anymore - it shows up as text, images, audio, PDFs, embeddings, and beyond. Handling diverse modalities unlocks more value from more sources. And by using a single engine, you can process them all—seamlessly and efficiently—in a single pipeline. Easy to develop, and even easier to run at scale.
 
 Some of Daft's supported modalities include:
 

@@ -6,6 +6,7 @@ use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
 use daft_core::prelude::SchemaRef;
+use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
@@ -119,6 +120,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         plan_stats: StatsState,
         ctx: &RuntimeContext,
         output_schema: SchemaRef,
+        context: &LocalNodeContext,
     ) -> Self {
         let name: Arc<str> = op.name().into();
         let node_info = ctx.next_node_info(
@@ -126,6 +128,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
             op.op_type(),
             NodeCategory::StreamingSink,
             output_schema,
+            context,
         );
         let runtime_stats = op.make_runtime_stats(node_info.id);
 
@@ -233,7 +236,7 @@ impl<Op: StreamingSink + 'static> TreeDisplay for StreamingSinkNode<Op> {
                 if matches!(level, DisplayLevel::Verbose) {
                     let rt_result = self.runtime_stats.snapshot();
                     for (name, value) in rt_result {
-                        writeln!(display, "{} = {}", name.as_str().capitalize(), value).unwrap();
+                        writeln!(display, "{} = {}", name.as_ref().capitalize(), value).unwrap();
                     }
                 }
             }

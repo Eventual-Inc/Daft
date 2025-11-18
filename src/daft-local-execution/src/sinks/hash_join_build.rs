@@ -4,7 +4,7 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{Stat, StatSnapshotSend, ops::NodeType, snapshot};
+use common_metrics::{CPU_US_KEY, Stat, StatSnapshot, ops::NodeType, snapshot};
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
@@ -20,7 +20,7 @@ use super::blocking_sink::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::NodeName,
-    runtime_stats::{CPU_US_KEY, Counter, RuntimeStats},
+    runtime_stats::{Counter, RuntimeStats},
     state_bridge::BroadcastStateBridgeRef,
 };
 
@@ -108,8 +108,8 @@ impl HashJoinBuildRuntimeStats {
         let meter = global::meter("daft.local.node_stats");
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
         Self {
-            cpu_us: Counter::new(&meter, "cpu_us".into()),
-            rows_in: Counter::new(&meter, "rows_in".into()),
+            cpu_us: Counter::new(&meter, "cpu_us".into(), None),
+            rows_in: Counter::new(&meter, "rows_in".into(), None),
             node_kv,
         }
     }
@@ -120,7 +120,7 @@ impl RuntimeStats for HashJoinBuildRuntimeStats {
         self
     }
 
-    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         snapshot![
             CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
             "rows inserted"; Stat::Count(self.rows_in.load(ordering)),

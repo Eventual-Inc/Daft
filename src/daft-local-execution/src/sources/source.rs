@@ -8,12 +8,13 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
-    Stat, StatSnapshotSend,
+    CPU_US_KEY, ROWS_OUT_KEY, Stat, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot,
 };
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
+use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use futures::{StreamExt, stream::BoxStream};
@@ -23,7 +24,7 @@ use crate::{
     ExecutionRuntimeContext,
     channel::{Receiver, create_channel},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
-    runtime_stats::{CPU_US_KEY, Counter, CountingSender, ROWS_OUT_KEY, RuntimeStats},
+    runtime_stats::{Counter, CountingSender, RuntimeStats},
 };
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
@@ -42,8 +43,8 @@ impl SourceStats {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, "cpu_us".into()),
-            rows_out: Counter::new(&meter, "rows_out".into()),
+            cpu_us: Counter::new(&meter, "cpu_us".into(), None),
+            rows_out: Counter::new(&meter, "rows_out".into(), None),
             io_stats: IOStatsRef::default(),
 
             node_kv,
@@ -56,7 +57,7 @@ impl RuntimeStats for SourceStats {
         self
     }
 
-    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         snapshot![
             CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
             ROWS_OUT_KEY; Stat::Count(self.rows_out.load(ordering)),
@@ -108,12 +109,14 @@ impl SourceNode {
         plan_stats: StatsState,
         ctx: &RuntimeContext,
         output_schema: SchemaRef,
+        context: &LocalNodeContext,
     ) -> Self {
         let info = ctx.next_node_info(
             source.name().into(),
             source.op_type(),
             NodeCategory::Source,
             output_schema,
+            context,
         );
         let runtime_stats = source.make_runtime_stats(info.id);
         Self {
@@ -153,7 +156,7 @@ impl TreeDisplay for SourceNode {
 
                     writeln!(display).unwrap();
                     for (name, value) in rt_result {
-                        writeln!(display, "{} = {}", name.as_str().capitalize(), value).unwrap();
+                        writeln!(display, "{} = {}", name.as_ref().capitalize(), value).unwrap();
                     }
                 }
             }
