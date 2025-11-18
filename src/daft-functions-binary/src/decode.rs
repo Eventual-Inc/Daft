@@ -17,11 +17,10 @@ use crate::kernels::BinaryArrayExtension;
 // implementations
 //-----------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct BinaryDecode;
 
-#[derive(
-    Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, common_macros::FunctionArgs,
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash, common_macros::FunctionArgs,
 )]
 struct Args<T> {
     input: T,
@@ -84,7 +83,7 @@ impl ScalarUDF for BinaryDecode {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct BinaryTryDecode;
 
 #[typetag::serde]

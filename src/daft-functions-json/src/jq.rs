@@ -10,7 +10,7 @@ use daft_dsl::functions::prelude::*;
 /// # Returns
 ///
 /// A `DaftResult` containing the resulting UTF-8 array after applying the filter.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Jq;
 
 #[derive(FunctionArgs)]
