@@ -120,6 +120,8 @@ impl PyDaftExecutionConfig {
         min_cpu_per_task=None,
         actor_udf_ready_timeout=None,
         maintain_order=None,
+        enable_dynamic_batching=None,
+        dynamic_batching_algorithm=None,
     ))]
     fn with_config_values(
         &self,
@@ -154,6 +156,8 @@ impl PyDaftExecutionConfig {
         min_cpu_per_task: Option<f64>,
         actor_udf_ready_timeout: Option<usize>,
         maintain_order: Option<bool>,
+        enable_dynamic_batching: Option<bool>,
+        dynamic_batching_algorithm: Option<&str>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -273,6 +277,17 @@ impl PyDaftExecutionConfig {
 
         if let Some(maintain_order) = maintain_order {
             config.maintain_order = maintain_order;
+        }
+        if let Some(enable_dynamic_batching) = enable_dynamic_batching {
+            config.enable_dynamic_batching = enable_dynamic_batching;
+        }
+        if let Some(dynamic_batching_algorithm) = dynamic_batching_algorithm {
+            if !matches!(dynamic_batching_algorithm, "aimd" | "auto") {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "dynamic_batching_algorithm must be 'auto' or 'aimd'",
+                ));
+            }
+            config.dynamic_batching_algorithm = dynamic_batching_algorithm.to_string();
         }
 
         Ok(Self {
@@ -414,6 +429,15 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn maintain_order(&self) -> PyResult<bool> {
         Ok(self.config.maintain_order)
+    }
+
+    #[getter]
+    fn enable_dynamic_batching(&self) -> PyResult<bool> {
+        Ok(self.config.enable_dynamic_batching)
+    }
+    #[getter]
+    fn dynamic_batching_algorithm(&self) -> PyResult<&str> {
+        Ok(self.config.dynamic_batching_algorithm.as_str())
     }
 }
 

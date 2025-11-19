@@ -1,46 +1,41 @@
-use std::{
-    collections::VecDeque,
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
-};
+use std::{sync::Arc, time::Instant};
 
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use tracing::Span;
 
 use crate::{
-    dynamic_batching::DynamicBatching,
+    dynamic_batching::DynamicBatchingAlgorithm,
     intermediate_ops::intermediate_op::{
         IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
     },
 };
 
-pub struct DynamicBatchingState<S> {
-    inner_state: S,
+pub struct DynamicBatchingState<S1, S2> {
+    inner_state: S1,
     row_offset: usize,
     current_input: Option<Arc<RecordBatch>>,
+    batch_state: S2,
 }
 
 pub struct DynamicallyBatchedIntermediateOperator<Op, DB>
 where
     Op: IntermediateOperator,
-    DB: DynamicBatching,
+    DB: DynamicBatchingAlgorithm,
 {
     inner_op: Arc<Op>,
     dynamic_batcher: Arc<DB>,
-    batch_state: Arc<Mutex<DB::State>>,
 }
 
 impl<Op, DB> DynamicallyBatchedIntermediateOperator<Op, DB>
 where
     Op: IntermediateOperator,
-    DB: DynamicBatching,
+    DB: DynamicBatchingAlgorithm,
 {
-    pub fn new(inner_op: Arc<Op>, dynamic_batcher: Arc<DB>, initial_state: DB::State) -> Self {
+    pub fn new(inner_op: Arc<Op>, dynamic_batcher: Arc<DB>) -> Self {
         Self {
             inner_op,
             dynamic_batcher,
-            batch_state: Arc::new(Mutex::new(initial_state)),
         }
     }
 }
@@ -48,9 +43,9 @@ where
 impl<Op, DB> IntermediateOperator for DynamicallyBatchedIntermediateOperator<Op, DB>
 where
     Op: IntermediateOperator + 'static,
-    DB: DynamicBatching + 'static,
+    DB: DynamicBatchingAlgorithm + 'static,
 {
-    type State = DynamicBatchingState<Op::State>;
+    type State = DynamicBatchingState<Op::State, DB::State>;
 
     fn execute(
         &self,
@@ -59,7 +54,6 @@ where
         task_spawner: &crate::ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self> {
         let inner_op = self.inner_op.clone();
-        let batch_state = self.batch_state.clone();
         let dynamic_batcher = self.dynamic_batcher.clone();
         let task_spawner_clone = task_spawner.clone();
 
@@ -85,9 +79,8 @@ where
 
                 // Process a dynamic batch size
                 let batch_size = {
-                    let batch_state = batch_state.lock().unwrap();
                     dynamic_batcher
-                        .current_batch_size(&batch_state)
+                        .current_batch_size(&state.batch_state)
                         .min(total_rows - state.row_offset)
                 };
 
@@ -95,7 +88,7 @@ where
                     current_table.slice(state.row_offset, state.row_offset + batch_size)?;
 
                 let sub_partition = Arc::new(MicroPartition::new_loaded(
-                    input.schema().clone(),
+                    input.schema(),
                     Arc::new(vec![sub_batch]),
                     None,
                 ));
@@ -108,24 +101,27 @@ where
                 state.inner_state = result.0;
                 state.row_offset += batch_size;
                 // Update dynamic batching state
-                if let Ok(mut batch_state) = batch_state.lock() {
-                    dynamic_batcher.adjust_batch_size(&mut batch_state, duration);
-                }
+
+                dynamic_batcher.adjust_batch_size(
+                    &mut state.batch_state,
+                    task_spawner_clone.runtime_stats.as_ref(),
+                    duration,
+                );
 
                 match result.1 {
                     IntermediateOperatorResult::HasMoreOutput(output) => {
-                        return Ok((state, IntermediateOperatorResult::HasMoreOutput(output)));
+                        Ok((state, IntermediateOperatorResult::HasMoreOutput(output)))
                     }
                     IntermediateOperatorResult::NeedMoreInput(Some(output)) => {
-                        return Ok((state, IntermediateOperatorResult::HasMoreOutput(output)));
+                        Ok((state, IntermediateOperatorResult::HasMoreOutput(output)))
                     }
                     IntermediateOperatorResult::NeedMoreInput(None) => {
-                        return Ok((state, IntermediateOperatorResult::NeedMoreInput(None)));
+                        Ok((state, IntermediateOperatorResult::NeedMoreInput(None)))
                     }
                 }
+            } else {
+                Ok((state, IntermediateOperatorResult::NeedMoreInput(None)))
             }
-
-            Ok((state, IntermediateOperatorResult::NeedMoreInput(None)))
         };
 
         let fut = task_spawner.spawn(fut, Span::current());
@@ -133,7 +129,7 @@ where
     }
 
     fn name(&self) -> crate::pipeline::NodeName {
-        format!("DynamicBatching[{}]", self.inner_op.name()).into()
+        self.inner_op.name()
     }
 
     fn op_type(&self) -> common_metrics::ops::NodeType {
@@ -148,10 +144,12 @@ where
 
     fn make_state(&self) -> common_error::DaftResult<Self::State> {
         let inner_state = self.inner_op.make_state()?;
+        let batch_state = self.dynamic_batcher.make_state();
         Ok(DynamicBatchingState {
             inner_state,
             row_offset: 0,
             current_input: None,
+            batch_state,
         })
     }
 

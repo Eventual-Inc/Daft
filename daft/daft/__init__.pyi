@@ -2141,6 +2141,8 @@ class PyDaftExecutionConfig:
         min_cpu_per_task: float | None = None,
         actor_udf_ready_timeout: int | None = None,
         maintain_order: bool | None = None,
+        enable_dynamic_batching: bool | None = None,
+        dynamic_batching_algorithm: str | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -2196,6 +2198,10 @@ class PyDaftExecutionConfig:
     def actor_udf_ready_timeout(self) -> int: ...
     @property
     def scantask_max_parallel(self) -> int: ...
+    @property
+    def enable_dynamic_batching(self) -> bool: ...
+    @property
+    def dynamic_batching_algorithm(self) -> str: ...
 
 class PyDaftPlanningConfig:
     @staticmethod

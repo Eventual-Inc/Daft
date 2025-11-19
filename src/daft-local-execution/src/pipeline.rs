@@ -35,7 +35,7 @@ use snafu::ResultExt;
 use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
     channel::Receiver,
-    dynamic_batching::{AimdDynamicBatching, AimdState},
+    dynamic_batching::AimdBatching,
     intermediate_ops::{
         cross_join::CrossJoinOperator,
         distributed_actor_pool_project::DistributedActorPoolProjectOperator,
@@ -554,15 +554,33 @@ fn physical_plan_to_pipeline(
                 }
             })?;
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            IntermediateNode::new(
-                Arc::new(proj_op),
-                vec![child_node],
-                stats_state.clone(),
-                ctx,
-                schema.clone(),
-                context,
-            )
-            .boxed()
+            if !cfg.maintain_order && cfg.enable_dynamic_batching {
+                let algorithm = match cfg.dynamic_batching_algorithm.as_str() {
+                    "aimd" | "auto" => Arc::new(AimdBatching::default()),
+                    _ => panic!("Unsupported dynamic batching algorithm"),
+                };
+                let dbio =
+                    DynamicallyBatchedIntermediateOperator::new(Arc::new(proj_op), algorithm);
+                IntermediateNode::new(
+                    Arc::new(dbio),
+                    vec![child_node],
+                    stats_state.clone(),
+                    ctx,
+                    schema.clone(),
+                    context,
+                )
+                .boxed()
+            } else {
+                IntermediateNode::new(
+                    Arc::new(proj_op),
+                    vec![child_node],
+                    stats_state.clone(),
+                    ctx,
+                    schema.clone(),
+                    context,
+                )
+                .boxed()
+            }
         }
         LocalPhysicalPlan::UDFProject(UDFProject {
             input,
@@ -604,22 +622,34 @@ fn physical_plan_to_pipeline(
                 .with_context(|_| PipelineCreationSnafu {
                     plan_name: physical_plan.name(),
                 })?;
-                let db = AimdDynamicBatching::default();
-                let dbio = DynamicallyBatchedIntermediateOperator::new(
-                    Arc::new(proj_op),
-                    Arc::new(db),
-                    AimdState::new(1),
-                );
 
-                IntermediateNode::new(
-                    Arc::new(dbio),
-                    vec![child_node],
-                    stats_state.clone(),
-                    ctx,
-                    schema.clone(),
-                    context,
-                )
-                .boxed()
+                if !cfg.maintain_order && cfg.enable_dynamic_batching {
+                    let algorithm = match cfg.dynamic_batching_algorithm.as_str() {
+                        "aimd" | "auto" => Arc::new(AimdBatching::default()),
+                        _ => panic!("Unsupported dynamic batching algorithm"),
+                    };
+                    let dbio =
+                        DynamicallyBatchedIntermediateOperator::new(Arc::new(proj_op), algorithm);
+                    IntermediateNode::new(
+                        Arc::new(dbio),
+                        vec![child_node],
+                        stats_state.clone(),
+                        ctx,
+                        schema.clone(),
+                        context,
+                    )
+                    .boxed()
+                } else {
+                    IntermediateNode::new(
+                        Arc::new(proj_op),
+                        vec![child_node],
+                        stats_state.clone(),
+                        ctx,
+                        schema.clone(),
+                        context,
+                    )
+                    .boxed()
+                }
             }
         }
         #[cfg(feature = "python")]
