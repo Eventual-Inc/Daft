@@ -366,7 +366,7 @@ def local_path(tmp_path: pathlib.Path, data_dir: str) -> tuple[str, None, None]:
     scope="function",
     params=[
         pytest.param(lazy_fixture("local_path"), marks=pytest.mark.local),
-        # pytest.param(lazy_fixture("s3_path"), marks=pytest.mark.s3),
+        pytest.param(lazy_fixture("s3_path"), marks=pytest.mark.s3),
         # Azure tests require starting a Docker container + mock server that (1) requires a dev Docker dependency, and
         # (2) takes 15+ seconds to start on every run, so we current mark it as an integration test.
         pytest.param(lazy_fixture("az_path"), marks=(pytest.mark.az, pytest.mark.integration)),
