@@ -335,15 +335,13 @@ def test_binary_slice_errors() -> None:
     )
     with pytest.raises(
         Exception,
-        match="(?:ExpressionBinaryNamespace.)?slice\\(\\) takes from 2 to 3 positional arguments but 4 were given",
+        match="slice\\(\\) takes from 2 to 3 positional arguments but 4 were given",
     ):
         table.eval_expression_list([daft.functions.slice(col("col"), col("start"), col("length"), col("extra"))])
 
     # Test slice with wrong number of arguments (too few)
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [1, 2]})
-    with pytest.raises(
-        Exception, match="(?:ExpressionBinaryNamespace.)?slice\\(\\) missing 1 required positional argument: 'start'"
-    ):
+    with pytest.raises(Exception, match="slice\\(\\) missing 1 required positional argument: 'start'"):
         table.eval_expression_list([daft.functions.slice(col("col"))])
 
 

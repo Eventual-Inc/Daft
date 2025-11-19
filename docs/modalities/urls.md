@@ -16,9 +16,7 @@ Daft supports working with:
 
 ### 1. URL Functions
 
-URL functions are ideal when your data will fit into memory or when you need the entire file content at once. Daft provides the [`.url.*`](../api/expressions.md#daft.expressions.expressions.ExpressionUrlNamespace) method namespace with functionality for working with URL strings. For example, to download data from URLs:
-
-<!-- todo(docs - cc): add relative path to url.download after figure out url namespace-->
+URL functions are ideal when your data will fit into memory or when you need the entire file content at once. Daft provides methods for working with URL strings. For example, to download data from URLs:
 
 === "🐍 Python"
     ``` python

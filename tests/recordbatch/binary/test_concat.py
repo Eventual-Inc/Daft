@@ -246,9 +246,7 @@ def test_binary_concat_errors() -> None:
 
     # Test concat with wrong number of arguments
     table = MicroPartition.from_pydict({"a": [b"hello", b"world"], "b": [b"foo", b"bar"], "c": [b"test", b"data"]})
-    with pytest.raises(
-        Exception, match="(?:ExpressionBinaryNamespace.)?concat\\(\\) takes 2 positional arguments but 3 were given"
-    ):
+    with pytest.raises(Exception, match="concat\\(\\) takes 2 positional arguments but 3 were given"):
         table.eval_expression_list([daft.functions.concat(col("a"), col("b"), col("c"))])
 
     # Test concat with no arguments

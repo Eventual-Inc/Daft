@@ -243,12 +243,10 @@ def test_fixed_size_binary_slice_errors() -> None:
     # Test with wrong number of arguments (too many)
     with pytest.raises(
         Exception,
-        match="(?:ExpressionBinaryNamespace.)?slice\\(\\) takes from 2 to 3 positional arguments but 4 were given",
+        match="slice\\(\\) takes from 2 to 3 positional arguments but 4 were given",
     ):
         table.eval_expression_list([daft.functions.slice(col("a"), lit(0), lit(1), lit(2))])
 
     # Test with wrong number of arguments (too few)
-    with pytest.raises(
-        Exception, match="(?:ExpressionBinaryNamespace.)?slice\\(\\) missing 1 required positional argument: 'start'"
-    ):
+    with pytest.raises(Exception, match="slice\\(\\) missing 1 required positional argument: 'start'"):
         table.eval_expression_list([daft.functions.slice(col("a"))])
