@@ -7,7 +7,9 @@ def test_endswith(test_expression):
     test_expression(
         data=test_data,
         expected=expected,
-        name="ends_with",
+        name="endswith",
+        fn_name="ends_with",
+        sql_name="ends_with",
         args=["thon"],
     )
 
@@ -18,7 +20,9 @@ def test_startswith(test_expression):
     test_expression(
         data=test_data,
         expected=expected,
-        name="starts_with",
+        name="startswith",
+        fn_name="starts_with",
+        sql_name="starts_with",
         args=["hello"],
     )
 

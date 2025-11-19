@@ -16,20 +16,17 @@ def test_expression():
         data: list[Any],
         expected: list[Any],
         name: str,
-        namespace: str | None = None,
+        fn_name: str | None = None,
         sql_name: str | None = None,
         args: list[Any] = [],
         kwargs: dict | None = None,
     ):
-        fn_name = name
+        fn_name = fn_name if fn_name else name
         fn_args = args
         fn_kwargs = kwargs if kwargs else {}
-        namespace = namespace
-        # Track if we need to skip Series assertion for replace with regex=True
-        skip_series_assert = False
 
         col_expr = col("c0")
-        expr = getattr(col_expr, fn_name)(*fn_args, **fn_kwargs)
+        expr = getattr(col_expr, name)(*fn_args, **fn_kwargs)
 
         sql_args = ["c0"]
         for arg in fn_args:
@@ -59,7 +56,7 @@ def test_expression():
 
         kwargs_str = ", ".join(kwargs_parts)
 
-        sql_name = sql_name if sql_name else fn_name
+        sql_name = sql_name if sql_name else name
 
         sql_expr = f"{sql_name}({', '.join(sql_args)}"
         if kwargs_str:
@@ -77,7 +74,6 @@ def test_expression():
         assert df_res == expected
         assert rb_result == expected
         assert sql_res == expected
-        if not skip_series_assert:
-            assert series_res == expected
+        assert series_res == expected
 
     yield _test_expression
