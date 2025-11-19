@@ -7,8 +7,7 @@ def test_endswith(test_expression):
     test_expression(
         data=test_data,
         expected=expected,
-        name="endswith",
-        sql_name="ends_with",
+        name="ends_with",
         args=["thon"],
     )
 
@@ -19,8 +18,7 @@ def test_startswith(test_expression):
     test_expression(
         data=test_data,
         expected=expected,
-        name="startswith",
-        sql_name="starts_with",
+        name="starts_with",
         args=["hello"],
     )
 
@@ -32,7 +30,6 @@ def contains(test_expression):
         data=test_data,
         expected=expected,
         name="contains",
-        sql_name="contains",
         args=[["lo"]],
     )
 
@@ -84,7 +81,7 @@ def test_extract(test_expression):
     test_expression(
         data=test_data,
         expected=expected,
-        name="extract",
+        name="regexp_extract",
         sql_name="regexp_extract",
         args=[regex],
     )
@@ -97,7 +94,6 @@ def test_substr(test_expression):
         data=test_data,
         expected=expected,
         name="substr",
-        sql_name="substr",
         args=[2, None],
     )
 
@@ -110,8 +106,6 @@ def test_regexp_replace(test_expression):
     test_expression(
         data=test_data,
         expected=expected,
-        name="replace",
-        sql_name="regexp_replace",
+        name="regexp_replace",
         args=[regex, replace],
-        kwargs={"regex": True},
     )

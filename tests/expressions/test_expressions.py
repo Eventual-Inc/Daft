@@ -122,16 +122,7 @@ def test_repr_functions_negate() -> None:
     a = col("a")
     y = a.negate()
     repr_out = repr(y)
-    assert repr_out == "negative(col(a))"
-    copied = copy.deepcopy(y)
-    assert repr_out == repr(copied)
-
-
-def test_repr_functions_negative() -> None:
-    a = col("a")
-    y = a.negate()
-    repr_out = repr(y)
-    assert repr_out == "negative(col(a))"
+    assert repr_out == "negate(col(a))"
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 

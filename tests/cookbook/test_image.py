@@ -90,7 +90,7 @@ def test_image_encode(with_morsel_size) -> None:
     df = df.select(df["img"].cast(target_dtype))
     assert df.schema()["img"].dtype == target_dtype
 
-    df = df.with_column("encoded", df["img"].encode(file_format))
+    df = df.with_column("encoded", df["img"].encode_image(file_format))
     assert df.schema()["encoded"].dtype == DataType.binary()
 
     pil_decoded_imgs = [np.asarray(Image.open(io.BytesIO(bytes_))) for bytes_ in df.to_pydict()["encoded"]]
