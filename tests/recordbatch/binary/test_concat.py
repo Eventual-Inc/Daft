@@ -250,5 +250,5 @@ def test_binary_concat_errors() -> None:
 
     # Test concat with no arguments
     table = MicroPartition.from_pydict({"a": [b"hello", b"world"]})
-    with pytest.raises(Exception, match="concat\\(\\) missing 1 required positional argument: 'right'"):
+    with pytest.raises(Exception, match="concat\\(\\) missing 1 required positional argument: 'other'"):
         table.eval_expression_list([col("a").concat()])
