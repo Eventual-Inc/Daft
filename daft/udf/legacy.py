@@ -227,21 +227,14 @@ class UDF:
     Calling this class produces a `daft.Expression` that can be used in a DataFrame function.
 
     Examples:
-        ```python
-        import daft
-
-
-        @daft.udf(return_dtype=daft.DataType.float64())
-        def multiply_and_add(x: daft.Series, y: float, z: float):
-            return x.to_arrow().to_numpy() * y + z
-
-
-        df = daft.from_pydict({"x": [1, 2, 3]})
-        df = df.with_column("result", multiply_and_add(df["x"], 2.0, z=1.5))
-        df.show()
-        ```
-
-        ``` {title="Output"}
+        >>> import daft
+        >>> @daft.udf(return_dtype=daft.DataType.float64())
+        ... def multiply_and_add(x: daft.Series, y: float, z: float):
+        ...     return x.to_arrow().to_numpy() * y + z
+        >>>
+        >>> df = daft.from_pydict({"x": [1, 2, 3]})
+        >>> df = df.with_column("result", multiply_and_add(df["x"], 2.0, z=1.5))
+        >>> df.show()
         ╭───────┬─────────╮
         │ x     ┆ result  │
         │ ---   ┆ ---     │
@@ -255,7 +248,6 @@ class UDF:
         ╰───────┴─────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
-        ```
     """
 
     inner: UserDefinedPyFuncLike
@@ -325,19 +317,16 @@ class UDF:
         Examples:
             For instance, if your UDF requires 4 CPUs to run, you can configure it like so:
 
-            ```python
-            import daft
+            >>> import daft
+            >>>
+            >>> @daft.udf(return_dtype=daft.DataType.string())
+            ... def example_udf(inputs):
+            ...     # You will have access to 4 CPUs here if you configure your UDF correctly!
+            ...     return inputs
+            >>>
+            >>> # Parametrize the UDF to run with 4 CPUs
+            >>> example_udf_4CPU = example_udf.override_options(num_cpus=4)
 
-
-            @daft.udf(return_dtype=daft.DataType.string())
-            def example_udf(inputs):
-                # You will have access to 4 CPUs here if you configure your UDF correctly!
-                return inputs
-
-
-            # Parametrize the UDF to run with 4 CPUs
-            example_udf_4CPU = example_udf.override_options(num_cpus=4)
-            ```
         """
         new_resource_request = ResourceRequest() if self.resource_request is None else self.resource_request
         if num_cpus is not _UnsetMarker:
@@ -385,22 +374,18 @@ class UDF:
         """Override the concurrency of this UDF, which tells Daft how many instances of your UDF to run concurrently.
 
         Examples:
-            ```python
-            import daft
-
-
-            @daft.udf(return_dtype=daft.DataType.string(), num_gpus=1)
-            class MyGpuUdf:
-                def __init__(self, text=" world"):
-                    self.text = text
-
-                def __call__(self, data):
-                    return [x + self.text for x in data]
-
-
-            # New UDF that will have 8 concurrent running instances (will require 8 total GPUs)
-            MyGpuUdf_8_concurrency = MyGpuUdf.with_concurrency(8)
-            ```
+            >>> import daft
+            >>>
+            >>> @daft.udf(return_dtype=daft.DataType.string(), num_gpus=1)
+            ... class MyGpuUdf:
+            ...     def __init__(self, text=" world"):
+            ...         self.text = text
+            ...
+            ...     def __call__(self, data):
+            ...         return [x + self.text for x in data]
+            >>>
+            >>> # New UDF that will have 8 concurrent running instances (will require 8 total GPUs)
+            >>> MyGpuUdf_8_concurrency = MyGpuUdf.with_concurrency(8)
         """
         return dataclasses.replace(self, concurrency=concurrency)
 
@@ -408,22 +393,18 @@ class UDF:
         """Override whether this UDF should run on a separate process or not.
 
         Examples:
-            ```python
-            import daft
-
-
-            @daft.udf(return_dtype=daft.DataType.string(), num_gpus=1)
-            class MyGpuUdf:
-                def __init__(self, text=" world"):
-                    self.text = text
-
-                def __call__(self, data):
-                    return [x + self.text for x in data]
-
-
-            # New UDF that will run on a separate process
-            MyGpuUdf_separate_process = MyGpuUdf.run_on_process(True)
-            ```
+            >>> import daft
+            >>>
+            >>> @daft.udf(return_dtype=daft.DataType.string(), num_gpus=1)
+            ... class MyGpuUdf:
+            ...     def __init__(self, text=" world"):
+            ...         self.text = text
+            ...
+            ...     def __call__(self, data):
+            ...         return [x + self.text for x in data]
+            >>>
+            >>> # New UDF that will run on a separate process
+            >>> MyGpuUdf_separate_process = MyGpuUdf.run_on_process(True)
         """
         return dataclasses.replace(self, use_process=use_process)
 
@@ -431,29 +412,23 @@ class UDF:
         """Replace initialization arguments for a class UDF when calling `__init__` at runtime on each instance of the UDF.
 
         Examples:
-            ```python
-            import daft
-
-
-            @daft.udf(return_dtype=daft.DataType.string())
-            class MyUdfWithInit:
-                def __init__(self, text=" world"):
-                    self.text = text
-
-                def __call__(self, data):
-                    return [x + self.text for x in data]
-
-
-            # Create a customized version of MyUdfWithInit by overriding the init args
-            MyUdfWithInit_CustomInitArgs = MyUdfWithInit.with_init_args(text=" my old friend")
-
-            df = daft.from_pydict({"foo": ["hello", "hello", "hello"]})
-            df = df.with_column("bar_world", MyUdfWithInit(df["foo"]))
-            df = df.with_column("bar_custom", MyUdfWithInit_CustomInitArgs(df["foo"]))
-            df.show()
-            ```
-
-            ``` {title="Output"}
+            >>> import daft
+            >>>
+            >>> @daft.udf(return_dtype=daft.DataType.string())
+            ... class MyUdfWithInit:
+            ...     def __init__(self, text=" world"):
+            ...         self.text = text
+            ...
+            ...     def __call__(self, data):
+            ...         return [x + self.text for x in data]
+            >>>
+            >>> # Create a customized version of MyUdfWithInit by overriding the init args
+            >>> MyUdfWithInit_CustomInitArgs = MyUdfWithInit.with_init_args(text=" my old friend")
+            >>>
+            >>> df = daft.from_pydict({"foo": ["hello", "hello", "hello"]})
+            >>> df = df.with_column("bar_world", MyUdfWithInit(df["foo"]))
+            >>> df = df.with_column("bar_custom", MyUdfWithInit_CustomInitArgs(df["foo"]))
+            >>> df.show()
             ╭────────┬─────────────┬─────────────────────╮
             │ foo    ┆ bar_world   ┆ bar_custom          │
             │ ---    ┆ ---         ┆ ---                 │
@@ -467,7 +442,6 @@ class UDF:
             ╰────────┴─────────────┴─────────────────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
-            ```
         """
         if not isinstance(self.inner, type):
             raise ValueError("Function UDFs cannot have init args.")
@@ -537,21 +511,14 @@ def udf(
         5. We can call our UDF on a dataframe using any of the dataframe projection operations ([df.with_column()](https://docs.daft.ai/en/latest/api/dataframe/#daft.DataFrame.with_column),
         [df.select()](https://docs.daft.ai/en/latest/api/dataframe/#daft.DataFrame.select), etc.)
 
-        ```python
-        import daft
-
-
-        @daft.udf(return_dtype=daft.DataType.int64())
-        def add_constant(x: daft.Series, c=10):
-            return [v + c for v in x]
-
-
-        df = daft.from_pydict({"x": [1, 2, 3]})
-        df = df.with_column("new_x", add_constant(df["x"], c=20))
-        df.show()
-        ```
-
-        ``` {title="Output"}
+        >>> import daft
+        >>> @daft.udf(return_dtype=daft.DataType.int64())
+        ... def add_constant(x: daft.Series, c=10):
+        ...     return [v + c for v in x]
+        >>>
+        >>> df = daft.from_pydict({"x": [1, 2, 3]})
+        >>> df = df.with_column("new_x", add_constant(df["x"], c=20))
+        >>> df.show()
         ╭───────┬───────╮
         │ x     ┆ new_x │
         │ ---   ┆ ---   │
@@ -565,24 +532,20 @@ def udf(
         ╰───────┴───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
-        ```
+
         **Resource Requests:**
 
         You can also hint Daft about the resources that your UDF will require to run. For example, the following UDF requires 2 CPUs to run. On a
         machine/cluster with 8 CPUs, Daft will be able to run up to 4 instances of this UDF at once!
 
-        ```python
-        import daft
-        @daft.udf(return_dtype=daft.DataType.int64(), num_cpus=2)
-        def udf_needs_2_cpus(x: daft.Series):
-            return x
-
-        df = daft.from_pydict({"x": [1, 2, 3]})
-        df = df.with_column("new_x", udf_needs_2_cpus(df["x"]))
-        df.show()
-        ```
-
-        ``` {title="Output"}
+        >>> import daft
+        >>> @daft.udf(return_dtype=daft.DataType.int64(), num_cpus=2)
+        ... def udf_needs_2_cpus(x: daft.Series):
+        ...     return x
+        >>>
+        >>> df = daft.from_pydict({"x": [1, 2, 3]})
+        >>> df = df.with_column("new_x", udf_needs_2_cpus(df["x"]))
+        >>> df.show()
         ╭───────┬───────╮
         │ x     ┆ new_x │
         │ ---   ┆ ---   │
@@ -596,24 +559,20 @@ def udf(
         ╰───────┴───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
-        ```
+
         Your UDF's resources can also be overridden before you call it like so:
 
-        ```python
-        import daft
-        @daft.udf(return_dtype=daft.DataType.int64(), num_cpus=4)
-        def udf_needs_4_cpus(x: daft.Series):
-            return x
-
-        # Override the num_cpus to 2 instead
-        udf_needs_2_cpus = udf_needs_4_cpus.override_options(num_cpus=2)
-
-        df = daft.from_pydict({"x": [1, 2, 3]})
-        df = df.with_column("new_x", udf_needs_2_cpus(df["x"]))
-        df.show()
-        ```
-
-        ``` {title="Output"}
+        >>> import daft
+        >>> @daft.udf(return_dtype=daft.DataType.int64(), num_cpus=4)
+        ... def udf_needs_4_cpus(x: daft.Series):
+        ...     return x
+        >>>
+        >>> # Override the num_cpus to 2 instead
+        >>> udf_needs_2_cpus = udf_needs_4_cpus.override_options(num_cpus=2)
+        >>>
+        >>> df = daft.from_pydict({"x": [1, 2, 3]})
+        >>> df = df.with_column("new_x", udf_needs_2_cpus(df["x"]))
+        >>> df.show()
         ╭───────┬───────╮
         │ x     ┆ new_x │
         │ ---   ┆ ---   │
@@ -627,7 +586,7 @@ def udf(
         ╰───────┴───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
-        ```
+
         **Concurrency:**
 
         With the `concurrency` parameter, you can tell Daft how many instances of your UDF you want to run at the same time.
@@ -635,19 +594,18 @@ def udf(
 
         This is especially useful if your UDF has a costly initialization step, for example, if you are loading a ML model into memory.
 
-        ```python
-        import daft
-        @daft.udf(
-            return_dtype=daft.DataType.string(),
-            concurrency=4,  # only create 4 instances of this UDF
-        )
-        class MLModelUDF:
-            def __init__(self):
-                self.model = some_slow_initialization_step()
+        >>> import daft
+        >>> @daft.udf(
+        ...     return_dtype=daft.DataType.string(),
+        ...     concurrency=4,  # only create 4 instances of this UDF
+        ... )
+        ... class MLModelUDF:
+        ...     def __init__(self):
+        ...         self.model = some_slow_initialization_step()
+        ...
+        ...     def __call__(self, data):
+        ...         return self.model(data.to_pylist())
 
-            def __call__(self, data):
-                return self.model(data.to_pylist())
-        ```
     """
     inferred_return_dtype = DataType._infer(return_dtype)
 

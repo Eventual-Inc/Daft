@@ -52,15 +52,10 @@ def lit(value: object) -> Expression:
         Expression: Expression representing the value provided
 
     Examples:
-        ```python
-        import daft
-
-        df = daft.from_pydict({"x": [1, 2, 3]})
-        df = df.with_column("y", daft.lit(1))
-        df.show()
-        ```
-
-        ``` {title="Output"}
+        >>> import daft
+        >>> df = daft.from_pydict({"x": [1, 2, 3]})
+        >>> df = df.with_column("y", daft.lit(1))
+        >>> df.show()
         ╭───────┬───────╮
         │ x     ┆ y     │
         │ ---   ┆ ---   │
@@ -74,7 +69,7 @@ def lit(value: object) -> Expression:
         ╰───────┴───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
-        ```
+
     """
     return Expression._from_pyexpr(_lit(value))
 
@@ -99,15 +94,10 @@ def col(name: str) -> Expression:
         Expression: Expression representing the selected column
 
     Examples:
-        ```python
-        import daft
-
-        df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
-        df = df.select(daft.col("x"))
-        df.show()
-        ```
-
-        ``` {title="Output"}
+        >>> import daft
+        >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+        >>> df = df.select(daft.col("x"))
+        >>> df.show()
         ╭───────╮
         │ x     │
         │ ---   │
@@ -121,7 +111,7 @@ def col(name: str) -> Expression:
         ╰───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
-        ```
+
     """
     return Expression._from_pyexpr(unresolved_col(name))
 
@@ -483,15 +473,10 @@ class Expression:
 
         Examples:
             Getting a single value:
-            ```python
-            import daft
-
-            df = daft.from_pydict({"struct": [{"x": 1, "y": 2}, {"x": 3, "y": 4}], "list": [[10, 20], [30, 40]]})
-            df = df.select(df["struct"]["x"], df["list"][0].alias("first"))
-            df.show()
-            ```
-
-            ``` {title="Output"}
+            >>> import daft
+            >>> df = daft.from_pydict({"struct": [{"x": 1, "y": 2}, {"x": 3, "y": 4}], "list": [[10, 20], [30, 40]]})
+            >>> df = df.select(df["struct"]["x"], df["list"][0].alias("first"))
+            >>> df.show()
             ╭───────┬───────╮
             │ x     ┆ first │
             │ ---   ┆ ---   │
@@ -503,15 +488,11 @@ class Expression:
             ╰───────┴───────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
-            ```
-            Getting a slice:
-            ```python
-            df = daft.from_pydict({"x": [[1, 2, 3], [4, 5, 6, 7], [8]]})
-            df = df.select(df["x"][1:-1])
-            df.show()
-            ```
 
-            ``` {title="Output"}
+            Getting a slice:
+            >>> df = daft.from_pydict({"x": [[1, 2, 3], [4, 5, 6, 7], [8]]})
+            >>> df = df.select(df["x"][1:-1])
+            >>> df.show()
             ╭─────────────╮
             │ x           │
             │ ---         │
@@ -525,7 +506,7 @@ class Expression:
             ╰─────────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
-            ```
+
         Tip: See Also
             [`daft.functions.get`](https://docs.daft.ai/en/stable/api/functions/get/)
             [`daft.functions.slice`](https://docs.daft.ai/en/stable/api/functions/slice/)
@@ -569,15 +550,10 @@ class Expression:
             Expression: Renamed expression
 
         Examples:
-            ```python
-            import daft
-
-            df = daft.from_pydict({"x": [1, 2, 3]})
-            df = df.select(col("x").alias("y"))
-            df.show()
-            ```
-
-            ``` {title="Output"}
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3]})
+            >>> df = df.select(col("x").alias("y"))
+            >>> df.show()
             ╭───────╮
             │ y     │
             │ ---   │
@@ -591,7 +567,7 @@ class Expression:
             ╰───────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
-            ```
+
         """
         assert isinstance(name, str)
         expr = self._expr.alias(name)
@@ -1237,23 +1213,14 @@ class Expression:
             use a UDF instead.
 
         Examples:
-            ```python
-            import daft
-
-            df = daft.from_pydict({"x": ["1", "2", "tim"]})
-
-
-            def f(x_val: str) -> int:
-                if x_val.isnumeric():
-                    return int(x_val)
-                else:
-                    return 0
-
-
-            df.with_column("num_x", df["x"].apply(f, return_dtype=daft.DataType.int64())).collect()
-            ```
-
-            ``` {title="Output"}
+            >>> import daft
+            >>> df = daft.from_pydict({"x": ["1", "2", "tim"]})
+            >>> def f(x_val: str) -> int:
+            ...     if x_val.isnumeric():
+            ...         return int(x_val)
+            ...     else:
+            ...         return 0
+            >>> df.with_column("num_x", df["x"].apply(f, return_dtype=daft.DataType.int64())).collect()
             ╭────────┬───────╮
             │ x      ┆ num_x │
             │ ---    ┆ ---   │
@@ -1267,7 +1234,7 @@ class Expression:
             ╰────────┴───────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
-            ```
+
         """
         from daft.udf import UDF
 
@@ -3830,15 +3797,10 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
             A new expression representing the slice.
 
         Examples:
-            ```python
-            import daft
-
-            df = daft.from_pydict({"x": [b"Hello World", b"\xff\xfe\x00", b"empty"]})
-            df = df.select(df["x"].binary.slice(1, 3))
-            df.show()
-            ```
-
-            ``` {title="Output"}
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [b"Hello World", b"\xff\xfe\x00", b"empty"]})
+            >>> df = df.select(df["x"].binary.slice(1, 3))
+            >>> df.show()
             ╭─────────────╮
             │ x           │
             │ ---         │
@@ -3852,7 +3814,7 @@ class ExpressionBinaryNamespace(ExpressionNamespace):
             ╰─────────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
-            ```
+
         """
         warnings.warn(
             "`Expression.binary.slice` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.slice` instead.",
