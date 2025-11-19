@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-import daft
 from daft.expressions import col
 from daft.expressions.expressions import lit
 from daft.functions import when
@@ -20,7 +19,7 @@ from daft.recordbatch.micropartition import MicroPartition
         ([False, False, False], [1, 2, 3], [4, 5, 6], [4, 5, 6]),
     ],
 )
-def test_table_expr_if_else(predicate, if_true, if_false, expected) -> None:
+def test_table_expr_when(predicate, if_true, if_false, expected) -> None:
     daft_recordbatch = MicroPartition.from_pydict({"predicate": predicate, "if_true": if_true, "if_false": if_false})
     daft_recordbatch = daft_recordbatch.eval_expression_list(
         [when(col("predicate"), col("if_true")).otherwise(col("if_false"))]
@@ -32,19 +31,15 @@ def test_table_expr_if_else(predicate, if_true, if_false, expected) -> None:
 
 @pytest.mark.skip(reason="missing_key does not get evaluated but it errors on binding")
 @pytest.mark.parametrize(
-    "if_else_expr",
+    "when_expr",
     [
-        when(lit(True), daft.functions.get(col("struct"), "key")).otherwise(
-            daft.functions.get(col("struct"), "missing_key")
-        ),
-        when(lit(False), daft.functions.get(col("struct"), "missing_key")).otherwise(
-            daft.functions.get(col("struct"), "key")
-        ),
+        when(lit(True), col("struct").get("key")).otherwise(col("struct").get("missing_key")),
+        when(lit(False), col("struct").get("missing_key")).otherwise(col("struct").get("key")),
     ],
 )
-def test_table_expr_if_else_literal_predicate(if_else_expr) -> None:
+def test_table_expr_when_literal_predicate(when_expr) -> None:
     daft_recordbatch = MicroPartition.from_pydict({"struct": [{"key": "value"}]})
-    daft_recordbatch = daft_recordbatch.eval_expression_list([if_else_expr])
+    daft_recordbatch = daft_recordbatch.eval_expression_list([when_expr])
     pydict = daft_recordbatch.to_pydict()
 
-    assert pydict == {if_else_expr.name(): ["value"]}
+    assert pydict == {when_expr.name(): ["value"]}

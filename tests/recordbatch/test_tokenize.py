@@ -35,7 +35,7 @@ def test_tokenize_encoding(encoding: str) -> None:
     ]
 
     s = daft.from_pydict({"a": test_data})
-    a = s.select(daft.functions.tokenize_encode(col("a"), encoding)).to_pydict()["a"]
+    a = s.select(col("a").tokenize_encode(encoding)).to_pydict()["a"]
     assert a[3] is None and a[-1] is None
 
     # openai encoder errors on Nones
@@ -71,7 +71,7 @@ def test_tokenize_decoding(encoding: str, num_type: DataType) -> None:
     token_data[3] = token_data[-1] = None
 
     s = daft.from_pydict({"a": token_data}).select(col("a").cast(DataType.list(num_type)))
-    a = s.select(daft.functions.tokenize_decode(col("a"), encoding)).to_pydict()["a"]
+    a = s.select(col("a").tokenize_decode(encoding)).to_pydict()["a"]
     assert a == test_data
 
 
@@ -81,7 +81,7 @@ def test_tokenize_decode_invalid_dtype(encoding: str):
 
     s = daft.from_pydict({"a": test_data})
     with pytest.raises(DaftCoreException):
-        s.select(daft.functions.tokenize_encode(col("a"), encoding)).collect()
+        s.select(col("a").tokenize_encode(encoding)).collect()
 
 
 @pytest.mark.parametrize("encoding", DEFAULT_ENCODINGS)
@@ -93,7 +93,7 @@ def test_tokenize_decode_invalid_tokens(encoding: str):
     for t in test_data:
         s = daft.from_pydict({"a": [t]})
         with pytest.raises(DaftCoreException, match="Input has bad token"):
-            s.select(daft.functions.tokenize_decode(col("a"), encoding)).collect()
+            s.select(col("a").tokenize_decode(encoding)).collect()
 
 
 def test_tokenize_base64_fail():
@@ -101,7 +101,7 @@ def test_tokenize_base64_fail():
     test_data = ["this should fail"]
     s = daft.from_pydict({"a": test_data})
     with pytest.raises(DaftCoreException, match="Error decoding base 64 token IGFyZQ= with rank 389"):
-        s.select(daft.functions.tokenize_encode(col("a"), file_path, pattern=P50K_REGEX)).collect()
+        s.select(col("a").tokenize_encode(file_path, pattern=P50K_REGEX)).collect()
 
 
 def test_tokenize_rank_parse_fail():
@@ -109,7 +109,7 @@ def test_tokenize_rank_parse_fail():
     test_data = ["this should fail"]
     s = daft.from_pydict({"a": test_data})
     with pytest.raises(DaftCoreException, match="Error parsing rank number 4I5"):
-        s.select(daft.functions.tokenize_encode(col("a"), file_path, pattern=P50K_REGEX)).collect()
+        s.select(col("a").tokenize_encode(file_path, pattern=P50K_REGEX)).collect()
 
 
 def test_tokenize_invalid_token_fail():
@@ -117,7 +117,7 @@ def test_tokenize_invalid_token_fail():
     test_data = ["this should fail"]
     s = daft.from_pydict({"a": test_data})
     with pytest.raises(DaftCoreException, match="Invalid line in token file"):
-        s.select(daft.functions.tokenize_encode(col("a"), file_path, pattern=P50K_REGEX)).collect()
+        s.select(col("a").tokenize_encode(file_path, pattern=P50K_REGEX)).collect()
 
 
 def test_tokenize_empty_file_fail():
@@ -125,7 +125,7 @@ def test_tokenize_empty_file_fail():
     test_data = ["this should fail"]
     s = daft.from_pydict({"a": test_data})
     with pytest.raises(DaftCoreException, match="Token file has no tokens"):
-        s.select(daft.functions.tokenize_encode(col("a"), file_path, pattern=P50K_REGEX)).collect()
+        s.select(col("a").tokenize_encode(file_path, pattern=P50K_REGEX)).collect()
 
 
 def test_tokenize_missing_pattern_fail():
@@ -133,7 +133,7 @@ def test_tokenize_missing_pattern_fail():
     test_data = ["this should fail"]
     s = daft.from_pydict({"a": test_data})
     with pytest.raises(DaftCoreException, match="Pattern must be provided for non-builtin token sets"):
-        s.select(daft.functions.tokenize_encode(col("a"), file_path)).collect()
+        s.select(col("a").tokenize_encode(file_path)).collect()
 
 
 def test_tokenize_llama3_special_tokens():
@@ -146,9 +146,7 @@ def test_tokenize_llama3_special_tokens():
         "<|reserved_special_token_255|><|reserved_special_token_256|>",
     ]
     s = daft.from_pydict({"a": test_data})
-    a = s.select(
-        daft.functions.tokenize_encode(col("a"), file_path, pattern=P50K_REGEX, special_tokens="llama3")
-    ).to_pydict()["a"]
+    a = s.select(col("a").tokenize_encode(file_path, pattern=P50K_REGEX, special_tokens="llama3")).to_pydict()["a"]
     expected = [
         [5000, 5001],
         [5002, 5003, 5004],
@@ -182,9 +180,7 @@ def test_tokenize_unsupported_special_tokens():
     test_data = ["this should fail"]
     s = daft.from_pydict({"a": test_data})
     with pytest.raises(DaftCoreException, match="Provided special token set is not supported"):
-        s.select(
-            daft.functions.tokenize_encode(col("a"), file_path, pattern=P50K_REGEX, special_tokens="thisdoesntexist")
-        ).collect()
+        s.select(col("a").tokenize_encode(file_path, pattern=P50K_REGEX, special_tokens="thisdoesntexist")).collect()
 
 
 def test_tokenize_special_tokens_disabled():
@@ -192,13 +188,7 @@ def test_tokenize_special_tokens_disabled():
     test_data = ["<|begin_of_text|><|end_of_text|>"]
     s = daft.from_pydict({"a": test_data})
     a = s.select(
-        daft.functions.tokenize_encode(
-            col("a"),
-            file_path,
-            pattern=P50K_REGEX,
-            special_tokens="llama3",
-            use_special_tokens=False,
-        )
+        col("a").tokenize_encode(file_path, pattern=P50K_REGEX, special_tokens="llama3", use_special_tokens=False)
     ).to_pydict()["a"]
     assert 5000 not in a[0] and 5001 not in a[0]
 
@@ -208,7 +198,7 @@ def test_tokenize_builtin_tokens(encoding, end_token):
     test_data = ["<|endoftext|>"]
 
     s = daft.from_pydict({"a": test_data})
-    a = s.select(daft.functions.tokenize_encode(col("a"), encoding, use_special_tokens=True)).to_pydict()["a"]
+    a = s.select(col("a").tokenize_encode(encoding, use_special_tokens=True)).to_pydict()["a"]
     assert len(a[0]) == 1 and a[0][0] == end_token
 
 
@@ -217,5 +207,5 @@ def test_tokenize_builtin_tokens_disabled(encoding, end_token):
     test_data = ["<|endoftext|>"]
 
     s = daft.from_pydict({"a": test_data})
-    a = s.select(daft.functions.tokenize_encode(col("a"), encoding, use_special_tokens=False)).to_pydict()["a"]
+    a = s.select(col("a").tokenize_encode(encoding, use_special_tokens=False)).to_pydict()["a"]
     assert len(a[0]) >= 1 and a[0][0] != end_token

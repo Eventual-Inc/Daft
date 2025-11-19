@@ -4,7 +4,6 @@ import datetime
 
 import pytest
 
-import daft
 from daft.datatype import DataType
 from daft.expressions.expressions import col
 from daft.recordbatch.micropartition import MicroPartition
@@ -57,9 +56,7 @@ def test_table_expr_fill_nan(float_dtype) -> None:
     expected = [1.0, None, 3.0, 2.0]
 
     daft_recordbatch = MicroPartition.from_pydict({"input": input})
-    daft_recordbatch = daft_recordbatch.eval_expression_list(
-        [daft.functions.fill_nan(col("input").cast(float_dtype), fill_value)]
-    )
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").cast(float_dtype).fill_nan(fill_value)])
     pydict = daft_recordbatch.to_pydict()
 
     assert pydict["input"] == expected

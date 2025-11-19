@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-import daft
 from daft.expressions import col
 from daft.recordbatch import MicroPartition
 
@@ -26,7 +25,7 @@ def test_binary_length() -> None:
             ]
         }
     )
-    result = table.eval_expression_list([daft.functions.length(col("col"))])
+    result = table.eval_expression_list([col("col").length()])
     assert result.to_pydict() == {
         "col": [
             3,  # "foo"
@@ -79,7 +78,7 @@ def test_binary_length() -> None:
 )
 def test_binary_length_parameterized(input_data: list[bytes | None], expected_lengths: list[int | None]) -> None:
     table = MicroPartition.from_pydict({"col": input_data})
-    result = table.eval_expression_list([daft.functions.length(col("col"))])
+    result = table.eval_expression_list([col("col").length()])
     assert result.to_pydict() == {"col": expected_lengths}
 
 
@@ -87,4 +86,4 @@ def test_binary_length_errors() -> None:
     # Test length with wrong number of arguments
     table = MicroPartition.from_pydict({"a": [b"hello", b"world"], "b": [b"foo", b"bar"]})
     with pytest.raises(Exception, match="length\\(\\) takes 1 positional argument but 2 were given"):
-        table.eval_expression_list([daft.functions.length(col("a"), col("b"))])
+        table.eval_expression_list([col("a").length(col("b"))])

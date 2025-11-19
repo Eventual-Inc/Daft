@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-import daft
 from daft.expressions import col, lit
 from daft.recordbatch import MicroPartition
 
@@ -10,10 +9,10 @@ from daft.recordbatch import MicroPartition
 @pytest.mark.parametrize(
     ["expr", "data", "expected"],
     [
-        (daft.functions.lpad(col("col"), 5, "."), ["foo", "abcdef", "quux"], ["..foo", "abcde", ".quux"]),
-        (daft.functions.lpad(col("col"), lit(5), lit("-")), ["foo", "abcdef", "quux"], ["--foo", "abcde", "-quux"]),
+        (col("col").lpad(5, "."), ["foo", "abcdef", "quux"], ["..foo", "abcde", ".quux"]),
+        (col("col").lpad(lit(5), lit("-")), ["foo", "abcdef", "quux"], ["--foo", "abcde", "-quux"]),
         (
-            daft.functions.lpad(col("col"), col("zeroes") + lit(5), col("emptystrings") + lit("-")),
+            col("col").lpad(col("zeroes") + lit(5), col("emptystrings") + lit("-")),
             ["foo", "abcdef", "quux"],
             ["--foo", "abcde", "-quux"],
         ),

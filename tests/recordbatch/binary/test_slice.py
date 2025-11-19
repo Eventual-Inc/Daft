@@ -202,7 +202,7 @@ def test_binary_slice_with_columns(
         end = start + length
     else:
         end = start + length
-    result = table.eval_expression_list([daft.functions.slice(col("col"), start, end)])
+    result = table.eval_expression_list([col("col").slice(start, end)])
     assert result.to_pydict() == {"col": expected_result}
 
 
@@ -324,7 +324,7 @@ def test_binary_slice_edge_cases(
         end = None
     else:
         end = col("start") + length
-    result = table.eval_expression_list([daft.functions.slice(col("col"), col("start"), end)])
+    result = table.eval_expression_list([col("col").slice(col("start"), end)])
     assert result.to_pydict() == {"col": expected_result}
 
 
@@ -337,12 +337,12 @@ def test_binary_slice_errors() -> None:
         Exception,
         match="slice\\(\\) takes from 2 to 3 positional arguments but 4 were given",
     ):
-        table.eval_expression_list([daft.functions.slice(col("col"), col("start"), col("length"), col("extra"))])
+        table.eval_expression_list([col("col").slice(col("start"), col("length"), col("extra"))])
 
     # Test slice with wrong number of arguments (too few)
     table = MicroPartition.from_pydict({"col": [b"hello", b"world"], "start": [1, 2]})
     with pytest.raises(Exception, match="slice\\(\\) missing 1 required positional argument: 'start'"):
-        table.eval_expression_list([daft.functions.slice(col("col"))])
+        table.eval_expression_list([col("col").slice()])
 
 
 def test_binary_slice_computed() -> None:
@@ -364,10 +364,10 @@ def test_binary_slice_computed() -> None:
     )
     result = table.eval_expression_list(
         [
-            daft.functions.slice(
+            col("col").slice(
                 col("col"),
-                (daft.functions.length(col("col")) - 5).cast(DataType.int32()),  # start 5 chars from end
-                (daft.functions.length(col("col")) - 5).cast(DataType.int32()) + 3,  # end at start + 3
+                (col("col").length() - 5).cast(DataType.int32()),  # start 5 chars from end
+                (col("col").length() - 5).cast(DataType.int32()) + 3,  # end at start + 3
             )
         ]
     )
@@ -393,10 +393,10 @@ def test_binary_slice_computed() -> None:
     )
     result = table.eval_expression_list(
         [
-            daft.functions.slice(
+            col("col").slice(
                 col("col"),
                 0,  # start from beginning
-                (daft.functions.length(col("col")) / 2).cast(DataType.int32()),  # end at half of string (0 + length/2)
+                (col("col").length() / 2).cast(DataType.int32()),  # end at half of string (0 + length/2)
             )
         ]
     )
@@ -432,11 +432,11 @@ def test_binary_slice_computed() -> None:
     )
     result = table.eval_expression_list(
         [
-            daft.functions.slice(
+            col("col").slice(
                 col("col"),
-                (daft.functions.length(col("col")) / 5).cast(DataType.int32()),  # start at 1/5 of string
-                (daft.functions.length(col("col")) / 5).cast(DataType.int32())
-                + (daft.functions.length(col("col")) / 3).cast(DataType.int32()),  # end at start + 1/3 of string
+                (col("col").length() / 5).cast(DataType.int32()),  # start at 1/5 of string
+                (col("col").length() / 5).cast(DataType.int32())
+                + (col("col").length() / 3).cast(DataType.int32()),  # end at start + 1/3 of string
             )
         ]
     )
@@ -626,15 +626,5 @@ def test_binary_slice_broadcasting(
     table = MicroPartition.from_pydict(table_data)
 
     # Perform slice operation on the raw binary value
-    # Convert length to end index: end = start + length
-    if isinstance(start_expr, Expression) or isinstance(length_expr, Expression):
-        if isinstance(start_expr, Expression) and isinstance(length_expr, Expression):
-            end_expr = start_expr + length_expr
-        elif isinstance(start_expr, Expression):
-            end_expr = start_expr + length_expr
-        else:
-            end_expr = start_expr + length_expr
-    else:
-        end_expr = start_expr + length_expr
-    result = table.eval_expression_list([daft.functions.slice(lit(input_data), start_expr, end_expr)])
+    result = table.eval_expression_list([lit(input_data).slice(start_expr, length_expr)])
     assert result.to_pydict() == {"literal": expected_result}

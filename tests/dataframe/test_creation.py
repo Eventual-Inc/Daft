@@ -932,7 +932,7 @@ def test_create_dataframe_json_schema_hints_two_files() -> None:
         assert df.schema()["foo"].dtype == DataType.struct({"bar": DataType.string(), "bar2": DataType.string()})
 
         # When dataframe is materialized, the schema hints should be enforced and bar2 should be included
-        df = df.select(daft.functions.get(df["foo"], "bar2"))
+        df = df.select(df["foo"].get("bar2"))
         df = df.where(df["bar2"].not_null()).collect()
 
         assert len(df) == 1

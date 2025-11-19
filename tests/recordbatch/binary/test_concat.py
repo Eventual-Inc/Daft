@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-import daft
 from daft.expressions import col, lit
 from daft.recordbatch import MicroPartition
 
@@ -106,7 +105,7 @@ def test_binary_concat(
     input_a: list[bytes | None], input_b: list[bytes | None], expected_result: list[bytes | None]
 ) -> None:
     table = MicroPartition.from_pydict({"a": input_a, "b": input_b})
-    result = table.eval_expression_list([daft.functions.concat(col("a"), col("b"))])
+    result = table.eval_expression_list([col("a").concat(col("b"))])
     assert result.to_pydict() == {"a": expected_result}
 
 
@@ -162,12 +161,12 @@ def test_binary_concat_broadcast(
 ) -> None:
     # Test right-side broadcasting
     table = MicroPartition.from_pydict({"a": input_data})
-    result = table.eval_expression_list([daft.functions.concat(col("a"), literal)])
+    result = table.eval_expression_list([col("a").concat(literal)])
     assert result.to_pydict() == {"a": expected_result}
 
     # Test left-side broadcasting
     table = MicroPartition.from_pydict({"b": input_data})
-    result = table.eval_expression_list([daft.functions.concat(lit(literal), col("b"))])
+    result = table.eval_expression_list([lit(literal).concat(col("b"))])
     if literal is None:
         # When literal is None, all results should be None
         assert result.to_pydict() == {"literal": [None] * len(input_data)}
@@ -207,7 +206,7 @@ def test_binary_concat_edge_cases() -> None:
             ],
         }
     )
-    result = table.eval_expression_list([daft.functions.concat(col("a"), col("b"))])
+    result = table.eval_expression_list([col("a").concat(col("b"))])
     assert result.to_pydict() == {
         "a": [
             b"",  # Empty + Empty = Empty
@@ -227,29 +226,29 @@ def test_binary_concat_errors() -> None:
     # Test concat with incompatible type (string)
     table = MicroPartition.from_pydict({"a": [b"hello", b"world"], "b": ["foo", "bar"]})
     with pytest.raises(Exception, match="Cannot add types: String, Binary"):
-        table.eval_expression_list([daft.functions.concat(col("a"), col("b"))])
+        table.eval_expression_list([col("a").concat(col("b"))])
 
     # Test concat with incompatible type (integer)
     table = MicroPartition.from_pydict({"a": [b"hello", b"world"], "b": [1, 2]})
     with pytest.raises(Exception, match="Cannot infer supertypes for addition on types: Binary, Int64"):
-        table.eval_expression_list([daft.functions.concat(col("a"), col("b"))])
+        table.eval_expression_list([col("a").concat(col("b"))])
 
     # Test concat with incompatible type (float)
     table = MicroPartition.from_pydict({"a": [b"hello", b"world"], "b": [1.0, 2.0]})
     with pytest.raises(Exception, match="Cannot infer supertypes for addition on types: Binary, Float64"):
-        table.eval_expression_list([daft.functions.concat(col("a"), col("b"))])
+        table.eval_expression_list([col("a").concat(col("b"))])
 
     # Test concat with incompatible type (boolean)
     table = MicroPartition.from_pydict({"a": [b"hello", b"world"], "b": [True, False]})
     with pytest.raises(Exception, match="Cannot infer supertypes for addition on types: Binary, Bool"):
-        table.eval_expression_list([daft.functions.concat(col("a"), col("b"))])
+        table.eval_expression_list([col("a").concat(col("b"))])
 
     # Test concat with wrong number of arguments
     table = MicroPartition.from_pydict({"a": [b"hello", b"world"], "b": [b"foo", b"bar"], "c": [b"test", b"data"]})
     with pytest.raises(Exception, match="concat\\(\\) takes 2 positional arguments but 3 were given"):
-        table.eval_expression_list([daft.functions.concat(col("a"), col("b"), col("c"))])
+        table.eval_expression_list([col("a").concat(col("b"), col("c"))])
 
     # Test concat with no arguments
     table = MicroPartition.from_pydict({"a": [b"hello", b"world"]})
     with pytest.raises(Exception, match="concat\\(\\) missing 1 required positional argument: 'right'"):
-        table.eval_expression_list([daft.functions.concat(col("a"))])
+        table.eval_expression_list([col("a").concat()])

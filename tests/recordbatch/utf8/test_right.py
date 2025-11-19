@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import daft
 from daft.expressions import col
 from daft.recordbatch import MicroPartition
 
 
 def test_utf8_right():
     table = MicroPartition.from_pydict({"col": ["foo", None, "barBaz", "quux", "1"]})
-    result = table.eval_expression_list([daft.functions.right(col("col"), 3)])
+    result = table.eval_expression_list([col("col").right(3)])
     assert result.to_pydict() == {"col": ["foo", None, "Baz", "uux", "1"]}

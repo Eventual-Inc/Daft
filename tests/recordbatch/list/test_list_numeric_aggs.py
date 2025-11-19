@@ -43,14 +43,14 @@ def fixed_table(numeric_dtype):
 
 def test_list_sum(table, fixed_table):
     for t in [table, fixed_table]:
-        result = t.eval_expression_list([daft.functions.list_sum(col("a"))])
+        result = t.eval_expression_list([col("a").list_sum()])
         assert result.to_pydict() == {"a": [3, 7, 5, None, None]}
 
 
 def test_list_mean(table, fixed_table):
     expected = {"a": [1.5, 3.5, 5.0, None, None]}
     for t in [table, fixed_table]:
-        result = t.eval_expression_list([daft.functions.list_mean(col("a"))])
+        result = t.eval_expression_list([col("a").list_mean()])
         result_dict = result.to_pydict()
         # Compare with tolerance for floating point values
         assert len(result_dict["a"]) == len(expected["a"])
@@ -63,13 +63,13 @@ def test_list_mean(table, fixed_table):
 
 def test_list_min(table, fixed_table):
     for t in [table, fixed_table]:
-        result = t.eval_expression_list([daft.functions.list_min(col("a"))])
+        result = t.eval_expression_list([col("a").list_min()])
         assert result.to_pydict() == {"a": [1, 3, 5, None, None]}
 
 
 def test_list_max(table, fixed_table):
     for t in [table, fixed_table]:
-        result = t.eval_expression_list([daft.functions.list_max(col("a"))])
+        result = t.eval_expression_list([col("a").list_max()])
         assert result.to_pydict() == {"a": [2, 4, 5, None, None]}
 
 
@@ -83,22 +83,14 @@ def test_list_numeric_aggs_empty_table(numeric_dtype):
 
     result = empty_table.eval_expression_list(
         [
-            daft.functions.list_sum(col("col").cast(DataType.list(numeric_dtype))).alias("col_sum"),
-            daft.functions.list_mean(col("col").cast(DataType.list(numeric_dtype))).alias("col_mean"),
-            daft.functions.list_min(col("col").cast(DataType.list(numeric_dtype))).alias("col_min"),
-            daft.functions.list_max(col("col").cast(DataType.list(numeric_dtype))).alias("col_max"),
-            daft.functions.list_sum(col("fixed_col").cast(DataType.fixed_size_list(numeric_dtype, 2))).alias(
-                "fixed_col_sum"
-            ),
-            daft.functions.list_mean(col("fixed_col").cast(DataType.fixed_size_list(numeric_dtype, 2))).alias(
-                "fixed_col_mean"
-            ),
-            daft.functions.list_min(col("fixed_col").cast(DataType.fixed_size_list(numeric_dtype, 2))).alias(
-                "fixed_col_min"
-            ),
-            daft.functions.list_max(col("fixed_col").cast(DataType.fixed_size_list(numeric_dtype, 2))).alias(
-                "fixed_col_max"
-            ),
+            col("col").cast(DataType.list(numeric_dtype)).list_sum().alias("col_sum"),
+            col("col").cast(DataType.list(numeric_dtype)).list_mean().alias("col_mean"),
+            col("col").cast(DataType.list(numeric_dtype)).list_min().alias("col_min"),
+            col("col").cast(DataType.list(numeric_dtype)).list_max().alias("col_max"),
+            col("fixed_col").cast(DataType.fixed_size_list(numeric_dtype, 2)).list_sum().alias("fixed_col_sum"),
+            col("fixed_col").cast(DataType.fixed_size_list(numeric_dtype, 2)).list_mean().alias("fixed_col_mean"),
+            col("fixed_col").cast(DataType.fixed_size_list(numeric_dtype, 2)).list_min().alias("fixed_col_min"),
+            col("fixed_col").cast(DataType.fixed_size_list(numeric_dtype, 2)).list_max().alias("fixed_col_max"),
         ]
     )
     assert result.to_pydict() == {
@@ -125,10 +117,10 @@ def test_list_numeric_aggs_with_groupby():
     grouped_df = df.groupby("group_col").agg(daft.col("id_col").list_agg().alias("ids_col"))
     result = grouped_df.select(
         col("group_col"),
-        daft.functions.list_sum(col("ids_col")).alias("ids_col_sum"),
-        daft.functions.list_mean(col("ids_col")).alias("ids_col_mean"),
-        daft.functions.list_min(col("ids_col")).alias("ids_col_min"),
-        daft.functions.list_max(col("ids_col")).alias("ids_col_max"),
+        col("ids_col").list_sum().alias("ids_col_sum"),
+        col("ids_col").list_mean().alias("ids_col_mean"),
+        col("ids_col").list_min().alias("ids_col_min"),
+        col("ids_col").list_max().alias("ids_col_max"),
     ).sort("group_col", desc=False)
     result_dict = result.to_pydict()
     expected = {
@@ -144,10 +136,10 @@ def test_list_numeric_aggs_with_groupby():
     grouped_df = grouped_df.with_column("ids_col", col("ids_col").cast(DataType.fixed_size_list(DataType.int64(), 4)))
     result = grouped_df.select(
         col("group_col"),
-        daft.functions.list_sum(col("ids_col")).alias("ids_col_sum"),
-        daft.functions.list_mean(col("ids_col")).alias("ids_col_mean"),
-        daft.functions.list_min(col("ids_col")).alias("ids_col_min"),
-        daft.functions.list_max(col("ids_col")).alias("ids_col_max"),
+        col("ids_col").list_sum().alias("ids_col_sum"),
+        col("ids_col").list_mean().alias("ids_col_mean"),
+        col("ids_col").list_min().alias("ids_col_min"),
+        col("ids_col").list_max().alias("ids_col_max"),
     ).sort("group_col", desc=False)
     result_dict = result.to_pydict()
     assert result_dict == expected

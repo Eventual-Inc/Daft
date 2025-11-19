@@ -4,7 +4,6 @@ import datetime
 
 import pytest
 
-import daft
 from daft import col
 from daft.recordbatch.micropartition import MicroPartition
 
@@ -31,7 +30,7 @@ DATETIMES_WITH_NULL = [None, datetime.datetime(2021, 1, 2, 1, 2, 3)]
 )
 def test_table_date(input, expected):
     table = MicroPartition.from_pydict({"datetime": input})
-    dates = table.eval_expression_list([daft.functions.date(col("datetime"))])
+    dates = table.eval_expression_list([col("datetime").date()])
     assert dates.get_column_by_name("datetime").to_pylist() == expected
 
 
@@ -50,7 +49,7 @@ def test_table_date(input, expected):
 )
 def test_table_day(input, expected):
     table = MicroPartition.from_pydict({"datetime": input})
-    dates = table.eval_expression_list([daft.functions.day(col("datetime"))])
+    dates = table.eval_expression_list([col("datetime").day()])
     assert dates.get_column_by_name("datetime").to_pylist() == expected
 
 
@@ -69,7 +68,7 @@ def test_table_day(input, expected):
 )
 def test_table_hour(input, expected):
     table = MicroPartition.from_pydict({"datetime": input})
-    dates = table.eval_expression_list([daft.functions.hour(col("datetime"))])
+    dates = table.eval_expression_list([col("datetime").hour()])
     assert dates.get_column_by_name("datetime").to_pylist() == expected
 
 
@@ -88,7 +87,7 @@ def test_table_hour(input, expected):
 )
 def test_table_minute(input, expected):
     table = MicroPartition.from_pydict({"datetime": input})
-    dates = table.eval_expression_list([daft.functions.minute(col("datetime"))])
+    dates = table.eval_expression_list([col("datetime").minute()])
     assert dates.get_column_by_name("datetime").to_pylist() == expected
 
 
@@ -107,7 +106,7 @@ def test_table_minute(input, expected):
 )
 def test_table_second(input, expected):
     table = MicroPartition.from_pydict({"datetime": input})
-    dates = table.eval_expression_list([daft.functions.second(col("datetime"))])
+    dates = table.eval_expression_list([col("datetime").second()])
     assert dates.get_column_by_name("datetime").to_pylist() == expected
 
 
@@ -126,5 +125,5 @@ def test_table_second(input, expected):
 )
 def test_table_time(input, expected):
     table = MicroPartition.from_pydict({"datetime": input})
-    dates = table.eval_expression_list([daft.functions.time(col("datetime"))])
+    dates = table.eval_expression_list([col("datetime").time()])
     assert dates.get_column_by_name("datetime").to_pylist() == expected

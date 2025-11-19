@@ -5,7 +5,7 @@ import pytest
 import daft
 import daft.exceptions
 from daft import col
-from daft.functions import get, to_struct
+from daft.functions import to_struct
 
 
 def test_to_struct_empty_structs():
@@ -24,5 +24,5 @@ def test_to_struct_pushdown():
         }
     )
     df = df.select(to_struct(col("a"), col("b")))
-    df = df.select(get(col("struct"), "a"))
+    df = df.select(df["struct"].get("a"))
     assert df.to_pydict() == {"a": [1, 2, 3, 4, None, 6, None]}

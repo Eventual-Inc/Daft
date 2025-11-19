@@ -5,7 +5,7 @@ import daft
 
 def test_decode_all_empty():
     df = daft.from_pydict({"foo": [b"not an image", None]})
-    df = df.with_column("image", daft.functions.decode_image(df["foo"], on_error="null"))
+    df = df.with_column("image", daft.col("foo").decode_image(on_error="null"))
     df.collect()
 
     assert df.to_pydict() == {

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-import daft
 from daft import Expression, col, lit
 from daft.dependencies import pa, pc
 
@@ -174,13 +173,13 @@ def test_math_functions(daft_expr: Expression, arrow_expr: str):
 @pytest.mark.parametrize(
     ["daft_expr", "arrow_expr"],
     [
-        (daft.functions.capitalize(lit("hello")), 'utf8_capitalize("hello")'),
-        (daft.functions.concat(lit("hello"), lit("world")), 'add("hello", "world")'),
+        (lit("hello").capitalize(), 'utf8_capitalize("hello")'),
+        (lit("hello").concat(lit("world")), 'add("hello", "world")'),
         # containment tests
-        (daft.functions.count_matches(lit("hello"), lit("l")), pc.count_substring(pc.scalar("hello"), "l")),
-        (daft.functions.contains(lit("hello"), lit("ll")), pc.match_substring(pc.scalar("hello"), "ll")),
-        (daft.functions.endswith(lit("hello"), lit("o")), pc.ends_with(pc.scalar("hello"), "o")),
-        (daft.functions.startswith(lit("hello"), lit("h")), pc.starts_with(pc.scalar("hello"), "h")),
+        (lit("hello").count_matches(lit("l")), pc.count_substring(pc.scalar("hello"), "l")),
+        (lit("hello").contains(lit("ll")), pc.match_substring(pc.scalar("hello"), "ll")),
+        (lit("hello").endswith(lit("o")), pc.ends_with(pc.scalar("hello"), "o")),
+        (lit("hello").startswith(lit("h")), pc.starts_with(pc.scalar("hello"), "h")),
         # TODO
         # (lit("hello").str.extract(lit("h(.*)o")), "extract('hello', 'h(.*)o')"),
         # (lit("hello").str.extract_all(lit("l")), "extract_all('hello', 'l')"),

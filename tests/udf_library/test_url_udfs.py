@@ -41,7 +41,10 @@ def test_download(files):
 
 
 def test_download_with_none(files):
-    data = {"id": list(range(len(files) * 2)), "filenames": [str(f) for f in files] + [None for _ in range(len(files))]}
+    data = {
+        "id": list(range(len(files) * 2)),
+        "filenames": [str(f) for f in files] + [None for _ in range(len(files))],
+    }
     # Run it twice to ensure runtime works
     for _ in range(2):
         df = daft.from_pydict(data)
@@ -62,7 +65,6 @@ def test_download_with_missing_urls(files):
         df = df.with_column(
             "bytes",
             col("filenames").download(
-                col("filenames"),
                 on_error="null",
             ),
         )
@@ -84,7 +86,6 @@ def test_download_with_missing_urls_reraise_errors(files):
         df = df.with_column(
             "bytes",
             col("filenames").download(
-                col("filenames"),
                 on_error="raise",
             ),
         )

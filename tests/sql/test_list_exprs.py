@@ -6,7 +6,7 @@ import pytest
 import daft
 from daft import DataType, col
 from daft.daft import CountMode
-from daft.functions import to_list as list_
+from daft.functions import to_list
 
 
 def assert_eq(actual, expect):
@@ -51,7 +51,7 @@ def test_list_constructor_heterogeneous():
 def test_list_constructor_heterogeneous_with_cast():
     df = daft.from_pydict({"x": [1, 2, 3], "y": [True, True, False]})
     actual = daft.sql("SELECT [ CAST(x AS STRING), CAST(y AS STRING) ] FROM df")
-    expect = df.select(list_(col("x").cast(DataType.string()), col("y").cast(DataType.string())))
+    expect = df.select(to_list(col("x").cast(DataType.string()), col("y").cast(DataType.string())))
     assert_eq(actual, expect)
 
 
@@ -92,12 +92,12 @@ def test_list_chunk():
     )
     bindings = {"test": df}
     expected = df.select(
-        daft.functions.chunk(col("col"), 1).alias("col1"),
-        daft.functions.chunk(col("col"), 2).alias("col2"),
-        daft.functions.chunk(col("col"), 1000).alias("col3"),
-        daft.functions.chunk(col("fixed_col"), 1).alias("fixed_col1"),
-        daft.functions.chunk(col("fixed_col"), 2).alias("fixed_col2"),
-        daft.functions.chunk(col("fixed_col"), 1000).alias("fixed_col3"),
+        daft.col("col").chunk(1).alias("col1"),
+        daft.col("col").chunk(2).alias("col2"),
+        daft.col("col").chunk(1000).alias("col3"),
+        daft.col("fixed_col").chunk(1).alias("fixed_col1"),
+        daft.col("fixed_col").chunk(2).alias("fixed_col2"),
+        daft.col("fixed_col").chunk(1000).alias("fixed_col3"),
     )
 
     actual = daft.sql(
@@ -120,9 +120,9 @@ def test_list_counts():
     df = daft.from_pydict({"col": [[1, 2, 3], [1, 2], [1, None, 4], []]})
     bindings = {"test": df}
     expected = df.select(
-        daft.functions.list_count(col("col")).alias("count_valid"),
-        daft.functions.list_count(col("col"), CountMode.All).alias("count_all"),
-        daft.functions.list_count(col("col"), CountMode.Null).alias("count_null"),
+        daft.col("col").list_count().alias("count_valid"),
+        daft.col("col").list_count(CountMode.All).alias("count_all"),
+        daft.col("col").list_count(CountMode.Null).alias("count_null"),
     ).collect()
     actual = daft.sql(
         """
@@ -151,7 +151,7 @@ def test_list_explode():
 def test_list_join():
     df = daft.from_pydict({"col": [None, [], ["a"], [None], ["a", "a"], ["a", None], ["a", None, "a"]]})
     bindings = {"test": df}
-    expected = df.select(daft.functions.list_join(col("col"), ","))
+    expected = df.select(daft.col("col").list_join(","))
     actual = daft.sql("SELECT list_join(col, ',') FROM test", **bindings).collect()
     assert actual.to_pydict() == expected.to_pydict()
     # make sure it works with the `array_to_string` function too
@@ -163,14 +163,14 @@ def test_various_list_ops():
     df = daft.from_pydict({"col": [[1, 2, 3], [1, 2], [1, None, 4], []]})
     bindings = {"test": df}
     expected = df.select(
-        daft.functions.list_min(col("col")).alias("min"),
-        daft.functions.list_max(col("col")).alias("max"),
-        daft.functions.list_mean(col("col")).alias("mean"),
-        daft.functions.list_sum(col("col")).alias("sum"),
-        daft.functions.list_sort(col("col")).alias("sort"),
-        daft.functions.list_sort(col("col"), True).alias("sort_desc"),
-        daft.functions.list_sort(col("col"), False).alias("sort_asc"),
-        daft.functions.slice(col("col"), 1, 2).alias("slice"),
+        daft.col("col").list_min().alias("min"),
+        daft.col("col").list_max().alias("max"),
+        daft.col("col").list_mean().alias("mean"),
+        daft.col("col").list_sum().alias("sum"),
+        daft.col("col").list_sort().alias("sort"),
+        daft.col("col").list_sort(desc=True).alias("sort_desc"),
+        daft.col("col").list_sort(desc=False).alias("sort_asc"),
+        daft.col("col").slice(1, 2).alias("slice"),
     ).collect()
     actual = daft.sql(
         """

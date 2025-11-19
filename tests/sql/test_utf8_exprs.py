@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import daft
-from daft import col
+from daft import col, lit
 
 
 def test_utf8_exprs():
@@ -110,13 +110,7 @@ def test_utf8_exprs():
             col("a").tokenize_encode("r50k_base").alias("tokenize_encode_a"),
             col("a").tokenize_decode(col("a").tokenize_encode("r50k_base")).alias("tokenize_decode_a"),
             col("a").concat("---").alias("concat_a"),
-            col("a")
-            .concat("--")
-            .concat(col("a"))
-            .concat(col("a"))
-            .concat(col("a"))
-            .concat("--")
-            .alias("concat_multi_a"),
+            lit("--").concat(col("a")).concat(col("a")).concat(col("a")).concat("--").alias("concat_multi_a"),
         )
         .collect()
         .to_pydict()

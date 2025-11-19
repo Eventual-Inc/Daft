@@ -913,9 +913,7 @@ def test_join_true_join_keys(join_type, expected_dtypes, make_df, with_morsel_si
         }
     )
 
-    result = daft_df.join(
-        daft_df2, left_on=["id", "values"], right_on=["id", daft.functions.left(col("values"), 1)], how=join_type
-    )
+    result = daft_df.join(daft_df2, left_on=["id", "values"], right_on=["id", col("values").left(1)], how=join_type)
 
     assert result.schema().column_names() == ["id", "values", "right.values"]
     assert result.schema()["id"].dtype == expected_dtypes["id"]

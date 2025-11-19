@@ -16,9 +16,9 @@ def test_list_sort():
 
     res = table.eval_expression_list(
         [
-            daft.functions.list_sort(col("a")).alias("asc"),
-            daft.functions.list_sort(col("a"), True).alias("desc"),
-            daft.functions.list_sort(col("a"), col("b")).alias("mixed"),
+            col("a").list_sort().alias("asc"),
+            col("a").list_sort(True).alias("desc"),
+            col("a").list_sort(col("b")).alias("mixed"),
         ]
     )
 
@@ -39,9 +39,9 @@ def test_list_sort_fixed_size():
 
     res = table.eval_expression_list(
         [
-            daft.functions.list_sort(col("a")).alias("asc"),
-            daft.functions.list_sort(col("a"), True).alias("desc"),
-            daft.functions.list_sort(col("a"), col("b")).alias("mixed"),
+            col("a").list_sort().alias("asc"),
+            col("a").list_sort(True).alias("desc"),
+            col("a").list_sort(col("b")).alias("mixed"),
         ]
     )
 
@@ -56,17 +56,17 @@ def test_list_sort_with_groupby():
     df = daft.from_pydict({"group_col": [1, 1, 1, 2, 2, 2], "id_col": ["c", "a", "b", "e", "d", "a"]})
 
     # Group by group_col, aggregate id_col as a list.
-    grouped_df = df.groupby("group_col").agg(daft.col("id_col").list_agg().alias("ids_col"))
+    grouped_df = df.groupby("group_col").agg(col("id_col").list_agg().alias("ids_col"))
 
     # Sort the list.
-    result = grouped_df.select(col("group_col"), daft.functions.list_sort(col("ids_col"))).sort("group_col", desc=False)
+    result = grouped_df.select(col("group_col"), col("ids_col").list_sort()).sort("group_col", desc=False)
     result_dict = result.to_pydict()
     expected = {"group_col": [1, 2], "ids_col": [["a", "b", "c"], ["a", "d", "e"]]}
     assert result_dict == expected
 
     # Cast to fixed size list and sort.
     result = grouped_df.select(
-        col("group_col"), daft.functions.list_sort(col("ids_col").cast(DataType.fixed_size_list(DataType.string(), 3)))
+        col("group_col"), col("ids_col").cast(DataType.fixed_size_list(DataType.string(), 3)).list_sort()
     ).sort("group_col", desc=False)
     result_dict = result.to_pydict()
     expected = {"group_col": [1, 2], "ids_col": [["a", "b", "c"], ["a", "d", "e"]]}
