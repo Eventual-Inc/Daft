@@ -99,6 +99,34 @@ def test_from_pydict_namespaced():
     assert sess.get_table("default.ns2.T2") is not None
 
 
+def test_from_pydict_with_identifier_keys():
+    data = {"x": [1, 2, 3]}
+
+    # Test with Identifier objects as keys (using single-level and namespace.table format)
+    cat = Catalog.from_pydict(
+        {
+            Identifier("table1"): data,
+            Identifier("namespace", "table2"): data,
+        }
+    )
+
+    assert len(cat.list_tables()) == 2
+    assert cat.get_table("table1") is not None
+    assert cat.get_table("namespace.table2") is not None
+
+    # Test mixing string and Identifier keys
+    cat2 = Catalog.from_pydict(
+        {
+            "string_key": data,
+            Identifier("identifier_key"): data,
+        }
+    )
+
+    assert len(cat2.list_tables()) == 2
+    assert cat2.get_table("string_key") is not None
+    assert cat2.get_table("identifier_key") is not None
+
+
 class MockCatalog(Catalog):
     """MockCatalog is an implementation designed to test implementing the ABC."""
 

@@ -143,3 +143,64 @@ impl IntermediateOperator for FilterOperator {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::Ordering;
+
+    use super::FilterStats;
+    use crate::runtime_stats::RuntimeStats;
+
+    #[test]
+    fn selectivity_updates_after_rows_events() {
+        let stats = FilterStats::new(42);
+
+        stats.add_rows_in(200);
+        stats.add_rows_out(50);
+
+        // 50 / 200 = 0.25 -> 25%
+        let selectivity = stats.selectivity.load(Ordering::Relaxed);
+        assert!(
+            (selectivity - 25.0).abs() < f64::EPSILON,
+            "expected selectivity to be 25%, got {}",
+            selectivity
+        );
+    }
+
+    #[test]
+    fn selectivity_defaults_to_100_percent_on_zero_rows_in() {
+        let stats = FilterStats::new(1);
+
+        stats.add_rows_out(10);
+
+        let selectivity = stats.selectivity.load(Ordering::Relaxed);
+        assert!(
+            (selectivity - 100.0).abs() < f64::EPSILON,
+            "expected selectivity to be 100% for zero input rows, got {}",
+            selectivity
+        );
+    }
+
+    #[test]
+    fn selectivity_handles_multiple_updates() {
+        let stats = FilterStats::new(99);
+
+        stats.add_rows_in(100);
+        stats.add_rows_out(40);
+        let after_first_batch = stats.selectivity.load(Ordering::Relaxed);
+        assert!(
+            (after_first_batch - 40.0).abs() < f64::EPSILON,
+            "expected selectivity to be 40% after first batch, got {}",
+            after_first_batch
+        );
+
+        stats.add_rows_in(100);
+        stats.add_rows_out(10);
+        let final_selectivity = stats.selectivity.load(Ordering::Relaxed);
+        assert!(
+            (final_selectivity - 25.0).abs() < f64::EPSILON,
+            "expected selectivity to be 25% after second batch, got {}",
+            final_selectivity
+        );
+    }
+}

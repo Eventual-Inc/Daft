@@ -28,7 +28,7 @@ pub struct TemporalFunctions;
 macro_rules! impl_temporal {
     ($name:ident, $dt:ident, $dtype:ident) => {
         paste::paste! {
-            #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+            #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
             pub struct $name;
 
             #[typetag::serde]

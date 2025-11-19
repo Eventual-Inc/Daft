@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::PhysicalPlanRef;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct DataSink {
     pub schema: SchemaRef,
     pub data_sink_info: DataSinkInfo,

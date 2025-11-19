@@ -1741,7 +1741,7 @@ class DataFrame:
             │ Int64 ┆ Int64 │
             ╰───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
             >>> df[["a", "c"]]  # Get multiple columns by name
             ╭───────┬───────╮
             │ a     ┆ c     │
@@ -1749,7 +1749,7 @@ class DataFrame:
             │ Int64 ┆ Int64 │
             ╰───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
             >>> df[["a", 1]]  # Get multiple columns by name and index
             ╭───────┬───────╮
             │ a     ┆ b     │
@@ -1757,7 +1757,7 @@ class DataFrame:
             │ Int64 ┆ Int64 │
             ╰───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
             >>> df[0:2]  # Get a slice of columns by index
             ╭───────┬───────╮
             │ a     ┆ b     │
@@ -1765,7 +1765,7 @@ class DataFrame:
             │ Int64 ┆ Int64 │
             ╰───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
             >>> df[["a", "b", 2]]  # Get a mix of column names and indices
             ╭───────┬───────┬───────╮
             │ a     ┆ b     ┆ c     │
@@ -1773,7 +1773,7 @@ class DataFrame:
             │ Int64 ┆ Int64 ┆ Int64 │
             ╰───────┴───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
 
         """
         result: Optional[Expression]
@@ -4053,7 +4053,7 @@ class DataFrame:
                 if seen >= n:
                     break
 
-            preview_partition = MicroPartition.concat(tables)
+            preview_partition = MicroPartition.concat_or_empty(tables, self.schema())
             if len(preview_partition) > n:
                 preview_partition = preview_partition.slice(0, n)
             elif len(preview_partition) < n:
