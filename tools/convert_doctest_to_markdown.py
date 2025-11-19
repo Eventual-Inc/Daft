@@ -14,6 +14,58 @@ import sys
 from pathlib import Path
 
 
+def fix_double_empty_lines_in_code_blocks(content: str) -> str:
+    """Fix double empty lines within Python code blocks.
+
+    Args:
+        content: The file content as a string
+
+    Returns:
+        The content with double empty lines fixed
+    """
+    lines = content.split("\n")
+    result = []
+    in_code_block = False
+    i = 0
+
+    while i < len(lines):
+        line = lines[i]
+
+        # Check if we're entering a Python code block
+        if line.strip().endswith("```python"):
+            in_code_block = True
+            result.append(line)
+            i += 1
+            continue
+
+        # Check if we're exiting a code block
+        if in_code_block and line.strip().startswith("```"):
+            in_code_block = False
+            result.append(line)
+            i += 1
+            continue
+
+        # If we're in a code block, check for consecutive empty lines
+        if in_code_block:
+            # Add the current line
+            result.append(line)
+
+            # If this line is empty, skip any additional consecutive empty lines
+            if line.strip() == "":
+                # Look ahead and skip consecutive empty lines
+                j = i + 1
+                while j < len(lines) and lines[j].strip() == "" and not lines[j].strip().startswith("```"):
+                    j += 1
+                # Move i to just before the next non-empty line (or end of consecutive empties)
+                i = j - 1
+        else:
+            result.append(line)
+
+        i += 1
+
+    return "\n".join(result)
+
+
 def convert_file(file_path):
     """Convert doctest examples in a file to markdown format."""
     with open(file_path) as f:
@@ -149,6 +201,9 @@ def main():
 
     # Convert the file
     converted = convert_file(file_path)
+
+    # Fix double empty lines in code blocks
+    converted = fix_double_empty_lines_in_code_blocks(converted)
 
     # Write back
     with open(file_path, "w") as f:
