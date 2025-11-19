@@ -161,7 +161,8 @@ pub fn pyobj_to_table(obj: Bound<PyAny>) -> PyResult<TableRef> {
 
 /// PyIdentifier maps identifier.py to identifier.rs
 #[pyclass(sequence)]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PyIdentifier(Identifier);
 
 #[pymethods]

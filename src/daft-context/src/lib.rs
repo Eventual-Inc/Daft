@@ -18,7 +18,8 @@ use pyo3::prelude::*;
 use crate::subscribers::QueryMetadata;
 pub use crate::subscribers::Subscriber;
 
-#[derive(Debug, Default)]
+#[derive(Default)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Config {
     pub execution: Arc<DaftExecutionConfig>,
     pub planning: Arc<DaftPlanningConfig>,
@@ -33,7 +34,7 @@ impl Config {
     }
 }
 
-#[derive(Debug)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 struct ContextState {
     /// Shared configuration for the context
     config: Config,
@@ -43,10 +44,17 @@ struct ContextState {
 /// Wrapper around the ContextState to provide a thread-safe interface.
 /// IMPORTANT: Do not create this directly, use `get_context` instead.
 /// This is a singleton, and should only be created once.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct DaftContext {
     /// Private state field - access only through state() and state_mut() methods
     state: Arc<RwLock<ContextState>>,
+}
+#[cfg(not(debug_assertions))]
+impl std::fmt::Debug for DaftContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DaftContext").finish()
+    }
 }
 
 impl DaftContext {

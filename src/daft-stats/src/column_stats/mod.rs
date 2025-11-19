@@ -35,11 +35,16 @@ impl Hash for ColumnRangeStatistics {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq)]
 pub enum TruthValue {
     False,
     Maybe,
     True,
+}
+impl std::fmt::Debug for TruthValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self}")
+    }
 }
 
 impl std::fmt::Display for TruthValue {

@@ -67,7 +67,7 @@ Now let's take a look at what we loaded. You can inspect the DataFrame by simply
 │ String  ┆ String       ┆ String   ┆ (9 hidden) ┆ String   ┆ String      ┆ String           │
 ╰─────────┴──────────────┴──────────┴────────────┴──────────┴─────────────┴──────────────────╯
 
-(No data to display: Dataframe not materialized)
+(No data to display: Dataframe not materialized, use .collect() to materialize)
 ```
 
 You see the above output because **Daft is lazy by default** - it displays the schema (column names and types) but doesn't actually load or process your data until you explicitly tell it to. This allows Daft to optimize your entire workflow before executing anything.
@@ -223,6 +223,9 @@ Let's suppose you want to create a new column that shows if each product is made
         df["wood_analysis"]["is_wooden"]
     )
 
+    # Materialize the dataframe to compute all transformations
+    df = df.collect()
+
     # View results
     df.select("Product Name", "image", "is_wooden").show()
     ```
@@ -312,6 +315,9 @@ Now, suppose you're satisfied with the results from your small subset and want t
         df_large["wood_analysis"]["is_wooden"]
     )
 
+    # Materialize the dataframe to compute all transformations
+    df_large = df_large.collect()
+
     # Count wooden products
     wooden_count = df_large.where(df_large["is_wooden"] == True).count_rows()
     total_count = df_large.count_rows()
@@ -332,6 +338,67 @@ Out of 100 products analyzed:
 !!! note "Results May Vary"
 
     AI models are non-deterministic, so you may see slightly different numbers when running this analysis.
+
+### Storing Your Results
+
+After processing your data, you'll often want to save it for later use. Let's store our analyzed dataset as Parquet files:
+
+=== "🐍 Python"
+
+    ```python
+    # Write the analyzed data to local Parquet files
+    df_large.write_parquet("product_analysis", write_mode="overwrite")
+    ```
+
+This writes your data to the `product_analysis/` directory. Daft automatically handles file naming using UUIDs to prevent conflicts. The `write_mode="overwrite"` parameter ensures that any existing data in the directory is replaced.
+
+!!! note "Write anywhere"
+
+    Just like reading, Daft can write data to many destinations including [S3](connectors/aws.md), [Iceberg](connectors/iceberg.md), [Delta Lake](connectors/delta_lake.md), and [more](connectors/index.md).
+
+### Loading Your Stored Data
+
+Let's verify the stored data by loading it back from those Parquet files:
+
+=== "🐍 Python"
+
+    ```python
+    # Read the data back from Parquet files
+    df_loaded = daft.read_parquet("product_analysis/*.parquet")
+
+    # Verify the data loaded correctly
+    df_loaded.show(5)
+    ```
+
+``` {title="Output"}
+╭────────────────────┬────────────────────┬───────────────────┬───────────────────┬────────────┬──────────────┬───────────────────┬───────────╮
+│ Product Name       ┆ About Product      ┆ Image             ┆ first_image_url   ┆      …     ┆ image        ┆ wood_analysis     ┆ is_wooden │
+│ ---                ┆ ---                ┆ ---               ┆ ---               ┆            ┆ ---          ┆ ---               ┆ ---       │
+│ String             ┆ String             ┆ String            ┆ String            ┆ (1 hidden) ┆ Image[MIXED] ┆ Struct[is_wooden: ┆ Bool      │
+│                    ┆                    ┆                   ┆                   ┆            ┆              ┆ Bool]             ┆           │
+╞════════════════════╪════════════════════╪═══════════════════╪═══════════════════╪════════════╪══════════════╪═══════════════════╪═══════════╡
+│ Flash Furniture    ┆ Collaborative      ┆ https://images-na ┆ https://images-na ┆ …          ┆ <Image>      ┆ {is_wooden:       ┆ false     │
+│ 25''W x 45''L…     ┆ Trapezoid Acti…    ┆ .ssl-images-…     ┆ .ssl-images-…     ┆            ┆              ┆ false,            ┆           │
+│                    ┆                    ┆                   ┆                   ┆            ┆              ┆ }                 ┆           │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+│ DB Longboards      ┆ Make sure this     ┆ https://images-na ┆ https://images-na ┆ …          ┆ <Image>      ┆ {is_wooden: true, ┆ true      │
+│ CoreFlex Crossb…   ┆ fits by enteri…    ┆ .ssl-images-…     ┆ .ssl-images-…     ┆            ┆              ┆ }                 ┆           │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+│ DC Cover Girls:    ┆ Make sure this     ┆ https://images-na ┆ https://images-na ┆ …          ┆ <Image>      ┆ {is_wooden:       ┆ false     │
+│ Black Canary …     ┆ fits by enteri…    ┆ .ssl-images-…     ┆ .ssl-images-…     ┆            ┆              ┆ false,            ┆           │
+│                    ┆                    ┆                   ┆                   ┆            ┆              ┆ }                 ┆           │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+│ The Complete       ┆ Make sure this     ┆ https://images-na ┆ https://images-na ┆ …          ┆ <Image>      ┆ {is_wooden:       ┆ false     │
+│ Common Core: Sta…  ┆ fits by enteri…    ┆ .ssl-images-…     ┆ .ssl-images-…     ┆            ┆              ┆ false,            ┆           │
+│                    ┆                    ┆                   ┆                   ┆            ┆              ┆ }                 ┆           │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+│ Rubie's Child's    ┆ Make sure this     ┆ https://images-na ┆ https://images-na ┆ …          ┆ <Image>      ┆ {is_wooden:       ┆ false     │
+│ Pokemon Delux…     ┆ fits by enteri…    ┆ .ssl-images-…     ┆ .ssl-images-…     ┆            ┆              ┆ false,            ┆           │
+│                    ┆                    ┆                   ┆                   ┆            ┆              ┆ }                 ┆           │
+╰────────────────────┴────────────────────┴───────────────────┴───────────────────┴────────────┴──────────────┴───────────────────┴───────────╯
+
+(Showing first 5 rows)
+```
 
 ### What's Next?
 
