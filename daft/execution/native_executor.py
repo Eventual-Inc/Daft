@@ -53,11 +53,9 @@ class NativeExecutor:
                 context,
             )
 
-            try:
-                async for batch in result_handle:
-                    yield batch
-            finally:
-                _ = await result_handle.finish()
+            async for batch in result_handle:
+                yield batch
+            _ = await result_handle.finish()
 
         event_loop = get_or_init_event_loop()
         async_exec = run_executor()
