@@ -120,6 +120,7 @@ impl PyDaftExecutionConfig {
         min_cpu_per_task=None,
         actor_udf_ready_timeout=None,
         maintain_order=None,
+        max_limit_tasks_submittable_in_parallel=None,
     ))]
     fn with_config_values(
         &self,
@@ -154,6 +155,7 @@ impl PyDaftExecutionConfig {
         min_cpu_per_task: Option<f64>,
         actor_udf_ready_timeout: Option<usize>,
         maintain_order: Option<bool>,
+        max_limit_tasks_submittable_in_parallel: Option<usize>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -273,6 +275,13 @@ impl PyDaftExecutionConfig {
 
         if let Some(maintain_order) = maintain_order {
             config.maintain_order = maintain_order;
+        }
+
+        if let Some(max_limit_tasks_submittable_in_parallel) =
+            max_limit_tasks_submittable_in_parallel
+        {
+            config.max_limit_tasks_submittable_in_parallel =
+                max_limit_tasks_submittable_in_parallel;
         }
 
         Ok(Self {
@@ -414,6 +423,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn maintain_order(&self) -> PyResult<bool> {
         Ok(self.config.maintain_order)
+    }
+
+    #[getter]
+    fn max_limit_tasks_submittable_in_parallel(&self) -> PyResult<usize> {
+        Ok(self.config.max_limit_tasks_submittable_in_parallel)
     }
 }
 

@@ -128,6 +128,7 @@ pub struct DaftExecutionConfig {
     pub min_cpu_per_task: f64,
     pub actor_udf_ready_timeout: usize,
     pub maintain_order: bool,
+    pub max_limit_tasks_submittable_in_parallel: usize,
 }
 
 impl Default for DaftExecutionConfig {
@@ -165,6 +166,7 @@ impl Default for DaftExecutionConfig {
             min_cpu_per_task: 0.5,
             actor_udf_ready_timeout: 120,
             maintain_order: true,
+            max_limit_tasks_submittable_in_parallel: 1,
         }
     }
 }
@@ -183,6 +185,8 @@ impl DaftExecutionConfig {
     const ENV_CSV_INFLATION_FACTOR: &'static str = "DAFT_CSV_INFLATION_FACTOR";
     const ENV_JSON_INFLATION_FACTOR: &'static str = "DAFT_JSON_INFLATION_FACTOR";
     const ENV_DAFT_MAINTAIN_ORDER: &'static str = "DAFT_MAINTAIN_ORDER";
+    const ENV_DAFT_MAX_LIMIT_TASKS_SUBMITTABLE_IN_PARALLEL: &'static str =
+        "DAFT_MAX_LIMIT_TASKS_SUBMITTABLE_IN_PARALLEL";
 
     #[must_use]
     pub fn from_env() -> Self {
@@ -256,6 +260,13 @@ impl DaftExecutionConfig {
             parse_number_from_env(Self::ENV_JSON_INFLATION_FACTOR, cfg.json_inflation_factor)
         {
             cfg.json_inflation_factor = val;
+        }
+
+        if let Some(val) = parse_number_from_env(
+            Self::ENV_DAFT_MAX_LIMIT_TASKS_SUBMITTABLE_IN_PARALLEL,
+            cfg.max_limit_tasks_submittable_in_parallel,
+        ) {
+            cfg.max_limit_tasks_submittable_in_parallel = val;
         }
 
         cfg
@@ -585,6 +596,36 @@ mod tests {
 
             unsafe {
                 std::env::remove_var(DaftExecutionConfig::ENV_DAFT_MAINTAIN_ORDER);
+            }
+        }
+
+        // DAFT_MAX_LIMIT_TASKS_SUBMITTABLE_IN_PARALLEL
+        {
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.max_limit_tasks_submittable_in_parallel, 1);
+
+            unsafe {
+                std::env::set_var(
+                    DaftExecutionConfig::ENV_DAFT_MAX_LIMIT_TASKS_SUBMITTABLE_IN_PARALLEL,
+                    "5",
+                );
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.max_limit_tasks_submittable_in_parallel, 5);
+
+            unsafe {
+                std::env::set_var(
+                    DaftExecutionConfig::ENV_DAFT_MAX_LIMIT_TASKS_SUBMITTABLE_IN_PARALLEL,
+                    "invalid",
+                );
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.max_limit_tasks_submittable_in_parallel, 1);
+
+            unsafe {
+                std::env::remove_var(
+                    DaftExecutionConfig::ENV_DAFT_MAX_LIMIT_TASKS_SUBMITTABLE_IN_PARALLEL,
+                );
             }
         }
     }
