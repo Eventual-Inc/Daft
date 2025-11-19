@@ -616,12 +616,14 @@ impl LogicalPlan {
 
                 Self::Sample(Sample {
                     fraction,
+                    size,
                     with_replacement,
                     seed,
                     ..
                 }) => Self::Sample(Sample::new(
                     input.clone(),
                     *fraction,
+                    *size,
                     *with_replacement,
                     *seed,
                 )),

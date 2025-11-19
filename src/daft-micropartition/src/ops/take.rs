@@ -130,7 +130,9 @@ mod tests {
         let err = mp.sample_by_size(5, false, Some(42)).unwrap_err();
         match err {
             DaftError::ValueError(msg) => {
-                assert!(msg.contains("Cannot take a sample larger than the population when 'replace=False'"));
+                assert!(msg.contains(
+                    "Cannot take a sample larger than the population when 'replace=False'"
+                ));
             }
             other => panic!("expected ValueError, got {other:?}"),
         }

@@ -514,12 +514,13 @@ impl LogicalPlanBuilder {
 
     pub fn sample(
         &self,
-        fraction: f64,
+        fraction: Option<f64>,
+        size: Option<usize>,
         with_replacement: bool,
         seed: Option<u64>,
     ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            ops::Sample::new(self.plan.clone(), fraction, with_replacement, seed).into();
+            ops::Sample::new(self.plan.clone(), fraction, size, with_replacement, seed).into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -1213,16 +1214,17 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.distinct(columns)?.into())
     }
 
-    #[pyo3(signature = (fraction, with_replacement, seed=None))]
+    #[pyo3(signature = (fraction=None, size=None, with_replacement=false, seed=None))]
     pub fn sample(
         &self,
-        fraction: f64,
+        fraction: Option<f64>,
+        size: Option<usize>,
         with_replacement: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
         Ok(self
             .builder
-            .sample(fraction, with_replacement, seed)?
+            .sample(fraction, size, with_replacement, seed)?
             .into())
     }
 

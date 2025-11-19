@@ -297,10 +297,20 @@ impl PhysicalPlan {
                 input.approximate_stats()
             }
             Self::Sample(Sample {
-                input, fraction, ..
-            }) => input
-                .approximate_stats()
-                .apply(|v| ((v as f64) * fraction) as usize),
+                input,
+                fraction,
+                size,
+                ..
+            }) => {
+                let input_stats = input.approximate_stats();
+                if let Some(fraction) = fraction {
+                    input_stats.apply(|v| ((v as f64) * fraction) as usize)
+                } else if let Some(size) = size {
+                    input_stats.apply(|v| v.min(*size))
+                } else {
+                    input_stats
+                }
+            }
             Self::Explode(Explode { input, .. }) => {
                 let input_stats = input.approximate_stats();
                 const EXPLODE_FACTOR: usize = 4;
@@ -564,12 +574,14 @@ impl PhysicalPlan {
                 )),
                 Self::Sample(Sample {
                     fraction,
+                    size,
                     with_replacement,
                     seed,
                     ..
                 }) => Self::Sample(Sample::new(
                     input.clone(),
                     *fraction,
+                    *size,
                     *with_replacement,
                     *seed,
                 )),
