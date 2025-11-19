@@ -43,17 +43,35 @@ impl Default for OptimizerConfig {
     }
 }
 
+#[cfg(debug_assertions)]
 pub trait OptimizerRuleInBatch: OptimizerRule + std::fmt::Debug {}
 
+#[cfg(not(debug_assertions))]
+pub trait OptimizerRuleInBatch: OptimizerRule {}
+
+#[cfg(debug_assertions)]
 impl<T: OptimizerRule + std::fmt::Debug> OptimizerRuleInBatch for T {}
 
+#[cfg(not(debug_assertions))]
+impl<T: OptimizerRule> OptimizerRuleInBatch for T {}
+
 /// A batch of logical optimization rules.
-#[derive(Debug)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct RuleBatch {
     // Optimization rules in this batch.
     pub rules: Vec<Box<dyn OptimizerRuleInBatch>>,
     // The rule execution strategy (once, fixed-point).
     pub strategy: RuleExecutionStrategy,
+}
+
+#[cfg(not(debug_assertions))]
+impl std::fmt::Debug for RuleBatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RuleBatch")
+            .field("n_rules", &self.rules.len())
+            .field("strategy", &self.strategy)
+            .finish()
+    }
 }
 
 impl RuleBatch {

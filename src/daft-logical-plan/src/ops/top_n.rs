@@ -21,7 +21,8 @@ use crate::{
 ///
 /// It is currently unavailable in the Python API and only constructed by the
 /// Daft logical optimizer.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct TopN {
     /// An id for the plan.
     pub plan_id: Option<usize>,

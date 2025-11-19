@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 // super annoying, but using an enum with typetag::serde doesn't work with bincode because it uses Deserializer::deserialize_identifier
 macro_rules! trigonometry {
     ($name:ident, $variant:ident, $docstring:literal) => {
-        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+        #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
         pub struct $variant;
 
         #[typetag::serde]
@@ -123,7 +123,7 @@ trigonometry!(
     "Calculates the inverse hyperbolic sine of a number."
 );
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Atan2;
 
 #[derive(FunctionArgs)]

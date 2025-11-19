@@ -10,7 +10,7 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct CountMatches;
 
 const WHOLE_WORDS_DEFAULT_VALUE: bool = false;

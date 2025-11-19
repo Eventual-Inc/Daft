@@ -1741,7 +1741,7 @@ class DataFrame:
             │ Int64 ┆ Int64 │
             ╰───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
             >>> df[["a", "c"]]  # Get multiple columns by name
             ╭───────┬───────╮
             │ a     ┆ c     │
@@ -1749,7 +1749,7 @@ class DataFrame:
             │ Int64 ┆ Int64 │
             ╰───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
             >>> df[["a", 1]]  # Get multiple columns by name and index
             ╭───────┬───────╮
             │ a     ┆ b     │
@@ -1757,7 +1757,7 @@ class DataFrame:
             │ Int64 ┆ Int64 │
             ╰───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
             >>> df[0:2]  # Get a slice of columns by index
             ╭───────┬───────╮
             │ a     ┆ b     │
@@ -1765,7 +1765,7 @@ class DataFrame:
             │ Int64 ┆ Int64 │
             ╰───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
             >>> df[["a", "b", 2]]  # Get a mix of column names and indices
             ╭───────┬───────┬───────╮
             │ a     ┆ b     ┆ c     │
@@ -1773,7 +1773,7 @@ class DataFrame:
             │ Int64 ┆ Int64 ┆ Int64 │
             ╰───────┴───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
 
         """
         result: Optional[Expression]

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use super::to_field_numeric;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Sign;
 
 #[typetag::serde]
@@ -58,7 +58,7 @@ pub fn sign(input: ExprRef) -> ExprRef {
     ScalarFn::builtin(Sign, vec![input]).into()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Negate;
 
 #[typetag::serde]

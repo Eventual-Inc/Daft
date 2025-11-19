@@ -8,8 +8,9 @@ pub trait MermaidDisplay: TreeDisplay {
     fn repr_mermaid(&self, options: MermaidDisplayOptions) -> String;
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject))]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct MermaidDisplayOptions {
     /// simple mode doesn't show the full display string of each node.
     /// This is useful for large trees.
@@ -24,8 +25,9 @@ pub struct MermaidDisplayOptions {
 }
 
 /// subgraph <subgraph_id>["<name>"]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject))]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct SubgraphOptions {
     /// The display text for the subgraph name.
     pub name: String,
