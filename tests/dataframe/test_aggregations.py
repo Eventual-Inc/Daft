@@ -384,9 +384,9 @@ def test_all_null_groupby_keys(make_df, repartition_nparts, with_morsel_size):
         daft_df.with_column("group", daft_df["group"].cast(DataType.int64()))
         .groupby(col("group"))
         .agg(
-            col("values").agg_list().alias("list"),
+            col("values").list_agg().alias("list"),
             col("values").mean().alias("mean"),
-            col("values").agg_set().alias("set"),
+            col("values").list_agg_distinct().alias("set"),
         )
     )
 
