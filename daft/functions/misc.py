@@ -110,17 +110,17 @@ def cast(expr: Expression, dtype: DataTypeLike) -> Expression:
         ...     df["a"].cast("tinyint").alias("sql_tinyint"),
         ... )
         >>> df.show()
-        ╭──────┬───────┬─────────┬────────────┬─────────┬─────────────╮
-        │ str  ┆ int   ┆ float   ┆ sql_string ┆ sql_int ┆ sql_tinyint │
-        │ ---  ┆ ---   ┆ ---     ┆ ---        ┆ ---     ┆ ---         │
-        │ Utf8 ┆ Int64 ┆ Float64 ┆ Utf8       ┆ Int32   ┆ Int8        │
-        ╞══════╪═══════╪═════════╪════════════╪═════════╪═════════════╡
-        │ 1    ┆ 1     ┆ 1       ┆ 1          ┆ 1       ┆ 1           │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2    ┆ 2     ┆ 2       ┆ 2          ┆ 2       ┆ 2           │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 3    ┆ 3     ┆ 3       ┆ 3          ┆ 3       ┆ 3           │
-        ╰──────┴───────┴─────────┴────────────┴─────────┴─────────────╯
+        ╭────────┬───────┬─────────┬────────────┬─────────┬─────────────╮
+        │ str    ┆ int   ┆ float   ┆ sql_string ┆ sql_int ┆ sql_tinyint │
+        │ ---    ┆ ---   ┆ ---     ┆ ---        ┆ ---     ┆ ---         │
+        │ String ┆ Int64 ┆ Float64 ┆ String     ┆ Int32   ┆ Int8        │
+        ╞════════╪═══════╪═════════╪════════════╪═════════╪═════════════╡
+        │ 1      ┆ 1     ┆ 1       ┆ 1          ┆ 1       ┆ 1           │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2      ┆ 2     ┆ 2       ┆ 2          ┆ 2       ┆ 2           │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3      ┆ 3     ┆ 3       ┆ 3          ┆ 3       ┆ 3           │
+        ╰────────┴───────┴─────────┴────────────┴─────────┴─────────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
     """
@@ -142,17 +142,17 @@ def is_null(expr: Expression) -> Expression:
         >>> df = daft.from_pydict({"x": [1.0, None, float("nan")]})
         >>> df = df.select(is_null(df["x"]))
         >>> df.collect()
-        ╭─────────╮
-        │ x       │
-        │ ---     │
-        │ Boolean │
-        ╞═════════╡
-        │ false   │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ true    │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ false   │
-        ╰─────────╯
+        ╭───────╮
+        │ x     │
+        │ ---   │
+        │ Bool  │
+        ╞═══════╡
+        │ false │
+        ├╌╌╌╌╌╌╌┤
+        │ true  │
+        ├╌╌╌╌╌╌╌┤
+        │ false │
+        ╰───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -174,17 +174,17 @@ def not_null(expr: Expression) -> Expression:
         >>> df = daft.from_pydict({"x": [1.0, None, float("nan")]})
         >>> df = df.select(not_null(df["x"]))
         >>> df.collect()
-        ╭─────────╮
-        │ x       │
-        │ ---     │
-        │ Boolean │
-        ╞═════════╡
-        │ true    │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ false   │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ true    │
-        ╰─────────╯
+        ╭───────╮
+        │ x     │
+        │ ---   │
+        │ Bool  │
+        ╞═══════╡
+        │ true  │
+        ├╌╌╌╌╌╌╌┤
+        │ false │
+        ├╌╌╌╌╌╌╌┤
+        │ true  │
+        ╰───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -239,17 +239,17 @@ def is_in(expr: Expression, other: Any) -> Expression:
         >>> df = daft.from_pydict({"data": [1, 2, 3]})
         >>> df = df.select(is_in(df["data"], [1, 3]))
         >>> df.collect()
-        ╭─────────╮
-        │ data    │
-        │ ---     │
-        │ Boolean │
-        ╞═════════╡
-        │ true    │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ false   │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ true    │
-        ╰─────────╯
+        ╭───────╮
+        │ data  │
+        │ ---   │
+        │ Bool  │
+        ╞═══════╡
+        │ true  │
+        ├╌╌╌╌╌╌╌┤
+        │ false │
+        ├╌╌╌╌╌╌╌┤
+        │ true  │
+        ╰───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -423,17 +423,17 @@ def concat(left: Expression | str | bytes, right: Expression | str | bytes) -> E
         >>>
         >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"], "y": ["a", "b", "c"]})
         >>> df.select(concat(df["x"], df["y"])).collect()
-        ╭──────╮
-        │ x    │
-        │ ---  │
-        │ Utf8 │
-        ╞══════╡
-        │ fooa │
-        ├╌╌╌╌╌╌┤
-        │ barb │
-        ├╌╌╌╌╌╌┤
-        │ bazc │
-        ╰──────╯
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ fooa   │
+        ├╌╌╌╌╌╌╌╌┤
+        │ barb   │
+        ├╌╌╌╌╌╌╌╌┤
+        │ bazc   │
+        ╰────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -559,15 +559,15 @@ def get(expr: Expression, key: int | str | Expression, default: Any = None) -> E
         >>> df = daft.from_pydict({"structs": [{"name": "Alice", "age": 25}, {"name": "Bob", "age": 30}]})
         >>> df = df.select(df["structs"].get("name"), df["structs"].get("age"))
         >>> df.show()
-        ╭───────┬───────╮
-        │ name  ┆ age   │
-        │ ---   ┆ ---   │
-        │ Utf8  ┆ Int64 │
-        ╞═══════╪═══════╡
-        │ Alice ┆ 25    │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ Bob   ┆ 30    │
-        ╰───────┴───────╯
+        ╭────────┬───────╮
+        │ name   ┆ age   │
+        │ ---    ┆ ---   │
+        │ String ┆ Int64 │
+        ╞════════╪═══════╡
+        │ Alice  ┆ 25    │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ Bob    ┆ 30    │
+        ╰────────┴───────╯
         <BLANKLINE>
         (Showing first 2 of 2 rows)
 
@@ -634,21 +634,21 @@ def map_get(expr: Expression, key: Expression) -> Expression:
         >>> df = daft.from_arrow(pa.table({"map_col": pa_array}))
         >>> df = df.with_column("a", df["map_col"].map_get("a"))
         >>> df.show()
-        ╭──────────────────┬───────╮
-        │ map_col          ┆ a     │
-        │ ---              ┆ ---   │
-        │ Map[Utf8: Int64] ┆ Int64 │
-        ╞══════════════════╪═══════╡
-        │ [{key: a,        ┆ 1     │
-        │ value: 1,        ┆       │
-        │ }]               ┆       │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ []               ┆ None  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ [{key: b,        ┆ None  │
-        │ value: 2,        ┆       │
-        │ }]               ┆       │
-        ╰──────────────────┴───────╯
+        ╭────────────────────┬───────╮
+        │ map_col            ┆ a     │
+        │ ---                ┆ ---   │
+        │ Map[String: Int64] ┆ Int64 │
+        ╞════════════════════╪═══════╡
+        │ [{key: a,          ┆ 1     │
+        │ value: 1,          ┆       │
+        │ }]                 ┆       │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ []                 ┆ None  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ [{key: b,          ┆ None  │
+        │ value: 2,          ┆       │
+        │ }]                 ┆       │
+        ╰────────────────────┴───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -736,7 +736,7 @@ def when(condition: Expression | bool, then: Expression | Any) -> WhenExpr:
         ╭──────────╮
         │ category │
         │ ---      │
-        │ Utf8     │
+        │ String   │
         ╞══════════╡
         │ low      │
         ├╌╌╌╌╌╌╌╌╌╌┤
@@ -761,21 +761,21 @@ def when(condition: Expression | bool, then: Expression | Any) -> WhenExpr:
         ...     .alias("grade")
         ... )
         >>> df.show()
-        ╭───────╮
-        │ grade │
-        │ ---   │
-        │ Utf8  │
-        ╞═══════╡
-        │ B     │
-        ├╌╌╌╌╌╌╌┤
-        │ A     │
-        ├╌╌╌╌╌╌╌┤
-        │ C     │
-        ├╌╌╌╌╌╌╌┤
-        │ F     │
-        ├╌╌╌╌╌╌╌┤
-        │ B     │
-        ╰───────╯
+        ╭────────╮
+        │ grade  │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ B      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ A      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ C      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ F      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ B      │
+        ╰────────╯
         <BLANKLINE>
         (Showing first 5 of 5 rows)
 
@@ -792,7 +792,7 @@ def when(condition: Expression | bool, then: Expression | Any) -> WhenExpr:
         ╭─────────┬─────────────╮
         │ name    ┆ working_age │
         │ ---     ┆ ---         │
-        │ Utf8    ┆ Int64       │
+        │ String  ┆ Int64       │
         ╞═════════╪═════════════╡
         │ Alice   ┆ 25          │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -816,7 +816,7 @@ def when(condition: Expression | bool, then: Expression | Any) -> WhenExpr:
         ╭─────────╮
         │ status  │
         │ ---     │
-        │ Utf8    │
+        │ String  │
         ╞═════════╡
         │ normal  │
         ├╌╌╌╌╌╌╌╌╌┤
@@ -836,7 +836,7 @@ def when(condition: Expression | bool, then: Expression | Any) -> WhenExpr:
         ╭────────╮
         │ result │
         │ ---    │
-        │ Utf8   │
+        │ String │
         ╞════════╡
         │ None   │
         ├╌╌╌╌╌╌╌╌┤

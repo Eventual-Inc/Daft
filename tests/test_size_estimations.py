@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import io
+
 import pyarrow as pa
 import pyarrow.parquet as papq
 import pytest
 
+import daft
+from daft.context import execution_config_ctx
 from daft.daft import testing as native_testing_utils
 from daft.recordbatch.micropartition import MicroPartition
-
-pytest.skip(allow_module_level=True, reason="Skipping because these tests don't currently pass")
 
 
 def get_scantask_estimated_size(pq_path: str, size_on_disk: int, columns: list[str] | None = None) -> int:
@@ -29,6 +31,7 @@ def assert_close(size_on_disk, estimated: int, actual: int, pct: float = 0.3):
 
 @pytest.mark.parametrize("compression", ["snappy", None], ids=["snappy", "no_compression"])
 @pytest.mark.parametrize("use_dictionary", [True, False], ids=["dict", "no_dict"])
+@pytest.mark.skip(reason="Skipping because these tests don't currently pass")
 def test_estimations_unique_strings(tmpdir, use_dictionary, compression):
     pq_path = tmpdir / f"unique_strings.use_dictionary={use_dictionary}.compression={compression}.pq"
     data = [f"{'a' * 100}{i}" for i in range(1000_000)]
@@ -36,11 +39,16 @@ def test_estimations_unique_strings(tmpdir, use_dictionary, compression):
     papq.write_table(tbl, pq_path, use_dictionary=use_dictionary, compression=compression)
 
     size_on_disk = pq_path.stat().size
-    assert_close(size_on_disk, get_scantask_estimated_size(pq_path, size_on_disk), get_actual_size(pq_path))
+    assert_close(
+        size_on_disk,
+        get_scantask_estimated_size(pq_path, size_on_disk),
+        get_actual_size(pq_path),
+    )
 
 
 @pytest.mark.parametrize("compression", ["snappy", None], ids=["snappy", "no_compression"])
 @pytest.mark.parametrize("use_dictionary", [True, False], ids=["dict", "no_dict"])
+@pytest.mark.skip(reason="Skipping because these tests don't currently pass")
 def test_estimations_dup_strings(tmpdir, use_dictionary, compression):
     pq_path = tmpdir / f"dup_strings.use_dictionary={use_dictionary}.compression={compression}.pq"
     data = ["a" * 100 for _ in range(1000_000)]
@@ -48,11 +56,16 @@ def test_estimations_dup_strings(tmpdir, use_dictionary, compression):
     papq.write_table(tbl, pq_path, use_dictionary=use_dictionary, compression=compression)
 
     size_on_disk = pq_path.stat().size
-    assert_close(size_on_disk, get_scantask_estimated_size(pq_path, size_on_disk), get_actual_size(pq_path))
+    assert_close(
+        size_on_disk,
+        get_scantask_estimated_size(pq_path, size_on_disk),
+        get_actual_size(pq_path),
+    )
 
 
 @pytest.mark.parametrize("compression", ["snappy", None], ids=["snappy", "no_compression"])
 @pytest.mark.parametrize("use_dictionary", [True, False], ids=["dict", "no_dict"])
+@pytest.mark.skip(reason="Skipping because these tests don't currently pass")
 def test_estimations_unique_ints(tmpdir, use_dictionary, compression):
     pq_path = tmpdir / f"unique_ints.use_dictionary={use_dictionary}.compression={compression}.pq"
 
@@ -61,11 +74,16 @@ def test_estimations_unique_ints(tmpdir, use_dictionary, compression):
     papq.write_table(tbl, pq_path, use_dictionary=use_dictionary, compression=compression)
 
     size_on_disk = pq_path.stat().size
-    assert_close(size_on_disk, get_scantask_estimated_size(pq_path, size_on_disk), get_actual_size(pq_path))
+    assert_close(
+        size_on_disk,
+        get_scantask_estimated_size(pq_path, size_on_disk),
+        get_actual_size(pq_path),
+    )
 
 
 @pytest.mark.parametrize("compression", ["snappy", None], ids=["snappy", "no_compression"])
 @pytest.mark.parametrize("use_dictionary", [True, False], ids=["dict", "no_dict"])
+@pytest.mark.skip(reason="Skipping because these tests don't currently pass")
 def test_estimations_dup_ints(tmpdir, use_dictionary, compression):
     pq_path = tmpdir / f"dup_ints.use_dictionary={use_dictionary}.compression={compression}.pq"
 
@@ -74,7 +92,11 @@ def test_estimations_dup_ints(tmpdir, use_dictionary, compression):
     papq.write_table(tbl, pq_path, use_dictionary=use_dictionary, compression=compression)
 
     size_on_disk = pq_path.stat().size
-    assert_close(size_on_disk, get_scantask_estimated_size(pq_path, size_on_disk), get_actual_size(pq_path))
+    assert_close(
+        size_on_disk,
+        get_scantask_estimated_size(pq_path, size_on_disk),
+        get_actual_size(pq_path),
+    )
 
 
 @pytest.mark.parametrize(
@@ -96,13 +118,18 @@ def test_estimations_dup_ints(tmpdir, use_dictionary, compression):
         "llava-onevision-data",
     ],
 )
+@pytest.mark.skip(reason="Skipping because these tests don't currently pass")
 def test_canonical_files_in_hf(path):
     import requests
 
     response = requests.head(path, allow_redirects=True)
     size_on_disk = int(response.headers["Content-Length"])
 
-    assert_close(size_on_disk, get_scantask_estimated_size(path, size_on_disk), get_actual_size(path))
+    assert_close(
+        size_on_disk,
+        get_scantask_estimated_size(path, size_on_disk),
+        get_actual_size(path),
+    )
 
 
 @pytest.mark.parametrize(
@@ -114,6 +141,7 @@ def test_canonical_files_in_hf(path):
         "lineitem",
     ],
 )
+@pytest.mark.skip(reason="Skipping because these tests don't currently pass")
 def test_canonical_files_in_s3(path):
     import boto3
 
@@ -122,4 +150,74 @@ def test_canonical_files_in_s3(path):
     response = s3.head_object(Bucket=bucket, Key=key)
     size_on_disk = response["ContentLength"]
 
-    assert_close(size_on_disk, get_scantask_estimated_size(path, size_on_disk), get_actual_size(path))
+    assert_close(
+        size_on_disk,
+        get_scantask_estimated_size(path, size_on_disk),
+        get_actual_size(path),
+    )
+
+
+@pytest.mark.parametrize(
+    "inflation_factor,expected_size_bytes",
+    [
+        (1.0, "Approx size bytes = 174.70 K"),
+        (2.0, "Approx size bytes = 349.40 K"),
+        (3.0, "Approx size bytes = 524.11 K"),
+    ],
+)
+def test_csv_config_affects_estimations(tmpdir, inflation_factor, expected_size_bytes):
+    """Test that csv inflation factor affects size estimations."""
+    import csv
+
+    # Create test data
+    data = [f"test_string_{i}" for i in range(10000)]
+
+    # Create csv file
+    file_path = tmpdir / "test_config.csv"
+    with open(file_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["foo"])  # header
+        for value in data:
+            writer.writerow([value])
+
+    # Test with the specified inflation factor
+    with execution_config_ctx(csv_inflation_factor=inflation_factor):
+        df = daft.read_csv(str(file_path))
+        string_io = io.StringIO()
+        df.explain(True, file=string_io)
+        explain_output = string_io.getvalue()
+
+    # Assert the expected values
+    assert expected_size_bytes in explain_output
+
+
+@pytest.mark.parametrize(
+    "inflation_factor,expected_size_bytes",
+    [
+        (1.0, "Approx size bytes = 272.35 K"),
+        (2.0, "Approx size bytes = 544.71 K"),
+        (3.0, "Approx size bytes = 817.06 K"),
+    ],
+)
+def test_json_config_affects_estimations(tmpdir, inflation_factor, expected_size_bytes):
+    """Test that json inflation factor affects size estimations."""
+    import json
+
+    # Create test data
+    data = [f"test_string_{i}" for i in range(10000)]
+
+    # Create a newline delimited JSON file
+    file_path = tmpdir / "test_config.json"
+    with open(file_path, "w") as f:
+        for value in data:
+            f.write(json.dumps({"foo": value}) + "\n")
+
+    # Test with the specified inflation factor
+    with execution_config_ctx(json_inflation_factor=inflation_factor):
+        df = daft.read_json(str(file_path))
+        string_io = io.StringIO()
+        df.explain(True, file=string_io)
+        explain_output = string_io.getvalue()
+
+    # Assert the expected values
+    assert expected_size_bytes in explain_output

@@ -99,6 +99,7 @@ impl PyDaftExecutionConfig {
         parquet_inflation_factor=None,
         csv_target_filesize=None,
         csv_inflation_factor=None,
+        json_inflation_factor=None,
         shuffle_aggregation_default_partitions=None,
         partial_aggregation_threshold=None,
         high_cardinality_aggregation_threshold=None,
@@ -107,12 +108,12 @@ impl PyDaftExecutionConfig {
         shuffle_algorithm=None,
         pre_shuffle_merge_threshold=None,
         flight_shuffle_dirs=None,
-        enable_ray_tracing=None,
         scantask_splitting_level=None,
         scantask_max_parallel=None,
         native_parquet_writer=None,
         min_cpu_per_task=None,
         actor_udf_ready_timeout=None,
+        maintain_order=None,
     ))]
     fn with_config_values(
         &self,
@@ -126,6 +127,7 @@ impl PyDaftExecutionConfig {
         parquet_inflation_factor: Option<f64>,
         csv_target_filesize: Option<usize>,
         csv_inflation_factor: Option<f64>,
+        json_inflation_factor: Option<f64>,
         shuffle_aggregation_default_partitions: Option<usize>,
         partial_aggregation_threshold: Option<usize>,
         high_cardinality_aggregation_threshold: Option<f64>,
@@ -134,12 +136,12 @@ impl PyDaftExecutionConfig {
         shuffle_algorithm: Option<&str>,
         pre_shuffle_merge_threshold: Option<usize>,
         flight_shuffle_dirs: Option<Vec<String>>,
-        enable_ray_tracing: Option<bool>,
         scantask_splitting_level: Option<i32>,
         scantask_max_parallel: Option<usize>,
         native_parquet_writer: Option<bool>,
         min_cpu_per_task: Option<f64>,
         actor_udf_ready_timeout: Option<usize>,
+        maintain_order: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -172,6 +174,9 @@ impl PyDaftExecutionConfig {
         }
         if let Some(csv_inflation_factor) = csv_inflation_factor {
             config.csv_inflation_factor = csv_inflation_factor;
+        }
+        if let Some(json_inflation_factor) = json_inflation_factor {
+            config.json_inflation_factor = json_inflation_factor;
         }
         if let Some(shuffle_aggregation_default_partitions) = shuffle_aggregation_default_partitions
         {
@@ -209,10 +214,6 @@ impl PyDaftExecutionConfig {
             config.flight_shuffle_dirs = flight_shuffle_dirs;
         }
 
-        if let Some(enable_ray_tracing) = enable_ray_tracing {
-            config.enable_ray_tracing = enable_ray_tracing;
-        }
-
         if let Some(scantask_splitting_level) = scantask_splitting_level {
             if !matches!(scantask_splitting_level, 1 | 2) {
                 return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
@@ -236,6 +237,10 @@ impl PyDaftExecutionConfig {
 
         if let Some(actor_udf_ready_timeout) = actor_udf_ready_timeout {
             config.actor_udf_ready_timeout = actor_udf_ready_timeout;
+        }
+
+        if let Some(maintain_order) = maintain_order {
+            config.maintain_order = maintain_order;
         }
 
         Ok(Self {
@@ -289,6 +294,11 @@ impl PyDaftExecutionConfig {
     }
 
     #[getter]
+    fn get_json_inflation_factor(&self) -> PyResult<f64> {
+        Ok(self.config.json_inflation_factor)
+    }
+
+    #[getter]
     fn get_shuffle_aggregation_default_partitions(&self) -> PyResult<usize> {
         Ok(self.config.shuffle_aggregation_default_partitions)
     }
@@ -321,11 +331,6 @@ impl PyDaftExecutionConfig {
     }
 
     #[getter]
-    fn enable_ray_tracing(&self) -> PyResult<bool> {
-        Ok(self.config.enable_ray_tracing)
-    }
-
-    #[getter]
     fn scantask_splitting_level(&self) -> PyResult<i32> {
         Ok(self.config.scantask_splitting_level)
     }
@@ -343,6 +348,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn actor_udf_ready_timeout(&self) -> PyResult<usize> {
         Ok(self.config.actor_udf_ready_timeout)
+    }
+
+    #[getter]
+    fn maintain_order(&self) -> PyResult<bool> {
+        Ok(self.config.maintain_order)
     }
 }
 

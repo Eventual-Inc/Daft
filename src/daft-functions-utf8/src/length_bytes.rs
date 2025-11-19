@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::{unary_utf8_evaluate, unary_utf8_to_field};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct LengthBytes;
 
 #[typetag::serde]

@@ -6,6 +6,7 @@ pub mod optimization;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod python_udf;
+pub use common_metrics::operator_metrics;
 
 #[cfg(feature = "python")]
 mod visitor;

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::{Utf8ArrayUtils, binary_utf8_evaluate, binary_utf8_to_field};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RegexpMatch;
 
 #[typetag::serde]

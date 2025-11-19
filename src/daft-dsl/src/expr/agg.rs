@@ -15,6 +15,7 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                     AggExpr::CountDistinct(Expr::Alias(e, name.clone()).into())
                 }
                 AggExpr::Sum(e) => AggExpr::Sum(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Product(e) => AggExpr::Product(Expr::Alias(e, name.clone()).into()),
                 AggExpr::ApproxPercentile(ApproxPercentileParams {
                     child: e,
                     percentiles,

@@ -14,44 +14,42 @@ It also explains some concepts on [Dynamic execution for multimodal workloads](#
 To setup this example, let's read a Parquet file from a public S3 bucket containing sample dog owners, use [`daft.col()`][daft.expressions.col] with the [`df.with_column`][daft.DataFrame.with_column] method to create a new column `full_name`, and join the contents from the `last_name` column to the `first_name` column. Then, let's create a `dogs` DataFrame from a Python dictionary and use [`df.join`][daft.DataFrame.join] to join this with our dataframe of owners:
 
 
-=== "🐍 Python"
+```python
+import daft
+from daft import col
 
-    ```python
-    import daft
-    from daft import col
+# Read parquet file containing sample dog owners
+df = daft.read_parquet("s3://daft-public-data/tutorials/10-min/sample-data-dog-owners-partitioned.pq/**")
 
-    # Read parquet file containing sample dog owners
-    df = daft.read_parquet("s3://daft-public-data/tutorials/10-min/sample-data-dog-owners-partitioned.pq/**")
+# Combine "first_name" and "last_name" to create new column "full_name"
+df = df.with_column("full_name", col("first_name") + " " + col("last_name"))
+df.select("full_name", "age", "country", "has_dog").show()
 
-    # Combine "first_name" and "last_name" to create new column "full_name"
-    df = df.with_column("full_name", col("first_name") + " " + col("last_name"))
-    df.select("full_name", "age", "country", "has_dog").show()
+# Create dataframe of dogs
+df_dogs = daft.from_pydict(
+    {
+        "urls": [
+            "https://live.staticflickr.com/65535/53671838774_03ba68d203_o.jpg",
+            "https://live.staticflickr.com/65535/53671700073_2c9441422e_o.jpg",
+            "https://live.staticflickr.com/65535/53670606332_1ea5f2ce68_o.jpg",
+            "https://live.staticflickr.com/65535/53671838039_b97411a441_o.jpg",
+            "https://live.staticflickr.com/65535/53671698613_0230f8af3c_o.jpg",
+        ],
+        "full_name": [
+            "Ernesto Evergreen",
+            "James Jale",
+            "Wolfgang Winter",
+            "Shandra Shamas",
+            "Zaya Zaphora",
+        ],
+        "dog_name": ["Ernie", "Jackie", "Wolfie", "Shaggie", "Zadie"],
+    }
+)
 
-    # Create dataframe of dogs
-    df_dogs = daft.from_pydict(
-        {
-            "urls": [
-                "https://live.staticflickr.com/65535/53671838774_03ba68d203_o.jpg",
-                "https://live.staticflickr.com/65535/53671700073_2c9441422e_o.jpg",
-                "https://live.staticflickr.com/65535/53670606332_1ea5f2ce68_o.jpg",
-                "https://live.staticflickr.com/65535/53671838039_b97411a441_o.jpg",
-                "https://live.staticflickr.com/65535/53671698613_0230f8af3c_o.jpg",
-            ],
-            "full_name": [
-                "Ernesto Evergreen",
-                "James Jale",
-                "Wolfgang Winter",
-                "Shandra Shamas",
-                "Zaya Zaphora",
-            ],
-            "dog_name": ["Ernie", "Jackie", "Wolfie", "Shaggie", "Zadie"],
-        }
-    )
-
-    # Join owners with dogs, dropping some columns
-    df_family = df.join(df_dogs, on="full_name").exclude("first_name", "last_name", "DoB", "country", "age")
-    df_family.show()
-    ```
+# Join owners with dogs, dropping some columns
+df_family = df.join(df_dogs, on="full_name").exclude("first_name", "last_name", "DoB", "country", "age")
+df_family.show()
+```
 
 ```{title="Output"}
 ╭───────────────────┬─────────┬────────────────────────────────┬──────────╮
@@ -216,6 +214,48 @@ Now you're ready to call this function on the `urls` column and store the output
 !!! note "Note"
 
     Execute in notebook to see properly rendered images.
+### Zero Shot Classification
+
+For zero shot classification, you can use our built in `classify_image` function to classify images
+
+=== "🐍 Python"
+
+    ```python
+    classify_images_expr = daft.functions.classify_image(
+      daft.col("image"), labels=[
+        "boxer",
+        "schnauzer",
+        "rottweiler",
+        "staffordshire terrier",
+        "collie",
+        "chihuahua",
+        "corgi"
+      ]
+    )
+    classified_images_df = df_family.with_column("classify_breed", classify_images_expr)
+    classified_images_df.select("dog_name", "image", "classify_breed").show()
+    ```
+
+```{title="Output"}
+╭──────────┬──────────────┬───────────────────────╮
+│ dog_name ┆ image        ┆ classify_breed        │
+│ ---      ┆ ---          ┆ ---                   │
+│ String   ┆ Image[MIXED] ┆ String                │
+╞══════════╪══════════════╪═══════════════════════╡
+│ Ernie    ┆ <Image>      ┆ boxer                 │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Jackie   ┆ <Image>      ┆ staffordshire terrier │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Wolfie   ┆ <Image>      ┆ collie                │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Shaggie  ┆ <Image>      ┆ schnauzer             │
+├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Zadie    ┆ <Image>      ┆ rottweiler            │
+╰──────────┴──────────────┴───────────────────────╯
+
+(Showing first 5 of 5 rows)
+```
+
 
 <!-- todo(docs - jay): Insert table of dog urls? or new UDF example? This was from the original 10-min quickstart with multimodal -->
 

@@ -1,8 +1,5 @@
 use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::{Arc, atomic::Ordering},
     time::Duration,
 };
 
@@ -11,30 +8,48 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
-    Stat, StatSnapshotSend,
+    CPU_US_KEY, ROWS_OUT_KEY, Stat, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot,
 };
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
+use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use futures::{StreamExt, stream::BoxStream};
+use opentelemetry::{KeyValue, global};
 
 use crate::{
     ExecutionRuntimeContext,
     channel::{Receiver, create_channel},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
-    runtime_stats::{CPU_US_KEY, CountingSender, ROWS_OUT_KEY, RuntimeStats},
+    runtime_stats::{Counter, CountingSender, RuntimeStats},
 };
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
 
-#[derive(Default)]
 pub(crate) struct SourceStats {
-    cpu_us: AtomicU64,
-    rows_out: AtomicU64,
+    cpu_us: Counter,
+    rows_out: Counter,
     io_stats: IOStatsRef,
+
+    node_kv: Vec<KeyValue>,
+}
+
+impl SourceStats {
+    pub fn new(id: usize) -> Self {
+        let meter = global::meter("daft.local.node_stats");
+        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+
+        Self {
+            cpu_us: Counter::new(&meter, "cpu_us".into(), None),
+            rows_out: Counter::new(&meter, "rows_out".into(), None),
+            io_stats: IOStatsRef::default(),
+
+            node_kv,
+        }
+    }
 }
 
 impl RuntimeStats for SourceStats {
@@ -42,7 +57,7 @@ impl RuntimeStats for SourceStats {
         self
     }
 
-    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         snapshot![
             CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
             ROWS_OUT_KEY; Stat::Count(self.rows_out.load(ordering)),
@@ -55,11 +70,11 @@ impl RuntimeStats for SourceStats {
     }
 
     fn add_rows_out(&self, rows: u64) {
-        self.rows_out.fetch_add(rows, Ordering::Relaxed);
+        self.rows_out.add(rows, self.node_kv.as_slice());
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
+        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
@@ -67,8 +82,8 @@ impl RuntimeStats for SourceStats {
 pub trait Source: Send + Sync {
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
-    fn make_runtime_stats(&self) -> Arc<SourceStats> {
-        Arc::new(SourceStats::default())
+    fn make_runtime_stats(&self, id: usize) -> Arc<SourceStats> {
+        Arc::new(SourceStats::new(id))
     }
     fn multiline_display(&self) -> Vec<String>;
     async fn get_data(
@@ -89,9 +104,21 @@ pub(crate) struct SourceNode {
 }
 
 impl SourceNode {
-    pub fn new(source: Arc<dyn Source>, plan_stats: StatsState, ctx: &RuntimeContext) -> Self {
-        let info = ctx.next_node_info(source.name().into(), source.op_type(), NodeCategory::Source);
-        let runtime_stats = source.make_runtime_stats();
+    pub fn new(
+        source: Arc<dyn Source>,
+        plan_stats: StatsState,
+        ctx: &RuntimeContext,
+        output_schema: SchemaRef,
+        context: &LocalNodeContext,
+    ) -> Self {
+        let info = ctx.next_node_info(
+            source.name().into(),
+            source.op_type(),
+            NodeCategory::Source,
+            output_schema,
+            context,
+        );
+        let runtime_stats = source.make_runtime_stats(info.id);
         Self {
             source,
             runtime_stats,
@@ -129,13 +156,21 @@ impl TreeDisplay for SourceNode {
 
                     writeln!(display).unwrap();
                     for (name, value) in rt_result {
-                        writeln!(display, "{} = {}", name.capitalize(), value).unwrap();
+                        writeln!(display, "{} = {}", name.as_ref().capitalize(), value).unwrap();
                     }
                 }
             }
         }
         display
     }
+
+    fn repr_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "id": self.id(),
+            "name": self.name(),
+        })
+    }
+
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
         self.children()
             .iter()

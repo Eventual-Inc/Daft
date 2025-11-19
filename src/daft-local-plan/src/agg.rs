@@ -115,6 +115,11 @@ pub fn populate_aggregation_stages_bound_with_schema(
                 let global_count_col = second_stage!(AggExpr::Sum(count_col));
                 final_stage(global_count_col);
             }
+            AggExpr::Product(expr) => {
+                let product_col = first_stage!(AggExpr::Product(expr.clone()));
+                let global_product_col = second_stage!(AggExpr::Product(product_col));
+                final_stage(global_product_col);
+            }
             AggExpr::CountDistinct(expr) => {
                 let set_agg_col = first_stage!(AggExpr::Set(expr.clone()));
                 let concat_col = second_stage!(AggExpr::Concat(set_agg_col));

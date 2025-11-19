@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, stream::select};
@@ -31,7 +31,6 @@ impl CrossJoinNode {
 
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         num_partitions: usize,
         left_node: DistributedPipelineNode,
@@ -39,12 +38,10 @@ impl CrossJoinNode {
         output_schema: SchemaRef,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![left_node.node_id(), right_node.node_id()],
-            vec![left_node.name(), right_node.name()],
-            logical_node_id,
         );
 
         let config = PipelineNodeConfig::new(
@@ -126,6 +123,10 @@ impl CrossJoinNode {
             right_plan,
             self.config.schema.clone(),
             StatsState::NotMaterialized,
+            LocalNodeContext {
+                origin_node_id: Some(self.node_id() as usize),
+                additional: None,
+            },
         );
 
         let mut psets = right_psets;

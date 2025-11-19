@@ -1013,6 +1013,16 @@ class Expression:
 
         return sum(self)
 
+    def product(self) -> Expression:
+        """Calculates the product of the values in the expression.
+
+        Tip: See Also
+            [`daft.functions.product`](https://docs.daft.ai/en/stable/api/functions/product/)
+        """
+        from daft.functions import product
+
+        return product(self)
+
     def approx_count_distinct(self) -> Expression:
         """Calculates the approximate number of non-`NULL` distinct values in the expression.
 
@@ -1211,17 +1221,17 @@ class Expression:
             ...     else:
             ...         return 0
             >>> df.with_column("num_x", df["x"].apply(f, return_dtype=daft.DataType.int64())).collect()
-            ╭──────┬───────╮
-            │ x    ┆ num_x │
-            │ ---  ┆ ---   │
-            │ Utf8 ┆ Int64 │
-            ╞══════╪═══════╡
-            │ 1    ┆ 1     │
-            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ 2    ┆ 2     │
-            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ tim  ┆ 0     │
-            ╰──────┴───────╯
+            ╭────────┬───────╮
+            │ x      ┆ num_x │
+            │ ---    ┆ ---   │
+            │ String ┆ Int64 │
+            ╞════════╪═══════╡
+            │ 1      ┆ 1     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2      ┆ 2     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ tim    ┆ 0     │
+            ╰────────┴───────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 

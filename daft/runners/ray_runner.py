@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+import uuid
 from collections.abc import Generator, Iterable, Iterator
 from typing import TYPE_CHECKING, Any, Union, cast
 
@@ -511,12 +512,15 @@ class RayRunner(Runner[ray.ObjectRef]):
 
         # Grab and freeze the current context
         ctx = get_context()
+        query_id = str(uuid.uuid4())
         daft_execution_config = ctx.daft_execution_config
 
         # Optimize the logical plan.
-        builder = builder.optimize()
+        builder = builder.optimize(daft_execution_config)
 
-        distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(builder._builder, daft_execution_config)
+        distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
+            builder._builder, query_id, daft_execution_config
+        )
         if self.flotilla_plan_runner is None:
             self.flotilla_plan_runner = FlotillaRunner()
 

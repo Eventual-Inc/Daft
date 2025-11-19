@@ -3,7 +3,7 @@ use daft_dsl::functions::prelude::*;
 
 use crate::format::Format;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Serialize;
 
 #[derive(FunctionArgs)]
@@ -36,7 +36,7 @@ impl ScalarUDF for Serialize {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct TrySerialize;
 
 #[typetag::serde]

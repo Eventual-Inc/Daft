@@ -10,7 +10,6 @@ mod sinks;
 mod sources;
 mod state_bridge;
 mod streaming_sink;
-
 use std::{
     future::Future,
     pin::Pin,
@@ -88,6 +87,16 @@ impl<T: Send + 'static> TaskSet<T> {
             .join_next()
             .await
             .map(|r| r.map_err(|e| Error::JoinError { source: e }))
+    }
+
+    fn try_join_next(&mut self) -> Option<Result<T, Error>> {
+        self.inner
+            .try_join_next()
+            .map(|r| r.map_err(|e| Error::JoinError { source: e }))
+    }
+
+    fn len(&self) -> usize {
+        self.inner.len()
     }
 
     async fn shutdown(&mut self) {

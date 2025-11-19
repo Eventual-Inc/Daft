@@ -13,21 +13,23 @@ use common_display::{
     tree::TreeDisplay,
 };
 use common_error::DaftResult;
+use common_metrics::QueryID;
 use common_partitioning::PartitionRef;
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use common_treenode::ConcreteTreeNode;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{InMemoryInfo, partitioning::ClusteringSpecRef, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt, stream::BoxStream};
-use itertools::Itertools;
 use materialize::materialize_all_pipeline_outputs;
 
 use crate::{
-    plan::{PlanExecutionContext, PlanID},
+    plan::{PlanExecutionContext, QueryIdx},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SchedulingStrategy, SwordfishTask, Task, TaskContext},
         worker::WorkerId,
     },
+    statistics::stats::{DefaultRuntimeStats, RuntimeStats},
     utils::channel::{Receiver, ReceiverStream},
 };
 
@@ -57,6 +59,7 @@ mod top_n;
 mod translate;
 mod udf;
 mod unpivot;
+mod vllm;
 mod window;
 
 pub(crate) use translate::logical_plan_to_pipeline_node;
@@ -139,44 +142,32 @@ impl PipelineNodeConfig {
 
 #[derive(Clone)]
 pub(super) struct PipelineNodeContext {
-    pub plan_id: PlanID,
+    pub query_idx: QueryIdx,
+    pub query_id: QueryID,
     pub node_id: NodeID,
     pub node_name: NodeName,
-    pub child_ids: Vec<NodeID>,
-    pub child_names: Vec<NodeName>,
-    pub logical_node_id: Option<NodeID>,
 }
 
 impl PipelineNodeContext {
     pub fn new(
-        plan_id: PlanID,
+        query_idx: QueryIdx,
+        query_id: QueryID,
         node_id: NodeID,
         node_name: NodeName,
-        child_ids: Vec<NodeID>,
-        child_names: Vec<NodeName>,
-        logical_node_id: Option<NodeID>,
     ) -> Self {
         Self {
-            plan_id,
+            query_idx,
+            query_id,
             node_id,
             node_name,
-            child_ids,
-            child_names,
-            logical_node_id,
         }
     }
 
     pub fn to_hashmap(&self) -> HashMap<String, String> {
         HashMap::from([
-            ("plan_id".to_string(), self.plan_id.to_string()),
+            ("query_id".to_string(), self.query_id.to_string()),
             ("node_id".to_string(), self.node_id.to_string()),
             ("node_name".to_string(), self.node_name.to_string()),
-            ("child_ids".to_string(), self.child_ids.iter().join(",")),
-            ("child_names".to_string(), self.child_names.iter().join(",")),
-            (
-                "logical_node_id".to_string(),
-                self.logical_node_id.unwrap_or(0).to_string(),
-            ),
         ])
     }
 }
@@ -184,6 +175,12 @@ impl PipelineNodeContext {
 pub(crate) trait PipelineNodeImpl: Send + Sync {
     fn context(&self) -> &PipelineNodeContext;
     fn config(&self) -> &PipelineNodeConfig;
+    fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
+        Arc::new(DefaultRuntimeStats::new(
+            self.node_id(),
+            self.context().query_id.clone(),
+        ))
+    }
 
     fn children(&self) -> Vec<DistributedPipelineNode>;
     fn produce_tasks(
@@ -192,10 +189,6 @@ pub(crate) trait PipelineNodeImpl: Send + Sync {
     ) -> SubmittableTaskStream;
     fn name(&self) -> NodeName {
         self.context().node_name
-    }
-    #[allow(dead_code)]
-    fn plan_id(&self) -> PlanID {
-        self.context().plan_id
     }
     fn node_id(&self) -> NodeID {
         self.context().node_id
@@ -230,11 +223,32 @@ impl DistributedPipelineNode {
     pub fn num_partitions(&self) -> usize {
         self.op.config().clustering_spec.num_partitions()
     }
+    pub fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
+        self.op.runtime_stats()
+    }
     pub fn produce_tasks(self, plan_context: &mut PlanExecutionContext) -> SubmittableTaskStream {
         self.op.produce_tasks(plan_context)
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
+    }
+}
+
+impl ConcreteTreeNode for DistributedPipelineNode {
+    fn children(&self) -> Vec<&Self> {
+        self.children.iter().collect()
+    }
+
+    fn take_children(mut self) -> (Self, Vec<Self>) {
+        let children = std::mem::take(&mut self.children);
+        (self, children)
+    }
+
+    fn with_new_children(self, children: Vec<Self>) -> DaftResult<Self> {
+        Ok(Self {
+            op: self.op.clone(),
+            children,
+        })
     }
 }
 
@@ -245,6 +259,14 @@ impl TreeDisplay for DistributedPipelineNode {
             DisplayLevel::Default => self.op.multiline_display(false).join("\n"),
             DisplayLevel::Verbose => self.op.multiline_display(true).join("\n"),
         }
+    }
+
+    fn repr_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "id": self.id(),
+            "type": self.op.name(),
+            "name": self.name(),
+        })
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
@@ -331,7 +353,7 @@ impl Stream for SubmittableTaskStream {
 pub(crate) fn make_in_memory_scan_from_materialized_outputs(
     materialized_outputs: &[MaterializedOutput],
     schema: SchemaRef,
-    cache_key: String,
+    node_id: NodeID,
 ) -> DaftResult<LocalPhysicalPlanRef> {
     let num_partitions = materialized_outputs.len();
     let mut total_size_bytes = 0;
@@ -344,7 +366,7 @@ pub(crate) fn make_in_memory_scan_from_materialized_outputs(
 
     let info = InMemoryInfo::new(
         schema,
-        cache_key,
+        node_id.to_string(),
         None,
         num_partitions,
         total_size_bytes,
@@ -352,8 +374,14 @@ pub(crate) fn make_in_memory_scan_from_materialized_outputs(
         None,
         None,
     );
-    let in_memory_source_plan =
-        LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
+    let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
+        info,
+        StatsState::NotMaterialized,
+        LocalNodeContext {
+            origin_node_id: Some(node_id as usize),
+            additional: None,
+        },
+    );
     Ok(in_memory_source_plan)
 }
 
@@ -371,7 +399,7 @@ where
     let in_memory_source_plan = make_in_memory_scan_from_materialized_outputs(
         &materialized_outputs,
         input_schema,
-        node.node_id().to_string(),
+        node.node_id(),
     )?;
     let partition_refs = materialized_outputs
         .into_iter()
@@ -422,9 +450,7 @@ where
     let psets = submittable_task.task().psets().clone();
     let config = submittable_task.task().config().clone();
     let mut task_context = submittable_task.task().task_context();
-    if let Some(logical_node_id) = node.context().logical_node_id {
-        task_context.add_logical_node_id(logical_node_id);
-    }
+    task_context.add_node_id(node.node_id());
 
     submittable_task.with_new_task(SwordfishTask::new(
         task_context,

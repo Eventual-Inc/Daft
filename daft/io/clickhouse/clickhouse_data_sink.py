@@ -62,7 +62,7 @@ class ClickHouseDataSink(DataSink[QuerySummary]):
         try:
             for micropartition in micropartitions:
                 df = micropartition.to_pandas()
-                bytes_written = df.memory_usage().sum()
+                bytes_written: int = int(df.memory_usage().sum())
                 rows_written = df.shape[0]
 
                 query_summary = ck_client.insert_df(self._table, df, **self._write_kwargs)

@@ -15,6 +15,7 @@ use crate::{
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
     },
+    file::DaftMediaType,
     series::Series,
     utils::display::{
         display_date32, display_decimal128, display_duration, display_time64, display_timestamp,
@@ -289,10 +290,50 @@ impl MapArray {
     }
 }
 
+fn sparkline_from_floats(values: &[f32], num_bins: usize) -> String {
+    const SPARK_CHARS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+
+    if values.is_empty() {
+        return String::new();
+    }
+
+    // Compute bin size (last bin may be smaller)
+    let bin_size = (values.len() as f32 / num_bins as f32).ceil() as usize;
+
+    let mut bins = Vec::with_capacity(num_bins);
+
+    for i in (0..values.len()).step_by(bin_size) {
+        let end = usize::min(i + bin_size, values.len());
+        let slice = &values[i..end];
+        let energy = slice.iter().copied().map(|x| x * x).sum::<f32>() / slice.len() as f32;
+        bins.push(energy.sqrt());
+    }
+
+    // Normalize bins to 0-1
+    let min = bins.iter().copied().fold(f32::INFINITY, f32::min);
+    let max = bins.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let range = (max - min).max(1e-8); // avoid division by 0
+
+    bins.iter()
+        .map(|&v| {
+            let norm = (v - min) / range;
+            let idx = (norm * (SPARK_CHARS.len() as f32 - 1.0)).round() as usize;
+            SPARK_CHARS[idx]
+        })
+        .collect()
+}
+
 impl EmbeddingArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         if self.physical.is_valid(idx) {
-            Ok("<Embedding>".to_string())
+            let value = self
+                .get(idx)
+                .expect("str_value should only be called in bounds");
+            let value_casted = value.cast(&DataType::Float32)?;
+            let value_f32 = value_casted.f32()?;
+            let slice = value_f32.as_slice();
+            let sparkline = sparkline_from_floats(slice, 24);
+            Ok(sparkline)
         } else {
             Ok("None".to_string())
         }
@@ -420,7 +461,10 @@ impl StructArray {
         }
     }
 }
-impl FileArray {
+impl<T> FileArray<T>
+where
+    T: DaftMediaType,
+{
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         Ok(self.get_lit(idx).to_string())
     }
@@ -610,7 +654,10 @@ impl FixedShapeSparseTensorArray {
     }
 }
 
-impl FileArray {
+impl<T> FileArray<T>
+where
+    T: DaftMediaType,
+{
     pub fn html_value(&self, idx: usize, truncate: bool) -> String {
         let str_value = self.str_value(idx).unwrap();
         let truncated = if truncate {

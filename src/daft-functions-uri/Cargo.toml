@@ -1,4 +1,5 @@
 [dependencies]
+async-trait = {workspace = true}
 bytes = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}

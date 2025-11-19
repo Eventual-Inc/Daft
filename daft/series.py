@@ -571,6 +571,10 @@ class Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.sum())
 
+    def product(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series.product())
+
     def shift_right(self, bits: Series) -> Series:
         if not isinstance(bits, Series):
             raise TypeError(f"expected another Series but got {type(bits)}")
@@ -842,7 +846,7 @@ class SeriesStringNamespace(SeriesNamespace):
             regex: DEPRECATED. Use regexp_split() instead for regex patterns.
 
         Returns:
-            Series: A List[Utf8] series containing the string splits for each string.
+            Series: A List[String] series containing the string splits for each string.
         """
         if regex:
             import warnings
@@ -862,7 +866,7 @@ class SeriesStringNamespace(SeriesNamespace):
             pattern: The regex pattern on which each string should be split.
 
         Returns:
-            Series: A List[Utf8] series containing the string splits for each string.
+            Series: A List[String] series containing the string splits for each string.
         """
         return self._eval_expressions("regexp_split", pattern)
 

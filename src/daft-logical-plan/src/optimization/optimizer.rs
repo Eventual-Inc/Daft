@@ -1,5 +1,6 @@
 use std::{ops::ControlFlow, sync::Arc};
 
+use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_treenode::Transformed;
 
@@ -16,7 +17,7 @@ use super::{
         UnnestScalarSubquery,
     },
 };
-use crate::LogicalPlan;
+use crate::{LogicalPlan, optimization::rules::SplitVLLM};
 
 /// Config for optimizer.
 #[derive(Debug)]
@@ -42,17 +43,35 @@ impl Default for OptimizerConfig {
     }
 }
 
+#[cfg(debug_assertions)]
 pub trait OptimizerRuleInBatch: OptimizerRule + std::fmt::Debug {}
 
+#[cfg(not(debug_assertions))]
+pub trait OptimizerRuleInBatch: OptimizerRule {}
+
+#[cfg(debug_assertions)]
 impl<T: OptimizerRule + std::fmt::Debug> OptimizerRuleInBatch for T {}
 
+#[cfg(not(debug_assertions))]
+impl<T: OptimizerRule> OptimizerRuleInBatch for T {}
+
 /// A batch of logical optimization rules.
-#[derive(Debug)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct RuleBatch {
     // Optimization rules in this batch.
     pub rules: Vec<Box<dyn OptimizerRuleInBatch>>,
     // The rule execution strategy (once, fixed-point).
     pub strategy: RuleExecutionStrategy,
+}
+
+#[cfg(not(debug_assertions))]
+impl std::fmt::Debug for RuleBatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RuleBatch")
+            .field("n_rules", &self.rules.len())
+            .field("strategy", &self.strategy)
+            .finish()
+    }
 }
 
 impl RuleBatch {
@@ -173,6 +192,7 @@ impl OptimizerBuilder {
                 vec![
                     Box::new(SplitUDFsFromFilters::new()),
                     Box::new(SplitUDFs::new()),
+                    Box::new(SplitVLLM),
                     Box::new(PushDownProjection::new()),
                     Box::new(DetectMonotonicId::new()),
                 ],
@@ -210,31 +230,26 @@ impl OptimizerBuilder {
                 vec![Box::new(ShardScans::new())],
                 RuleExecutionStrategy::Once,
             ),
-            // --- Enrich logical plan with stats ---
-            RuleBatch::new(
-                vec![Box::new(EnrichWithStats::new())],
-                RuleExecutionStrategy::Once,
-            ),
         ]);
         self
     }
 
-    pub fn reorder_joins(mut self) -> Self {
+    pub fn reorder_joins(mut self, cfg: Option<Arc<DaftExecutionConfig>>) -> Self {
         self.rule_batches.push(RuleBatch::new(
             vec![
-                Box::new(ReorderJoins::new()),
+                Box::new(ReorderJoins::new(cfg.clone())),
                 Box::new(PushDownFilter::new(self.config.strict_pushdown)),
                 Box::new(PushDownProjection::new()),
-                Box::new(EnrichWithStats::new()),
+                Box::new(EnrichWithStats::new(cfg)),
             ],
             RuleExecutionStrategy::Once,
         ));
         self
     }
 
-    pub fn enrich_with_stats(mut self) -> Self {
+    pub fn enrich_with_stats(mut self, cfg: Option<Arc<DaftExecutionConfig>>) -> Self {
         self.rule_batches.push(RuleBatch::new(
-            vec![Box::new(EnrichWithStats::new())],
+            vec![Box::new(EnrichWithStats::new(cfg))],
             RuleExecutionStrategy::Once,
         ));
         self
@@ -681,7 +696,7 @@ mod tests {
             vec![RuleBatch::new(
                 vec![
                     Box::new(MaterializeScans::new()),
-                    Box::new(EnrichWithStats::new()),
+                    Box::new(EnrichWithStats::new(None)),
                 ],
                 RuleExecutionStrategy::Once,
             )],
@@ -738,6 +753,7 @@ mod tests {
         // Check that the limit commutes with the actor pool project.
         let optimizer = OptimizerBuilder::default()
             .with_default_optimizations()
+            .enrich_with_stats(None)
             .build();
         let opt_plan = optimizer.optimize(plan, |_, _, _, _, _| {})?;
         assert_eq!(
@@ -799,6 +815,7 @@ mod tests {
         // Check that the filter commutes with the actor pool project.
         let optimizer = OptimizerBuilder::default()
             .with_default_optimizations()
+            .enrich_with_stats(None)
             .build();
         let opt_plan = optimizer.optimize(plan, |_, _, _, _, _| {})?;
         assert_eq!(
@@ -855,6 +872,7 @@ mod tests {
 
         let optimizer = OptimizerBuilder::default()
             .with_default_optimizations()
+            .enrich_with_stats(None)
             .build();
         let opt_plan = optimizer.optimize(plan, |_, _, _, _, _| {})?;
 

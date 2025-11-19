@@ -56,7 +56,7 @@ fn image_decode_impl(
     match cached_dtype {
         DataType::UInt8 => Ok(image_array_from_img_buffers(
             ba.name(),
-            img_bufs.as_slice(),
+            img_bufs.into_iter(),
             mode,
         )?),
         _ => unimplemented!(

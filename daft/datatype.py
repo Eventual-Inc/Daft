@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable, Union
 
 from packaging.version import parse
 
-from daft.daft import ImageMode, PyDataType, PyTimeUnit, sql_datatype
+from daft.daft import ImageMode, PyDataType, PyMediaType, PyTimeUnit, sql_datatype
 from daft.dependencies import np, pa
 from daft.runners import get_or_create_runner
 
@@ -15,6 +15,29 @@ if TYPE_CHECKING:
     import builtins
 
     import jaxtyping
+
+
+class MediaType:
+    _media_type: PyMediaType
+
+    def __init__(self) -> None:
+        raise NotImplementedError("Please use MediaType.unknown() or .video() instead.")
+
+    @classmethod
+    def _from_pyfileformat(cls, mt: PyMediaType) -> MediaType:
+        fileformat = MediaType.__new__(MediaType)
+        fileformat._media_type = mt
+        return fileformat
+
+    @classmethod
+    def unknown(cls) -> MediaType:
+        """Represents an unknown media type."""
+        return cls._from_pyfileformat(PyMediaType.unknown())
+
+    @classmethod
+    def video(cls) -> MediaType:
+        """Represents a video media type."""
+        return cls._from_pyfileformat(PyMediaType.video())
 
 
 class TimeUnit:
@@ -113,8 +136,7 @@ class DataType:
         import decimal
         import importlib
         import typing
-
-        from typing_extensions import is_typeddict
+        from typing import is_typeddict
 
         import daft.file
         import daft.series
@@ -163,6 +185,10 @@ class DataType:
             return cls.time(TimeUnit.us())
         elif check_type(datetime.timedelta):
             return cls.duration(TimeUnit.us())
+        elif check_type(daft.file.VideoFile):
+            return cls.file(MediaType.video())
+        elif check_type(daft.file.File):
+            return cls.file(MediaType.unknown())
         elif check_type(list):
             if len(args) == 0:
                 inner_dtype = cls.python()
@@ -206,6 +232,16 @@ class DataType:
                 # tuple[type0, type1, ...] -> Struct[_0: type0, _1: type1, ...]
                 field_dtypes = {f"_{i}": cls.infer_from_type(arg) for i, arg in enumerate(args)}
                 return cls.struct(field_dtypes)
+        elif check_type(decimal.Decimal):
+            warnings.warn(
+                "Cannot derive precision and scale from decimal.Decimal type, defaulting to DataType.python()"
+            )
+            return cls.python()
+        elif check_type(daft.series.Series):
+            warnings.warn(
+                "Cannot derive inner type from daft.Series type, defaulting to DataType.python() for Series inner type"
+            )
+            return cls.list(cls.python())
         elif check_type("pydantic.BaseModel"):
             import pydantic
 
@@ -242,11 +278,8 @@ class DataType:
                 field_dtypes[serialized_name] = cls.infer_from_type(field_info.return_type)
 
             return cls.struct(field_dtypes)
-        elif check_type(decimal.Decimal):
-            warnings.warn(
-                "Cannot derive precision and scale from decimal.Decimal type, defaulting to DataType.python()"
-            )
-            return cls.python()
+        elif check_type("PIL.Image.Image"):
+            return cls.image()
         elif check_type("jaxtyping.AbstractArray"):
             return cls._infer_from_jaxtyping(origin)
         elif check_type("numpy.ndarray"):
@@ -264,6 +297,7 @@ class DataType:
                 inner_dtype = cls.python()
 
             return cls.tensor(inner_dtype)
+
         elif check_type("torch.FloatTensor"):
             return cls.tensor(cls.float32())
         elif check_type("torch.DoubleTensor"):
@@ -294,15 +328,6 @@ class DataType:
                 "Cannot derive inner type from pandas.Series type, defaulting to DataType.python() for Series inner type"
             )
             return cls.list(cls.python())
-        elif check_type("PIL.Image.Image"):
-            return cls.image()
-        elif check_type(daft.series.Series):
-            warnings.warn(
-                "Cannot derive inner type from daft.Series type, defaulting to DataType.python() for Series inner type"
-            )
-            return cls.list(cls.python())
-        elif check_type(daft.file.File):
-            return cls.file()
         else:
             return cls.python()
 
@@ -821,9 +846,9 @@ class DataType:
         return cls._from_pydatatype(PyDataType.python())
 
     @classmethod
-    def file(cls) -> DataType:
+    def file(cls, media_type: MediaType = MediaType.unknown()) -> DataType:
         """Create a File DataType: a type which refers to a file object."""
-        return cls._from_pydatatype(PyDataType.file())
+        return cls._from_pydatatype(PyDataType.file(media_type._media_type))
 
     def is_null(self) -> builtins.bool:
         """Check if this is a null type.

@@ -176,6 +176,7 @@ pub mod pylib {
         functions_registry.add_fn(daft_functions::coalesce::Coalesce);
         functions_registry.add_fn(daft_file::File);
         functions_registry.add_fn(daft_file::Size);
+        functions_registry.add_fn(daft_file::VideoFile);
         functions_registry
             .add_fn(daft_functions::monotonically_increasing_id::MonotonicallyIncreasingId);
         functions_registry.register::<daft_functions::distance::DistanceFunctions>();

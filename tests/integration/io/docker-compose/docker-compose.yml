@@ -33,3 +33,13 @@ services:
       dockerfile: Dockerfile.s3_retry_server
     ports:
     - 8001:8000
+
+  # Bigtable emulator for integration testing
+  bigtable-emulator:
+    image: google/cloud-sdk
+    container_name: bigtable-emulator
+    ports:
+    - "127.0.0.1:8086:8086"
+    command: gcloud beta emulators bigtable start --host-port=0.0.0.0:8086
+    environment:
+    - BIGTABLE_EMULATOR_HOST=0.0.0.0:8086

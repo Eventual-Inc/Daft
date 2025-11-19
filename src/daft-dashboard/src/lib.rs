@@ -5,7 +5,10 @@ pub mod engine;
 pub mod python;
 pub(crate) mod state;
 
-use std::{net::Ipv4Addr, sync::Arc};
+use std::{
+    net::{IpAddr, Ipv4Addr},
+    sync::Arc,
+};
 
 use axum::{
     Json, Router,
@@ -28,6 +31,7 @@ use tracing::Level;
 
 use crate::state::{DashboardState, GLOBAL_DASHBOARD_STATE};
 
+// NOTE(void001): default listen to all ipv4 address, which pose a security risk in production environment
 pub const DEFAULT_SERVER_ADDR: Ipv4Addr = Ipv4Addr::UNSPECIFIED;
 pub const DEFAULT_SERVER_PORT: u16 = 3238;
 
@@ -274,6 +278,7 @@ async fn ping() -> StatusCode {
 }
 
 pub async fn launch_server(
+    addr: IpAddr,
     port: u16,
     shutdown_fn: impl Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
@@ -303,7 +308,7 @@ pub async fn launch_server(
         .with_state(GLOBAL_DASHBOARD_STATE.clone());
 
     // Start the server
-    let listener = TcpListener::bind((DEFAULT_SERVER_ADDR, port)).await?;
+    let listener = TcpListener::bind((addr, port)).await?;
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_fn)
         .await

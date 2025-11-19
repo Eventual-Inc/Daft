@@ -35,11 +35,16 @@ impl Hash for ColumnRangeStatistics {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq)]
 pub enum TruthValue {
     False,
     Maybe,
     True,
+}
+impl std::fmt::Debug for TruthValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self}")
+    }
 }
 
 impl std::fmt::Display for TruthValue {
@@ -93,7 +98,7 @@ impl ColumnRangeStatistics {
 
             // UNSUPPORTED TYPES:
             // Types that don't support comparisons and can't be used as ColumnRangeStatistics
-            DataType::List(..) | DataType::FixedSizeList(..) | DataType::Image(..) | DataType::FixedShapeImage(..) | DataType::Tensor(..) | DataType::SparseTensor(..) | DataType::FixedShapeSparseTensor(..) | DataType::FixedShapeTensor(..) | DataType::Struct(..) | DataType::Map { .. } | DataType::Extension(..) | DataType::Embedding(..) | DataType::Unknown | DataType::File => false,
+            DataType::List(..) | DataType::FixedSizeList(..) | DataType::Image(..) | DataType::FixedShapeImage(..) | DataType::Tensor(..) | DataType::SparseTensor(..) | DataType::FixedShapeSparseTensor(..) | DataType::FixedShapeTensor(..) | DataType::Struct(..) | DataType::Map { .. } | DataType::Extension(..) | DataType::Embedding(..) | DataType::Unknown | DataType::File(_) => false,
             #[cfg(feature = "python")]
             DataType::Python => false,
         }

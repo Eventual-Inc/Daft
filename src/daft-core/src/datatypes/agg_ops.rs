@@ -19,6 +19,23 @@ pub fn try_sum_supertype(dtype: &DataType) -> DaftResult<DataType> {
     }
 }
 
+/// Get the data type that the product of a column of the given data type should be casted to.
+pub fn try_product_supertype(dtype: &DataType) -> DaftResult<DataType> {
+    match dtype {
+        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => Ok(DataType::Int64),
+        DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
+            Ok(DataType::UInt64)
+        }
+        DataType::Float32 => Ok(DataType::Float32),
+        DataType::Float64 => Ok(DataType::Float64),
+        DataType::Decimal128(_, s) => Ok(DataType::Decimal128(38, *s)),
+        other => Err(DaftError::TypeError(format!(
+            "Invalid argument to product supertype: {}",
+            other
+        ))),
+    }
+}
+
 /// Get the data type that the mean of a column of the given data type should be casted to.
 pub fn try_mean_aggregation_supertype(dtype: &DataType) -> DaftResult<DataType> {
     match dtype {

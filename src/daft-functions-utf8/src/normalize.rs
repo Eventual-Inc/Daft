@@ -10,7 +10,7 @@ use daft_dsl::{
 use serde::{Deserialize, Serialize};
 use unicode_normalization::{IsNormalized, UnicodeNormalization, is_nfd_quick};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Normalize;
 
 #[derive(FunctionArgs)]

@@ -10,7 +10,7 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Slice;
 
 #[derive(FunctionArgs)]
