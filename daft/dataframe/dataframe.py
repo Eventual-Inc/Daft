@@ -620,7 +620,7 @@ class DataFrame:
             return
 
         preview_partition_invalid = (
-            self._preview.partition is None or len(self._preview.partition) < self._num_preview_rows
+            self._preview.partition is None or len(self._preview.partition) != self._num_preview_rows
         )
         if preview_partition_invalid:
             preview_parts = results._get_preview_micropartitions(self._num_preview_rows)

@@ -9,16 +9,15 @@ import daft
 from daft.dataframe.preview import PreviewFormatter
 
 
-def _capture_stdout_show(df, **kwargs):
+def _capture_stdout(df_fn):
     old_stdout = sys.stdout
     sys.stdout = StringIO()
     try:
-        df.show(**kwargs)
+        df_fn()
         output = sys.stdout.getvalue()
     finally:
         sys.stdout = old_stdout
     return output
-
 
 def _markdown_count_rows(markdown_output: str) -> int:
     # Count markdown table lines: header + data, exclude separator lines like "|---"
@@ -26,9 +25,13 @@ def _markdown_count_rows(markdown_output: str) -> int:
     table_lines = [line for line in lines if line.strip().startswith('|') and not line.strip().startswith('|---')]
     return len(table_lines)
 
-
 def _html_count_tr(markup: str) -> int:
     return markup.count('<tr>')
+
+def _count_table_data_rows(table_output: str) -> int:
+    # Count data rows in table format (lines containing "item_" pattern)
+    # This counts the actual data rows, not header/type rows
+    return sum(1 for line in table_output.split('\n') if 'item_' in line)
 
 
 def test_show_limit_n_markdown_counts_rows():
@@ -38,15 +41,15 @@ def test_show_limit_n_markdown_counts_rows():
     })
 
     # n < 10
-    out = _capture_stdout_show(df, n=5, format='markdown')
+    out = _capture_stdout(lambda: df.show(n=5, format='markdown'))
     assert _markdown_count_rows(out) == 6  # 1 header + 5 data
 
     # n = 10
-    out = _capture_stdout_show(df, n=10, format='markdown')
+    out = _capture_stdout(lambda: df.show(n=10, format='markdown'))
     assert _markdown_count_rows(out) == 11  # 1 header + 10 data
 
     # n > 10
-    out = _capture_stdout_show(df, n=15, format='markdown')
+    out = _capture_stdout(lambda: df.show(n=15, format='markdown'))
     assert _markdown_count_rows(out) == 16  # 1 header + 15 data
 
 
@@ -109,15 +112,18 @@ def test_collect_num_preview_rows():
 
     # Test with num_preview_rows < 10
     df_collected = df.collect(num_preview_rows=5)
-    out = _capture_stdout_show(df_collected, format='markdown')
-    assert _markdown_count_rows(out) == 6  # 1 header + 5 data
+    out = _capture_stdout(lambda: print(df_collected))
+    assert "(Showing first 5 of 20 rows)" in out
+    assert _count_table_data_rows(out) == 5
 
     # Test with num_preview_rows = 10
     df_collected = df.collect(num_preview_rows=10)
-    out = _capture_stdout_show(df_collected, format='markdown')
-    assert _markdown_count_rows(out) == 11  # 1 header + 10 data
+    out = _capture_stdout(lambda: print(df_collected))
+    assert "(Showing first 10 of 20 rows)" in out
+    assert _count_table_data_rows(out) == 10
 
     # Test with num_preview_rows > 10
     df_collected = df.collect(num_preview_rows=15)
-    out = _capture_stdout_show(df_collected, format='markdown')
-    assert _markdown_count_rows(out) == 16  # 1 header + 15 data
+    out = _capture_stdout(lambda: print(df_collected))
+    assert "(Showing first 15 of 20 rows)" in out
+    assert _count_table_data_rows(out) == 15
