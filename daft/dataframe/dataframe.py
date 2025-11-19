@@ -313,16 +313,18 @@ class DataFrame:
         Examples:
             >>> import daft
             >>>
+            >>> daft.set_runner_ray()  # doctest: +SKIP
+            >>>
             >>> # Create a DataFrame with 1000 rows
             >>> df = daft.from_pydict({"x": list(range(1000))})
             >>>
             >>> # Partition count may depend on default config or optimizer decisions
-            >>> df.num_partitions()
+            >>> df.num_partitions()  # doctest: +SKIP
             1
             >>>
             >>> # You can repartition manually (if supported), and then inspect again:
-            >>> df2 = df.repartition(10)
-            >>> df2.num_partitions()
+            >>> df2 = df.repartition(10)  # doctest: +SKIP
+            >>> df2.num_partitions()  # doctest: +SKIP
             10
         """
         runner_name = get_or_create_runner().name
