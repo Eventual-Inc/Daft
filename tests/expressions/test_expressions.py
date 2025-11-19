@@ -118,15 +118,6 @@ def test_repr_functions_sign() -> None:
     assert repr_out == repr(copied)
 
 
-def test_repr_functions_signum() -> None:
-    a = col("a")
-    y = a.sign()
-    repr_out = repr(y)
-    assert repr_out == "sign(col(a))"
-    copied = copy.deepcopy(y)
-    assert repr_out == repr(copied)
-
-
 def test_repr_functions_negate() -> None:
     a = col("a")
     y = a.negate()

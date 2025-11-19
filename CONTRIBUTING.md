@@ -415,7 +415,6 @@ def test_extract(test_expression):
         data=test_data,
         expected=expected,
         name="extract",
-        namespace="str",
         sql_name="regexp_extract", # if this is not provided, it will be the same as `name`
         args=[regex],
         kwargs={}

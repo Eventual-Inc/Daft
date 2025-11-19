@@ -311,17 +311,9 @@ class Series:
         """The sign of a numeric series."""
         return self._eval_expressions("sign")
 
-    def signum(self) -> Series:
-        """The signum of a numeric series."""
-        return self._eval_expressions("sign")
-
     def negate(self) -> Series:
         """The negative of a numeric series."""
-        return self._eval_expressions("negative")
-
-    def negative(self) -> Series:
-        """The negative of a numeric series."""
-        return self._eval_expressions("negative")
+        return self._eval_expressions("negate")
 
     def round(self, decimals: int = 0) -> Series:
         return self._eval_expressions("round", decimals=decimals)

@@ -44,7 +44,7 @@ def sign(expr: Expression) -> Expression:
 
 def negate(expr: Expression) -> Expression:
     """The negative of a numeric expression."""
-    return Expression._call_builtin_scalar_fn("negative", expr)
+    return Expression._call_builtin_scalar_fn("negate", expr)
 
 
 def round(expr: Expression, decimals: Expression | int = 0) -> Expression:

@@ -145,8 +145,7 @@ def test_table_floor_bad_input() -> None:
         table.eval_expression_list([col("a").floor()])
 
 
-@pytest.mark.parametrize(("fun"), ["sign", "signum"])
-def test_table_numeric_sign(fun: str) -> None:
+def test_table_numeric_sign() -> None:
     table = MicroPartition.from_pydict(
         {
             "a": [None, -1, -5, 0, 5, 2, None],
@@ -156,10 +155,8 @@ def test_table_numeric_sign(fun: str) -> None:
     my_schema = pa.schema([pa.field("uint8", pa.uint8())])
     table_Unsign = MicroPartition.from_arrow(pa.Table.from_arrays([pa.array([None, 0, 1, 2, 3])], schema=my_schema))
 
-    # signum is deprecated, use sign instead
-    actual_fun = "sign" if fun == "signum" else fun
-    sign_table = table.eval_expression_list([getattr(col("a"), actual_fun)(), getattr(col("b"), actual_fun)()])
-    unsign_sign_table = table_Unsign.eval_expression_list([getattr(col("uint8"), actual_fun)()])
+    sign_table = table.eval_expression_list([col("a").sign(), col("b").sign()])
+    unsign_sign_table = table_Unsign.eval_expression_list([col("uint8").sign()])
 
     def checkSign(val):
         if val < 0:
@@ -179,43 +176,27 @@ def test_table_numeric_sign(fun: str) -> None:
     ] == unsign_sign_table.get_column_by_name("uint8").to_pylist()
 
 
-@pytest.mark.parametrize(
-    ("fun"),
-    [
-        "sign",
-        "signum",
-        "negate",
-        "negative",
-    ],
-)
-def test_table_sign_bad_input(fun: str) -> None:
+def test_table_sign_bad_input() -> None:
     table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
 
-    mapping = {"negate": "negate", "signum": "sign", "negative": "negate"}
-    true_fun = mapping[fun] if fun in mapping else fun
-    # The error message uses "negative" even though the function is "negate"
-    error_msg = "negative" if fun in ("negate", "negative") else true_fun
-    with pytest.raises(ValueError, match=f"Expected input to {error_msg} to be numeric"):
-        table.eval_expression_list([getattr(col("a"), true_fun)()])
+    with pytest.raises(ValueError, match="Expected input to sign to be numeric"):
+        table.eval_expression_list([col("a").sign()])
 
 
-@pytest.mark.parametrize(
-    ("fun"),
-    [
-        ("negate"),
-        ("negative"),
-    ],
-)
-def test_table_numeric_negative(fun: str) -> None:
+def test_table_negate_bad_input() -> None:
+    table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
+    with pytest.raises(ValueError, match="Expected input to negate to be numeric"):
+        table.eval_expression_list([col("a").negate()])
+
+
+def test_table_numeric_negative() -> None:
     table = MicroPartition.from_pydict(
         {
             "a": [None, -1, -5, 0, 5, 2, None],
             "b": [-1.7, -1.5, -1.3, 0.3, 0.7, None, None],
         }
     )
-    # negative is deprecated, use negate instead
-    actual_fun = "negate" if fun == "negative" else fun
-    sign_table = table.eval_expression_list([getattr(col("a"), actual_fun)(), getattr(col("b"), actual_fun)()])
+    sign_table = table.eval_expression_list([col("a").negate(), col("b").negate()])
 
     # Check signed integers
     a_result = sign_table.to_pydict()["a"]

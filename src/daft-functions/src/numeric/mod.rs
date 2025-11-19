@@ -24,7 +24,7 @@ use exp::{Exp, Expm1};
 use floor::Floor;
 use log::{Ln, Log, Log1p, Log2, Log10};
 use round::Round;
-use sign::{Negative, Sign};
+use sign::{Negate, Sign};
 use sqrt::Sqrt;
 
 fn to_field_numeric(f: &dyn ScalarUDF, input: &Expr, schema: &Schema) -> DaftResult<Field> {
@@ -62,7 +62,7 @@ impl FunctionModule for NumericFunctions {
         parent.add_fn(Floor);
         parent.add_fn(Round);
         parent.add_fn(Sign);
-        parent.add_fn(Negative);
+        parent.add_fn(Negate);
         parent.add_fn(Sqrt);
 
         // trig functions
