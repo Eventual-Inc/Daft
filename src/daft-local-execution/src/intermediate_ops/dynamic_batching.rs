@@ -94,38 +94,27 @@ where
                 ));
 
                 let start_time = Instant::now();
-                let result = inner_op
+                let (inner_state, op_result) = inner_op
                     .execute(sub_partition, state.inner_state, &task_spawner_clone)
                     .await??;
                 let duration = start_time.elapsed();
-                state.inner_state = result.0;
+                state.inner_state = inner_state;
                 state.row_offset += batch_size;
-                // Update dynamic batching state
 
+                // Update dynamic batching state
                 dynamic_batcher.adjust_batch_size(
                     &mut state.batch_state,
                     task_spawner_clone.runtime_stats.as_ref(),
                     duration,
                 );
 
-                match result.1 {
-                    IntermediateOperatorResult::HasMoreOutput(output) => {
-                        Ok((state, IntermediateOperatorResult::HasMoreOutput(output)))
-                    }
-                    IntermediateOperatorResult::NeedMoreInput(Some(output)) => {
-                        Ok((state, IntermediateOperatorResult::HasMoreOutput(output)))
-                    }
-                    IntermediateOperatorResult::NeedMoreInput(None) => {
-                        Ok((state, IntermediateOperatorResult::NeedMoreInput(None)))
-                    }
-                }
+                Ok((state, op_result))
             } else {
                 Ok((state, IntermediateOperatorResult::NeedMoreInput(None)))
             }
         };
 
-        let fut = task_spawner.spawn(fut, Span::current());
-        fut.into()
+        task_spawner.spawn(fut, Span::current()).into()
     }
 
     fn name(&self) -> crate::pipeline::NodeName {
@@ -137,9 +126,7 @@ where
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        let mut display = vec![format!("DynamicBatching[{}]", self.inner_op.name())];
-        display.extend(self.inner_op.multiline_display());
-        display
+        self.inner_op.multiline_display()
     }
 
     fn make_state(&self) -> common_error::DaftResult<Self::State> {
