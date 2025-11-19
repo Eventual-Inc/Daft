@@ -1,5 +1,6 @@
 # fmt: off
 # ^ ruff formatting breaks tests which are sensitive to format.
+from __future__ import annotations
 
 import sys
 from io import StringIO
@@ -21,8 +22,8 @@ def _capture_stdout_show(df, **kwargs):
 
 def _markdown_count_rows(markdown_output: str) -> int:
     # Count markdown table lines: header + data, exclude separator lines like "|---"
-    lines = [l for l in markdown_output.split('\n') if l.strip()]
-    table_lines = [l for l in lines if l.strip().startswith('|') and not l.strip().startswith('|---')]
+    lines = [line for line in markdown_output.split('\n') if line.strip()]
+    table_lines = [line for line in lines if line.strip().startswith('|') and not line.strip().startswith('|---')]
     return len(table_lines)
 
 
@@ -83,18 +84,18 @@ def test_show_limit_n_plain_counts_rows():
     preview = df._construct_show_preview(5)
     out = PreviewFormatter(preview, df.schema(), format='plain')._to_text()
     # Count data lines (ignore header lines)
-    lines = [l for l in out.split('\n') if l.strip()]
+    lines = [line for line in out.split('\n') if line.strip()]
     # Heuristic: in plain format, header line is first line, then rows
     assert len(lines) == 6 # 1 header + 5 data
 
     # n = 10
     preview = df._construct_show_preview(10)
     out = PreviewFormatter(preview, df.schema(), format='plain')._to_text()
-    lines = [l for l in out.split('\n') if l.strip()]
+    lines = [line for line in out.split('\n') if line.strip()]
     assert len(lines) == 11 # 1 header + 10 data
 
     # n > 10
     preview = df._construct_show_preview(15)
     out = PreviewFormatter(preview, df.schema(), format='plain')._to_text()
-    lines = [l for l in out.split('\n') if l.strip()]
+    lines = [line for line in out.split('\n') if line.strip()]
     assert len(lines) == 16 # 1 header + 15 data
