@@ -1390,7 +1390,7 @@ all = [
     { name = "clickhouse-connect" },
     { name = "connectorx" },
     { name = "deltalake", version = "0.5.8", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
-    { name = "deltalake", version = "1.2.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "deltalake", version = "1.0.2", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
     { name = "googleapis-common-protos" },
     { name = "grpcio" },
     { name = "grpcio-status" },
@@ -1431,7 +1431,7 @@ clickhouse = [
 ]
 deltalake = [
     { name = "deltalake", version = "0.5.8", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
-    { name = "deltalake", version = "1.2.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "deltalake", version = "1.0.2", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
 ]
 hudi = [
     { name = "pyarrow" },
@@ -1515,7 +1515,7 @@ dev = [
     { name = "databricks-sdk" },
     { name = "datasets" },
     { name = "deltalake", version = "0.5.8", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
-    { name = "deltalake", version = "1.2.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "deltalake", version = "1.0.2", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
     { name = "docker" },
     { name = "duckdb" },
     { name = "gcsfs" },
@@ -1613,7 +1613,7 @@ requires-dist = [
     { name = "clickhouse-connect", marker = "extra == 'clickhouse'" },
     { name = "connectorx", marker = "extra == 'sql'", specifier = ">=0.4.4" },
     { name = "daft", extras = ["aws", "azure", "clickhouse", "deltalake", "gcp", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "postgres", "ray", "sentence-transformers", "spark", "sql", "transformers", "turbopuffer", "unity", "video"], marker = "extra == 'all'" },
-    { name = "deltalake", marker = "extra == 'deltalake'", specifier = "<=1.2.1" },
+    { name = "deltalake", marker = "extra == 'deltalake'" },
     { name = "fsspec" },
     { name = "googleapis-common-protos", marker = "extra == 'spark'", specifier = ">=1.56.4" },
     { name = "grpcio", marker = "extra == 'spark'", specifier = ">=1.48" },
@@ -1663,7 +1663,7 @@ dev = [
     { name = "dask", extras = ["dataframe"], specifier = ">=2025.10.0" },
     { name = "databricks-sdk", specifier = "==0.12.0" },
     { name = "datasets", specifier = "==4.0.0" },
-    { name = "deltalake", marker = "sys_platform != 'win32'", specifier = "==1.2.1" },
+    { name = "deltalake", marker = "sys_platform != 'win32'", specifier = "==1.0.2" },
     { name = "deltalake", marker = "sys_platform == 'win32'", specifier = "==0.5.8" },
     { name = "docker" },
     { name = "duckdb", specifier = "==1.1.2" },
@@ -1880,7 +1880,7 @@ wheels = [
 
 [[package]]
 name = "deltalake"
-version = "1.2.1"
+version = "1.0.2"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
@@ -1908,13 +1908,13 @@ dependencies = [
     { name = "arro3-core", marker = "sys_platform != 'win32'" },
     { name = "deprecated", marker = "sys_platform != 'win32'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d0/f2/1ee40a1e1d65386ff8c34b268cd456e9baa5cbfda05f8762f1dd6d2f5700/deltalake-1.2.1.tar.gz", hash = "sha256:76ace48961de01b7d7cc4b1a2b2462271fb49bf74838c8bdfa0c6372e053d905", size = 5144436, upload-time = "2025-10-21T08:49:45.265Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1e/c3/19cd8457243c41aa60562d28b66271ff958d896e3fd9373816d8fd781f1a/deltalake-1.0.2.tar.gz", hash = "sha256:fbe4cccde0af14c6e30b62cc3dd09e9a46777e8fd8e375ec809a6bf4edea756c", size = 5076074, upload-time = "2025-06-02T11:08:14.063Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4c/b2/1c34fbac16707abaaf0d4ef490d31cfe9e34d77c7fd8f24d605f5959198d/deltalake-1.2.1-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:fc0951859963ee294a7afa11fdd7168c35e5062139949c6d00f6fadae386cf0e", size = 47045602, upload-time = "2025-10-21T08:47:54.339Z" },
-    { url = "https://files.pythonhosted.org/packages/d4/a5/c8c09434c75457819447c85bafd72e0a20ff1b5e73769379bf934ef3794f/deltalake-1.2.1-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:8ba4115dac7cc540c2c33e266d7513a34d4ba2d2d8ca2e83a663b11f4196008f", size = 43287163, upload-time = "2025-10-21T08:48:45.225Z" },
-    { url = "https://files.pythonhosted.org/packages/c2/94/c2e2471ed2c4473a11832bcb5ebbf658fa771f46242b04255241ecd8fc58/deltalake-1.2.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:21ba497201450bbf4ded349264b4a024e3fd55631104ae1e81c385c8ccf348a0", size = 56593648, upload-time = "2025-10-21T08:49:42.617Z" },
-    { url = "https://files.pythonhosted.org/packages/f7/ec/9bd98180f0e2c4234427c1de520b606b165301193a9e00c32ff468412e81/deltalake-1.2.1-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:d613cd74c3f379cebf0775b88601167e5c5d57f79124e4768d6beb202c06f95d", size = 45383092, upload-time = "2025-10-21T08:50:44.928Z" },
-    { url = "https://files.pythonhosted.org/packages/ec/c0/d95f4974962a581ffb4dec90e7e041079a191da286bfef7359017907c765/deltalake-1.2.1-cp39-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:1dc087a81458b167a56ce0406f5571bf1b7873c132d19c9979a47c6362eedd65", size = 49172950, upload-time = "2025-10-21T08:50:10.885Z" },
+    { url = "https://files.pythonhosted.org/packages/78/74/043f52f50cbda7f651d39465fb7c5a9e8880e9a332abbb4f64c4d0522306/deltalake-1.0.2-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:e4f24cdbadaf8a4c32ae535a44b89d8bcafd5cb97897de33a4ec8609058a7d50", size = 41649942, upload-time = "2025-06-02T11:08:17.754Z" },
+    { url = "https://files.pythonhosted.org/packages/f9/99/ced0f538deacdf0f1e78e28a14c30420d8df1c7d9ca30ff8f71a03a008a7/deltalake-1.0.2-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:43731c48657c16c1728c90270e5e7ae1f3fa1a5b6fb0cb0b55c88c5c8f23cc3f", size = 38590012, upload-time = "2025-06-02T11:09:07.48Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/f1/feee0df833eed13a27aafeedfac313c0b6bf7b0d712fa5892b1099a7a752/deltalake-1.0.2-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:c921b47e4810a346650141dae30abc69564e57f26e00cce256f1837dd9c4b5fd", size = 40281750, upload-time = "2025-06-02T11:08:52.532Z" },
+    { url = "https://files.pythonhosted.org/packages/dc/6f/4707d7511bd172f6c6504e87ea0bc43cdf7b5a4c85340ff61cee83170e37/deltalake-1.0.2-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:59a3b403e5871d12920798d27f2b1e4b70f4e975381841066cb6733ccbc80071", size = 51273870, upload-time = "2025-06-02T11:08:10.194Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/2a/1dfc1f337f85d62141b4e70923b923d5faccbe666d4253b670c6d506d1bb/deltalake-1.0.2-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:67d3224ce7e569bbb6d5181f9ed2530b237a1cdc87f413e5ff0bc1227aab50d5", size = 40293966, upload-time = "2025-06-02T11:08:51.989Z" },
 ]
 
 [[package]]
