@@ -2686,7 +2686,7 @@ class DataFrame:
         on: Optional[Union[list[ColumnInputType], ColumnInputType]] = None,
         left_on: Optional[Union[list[ColumnInputType], ColumnInputType]] = None,
         right_on: Optional[Union[list[ColumnInputType], ColumnInputType]] = None,
-        how: Literal["inner", "inner", "left", "right", "outer", "anti", "semi", "cross"] = "inner",
+        how: Literal["inner", "left", "right", "outer", "anti", "semi", "cross"] = "inner",
         strategy: Optional[Literal["hash", "sort_merge", "broadcast"]] = None,
         prefix: Optional[str] = None,
         suffix: Optional[str] = None,
