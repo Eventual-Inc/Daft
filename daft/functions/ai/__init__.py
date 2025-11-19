@@ -89,19 +89,24 @@ def embed_text(
         Expression (Embedding Expression): An expression representing the embedded text vectors.
 
     Examples:
-        >>> import daft
-        >>> from daft.functions import embed_text
-        >>> df = daft.read_huggingface("togethercomputer/RedPajama-Data-1T")
-        >>> # Embed Text with Defaults
-        >>> df = df.with_column(
-        ...     "embeddings",
-        ...     embed_text(
-        ...         daft.col("text"),
-        ...         provider="transformers",
-        ...         model="sentence-transformers/all-MiniLM-L6-v2",
-        ...     ),
-        ... )
-        >>> df.limit(3).show()
+        ```python
+        import daft
+        from daft.functions import embed_text
+
+        df = daft.read_huggingface("togethercomputer/RedPajama-Data-1T")
+        # Embed Text with Defaults
+        df = df.with_column(
+            "embeddings",
+            embed_text(
+                daft.col("text"),
+                provider="transformers",
+                model="sentence-transformers/all-MiniLM-L6-v2",
+            ),
+        )
+        df.limit(3).show()
+        ```
+
+        ``` {title="Output"}
         ╭────────────────────────────────┬────────────────────────────────┬───────────────────┬──────────────────────────╮
         │ text                           ┆ meta                           ┆ red_pajama_subset ┆ embeddings               │
         │ ---                            ┆ ---                            ┆ ---               ┆ ---                      │
@@ -115,6 +120,7 @@ def embed_text(
         ╰────────────────────────────────┴────────────────────────────────┴───────────────────┴──────────────────────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
+        ```
     """
     from daft.ai._expressions import _TextEmbedderExpression
     from daft.ai.protocols import TextEmbedder
@@ -166,26 +172,29 @@ def embed_image(
         Expression (Embedding Expression): An expression representing the embedded image vectors.
 
     Examples:
-        >>> import daft
-        >>> from daft.functions import embed_image, decode_image
-        >>> df = (
-        ...     # Discover a few images from HuggingFace
-        ...     daft.from_glob_path("hf://datasets/datasets-examples/doc-image-3/images")
-        ...     # Read the 4 PNG, JPEG, TIFF, WEBP Images
-        ...     .with_column("image_bytes", daft.col("path").url.download())
-        ...     # Decode the image bytes into a daft Image DataType
-        ...     .with_column("image_type", decode_image(daft.col("image_bytes")))
-        ...     # Convert Image to RGB and resize the image to 288x288
-        ...     .with_column("image_resized", daft.col("image_type").convert_image("RGB").resize(288, 288))
-        ...     # Embed the image
-        ...     .with_column(
-        ...         "image_embeddings",
-        ...         embed_image(
-        ...             daft.col("image_resized"), provider="transformers", model="apple/aimv2-large-patch14-224-lit"
-        ...         ),
-        ...     )
-        ... )
-        >>> df.show()
+        ```python
+        import daft
+        from daft.functions import embed_image, decode_image
+
+        df = (
+            # Discover a few images from HuggingFace
+            daft.from_glob_path("hf://datasets/datasets-examples/doc-image-3/images")
+            # Read the 4 PNG, JPEG, TIFF, WEBP Images
+            .with_column("image_bytes", daft.col("path").url.download())
+            # Decode the image bytes into a daft Image DataType
+            .with_column("image_type", decode_image(daft.col("image_bytes")))
+            # Convert Image to RGB and resize the image to 288x288
+            .with_column("image_resized", daft.col("image_type").convert_image("RGB").resize(288, 288))
+            # Embed the image
+            .with_column(
+                "image_embeddings",
+                embed_image(daft.col("image_resized"), provider="transformers", model="apple/aimv2-large-patch14-224-lit"),
+            )
+        )
+        df.show()
+        ```
+
+        ``` {title="Output"}
         ╭────────────────────────────────┬─────────┬───────────────┬──────────────┬───────────────────────┬──────────────────────────╮
         │ path                           ┆ size    ┆ image_bytes   ┆ image_type   ┆ image_resized         ┆ image_embeddings         │
         │ ---                            ┆ ---     ┆ ---           ┆ ---          ┆ ---                   ┆ ---                      │
@@ -201,6 +210,7 @@ def embed_image(
         ╰────────────────────────────────┴─────────┴───────────────┴──────────────┴───────────────────────┴──────────────────────────╯
         <BLANKLINE>
         (Showing first 4 of 4 rows)
+        ```
     """
     from daft.ai._expressions import _ImageEmbedderExpression
     from daft.ai.protocols import ImageEmbedder
@@ -262,19 +272,24 @@ def classify_text(
         Expression (String Expression): An expression representing the most-probable label string.
 
     Examples:
-        >>> import daft
-        >>> from daft.functions import classify_text
-        >>> df = daft.from_pydict({"text": ["Daft is wicked fast!"]})
-        >>> df = df.with_column(
-        ...     "label",
-        ...     classify_text(
-        ...         daft.col("text"),
-        ...         labels=["Positive", "Negative"],
-        ...         provider="transformers",
-        ...         model="tabularisai/multilingual-sentiment-analysis",
-        ...     ),
-        ... )
-        >>> df.show()
+        ```python
+        import daft
+        from daft.functions import classify_text
+
+        df = daft.from_pydict({"text": ["Daft is wicked fast!"]})
+        df = df.with_column(
+            "label",
+            classify_text(
+                daft.col("text"),
+                labels=["Positive", "Negative"],
+                provider="transformers",
+                model="tabularisai/multilingual-sentiment-analysis",
+            ),
+        )
+        df.show()
+        ```
+
+        ``` {title="Output"}
         ╭─────────────────────┬───────────╮
         │ text                ┆ label     │
         │ ---                 ┆ ---       │
@@ -284,6 +299,7 @@ def classify_text(
         ╰─────────────────────┴───────────╯
         <BLANKLINE>
         (Showing first 1 of 1 rows)
+        ```
     """
     from daft.ai._expressions import _TextClassificationExpression
     from daft.ai.protocols import TextClassifier
@@ -341,29 +357,34 @@ def classify_image(
         Expression (String Expression): An expression representing the most-probable label string.
 
     Examples:
-        >>> import daft
-        >>> from daft.functions import classify_image, decode_image
-        >>> df = (
-        ...     # Discover a few images from HuggingFace
-        ...     daft.from_glob_path("hf://datasets/datasets-examples/doc-image-3/images")
-        ...     # Read the 4 PNG, JPEG, TIFF, WEBP Images
-        ...     .with_column("image_bytes", daft.col("path").url.download())
-        ...     # Decode the image bytes into a daft Image DataType
-        ...     .with_column("image_type", decode_image(daft.col("image_bytes")))
-        ...     # Convert Image to RGB and resize the image to 288x288
-        ...     .with_column("image_resized", daft.col("image_type").convert_image("RGB").resize(288, 288))
-        ...     # Classify the image
-        ...     .with_column(
-        ...         "image_label",
-        ...         classify_image(
-        ...             daft.col("image_resized"),
-        ...             labels=["bulbasaur", "catapie", "voltorb", "electrode"],
-        ...             provider="transformers",
-        ...             model="openai/clip-vit-base-patch32",
-        ...         ),
-        ...     )
-        ... )
-        >>> df.show()
+        ```python
+        import daft
+        from daft.functions import classify_image, decode_image
+
+        df = (
+            # Discover a few images from HuggingFace
+            daft.from_glob_path("hf://datasets/datasets-examples/doc-image-3/images")
+            # Read the 4 PNG, JPEG, TIFF, WEBP Images
+            .with_column("image_bytes", daft.col("path").url.download())
+            # Decode the image bytes into a daft Image DataType
+            .with_column("image_type", decode_image(daft.col("image_bytes")))
+            # Convert Image to RGB and resize the image to 288x288
+            .with_column("image_resized", daft.col("image_type").convert_image("RGB").resize(288, 288))
+            # Classify the image
+            .with_column(
+                "image_label",
+                classify_image(
+                    daft.col("image_resized"),
+                    labels=["bulbasaur", "catapie", "voltorb", "electrode"],
+                    provider="transformers",
+                    model="openai/clip-vit-base-patch32",
+                ),
+            )
+        )
+        df.show()
+        ```
+
+        ``` {title="Output"}
         ╭────────────────────────────────┬─────────┬────────────────┬──────────────┬───────────────────────┬───────────────╮
         │ path                           ┆ size    ┆ image_bytes    ┆ image_type   ┆ image_resized         ┆ image_labels  │
         │ ---                            ┆ ---     ┆ ---            ┆ ---          ┆ ---                   ┆ ---           │
@@ -379,6 +400,7 @@ def classify_image(
         ╰────────────────────────────────┴─────────┴────────────────┴──────────────┴───────────────────────┴───────────────╯
         <BLANKLINE>
         (Showing first 4 of 4 rows)
+        ```
     """
     from daft.ai._expressions import _ImageClassificationExpression
     from daft.ai.protocols import ImageClassifier
@@ -441,29 +463,34 @@ def prompt(
 
     Examples:
         Basic Usage:
-        >>> import daft
-        >>> from daft.ai.openai.provider import OpenAIProvider
-        >>> from daft.functions.ai import prompt
-        >>> # Create a dataframe with the quotes
-        >>> df = daft.from_pydict(
-        ...     {
-        ...         "quote": [
-        ...             "I am going to be the king of the pirates!",
-        ...             "I'm going to be the next Hokage!",
-        ...         ],
-        ...     }
-        ... )
-        >>> # Use the prompt function to classify the quotes
-        >>> df = df.with_column(
-        ...     "response",
-        ...     prompt(
-        ...         daft.col("quote"),
-        ...         system_message="Classify the anime from the quote and return the show, character name, and explanation.",
-        ...         provider="openai",  # Make sure OPENAI_API_KEY is set
-        ...         model="gpt-5-nano",
-        ...     ),
-        ... )
-        >>> df.show(format="fancy", max_width=120)
+        ```python
+        import daft
+        from daft.ai.openai.provider import OpenAIProvider
+        from daft.functions.ai import prompt
+
+        # Create a dataframe with the quotes
+        df = daft.from_pydict(
+            {
+                "quote": [
+                    "I am going to be the king of the pirates!",
+                    "I'm going to be the next Hokage!",
+                ],
+            }
+        )
+        # Use the prompt function to classify the quotes
+        df = df.with_column(
+            "response",
+            prompt(
+                daft.col("quote"),
+                system_message="Classify the anime from the quote and return the show, character name, and explanation.",
+                provider="openai",  # Make sure OPENAI_API_KEY is set
+                model="gpt-5-nano",
+            ),
+        )
+        df.show(format="fancy", max_width=120)
+        ```
+
+        ``` {title="Output"}
         ╭───────────────────────────────────────────┬─────────────────────────────────────────────────────────╮
         │ quote                                     ┆ response                                                │
         ╞═══════════════════════════════════════════╪═════════════════════════════════════════════════════════╡
@@ -477,52 +504,56 @@ def prompt(
         │                                           ┆                                                         │
         │                                           ┆ This quote refl…                                        │
         ╰───────────────────────────────────────────┴─────────────────────────────────────────────────────────╯
-
+        ```
         Structured Outputs with Custom OpenAI Provider:
-        >>> import os
-        >>> from dotenv import load_dotenv
-        >>> import daft
-        >>> from daft.ai.openai.provider import OpenAIProvider
-        >>> from daft.functions.ai import prompt
-        >>> from daft.functions import unnest
-        >>> from daft.session import Session
-        >>> from pydantic import BaseModel, Field
-        >>> # Load environment variables
-        >>> load_dotenv()
-        >>> class Anime(BaseModel):
-        >>>     show: str = Field(description="The name of the anime show")
-        >>>     character: str = Field(description="The name of the character who says the quote")
-        >>>     explanation: str = Field(description="Why the character says the quote")
-        ...
-        >>> # Create an OpenRouter provider
-        >>> openrouter_provider = OpenAIProvider(
-        ...     name="OpenRouter", base_url="https://openrouter.ai/api/v1", api_key=os.environ.get("OPENROUTER_API_KEY")
-        ... )
-        >>> # Create a session and attach the provider
-        >>> sess = Session()
-        >>> sess.attach_provider(openrouter_provider)
-        >>> sess.set_provider("OpenRouter")
-        >>> # Create a dataframe with the quotes
-        >>> df = daft.from_pydict(
-        ...     {
-        ...         "quote": [
-        ...             "I am going to be the king of the pirates!",
-        ...             "I'm going to be the next Hokage!",
-        ...         ],
-        ...     }
-        ... )
-        >>> # Use the prompt function to classify the quotes
-        >>> df = df.with_column(
-        ...     "nemotron-response",
-        ...     prompt(
-        ...         daft.col("quote"),
-        ...         system_message="Classify the anime from the quote and return the show, character name, and explanation.",
-        ...         return_format=Anime,
-        ...         provider=sess.get_provider("OpenRouter"),
-        ...         model="nvidia/nemotron-nano-9b-v2:free",
-        ...     ),
-        ... ).select("quote", unnest(daft.col("nemotron-response")))
-        >>> df.show(format="fancy", max_width=120)
+        ```python
+        import os
+        from dotenv import load_dotenv
+        import daft
+        from daft.ai.openai.provider import OpenAIProvider
+        from daft.functions.ai import prompt
+        from daft.functions import unnest
+        from daft.session import Session
+        from pydantic import BaseModel, Field
+        # Load environment variables
+        load_dotenv()
+        class Anime(BaseModel):
+            show: str = Field(description="The name of the anime show")
+            character: str = Field(description="The name of the character who says the quote")
+            explanation: str = Field(description="Why the character says the quote")
+
+        # Create an OpenRouter provider
+        openrouter_provider = OpenAIProvider(
+            name="OpenRouter", base_url="https://openrouter.ai/api/v1", api_key=os.environ.get("OPENROUTER_API_KEY")
+        )
+        # Create a session and attach the provider
+        sess = Session()
+        sess.attach_provider(openrouter_provider)
+        sess.set_provider("OpenRouter")
+        # Create a dataframe with the quotes
+        df = daft.from_pydict(
+            {
+                "quote": [
+                    "I am going to be the king of the pirates!",
+                    "I'm going to be the next Hokage!",
+                ],
+            }
+        )
+        # Use the prompt function to classify the quotes
+        df = df.with_column(
+            "nemotron-response",
+            prompt(
+                daft.col("quote"),
+                system_message="Classify the anime from the quote and return the show, character name, and explanation.",
+                return_format=Anime,
+                provider=sess.get_provider("OpenRouter"),
+                model="nvidia/nemotron-nano-9b-v2:free",
+            ),
+        ).select("quote", unnest(daft.col("nemotron-response")))
+        df.show(format="fancy", max_width=120)
+        ```
+
+        ``` {title="Output"}
         ╭───────────────────────────────────────────┬───────────┬─────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
         │ quote                                     ┆ show      ┆ character       ┆ explanation                                                                                                            │
         ╞═══════════════════════════════════════════╪═══════════╪═════════════════╪════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
@@ -532,6 +563,7 @@ def prompt(
         ╰───────────────────────────────────────────┴───────────┴─────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
         <BLANKLINE>
         (Showing first 2 of 2 rows)
+        ```
     """
     from daft.ai._expressions import _PrompterExpression
 

@@ -30,9 +30,14 @@ def from_pylist(data: list[dict[str, Any]]) -> "DataFrame":
         DataFrame: DataFrame created from list of dictionaries.
 
     Examples:
-        >>> import daft
-        >>> df = daft.from_pylist([{"foo": 1}, {"foo": 2}])
-        >>> df.show()
+        ```python
+        import daft
+
+        df = daft.from_pylist([{"foo": 1}, {"foo": 2}])
+        df.show()
+        ```
+
+        ``` {title="Output"}
         ╭───────╮
         │ foo   │
         │ ---   │
@@ -44,6 +49,7 @@ def from_pylist(data: list[dict[str, Any]]) -> "DataFrame":
         ╰───────╯
         <BLANKLINE>
         (Showing first 2 of 2 rows)
+        ```
     """
     from daft import DataFrame
 
@@ -62,9 +68,14 @@ def from_pydict(data: dict[str, InputListType]) -> "DataFrame":
         DataFrame: DataFrame created from dictionary of columns
 
     Examples:
-        >>> import daft
-        >>> df = daft.from_pydict({"foo": [1, 2]})
-        >>> df.show()
+        ```python
+        import daft
+
+        df = daft.from_pydict({"foo": [1, 2]})
+        df.show()
+        ```
+
+        ``` {title="Output"}
         ╭───────╮
         │ foo   │
         │ ---   │
@@ -76,6 +87,7 @@ def from_pydict(data: dict[str, InputListType]) -> "DataFrame":
         ╰───────╯
         <BLANKLINE>
         (Showing first 2 of 2 rows)
+        ```
     """
     from daft import DataFrame
 
@@ -95,11 +107,16 @@ def from_arrow(
         DataFrame: DataFrame created from the provided pyarrow Table.
 
     Examples:
-        >>> import pyarrow as pa
-        >>> import daft
-        >>> t = pa.table({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
-        >>> df = daft.from_arrow(t)
-        >>> df.show()
+        ```python
+        import pyarrow as pa
+        import daft
+
+        t = pa.table({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
+        df = daft.from_arrow(t)
+        df.show()
+        ```
+
+        ``` {title="Output"}
         ╭───────┬────────╮
         │ a     ┆ b      │
         │ ---   ┆ ---    │
@@ -113,6 +130,7 @@ def from_arrow(
         ╰───────┴────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
+        ```
     """
     from daft import DataFrame
 
@@ -130,11 +148,16 @@ def from_pandas(data: Union["pd.DataFrame", list["pd.DataFrame"]]) -> "DataFrame
         DataFrame: Daft DataFrame created from the provided pandas DataFrame.
 
     Examples:
-        >>> import pandas as pd
-        >>> import daft
-        >>> pd_df = pd.DataFrame({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
-        >>> df = daft.from_pandas(pd_df)
-        >>> df.show()
+        ```python
+        import pandas as pd
+        import daft
+
+        pd_df = pd.DataFrame({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
+        df = daft.from_pandas(pd_df)
+        df.show()
+        ```
+
+        ``` {title="Output"}
         ╭───────┬────────╮
         │ a     ┆ b      │
         │ ---   ┆ ---    │
@@ -148,6 +171,7 @@ def from_pandas(data: Union["pd.DataFrame", list["pd.DataFrame"]]) -> "DataFrame
         ╰───────┴────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
+        ```
     """
     from daft import DataFrame
 
@@ -168,14 +192,18 @@ def from_ray_dataset(ds: "RayDataset") -> "DataFrame":
         This function can only work if Daft is running using the RayRunner
 
     Examples:
-        >>> import ray
-        >>> import daft
-        >>>
-        >>> daft.context.set_runner_ray()  # doctest: +SKIP
-        >>>
-        >>> ds = ray.data.from_items([{"a": 1, "b": "foo"}, {"a": 2, "b": "bar"}])  # doctest: +SKIP
-        >>> df = daft.from_ray_dataset(ds)  # doctest: +SKIP
-        >>> df.show()  # doctest: +SKIP
+        ```python
+        import ray
+        import daft
+
+        daft.context.set_runner_ray()  # doctest: +SKIP
+
+        ds = ray.data.from_items([{"a": 1, "b": "foo"}, {"a": 2, "b": "bar"}])  # doctest: +SKIP
+        df = daft.from_ray_dataset(ds)  # doctest: +SKIP
+        df.show()  # doctest: +SKIP
+        ```
+
+        ``` {title="Output"}
         ╭───────┬────────╮
         │ a     ┆ b      │
         │ ---   ┆ ---    │
@@ -187,7 +215,7 @@ def from_ray_dataset(ds: "RayDataset") -> "DataFrame":
         ╰───────┴────────╯
         <BLANKLINE>
         (Showing first 2 of 2 rows)
-
+        ```
     """
     from daft import DataFrame
 
@@ -210,16 +238,20 @@ def from_dask_dataframe(ddf: "dask.DataFrame") -> "DataFrame":
         This function can only work if Daft is running using the RayRunner
 
     Examples:
-        >>> import dask.dataframe as dd
-        >>> import pandas as pd
-        >>> import daft
-        >>> import ray
-        >>>
-        >>> daft.context.set_runner_ray()  # doctest: +SKIP
-        >>>
-        >>> ddf = dd.from_pandas(pd.DataFrame({"a": [1, 2], "b": ["foo", "bar"]}), npartitions=2)  # doctest: +SKIP
-        >>> df = daft.from_dask_dataframe(ddf)  # doctest: +SKIP
-        >>> df.show()  # doctest: +SKIP
+        ```python
+        import dask.dataframe as dd
+        import pandas as pd
+        import daft
+        import ray
+
+        daft.context.set_runner_ray()  # doctest: +SKIP
+
+        ddf = dd.from_pandas(pd.DataFrame({"a": [1, 2], "b": ["foo", "bar"]}), npartitions=2)  # doctest: +SKIP
+        df = daft.from_dask_dataframe(ddf)  # doctest: +SKIP
+        df.show()  # doctest: +SKIP
+        ```
+
+        ``` {title="Output"}
         ╭───────┬────────╮
         │ a     ┆ b      │
         │ ---   ┆ ---    │
@@ -231,7 +263,7 @@ def from_dask_dataframe(ddf: "dask.DataFrame") -> "DataFrame":
         ╰───────┴────────╯
         <BLANKLINE>
         (Showing first 2 of 2 rows)
-
+        ```
     """
     from daft import DataFrame
 
