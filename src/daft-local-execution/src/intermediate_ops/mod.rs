@@ -1,3 +1,4 @@
+pub mod dynamic_batching;
 pub mod cross_join;
 pub mod distributed_actor_pool_project;
 pub mod explode;

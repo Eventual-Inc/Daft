@@ -1,6 +1,7 @@
 mod buffer;
 mod channel;
 mod dispatcher;
+mod dynamic_batching;
 mod intermediate_ops;
 mod pipeline;
 mod resource_manager;
@@ -178,6 +179,7 @@ impl ExecutionRuntimeContext {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct ExecutionTaskSpawner {
     runtime_ref: RuntimeRef,
     memory_manager: Arc<MemoryManager>,

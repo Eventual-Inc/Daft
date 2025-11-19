@@ -35,13 +35,15 @@ use snafu::ResultExt;
 use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
     channel::Receiver,
+    dynamic_batching::{AimdDynamicBatching, AimdState},
     intermediate_ops::{
         cross_join::CrossJoinOperator,
         distributed_actor_pool_project::DistributedActorPoolProjectOperator,
-        explode::ExplodeOperator, filter::FilterOperator,
-        inner_hash_join_probe::InnerHashJoinProbeOperator, intermediate_op::IntermediateNode,
-        into_batches::IntoBatchesOperator, project::ProjectOperator, sample::SampleOperator,
-        udf::UdfOperator, unpivot::UnpivotOperator,
+        dynamic_batching::DynamicallyBatchedIntermediateOperator, explode::ExplodeOperator,
+        filter::FilterOperator, inner_hash_join_probe::InnerHashJoinProbeOperator,
+        intermediate_op::IntermediateNode, into_batches::IntoBatchesOperator,
+        project::ProjectOperator, sample::SampleOperator, udf::UdfOperator,
+        unpivot::UnpivotOperator,
     },
     runtime_stats::RuntimeStats,
     sinks::{
@@ -602,8 +604,15 @@ fn physical_plan_to_pipeline(
                 .with_context(|_| PipelineCreationSnafu {
                     plan_name: physical_plan.name(),
                 })?;
-                IntermediateNode::new(
+                let db = AimdDynamicBatching::default();
+                let dbio = DynamicallyBatchedIntermediateOperator::new(
                     Arc::new(proj_op),
+                    Arc::new(db),
+                    AimdState::new(1),
+                );
+
+                IntermediateNode::new(
+                    Arc::new(dbio),
                     vec![child_node],
                     stats_state.clone(),
                     ctx,
