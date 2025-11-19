@@ -8,6 +8,8 @@ from PIL import Image
 import daft
 from daft import col
 from daft.datatype import DataType
+from daft.functions import download
+from daft.functions.image import decode_image, encode_image, resize
 from daft.series import Series
 from tests.cookbook.assets import ASSET_FOLDER
 
@@ -35,7 +37,7 @@ def test_image_resize_mixed_modes(with_morsel_size) -> None:
 
     assert df.schema()["img"].dtype == target_dtype
 
-    df = df.with_column("resized", daft.functions.resize(df["img"], 5, 5))
+    df = df.with_column("resized", resize(df["img"], 5, 5))
 
     assert df.schema()["resized"].dtype == target_dtype
 
@@ -68,9 +70,7 @@ def test_image_decode(with_morsel_size) -> None:
     df = (
         daft.from_glob_path(f"{ASSET_FOLDER}/images/**")
         .into_partitions(2)
-        .with_column(
-            "image", daft.functions.resize(daft.functions.decode_image(daft.functions.download(col("path"))), 10, 10)
-        )
+        .with_column("image", resize(decode_image(download(col("path"))), 10, 10))
     )
     target_dtype = DataType.image()
     assert df.schema()["image"].dtype == target_dtype
@@ -92,7 +92,7 @@ def test_image_encode(with_morsel_size) -> None:
     df = df.select(df["img"].cast(target_dtype))
     assert df.schema()["img"].dtype == target_dtype
 
-    df = df.with_column("encoded", daft.functions.encode_image(df["img"], file_format))
+    df = df.with_column("encoded", encode_image(df["img"], file_format))
     assert df.schema()["encoded"].dtype == DataType.binary()
 
     pil_decoded_imgs = [np.asarray(Image.open(io.BytesIO(bytes_))) for bytes_ in df.to_pydict()["encoded"]]

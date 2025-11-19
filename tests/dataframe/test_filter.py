@@ -17,13 +17,10 @@ def test_filter_missing_column(make_df, valid_data: list[dict[str, Any]]) -> Non
 def test_drop_na(make_df, missing_value_data: list[dict[str, Any]]) -> None:
     df: DataFrame = make_df(missing_value_data)
     df_len_no_col = len(df.drop_nan().collect())
-    # When loading from Arrow, None in float columns may be converted to NaN,
-    # so drop_nan() will drop both rows with None/NaN, leaving only 1 row
-    assert df_len_no_col == 1
+    assert df_len_no_col == 2
 
     df: DataFrame = make_df(missing_value_data)
     df_len_col = len(df.drop_nan("sepal_width").collect())
-    # When dropping NaN from sepal_width column, only row 1 (with NaN) is dropped, leaving 2 rows
     assert df_len_col == 2
 
 

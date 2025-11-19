@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-import daft
 from daft.datatype import DataType
 from daft.expressions import col
-from daft.functions import monotonically_increasing_id
+from daft.functions import monotonically_increasing_id, when
 from daft.io._generator import read_generator
 from daft.recordbatch.recordbatch import RecordBatch
 from tests.conftest import get_tests_daft_runner_name
@@ -292,9 +291,7 @@ def test_monotonic_id_with_complex_expressions(make_df) -> None:
             {
                 "id_plus_one": monotonically_increasing_id() + 1,
                 "id_times_a": monotonically_increasing_id() * col("a"),
-                "id_conditional": daft.functions.when(monotonically_increasing_id() > 1, col("a") * 2).otherwise(
-                    col("a")
-                ),
+                "id_conditional": when(monotonically_increasing_id() > 1, col("a") * 2).otherwise(col("a")),
             }
         )
         .collect()
@@ -311,7 +308,7 @@ def test_monotonic_id_with_complex_expressions(make_df) -> None:
             {
                 "id_plus_one": col("id") + 1,
                 "id_times_a": col("id") * col("a"),
-                "id_conditional": daft.functions.when(col("id") > 1, col("a") * 2).otherwise(col("a")),
+                "id_conditional": when(col("id") > 1, col("a") * 2).otherwise(col("a")),
             }
         )
         .select("a", "id_plus_one", "id_times_a", "id_conditional")  # Pass column names as separate arguments
@@ -369,7 +366,7 @@ def test_monotonic_id_deeply_nested(make_df) -> None:
         .with_columns(
             {
                 "nested1": (monotonically_increasing_id() + col("a")) * (monotonically_increasing_id() + col("b")),
-                "nested2": daft.functions.when(
+                "nested2": when(
                     (monotonically_increasing_id() > 0) & (col("a") > 2), monotonically_increasing_id() * 2
                 ).otherwise(monotonically_increasing_id() + 1),
             }
@@ -386,9 +383,7 @@ def test_monotonic_id_deeply_nested(make_df) -> None:
         .with_columns(
             {
                 "nested1": (col("id1") + col("a")) * (col("id2") + col("b")),
-                "nested2": daft.functions.when((col("id1") > 0) & (col("a") > 2), col("id2") * 2).otherwise(
-                    col("id3") + 1
-                ),
+                "nested2": when((col("id1") > 0) & (col("a") > 2), col("id2") * 2).otherwise(col("id3") + 1),
             }
         )
         .select("a", "b", "nested1", "nested2")
@@ -408,14 +403,10 @@ def test_monotonic_id_complex_conditionals(make_df) -> None:
         make_df(data)
         .with_columns(
             {
-                "case1": daft.functions.when(monotonically_increasing_id() % 2 == 0, col("value") * 2).otherwise(
-                    col("value")
-                ),
+                "case1": when(monotonically_increasing_id() % 2 == 0, col("value") * 2).otherwise(col("value")),
                 "case2": (
-                    daft.functions.when(monotonically_increasing_id() < 2, col("value")).otherwise(
-                        daft.functions.when(monotonically_increasing_id() < 4, col("value") * 2).otherwise(
-                            col("value") * 3
-                        )
+                    when(monotonically_increasing_id() < 2, col("value")).otherwise(
+                        when(monotonically_increasing_id() < 4, col("value") * 2).otherwise(col("value") * 3)
                     )
                 ),
             }
@@ -429,10 +420,10 @@ def test_monotonic_id_complex_conditionals(make_df) -> None:
         ._add_monotonically_increasing_id()
         .with_columns(
             {
-                "case1": daft.functions.when(col("id") % 2 == 0, col("value") * 2).otherwise(col("value")),
+                "case1": when(col("id") % 2 == 0, col("value") * 2).otherwise(col("value")),
                 "case2": (
-                    daft.functions.when(col("id") < 2, col("value")).otherwise(
-                        daft.functions.when(col("id") < 4, col("value") * 2).otherwise(col("value") * 3)
+                    when(col("id") < 2, col("value")).otherwise(
+                        when(col("id") < 4, col("value") * 2).otherwise(col("value") * 3)
                     )
                 ),
             }

@@ -21,12 +21,12 @@ def test_partitioning_exprs():
     bindings = {"test": df}
     expected = (
         df.select(
-            daft.functions.partition_days(daft.col("date")).alias("date_days"),
-            daft.functions.partition_hours(daft.col("date")).alias("date_hours"),
-            daft.functions.partition_months(daft.col("date")).alias("date_months"),
-            daft.functions.partition_years(daft.col("date")).alias("date_years"),
-            daft.functions.partition_iceberg_bucket(daft.col("id"), 10).alias("id_bucket"),
-            daft.functions.partition_iceberg_truncate(daft.col("id"), 10).alias("id_truncate"),
+            daft.col("date").partition_days().alias("date_days"),
+            daft.col("date").partition_hours().alias("date_hours"),
+            daft.col("date").partition_months().alias("date_months"),
+            daft.col("date").partition_years().alias("date_years"),
+            daft.col("id").partition_iceberg_bucket(10).alias("id_bucket"),
+            daft.col("id").partition_iceberg_truncate(10).alias("id_truncate"),
         )
         .collect()
         .to_pydict()

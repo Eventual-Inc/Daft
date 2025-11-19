@@ -10,6 +10,7 @@ import pytz
 
 import daft
 from daft import DataType, col
+from daft.functions import day_of_month, day_of_week, day_of_year, strftime, to_date, to_unix_epoch, week_of_year
 
 PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
 
@@ -475,7 +476,7 @@ def test_intervals(op, expected):
 )
 def test_date_comparison(value):
     date_df = daft.from_pydict({"date_str": ["2020-01-01", "2020-01-02", "2020-01-03"]})
-    date_df = date_df.with_column("date", daft.functions.to_date(col("date_str"), "%Y-%m-%d"))
+    date_df = date_df.with_column("date", to_date(col("date_str"), "%Y-%m-%d"))
     actual = date_df.filter(col("date") == value).select("date").to_pydict()
 
     expected = {"date": [date(2020, 1, 1)]}
@@ -496,8 +497,8 @@ def test_date_and_datetime_day_of_week():
     )
 
     df = df.select(
-        daft.functions.day_of_week(df["date"]).alias("date_dow"),
-        daft.functions.day_of_week(df["datetime"]).alias("datetime_dow"),
+        day_of_week(df["date"]).alias("date_dow"),
+        day_of_week(df["datetime"]).alias("datetime_dow"),
     )
 
     expected = {"date_dow": [2, 3, 4], "datetime_dow": [2, 3, 4]}
@@ -518,8 +519,8 @@ def test_date_and_datetime_day_of_month():
     )
 
     df = df.select(
-        daft.functions.day_of_month(df["date"]).alias("date_dom"),
-        daft.functions.day_of_month(df["datetime"]).alias("datetime_dom"),
+        day_of_month(df["date"]).alias("date_dom"),
+        day_of_month(df["datetime"]).alias("datetime_dom"),
     )
 
     expected = {"date_dom": [1, 31, 31], "datetime_dom": [1, 31, 31]}
@@ -540,8 +541,8 @@ def test_date_and_datetime_day_of_year():
     )
 
     df = df.select(
-        daft.functions.day_of_year(df["date"]).alias("date_doy"),
-        daft.functions.day_of_year(df["datetime"]).alias("datetime_doy"),
+        day_of_year(df["date"]).alias("date_doy"),
+        day_of_year(df["datetime"]).alias("datetime_doy"),
     )
 
     expected = {"date_doy": [1, 366, 365], "datetime_doy": [1, 366, 365]}
@@ -562,8 +563,8 @@ def test_date_and_datetime_week_of_year():
     )
 
     df = df.select(
-        daft.functions.week_of_year(df["date"]).alias("date_woy"),
-        daft.functions.week_of_year(df["datetime"]).alias("datetime_woy"),
+        week_of_year(df["date"]).alias("date_woy"),
+        week_of_year(df["datetime"]).alias("datetime_woy"),
     )
 
     expected = {"date_woy": [1, 53, 52], "datetime_woy": [1, 53, 52]}
@@ -583,16 +584,16 @@ def test_date_to_unix_epoch():
         }
     )
     actual = df.select(
-        daft.functions.to_unix_epoch(df["date"]).alias("date_epoch"),
-        daft.functions.to_unix_epoch(df["date"], "s").alias("date_epoch_s"),
-        daft.functions.to_unix_epoch(df["date"], "ms").alias("date_epoch_ms"),
-        daft.functions.to_unix_epoch(df["date"], "us").alias("date_epoch_us"),
-        daft.functions.to_unix_epoch(df["date"], "ns").alias("date_epoch_ns"),
-        daft.functions.to_unix_epoch(df["datetime"]).alias("datetime_epoch"),
-        daft.functions.to_unix_epoch(df["datetime"], "s").alias("datetime_epoch_s"),
-        daft.functions.to_unix_epoch(df["datetime"], "ms").alias("datetime_epoch_ms"),
-        daft.functions.to_unix_epoch(df["datetime"], "us").alias("datetime_epoch_us"),
-        daft.functions.to_unix_epoch(df["datetime"], "ns").alias("datetime_epoch_ns"),
+        to_unix_epoch(df["date"]).alias("date_epoch"),
+        to_unix_epoch(df["date"], "s").alias("date_epoch_s"),
+        to_unix_epoch(df["date"], "ms").alias("date_epoch_ms"),
+        to_unix_epoch(df["date"], "us").alias("date_epoch_us"),
+        to_unix_epoch(df["date"], "ns").alias("date_epoch_ns"),
+        to_unix_epoch(df["datetime"]).alias("datetime_epoch"),
+        to_unix_epoch(df["datetime"], "s").alias("datetime_epoch_s"),
+        to_unix_epoch(df["datetime"], "ms").alias("datetime_epoch_ms"),
+        to_unix_epoch(df["datetime"], "us").alias("datetime_epoch_us"),
+        to_unix_epoch(df["datetime"], "ns").alias("datetime_epoch_ns"),
     ).to_pydict()
 
     expected = {
@@ -626,10 +627,10 @@ def test_date_to_string():
     df = df.with_column("datetimes_s", daft.col("datetimes").cast(daft.DataType.timestamp("s")))
 
     actual = df.select(
-        daft.functions.strftime(daft.col("dates")).alias("iso_date"),
-        daft.functions.strftime(daft.col("dates"), "%m/%d/%Y").alias("custom_date"),
-        daft.functions.strftime(daft.col("datetimes_s")).alias("iso_datetime"),
-        daft.functions.strftime(daft.col("datetimes_s"), "%Y/%m/%d %H:%M:%S").alias("custom_datetime"),
+        strftime(daft.col("dates")).alias("iso_date"),
+        strftime(daft.col("dates"), "%m/%d/%Y").alias("custom_date"),
+        strftime(daft.col("datetimes_s")).alias("iso_datetime"),
+        strftime(daft.col("datetimes_s"), "%Y/%m/%d %H:%M:%S").alias("custom_datetime"),
     ).to_pydict()
 
     expected = {
@@ -654,7 +655,7 @@ def test_date_to_unix_epoch_valid_timeunits(timeunit):
     )
     try:
         df.select(
-            daft.functions.to_unix_epoch(df["date"], timeunit).alias("date_epoch"),
+            to_unix_epoch(df["date"], timeunit).alias("date_epoch"),
         ).to_pydict()
     except ValueError:
         pytest.fail(f"to_unix_epoch with timeunit {timeunit} raised an exception.")
@@ -672,7 +673,7 @@ def test_date_to_unix_epoch_invalid_timeunits(timeunit):
     )
     try:
         df.select(
-            daft.functions.to_unix_epoch(df["date"], timeunit).alias("date_epoch"),
+            to_unix_epoch(df["date"], timeunit).alias("date_epoch"),
         ).to_pydict()
         pytest.fail(f"to_unix_epoch with timeunit {timeunit} did not raise an exception.")
     except ValueError:
@@ -703,7 +704,7 @@ def test_datetime_to_string(fmt, expected):
     df = df.with_column("datetimes_s", daft.col("datetimes").cast(daft.DataType.timestamp("s")))
 
     actual = df.select(
-        daft.functions.strftime(daft.col("datetimes"), fmt).alias("formatted_datetime"),
+        strftime(daft.col("datetimes"), fmt).alias("formatted_datetime"),
     ).to_pydict()
 
     expected = {
@@ -731,7 +732,7 @@ def test_time_to_string(fmt, expected):
     )
 
     actual = df.select(
-        daft.functions.strftime(daft.col("times"), fmt).alias("formatted_time"),
+        strftime(daft.col("times"), fmt).alias("formatted_time"),
     ).to_pydict()
 
     expected = {
@@ -757,4 +758,4 @@ def test_datetime_to_string_errors(value):
     df = daft.from_pydict({"invalid": [value]})
 
     with pytest.raises(daft.exceptions.DaftCoreException):
-        df.select(daft.functions.strftime(daft.col("invalid"), "%Y-%m-%d")).to_pydict()
+        df.select(strftime(daft.col("invalid"), "%Y-%m-%d")).to_pydict()
