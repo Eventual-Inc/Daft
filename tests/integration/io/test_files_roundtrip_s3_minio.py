@@ -11,7 +11,7 @@ def run_url_upload_roundtrip_test(folder: str, io_config, bytes_data: list[bytes
     """Helper function to run URL upload/download roundtrip test."""
     data = {"data": bytes_data}
     df = daft.from_pydict(data)
-    df = df.with_column("file_paths", df["data"].url.upload(folder, io_config=io_config))
+    df = df.with_column("file_paths", df["data"].upload(folder, io_config=io_config))
     df.collect()
 
     df = df.with_column("roundtrip_data", df["file_paths"].download(io_config=io_config))

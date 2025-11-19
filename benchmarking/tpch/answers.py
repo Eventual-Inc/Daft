@@ -190,7 +190,7 @@ def q7(get_df: GetDFFunc) -> DataFrame:
         .select(
             col("supp_nation"),
             col("cust_nation"),
-            col("L_SHIPDATE").dt.year().alias("l_year"),
+            col("L_SHIPDATE").year().alias("l_year"),
             decrease(col("L_EXTENDEDPRICE"), col("L_DISCOUNT")).alias("volume"),
         )
         .groupby(col("supp_nation"), col("cust_nation"), col("l_year"))
@@ -236,7 +236,7 @@ def q8(get_df: GetDFFunc) -> DataFrame:
         .select(col("O_ORDERKEY"), col("O_ORDERDATE"))
         .join(line, left_on=col("O_ORDERKEY"), right_on=col("L_ORDERKEY"))
         .select(
-            col("O_ORDERDATE").dt.year().alias("o_year"),
+            col("O_ORDERDATE").year().alias("o_year"),
             col("volume"),
             (col("N_NAME") == "BRAZIL").if_else(col("volume"), 0.0).alias("case_volume"),
         )
@@ -271,7 +271,7 @@ def q9(get_df: GetDFFunc) -> DataFrame:
         .join(orders, left_on=col("L_ORDERKEY"), right_on=col("O_ORDERKEY"))
         .select(
             col("N_NAME"),
-            col("O_ORDERDATE").dt.year().alias("o_year"),
+            col("O_ORDERDATE").year().alias("o_year"),
             expr(col("L_EXTENDEDPRICE"), col("L_DISCOUNT"), col("PS_SUPPLYCOST"), col("L_QUANTITY")).alias("amount"),
         )
         .groupby(col("N_NAME"), col("o_year"))

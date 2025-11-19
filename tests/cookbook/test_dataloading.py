@@ -86,7 +86,7 @@ def test_glob_files(tmpdir):
         {"path": "file://" + str(path.as_posix()), "size": size, "num_rows": None}
         for path, size in zip(filepaths, list(range(10)))
     )
-    pd_df = pd_df[~pd_df["path"].endswith(".bar")]
+    pd_df = pd_df[~pd_df["path"].str.endswith(".bar")]
     pd_df = pd_df.astype({"num_rows": float})
     assert_df_equals(daft_pd_df, pd_df, sort_key="path")
 
