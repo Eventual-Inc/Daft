@@ -119,8 +119,17 @@ where
                     task_spawner_clone.runtime_stats.as_ref(),
                     duration,
                 );
-
-                Ok((state, op_result))
+                match op_result {
+                    IntermediateOperatorResult::HasMoreOutput(output) => {
+                        Ok((state, IntermediateOperatorResult::HasMoreOutput(output)))
+                    }
+                    IntermediateOperatorResult::NeedMoreInput(Some(output)) => {
+                        Ok((state, IntermediateOperatorResult::HasMoreOutput(output)))
+                    }
+                    IntermediateOperatorResult::NeedMoreInput(None) => {
+                        Ok((state, IntermediateOperatorResult::NeedMoreInput(None)))
+                    }
+                }
             } else {
                 Ok((state, IntermediateOperatorResult::NeedMoreInput(None)))
             }

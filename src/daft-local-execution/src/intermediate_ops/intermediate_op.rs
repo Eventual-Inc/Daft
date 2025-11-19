@@ -25,7 +25,7 @@ use crate::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
     },
 };
-
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub enum IntermediateOperatorResult {
     NeedMoreInput(Option<Arc<MicroPartition>>),
     HasMoreOutput(Arc<MicroPartition>),

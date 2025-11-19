@@ -1,7 +1,10 @@
 mod aimd;
+mod latency_constrained;
+
 use std::time::Duration;
 
 pub use aimd::*;
+pub use latency_constrained::*;
 
 use crate::runtime_stats::RuntimeStats;
 

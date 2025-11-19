@@ -311,6 +311,8 @@ pub enum Error {
         source: DaftError,
         node_name: String,
     },
+    #[snafu(display("ValueError: {}", message))]
+    ValueError { message: String },
 }
 
 impl From<Error> for DaftError {
@@ -324,6 +326,7 @@ impl From<Error> for DaftError {
                 log::error!("Error when running pipeline node {}", node_name);
                 source
             }
+            Error::ValueError { message } => Self::ValueError(message),
             _ => Self::External(err.into()),
         }
     }

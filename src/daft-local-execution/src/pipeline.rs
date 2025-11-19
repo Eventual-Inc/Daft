@@ -35,14 +35,19 @@ use snafu::ResultExt;
 use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
     channel::Receiver,
-    dynamic_batching::AimdBatching,
+    dynamic_batching::{AimdBatching, LatencyConstrainedBatching},
     intermediate_ops::{
         cross_join::CrossJoinOperator,
         distributed_actor_pool_project::DistributedActorPoolProjectOperator,
-        dynamic_batching::DynamicallyBatchedIntermediateOperator, explode::ExplodeOperator,
-        filter::FilterOperator, inner_hash_join_probe::InnerHashJoinProbeOperator,
-        intermediate_op::IntermediateNode, into_batches::IntoBatchesOperator,
-        project::ProjectOperator, sample::SampleOperator, udf::UdfOperator,
+        dynamic_batching::DynamicallyBatchedIntermediateOperator,
+        explode::ExplodeOperator,
+        filter::FilterOperator,
+        inner_hash_join_probe::InnerHashJoinProbeOperator,
+        intermediate_op::{IntermediateNode, IntermediateOperator},
+        into_batches::IntoBatchesOperator,
+        project::ProjectOperator,
+        sample::SampleOperator,
+        udf::UdfOperator,
         unpivot::UnpivotOperator,
     },
     runtime_stats::RuntimeStats,
@@ -554,32 +559,17 @@ fn physical_plan_to_pipeline(
                 }
             })?;
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            if !cfg.maintain_order && cfg.enable_dynamic_batching {
-                let algorithm = match cfg.dynamic_batching_algorithm.as_str() {
-                    "aimd" | "auto" => Arc::new(AimdBatching::default()),
-                    _ => panic!("Unsupported dynamic batching algorithm"),
-                };
-                let dbio =
-                    DynamicallyBatchedIntermediateOperator::new(Arc::new(proj_op), algorithm);
-                IntermediateNode::new(
-                    Arc::new(dbio),
-                    vec![child_node],
-                    stats_state.clone(),
-                    ctx,
-                    schema.clone(),
-                    context,
-                )
-                .boxed()
-            } else {
-                IntermediateNode::new(
-                    Arc::new(proj_op),
-                    vec![child_node],
-                    stats_state.clone(),
-                    ctx,
-                    schema.clone(),
-                    context,
-                )
-                .boxed()
+            match maybe_dynamically_batched(
+                cfg,
+                ctx,
+                schema,
+                stats_state,
+                context,
+                Arc::new(proj_op),
+                child_node,
+            ) {
+                Ok(value) => value,
+                Err(value) => return value,
             }
         }
         LocalPhysicalPlan::UDFProject(UDFProject {
@@ -623,32 +613,17 @@ fn physical_plan_to_pipeline(
                     plan_name: physical_plan.name(),
                 })?;
 
-                if !cfg.maintain_order && cfg.enable_dynamic_batching {
-                    let algorithm = match cfg.dynamic_batching_algorithm.as_str() {
-                        "aimd" | "auto" => Arc::new(AimdBatching::default()),
-                        _ => panic!("Unsupported dynamic batching algorithm"),
-                    };
-                    let dbio =
-                        DynamicallyBatchedIntermediateOperator::new(Arc::new(proj_op), algorithm);
-                    IntermediateNode::new(
-                        Arc::new(dbio),
-                        vec![child_node],
-                        stats_state.clone(),
-                        ctx,
-                        schema.clone(),
-                        context,
-                    )
-                    .boxed()
-                } else {
-                    IntermediateNode::new(
-                        Arc::new(proj_op),
-                        vec![child_node],
-                        stats_state.clone(),
-                        ctx,
-                        schema.clone(),
-                        context,
-                    )
-                    .boxed()
+                match maybe_dynamically_batched(
+                    cfg,
+                    ctx,
+                    schema,
+                    stats_state,
+                    context,
+                    Arc::new(proj_op),
+                    child_node,
+                ) {
+                    Ok(value) => value,
+                    Err(value) => return value,
                 }
             }
         }
@@ -1603,4 +1578,58 @@ fn physical_plan_to_pipeline(
     };
 
     Ok(pipeline_node)
+}
+
+fn maybe_dynamically_batched<Op: IntermediateOperator + 'static>(
+    cfg: &Arc<DaftExecutionConfig>,
+    ctx: &RuntimeContext,
+    schema: &Arc<Schema>,
+    stats_state: &StatsState,
+    context: &LocalNodeContext,
+    proj_op: Arc<Op>,
+    child_node: Box<dyn PipelineNode>,
+) -> Result<Box<dyn PipelineNode>, Result<Box<dyn PipelineNode>, crate::Error>> {
+    if !cfg.maintain_order && cfg.enable_dynamic_batching {
+        Ok(match cfg.dynamic_batching_algorithm.as_str() {
+            "aimd" => IntermediateNode::new(
+                Arc::new(DynamicallyBatchedIntermediateOperator::new(
+                    proj_op,
+                    Arc::new(AimdBatching::default()),
+                )),
+                vec![child_node],
+                stats_state.clone(),
+                ctx,
+                schema.clone(),
+                context,
+            )
+            .boxed(),
+            "latency_constrained" | "auto" => IntermediateNode::new(
+                Arc::new(DynamicallyBatchedIntermediateOperator::new(
+                    proj_op,
+                    Arc::new(LatencyConstrainedBatching::default()),
+                )),
+                vec![child_node],
+                stats_state.clone(),
+                ctx,
+                schema.clone(),
+                context,
+            )
+            .boxed(),
+            _ => {
+                return Err(Err(crate::Error::ValueError {
+                    message: "Unsupported dynamic batching algorithm".to_string(),
+                }));
+            }
+        })
+    } else {
+        Ok(IntermediateNode::new(
+            proj_op,
+            vec![child_node],
+            stats_state.clone(),
+            ctx,
+            schema.clone(),
+            context,
+        )
+        .boxed())
+    }
 }
