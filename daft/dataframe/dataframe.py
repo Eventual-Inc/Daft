@@ -2889,7 +2889,7 @@ class DataFrame:
 
         return self.where(
             ~reduce(
-                lambda x, y: when(x.is_null(), lit(False)).when(y.is_null(), lit(False)),
+                lambda x, y: when(x.is_null(), lit(False)).otherwise(x) | when(y.is_null(), lit(False)).otherwise(y),
                 (is_nan(x) for x in float_columns),
             )
         )
