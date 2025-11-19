@@ -4739,14 +4739,6 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.list_agg, cols, self.group_by)
 
-    def agg_list(self, *cols: ColumnInputType) -> DataFrame:
-        """(DEPRECATED) Please use `DataFrame.list_agg` instead."""
-        warnings.warn(
-            "`DataFrame.agg_list` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `DataFrame.list_agg` instead.",
-            category=DeprecationWarning,
-        )
-        return self.list_agg(*cols)
-
     def list_agg_distinct(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped list distinct on this GroupedDataFrame (ignoring nulls).
 
@@ -4758,14 +4750,6 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.list_agg_distinct, cols, self.group_by)
 
-    def agg_set(self, *cols: ColumnInputType) -> DataFrame:
-        """(DEPRECATED) Please use `DataFrame.list_agg_distinct` instead."""
-        warnings.warn(
-            "`DataFrame.agg_set` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `DataFrame.list_agg_distinct` instead.",
-            category=DeprecationWarning,
-        )
-        return self.list_agg_distinct(*cols)
-
     def string_agg(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped string concat on this GroupedDataFrame.
 
@@ -4773,14 +4757,6 @@ class GroupedDataFrame:
             DataFrame: DataFrame with grouped string concatenated per column.
         """
         return self.df._apply_agg_fn(Expression.string_agg, cols, self.group_by)
-
-    def agg_concat(self, *cols: ColumnInputType) -> DataFrame:
-        """(DEPRECATED) Please use `DataFrame.string_agg` instead."""
-        warnings.warn(
-            "`DataFrame.agg_concat` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `DataFrame.string_agg` instead.",
-            category=DeprecationWarning,
-        )
-        return self.string_agg(*cols)
 
     def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> DataFrame:
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.
