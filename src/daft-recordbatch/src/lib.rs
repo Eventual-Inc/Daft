@@ -1463,39 +1463,9 @@ impl RecordBatch {
             num_columns
         );
 
-        let (head_rows, tail_rows) = if self.len() > 10 {
-            (5, 5)
-        } else {
-            (self.len(), 0)
-        };
+        let total_rows = self.len();
 
-        for i in 0..head_rows {
-            // Begin row.
-            res.push_str("<tr>");
-
-            for (col_idx, col) in self.columns.iter().enumerate() {
-                #[allow(clippy::format_push_string)]
-                res.push_str(&format!(
-                    "<td data-row=\"{}\" data-col=\"{}\"><div style=\"{}\">",
-                    i, col_idx, body_style
-                ));
-                res.push_str(&html_value(col, i, true));
-                res.push_str("</div></td>");
-            }
-
-            // End row.
-            res.push_str("</tr>\n");
-        }
-
-        if tail_rows != 0 {
-            res.push_str("<tr>");
-            for _ in 0..self.columns.len() {
-                res.push_str("<td>...</td>");
-            }
-            res.push_str("</tr>\n");
-        }
-
-        for i in (self.len() - tail_rows)..(self.len()) {
+        for i in 0..total_rows {
             // Begin row.
             res.push_str("<tr>");
 
