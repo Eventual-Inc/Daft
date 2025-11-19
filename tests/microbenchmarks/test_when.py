@@ -6,7 +6,7 @@ import pytest
 
 import daft
 from daft import DataFrame
-from daft.expressions import when
+from daft.functions import when
 from daft.recordbatch import MicroPartition
 
 NUM_ROWS = 1_000_000
