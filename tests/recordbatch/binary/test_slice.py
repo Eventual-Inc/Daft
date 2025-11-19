@@ -64,7 +64,15 @@ def test_binary_slice() -> None:
             ],
             [1, 0, 2, 5, 1, 4, 1],
             3,
-            [b"ell", b"wor", b"st", b"\xe2\x98\x83", b"\x9f\x98\x89", b"\xf0\x9f\x8c", b"\xfe\xfd"],
+            [
+                b"ell",
+                b"wor",
+                b"st",
+                b"\xe2\x98\x83",
+                b"\x9f\x98\x89",
+                b"\xf0\x9f\x8c",
+                b"\xfe\xfd",
+            ],
         ),
         # Test with column for length
         (
@@ -94,7 +102,15 @@ def test_binary_slice() -> None:
             ],
             [1, 0, 2, 5, 1, 4, 0],
             [2, 3, 1, 2, 3, 1, 3],
-            [b"el", b"wor", b"s", b"\xe2\x98", b"\x9f\x98\x89", b"\xf0", b"\xff\xfe\xfd"],
+            [
+                b"el",
+                b"wor",
+                b"s",
+                b"\xe2\x98",
+                b"\x9f\x98\x89",
+                b"\xf0",
+                b"\xff\xfe\xfd",
+            ],
         ),
         # Test with nulls in start column
         (
@@ -273,7 +289,14 @@ def test_binary_slice_with_columns(
             ],
             [0, 1, 5, 0, 4, 1],
             100,
-            [b"hello", b"orld", b"\xe2\x98\x83World", b"\xf0\x9f\x98\x89test", b"\xf0\x9f\x8c\x88", b"\xfe\xfd\xfc"],
+            [
+                b"hello",
+                b"orld",
+                b"\xe2\x98\x83World",
+                b"\xf0\x9f\x98\x89test",
+                b"\xf0\x9f\x8c\x88",
+                b"\xfe\xfd\xfc",
+            ],
         ),
         # Test empty strings
         (
@@ -294,7 +317,14 @@ def test_binary_slice_with_columns(
             ],
             [2, 3, 5, 0, 4, 2],
             9999999999,
-            [b"llo", b"ld", b"\xe2\x98\x83World", b"\xf0\x9f\x98\x89test", b"\xf0\x9f\x8c\x88", b"\xfd\xfc"],
+            [
+                b"llo",
+                b"ld",
+                b"\xe2\x98\x83World",
+                b"\xf0\x9f\x98\x89test",
+                b"\xf0\x9f\x8c\x88",
+                b"\xfd\xfc",
+            ],
         ),
         # Test UTF-8 and binary sequence boundaries
         (
@@ -331,7 +361,12 @@ def test_binary_slice_edge_cases(
 def test_binary_slice_errors() -> None:
     # Test slice with wrong number of arguments (too many)
     table = MicroPartition.from_pydict(
-        {"col": [b"hello", b"world"], "start": [1, 2], "length": [2, 3], "extra": [4, 5]}
+        {
+            "col": [b"hello", b"world"],
+            "start": [1, 2],
+            "length": [2, 3],
+            "extra": [4, 5],
+        }
     )
     with pytest.raises(
         Exception,
@@ -365,14 +400,23 @@ def test_binary_slice_computed() -> None:
     result = table.eval_expression_list(
         [
             col("col").slice(
-                col("col"),
                 (col("col").length() - 5).cast(DataType.int32()),  # start 5 chars from end
                 (col("col").length() - 5).cast(DataType.int32()) + 3,  # end at start + 3
             )
         ]
     )
     assert result.to_pydict() == {
-        "col": [b"wor", b"mmi", b"ien", b"ici", b"gen", b"Wor", b"\x89te", b"\x88te", b"\xff\xfe\xfd"]
+        "col": [
+            b"wor",
+            b"mmi",
+            b"ien",
+            b"ici",
+            b"gen",
+            b"Wor",
+            b"\x89te",
+            b"\x88te",
+            b"\xff\xfe\xfd",
+        ]
     }
 
     # Test with computed length (half of string length)
@@ -394,7 +438,6 @@ def test_binary_slice_computed() -> None:
     result = table.eval_expression_list(
         [
             col("col").slice(
-                col("col"),
                 0,  # start from beginning
                 (col("col").length() / 2).cast(DataType.int32()),  # end at half of string (0 + length/2)
             )
@@ -433,7 +476,6 @@ def test_binary_slice_computed() -> None:
     result = table.eval_expression_list(
         [
             col("col").slice(
-                col("col"),
                 (col("col").length() / 5).cast(DataType.int32()),  # start at 1/5 of string
                 (col("col").length() / 5).cast(DataType.int32())
                 + (col("col").length() / 3).cast(DataType.int32()),  # end at start + 1/3 of string
@@ -441,7 +483,17 @@ def test_binary_slice_computed() -> None:
         ]
     )
     assert result.to_pydict() == {
-        "col": [b"llo", b"hon pr", b"ta s", b"tif", b"tell", b"llo\xe2", b"st\xf0\x9f", b"st\xf0\x9f", b"\xfe"]
+        "col": [
+            b"llo",
+            b"hon pr",
+            b"ta s",
+            b"tif",
+            b"tell",
+            b"llo\xe2",
+            b"st\xf0\x9f",
+            b"st\xf0\x9f",
+            b"\xfe",
+        ]
     }
 
 
@@ -517,9 +569,11 @@ def test_binary_slice_multiple_slices() -> None:
     result = table.eval_expression_list(
         [
             # First half
-            daft.functions.slice(col("col"), 0, (daft.functions.length(col("col")) / 2).cast(DataType.int32())).alias(
-                "first_half"
-            ),  # end=0+length/2=length/2
+            daft.functions.slice(
+                col("col"),
+                0,
+                (daft.functions.length(col("col")) / 2).cast(DataType.int32()),
+            ).alias("first_half"),  # end=0+length/2=length/2
             # Second half
             daft.functions.slice(
                 col("col"),
@@ -626,5 +680,5 @@ def test_binary_slice_broadcasting(
     table = MicroPartition.from_pydict(table_data)
 
     # Perform slice operation on the raw binary value
-    result = table.eval_expression_list([lit(input_data).slice(start_expr, length_expr)])
+    result = table.eval_expression_list([lit(input_data).slice(start_expr, start_expr + length_expr)])
     assert result.to_pydict() == {"literal": expected_result}

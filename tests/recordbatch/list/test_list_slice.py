@@ -217,13 +217,7 @@ def test_list_slice_invalid_parameters():
     with pytest.raises(ValueError, match="`end` argument to `slice` must be an integer, received: Float64"):
         table.eval_expression_list([col("col").slice(0, 1.0)])
     with pytest.raises(TypeError, match="missing 1 required positional argument: 'start'"):
-        table.eval_expression_list(
-            [
-                col("col").slice(
-                    col("col"),
-                )
-            ]
-        )
+        table.eval_expression_list([col("col").slice()])
     with pytest.raises(TypeError, match="takes from 2 to 3 positional arguments but 4 were given"):
         table.eval_expression_list([col("col").slice(0, 0, 0)])
 

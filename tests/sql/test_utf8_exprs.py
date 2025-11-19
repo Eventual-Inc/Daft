@@ -108,7 +108,7 @@ def test_utf8_exprs():
             .normalize(remove_punct=True, lowercase=True, white_space=True)
             .alias("normalize_remove_punct_lower_ws_a"),
             col("a").tokenize_encode("r50k_base").alias("tokenize_encode_a"),
-            col("a").tokenize_decode(col("a").tokenize_encode("r50k_base")).alias("tokenize_decode_a"),
+            col("a").tokenize_encode("r50k_base").tokenize_decode("r50k_base").alias("tokenize_decode_a"),
             col("a").concat("---").alias("concat_a"),
             lit("--").concat(col("a")).concat(col("a")).concat(col("a")).concat("--").alias("concat_multi_a"),
         )
