@@ -130,7 +130,6 @@ def read_lance(
         "version": version,
         "asof": asof,
         "block_size": block_size,
-        "commit_lock": commit_lock,
         "index_cache_size": index_cache_size,
         "default_scan_options": default_scan_options,
         "metadata_cache_size_bytes": metadata_cache_size_bytes,
