@@ -2078,7 +2078,6 @@ class PyDaftExecutionConfig:
         high_cardinality_aggregation_threshold: float | None = None,
         read_sql_partition_size_bytes: int | None = None,
         default_morsel_size: int | None = None,
-        enable_ray_tracing: bool | None = None,
         shuffle_algorithm: str | None = None,
         pre_shuffle_merge_threshold: int | None = None,
         flight_shuffle_dirs: list[str] | None = None,
@@ -2125,8 +2124,6 @@ class PyDaftExecutionConfig:
     def pre_shuffle_merge_threshold(self) -> int: ...
     @property
     def flight_shuffle_dirs(self) -> list[str]: ...
-    @property
-    def enable_ray_tracing(self) -> bool: ...
     @property
     def min_cpu_per_task(self) -> float: ...
     @property
