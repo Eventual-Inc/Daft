@@ -311,17 +311,9 @@ class Series:
         """The sign of a numeric series."""
         return self._eval_expressions("sign")
 
-    def signum(self) -> Series:
-        """The signum of a numeric series."""
-        return self._eval_expressions("sign")
-
     def negate(self) -> Series:
         """The negative of a numeric series."""
-        return self._eval_expressions("negative")
-
-    def negative(self) -> Series:
-        """The negative of a numeric series."""
-        return self._eval_expressions("negative")
+        return self._eval_expressions("negate")
 
     def round(self, decimals: int = 0) -> Series:
         return self._eval_expressions("round", decimals=decimals)
@@ -837,6 +829,17 @@ class SeriesStringNamespace(SeriesNamespace):
 
     def match(self, pattern: Series) -> Series:
         return self._eval_expressions("regexp_match", pattern)
+
+    def split(self, pattern: Series) -> Series:
+        """Splits each string on the given literal pattern, into a list of strings.
+
+        Args:
+            pattern: The literal pattern on which each string should be split.
+
+        Returns:
+            Series: A List[String] series containing the string splits for each string.
+        """
+        return self._eval_expressions("split", pattern)
 
     def regexp_split(self, pattern: Series) -> Series:
         """Splits each string on the given regex pattern, into a list of strings.
