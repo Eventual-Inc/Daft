@@ -99,3 +99,25 @@ def test_show_limit_n_plain_counts_rows():
     out = PreviewFormatter(preview, df.schema(), format='plain')._to_text()
     lines = [line for line in out.split('\n') if line.strip()]
     assert len(lines) == 16 # 1 header + 15 data
+
+
+def test_collect_num_preview_rows():
+    df = daft.from_pydict({
+        'id': list(range(20)),
+        'value': [f'item_{i}' for i in range(20)],
+    })
+
+    # Test with num_preview_rows < 10
+    df_collected = df.collect(num_preview_rows=5)
+    out = _capture_stdout_show(df_collected, format='markdown')
+    assert _markdown_count_rows(out) == 6  # 1 header + 5 data
+
+    # Test with num_preview_rows = 10
+    df_collected = df.collect(num_preview_rows=10)
+    out = _capture_stdout_show(df_collected, format='markdown')
+    assert _markdown_count_rows(out) == 11  # 1 header + 10 data
+
+    # Test with num_preview_rows > 10
+    df_collected = df.collect(num_preview_rows=15)
+    out = _capture_stdout_show(df_collected, format='markdown')
+    assert _markdown_count_rows(out) == 16  # 1 header + 15 data
