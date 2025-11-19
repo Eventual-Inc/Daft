@@ -9,6 +9,7 @@ use crate::{
     intermediate_ops::intermediate_op::{
         IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
     },
+    pipeline::MorselSizeRequirement,
 };
 
 pub struct DynamicBatchingState<S1, S2> {
@@ -54,10 +55,21 @@ where
         task_spawner: &crate::ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self> {
         let inner_op = self.inner_op.clone();
+
         let dynamic_batcher = self.dynamic_batcher.clone();
         let task_spawner_clone = task_spawner.clone();
+        let morsel_size_requirement = self.morsel_size_requirement();
 
         let fut = async move {
+            // if it has strict morsel size requirements. We don't do anything.
+            if let Some(MorselSizeRequirement::Strict(_)) = morsel_size_requirement {
+                let (inner_state, op_result) = inner_op
+                    .execute(input, state.inner_state, &task_spawner_clone)
+                    .await??;
+                state.inner_state = inner_state;
+                return Ok((state, op_result));
+            }
+
             if state.current_input.is_none() {
                 let input_tables = input.get_tables()?;
                 if let Some(table) = input_tables.first() {
