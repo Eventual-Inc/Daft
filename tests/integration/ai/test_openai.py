@@ -341,7 +341,7 @@ def test_prompt_with_image_from_bytes(session, metrics):
     )
 
     # Download the image to get bytes
-    df = df.with_column("image_bytes", daft.col("image_url").url.download())
+    df = df.with_column("image_bytes", daft.col("image_url").download())
 
     df = df.with_column(
         "answer",

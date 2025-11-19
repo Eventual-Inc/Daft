@@ -45,7 +45,7 @@ def q2(get_df: GetDFFunc) -> DataFrame:
         .join(partsupp, left_on=col("S_SUPPKEY"), right_on=col("PS_SUPPKEY"))
     )
 
-    brass = part.where((col("P_SIZE") == 15) & col("P_TYPE").str.endswith("BRASS")).join(
+    brass = part.where((col("P_SIZE") == 15) & col("P_TYPE").endswith("BRASS")).join(
         europe,
         left_on=col("P_PARTKEY"),
         right_on=col("PS_PARTKEY"),
@@ -260,7 +260,7 @@ def q9(get_df: GetDFFunc) -> DataFrame:
     def expr(x, y, v, w):
         return x * (1 - y) - (v * w)
 
-    linepart = part.where(col("P_NAME").str.contains("green")).join(
+    linepart = part.where(col("P_NAME").contains("green")).join(
         lineitem, left_on=col("P_PARTKEY"), right_on=col("L_PARTKEY")
     )
     natsup = nation.join(supplier, left_on=col("N_NATIONKEY"), right_on=col("S_NATIONKEY"))
@@ -398,7 +398,7 @@ def q13(get_df: GetDFFunc) -> DataFrame:
 
     daft_df = (
         customers.join(
-            orders.where(~col("O_COMMENT").str.match(".*special.*requests.*")),
+            orders.where(~col("O_COMMENT").match(".*special.*requests.*")),
             left_on="C_CUSTKEY",
             right_on="O_CUSTKEY",
             how="left",
@@ -423,7 +423,7 @@ def q14(get_df: GetDFFunc) -> DataFrame:
         .where((col("L_SHIPDATE") >= datetime.date(1995, 9, 1)) & (col("L_SHIPDATE") < datetime.date(1995, 10, 1)))
         .agg(
             col("P_TYPE")
-            .str.startswith("PROMO")
+            .startswith("PROMO")
             .if_else(col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT")), 0)
             .sum()
             .alias("tmp_1"),
@@ -466,7 +466,7 @@ def q16(get_df: GetDFFunc) -> DataFrame:
 
     supplier = get_df("supplier")
 
-    suppkeys = supplier.where(col("S_COMMENT").str.match(".*Customer.*Complaints.*")).select(
+    suppkeys = supplier.where(col("S_COMMENT").regexp(".*Customer.*Complaints.*")).select(
         col("S_SUPPKEY"), col("S_SUPPKEY").alias("PS_SUPPKEY_RIGHT")
     )
 
@@ -474,7 +474,7 @@ def q16(get_df: GetDFFunc) -> DataFrame:
         part.join(partsupp, left_on=col("P_PARTKEY"), right_on=col("PS_PARTKEY"))
         .where(
             (col("P_BRAND") != "Brand#45")
-            & ~col("P_TYPE").str.startswith("MEDIUM POLISHED")
+            & ~col("P_TYPE").startswith("MEDIUM POLISHED")
             & (col("P_SIZE").is_in([49, 14, 23, 45, 19, 3, 36, 9]))
         )
         .join(suppkeys, left_on="PS_SUPPKEY", right_on="S_SUPPKEY", how="left")
@@ -593,7 +593,7 @@ def q20(get_df: GetDFFunc) -> DataFrame:
     res_3 = supplier.join(res_2, left_on="S_NATIONKEY", right_on="N_NATIONKEY")
 
     daft_df = (
-        part.where(col("P_NAME").str.startswith("forest"))
+        part.where(col("P_NAME").startswith("forest"))
         .select("P_PARTKEY")
         .distinct()
         .join(partsupp, left_on="P_PARTKEY", right_on="PS_PARTKEY")
@@ -652,7 +652,7 @@ def q22(get_df: GetDFFunc) -> DataFrame:
     customer = get_df("customer")
 
     res_1 = (
-        customer.with_column("cntrycode", col("C_PHONE").str.left(2))
+        customer.with_column("cntrycode", col("C_PHONE").left(2))
         .where(col("cntrycode").is_in(["13", "31", "23", "29", "30", "18", "17"]))
         .select("C_ACCTBAL", "C_CUSTKEY", "cntrycode")
     )

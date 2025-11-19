@@ -204,7 +204,7 @@ def set_planning_config(
     Args:
         config: A PyDaftPlanningConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
             that the old (current) config should be used.
-        default_io_config: A default IOConfig to use in the absence of one being explicitly passed into any Expression (e.g. `.url.download()`)
+        default_io_config: A default IOConfig to use in the absence of one being explicitly passed into any Expression (e.g. `.download()`)
             or Dataframe operation (e.g. `daft.read_parquet()`).
     """
     # Replace values in the DaftPlanningConfig with user-specified overrides

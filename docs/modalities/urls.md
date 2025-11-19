@@ -28,7 +28,7 @@ URL functions are ideal when your data will fit into memory or when you need the
             "s3://daft-public-data/open-images/validation-images/0001eeaf4aed83f9.jpg",
         ],
     })
-    df = df.with_column("data", df["urls"].url.download())
+    df = df.with_column("data", df["urls"].download())
     df.collect()
     ```
 

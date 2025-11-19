@@ -77,7 +77,7 @@ We can use Daft to download these PDFs from S3 in parallel! Let's see what that 
 df_sample = df_sample.collect()
 
 _start = datetime.now()
-df_sample_downloaded = df_sample.with_column("pdf_bytes", col("path").url.download(io_config=IO_CONFIG))
+df_sample_downloaded = df_sample.with_column("pdf_bytes", col("path").download(io_config=IO_CONFIG))
 df_sample_downloaded = df_sample_downloaded.collect()
 _end = datetime.now()
 print(f"Downloaded {df_sample_downloaded.count_rows()} PDFs from S3 in {_end - _start}")
@@ -85,7 +85,7 @@ print(f"Downloaded {df_sample_downloaded.count_rows()} PDFs from S3 in {_end - _
 print(df_sample_downloaded)
 ```
 
-Daft knows about URLs and has built-in support for downloading their contents! This is exposed via the [`.url.download()`](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.expressions.ExpressionUrlNamespace.download) method on a column expression (that's the [`col('path')`](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.col)).
+Daft knows about URLs and has built-in support for downloading their contents! This is exposed via the [`.download()`](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.expressions.download) method on a column expression (that's the [`col('path')`](https://docs.daft.ai/en/stable/api/expressions/#daft.expressions.col)).
 
 ### Pydantic Document Classes
 
@@ -407,7 +407,7 @@ Let's see what it looks like to perform OCR and extract text from the first PDF 
 
 ```python
 df_first_1 = df_sample.limit(1)
-df_first_1 = df_first_1.with_column("pdf_bytes", df_first_1["path"].url.download(io_config=IO_CONFIG))
+df_first_1 = df_first_1.with_column("pdf_bytes", df_first_1["path"].download(io_config=IO_CONFIG))
 df_first_1 = df_first_1.collect()
 print(df_first_1)
 
@@ -727,7 +727,7 @@ Downloads the contents of each PDF file:
 
 ```python
 df = df.select("path").with_column_renamed("path", "url")
-df = df.with_column("pdf_bytes", col("url").url.download(io_config=IO_CONFIG))
+df = df.with_column("pdf_bytes", col("url").download(io_config=IO_CONFIG))
 print(df.schema())
 ```
 

@@ -195,7 +195,7 @@ See docs: [normalize][daft.Expression.normalize]
 ```python
 # Normalize text
 df_norm = df_ready.with_column("content_normalized",
-    col(content_col).str.normalize(
+    col(content_col).normalize(
         remove_punct=True,
         lowercase=True,
         nfd_unicode=True,

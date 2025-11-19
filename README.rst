@@ -63,10 +63,10 @@ In this example, we load images from an AWS S3 bucket's URLs and resize each ima
 
     # 1. Download column of image URLs as a column of bytes
     # 2. Decode the column of bytes into a column of images
-    df = df.with_column("image", df["path"].url.download().image.decode())
+    df = df.with_column("image", df["path"].download().decode_image())
 
     # Resize each image into 32x32
-    df = df.with_column("resized", df["image"].image.resize(32, 32))
+    df = df.with_column("resized", df["image"].resize_image(32, 32))
 
     df.show(3)
 
