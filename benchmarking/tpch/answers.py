@@ -4,6 +4,7 @@ import datetime
 from typing import Callable
 
 from daft import DataFrame, col, lit
+from daft.functions import when
 
 GetDFFunc = Callable[[str], DataFrame]
 
@@ -238,7 +239,7 @@ def q8(get_df: GetDFFunc) -> DataFrame:
         .select(
             col("O_ORDERDATE").year().alias("o_year"),
             col("volume"),
-            (col("N_NAME") == "BRAZIL").if_else(col("volume"), 0.0).alias("case_volume"),
+            when(col("N_NAME") == "BRAZIL", col("volume")).otherwise(0.0).alias("case_volume"),
         )
         .groupby(col("o_year"))
         .agg(col("case_volume").sum().alias("case_volume_sum"), col("volume").sum().alias("volume_sum"))
@@ -383,8 +384,8 @@ def q12(get_df: GetDFFunc) -> DataFrame:
         )
         .groupby(col("L_SHIPMODE"))
         .agg(
-            col("O_ORDERPRIORITY").is_in(["1-URGENT", "2-HIGH"]).if_else(1, 0).sum().alias("high_line_count"),
-            (~col("O_ORDERPRIORITY").is_in(["1-URGENT", "2-HIGH"])).if_else(1, 0).sum().alias("low_line_count"),
+            when(col("O_ORDERPRIORITY").is_in(["1-URGENT", "2-HIGH"]), 1).otherwise(0).sum().alias("high_line_count"),
+            when(~col("O_ORDERPRIORITY").is_in(["1-URGENT", "2-HIGH"]), 1).otherwise(0).sum().alias("low_line_count"),
         )
         .sort(col("L_SHIPMODE"))
     )
@@ -422,9 +423,7 @@ def q14(get_df: GetDFFunc) -> DataFrame:
         lineitem.join(part, left_on=col("L_PARTKEY"), right_on=col("P_PARTKEY"))
         .where((col("L_SHIPDATE") >= datetime.date(1995, 9, 1)) & (col("L_SHIPDATE") < datetime.date(1995, 10, 1)))
         .agg(
-            col("P_TYPE")
-            .startswith("PROMO")
-            .if_else(col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT")), 0)
+            when(col("P_TYPE").startswith("PROMO"), col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))).otherwise(0)
             .sum()
             .alias("tmp_1"),
             (col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))).sum().alias("tmp_2"),
