@@ -8,11 +8,11 @@ from openai import AsyncOpenAI
 from openai.types.completion_usage import CompletionUsage
 from openai.types.responses import ResponseUsage
 
+from daft.ai.metrics import record_token_metrics
 from daft.ai.protocols import Prompter, PrompterDescriptor
 from daft.ai.typing import UDFOptions
 from daft.dependencies import np
 from daft.file import File
-from daft.udf.metrics import increment_counter
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
@@ -46,6 +46,7 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
 
     def instantiate(self) -> Prompter:
         return OpenAIPrompter(
+            provider_name=self.provider_name,
             provider_options=self.provider_options,
             model=self.model_name,
             system_message=self.system_message,
@@ -58,13 +59,9 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
 class OpenAIPrompter(Prompter):
     """OpenAI prompter implementation using AsyncOpenAI for chat completions."""
 
-    REQUESTS_COUNTER_NAME: str = "num_requests"
-    INPUT_TOKENS_COUNTER_NAME: str = "tokens_in"
-    OUTPUT_TOKENS_COUNTER_NAME: str = "tokens_out"
-    TOTAL_TOKENS_COUNTER_NAME: str = "total_tokens"
-
     def __init__(
         self,
+        provider_name: str,
         provider_options: OpenAIProviderOptions,
         model: str,
         system_message: str | None = None,
@@ -72,6 +69,7 @@ class OpenAIPrompter(Prompter):
         generation_config: dict[str, Any] = {},
         use_chat_completions: bool = False,
     ) -> None:
+        self.provider_name = provider_name
         self.model = model
         self.return_format = return_format
         self.system_message = system_message
@@ -199,6 +197,21 @@ class OpenAIPrompter(Prompter):
             "file_data": encoded_content,
         }
 
+    def _record_usage_metrics(
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        total_tokens: int,
+    ) -> None:
+        record_token_metrics(
+            protocol="prompt",
+            model=self.model,
+            provider=self.provider_name,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+        )
+
     async def _prompt_with_chat_completions(self, messages_list: list[dict[str, Any]]) -> Any:
         """Generate responses using the Chat Completions API."""
         if self.return_format is not None:
@@ -221,13 +234,11 @@ class OpenAIPrompter(Prompter):
 
         usage = response.usage
         if usage is not None and isinstance(usage, CompletionUsage):
-            input_tokens = usage.prompt_tokens
-            output_tokens = usage.completion_tokens
-
-            increment_counter(self.INPUT_TOKENS_COUNTER_NAME, input_tokens)
-            increment_counter(self.OUTPUT_TOKENS_COUNTER_NAME, output_tokens)
-            increment_counter(self.TOTAL_TOKENS_COUNTER_NAME, usage.total_tokens)
-            increment_counter(self.REQUESTS_COUNTER_NAME)
+            self._record_usage_metrics(
+                input_tokens=usage.prompt_tokens,
+                output_tokens=usage.completion_tokens,
+                total_tokens=usage.total_tokens,
+            )
         return result
 
     async def _prompt_with_responses(self, messages_list: list[dict[str, Any]]) -> Any:
@@ -250,14 +261,11 @@ class OpenAIPrompter(Prompter):
 
         usage = response.usage
         if usage is not None and isinstance(usage, ResponseUsage):
-            input_tokens = usage.input_tokens
-            output_tokens = usage.output_tokens
-            total_tokens = usage.total_tokens
-
-            increment_counter(self.INPUT_TOKENS_COUNTER_NAME, input_tokens)
-            increment_counter(self.OUTPUT_TOKENS_COUNTER_NAME, output_tokens)
-            increment_counter(self.TOTAL_TOKENS_COUNTER_NAME, total_tokens)
-            increment_counter(self.REQUESTS_COUNTER_NAME)
+            self._record_usage_metrics(
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                total_tokens=usage.total_tokens,
+            )
         return result
 
     async def prompt(self, messages: tuple[Any, ...]) -> Any:

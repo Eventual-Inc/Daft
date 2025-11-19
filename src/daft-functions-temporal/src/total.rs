@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 macro_rules! impl_total {
     ($name:ident, $cast_method:ident) => {
         paste::paste! {
-        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+        #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
         pub struct $name;
 
         #[typetag::serde]

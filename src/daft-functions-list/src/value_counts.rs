@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::series::SeriesListExtension;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ListValueCounts;
 
 #[typetag::serde]

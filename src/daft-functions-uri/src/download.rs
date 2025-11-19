@@ -19,7 +19,7 @@ use serde::Serialize;
 /// url_download(input, on_error='null')
 /// url_download(input, max_connections=32, on_error='raise')
 /// ```
-#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
 pub struct UrlDownload;
 impl UrlDownload {
     pub const CONNECTION_BATCH_FACTOR: usize = 4;
