@@ -1,6 +1,6 @@
-pub mod dynamic_batching;
 pub mod cross_join;
 pub mod distributed_actor_pool_project;
+pub mod dynamic_batching;
 pub mod explode;
 pub mod filter;
 pub mod inner_hash_join_probe;
