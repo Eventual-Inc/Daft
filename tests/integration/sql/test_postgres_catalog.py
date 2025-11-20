@@ -753,7 +753,8 @@ def test_postgres_catalog_create_table_rls_defaults(test_db, enable_rls) -> None
         else:
             catalog.create_table(f"public.{test_table}", df, properties={"enable_rls": enable_rls})
             assert _check_rls_enabled(test_db, "public", test_table) == enable_rls
-            catalog.overwrite(df, options={"enable_rls": enable_rls})
+            table = catalog.get_table(f"public.{test_table}")
+            table.overwrite(df, enable_rls=enable_rls)
             assert _check_rls_enabled(test_db, "public", test_table) == enable_rls
     finally:
         if catalog.has_table(f"public.{test_table}"):
