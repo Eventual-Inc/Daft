@@ -61,29 +61,6 @@ if TYPE_CHECKING:
     from daft.io.partitioning import PartitionField
 
 
-def _convert_embeddings_to_lists(df: DataFrame) -> DataFrame:
-    """Convert any embedding columns to list format for PostgreSQL compatibility."""
-    schema = df.schema()
-    columns_to_convert = []
-
-    for field in schema:
-        if field.dtype.is_embedding():
-            columns_to_convert.append(field.name)
-
-    if not columns_to_convert:
-        return df
-
-    # Convert embedding columns to lists
-    result_df = df
-    for col_name in columns_to_convert:
-        # Get the embedding's inner dtype and convert to list
-        embedding_dtype = schema[col_name].dtype
-        inner_dtype = embedding_dtype.dtype  # The element type (e.g., float32)
-        result_df = result_df.with_column(col_name, df[col_name].cast(DataType.list(inner_dtype)))
-
-    return result_df
-
-
 def _daft_dtype_to_postgres_type(dtype: DataType, set_dimensions: bool = True) -> str:
     """Convert a Daft DataType to a PostgreSQL type string."""
     if dtype.is_int8():
