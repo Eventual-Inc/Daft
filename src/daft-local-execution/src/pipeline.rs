@@ -35,7 +35,7 @@ use snafu::ResultExt;
 use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
     channel::Receiver,
-    dynamic_batching::{AimdBatching, LatencyConstrainedBatching},
+    dynamic_batching::{AimdBatching, LatencyConstrainedBatchingStrategy},
     intermediate_ops::{
         cross_join::CrossJoinOperator,
         distributed_actor_pool_project::DistributedActorPoolProjectOperator,
@@ -1610,7 +1610,9 @@ fn maybe_dynamically_batched<Op: IntermediateOperator + 'static>(
                 IntermediateNode::new(
                     Arc::new(DynamicallyBatchedIntermediateOperator::new(
                         proj_op,
-                        Arc::new(LatencyConstrainedBatching::default().with_step_size(step_size)),
+                        Arc::new(
+                            LatencyConstrainedBatchingStrategy::default().with_step_size(step_size),
+                        ),
                     )),
                     vec![child_node],
                     stats_state.clone(),

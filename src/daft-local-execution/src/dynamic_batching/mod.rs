@@ -25,7 +25,7 @@ use crate::runtime_stats::RuntimeStats;
 /// // After processing a batch that took 100ms
 /// let new_batch_size = algorithm.adjust_batch_size(&mut state, &rt_stats, Duration::from_millis(100));
 /// ```
-pub trait DynamicBatchingAlgorithm: Send + Sync {
+pub trait BatchingStrategy: Send + Sync {
     type State: Send + Sync + Unpin;
     fn make_state(&self) -> Self::State;
     /// adjust the batch size based on runtime performance metrics

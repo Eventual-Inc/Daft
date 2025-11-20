@@ -4,7 +4,7 @@ use daft_micropartition::MicroPartition;
 use tracing::Span;
 
 use crate::{
-    dynamic_batching::DynamicBatchingAlgorithm,
+    dynamic_batching::BatchingStrategy,
     intermediate_ops::intermediate_op::{
         IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
     },
@@ -21,7 +21,7 @@ pub struct DynamicBatchingState<S1, S2> {
 pub struct DynamicallyBatchedIntermediateOperator<Op, DB>
 where
     Op: IntermediateOperator,
-    DB: DynamicBatchingAlgorithm,
+    DB: BatchingStrategy,
 {
     inner_op: Arc<Op>,
     dynamic_batcher: Arc<DB>,
@@ -30,7 +30,7 @@ where
 impl<Op, DB> DynamicallyBatchedIntermediateOperator<Op, DB>
 where
     Op: IntermediateOperator,
-    DB: DynamicBatchingAlgorithm,
+    DB: BatchingStrategy,
 {
     pub fn new(inner_op: Arc<Op>, dynamic_batcher: Arc<DB>) -> Self {
         Self {
@@ -43,7 +43,7 @@ where
 impl<Op, DB> IntermediateOperator for DynamicallyBatchedIntermediateOperator<Op, DB>
 where
     Op: IntermediateOperator + 'static,
-    DB: DynamicBatchingAlgorithm + 'static,
+    DB: BatchingStrategy + 'static,
 {
     type State = DynamicBatchingState<Op::State, DB::State>;
 

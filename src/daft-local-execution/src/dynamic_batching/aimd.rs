@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, time::Duration};
 
-use crate::{dynamic_batching::DynamicBatchingAlgorithm, runtime_stats::RuntimeStats};
+use crate::{dynamic_batching::BatchingStrategy, runtime_stats::RuntimeStats};
 
 /// Additive Increase/Multiplicative Decrease (AIMD) algorithm for dynamic batch sizing.
 ///
@@ -102,7 +102,7 @@ impl AimdState {
     }
 }
 
-impl DynamicBatchingAlgorithm for AimdBatching {
+impl BatchingStrategy for AimdBatching {
     type State = AimdState;
 
     fn make_state(&self) -> Self::State {
@@ -147,7 +147,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::{dynamic_batching::DynamicBatchingAlgorithm, runtime_stats::DefaultRuntimeStats};
+    use crate::{dynamic_batching::BatchingStrategy, runtime_stats::DefaultRuntimeStats};
 
     #[test]
     fn test_aimd_additive_increase() {

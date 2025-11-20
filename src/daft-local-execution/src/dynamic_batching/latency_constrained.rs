@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, time::Duration};
 
-use crate::{dynamic_batching::DynamicBatchingAlgorithm, runtime_stats::RuntimeStats};
+use crate::{dynamic_batching::BatchingStrategy, runtime_stats::RuntimeStats};
 
 /// Latency-constrained dynamic batching
 ///
@@ -16,27 +16,27 @@ use crate::{dynamic_batching::DynamicBatchingAlgorithm, runtime_stats::RuntimeSt
 /// - **Latency**: Larger batch sizes increase batch processing time
 /// - **Memory**: Larger batch sizes increase memory usage
 ///
-/// This algorithm optimizes batch size to maximize throughput while respecting a
-/// Service Level Agreement (SLA) on maximum batch latency.
+/// This algorithm optimizes batch size to maximize throughput while respecting an
+/// upper limit on latency.
 ///
 /// # How It Works
 ///
 /// The algorithm uses **binary search** to find the largest batch size that keeps
-/// batch latency within the SLA constraint. It maintains a search range [b_low, b_high]
+/// batch latency within the latency constraint. It maintains a search range [b_low, b_high]
 /// and adjusts it based on observed latencies:
 ///
-/// - If latency exceeds SLA: contract search space downward
-/// - If latency is well below SLA: expand search space upward
-/// - If latency is within SLA: tighten search around current point
+/// - If latency exceeds target: contract search space downward
+/// - If latency is well below target: expand search space upward
+/// - If latency is within target: tighten search around current point
 ///
 /// This converges to an optimal batch size with minimal oscillation.
 ///
 /// # Paper References
 ///
-/// - Section III.B: "Solution with SLA constraint"
-/// - Algorithm 2: "SLA constrained dynamic batching"
+/// - Section III.B: "Solution with target constraint"
+/// - Algorithm 2: "target constrained dynamic batching"
 /// - Figure 3: Shows relationship between batch size, throughput, and decoding time
-/// - Equation (3): SLA constraint formulation: D(b_t) - D_SLA ≤ ε_D
+/// - Equation (3): target constraint formulation: D(b_t) - D_SLA ≤ ε_D
 ///
 /// # Example
 ///
@@ -62,8 +62,8 @@ use crate::{dynamic_batching::DynamicBatchingAlgorithm, runtime_stats::RuntimeSt
 ///     None,
 /// );
 /// ```
-pub struct LatencyConstrainedBatching {
-    /// Target maximum decoding latency per batch (from user SLA).
+pub struct LatencyConstrainedBatchingStrategy {
+    /// Target maximum batch latency
     ///
     /// From paper Equation (3): D(b_t) ≤ D_SLA
     target_batch_latency: Duration,
@@ -77,9 +77,9 @@ pub struct LatencyConstrainedBatching {
     /// Controls how aggressively the algorithm expands/contracts the search space.
     /// Larger values = faster adaptation but potentially more oscillation.
     step_size_alpha: usize,
-    /// Correction factor (δ) for small nudges when inside SLA.
+    /// Correction factor (δ) for small nudges when inside latency range.
     ///
-    /// When latency is within the SLA, this controls how much to explore
+    /// When latency is within the target, this controls how much to explore
     /// the search space around the current batch size.
     /// Typical value: 5-10
     correction_delta: usize,
@@ -95,7 +95,7 @@ pub struct LatencyConstrainedBatching {
     max_batch_size: usize,
 }
 
-impl LatencyConstrainedBatching {
+impl LatencyConstrainedBatchingStrategy {
     #[allow(dead_code)]
     pub fn new(
         target_decoding_latency: Duration,
@@ -120,7 +120,7 @@ impl LatencyConstrainedBatching {
     }
 }
 
-impl Default for LatencyConstrainedBatching {
+impl Default for LatencyConstrainedBatchingStrategy {
     fn default() -> Self {
         Self {
             target_batch_latency: Duration::from_millis(2000),
@@ -153,7 +153,7 @@ impl LatencyConstrainedBatchingState {
     }
 }
 
-impl DynamicBatchingAlgorithm for LatencyConstrainedBatching {
+impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
     type State = LatencyConstrainedBatchingState;
 
     fn make_state(&self) -> Self::State {
@@ -236,9 +236,9 @@ impl DynamicBatchingAlgorithm for LatencyConstrainedBatching {
                 .saturating_add(self.step_size_alpha)
                 .min(self.max_batch_size);
         } else {
-            // Within SLA - tighten search around current point
+            // Within range - tighten search around current point
             log::debug!(
-                "[{}] WITHIN SLA ({}ms in range), tightening search space",
+                "[{}] WITHIN RANGE ({}ms in range), tightening search space",
                 std::thread::current().name().unwrap_or("unknown"),
                 avg_latency.as_millis(),
             );
@@ -285,7 +285,7 @@ mod tests {
 
     #[test]
     fn test_latency_constrained_initial_state() {
-        let batching = LatencyConstrainedBatching::default();
+        let batching = LatencyConstrainedBatchingStrategy::default();
         let state = batching.make_state();
 
         assert_eq!(state.current_batch_size, 1);
@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn test_latency_too_high_contracts_search_space() {
-        let batching = LatencyConstrainedBatching::default();
+        let batching = LatencyConstrainedBatchingStrategy::default();
         let mut state = batching.make_state();
         let stats = DefaultRuntimeStats::new(0);
         let initial_search_space = state.search_high - state.search_low;
@@ -320,7 +320,7 @@ mod tests {
 
     #[test]
     fn test_latency_too_low_expands_search_space() {
-        let batching = LatencyConstrainedBatching::default();
+        let batching = LatencyConstrainedBatchingStrategy::default();
         let mut state = batching.make_state();
         let stats = DefaultRuntimeStats::new(0);
 
@@ -335,7 +335,7 @@ mod tests {
 
     #[test]
     fn test_latency_within_sla_tightens_search() {
-        let batching = LatencyConstrainedBatching::default();
+        let batching = LatencyConstrainedBatchingStrategy::default();
         let mut state = batching.make_state();
         let stats = DefaultRuntimeStats::new(0);
 
@@ -352,7 +352,7 @@ mod tests {
 
     #[test]
     fn test_latency_convergence_to_optimal_batch_size() {
-        let batching = LatencyConstrainedBatching::default();
+        let batching = LatencyConstrainedBatchingStrategy::default();
         let mut state = batching.make_state();
         let stats = DefaultRuntimeStats::new(0);
 
@@ -388,7 +388,7 @@ mod tests {
 
     #[test]
     fn test_latency_respects_min_batch_size() {
-        let batching = LatencyConstrainedBatching::new(
+        let batching = LatencyConstrainedBatchingStrategy::new(
             Duration::from_millis(5000),
             Duration::from_millis(100),
             1024,
@@ -410,7 +410,7 @@ mod tests {
 
     #[test]
     fn test_latency_respects_max_batch_size() {
-        let batching = LatencyConstrainedBatching::default();
+        let batching = LatencyConstrainedBatchingStrategy::default();
         let mut state = batching.make_state();
         let stats = DefaultRuntimeStats::new(0);
 
@@ -425,7 +425,7 @@ mod tests {
 
     #[test]
     fn test_latency_history_window_size_limited() {
-        let batching = LatencyConstrainedBatching::default();
+        let batching = LatencyConstrainedBatchingStrategy::default();
         let mut state = batching.make_state();
         let stats = DefaultRuntimeStats::new(0);
 
@@ -442,7 +442,7 @@ mod tests {
 
     #[test]
     fn test_latency_average_latency_calculation() {
-        let batching = LatencyConstrainedBatching::default();
+        let batching = LatencyConstrainedBatchingStrategy::default();
         let mut state = batching.make_state();
         let stats = DefaultRuntimeStats::new(0);
 
@@ -459,7 +459,7 @@ mod tests {
 
     #[test]
     fn test_latency_no_oscillation_when_stable() {
-        let batching = LatencyConstrainedBatching::default();
+        let batching = LatencyConstrainedBatchingStrategy::default();
         let mut state = batching.make_state();
         let stats = DefaultRuntimeStats::new(0);
 
@@ -481,7 +481,7 @@ mod tests {
 
     #[test]
     fn test_latency_custom_parameters() {
-        let batching = LatencyConstrainedBatching::new(
+        let batching = LatencyConstrainedBatchingStrategy::new(
             Duration::from_millis(1000),
             Duration::from_millis(50),
             256,
