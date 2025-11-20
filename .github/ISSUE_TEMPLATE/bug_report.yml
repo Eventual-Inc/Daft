@@ -26,15 +26,15 @@ body:
     label: Component(s)
     multiple: true
     options:
-    - Expressions
-    - SQL
-    - Native Runner
-    - Ray Runner
-    - Parquet
-    - CSV
-    - Continuous Integration
-    - Developer Tools
-    - Documentation
+    - Built-in Functions
+    - UDFs (User Defined Functions)
+    - Data Sources & Sinks
+    - Native Runner (swordfish)
+    - Distribute Runner (flotilla)
+    - Cloud Storage (S3/GCS/Azure)
+    - Multimodal Operations (files/images/etc.)
+    - Memory Management/OOM's
+    - Lance Integration
     - Other
   validations:
     required: true
