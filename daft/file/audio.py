@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 from typing import TYPE_CHECKING, Any
 
 from daft.datatype import MediaType
@@ -48,17 +47,16 @@ class AudioFile(File):
                     subtype=af.subtype,
                 )
 
-    def to_numpy(self) -> np.ndarray[Any, Any]:
+    def to_numpy(self) -> np.ndarray[Any, np.dtype[np.float64]]:
         """Convert the audio file to a numpy array.
 
         Returns:
             np.ndarray[Any, Any]: The audio data as a numpy array.
 
         """
-        with self.open() as f:
-            data = f.read()
-            data, _ = sf.read(io.BytesIO(data))
-            return data  # type: ignore
+        with self.to_tempfile() as tmp:
+            audio, _ = sf.read(tmp)
+            return audio
 
     def resample(self, sample_rate: int) -> np.ndarray[Any, np.dtype[np.float64]]:
         """Resample the audio file to the given sample rate.
@@ -72,12 +70,10 @@ class AudioFile(File):
         """
         if not librosa.module_available():
             raise ImportError("The 'librosa' module is required to resample audio files.")
-        with self.open() as f:
-            data = f.read()
-            data, samplerate = sf.read(io.BytesIO(data))
-
+        with self.to_tempfile() as f:
+            data, samplerate = sf.read(f)
             if samplerate != sample_rate:
                 resampled_data = librosa.resample(data, orig_sr=samplerate, target_sr=sample_rate)
                 return resampled_data
             else:
-                return data  # type: ignore
+                return data

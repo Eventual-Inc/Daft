@@ -61,7 +61,7 @@ def resample_impl(
 
 resample_fn = Func._from_func(
     resample_impl,
-    return_dtype=daft.DataType.python(),
+    return_dtype=daft.DataType.tensor(daft.DataType.float64()),
     unnest=False,
     use_process=None,
     is_batch=False,
