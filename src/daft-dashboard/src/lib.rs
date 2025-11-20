@@ -354,7 +354,25 @@ mod tests {
         assert!(html.contains("serverUrl"));
         assert!(html.contains("<table class=\"dataframe\""));
         assert!(html.contains("data-full-matrix="));
-        assert!(html.contains("\"1\""));
-        assert!(html.contains("\"a\""));
+
+        // Extract data-full-matrix attribute and verify JSON parsing
+        let attr_prefix = "data-full-matrix='";
+        let start = html.find(attr_prefix).expect("data-full-matrix attr");
+        let rest = &html[start + attr_prefix.len()..];
+        let end = rest.find('\'').expect("closing quote for data-full-matrix");
+        let escaped = &rest[..end];
+        // Undo HTML escaping (&amp;, &lt;, &gt;, &#39;)
+        let unescaped = escaped
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&#39;", "'");
+        let matrix: Vec<Vec<String>> = serde_json::from_str(&unescaped).expect("valid JSON matrix");
+        assert_eq!(matrix.len(), 3);
+        assert_eq!(matrix[0].len(), 2);
+        assert_eq!(matrix[0][0], "1");
+        assert_eq!(matrix[0][1], "a");
+        assert_eq!(matrix[1][0], "2");
+        assert_eq!(matrix[2][1], "c");
     }
 }
