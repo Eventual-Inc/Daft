@@ -559,7 +559,7 @@ jobs:
     env:
       package-name: daft
     steps:
-    - name: Free Disk Space (Ubuntu)
+    - name: Free Disk Space (Ubuntu) # only run on ubuntu
       if: ${{ (runner.os == 'Linux') }}
       uses: jlumbroso/free-disk-space@main
       with:
