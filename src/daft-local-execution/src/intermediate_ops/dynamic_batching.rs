@@ -1,7 +1,6 @@
 use std::{sync::Arc, time::Instant};
 
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::RecordBatch;
 use tracing::Span;
 
 use crate::{
@@ -15,7 +14,7 @@ use crate::{
 pub struct DynamicBatchingState<S1, S2> {
     inner_state: S1,
     row_offset: usize,
-    current_input: Option<Arc<RecordBatch>>,
+    current_input: Option<Arc<MicroPartition>>,
     batch_state: S2,
 }
 
@@ -71,16 +70,10 @@ where
             }
 
             if state.current_input.is_none() {
-                let input_tables = input.get_tables()?;
-                if let Some(table) = input_tables.first() {
-                    state.current_input = Some(Arc::new(table.clone()));
-                    state.row_offset = 0;
-                } else {
-                    return Ok((state, IntermediateOperatorResult::NeedMoreInput(None)));
-                }
+                state.current_input = Some(input);
             }
-            if let Some(ref current_table) = state.current_input {
-                let total_rows = current_table.num_rows();
+            if let Some(ref current_input) = state.current_input {
+                let total_rows = current_input.len();
 
                 // If we've processed all rows, we need more input
                 if state.row_offset >= total_rows {
@@ -96,14 +89,8 @@ where
                         .min(total_rows - state.row_offset)
                 };
 
-                let sub_batch =
-                    current_table.slice(state.row_offset, state.row_offset + batch_size)?;
-
-                let sub_partition = Arc::new(MicroPartition::new_loaded(
-                    input.schema(),
-                    Arc::new(vec![sub_batch]),
-                    None,
-                ));
+                let sub_partition =
+                    Arc::new(current_input.slice(state.row_offset, state.row_offset + batch_size)?);
 
                 let start_time = Instant::now();
                 let (inner_state, op_result) = inner_op

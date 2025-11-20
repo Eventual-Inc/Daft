@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 import re
 
+import numpy as np
 import pytest
 
 import daft
 from daft import DataType, col
+from daft.recordbatch import MicroPartition, RecordBatch
 
 
 def test_row_wise_udf():
@@ -316,3 +318,49 @@ def test_row_wise_async_udf_use_process():
     df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
     async_df = df.select(my_async_stringify_and_sum(col("x"), col("y")))
     assert sorted(async_df.to_pydict()["x"]) == ["5", "7", "9"]
+
+
+def test_dynamic_batching_same_result():
+    def create_df_from_batches(batches_data):
+        micropartitions = []
+        for mp_data in batches_data:
+            record_batches = [RecordBatch.from_pydict(rb_data) for rb_data in mp_data]
+            mp = MicroPartition._from_record_batches(record_batches)
+            micropartitions.append(mp)
+        return daft.DataFrame._from_micropartitions(*micropartitions)
+
+    df = (
+        create_df_from_batches(
+            [
+                [
+                    {"x": np.arange(1).tolist(), "y": np.arange(1) * 2},
+                    {"x": np.arange(5).tolist(), "y": np.arange(5) * 2},
+                    {"x": np.arange(5).tolist(), "y": np.arange(5) * 2},
+                ],
+                [
+                    {"x": np.arange(1).tolist(), "y": np.arange(1) * 2},
+                    {"x": np.arange(2).tolist(), "y": np.arange(2) * 2},
+                ],
+                # [
+                #     {"x": np.arange(111).tolist(), "y": np.arange(111) * 2},
+                #     {"x": np.arange(1).tolist(), "y": np.arange(1) * 2},
+                #     {"x": np.arange(7597).tolist(), "y": np.arange(7597) * 2},
+                #     {"x": np.arange(253).tolist(), "y": np.arange(253) * 2},
+                # ],
+            ]
+        )
+        ._add_monotonically_increasing_id()
+        .collect()
+    )
+
+    @daft.func
+    def stringify_and_sum(a: int, b: int) -> str:
+        return f"{a + b}"
+
+    non_adaptive_batching_df = df.select("*", stringify_and_sum(col("x"), col("y")).alias("sum")).collect()
+
+    # adaptive batching is only enabled if maintain_order=False
+    with daft.execution_config_ctx(maintain_order=False, enable_dynamic_batching=True):
+        adaptive_batching_df = df.select("*", stringify_and_sum(col("x"), col("y")).alias("sum"))
+        adaptive_batching_df = adaptive_batching_df.collect().sort("id")
+        assert non_adaptive_batching_df.to_pydict() == adaptive_batching_df.to_pydict()
