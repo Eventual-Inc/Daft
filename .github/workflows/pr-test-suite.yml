@@ -688,7 +688,7 @@ jobs:
     - name: Wait for UC Server
       run: |
         echo "Waiting for Unity Catalog server to be ready..."
-        timeout 300 bash -c 'until curl -sf http://localhost:3000/ > /dev/null 2>&1; do
+        timeout 600 bash -c 'until curl -sf http://localhost:3000/ > /dev/null 2>&1; do
           echo "Still waiting for UC server..."
           sleep 5
         done'
