@@ -205,11 +205,17 @@ def pivot(
 
 
 def sample(
-    input: physical_plan.InProgressPhysicalPlan[PartitionT], fraction: float, with_replacement: bool, seed: int | None
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    fraction: float | None = None,
+    size: int | None = None,
+    with_replacement: bool = False,
+    seed: int | None = None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.pipeline_instruction(
         child_plan=input,
-        pipeable_instruction=execution_step.Sample(fraction=fraction, with_replacement=with_replacement, seed=seed),
+        pipeable_instruction=execution_step.Sample(
+            fraction=fraction, size=size, with_replacement=with_replacement, seed=seed
+        ),
         resource_request=ResourceRequest(),
     )
 
