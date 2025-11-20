@@ -243,7 +243,7 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
                 avg_latency.as_millis(),
             );
 
-            let tighten_amount = (search_space / 8).max(1);
+            let tighten_amount = (self.step_size_alpha / 2).max(1);
 
             state.search_high = avg_batch_size
                 .saturating_add(tighten_amount)
