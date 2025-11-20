@@ -333,20 +333,23 @@ def test_dynamic_batching_same_result():
         create_df_from_batches(
             [
                 [
-                    {"x": np.arange(1).tolist(), "y": np.arange(1) * 2},
-                    {"x": np.arange(5).tolist(), "y": np.arange(5) * 2},
-                    {"x": np.arange(5).tolist(), "y": np.arange(5) * 2},
+                    {"x": np.arange(1001).tolist(), "y": np.arange(1001) * 2},
+                    {"x": np.arange(523).tolist(), "y": np.arange(523) * 2},
+                    {"x": np.arange(15).tolist(), "y": np.arange(15) * 2},
                 ],
                 [
                     {"x": np.arange(1).tolist(), "y": np.arange(1) * 2},
                     {"x": np.arange(2).tolist(), "y": np.arange(2) * 2},
                 ],
-                # [
-                #     {"x": np.arange(111).tolist(), "y": np.arange(111) * 2},
-                #     {"x": np.arange(1).tolist(), "y": np.arange(1) * 2},
-                #     {"x": np.arange(7597).tolist(), "y": np.arange(7597) * 2},
-                #     {"x": np.arange(253).tolist(), "y": np.arange(253) * 2},
-                # ],
+                [
+                    {"x": np.arange(9).tolist(), "y": np.arange(9) * 2},
+                ],
+                [
+                    {"x": np.arange(111).tolist(), "y": np.arange(111) * 2},
+                    {"x": np.arange(1).tolist(), "y": np.arange(1) * 2},
+                    {"x": np.arange(7597).tolist(), "y": np.arange(7597) * 2},
+                    {"x": np.arange(253).tolist(), "y": np.arange(253) * 2},
+                ],
             ]
         )
         ._add_monotonically_increasing_id()
@@ -357,10 +360,10 @@ def test_dynamic_batching_same_result():
     def stringify_and_sum(a: int, b: int) -> str:
         return f"{a + b}"
 
-    non_adaptive_batching_df = df.select("*", stringify_and_sum(col("x"), col("y")).alias("sum")).collect()
+    non_dynamic_batching_df = df.select("*", stringify_and_sum(col("x"), col("y")).alias("sum")).collect()
 
-    # adaptive batching is only enabled if maintain_order=False
+    # dynamic batching is feature flagged
     with daft.execution_config_ctx(maintain_order=False, enable_dynamic_batching=True):
-        adaptive_batching_df = df.select("*", stringify_and_sum(col("x"), col("y")).alias("sum"))
-        adaptive_batching_df = adaptive_batching_df.collect().sort("id")
-        assert non_adaptive_batching_df.to_pydict() == adaptive_batching_df.to_pydict()
+        dynamic_batching_df = df.select("*", stringify_and_sum(col("x"), col("y")).alias("sum"))
+        dynamic_batching_df = dynamic_batching_df.collect().sort("id")
+        assert non_dynamic_batching_df.to_pydict() == dynamic_batching_df.to_pydict()
