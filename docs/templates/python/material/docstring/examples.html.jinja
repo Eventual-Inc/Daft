@@ -36,14 +36,30 @@ Context:
       FUNCTION OUTPUT: Input length is {{ input_text|length }} characters
     {% endmacro %}
 
-    {#- Debug output -#}
-    <div style="border: 2px solid blue; padding: 10px; margin: 10px 0;">
-      <strong>DEBUG INFO:</strong><br>
-      1. Raw content length: {{ sub_section|length }} chars<br>
-      2. First 100 chars: <code>{{ sub_section[:100] }}</code><br>
-      3. Test function call result: {{ test_function(sub_section) }}<br>
-      4. Can we use string methods? sub_section.upper()[:50] = <code>{{ sub_section.upper()[:50] }}</code>
-    </div>
+    {#- Debug output - show full content for specific examples -#}
+    {% set is_target_example = "king of the pirates" in sub_section or "Hokage" in sub_section %}
+
+    {% if is_target_example %}
+      <div style="border: 4px solid red; padding: 10px; margin: 10px 0; background-color: #ffe6e6;">
+        <strong>🎯 TARGET EXAMPLE FOUND - FULL CONTENT:</strong><br>
+        <hr>
+        <pre style="white-space: pre-wrap; word-wrap: break-word;">{{ sub_section }}</pre>
+        <hr>
+        <strong>Analysis:</strong><br>
+        - Total length: {{ sub_section|length }} chars<br>
+        - Number of lines: {{ sub_section.split('\n')|length }}<br>
+        - Contains '>>>' prompts: {{ '>>>' in sub_section }}<br>
+        - Contains table characters (╭): {{ '╭' in sub_section }}<br>
+      </div>
+    {% else %}
+      <div style="border: 2px solid blue; padding: 10px; margin: 10px 0;">
+        <strong>DEBUG INFO:</strong><br>
+        1. Raw content length: {{ sub_section|length }} chars<br>
+        2. First 100 chars: <code>{{ sub_section[:100] }}</code><br>
+        3. Test function call result: {{ test_function(sub_section) }}<br>
+        4. Can we use string methods? sub_section.upper()[:50] = <code>{{ sub_section.upper()[:50] }}</code>
+      </div>
+    {% endif %}
 
     {#- Original rendering for comparison -#}
     <div style="border: 2px solid green; padding: 10px; margin: 10px 0;">
