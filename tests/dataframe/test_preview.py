@@ -127,3 +127,9 @@ def test_collect_num_preview_rows():
     out = _capture_stdout(lambda: print(df_collected))
     assert "(Showing first 15 of 20 rows)" in out
     assert _count_table_data_rows(out) == 15
+
+    # Test with num_preview_rows > len(df)
+    df_collected = df.collect(num_preview_rows=25)
+    out = _capture_stdout(lambda: print(df_collected))
+    assert "(Showing first 20 of 20 rows)" in out
+    assert _count_table_data_rows(out) == 20

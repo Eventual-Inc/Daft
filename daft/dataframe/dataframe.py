@@ -619,11 +619,10 @@ class DataFrame:
         if results is None:
             return
 
-        preview_partition_invalid = (
-            self._preview.partition is None or len(self._preview.partition) != self._num_preview_rows
-        )
+        num_preview_rows = min(self._num_preview_rows, len(self))
+        preview_partition_invalid = self._preview.partition is None or len(self._preview.partition) != num_preview_rows
         if preview_partition_invalid:
-            preview_parts = results._get_preview_micropartitions(self._num_preview_rows)
+            preview_parts = results._get_preview_micropartitions(num_preview_rows)
             preview_results = LocalPartitionSet()
             for i, part in enumerate(preview_parts):
                 preview_results.set_partition_from_table(i, part)
