@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, time::Duration};
+use std::time::Duration;
 
 use crate::{dynamic_batching::BatchingStrategy, runtime_stats::RuntimeStats};
 
@@ -137,8 +137,6 @@ pub struct LatencyConstrainedBatchingState {
     current_batch_size: usize,
     search_low: usize,
     search_high: usize,
-    recent_latencies: VecDeque<Duration>,
-    recent_batch_sizes: VecDeque<usize>,
 }
 
 impl LatencyConstrainedBatchingState {
@@ -147,8 +145,6 @@ impl LatencyConstrainedBatchingState {
             current_batch_size: initial_batch_size,
             search_low: min,
             search_high: max,
-            recent_latencies: VecDeque::with_capacity(10),
-            recent_batch_sizes: VecDeque::with_capacity(10),
         }
     }
 }
@@ -169,68 +165,45 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
         &self,
         state: &mut Self::State,
         _runtime: &dyn RuntimeStats,
-        duration: Duration,
+        latency: Duration,
     ) -> usize {
-        // Record metrics
-        state.recent_latencies.push_back(duration);
-        state.recent_batch_sizes.push_back(state.current_batch_size);
-
-        if state.recent_latencies.len() > 10 {
-            state.recent_latencies.pop_front();
-            state.recent_batch_sizes.pop_front();
-        }
-
-        // Calculate average latency
-        let avg_latency = if !state.recent_latencies.is_empty() {
-            let total: Duration = state.recent_latencies.iter().sum();
-            total / state.recent_latencies.len() as u32
-        } else {
-            duration
-        };
-
-        let avg_batch_size = if !state.recent_batch_sizes.is_empty() {
-            state.recent_batch_sizes.iter().sum::<usize>() / state.recent_batch_sizes.len()
-        } else {
-            state.current_batch_size
-        };
-
+        let batch_size = state.current_batch_size;
         let search_space = state.search_high.saturating_sub(state.search_low);
 
         log::debug!(
-            "[{}] observed_latency={}ms, avg_latency={}ms, target={}ms±{}ms, avg_batch_size={}, search=[{}, {}], search_space={}",
+            "[{}] observed_latency={}ms, target={}ms±{}ms, batch_size={}, search=[{}, {}], search_space={}",
             std::thread::current().name().unwrap_or("unknown"),
-            duration.as_millis(),
-            avg_latency.as_millis(),
+            latency.as_millis(),
             self.target_batch_latency.as_millis(),
             self.latency_tolerance.as_millis(),
-            avg_batch_size,
+            batch_size,
             state.search_low,
             state.search_high,
             search_space,
         );
 
         // Binary search adjustment - conservative expansion
-        if avg_latency > self.target_batch_latency + self.latency_tolerance {
+        if latency > self.target_batch_latency + self.latency_tolerance {
             // Latency too high, reduce search space
             log::debug!(
                 "[{}] LATENCY TOO HIGH ({}ms > {}ms), contracting search space",
                 std::thread::current().name().unwrap_or("unknown"),
-                avg_latency.as_millis(),
+                latency.as_millis(),
                 (self.target_batch_latency + self.latency_tolerance).as_millis(),
             );
 
-            state.search_high = (avg_batch_size / 2).max(state.search_low + 1);
+            state.search_high = (batch_size / 2).max(state.search_low + 1);
             state.search_low = state.search_low.saturating_sub(self.correction_delta);
-        } else if avg_latency < self.target_batch_latency - self.latency_tolerance {
+        } else if latency < self.target_batch_latency - self.latency_tolerance {
             // Latency good, expand search space
             log::debug!(
                 "[{}] LATENCY GOOD ({}ms < {}ms), expanding search space",
                 std::thread::current().name().unwrap_or("unknown"),
-                avg_latency.as_millis(),
+                latency.as_millis(),
                 (self.target_batch_latency - self.latency_tolerance).as_millis(),
             );
 
-            state.search_low = avg_batch_size.max(state.search_low);
+            state.search_low = batch_size.max(state.search_low);
             state.search_high = state
                 .search_high
                 .saturating_add(self.step_size_alpha)
@@ -240,15 +213,15 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
             log::debug!(
                 "[{}] WITHIN RANGE ({}ms in range), tightening search space",
                 std::thread::current().name().unwrap_or("unknown"),
-                avg_latency.as_millis(),
+                latency.as_millis(),
             );
 
             let tighten_amount = (self.step_size_alpha / 2).max(1);
 
-            state.search_high = avg_batch_size
+            state.search_high = batch_size
                 .saturating_add(tighten_amount)
                 .min(self.max_batch_size);
-            state.search_low = avg_batch_size
+            state.search_low = batch_size
                 .saturating_sub(tighten_amount)
                 .max(self.min_batch_size);
         }
@@ -291,8 +264,6 @@ mod tests {
         assert_eq!(state.current_batch_size, 1);
         assert_eq!(state.search_low, 1);
         assert_eq!(state.search_high, 256);
-        assert!(state.recent_latencies.is_empty());
-        assert!(state.recent_batch_sizes.is_empty());
     }
 
     #[test]
@@ -351,42 +322,6 @@ mod tests {
     }
 
     #[test]
-    fn test_latency_convergence_to_optimal_batch_size() {
-        let batching = LatencyConstrainedBatchingStrategy::default();
-        let mut state = batching.make_state();
-        let stats = DefaultRuntimeStats::new(0);
-
-        // Simulate gradual approach to target latency
-        for i in 0..20 {
-            let latency = if i < 5 {
-                Duration::from_millis(100)
-            } else if i < 15 {
-                Duration::from_millis(1000 + (i as u64 - 5) * 300)
-            } else {
-                Duration::from_millis(5000)
-            };
-
-            batching.adjust_batch_size(&mut state, &stats, latency);
-        }
-
-        // Should converge to some stable batch size between min and max
-        assert!(state.current_batch_size >= batching.min_batch_size);
-        assert!(state.current_batch_size <= batching.max_batch_size);
-
-        // Should have stopped expanding/contracting wildly
-        // Last few batch sizes should be close to each other
-        let variance = state
-            .recent_batch_sizes
-            .iter()
-            .map(|&x| x as i64)
-            .collect::<Vec<_>>();
-        if variance.len() >= 3 {
-            let max_diff = (variance[variance.len() - 1] - variance[variance.len() - 3]).abs();
-            assert!(max_diff < 5000); // Reasonable convergence
-        }
-    }
-
-    #[test]
     fn test_latency_respects_min_batch_size() {
         let batching = LatencyConstrainedBatchingStrategy::new(
             Duration::from_millis(5000),
@@ -421,40 +356,6 @@ mod tests {
 
         // Should never exceed max_batch_size
         assert!(state.current_batch_size <= batching.max_batch_size);
-    }
-
-    #[test]
-    fn test_latency_history_window_size_limited() {
-        let batching = LatencyConstrainedBatchingStrategy::default();
-        let mut state = batching.make_state();
-        let stats = DefaultRuntimeStats::new(0);
-
-        // Fill history beyond window size
-        for i in 0..20 {
-            let latency = Duration::from_millis(100 + (i as u64 * 10));
-            batching.adjust_batch_size(&mut state, &stats, latency);
-        }
-
-        // Should only keep last 10
-        assert_eq!(state.recent_latencies.len(), 10);
-        assert_eq!(state.recent_batch_sizes.len(), 10);
-    }
-
-    #[test]
-    fn test_latency_average_latency_calculation() {
-        let batching = LatencyConstrainedBatchingStrategy::default();
-        let mut state = batching.make_state();
-        let stats = DefaultRuntimeStats::new(0);
-
-        // Add specific latencies
-        batching.adjust_batch_size(&mut state, &stats, Duration::from_millis(100));
-        batching.adjust_batch_size(&mut state, &stats, Duration::from_millis(200));
-        batching.adjust_batch_size(&mut state, &stats, Duration::from_millis(300));
-
-        // Average should be 200ms
-        let total: Duration = state.recent_latencies.iter().sum();
-        let avg = total / state.recent_latencies.len() as u32;
-        assert_eq!(avg, Duration::from_millis(200));
     }
 
     #[test]
