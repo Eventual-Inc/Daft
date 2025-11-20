@@ -66,7 +66,7 @@
 * Examples
     * [Examples](examples/index.md)
     * [Web Text Deduplication](examples/minhash-dedupe.md)
-    * [Document Processing](examples/document-processing.md)
+    * [Voice AI Analytics](examples/voice_ai_analytics.md)
     * [Audio Transcription](examples/audio-transcription.md)
     * [Generate Text Embeddings for Turbopuffer](examples/text-embeddings.md)
     * [Running LLMs on the Red Pajamas Dataset](examples/llms-red-pajamas.md)
