@@ -612,7 +612,6 @@ fn physical_plan_to_pipeline(
                 .with_context(|_| PipelineCreationSnafu {
                     plan_name: physical_plan.name(),
                 })?;
-
                 match maybe_dynamically_batched(
                     cfg,
                     ctx,
@@ -1603,18 +1602,24 @@ fn maybe_dynamically_batched<Op: IntermediateOperator + 'static>(
                 context,
             )
             .boxed(),
-            "latency_constrained" | "auto" => IntermediateNode::new(
-                Arc::new(DynamicallyBatchedIntermediateOperator::new(
-                    proj_op,
-                    Arc::new(LatencyConstrainedBatching::default()),
-                )),
-                vec![child_node],
-                stats_state.clone(),
-                ctx,
-                schema.clone(),
-                context,
-            )
-            .boxed(),
+            "latency_constrained" | "auto" => {
+                let step_size = match proj_op.op_type() {
+                    NodeType::UDFProject => 16, // use a really small step size for udfs as they are often expensive
+                    _ => 2048, // these are native functions and can usually handle larger batches
+                };
+                IntermediateNode::new(
+                    Arc::new(DynamicallyBatchedIntermediateOperator::new(
+                        proj_op,
+                        Arc::new(LatencyConstrainedBatching::default().with_step_size(step_size)),
+                    )),
+                    vec![child_node],
+                    stats_state.clone(),
+                    ctx,
+                    schema.clone(),
+                    context,
+                )
+                .boxed()
+            }
             _ => {
                 return Err(Err(crate::Error::ValueError {
                     message: "Unsupported dynamic batching algorithm".to_string(),

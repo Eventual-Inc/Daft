@@ -70,13 +70,12 @@ pub struct LatencyConstrainedBatching {
     /// Slack/tolerance around target latency for stability.
     ///
     /// Prevents oscillation when latency hovers near the boundary.
-    /// Typical value: 5-10% of target_decoding_latency
+    /// Typical value: 5-10% of target_batch_latency
     latency_tolerance: Duration,
     /// Step size (α) for adjusting search bounds when latency is out of range.
     ///
     /// Controls how aggressively the algorithm expands/contracts the search space.
     /// Larger values = faster adaptation but potentially more oscillation.
-    /// Typical value: 10-50 depending on model and hardware
     step_size_alpha: usize,
     /// Correction factor (δ) for small nudges when inside SLA.
     ///
@@ -115,15 +114,19 @@ impl LatencyConstrainedBatching {
             max_batch_size,
         }
     }
+    pub fn with_step_size(mut self, step_size: usize) -> Self {
+        self.step_size_alpha = step_size;
+        self
+    }
 }
 
 impl Default for LatencyConstrainedBatching {
     fn default() -> Self {
         Self {
-            target_batch_latency: Duration::from_millis(5000),
+            target_batch_latency: Duration::from_millis(2000),
             latency_tolerance: Duration::from_millis(100),
             step_size_alpha: 1024,
-            correction_delta: 128,
+            correction_delta: 10,
             min_batch_size: 1,
             max_batch_size: 128 * 1024,
         }
@@ -144,8 +147,8 @@ impl LatencyConstrainedBatchingState {
             current_batch_size: initial_batch_size,
             search_low: min,
             search_high: max,
-            recent_latencies: VecDeque::with_capacity(10),
-            recent_batch_sizes: VecDeque::with_capacity(10),
+            recent_latencies: VecDeque::with_capacity(24),
+            recent_batch_sizes: VecDeque::with_capacity(24),
         }
     }
 }
@@ -154,8 +157,12 @@ impl DynamicBatchingAlgorithm for LatencyConstrainedBatching {
     type State = LatencyConstrainedBatchingState;
 
     fn make_state(&self) -> Self::State {
-        // start with a relatively small search space (1 - 1024)
-        LatencyConstrainedBatchingState::new(1, self.min_batch_size, 1024)
+        log::debug!(
+            "[{}] Initializing state with search space [1, 256]",
+            std::thread::current().name().unwrap_or("unknown")
+        );
+        // start off with a small search space (1 - 256)
+        LatencyConstrainedBatchingState::new(1, self.min_batch_size, 256)
     }
 
     fn adjust_batch_size(
@@ -168,7 +175,7 @@ impl DynamicBatchingAlgorithm for LatencyConstrainedBatching {
         state.recent_latencies.push_back(duration);
         state.recent_batch_sizes.push_back(state.current_batch_size);
 
-        if state.recent_latencies.len() > 10 {
+        if state.recent_latencies.len() > 24 {
             state.recent_latencies.pop_front();
             state.recent_batch_sizes.pop_front();
         }
@@ -187,16 +194,42 @@ impl DynamicBatchingAlgorithm for LatencyConstrainedBatching {
             state.current_batch_size
         };
 
-        // Calculate search space for adaptive expansion/contraction
         let search_space = state.search_high.saturating_sub(state.search_low);
+
+        log::debug!(
+            "[{}] observed_latency={}ms, avg_latency={}ms, target={}ms±{}ms, avg_batch_size={}, search=[{}, {}], search_space={}",
+            std::thread::current().name().unwrap_or("unknown"),
+            duration.as_millis(),
+            avg_latency.as_millis(),
+            self.target_batch_latency.as_millis(),
+            self.latency_tolerance.as_millis(),
+            avg_batch_size,
+            state.search_low,
+            state.search_high,
+            search_space,
+        );
 
         // Binary search adjustment - conservative expansion
         if avg_latency > self.target_batch_latency + self.latency_tolerance {
             // Latency too high, reduce search space
+            log::debug!(
+                "[{}] LATENCY TOO HIGH ({}ms > {}ms), contracting search space",
+                std::thread::current().name().unwrap_or("unknown"),
+                avg_latency.as_millis(),
+                (self.target_batch_latency + self.latency_tolerance).as_millis(),
+            );
+
             state.search_high = (avg_batch_size / 2).max(state.search_low + 1);
             state.search_low = state.search_low.saturating_sub(self.correction_delta);
         } else if avg_latency < self.target_batch_latency - self.latency_tolerance {
             // Latency good, expand search space
+            log::debug!(
+                "[{}] LATENCY GOOD ({}ms < {}ms), expanding search space",
+                std::thread::current().name().unwrap_or("unknown"),
+                avg_latency.as_millis(),
+                (self.target_batch_latency - self.latency_tolerance).as_millis(),
+            );
+
             state.search_low = avg_batch_size.max(state.search_low);
             state.search_high = state
                 .search_high
@@ -204,7 +237,12 @@ impl DynamicBatchingAlgorithm for LatencyConstrainedBatching {
                 .min(self.max_batch_size);
         } else {
             // Within SLA - tighten search around current point
-            // Use adaptive tightening based on search space
+            log::debug!(
+                "[{}] WITHIN SLA ({}ms in range), tightening search space",
+                std::thread::current().name().unwrap_or("unknown"),
+                avg_latency.as_millis(),
+            );
+
             let tighten_amount = (search_space / 8).max(1);
 
             state.search_high = avg_batch_size
@@ -221,6 +259,14 @@ impl DynamicBatchingAlgorithm for LatencyConstrainedBatching {
             .current_batch_size
             .max(self.min_batch_size)
             .min(self.max_batch_size);
+
+        log::debug!(
+            "[{}] new_search=[{}, {}], new_batch_size={}",
+            std::thread::current().name().unwrap_or("unknown"),
+            state.search_low,
+            state.search_high,
+            state.current_batch_size,
+        );
 
         state.current_batch_size
     }

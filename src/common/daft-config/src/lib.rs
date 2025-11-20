@@ -184,7 +184,7 @@ impl Default for DaftExecutionConfig {
             actor_udf_ready_timeout: 120,
             maintain_order: true,
             enable_dynamic_batching: false,
-            dynamic_batching_algorithm: "aimd".to_string(),
+            dynamic_batching_algorithm: "auto".to_string(),
         }
     }
 }
