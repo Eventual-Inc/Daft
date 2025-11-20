@@ -47,13 +47,10 @@ Context:
     {#- Input as Python code -#}
     {{ input_lines|join('\n')|highlight(language="pycon") }}
 
-    {#- Output in a separate block styled like quickstart.md -#}
+    {#- Output in a separate block -#}
     {% if output_lines %}
-      <div class="language-text highlight">
-        <span class="filename">Output</span>
-        <div class="highlight">
-          <pre><code>{{ output_lines|join('\n') }}</code></pre>
-        </div>
+      <div class="highlight">
+        <pre><code>{{ output_lines|join('\n') }}</code></pre>
       </div>
     {% endif %}
   {% endif %}
