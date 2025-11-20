@@ -685,14 +685,6 @@ jobs:
     - name: Start UC Server
       working-directory: ./unitycatalog
       run: bin/start-uc-server -p 3000 &
-    - name: Wait for UC Server
-      run: |
-        echo "Waiting for Unity Catalog server to be ready..."
-        timeout 600 bash -c 'until curl -sf http://localhost:3000/ > /dev/null 2>&1; do
-          echo "Still waiting for UC server..."
-          sleep 5
-        done'
-        echo "Unity Catalog server is ready!"
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
@@ -735,6 +727,14 @@ jobs:
         popd
 
     # Unity tests
+    - name: Wait for UC Server
+      run: |
+        echo "Waiting for Unity Catalog server to be ready..."
+        timeout 600 bash -c 'until curl -sf http://localhost:3000/ > /dev/null 2>&1; do
+          echo "Still waiting for UC server..."
+          sleep 5
+        done'
+        echo "Unity Catalog server is ready!"
     - name: Run Unity integration tests (native)
       if: always()
       run: |
