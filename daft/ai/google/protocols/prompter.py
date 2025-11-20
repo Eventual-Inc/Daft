@@ -70,9 +70,25 @@ class GooglePrompter(Prompter):
         self.return_format = return_format
         self.system_message = system_message
 
+        # Separate Client params from generation params
+        client_params_keys = [
+            "base_url",
+            "vertexai",
+            "api_key",
+            "credentials",
+            "project",
+            "location",
+            "debug_config",
+            "http_options",
+        ]
+        client_params = {**provider_options}
+        for key, value in generation_config.items():
+            if key in client_params_keys:
+                client_params[key] = value
+
         # Initialize client
-        self.client = genai.Client(**provider_options)
-        self.generation_config = generation_config
+        self.generation_config = {k: v for k, v in generation_config.items() if k not in client_params_keys}
+        self.client = genai.Client(**client_params)
 
     @singledispatchmethod
     def _process_message(self, msg: Any) -> types.Part:
@@ -175,7 +191,7 @@ class GooglePrompter(Prompter):
 
         if self.return_format:
             config_params["response_mime_type"] = "application/json"
-            config_params["response_schema"] = self.return_format
+            config_params["response_schema"] = self.return_format.model_json_schema()
 
         config = types.GenerateContentConfig(**config_params)
 
@@ -183,10 +199,11 @@ class GooglePrompter(Prompter):
         response = await self.client.aio.models.generate_content(
             model=self.model,
             contents=[types.Content(role="user", parts=parts)],
-            config=config,
+            config=config,  # See https://googleapis.github.io/python-genai/genai.html#genai.types.GenerateContentConfigDict
         )
 
         # Record metrics
+        # See https://googleapis.github.io/python-genai/genai.html#genai.types.GenerateContentResponseUsageMetadata
         if response.usage_metadata:
             self._record_usage_metrics(
                 input_tokens=response.usage_metadata.prompt_token_count or 0,
@@ -195,10 +212,8 @@ class GooglePrompter(Prompter):
             )
 
         # Parse result
+        # See https://googleapis.github.io/python-genai/genai.html#genai.types.GenerateContentResponse
         if self.return_format:
-            # If structured output, the SDK should handle parsing if we passed the pydantic model
-            # But let's check if we need to parse explicitly or if 'parsed' field is available
-            # The google-genai SDK usually returns parsed object if response_schema is set with pydantic
             return response.parsed
         else:
             return response.text
