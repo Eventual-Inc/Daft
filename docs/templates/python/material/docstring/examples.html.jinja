@@ -13,6 +13,11 @@ Context:
   This block can be used to log debug messages, deprecation messages, warnings, etc.
   -#}
   {{ log.debug("Rendering examples section") }}
+  {% for section_type, sub_section in section.value %}
+    {{ log.info("Section type: " ~ section_type.value) }}
+    {{ log.info("Sub-section content type: " ~ sub_section.__class__.__name__) }}
+    {{ log.info("Sub-section content (first 200 chars): " ~ sub_section[:200]) }}
+  {% endfor %}
 {% endblock logs %}
 
 {# YORE: Bump 2: Replace `"|get_template` with `.html.jinja"` within line. #}
@@ -24,6 +29,26 @@ Context:
   {% if section_type.value == "text" %}
     {{ sub_section|convert_markdown(heading_level, html_id, autoref_hook=autoref_hook) }}
   {% elif section_type.value == "examples" %}
-    {{ sub_section|highlight(language="pycon") }}
+    {#- Test if we can define and call functions in the template -#}
+
+    {#- Define a simple test function using Jinja2 macro -#}
+    {% macro test_function(input_text) %}
+      FUNCTION OUTPUT: Input length is {{ input_text|length }} characters
+    {% endmacro %}
+
+    {#- Debug output -#}
+    <div style="border: 2px solid blue; padding: 10px; margin: 10px 0;">
+      <strong>DEBUG INFO:</strong><br>
+      1. Raw content length: {{ sub_section|length }} chars<br>
+      2. First 100 chars: <code>{{ sub_section[:100] }}</code><br>
+      3. Test function call result: {{ test_function(sub_section) }}<br>
+      4. Can we use string methods? sub_section.upper()[:50] = <code>{{ sub_section.upper()[:50] }}</code>
+    </div>
+
+    {#- Original rendering for comparison -#}
+    <div style="border: 2px solid green; padding: 10px; margin: 10px 0;">
+      <strong>Original rendering:</strong>
+      {{ sub_section|highlight(language="pycon") }}
+    </div>
   {% endif %}
 {% endfor %}
