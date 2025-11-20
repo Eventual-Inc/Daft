@@ -1133,6 +1133,20 @@ def test_join_same_name_alias_with_compute(join_strategy, join_type, expected, m
     )
 
 
+def test_sort_merge_join_small_partitions(make_df, with_morsel_size):
+    # Small partitions should not fail even if sample_size_for_sort > partition size
+    left = make_df({"k": [1, 2, 3], "lv": [10, 20, 30]}, repartition=3, repartition_columns=["k"])
+    right = make_df({"k": [2, 3], "rv": [200, 300]}, repartition=2, repartition_columns=["k"])
+
+    out = left.join(right, on=["k"], how="inner", strategy="sort_merge").sort("k")
+    out.collect()
+
+    pd = out.to_pydict()
+    assert pd["k"] == [2, 3]
+    assert pd["lv"] == [20, 30]
+    assert pd["rv"] == [200, 300]
+
+
 @pytest.mark.parametrize(
     "suffix,prefix,expected",
     [

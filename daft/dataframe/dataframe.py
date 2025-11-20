@@ -2057,23 +2057,32 @@ class DataFrame:
     @DataframePublicAPI
     def sample(
         self,
-        fraction: float,
+        fraction: Optional[float] = None,
+        size: Optional[int] = None,
         with_replacement: bool = False,
         seed: Optional[int] = None,
     ) -> "DataFrame":
-        """Samples a fraction of rows from the DataFrame.
+        """Samples rows from the DataFrame.
 
         Args:
-            fraction (float): fraction of rows to sample.
+            fraction (Optional[float]): fraction of rows to sample (between 0.0 and 1.0).
+                Must specify either `fraction` or `size`, but not both.
+                For backward compatibility, can also be passed as a positional argument.
+            size (Optional[int]): exact number of rows to sample.
+                Must specify either `fraction` or `size`, but not both.
+                If `size` exceeds the total number of rows:
+                - When `with_replacement=False`: raises ValueError
+                - When `with_replacement=True`: returns `size` rows (may contain duplicates)
             with_replacement (bool, optional): whether to sample with replacement. Defaults to False.
             seed (Optional[int], optional): random seed. Defaults to None.
 
         Returns:
-            DataFrame: DataFrame with a fraction of rows.
+            DataFrame: DataFrame with sampled rows.
 
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
+            >>> # Sample by fraction (backward compatible positional argument)
             >>> sampled_df = df.sample(0.5)
             >>> sampled_df = sampled_df.collect()
             >>> # sampled_df.show()
@@ -2099,11 +2108,22 @@ class DataFrame:
             >>> # ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             >>> # │ 3     ┆ 6     ┆ 9     │
             >>> # ╰───────┴───────┴───────╯
+            >>> # Sample by exact number of rows
+            >>> sampled_df = df.sample(size=2)
+            >>> sampled_df = sampled_df.collect()
         """
-        if fraction < 0.0 or fraction > 1.0:
-            raise ValueError(f"fraction should be between 0.0 and 1.0, but got {fraction}")
+        if fraction is not None and size is not None:
+            raise ValueError("Must specify either `fraction` or `size`, but not both")
+        if fraction is None and size is None:
+            raise ValueError("Must specify either `fraction` or `size`")
+        if fraction is not None:
+            if fraction < 0.0 or fraction > 1.0:
+                raise ValueError(f"fraction should be between 0.0 and 1.0, but got {fraction}")
+        if size is not None:
+            if size < 0:
+                raise ValueError(f"size should be non-negative, but got {size}")
 
-        builder = self._builder.sample(fraction, with_replacement, seed)
+        builder = self._builder.sample(fraction, size, with_replacement, seed)
         return DataFrame(builder)
 
     @DataframePublicAPI
