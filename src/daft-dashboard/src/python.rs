@@ -6,7 +6,7 @@ use tokio::{
     sync::oneshot,
 };
 
-use crate::{DEFAULT_SERVER_PORT, state::GLOBAL_DASHBOARD_STATE};
+use crate::state::GLOBAL_DASHBOARD_STATE;
 
 static DASHBOARD_ENABLED: AtomicBool = AtomicBool::new(false);
 
@@ -54,12 +54,7 @@ pub fn generate_interactive_html(df_id: String) -> PyResult<String> {
             ))
         })?;
 
-    let html = super::generate_interactive_html(
-        &record_batch,
-        &df_id,
-        &super::DEFAULT_SERVER_ADDR.to_string(),
-        DEFAULT_SERVER_PORT,
-    );
+    let html = super::generate_interactive_html(&record_batch, &df_id);
     Ok(html)
 }
 
