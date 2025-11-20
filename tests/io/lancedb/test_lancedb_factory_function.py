@@ -13,10 +13,11 @@ from daft.recordbatch import RecordBatch
 PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
 pytestmark = pytest.mark.skipif(PYARROW_LOWER_BOUND_SKIP, reason="lance not supported on old versions of pyarrow")
 
+# Import-or-skip lance once at module level so individual tests don't need to do this
+lance = pytest.importorskip("lance")
+
 
 def _build_large_lance_dataset(tmp_path_factory):
-    lance = pytest.importorskip("lance")
-
     tmp_dir = tmp_path_factory.mktemp("lance_factory")
     # Create 4 fragments of 5 rows each
     total = 0
@@ -65,14 +66,12 @@ def test_importerror_when_lance_missing():
 
 
 @pytest.mark.parametrize("num_frags", [1, 2, 4])
-@pytest.mark.parametrize("use_filter", [False, True])
-@pytest.mark.parametrize("use_required_cols", [False, True])
+@pytest.mark.parametrize("arrow_filter", [None, pc.greater_equal(pc.field("big_int"), pc.scalar(5))])
+@pytest.mark.parametrize("required_columns", [None, ["vector", "big_int"]])
 @pytest.mark.parametrize("push_limit", [None, 3])
 def test_reconstructs_dataset_and_reads_fragments(
-    tmp_path_factory, num_frags, use_filter, use_required_cols, push_limit
+    tmp_path_factory, num_frags, arrow_filter, required_columns, push_limit
 ):
-    lance = pytest.importorskip("lance")
-
     ds_path = _build_large_lance_dataset(tmp_path_factory)
 
     # Build reference via direct lance scanning
@@ -81,14 +80,6 @@ def test_reconstructs_dataset_and_reads_fragments(
     assert len(all_frags) == 4
 
     frag_ids = [f.fragment_id for f in all_frags[:num_frags]]
-
-    required_columns: list[str] | None = None
-    if use_required_cols:
-        required_columns = ["vector", "big_int"]
-
-    arrow_filter: pa.compute.Expression | None = None
-    if use_filter:
-        arrow_filter = pc.greater_equal(pc.field("big_int"), pc.scalar(all_frags[0].count_rows()))
 
     # Use open_kwargs to ensure reconstruction path is exercised
     open_kwargs: dict[str, Any] = {"version": None}
@@ -115,49 +106,13 @@ def test_reconstructs_dataset_and_reads_fragments(
     direct_batches = list(direct_scanner.to_batches())
     assert len(out_batches) == len(direct_batches)
 
-    # If no batches expected due to filters/limits, ensure factory also yields none and exit early
-    if len(direct_batches) == 0:
-        assert out_batches == []
-        return
-
-    # Per-batch row count equality
-    def rb_len(rb: pa.RecordBatch) -> int:
-        return rb.num_rows
-
-    out_rows_by_batch: list[int] = []
-    for py_rb in out_batches:
-        rb = RecordBatch._from_pyrecordbatch(py_rb)
-        pdict = rb.to_pydict()
-        # use any column length as row count
-        first_key = next(iter(pdict))
-        out_rows_by_batch.append(len(pdict[first_key]))
-
-    direct_rows_by_batch = [rb_len(rb) for rb in direct_batches]
-    assert out_rows_by_batch == direct_rows_by_batch
-
-    # Convert to pydict to compare against direct scanner
-    agg: dict[str, list] | None = None
-    for py_rb in out_batches:
-        rb = RecordBatch._from_pyrecordbatch(py_rb)
-        pdict = rb.to_pydict()
-        if agg is None:
-            agg = {k: list(v) for k, v in pdict.items()}
-        else:
-            for k in agg.keys():
-                agg[k].extend(pdict[k])
-
-    assert agg is not None
-
-    expect_tbl = pa.Table.from_batches(direct_batches)
-    expect_pydict = expect_tbl.to_pydict()
-
-    # Order is deterministic across both since fragments and scanner settings match
-    assert agg == expect_pydict
+    for out_py_rb, direct_rb in zip(out_batches, direct_batches):
+        # Convert factory output (PyRecordBatch) into Daft's RecordBatch wrapper before comparing
+        out_rb = RecordBatch._from_pyrecordbatch(out_py_rb)
+        assert out_rb.to_pydict() == direct_rb.to_pydict()
 
 
 def test_raises_when_no_fragments(tmp_path_factory):
-    lance = pytest.importorskip("lance")
-
     ds_path = _build_large_lance_dataset(tmp_path_factory)
     ds = lance.dataset(ds_path)
 
@@ -176,8 +131,6 @@ def test_raises_when_no_fragments(tmp_path_factory):
 
 
 def test_invalid_fragment_id_raises(tmp_path_factory):
-    lance = pytest.importorskip("lance")
-
     ds_path = _build_large_lance_dataset(tmp_path_factory)
     ds = lance.dataset(ds_path)
     all_frags = ds.get_fragments()
@@ -200,8 +153,6 @@ def test_invalid_fragment_id_raises(tmp_path_factory):
 
 
 def test_open_kwargs_version_selects_correct_version(tmp_path_factory):
-    lance = pytest.importorskip("lance")
-
     tmp_dir = tmp_path_factory.mktemp("lance_versioned")
 
     # v1: write initial 2 rows
@@ -233,20 +184,6 @@ def test_open_kwargs_version_selects_correct_version(tmp_path_factory):
 
     assert len(out_batches) == len(direct_batches_v1)
 
-    # Compare content equality
-    agg: dict[str, list] | None = None
-    for py_rb in out_batches:
-        rb = RecordBatch._from_pyrecordbatch(py_rb)
-        pdict = rb.to_pydict()
-        if agg is None:
-            agg = {k: list(v) for k, v in pdict.items()}
-        else:
-            for k in agg.keys():
-                agg[k].extend(pdict[k])
-
-    assert agg is not None
-
-    expect_tbl = pa.Table.from_batches(direct_batches_v1)
-    expect_pydict = expect_tbl.to_pydict()
-
-    assert agg == expect_pydict
+    for out_py_rb, direct_rb in zip(out_batches, direct_batches_v1):
+        out_rb = RecordBatch._from_pyrecordbatch(out_py_rb)
+        assert out_rb.to_pydict() == direct_rb.to_pydict()
