@@ -11,7 +11,7 @@ use daft_io::{IOConfig, IOStatsRef, SourceType, get_io_client};
 use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
 pub struct UrlUpload;
 
 #[derive(FunctionArgs)]

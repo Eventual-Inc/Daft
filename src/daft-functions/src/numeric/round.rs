@@ -10,7 +10,7 @@ use daft_dsl::{
 use num_traits::Pow;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Round;
 
 #[derive(FunctionArgs)]

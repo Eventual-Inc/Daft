@@ -14,14 +14,15 @@ use crate::{
 };
 
 /// Session holds all state for query planning and execution (e.g. connection).
-#[derive(Debug)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Session {
     /// Session state for interior mutability
     state: Arc<RwLock<SessionState>>,
 }
 
 /// Session state is to be kept internal, consider a builder.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 struct SessionState {
     /// Session identifier
     _id: String,

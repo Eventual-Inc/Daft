@@ -19,7 +19,8 @@ type NamespaceTableMap = IndexMap<Option<String>, IndexMap<String, Arc<MemoryTab
 /// A catalog entirely stored in-memory.
 ///
 /// Supports tables without namespaces or with a single level namespace.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct MemoryCatalog {
     name: String,
     /// map of optional namespace -> table name -> table
@@ -58,7 +59,8 @@ impl MemoryCatalog {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct MemoryTable {
     name: String,
     info: Arc<RwLock<InMemoryInfo>>,

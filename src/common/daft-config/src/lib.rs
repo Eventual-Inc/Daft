@@ -57,11 +57,19 @@ fn parse_number_from_env_with_custom_parser<T: std::str::FromStr + std::fmt::Dis
 /// 1. Creation of a Dataframe including any file listing and schema inference that needs to happen. Note
 ///    that this does not include the actual scan, which is taken care of by the DaftExecutionConfig.
 /// 2. Building of logical plan nodes
-#[derive(Clone, Serialize, Deserialize, Default, Debug, Eq, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Default, Eq, PartialEq)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct DaftPlanningConfig {
     pub default_io_config: IOConfig,
     pub disable_join_reordering: bool,
     pub enable_strict_filter_pushdown: bool,
+}
+
+#[cfg(not(debug_assertions))]
+impl std::fmt::Debug for DaftPlanningConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DaftPlanningConfig").finish()
+    }
 }
 
 impl DaftPlanningConfig {
@@ -94,7 +102,8 @@ impl DaftPlanningConfig {
 /// 3. Task generation from physical plan
 /// 4. Task scheduling
 /// 5. Task local execution
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct DaftExecutionConfig {
     pub scan_tasks_min_size_bytes: usize,
     pub scan_tasks_max_size_bytes: usize,
@@ -128,6 +137,12 @@ pub struct DaftExecutionConfig {
     pub min_cpu_per_task: f64,
     pub actor_udf_ready_timeout: usize,
     pub maintain_order: bool,
+}
+#[cfg(not(debug_assertions))]
+impl std::fmt::Debug for DaftExecutionConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DaftExecutionConfig").finish()
+    }
 }
 
 impl Default for DaftExecutionConfig {

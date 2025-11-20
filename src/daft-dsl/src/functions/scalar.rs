@@ -31,10 +31,18 @@ impl ScalarFn {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum BuiltinScalarFnVariant {
     Sync(Arc<dyn ScalarUDF>),
     Async(Arc<dyn AsyncScalarUDF>),
+}
+impl std::fmt::Debug for BuiltinScalarFnVariant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Sync(udf) => write!(f, "{}", udf.name()),
+            Self::Async(udf) => write!(f, "{}", udf.name()),
+        }
+    }
 }
 
 impl BuiltinScalarFnVariant {
@@ -178,7 +186,7 @@ pub trait ScalarFunctionFactory: Send + Sync {
 
 /// This is a concrete implementation of a ScalarFunction.
 #[typetag::serde(tag = "type")]
-pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
+pub trait ScalarUDF: Send + Sync + std::any::Any {
     /// The name of the function.
     fn name(&self) -> &'static str;
 
@@ -235,7 +243,7 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
 /// This is a concrete implementation of a ScalarFunction.
 #[typetag::serde(tag = "type")]
 #[async_trait::async_trait]
-pub trait AsyncScalarUDF: Send + Sync + std::fmt::Debug + std::any::Any {
+pub trait AsyncScalarUDF: Send + Sync + std::any::Any {
     fn preferred_batch_size(&self, _inputs: FunctionArgs<ExprRef>) -> DaftResult<Option<usize>> {
         Ok(None)
     }
