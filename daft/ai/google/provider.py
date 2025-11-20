@@ -15,8 +15,6 @@ if TYPE_CHECKING:
     from daft.ai.protocols import PrompterDescriptor, TextEmbedderDescriptor
 
 
-
-
 class GoogleProvider(Provider):
     _name: str
     _options: GoogleProviderOptions
