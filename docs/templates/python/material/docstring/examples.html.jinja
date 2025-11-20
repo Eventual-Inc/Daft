@@ -1,0 +1,29 @@
+{#- Template for "Examples" sections in docstrings.
+
+This template renders a list of documented examples.
+It alternates between rendering text and code examples.
+
+Context:
+  section (griffe.DocstringSectionAttributes): The section to render.
+-#}
+
+{% block logs scoped %}
+  {#- Logging block.
+
+  This block can be used to log debug messages, deprecation messages, warnings, etc.
+  -#}
+  {{ log.debug("Rendering examples section") }}
+{% endblock logs %}
+
+{# YORE: Bump 2: Replace `"|get_template` with `.html.jinja"` within line. #}
+{% import "language"|get_template as lang with context %}
+{#- Language module providing the `t` translation method. -#}
+
+<p><span class="doc-section-title">{{ section.title or lang.t("Examples:") }}</span></p>
+{% for section_type, sub_section in section.value %}
+  {% if section_type.value == "text" %}
+    {{ sub_section|convert_markdown(heading_level, html_id, autoref_hook=autoref_hook) }}
+  {% elif section_type.value == "examples" %}
+    {{ sub_section|highlight(language="pycon") }}
+  {% endif %}
+{% endfor %}
