@@ -99,8 +99,8 @@ impl<T: Send + 'static> TaskSet<T> {
         self.inner.len()
     }
 
-    async fn shutdown(&mut self) {
-        self.inner.shutdown().await;
+    fn abort_all(&mut self) {
+        self.inner.abort_all();
     }
 }
 
@@ -159,8 +159,17 @@ impl ExecutionRuntimeContext {
         self.worker_set.join_next().await
     }
 
-    pub async fn shutdown(&mut self) {
-        self.worker_set.shutdown().await;
+    pub async fn shutdown(&mut self) -> DaftResult<()> {
+        self.worker_set.abort_all();
+        while let Some(result) = self.join_next().await {
+            match result {
+                Ok(Err(e)) | Err(e) => {
+                    return Err(e.into());
+                }
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn handle(&self) -> RuntimeHandle {
