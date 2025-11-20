@@ -51,7 +51,7 @@ class NativeExecutor:
             context,
         )
 
-        async def stream_results() -> AsyncGenerator[PyMicroPartition, None]:
+        async def stream_results() -> AsyncGenerator[PyMicroPartition | None, None]:
             try:
                 async for batch in result_handle:
                     yield batch
