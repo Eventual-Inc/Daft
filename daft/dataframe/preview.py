@@ -147,10 +147,6 @@ class PreviewFormatter:
     def _generate_interactive_html(self) -> str:
         """Generate interactive HTML for the current PreviewFormatter's RecordBatch using the dashboard server."""
         from daft.daft import dashboard as dashboard_native
-        from daft.subscribers import launch
-
-        # Ensure the server is running (no-op if already running)
-        launch(noop_if_initialized=True)
 
         # Get the RecordBatch from the current preview partition
         if self._preview.partition is None:

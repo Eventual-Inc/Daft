@@ -18,6 +18,7 @@ tokio-stream = {workspace = true, features = ["sync"]}
 # Ideally want to use the same versions as Axum
 mime = "*"
 mime_guess = "*"
+daft-core = {path = "../daft-core", default-features = false}
 
 [features]
 python = ["dep:pyo3", "daft-recordbatch/python", "common-metrics/python"]

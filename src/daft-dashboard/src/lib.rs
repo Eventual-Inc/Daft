@@ -35,12 +35,7 @@ use crate::state::{DashboardState, GLOBAL_DASHBOARD_STATE};
 pub const DEFAULT_SERVER_ADDR: Ipv4Addr = Ipv4Addr::UNSPECIFIED;
 pub const DEFAULT_SERVER_PORT: u16 = 3238;
 
-fn generate_interactive_html(
-    record_batch: &RecordBatch,
-    df_id: &str,
-    host: &str,
-    port: u16,
-) -> String {
+fn generate_interactive_html(record_batch: &RecordBatch, df_id: &str) -> String {
     // Start with the basic table HTML from repr_html
     let table_html = record_batch.repr_html();
     // Build the complete interactive HTML with side pane layout
@@ -105,10 +100,27 @@ fn generate_interactive_html(
         .to_string(),
     ];
 
-    // Add the table HTML with ID
+    // Build full cell HTML matrix for side-pane
+    let mut full_matrix: Vec<Vec<String>> = Vec::with_capacity(record_batch.len());
+    for r in 0..record_batch.len() {
+        let mut row_vec: Vec<String> = Vec::with_capacity(record_batch.num_columns());
+        for c in 0..record_batch.num_columns() {
+            let col = record_batch.get_column(c);
+            row_vec.push(daft_recordbatch::html_value(col, r, false));
+        }
+        full_matrix.push(row_vec);
+    }
+    let full_matrix_json = serde_json::to_string(&full_matrix).unwrap();
+    let full_matrix_attr = full_matrix_json
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('\'', "&#39;");
+
+    // Add the table HTML with ID and embed full matrix in data attribute
     html.push(format!(
-        r#"<div id="dataframe-{}">{}</div>"#,
-        df_id, table_html
+        r#"<div id="dataframe-{}" data-full-matrix='{}'>{}</div>"#,
+        df_id, full_matrix_attr, table_html
     ));
 
     // Add the side pane
@@ -133,14 +145,15 @@ fn generate_interactive_html(
         r#"
         <script>
         (function() {{
-            const serverUrl = 'http://{}:{}';
             const dfId = '{}';
+            const serverUrl = '';
             const dataframeElement = document.getElementById('dataframe-' + dfId);
             const cells = dataframeElement ? dataframeElement.querySelectorAll('td') : [];
             const sidePane = document.getElementById('side-pane-' + dfId);
             const sidePaneTitle = document.getElementById('side-pane-title-' + dfId);
             const sidePaneContent = document.getElementById('side-pane-content-' + dfId);
             const closeButton = document.getElementById('close-button-' + dfId);
+            const fullMatrix = dataframeElement ? JSON.parse(dataframeElement.getAttribute('data-full-matrix') || '[]') : [];
             let selectedCell = null;
 
             function closeSidePane(paneId) {{
@@ -206,28 +219,16 @@ fn generate_interactive_html(
                         showLoadingContent();
                     }}, 100);
 
-                    // Fetch the cell content
-                    fetch(serverUrl + '/api/dataframes/' + dfId + '/cell?row=' + row + '&col=' + col)
-                        .then(response => response.json())
-                        .then(data => {{
-                            clearTimeout(loadingTimeout);
-                            showSidePane(row, col, data.value);
-                        }})
-                        .catch(err => {{
-                            clearTimeout(loadingTimeout);
-                            // Get the original cell content from the table
-                            const cell = selectedCell;
-                            if (cell) {{
-                                const originalContent = cell.innerHTML;
-                                showSidePane(row, col, originalContent);
-                            }}
-                        }});
+                    // Use pre-rendered full content from embedded matrix (no network)
+                    let content = (fullMatrix[row] && fullMatrix[row][col]) ? fullMatrix[row][col] : cell.innerHTML;
+                    clearTimeout(loadingTimeout);
+                    showSidePane(row, col, content);
                 }};
             }});
         }})();
         </script>
         "#,
-        host, port, df_id
+        df_id
     ));
 
     html.join("")
@@ -329,4 +330,31 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_submodule(&module)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use daft_core::prelude::*;
+    use daft_recordbatch::RecordBatch;
+
+    use super::generate_interactive_html;
+
+    #[test]
+    fn generates_full_matrix_and_js_markers() {
+        let a = Int64Array::from(("A", vec![1, 2, 3])).into_series();
+        let b = Utf8Array::from(("B", ["a", "b", "c"].as_slice())).into_series();
+        let schema = Schema::new(vec![a.field().clone(), b.field().clone()]);
+        let rb = RecordBatch::new_with_size(schema, vec![a, b], 3).unwrap();
+
+        let html = generate_interactive_html(&rb, "df-1");
+
+        assert!(html.contains("dashboard-container"));
+        assert!(html.contains("side-pane-"));
+        assert!(html.contains("showSidePane"));
+        assert!(html.contains("serverUrl"));
+        assert!(html.contains("<table class=\"dataframe\""));
+        assert!(html.contains("data-full-matrix="));
+        assert!(html.contains("\"1\""));
+        assert!(html.contains("\"a\""));
+    }
 }

@@ -2642,6 +2642,7 @@ dependencies = [
  "async-stream",
  "axum 0.8.4",
  "common-metrics",
+ "daft-core",
  "daft-recordbatch",
  "dashmap",
  "futures",
