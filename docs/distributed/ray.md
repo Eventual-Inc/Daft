@@ -149,3 +149,87 @@ ray job submit \
     The runtime env parameter specifies that Daft should be installed on the Ray workers. Alternative methods of including Daft in the worker dependencies can be found [here](https://docs.ray.io/en/latest/ray-core/handling-dependencies.html).
 
 For more information about Ray jobs, see [Ray docs -> Ray Jobs Overview](https://docs.ray.io/en/latest/cluster/running-applications/job-submission/index.html).
+
+### Dynamic Autoscaling
+
+Daft on Ray can automatically adjust cluster size to match workload pressure.
+
+- Scale-up: When the scheduler detects backlog pressure beyond capacity, Daft asks Ray to provision more workers.
+- Scale-down (simplified): When `DAFT_AUTOSCALING_DOWNSCALE_ENABLED` is true and there are idle RaySwordfishActor, Daft retires eligible idle RaySwordfishActor. Idle candidacy is controlled by `DAFT_AUTOSCALING_DOWNSCALE_IDLE_SECONDS`. Scaling down here refers to reclaiming idle RaySwordfishActors. The release of Ray worker nodes is managed by its built-in autoscaling mechanism. For example, on Kubernetes, worker nodes are released after being idle for 1 minute.
+
+#### Environment Variables
+
+Use these environment variables to tune autoscaling behavior. You can set them in your shell or via `os.environ` in Python.
+
+-   `DAFT_AUTOSCALING_DOWNSCALE_ENABLED`
+    -   **Meaning**: Enables or disables the downscaling logic in the scheduler.
+    -   **Default**: `true`
+    -   **Accepted Values**: `"1"/"true"` or `"0"/"false"`
+    -   **Effect**: When disabled, only scale-up will occur. The final downscale on job completion is also skipped.
+
+-   `DAFT_AUTOSCALING_DOWNSCALE_IDLE_SECONDS`
+    -   **Meaning**: The minimum time a worker must be idle to be considered a candidate for retirement.
+    -   **Default**: `60`
+    -   **Accepted Values**: An `integer` representing seconds.
+    -   **Effect**: Prevents recently used workers from being retired too quickly.
+
+-   `DAFT_AUTOSCALING_THRESHOLD`
+    -   **Meaning**: The scale-up threshold used by the `DefaultScheduler`.
+    -   **Default**: `1.25`
+    -   **Accepted Values**: A `float` greater than or equal to `1.0`.
+    -   **Effect**: If the backlog-to-capacity ratio exceeds this threshold, the scheduler will request more workers.
+
+-   `DAFT_SCHEDULER_LINEAR` (Optional)
+    -   **Meaning**: Selects the `LinearScheduler` instead of the default scheduler.
+    -   **Default**: `false`
+    -   **Accepted Values**: `"1"/"true"` or `"0"/"false"`
+    -   **Effect**: Switches the scheduling algorithm used by the `SchedulerActor`.
+
+!!! note
+    Autoscaling requires a Ray cluster configured with the Ray Autoscaler (e.g., in your cluster YAML, define node types with `min_workers` and `max_workers`). A simple head-only local cluster started with `ray start --head` will not automatically provision new nodes.
+
+#### Usage Examples
+
+**Example A: Local Cluster with Autoscaling**
+
+First, start a Ray cluster. For a true autoscaling experience, you would typically use a cluster configuration file. For local testing, you can simulate this by ensuring your environment is correctly set up.
+
+```bash
+# Configure downscaling aggressively
+export DAFT_AUTOSCALING_DOWNSCALE_ENABLED=1
+export DAFT_AUTOSCALING_MIN_SURVIVOR_WORKERS=1
+export DAFT_AUTOSCALING_DOWNSCALE_IDLE_SECONDS=0
+
+# Tune scale-up sensitivity
+export DAFT_AUTOSCALING_THRESHOLD=1.25
+```
+
+Now, run a Daft script that generates a significant backlog.
+
+```python
+import time
+import daft
+import ray
+from daft import col, udf
+from daft.datatype import DataType
+
+ray.init(address="auto")
+daft.context.set_runner_ray()
+
+@udf(return_dtype=DataType.int64())
+class SleepyUdf:
+    def __init__(self):
+        self._sleep = 0.2
+
+    def __call__(self, x):
+        time.sleep(self._sleep)
+        return x
+
+sleepy = SleepyUdf.with_concurrency(4)
+df = daft.from_pydict({"x": list(range(400))}).repartition(100, "x")
+_ = df.select(sleepy(col("x"))).collect()
+
+print("Workload finished. Downscaling should occur if cluster was idle.")
+```
+
+**Expected Behavior**: The Daft scheduler will detect a large backlog relative to available capacity, triggering a scale-up request to Ray. After the workload completes and workers become idle, the scheduler retires idle workers.

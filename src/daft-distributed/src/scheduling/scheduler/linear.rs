@@ -147,6 +147,13 @@ impl<T: Task> Scheduler<T> for LinearScheduler<T> {
                 .unwrap_or_default()
         })
     }
+
+    fn get_backlog_resource_requests(&self) -> Vec<TaskResourceRequest> {
+        self.pending_tasks
+            .iter()
+            .map(|task| task.task.resource_request().clone())
+            .collect()
+    }
 }
 #[cfg(test)]
 mod tests {
