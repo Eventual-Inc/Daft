@@ -125,7 +125,7 @@ def read_lance(
         metadata_cache_size_bytes=metadata_cache_size_bytes,
     )
 
-    ds._daft_open_kwargs = {
+    ds._lance_open_kwargs = {
         "storage_options": storage_options,
         "version": version,
         "asof": asof,

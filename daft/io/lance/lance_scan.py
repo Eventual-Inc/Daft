@@ -172,7 +172,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             filters = self._combine_filters_to_arrow()
 
             new_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(fields[0], pa.uint64())]))
-            open_kwargs = getattr(self._ds, "_daft_open_kwargs", None)
+            open_kwargs = getattr(self._ds, "_lance_open_kwargs", None)
             yield ScanTask.python_factory_func_scan_task(
                 module=_lancedb_count_result_function.__module__,
                 func_name=_lancedb_count_result_function.__name__,
@@ -197,7 +197,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         assert self._pushed_filters is None, "Expected no filters when creating scan tasks with limit and no filters"
         assert pushdowns.limit is not None, "Expected a limit when creating scan tasks with limit and no filters"
 
-        open_kwargs = getattr(self._ds, "_daft_open_kwargs", None)
+        open_kwargs = getattr(self._ds, "_lance_open_kwargs", None)
         fragments = self._ds.get_fragments()
         remaining_limit = pushdowns.limit
 
@@ -232,7 +232,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         self, pushdowns: PyPushdowns, required_columns: Optional[list[str]]
     ) -> Iterator[ScanTask]:
         """Create regular scan tasks without count pushdown."""
-        open_kwargs = getattr(self._ds, "_daft_open_kwargs", None)
+        open_kwargs = getattr(self._ds, "_lance_open_kwargs", None)
         fragments = self._ds.get_fragments()
         pushed_expr = self._combine_filters_to_arrow()
 
