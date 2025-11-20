@@ -36,35 +36,46 @@ Context:
       FUNCTION OUTPUT: Input length is {{ input_text|length }} characters
     {% endmacro %}
 
-    {#- Debug output - show full content for specific examples -#}
+    {#- Check if this is our target example -#}
     {% set is_target_example = "king of the pirates" in sub_section or "Hokage" in sub_section %}
 
     {% if is_target_example %}
-      <div style="border: 4px solid red; padding: 10px; margin: 10px 0; background-color: #ffe6e6;">
-        <strong>🎯 TARGET EXAMPLE FOUND - FULL CONTENT:</strong><br>
-        <hr>
-        <pre style="white-space: pre-wrap; word-wrap: break-word;">{{ sub_section }}</pre>
-        <hr>
-        <strong>Analysis:</strong><br>
-        - Total length: {{ sub_section|length }} chars<br>
-        - Number of lines: {{ sub_section.split('\n')|length }}<br>
-        - Contains '>>>' prompts: {{ '>>>' in sub_section }}<br>
-        - Contains table characters (╭): {{ '╭' in sub_section }}<br>
-      </div>
-    {% else %}
-      <div style="border: 2px solid blue; padding: 10px; margin: 10px 0;">
-        <strong>DEBUG INFO:</strong><br>
-        1. Raw content length: {{ sub_section|length }} chars<br>
-        2. First 100 chars: <code>{{ sub_section[:100] }}</code><br>
-        3. Test function call result: {{ test_function(sub_section) }}<br>
-        4. Can we use string methods? sub_section.upper()[:50] = <code>{{ sub_section.upper()[:50] }}</code>
-      </div>
-    {% endif %}
+      {#- Parse the example to separate input and output -#}
+      {% set lines = sub_section.split('\n') %}
+      {% set input_lines = [] %}
+      {% set output_lines = [] %}
+      {% set in_output = false %}
 
-    {#- Original rendering for comparison -#}
-    <div style="border: 2px solid green; padding: 10px; margin: 10px 0;">
-      <strong>Original rendering:</strong>
+      {% for line in lines %}
+        {% if line.strip().startswith('>>>') or line.strip().startswith('...') %}
+          {% set _ = input_lines.append(line) %}
+          {% set in_output = false %}
+        {% else %}
+          {#- Once we hit non-input, everything else is output -#}
+          {% if line.strip() or in_output %}
+            {% set _ = output_lines.append(line) %}
+            {% set in_output = true %}
+          {% endif %}
+        {% endif %}
+      {% endfor %}
+
+      {#- Render the separated input and output -#}
+      {#- Input as Python code -#}
+      {{ input_lines|join('\n')|highlight(language="pycon") }}
+
+      {#- Output in a separate block styled like quickstart.md -#}
+      {% if output_lines %}
+        <div class="language-text highlight">
+          <span class="filename">Output</span>
+          <div class="highlight">
+            <pre><code>{{ output_lines|join('\n') }}</code></pre>
+          </div>
+        </div>
+      {% endif %}
+
+    {% else %}
+      {#- For non-target examples, use the original rendering -#}
       {{ sub_section|highlight(language="pycon") }}
-    </div>
+    {% endif %}
   {% endif %}
 {% endfor %}
