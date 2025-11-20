@@ -37,7 +37,7 @@ clickhouse = ["clickhouse_connect"]
 deltalake = ["deltalake <= 1.2.1"]
 gcp = []
 hudi = ["pyarrow >= 8.0.0"]
-huggingface = ["huggingface-hub"]
+huggingface = ["huggingface-hub", "datasets"]
 # TODO: pyiceberg 0.9.1 has a bug https://github.com/apache/iceberg-python/issues/1979. It was not
 # triggered because we specify pyiceberg == 0.7.0 in requrements-dev.txt which hide this problem.
 # See https://github.com/Eventual-Inc/Daft/issues/4868.
