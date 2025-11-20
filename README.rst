@@ -45,6 +45,8 @@ Installation
 
 Install Daft with ``pip install daft``.
 
+Requires Python 3.10 or higher.
+
 For more advanced installations (e.g. installing from source or with extra dependencies such as Ray and AWS utilities), please see our `Installation Guide <https://docs.daft.ai/en/stable/install/>`_
 
 Quickstart

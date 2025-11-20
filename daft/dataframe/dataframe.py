@@ -2057,23 +2057,32 @@ class DataFrame:
     @DataframePublicAPI
     def sample(
         self,
-        fraction: float,
+        fraction: Optional[float] = None,
+        size: Optional[int] = None,
         with_replacement: bool = False,
         seed: Optional[int] = None,
     ) -> "DataFrame":
-        """Samples a fraction of rows from the DataFrame.
+        """Samples rows from the DataFrame.
 
         Args:
-            fraction (float): fraction of rows to sample.
+            fraction (Optional[float]): fraction of rows to sample (between 0.0 and 1.0).
+                Must specify either `fraction` or `size`, but not both.
+                For backward compatibility, can also be passed as a positional argument.
+            size (Optional[int]): exact number of rows to sample.
+                Must specify either `fraction` or `size`, but not both.
+                If `size` exceeds the total number of rows:
+                - When `with_replacement=False`: raises ValueError
+                - When `with_replacement=True`: returns `size` rows (may contain duplicates)
             with_replacement (bool, optional): whether to sample with replacement. Defaults to False.
             seed (Optional[int], optional): random seed. Defaults to None.
 
         Returns:
-            DataFrame: DataFrame with a fraction of rows.
+            DataFrame: DataFrame with sampled rows.
 
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
+            >>> # Sample by fraction (backward compatible positional argument)
             >>> sampled_df = df.sample(0.5)
             >>> sampled_df = sampled_df.collect()
             >>> # sampled_df.show()
@@ -2099,11 +2108,22 @@ class DataFrame:
             >>> # ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             >>> # │ 3     ┆ 6     ┆ 9     │
             >>> # ╰───────┴───────┴───────╯
+            >>> # Sample by exact number of rows
+            >>> sampled_df = df.sample(size=2)
+            >>> sampled_df = sampled_df.collect()
         """
-        if fraction < 0.0 or fraction > 1.0:
-            raise ValueError(f"fraction should be between 0.0 and 1.0, but got {fraction}")
+        if fraction is not None and size is not None:
+            raise ValueError("Must specify either `fraction` or `size`, but not both")
+        if fraction is None and size is None:
+            raise ValueError("Must specify either `fraction` or `size`")
+        if fraction is not None:
+            if fraction < 0.0 or fraction > 1.0:
+                raise ValueError(f"fraction should be between 0.0 and 1.0, but got {fraction}")
+        if size is not None:
+            if size < 0:
+                raise ValueError(f"size should be non-negative, but got {size}")
 
-        builder = self._builder.sample(fraction, with_replacement, seed)
+        builder = self._builder.sample(fraction, size, with_replacement, seed)
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -2686,7 +2706,7 @@ class DataFrame:
         on: Optional[Union[list[ColumnInputType], ColumnInputType]] = None,
         left_on: Optional[Union[list[ColumnInputType], ColumnInputType]] = None,
         right_on: Optional[Union[list[ColumnInputType], ColumnInputType]] = None,
-        how: Literal["inner", "inner", "left", "right", "outer", "anti", "semi", "cross"] = "inner",
+        how: Literal["inner", "left", "right", "outer", "anti", "semi", "cross"] = "inner",
         strategy: Optional[Literal["hash", "sort_merge", "broadcast"]] = None,
         prefix: Optional[str] = None,
         suffix: Optional[str] = None,
@@ -4739,14 +4759,6 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.list_agg, cols, self.group_by)
 
-    def agg_list(self, *cols: ColumnInputType) -> DataFrame:
-        """(DEPRECATED) Please use `DataFrame.list_agg` instead."""
-        warnings.warn(
-            "`DataFrame.agg_list` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `DataFrame.list_agg` instead.",
-            category=DeprecationWarning,
-        )
-        return self.list_agg(*cols)
-
     def list_agg_distinct(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped list distinct on this GroupedDataFrame (ignoring nulls).
 
@@ -4758,14 +4770,6 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.list_agg_distinct, cols, self.group_by)
 
-    def agg_set(self, *cols: ColumnInputType) -> DataFrame:
-        """(DEPRECATED) Please use `DataFrame.list_agg_distinct` instead."""
-        warnings.warn(
-            "`DataFrame.agg_set` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `DataFrame.list_agg_distinct` instead.",
-            category=DeprecationWarning,
-        )
-        return self.list_agg_distinct(*cols)
-
     def string_agg(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped string concat on this GroupedDataFrame.
 
@@ -4773,14 +4777,6 @@ class GroupedDataFrame:
             DataFrame: DataFrame with grouped string concatenated per column.
         """
         return self.df._apply_agg_fn(Expression.string_agg, cols, self.group_by)
-
-    def agg_concat(self, *cols: ColumnInputType) -> DataFrame:
-        """(DEPRECATED) Please use `DataFrame.string_agg` instead."""
-        warnings.warn(
-            "`DataFrame.agg_concat` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `DataFrame.string_agg` instead.",
-            category=DeprecationWarning,
-        )
-        return self.string_agg(*cols)
 
     def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> DataFrame:
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.

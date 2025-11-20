@@ -60,6 +60,7 @@ sql = ["connectorx>=0.4.4", "sqlalchemy", "sqlglot"]
 turbopuffer = ["turbopuffer"]
 unity = ["httpx <= 0.27.2", "unitycatalog"]
 video = ["av >= 15.0.0"]
+audio = ["soundfile >= 0.13.0", "librosa >= 0.11.0"]
 viz = []
 
 [dependency-groups]
@@ -154,6 +155,8 @@ dev = [
   "openai==1.100",
   # AV
   "av==15.0.0",
+  "soundfile>=0.13.0",
+  "librosa>=0.11.0",
   # Clickhouse
   "clickhouse-connect",
   # mcap

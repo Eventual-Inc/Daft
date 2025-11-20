@@ -472,15 +472,17 @@ fn physical_plan_to_partition_tasks(
         PhysicalPlan::Sample(Sample {
             input,
             fraction,
+            size,
             with_replacement,
             seed,
+            ..
         }) => {
             let upstream_iter =
                 physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
             let py_iter = py
                 .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "sample"))?
-                .call1((upstream_iter, *fraction, *with_replacement, *seed))?;
+                .call1((upstream_iter, *fraction, *size, *with_replacement, *seed))?;
             Ok(py_iter.into())
         }
         PhysicalPlan::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
