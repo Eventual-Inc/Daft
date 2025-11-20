@@ -163,7 +163,8 @@ impl ExecutionRuntimeContext {
         self.worker_set.abort_all();
         while let Some(result) = self.join_next().await {
             match result {
-                Ok(Err(e)) | Err(e) => {
+                Ok(Err(e)) | Err(e) if !matches!(&e, Error::JoinError { source } if source.is_cancelled()) =>
+                {
                     return Err(e.into());
                 }
                 _ => {}
