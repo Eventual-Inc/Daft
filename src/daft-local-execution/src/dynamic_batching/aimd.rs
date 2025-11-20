@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, time::Duration};
+use std::time::Duration;
 
 use crate::{dynamic_batching::BatchingStrategy, runtime_stats::RuntimeStats};
 
@@ -12,7 +12,7 @@ use crate::{dynamic_batching::BatchingStrategy, runtime_stats::RuntimeStats};
 /// # Algorithm Behavior
 ///
 /// - **Additive Increase**: When latency is below the threshold, increase batch size by
-///   a percentage of the current size (linear growth in absolute terms)
+///   a fixed amount
 /// - **Multiplicative Decrease**: When latency exceeds the threshold, multiply batch size
 ///   by a factor less than 1.0 (exponential reduction)
 /// - **Result**: Creates a "sawtooth" pattern that oscillates around the optimal batch size
@@ -35,7 +35,7 @@ use crate::{dynamic_batching::BatchingStrategy, runtime_stats::RuntimeStats};
 /// ```rust,ignore
 ///
 /// let aimd = AimdBatching::new(
-///     0.1,                           // 10% additive increase
+///     10,                            // 10 additive increase
 ///     0.5,                           // 50% multiplicative decrease
 ///     Duration::from_millis(100),    // 100ms latency threshold
 ///     1,                             // minimum batch size
@@ -51,7 +51,7 @@ use crate::{dynamic_batching::BatchingStrategy, runtime_stats::RuntimeStats};
 /// aimd.adjust_batch_size(&mut state, Duration::from_millis(150));
 /// ```
 pub struct AimdBatching {
-    additive_increase: f64,
+    additive_increase: usize,
     multiplicative_decrease: f64,
     latency_threshold: Duration,
     min_batch_size: usize,
@@ -61,7 +61,7 @@ pub struct AimdBatching {
 #[allow(dead_code)]
 impl AimdBatching {
     pub fn new(
-        additive_increase: f64,
+        additive_increase: usize,
         multiplicative_decrease: f64,
         latency_threshold: Duration,
         min_batch_size: usize,
@@ -75,11 +75,15 @@ impl AimdBatching {
             max_batch_size,
         }
     }
+    pub fn with_increase_amount(mut self, v: usize) -> Self {
+        self.additive_increase = v;
+        self
+    }
 }
 impl Default for AimdBatching {
     fn default() -> Self {
         Self {
-            additive_increase: 0.2,       // 20% increase
+            additive_increase: 16,
             multiplicative_decrease: 0.5, // 50% decrease
             latency_threshold: Duration::from_secs_f64(0.5),
             min_batch_size: 1,
@@ -89,14 +93,12 @@ impl Default for AimdBatching {
 }
 
 pub struct AimdState {
-    history: VecDeque<(usize, Duration)>,
     current_batch_size: usize,
 }
 
 impl AimdState {
     pub fn new(initial_batch_size: usize) -> Self {
         Self {
-            history: VecDeque::new(),
             current_batch_size: initial_batch_size,
         }
     }
@@ -115,13 +117,6 @@ impl BatchingStrategy for AimdBatching {
         _runtime_stats: &dyn RuntimeStats,
         duration: Duration,
     ) -> usize {
-        let num_rows = self.current_batch_size(state);
-        // Record this execution
-        state.history.push_back((num_rows, duration));
-        if state.history.len() > 10 {
-            state.history.pop_front();
-        }
-
         let congestion_detected = duration > self.latency_threshold;
 
         state.current_batch_size = if congestion_detected {
@@ -129,9 +124,7 @@ impl BatchingStrategy for AimdBatching {
             ((state.current_batch_size as f64 * self.multiplicative_decrease) as usize)
                 .max(self.min_batch_size)
         } else {
-            let increase = (state.current_batch_size as f64 * self.additive_increase) as usize;
-            let increase = increase.max(1); // Ensure at least 1 to avoid getting stuck
-            (state.current_batch_size + increase).min(self.max_batch_size)
+            (state.current_batch_size + self.additive_increase).min(self.max_batch_size)
         };
 
         state.current_batch_size
@@ -151,17 +144,16 @@ mod tests {
 
     #[test]
     fn test_aimd_additive_increase() {
-        let aimd = AimdBatching::default();
+        let aimd = AimdBatching::default().with_increase_amount(20);
         let mut state = aimd.make_state();
         let rt_stats = DefaultRuntimeStats::new(0);
-        // Fast execution should increase batch size by 20%
         let new_size = aimd.adjust_batch_size(&mut state, &rt_stats, Duration::from_millis(100));
-        assert_eq!(new_size, 2);
+        assert_eq!(new_size, 21);
 
         // Set a reasonable starting size
         state.current_batch_size = 100;
         let new_size = aimd.adjust_batch_size(&mut state, &rt_stats, Duration::from_millis(100));
-        assert_eq!(new_size, 120); // 100 + (100 * 0.2) = 120
+        assert_eq!(new_size, 120);
     }
 
     #[test]
@@ -179,50 +171,50 @@ mod tests {
 
     #[test]
     fn test_aimd_bounds() {
-        let aimd = AimdBatching::new(0.5, 0.1, Duration::from_millis(100), 10, 200);
+        let aimd = AimdBatching::new(50, 0.1, Duration::from_millis(100), 10, 200);
         let mut state = aimd.make_state();
         let rt_stats = DefaultRuntimeStats::new(0);
 
         // Should respect min bound
         state.current_batch_size = 15;
         let new_size = aimd.adjust_batch_size(&mut state, &rt_stats, Duration::from_secs(1));
-        assert_eq!(new_size, 10); // max(15 * 0.1, 10) = 10
+        assert_eq!(new_size, 10); // max(15 + 50, 10) = 10
 
         // Should respect max bound
         state.current_batch_size = 190;
         let new_size = aimd.adjust_batch_size(&mut state, &rt_stats, Duration::from_millis(50));
-        assert_eq!(new_size, 200); // min(190 + 95, 200) = 200
+        assert_eq!(new_size, 200); // min(190 + 50, 200) = 200
     }
 
     #[test]
     fn test_aimd_sawtooth_pattern() {
-        let aimd = AimdBatching::default();
+        let aimd = AimdBatching::default().with_increase_amount(10);
         let mut state = aimd.make_state();
         let rt_stats = DefaultRuntimeStats::new(0);
         state.current_batch_size = 100;
 
         // Simulate the sawtooth: increase, increase, decrease
-        let size1 = aimd.adjust_batch_size(&mut state, &rt_stats, Duration::from_millis(100)); // 120
-        let size2 = aimd.adjust_batch_size(&mut state, &rt_stats, Duration::from_millis(100)); // 144
-        let size3 = aimd.adjust_batch_size(&mut state, &rt_stats, Duration::from_secs(1)); // 72
+        let size1 = aimd.adjust_batch_size(&mut state, &rt_stats, Duration::from_millis(100)); // 110
+        let size2 = aimd.adjust_batch_size(&mut state, &rt_stats, Duration::from_millis(100)); // 120
+        let size3 = aimd.adjust_batch_size(&mut state, &rt_stats, Duration::from_secs(1)); // 60
 
         assert!(size2 > size1); // Should increase
         assert!(size3 < size2); // Should decrease
     }
     #[test]
     fn test_aimd_threshold_boundary_conditions() {
-        let aimd = AimdBatching::new(0.2, 0.5, Duration::from_millis(100), 1, 1000);
+        let aimd = AimdBatching::new(10, 0.5, Duration::from_millis(100), 1, 1000);
         let mut state = aimd.make_state();
         let rt_stats = DefaultRuntimeStats::new(0);
         state.current_batch_size = 100;
 
         // Exactly at threshold - should still be "good" (< threshold)
         let new_size = aimd.adjust_batch_size(&mut state, &rt_stats, Duration::from_millis(100));
-        assert_eq!(new_size, 120); // Should increase
+        assert_eq!(new_size, 110); // Should increase
 
         // Just over threshold
         let new_size = aimd.adjust_batch_size(&mut state, &rt_stats, Duration::from_millis(101));
-        assert_eq!(new_size, 60); // Should decrease
+        assert_eq!(new_size, 55); // Should decrease
     }
 
     #[test]

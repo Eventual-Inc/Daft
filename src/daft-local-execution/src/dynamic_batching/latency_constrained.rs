@@ -147,8 +147,8 @@ impl LatencyConstrainedBatchingState {
             current_batch_size: initial_batch_size,
             search_low: min,
             search_high: max,
-            recent_latencies: VecDeque::with_capacity(24),
-            recent_batch_sizes: VecDeque::with_capacity(24),
+            recent_latencies: VecDeque::with_capacity(10),
+            recent_batch_sizes: VecDeque::with_capacity(10),
         }
     }
 }
@@ -175,7 +175,7 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
         state.recent_latencies.push_back(duration);
         state.recent_batch_sizes.push_back(state.current_batch_size);
 
-        if state.recent_latencies.len() > 24 {
+        if state.recent_latencies.len() > 10 {
             state.recent_latencies.pop_front();
             state.recent_batch_sizes.pop_front();
         }
@@ -290,7 +290,7 @@ mod tests {
 
         assert_eq!(state.current_batch_size, 1);
         assert_eq!(state.search_low, 1);
-        assert_eq!(state.search_high, 1024);
+        assert_eq!(state.search_high, 256);
         assert!(state.recent_latencies.is_empty());
         assert!(state.recent_batch_sizes.is_empty());
     }

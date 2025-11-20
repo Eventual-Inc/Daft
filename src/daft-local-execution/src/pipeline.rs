@@ -1590,18 +1590,25 @@ fn maybe_dynamically_batched<Op: IntermediateOperator + 'static>(
 ) -> Result<Box<dyn PipelineNode>, Result<Box<dyn PipelineNode>, crate::Error>> {
     if !cfg.maintain_order && cfg.enable_dynamic_batching {
         Ok(match cfg.dynamic_batching_algorithm.as_str() {
-            "aimd" => IntermediateNode::new(
-                Arc::new(DynamicallyBatchedIntermediateOperator::new(
-                    proj_op,
-                    Arc::new(AimdBatching::default()),
-                )),
-                vec![child_node],
-                stats_state.clone(),
-                ctx,
-                schema.clone(),
-                context,
-            )
-            .boxed(),
+            "aimd" => {
+                let increase_amount = match proj_op.op_type() {
+                    NodeType::UDFProject => 16, // use a really increase amount for udfs as they are often expensive
+                    _ => 2048, // these are native functions and can usually handle larger batches
+                };
+
+                IntermediateNode::new(
+                    Arc::new(DynamicallyBatchedIntermediateOperator::new(
+                        proj_op,
+                        Arc::new(AimdBatching::default().with_increase_amount(increase_amount)),
+                    )),
+                    vec![child_node],
+                    stats_state.clone(),
+                    ctx,
+                    schema.clone(),
+                    context,
+                )
+                .boxed()
+            }
             "latency_constrained" | "auto" => {
                 let step_size = match proj_op.op_type() {
                     NodeType::UDFProject => 16, // use a really small step size for udfs as they are often expensive
