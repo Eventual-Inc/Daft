@@ -13,11 +13,6 @@ Context:
   This block can be used to log debug messages, deprecation messages, warnings, etc.
   -#}
   {{ log.debug("Rendering examples section") }}
-  {% for section_type, sub_section in section.value %}
-    {{ log.info("Section type: " ~ section_type.value) }}
-    {{ log.info("Sub-section content type: " ~ sub_section.__class__.__name__) }}
-    {{ log.info("Sub-section content (first 200 chars): " ~ sub_section[:200]) }}
-  {% endfor %}
 {% endblock logs %}
 
 {# YORE: Bump 2: Replace `"|get_template` with `.html.jinja"` within line. #}
@@ -29,53 +24,37 @@ Context:
   {% if section_type.value == "text" %}
     {{ sub_section|convert_markdown(heading_level, html_id, autoref_hook=autoref_hook) }}
   {% elif section_type.value == "examples" %}
-    {#- Test if we can define and call functions in the template -#}
+    {#- Parse all examples to separate input and output -#}
+    {% set lines = sub_section.split('\n') %}
+    {% set input_lines = [] %}
+    {% set output_lines = [] %}
+    {% set in_output = false %}
 
-    {#- Define a simple test function using Jinja2 macro -#}
-    {% macro test_function(input_text) %}
-      FUNCTION OUTPUT: Input length is {{ input_text|length }} characters
-    {% endmacro %}
-
-    {#- Check if this is our target example -#}
-    {% set is_target_example = "king of the pirates" in sub_section or "Hokage" in sub_section %}
-
-    {% if is_target_example %}
-      {#- Parse the example to separate input and output -#}
-      {% set lines = sub_section.split('\n') %}
-      {% set input_lines = [] %}
-      {% set output_lines = [] %}
-      {% set in_output = false %}
-
-      {% for line in lines %}
-        {% if line.strip().startswith('>>>') or line.strip().startswith('...') %}
-          {% set _ = input_lines.append(line) %}
-          {% set in_output = false %}
-        {% else %}
-          {#- Once we hit non-input, everything else is output -#}
-          {% if line.strip() or in_output %}
-            {% set _ = output_lines.append(line) %}
-            {% set in_output = true %}
-          {% endif %}
+    {% for line in lines %}
+      {% if line.strip().startswith('>>>') or line.strip().startswith('...') %}
+        {% set _ = input_lines.append(line) %}
+        {% set in_output = false %}
+      {% else %}
+        {#- Once we hit non-input, everything else is output -#}
+        {% if line.strip() or in_output %}
+          {% set _ = output_lines.append(line) %}
+          {% set in_output = true %}
         {% endif %}
-      {% endfor %}
-
-      {#- Render the separated input and output -#}
-      {#- Input as Python code -#}
-      {{ input_lines|join('\n')|highlight(language="pycon") }}
-
-      {#- Output in a separate block styled like quickstart.md -#}
-      {% if output_lines %}
-        <div class="language-text highlight">
-          <span class="filename">Output</span>
-          <div class="highlight">
-            <pre><code>{{ output_lines|join('\n') }}</code></pre>
-          </div>
-        </div>
       {% endif %}
+    {% endfor %}
 
-    {% else %}
-      {#- For non-target examples, use the original rendering -#}
-      {{ sub_section|highlight(language="pycon") }}
+    {#- Render the separated input and output -#}
+    {#- Input as Python code -#}
+    {{ input_lines|join('\n')|highlight(language="pycon") }}
+
+    {#- Output in a separate block styled like quickstart.md -#}
+    {% if output_lines %}
+      <div class="language-text highlight">
+        <span class="filename">Output</span>
+        <div class="highlight">
+          <pre><code>{{ output_lines|join('\n') }}</code></pre>
+        </div>
+      </div>
     {% endif %}
   {% endif %}
 {% endfor %}
