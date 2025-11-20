@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::series::Series;
 use daft_io::IOStatsContext;
 use daft_recordbatch::RecordBatch;
@@ -68,7 +68,17 @@ impl MicroPartition {
         let tables = self.concat_or_get(io_stats)?;
 
         match tables {
-            None => Ok(Self::empty(Some(self.schema.clone()))),
+            None => {
+                // Empty dataframe: check with_replacement
+                if !with_replacement {
+                    return Err(DaftError::ValueError(
+                        "Cannot take a sample larger than the population when 'replace=False'"
+                            .to_string(),
+                    ));
+                }
+                // For with_replacement=True, we can't sample from empty, so return empty
+                Ok(Self::empty(Some(self.schema.clone())))
+            }
             Some(single) => {
                 let taken = single.sample(size, with_replacement, seed)?;
                 Ok(Self::new_loaded(
@@ -99,5 +109,40 @@ impl MicroPartition {
                 ))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sample_by_size_empty_size_zero_returns_empty() {
+        let mp = MicroPartition::empty(None);
+        let out = mp.sample_by_size(0, false, None).unwrap();
+        assert!(out.is_empty());
+        assert_eq!(out.schema().names(), mp.schema().names());
+    }
+
+    #[test]
+    fn sample_by_size_empty_without_replacement_errors() {
+        let mp = MicroPartition::empty(None);
+        let err = mp.sample_by_size(5, false, Some(42)).unwrap_err();
+        match err {
+            DaftError::ValueError(msg) => {
+                assert!(msg.contains(
+                    "Cannot take a sample larger than the population when 'replace=False'"
+                ));
+            }
+            other => panic!("expected ValueError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn sample_by_size_empty_with_replacement_returns_empty() {
+        let mp = MicroPartition::empty(None);
+        let out = mp.sample_by_size(5, true, Some(123)).unwrap();
+        assert!(out.is_empty());
+        assert_eq!(out.schema().names(), mp.schema().names());
     }
 }

@@ -144,7 +144,7 @@ pub(crate) fn create_sample_tasks(
                     let sample = LocalPhysicalPlan::sample(
                         input,
                         SamplingMethod::Size(sample_size),
-                        false,
+                        true,
                         None,
                         StatsState::NotMaterialized,
                         LocalNodeContext {
