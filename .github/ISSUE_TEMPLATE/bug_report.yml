@@ -30,7 +30,7 @@ body:
     - UDFs (User Defined Functions)
     - Data Sources & Sinks
     - Native Runner (swordfish)
-    - Distribute Runner (flotilla)
+    - Distributed Runner (flotilla)
     - Cloud Storage (S3/GCS/Azure)
     - Multimodal Operations (files/images/etc.)
     - Memory Management/OOM's
