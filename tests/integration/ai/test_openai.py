@@ -314,34 +314,29 @@ def test_prompt_with_image(session, use_chat_completions, metrics):
 @pytest.mark.integration()
 def test_prompt_with_image_from_bytes(session, metrics):
     """Test prompt function with image input from bytes column."""
-    import tempfile
+    import io
 
     import numpy as np
     from PIL import Image
 
-    # Create a temporary image file (green square)
+    # Create a green square image
     green_square = np.zeros((100, 100, 3), dtype=np.uint8)
     green_square[:, :, 1] = 255  # Green channel
 
-    # Save to a temporary file
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-        img = Image.fromarray(green_square)
-        img.save(tmp.name)
-        temp_path = tmp.name
+    # Convert to PNG bytes directly using BytesIO
+    img = Image.fromarray(green_square)
+    bio = io.BytesIO()
+    img.save(bio, format="PNG")
+    image_bytes = bio.getvalue()
 
     df = daft.from_pydict(
         {
             "question": [
                 "Describe this image briefly.",
             ],
-            "image_url": [
-                temp_path,
-            ],
+            "image_bytes": [image_bytes],
         }
     )
-
-    # Download the image to get bytes
-    df = df.with_column("image_bytes", daft.col("image_url").download())
 
     df = df.with_column(
         "answer",

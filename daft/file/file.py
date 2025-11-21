@@ -6,11 +6,12 @@ from typing import TYPE_CHECKING
 
 from daft.daft import PyDaftFile, PyFileReference
 from daft.datatype import MediaType
-from daft.dependencies import av
+from daft.dependencies import av, sf
 
 if TYPE_CHECKING:
     from tempfile import _TemporaryFileWrapper
 
+    from daft.file.audio import AudioFile
     from daft.file.video import VideoFile
     from daft.io import IOConfig
 
@@ -121,6 +122,12 @@ class File:
             return True
         return False
 
+    def is_audio(self) -> bool:
+        mimetype = self.mime_type()
+        if mimetype.startswith("audio/"):
+            return True
+        return False
+
     def as_video(self) -> VideoFile:
         """Convert to VideoFile if this file contains video data."""
         if not av.module_available():
@@ -133,6 +140,22 @@ class File:
             raise ValueError(f"File {self} is not a video file")
 
         cls = VideoFile.__new__(VideoFile)
+        cls._inner = self._inner
+
+        return cls
+
+    def as_audio(self) -> AudioFile:
+        """Convert to AudioFile if this file contains audio data."""
+        if not sf.module_available():
+            raise ImportError("The 'sf' module is required to convert files to audio.")
+        # this is purposely inside the function, and after the `sf` check
+        # because using AudioFile means that the user has `sf` installed
+        from daft.file.audio import AudioFile
+
+        if not self.is_audio():
+            raise ValueError(f"File {self} is not an audio file")
+
+        cls = AudioFile.__new__(AudioFile)
         cls._inner = self._inner
 
         return cls

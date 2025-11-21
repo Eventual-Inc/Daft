@@ -801,6 +801,26 @@ class Expression:
 
         return log1p(self)
 
+    def pow(self, exp: Expression) -> Expression:
+        """The elementwise exponentiation of a numeric series.
+
+        Args:
+            exp: The exponent to raise each element to.
+        """
+        from daft.functions import pow
+
+        return pow(self, exp)
+
+    def power(self, exp: Expression) -> Expression:
+        """The elementwise exponentiation of a numeric series.
+
+        Args:
+            exp: The exponent to raise each element to.
+        """
+        from daft.functions import power
+
+        return power(self, exp)
+
     def exp(self) -> Expression:
         """The e^self of a numeric expression.
 

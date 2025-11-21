@@ -7,16 +7,9 @@ import pytest
 
 import daft
 from tests.conftest import get_tests_daft_runner_name
+from tests.utils import clean_explain_output
 
 pytestmark = pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="requires Native Runner to be in use")
-
-_pattern = re.compile("|".join(map(re.escape, ["\n", "|", " ", "*", "\\"])))
-_rep = {"\n": "", "|": "", " ": "", "*": "", "\\": ""}
-
-
-def clean_explain_output(output: str) -> str:
-    output = _pattern.sub(lambda m: _rep[m.group(0)], output)
-    return output.strip()
 
 
 def make_noop_udf(batch_size: int, dtype: daft.DataType = daft.DataType.int64()):

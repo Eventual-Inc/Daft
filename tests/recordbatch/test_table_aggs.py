@@ -1024,7 +1024,7 @@ def test_groupby_list(dtype) -> None:
             "b": [0, 1, 2, 3, 4, 5, 6],
         }
     ).with_column("a", col("a").cast(DataType.list(dtype)))
-    res = df.groupby("a").agg(daft.functions.list_agg(col("b"))).to_pydict()
+    res = df.groupby("a").list_agg("b").to_pydict()
     expected = [[0, 1, 4], [2, 6], [3, 5]]
     for lt in expected:
         assert lt in res["b"]
@@ -1046,7 +1046,7 @@ def test_groupby_fixed_size_list(dtype) -> None:
             "b": [0, 1, 2, 3, 4, 5, 6],
         }
     ).with_column("a", col("a").cast(DataType.fixed_size_list(dtype, 3)))
-    res = df.groupby("a").agg(daft.functions.list_agg(col("b"))).to_pydict()
+    res = df.groupby("a").list_agg("b").to_pydict()
     expected = [[0, 1, 4], [2, 6], [3, 5]]
     for lt in expected:
         assert lt in res["b"]
@@ -1068,7 +1068,7 @@ def test_groupby_struct(dtype) -> None:
             "b": [0, 1, 2, 3, 4, 5, 6],
         }
     ).with_column("a", col("a").cast(DataType.struct({"c": dtype, "d": DataType.string()})))
-    res = df.groupby("a").agg(daft.functions.list_agg(col("b"))).to_pydict()
+    res = df.groupby("a").list_agg("b").to_pydict()
     expected = [[0, 1, 4], [2, 6], [3, 5]]
     for lt in expected:
         assert lt in res["b"]
@@ -1082,7 +1082,7 @@ def test_agg_concat_on_string() -> None:
 
 def test_agg_concat_on_string_groupby() -> None:
     df3 = from_pydict({"a": ["the", " quick", " brown", " fox"], "b": [1, 2, 1, 2]})
-    res = df3.groupby("b").agg(daft.functions.string_agg(col("a"))).to_pydict()
+    res = df3.groupby("b").string_agg("a").to_pydict()
     expected = ["the brown", " quick fox"]
     for txt in expected:
         assert txt in res["a"]
@@ -1097,7 +1097,7 @@ def test_agg_concat_on_string_null() -> None:
 
 def test_agg_concat_on_string_groupby_null() -> None:
     df3 = from_pydict({"a": ["the", " quick", None, " fox"], "b": [1, 2, 1, 2]})
-    res = df3.groupby("b").agg(daft.functions.string_agg(col("a"))).to_pydict()
+    res = df3.groupby("b").string_agg("a").to_pydict()
     expected = ["the", " quick fox"]
     for txt in expected:
         assert txt in res["a"]
@@ -1117,7 +1117,7 @@ def test_agg_concat_on_string_groupby_null_list() -> None:
     df3 = from_pydict({"a": [None, None, None, None], "b": [1, 2, 1, 2]}).with_column(
         "a", col("a").cast(DataType.string())
     )
-    res = df3.groupby("b").agg(daft.functions.string_agg(col("a"))).to_pydict()
+    res = df3.groupby("b").string_agg("a").to_pydict()
     expected = [None, None]
     assert res["a"] == expected
     assert len(res["a"]) == len(expected)

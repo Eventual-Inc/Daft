@@ -5,6 +5,8 @@ pub mod clip;
 pub mod exp;
 pub mod floor;
 pub mod log;
+pub mod pow;
+pub mod power;
 pub mod round;
 pub mod sign;
 pub mod sqrt;
@@ -23,6 +25,8 @@ use daft_dsl::{
 use exp::{Exp, Expm1};
 use floor::Floor;
 use log::{Ln, Log, Log1p, Log2, Log10};
+use pow::Pow;
+use power::Power;
 use round::Round;
 use sign::{Negate, Sign};
 use sqrt::Sqrt;
@@ -59,6 +63,8 @@ impl FunctionModule for NumericFunctions {
         parent.add_fn(Log10);
         parent.add_fn(Ln);
         parent.add_fn(Log1p);
+        parent.add_fn(Pow);
+        parent.add_fn(Power);
         parent.add_fn(Floor);
         parent.add_fn(Round);
         parent.add_fn(Sign);

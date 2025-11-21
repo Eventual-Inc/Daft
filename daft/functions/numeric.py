@@ -193,6 +193,16 @@ def log1p(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("log1p", expr)
 
 
+def pow(base: Expression, expr: Expression) -> Expression:
+    """The base^expr of a numeric expression."""
+    return Expression._call_builtin_scalar_fn("pow", base, expr)
+
+
+def power(base: Expression, expr: Expression) -> Expression:
+    """The base^expr of a numeric expression."""
+    return Expression._call_builtin_scalar_fn("power", base, expr)
+
+
 def exp(expr: Expression) -> Expression:
     """The e^expr of a numeric expression."""
     return Expression._call_builtin_scalar_fn("exp", expr)
