@@ -199,11 +199,10 @@ class GooglePrompter(Prompter):
         response = await self.client.aio.models.generate_content(
             model=self.model,
             contents=[types.Content(role="user", parts=parts)],
-            config=config,  # See https://googleapis.github.io/python-genai/genai.html#genai.types.GenerateContentConfigDict
+            config=config,
         )
 
         # Record metrics
-        # See https://googleapis.github.io/python-genai/genai.html#genai.types.GenerateContentResponseUsageMetadata
         if response.usage_metadata:
             self._record_usage_metrics(
                 input_tokens=response.usage_metadata.prompt_token_count or 0,
@@ -212,7 +211,6 @@ class GooglePrompter(Prompter):
             )
 
         # Parse result
-        # See https://googleapis.github.io/python-genai/genai.html#genai.types.GenerateContentResponse
         if self.return_format:
             return response.parsed
         else:
