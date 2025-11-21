@@ -390,8 +390,8 @@ def test_google_prompter_client_params_separation():
         assert "api_key" not in prompter.generation_config
         assert "project" not in prompter.generation_config
         # Verify generation params are correctly stored
-        assert prompter.generation_config["temperature"] == 0.7
-        assert prompter.generation_config["max_output_tokens"] == 100
+        assert prompter.generation_config.temperature == 0.7
+        assert prompter.generation_config.max_output_tokens == 100
 
 
 def test_google_prompter_error_handling():
