@@ -22,67 +22,15 @@ LOG_LEVEL_MAP = {
 }
 
 
-def setup_debug_logger(
-    exclude_prefix: typing.Iterable[str] | None = None,
-    daft_only: bool = True,
-) -> None:
-    """Setup Daft logger with debug level, optional prefix filtering, and Rust sync.
-
-    Args:
-        exclude_prefix (typing.Iterable[str] | None, optional): A list of prefixes to exclude from logging. Defaults to None.
-        daft_only (bool, optional): Whether to only log messages from the Daft module. Defaults to True.
-    """
-    setup_logger_level("debug", exclude_prefix, daft_only)
-
-
-def setup_info_logger(
-    exclude_prefix: typing.Iterable[str] | None = None,
-    daft_only: bool = True,
-) -> None:
-    """Setup Daft logger with info level, optional prefix filtering, and Rust sync.
-
-    Args:
-        exclude_prefix (typing.Iterable[str] | None, optional): A list of prefixes to exclude from logging. Defaults to None.
-        daft_only (bool, optional): Whether to only log messages from the Daft module. Defaults to True.
-    """
-    setup_logger_level("info", exclude_prefix, daft_only)
-
-
-def setup_warn_logger(
-    exclude_prefix: typing.Iterable[str] | None = None,
-    daft_only: bool = True,
-) -> None:
-    """Setup Daft logger with warn level, optional prefix filtering, and Rust sync.
-
-    Args:
-        exclude_prefix (typing.Iterable[str] | None, optional): A list of prefixes to exclude from logging. Defaults to None.
-        daft_only (bool, optional): Whether to only log messages from the Daft module. Defaults to True.
-    """
-    setup_logger_level("warn", exclude_prefix, daft_only)
-
-
-def setup_error_logger(
-    exclude_prefix: typing.Iterable[str] | None = None,
-    daft_only: bool = True,
-) -> None:
-    """Setup Daft logger with error level, optional prefix filtering, and Rust sync.
-
-    Args:
-        exclude_prefix (typing.Iterable[str] | None, optional): A list of prefixes to exclude from logging. Defaults to None.
-        daft_only (bool, optional): Whether to only log messages from the Daft module. Defaults to True.
-    """
-    setup_logger_level("error", exclude_prefix, daft_only)
-
-
 def setup_logger_level(
-    level: str = "debug",
+    level: str,
     exclude_prefix: typing.Iterable[str] | None = None,
     daft_only: bool = True,
 ) -> None:
     """Setup Daft logger with a specific log level, optional prefix filtering, and Rust sync.
 
     Args:
-        level (str, optional): The log level to use. Defaults to "debug".
+        level (str, optional): The log level to use. Valid options are "DEBUG", "INFO", "WARNING", "ERROR". Defaults to "INFO".
         exclude_prefix (typing.Iterable[str] | None, optional): A list of prefixes to exclude from logging. Defaults to None.
         daft_only (bool, optional): Whether to only log messages from the Daft module. Defaults to True.
 

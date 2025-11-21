@@ -41,36 +41,36 @@ def test_invalid_level_raises() -> None:
 
 def test_debug_logger() -> None:
     import daft
-    from daft.logging import setup_debug_logger
+    from daft.logging import setup_logger_level
 
-    setup_debug_logger()
+    setup_logger_level("debug")
     rust_level = daft.daft.get_max_log_level()
     assert rust_level == "DEBUG"
 
 
 def test_info_logger() -> None:
     import daft
-    from daft.logging import setup_info_logger
+    from daft.logging import setup_logger_level
 
-    setup_info_logger()
+    setup_logger_level("info")
     rust_level = daft.daft.get_max_log_level()
     assert rust_level == "INFO"
 
 
 def test_warn_logger() -> None:
     import daft
-    from daft.logging import setup_warn_logger
+    from daft.logging import setup_logger_level
 
-    setup_warn_logger()
+    setup_logger_level("warn")
     rust_level = daft.daft.get_max_log_level()
     assert rust_level == "WARN"
 
 
 def test_error_logger() -> None:
     import daft
-    from daft.logging import setup_error_logger
+    from daft.logging import setup_logger_level
 
-    setup_error_logger()
+    setup_logger_level("error")
     rust_level = daft.daft.get_max_log_level()
     assert rust_level == "ERROR"
 
