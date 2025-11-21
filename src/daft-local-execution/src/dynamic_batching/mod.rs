@@ -26,14 +26,11 @@ use crate::runtime_stats::RuntimeStats;
 /// let new_batch_size = algorithm.adjust_batch_size(&mut state, &rt_stats, Duration::from_millis(100));
 /// ```
 pub trait BatchingStrategy: Send + Sync {
-    type State: Send + Sync + Unpin;
-    fn make_state(&self) -> Self::State;
     /// adjust the batch size based on runtime performance metrics
     fn adjust_batch_size(
-        &self,
-        state: &mut Self::State,
+        &mut self,
         _runtime_stats: &dyn RuntimeStats,
         current_run_duration: Duration,
     ) -> usize;
-    fn current_batch_size(&self, state: &Self::State) -> usize;
+    fn current_batch_size(&self) -> usize;
 }

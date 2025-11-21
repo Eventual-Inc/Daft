@@ -1,4 +1,9 @@
-use std::{borrow::Cow, collections::HashMap, fmt::Display, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    fmt::Display,
+    sync::{Arc, Mutex},
+};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{
@@ -1599,7 +1604,9 @@ fn maybe_dynamically_batched<Op: IntermediateOperator + 'static>(
                 IntermediateNode::new(
                     Arc::new(DynamicallyBatchedIntermediateOperator::new(
                         proj_op,
-                        Arc::new(AimdBatching::default().with_increase_amount(increase_amount)),
+                        Arc::new(Mutex::new(
+                            AimdBatching::default().with_increase_amount(increase_amount),
+                        )),
                     )),
                     vec![child_node],
                     stats_state.clone(),
@@ -1617,9 +1624,9 @@ fn maybe_dynamically_batched<Op: IntermediateOperator + 'static>(
                 IntermediateNode::new(
                     Arc::new(DynamicallyBatchedIntermediateOperator::new(
                         proj_op,
-                        Arc::new(
+                        Arc::new(Mutex::new(
                             LatencyConstrainedBatchingStrategy::default().with_step_size(step_size),
-                        ),
+                        )),
                     )),
                     vec![child_node],
                     stats_state.clone(),

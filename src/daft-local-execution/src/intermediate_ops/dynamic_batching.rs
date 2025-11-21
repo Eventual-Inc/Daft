@@ -1,4 +1,7 @@
-use std::{sync::Arc, time::Instant};
+use std::{
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 
 use daft_micropartition::MicroPartition;
 use tracing::Span;
@@ -11,11 +14,10 @@ use crate::{
     pipeline::MorselSizeRequirement,
 };
 
-pub struct DynamicBatchingState<S1, S2> {
+pub struct DynamicBatchingState<S1> {
     inner_state: S1,
     row_offset: usize,
     current_input: Option<Arc<MicroPartition>>,
-    batch_state: S2,
 }
 
 pub struct DynamicallyBatchedIntermediateOperator<Op, DB>
@@ -24,7 +26,7 @@ where
     DB: BatchingStrategy,
 {
     inner_op: Arc<Op>,
-    dynamic_batcher: Arc<DB>,
+    dynamic_batcher: Arc<Mutex<DB>>,
 }
 
 impl<Op, DB> DynamicallyBatchedIntermediateOperator<Op, DB>
@@ -32,7 +34,7 @@ where
     Op: IntermediateOperator,
     DB: BatchingStrategy,
 {
-    pub fn new(inner_op: Arc<Op>, dynamic_batcher: Arc<DB>) -> Self {
+    pub fn new(inner_op: Arc<Op>, dynamic_batcher: Arc<Mutex<DB>>) -> Self {
         Self {
             inner_op,
             dynamic_batcher,
@@ -45,7 +47,7 @@ where
     Op: IntermediateOperator + 'static,
     DB: BatchingStrategy + 'static,
 {
-    type State = DynamicBatchingState<Op::State, DB::State>;
+    type State = DynamicBatchingState<Op::State>;
 
     fn execute(
         &self,
@@ -85,7 +87,9 @@ where
                 // Process a dynamic batch size
                 let batch_size = {
                     dynamic_batcher
-                        .current_batch_size(&state.batch_state)
+                        .lock()
+                        .unwrap()
+                        .current_batch_size()
                         .min(total_rows - state.row_offset)
                 };
 
@@ -101,11 +105,10 @@ where
                 state.row_offset += batch_size;
 
                 // Update dynamic batching state
-                dynamic_batcher.adjust_batch_size(
-                    &mut state.batch_state,
-                    task_spawner_clone.runtime_stats.as_ref(),
-                    duration,
-                );
+                dynamic_batcher
+                    .lock()
+                    .unwrap()
+                    .adjust_batch_size(task_spawner_clone.runtime_stats.as_ref(), duration);
                 match op_result {
                     IntermediateOperatorResult::HasMoreOutput(output) => {
                         Ok((state, IntermediateOperatorResult::HasMoreOutput(output)))
@@ -139,12 +142,10 @@ where
 
     fn make_state(&self) -> common_error::DaftResult<Self::State> {
         let inner_state = self.inner_op.make_state()?;
-        let batch_state = self.dynamic_batcher.make_state();
         Ok(DynamicBatchingState {
             inner_state,
             row_offset: 0,
             current_input: None,
-            batch_state,
         })
     }
 
