@@ -686,10 +686,10 @@ def test_table_pow_bad_input() -> None:
     table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
     table2 = MicroPartition.from_pydict({"a": [1, 10, 100]})
 
-    with pytest.raises(ValueError, match="Expected input to compute pow to be numeric, got Utf8"):
+    with pytest.raises(ValueError, match="Expected input to compute pow to be numeric, got String"):
         table.eval_expression_list([col("a").pow(1)])
 
-    with pytest.raises(ValueError, match="Expected input to compute pow to be numeric, got Utf8"):
+    with pytest.raises(ValueError, match="Expected input to compute pow to be numeric, got String"):
         table.eval_expression_list([col("a").pow(0.1)])
 
     with pytest.raises(ValueError, match='DaftError::ValueError Expected floating point number, received: "c"'):
