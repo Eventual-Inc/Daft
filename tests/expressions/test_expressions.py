@@ -223,7 +223,7 @@ def test_repr_functions_power() -> None:
     a = col("a")
     y = a.power(1.2)
     repr_out = repr(y)
-    assert repr_out == "pow(col(a), lit(1.2))"
+    assert repr_out == "power(col(a), lit(1.2))"
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
