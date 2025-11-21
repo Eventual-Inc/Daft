@@ -122,7 +122,9 @@ impl WithoutReplacementState {
 
             if self.entries.len() < self.capacity {
                 self.entries.push(new_entry);
-            } else if let Some(max_idx) = self.max_key_index() && key < self.entries[max_idx].key {
+            } else if let Some(max_idx) = self.max_key_index()
+                && key < self.entries[max_idx].key
+            {
                 self.entries[max_idx] = new_entry;
             }
         }
