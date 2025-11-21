@@ -15,7 +15,7 @@ def adlfs_recursive_list(fs, path) -> list:
     curr_level_result = fs.ls(path.replace("az://", ""), detail=True)
     for item in curr_level_result:
         if item["type"] == "directory":
-            new_path = f'az://{item["name"]}'
+            new_path = f"az://{item['name']}"
             all_results.extend(adlfs_recursive_list(fs, new_path))
             item["name"] += "/"
             all_results.append(item)
