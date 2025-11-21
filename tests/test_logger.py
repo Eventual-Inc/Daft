@@ -25,26 +25,6 @@ def new_root_logger() -> tuple[logging.Logger, CaptureHandler]:
 
 
 def test_logger_initialization() -> None:
-class CaptureHandler(logging.Handler):
-    def __init__(self) -> None:
-        super().__init__()
-        self.records: list[logging.LogRecord] = []
-
-    def emit(self, record: logging.LogRecord) -> None:
-        self.records.append(record)
-
-
-def new_root_logger() -> tuple[logging.Logger, CaptureHandler]:
-    """Create a fresh root logger with isolated handler."""
-    root = logging.getLogger()
-    for h in root.handlers[:]:
-        root.removeHandler(h)
-    capture = CaptureHandler()
-    root.addHandler(capture)
-    return root, capture
-
-
-def test_logger_initialization() -> None:
     import daft
 
     rust_level = daft.daft.get_max_log_level()
