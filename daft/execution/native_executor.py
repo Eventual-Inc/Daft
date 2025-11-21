@@ -43,16 +43,15 @@ class NativeExecutor:
         psets_mp = {
             part_id: [part.micropartition()._micropartition for part in parts] for part_id, parts in psets.items()
         }
+        result_handle = self._executor.run(
+            local_physical_plan,
+            psets_mp,
+            ctx._ctx,
+            results_buffer_size,
+            context,
+        )
 
-        async def run_executor() -> AsyncGenerator[PyMicroPartition, None]:
-            result_handle = self._executor.run(
-                local_physical_plan,
-                psets_mp,
-                ctx._ctx,
-                results_buffer_size,
-                context,
-            )
-
+        async def stream_results() -> AsyncGenerator[PyMicroPartition | None, None]:
             try:
                 async for batch in result_handle:
                     yield batch
@@ -60,14 +59,15 @@ class NativeExecutor:
                 _ = await result_handle.finish()
 
         event_loop = get_or_init_event_loop()
-        async_exec = run_executor()
-        while True:
-            part = event_loop.run(async_exec.asend(None))  # codespell:ignore asend
-            if part is None:
-                break
-            yield LocalMaterializedResult(MicroPartition._from_pymicropartition(part))
-        # Execution exception handling
-        event_loop.run(async_exec.aclose())
+        async_exec = stream_results()
+        try:
+            while True:
+                part = event_loop.run(async_exec.__anext__())
+                if part is None:
+                    break
+                yield LocalMaterializedResult(MicroPartition._from_pymicropartition(part))
+        finally:
+            event_loop.run(async_exec.aclose())
 
     def pretty_print(
         self,

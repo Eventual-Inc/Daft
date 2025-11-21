@@ -219,9 +219,10 @@ impl PipelineNode for SourceNode {
                 let mut source_stream = source
                     .get_data(maintain_order, io_stats, chunk_size)
                     .await?;
+                stats_manager.activate_node(node_id);
+
                 while let Some(part) = source_stream.next().await {
                     has_data = true;
-                    stats_manager.activate_node(node_id);
                     if counting_sender.send(part?).await.is_err() {
                         stats_manager.finalize_node(node_id);
                         return Ok(());
