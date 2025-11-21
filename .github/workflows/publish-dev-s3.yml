@@ -48,7 +48,7 @@ jobs:
       build_exists: ${{ steps.check_step.outputs.build_exists }}
     steps:
     - name: Assume GitHub Actions AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v5
       with:
         aws-region: ${{ env.AWS_REGION }}
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
@@ -92,16 +92,16 @@ jobs:
       contents: read
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v6
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
     - name: Assume GitHub Actions AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v5
       with:
         aws-region: ${{ env.AWS_REGION }}
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}

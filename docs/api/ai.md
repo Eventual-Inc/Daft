@@ -1,5 +1,19 @@
 # AI
 
+Feature coverage table:
+
+| Feature              | OpenAI | Google | vLLM Prefix Caching | LM Studio | Transformers |
+| ---                  | ---    | ---    | ---                 | ---       | ---          |
+| Prompt               | ✅     | ✅     | ✅                  | ✅        | x            |
+| Embedding            | ✅     | x      | x                   | ✅        | ✅           |
+| Classification       | x      | x      | x                   | x         | ✅           |
+| Image Classification | x      | x      | x                   | x         | ✅           |
+
+
+!!! note
+    Open an issue on our [GitHub](https://github.com/daft-data/daft/issues/new/choose) if you would like to see support for a feature.
+
+
 ## Functions
 
 ::: daft.functions.ai.prompt
@@ -65,10 +79,22 @@
     options:
         heading_level: 3
 
+::: daft.ai.provider.load_google
+    options:
+        heading_level: 3
+
+::: daft.ai.provider.load_lm_studio
+    options:
+        heading_level: 3
+
 ::: daft.ai.provider.load_openai
     options:
         heading_level: 3
 
 ::: daft.ai.provider.load_transformers
+    options:
+        heading_level: 3
+
+::: daft.ai.provider.load_vllm_prefix_caching
     options:
         heading_level: 3
