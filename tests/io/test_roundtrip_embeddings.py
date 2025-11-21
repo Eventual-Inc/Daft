@@ -33,9 +33,7 @@ def _make_check_embeddings(
     def _check_embeddings(loaded_df: daft.DataFrame) -> None:
         loaded_df = loaded_df.collect()
         if loaded_df.count_rows() != test_df.count_rows():
-            raise ValueError(
-                f"Expecting {test_df.count_rows()} rows but got a " f"DataFrame with {loaded_df.count_rows()}"
-            )
+            raise ValueError(f"Expecting {test_df.count_rows()} rows but got a DataFrame with {loaded_df.count_rows()}")
 
         l_rows = loaded_df.to_pydict()[embeddings_col]
         for i, (t, l) in enumerate(zip(test_rows, l_rows)):  # noqa: E741
