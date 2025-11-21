@@ -86,8 +86,24 @@ class GooglePrompter(Prompter):
             if key in client_params_keys:
                 client_params[key] = value
 
+        # Prepare generation config
+        generation_config_keys = types.GenerateContentConfig.model_fields.keys()
+
+        config_params = {}
+        for key, value in generation_config.items():
+            if key in generation_config_keys:
+                config_params[key] = value
+
+        if self.system_message:
+            config_params["system_instruction"] = self.system_message
+
+        if self.return_format:
+            config_params["response_mime_type"] = "application/json"
+            config_params["response_schema"] = self.return_format.model_json_schema()
+
+        self.generation_config = types.GenerateContentConfig(**config_params)
+
         # Initialize client
-        self.generation_config = {k: v for k, v in generation_config.items() if k not in client_params_keys}
         self.client = genai.Client(**client_params)
 
     @singledispatchmethod
@@ -183,23 +199,11 @@ class GooglePrompter(Prompter):
         # Convert messages to Parts
         parts = [self._process_message(msg) for msg in messages]
 
-        # Prepare config
-        config_params = self.generation_config.copy()
-
-        if self.system_message:
-            config_params["system_instruction"] = self.system_message
-
-        if self.return_format:
-            config_params["response_mime_type"] = "application/json"
-            config_params["response_schema"] = self.return_format.model_json_schema()
-
-        config = types.GenerateContentConfig(**config_params)
-
         # Call API
         response = await self.client.aio.models.generate_content(
             model=self.model,
             contents=[types.Content(role="user", parts=parts)],
-            config=config,
+            config=self.generation_config,
         )
 
         # Record metrics
