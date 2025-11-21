@@ -1,6 +1,6 @@
 mod array_impl;
 mod from;
-mod from_lit;
+pub mod from_lit;
 mod ops;
 mod serdes;
 mod series_like;
@@ -8,6 +8,7 @@ mod utils;
 use std::{hash::Hash, ops::Sub, sync::Arc};
 
 pub use array_impl::{ArrayWrapper, IntoSeries};
+use arrow2::trusted_len::TrustedLen;
 use common_display::table_display::{StrValue, make_comfy_table};
 use common_error::DaftResult;
 use derive_more::Display;
@@ -249,7 +250,7 @@ impl Series {
         self.inner.get_lit(idx)
     }
 
-    pub fn to_literals(&self) -> impl ExactSizeIterator<Item = Literal> + use<'_> {
+    pub fn to_literals(&self) -> impl ExactSizeIterator<Item = Literal> + use<'_> + TrustedLen {
         (0..self.len()).map(|i| self.get_lit(i))
     }
 }
@@ -262,7 +263,7 @@ macro_rules! series {
             // put into a vec first for compile-time type consistency checking
             let elements = vec![$($element),+];
             let elements_lit = elements.into_iter().map(Literal::from).collect::<Vec<_>>();
-            Series::try_from(elements_lit).unwrap()
+            Series::from_literals(elements_lit).unwrap()
         }
     };
 }

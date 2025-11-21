@@ -1,0 +1,62 @@
+1. Check the status of your Daft deployment:
+
+   kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+
+{{- if .Values.distributed }}
+
+2. Your Daft cluster is running in distributed mode with Ray:
+
+   Ray Head:     {{ include "daft.fullname" . }}-head
+   Ray Workers:  {{ include "daft.fullname" . }}-worker ({{ .Values.worker.replicas }} replicas)
+   Job:          {{ include "daft.fullname" . }}-job
+   {{- if .Values.job.script }}
+   Script:       {{ include "daft.fullname" . }}-job-script (mounted at /usr/src/daft/main.py)
+   {{- end }}
+
+3. Monitor the Ray cluster status:
+
+   kubectl logs deployment/{{ include "daft.fullname" . }}-head -c ray-head
+
+4. Access the Ray dashboard (when ready):
+{{- if .Values.monitoring.enabled }}
+
+   kubectl port-forward service/{{ include "daft.headServiceName" . }} 8265:8265 3000:3000
+
+   Ray Dashboard     : http://localhost:8265
+   Grafana (optional): http://localhost:3000 (admin/admin)
+{{- else }}
+
+   kubectl port-forward service/{{ include "daft.headServiceName" . }} 8265:8265
+
+   Ray Dashboard: http://localhost:8265
+{{- end }}
+
+5. Check your job status:
+
+   kubectl get job {{ include "daft.fullname" . }}-job
+   kubectl logs job/{{ include "daft.fullname" . }}-job
+
+{{- else }}
+
+2. Your Daft job is running in simple mode (no Ray cluster):
+
+   Job: {{ include "daft.fullname" . }}-job
+   {{- if .Values.job.script }}
+   Script: {{ include "daft.fullname" . }}-job-script (mounted at /usr/src/daft/main.py)
+   {{- end }}
+
+3. Check your job status:
+
+   kubectl get job {{ include "daft.fullname" . }}-job
+   kubectl logs job/{{ include "daft.fullname" . }}-job
+
+{{- end }}
+
+{{- if not .Values.job.script }}
+
+To inject a Python script directly into the job, use:
+  helm install my-job ./daft --set-file job.script=my_script.py
+
+{{- end }}
+
+For more information, visit the Daft documentation.

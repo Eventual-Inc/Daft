@@ -9,7 +9,10 @@ use pyo3::{
 use serde::{Deserialize, Serialize};
 
 use super::field::PyField;
-use crate::{dtype::DataType, field::Field, image_mode::ImageMode, time_unit::TimeUnit};
+use crate::{
+    dtype::DataType, field::Field, image_mode::ImageMode, media_type::MediaType,
+    time_unit::TimeUnit,
+};
 
 #[pyclass]
 #[derive(Clone)]
@@ -305,12 +308,6 @@ impl PyDataType {
     #[pyo3(signature = (dtype, shape=None))]
     pub fn tensor(dtype: Self, shape: Option<Vec<u64>>) -> PyResult<Self> {
         // TODO(Clark): Add support for non-numeric (e.g. string) tensor columns.
-        if !dtype.dtype.is_numeric() {
-            return Err(PyValueError::new_err(format!(
-                "The data type for a tensor column must be numeric, but got: {}",
-                dtype.dtype
-            )));
-        }
         let dtype = Box::new(dtype.dtype);
         match shape {
             Some(shape) => Ok(DataType::FixedShapeTensor(dtype, shape).into()),
@@ -325,12 +322,6 @@ impl PyDataType {
         shape: Option<Vec<u64>>,
         use_offset_indices: bool,
     ) -> PyResult<Self> {
-        if !dtype.dtype.is_numeric() {
-            return Err(PyValueError::new_err(format!(
-                "The data type for a tensor column must be numeric, but got: {}",
-                dtype.dtype
-            )));
-        }
         let dtype = Box::new(dtype.dtype);
         match shape {
             Some(shape) => {
@@ -346,8 +337,8 @@ impl PyDataType {
     }
 
     #[staticmethod]
-    pub fn file() -> PyResult<Self> {
-        Ok(DataType::File.into())
+    pub fn file(ff: MediaType) -> PyResult<Self> {
+        Ok(DataType::File(ff).into())
     }
 
     pub fn to_arrow<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {

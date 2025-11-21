@@ -12,6 +12,7 @@ from daft.daft import (
     JsonConvertOptions,
     JsonParseOptions,
     JsonReadOptions,
+    OperatorMetrics,
     PySeries,
 )
 from daft.daft import PyRecordBatch as _PyRecordBatch
@@ -146,6 +147,10 @@ class RecordBatch:
             series_dict[k] = series._series
         return RecordBatch._from_pyrecordbatch(_PyRecordBatch.from_pylist_series(series_dict))
 
+    @staticmethod
+    def from_ipc_stream(bytes: bytes) -> RecordBatch:
+        return RecordBatch._from_pyrecordbatch(_PyRecordBatch.from_ipc_stream(bytes))
+
     @classmethod
     def concat(cls, to_merge: list[RecordBatch]) -> RecordBatch:
         tables = []
@@ -230,6 +235,9 @@ class RecordBatch:
             else:
                 return arrow_table.to_pandas(coerce_temporal_nanoseconds=coerce_temporal_nanoseconds)
 
+    def to_ipc_stream(self) -> bytes:
+        return self._recordbatch.to_ipc_stream()
+
     ###
     # Compute methods (Table -> Table)
     ###
@@ -238,6 +246,12 @@ class RecordBatch:
         assert all(isinstance(e, Expression) for e in exprs)
         pyexprs = [e._expr for e in exprs]
         return RecordBatch._from_pyrecordbatch(self._recordbatch.eval_expression_list(pyexprs))
+
+    def eval_expression_list_with_metrics(self, exprs: ExpressionsProjection) -> tuple[RecordBatch, OperatorMetrics]:
+        assert all(isinstance(e, Expression) for e in exprs)
+        pyexprs = [e._expr for e in exprs]
+        record_batch, metrics = self._recordbatch.eval_expression_list_with_metrics(pyexprs)
+        return RecordBatch._from_pyrecordbatch(record_batch), metrics
 
     def head(self, num: int) -> RecordBatch:
         return RecordBatch._from_pyrecordbatch(self._recordbatch.head(num))

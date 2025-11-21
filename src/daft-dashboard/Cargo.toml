@@ -1,17 +1,26 @@
 [dependencies]
-axum = "0.7"
+async-stream = {workspace = true}
+axum = "0.8"
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
+common-metrics = {path = "../common/metrics", default-features = false}
 tower = "0.5"
 tower-http = {version = "0.6", features = ["fs", "trace", "cors"]}
 include_dir = "0.7.4"
-parking_lot = {workspace = true}
+dashmap = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-serde.workspace = true
-tokio.workspace = true
-uuid.workspace = true
+serde_json = {workspace = true}
+tracing = {workspace = true}
+serde = {workspace = true}
+tokio = {workspace = true}
+uuid = {workspace = true}
+futures = {workspace = true}
+tokio-stream = {workspace = true, features = ["sync"]}
+# Ideally want to use the same versions as Axum
+mime = "*"
+mime_guess = "*"
 
 [features]
-python = ["dep:pyo3", "daft-recordbatch/python"]
+python = ["dep:pyo3", "daft-recordbatch/python", "common-metrics/python"]
 
 [lints]
 workspace = true

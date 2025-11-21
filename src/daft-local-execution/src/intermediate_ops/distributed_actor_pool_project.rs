@@ -7,6 +7,7 @@ use std::{
 };
 
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use daft_micropartition::MicroPartition;
 #[cfg(feature = "python")]
 use daft_micropartition::python::PyMicroPartition;
@@ -20,75 +21,71 @@ use super::intermediate_op::{
 };
 use crate::{
     ExecutionTaskSpawner,
-    ops::NodeType,
     pipeline::{MorselSizeRequirement, NodeName},
 };
 
 #[derive(Clone, Debug)]
 pub(crate) struct ActorHandle {
     #[cfg(feature = "python")]
-    inner: Arc<PyObject>,
+    inner: Arc<Py<PyAny>>,
 }
 
 impl ActorHandle {
-    #[cfg(feature = "python")]
     fn get_actors_on_current_node(actor_handles: Vec<Self>) -> DaftResult<(Vec<Self>, Vec<Self>)> {
-        let actor_handles = actor_handles
-            .into_iter()
-            .map(|e| e.inner)
-            .collect::<Vec<_>>();
-
-        let (local_actors, remote_actors) = Python::with_gil(|py| {
+        #[cfg(feature = "python")]
+        {
             let actor_handles = actor_handles
                 .into_iter()
-                .map(|e| e.as_ref().clone_ref(py))
+                .map(|e| e.inner)
                 .collect::<Vec<_>>();
-            let ray_actor_pool_udf_module =
-                py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
-            let (local_actors, remote_actors) = ray_actor_pool_udf_module
-                .call_method1(
-                    pyo3::intern!(py, "get_ready_actors_by_location"),
-                    (actor_handles,),
-                )?
-                .extract::<(Vec<PyObject>, Vec<PyObject>)>()?;
-            DaftResult::Ok((local_actors, remote_actors))
-        })?;
 
-        let local_actors = local_actors
-            .into_iter()
-            .map(|e| Self { inner: Arc::new(e) })
-            .collect::<Vec<_>>();
-        let remote_actors = remote_actors
-            .into_iter()
-            .map(|e| Self { inner: Arc::new(e) })
-            .collect::<Vec<_>>();
-        Ok((local_actors, remote_actors))
+            let (local_actors, remote_actors) = Python::attach(|py| {
+                let actor_handles = actor_handles
+                    .into_iter()
+                    .map(|e| e.as_ref().clone_ref(py))
+                    .collect::<Vec<_>>();
+                let ray_actor_pool_udf_module =
+                    py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
+                let (local_actors, remote_actors) = ray_actor_pool_udf_module
+                    .call_method1(
+                        pyo3::intern!(py, "get_ready_actors_by_location"),
+                        (actor_handles,),
+                    )?
+                    .extract::<(Vec<Py<PyAny>>, Vec<Py<PyAny>>)>()?;
+                DaftResult::Ok((local_actors, remote_actors))
+            })?;
+
+            let local_actors = local_actors
+                .into_iter()
+                .map(|e| Self { inner: Arc::new(e) })
+                .collect::<Vec<_>>();
+            let remote_actors = remote_actors
+                .into_iter()
+                .map(|e| Self { inner: Arc::new(e) })
+                .collect::<Vec<_>>();
+            Ok((local_actors, remote_actors))
+        }
+        #[cfg(not(feature = "python"))]
+        {
+            unimplemented!(
+                "ActorHandle::get_actors_on_current_node is not implemented without Python"
+            );
+        }
     }
 
     #[cfg(feature = "python")]
-    async fn eval_input(
-        &self,
-        input: Arc<MicroPartition>,
-        task_locals: pyo3_async_runtimes::TaskLocals,
-    ) -> DaftResult<Arc<MicroPartition>> {
+    async fn eval_input(&self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
         let inner = self.inner.clone();
-        let await_coroutine = async move {
-            let result = Python::with_gil(|py| {
+        let result =
+            common_runtime::python::execute_python_coroutine::<_, PyMicroPartition>(move |py| {
                 let coroutine = inner.call_method1(
                     py,
                     pyo3::intern!(py, "eval_input"),
                     (PyMicroPartition::from(input),),
                 )?;
-                pyo3_async_runtimes::tokio::into_future(coroutine.into_bound(py))
-            })?
+                Ok(coroutine.into_bound(py))
+            })
             .await?;
-            DaftResult::Ok(result)
-        };
-        let result = pyo3_async_runtimes::tokio::scope(task_locals, await_coroutine)
-            .await
-            .and_then(|result| {
-                Python::with_gil(|py| result.extract::<PyMicroPartition>(py)).map_err(|e| e.into())
-            })?;
         Ok(result.into())
     }
 }
@@ -109,8 +106,6 @@ pub(crate) struct DistributedActorPoolProjectOperator {
     batch_size: Option<usize>,
     memory_request: u64,
     counter: AtomicUsize,
-    #[cfg(feature = "python")]
-    task_locals: pyo3_async_runtimes::TaskLocals,
 }
 
 impl DistributedActorPoolProjectOperator {
@@ -120,17 +115,6 @@ impl DistributedActorPoolProjectOperator {
         memory_request: u64,
     ) -> DaftResult<Self> {
         let actor_handles: Vec<ActorHandle> = actor_handles.into_iter().map(|e| e.into()).collect();
-        Self::new_with_task_locals(actor_handles, batch_size, memory_request)
-    }
-
-    #[cfg(feature = "python")]
-    fn new_with_task_locals(
-        actor_handles: Vec<ActorHandle>,
-        batch_size: Option<usize>,
-        memory_request: u64,
-    ) -> DaftResult<Self> {
-        let task_locals = Python::with_gil(pyo3_async_runtimes::tokio::get_current_locals)?;
-
         let (local_actor_handles, remote_actor_handles) =
             ActorHandle::get_actors_on_current_node(actor_handles)?;
 
@@ -150,18 +134,7 @@ impl DistributedActorPoolProjectOperator {
             batch_size,
             memory_request,
             counter: AtomicUsize::new(init_counter),
-            task_locals,
         })
-    }
-    #[cfg(not(feature = "python"))]
-    fn new_with_task_locals(
-        actor_handles: Vec<ActorHandle>,
-        batch_size: Option<usize>,
-        memory_request: u64,
-    ) -> DaftResult<Self> {
-        unimplemented!(
-            "DistributedActorPoolProjectOperator::new_with_task_locals is not implemented without Python"
-        );
     }
 }
 
@@ -178,15 +151,13 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         let memory_request = self.memory_request;
         #[cfg(feature = "python")]
         {
-            let task_locals = Python::with_gil(|py| self.task_locals.clone_ref(py));
             let fut = task_spawner.spawn_with_memory_request(
                 memory_request,
                 async move {
-                    let res = state
-                        .actor_handle
-                        .eval_input(input, task_locals)
-                        .await
-                        .map(|result| IntermediateOperatorResult::NeedMoreInput(Some(result)))?;
+                    let res =
+                        state.actor_handle.eval_input(input).await.map(|result| {
+                            IntermediateOperatorResult::NeedMoreInput(Some(result))
+                        })?;
                     Ok((state, res))
                 },
                 Span::current(),
@@ -217,7 +188,7 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         res
     }
 
-    async fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self) -> DaftResult<Self::State> {
         // Check if we need to initialize the filtered actor handles
         #[cfg(feature = "python")]
         {
@@ -237,7 +208,9 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
     }
 
     fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(self.actor_handles.len())
+        // We set the max concurrency to be the number of actor handles * 2 to such that each actor handle has 2 workers submitting to it.
+        // This allows inputs to be queued up concurrently with UDF execution.
+        Ok(self.actor_handles.len() * 2)
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {

@@ -19,3 +19,21 @@ Learn more about [UDFs](../custom-code/udfs.md) in Daft User Guide.
 ::: daft.udf.UDF
     options:
         filters: ["!^_", "__call__"]
+
+## New UDFs
+
+`@daft.func` and `@daft.cls` are the new interface for creating user-defined functions in Daft. They provide a streamlined way to turn Python functions into Daft operations that work seamlessly with DataFrame expressions.
+
+Learn more in the [User Guide](../custom-code/func.md).
+
+::: daft.func
+
+::: daft.udf._FuncDecorator
+
+::: daft.cls
+
+::: daft.method
+
+::: daft.udf._MethodDecorator
+
+::: daft.udf.udf_v2.Func

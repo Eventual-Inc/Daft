@@ -157,21 +157,6 @@ impl From<(&str, Vec<arrow2::types::months_days_ns>)> for IntervalArray {
     }
 }
 
-#[cfg(feature = "python")]
-impl From<(&str, Vec<Arc<pyo3::PyObject>>)> for crate::datatypes::PythonArray {
-    fn from(item: (&str, Vec<Arc<pyo3::PyObject>>)) -> Self {
-        use crate::array::pseudo_arrow::PseudoArrowArray;
-
-        let (name, vec_pyobj) = item;
-        let arrow_array: Box<dyn arrow2::array::Array> =
-            Box::new(PseudoArrowArray::<Arc<pyo3::PyObject>>::from_pyobj_vec(
-                vec_pyobj,
-            ));
-        let field = Field::new(name, DataType::Python);
-        Self::new(field.into(), arrow_array).unwrap()
-    }
-}
-
 impl<T: AsRef<str>> From<(&str, &[T])> for DataArray<Utf8Type> {
     fn from(item: (&str, &[T])) -> Self {
         let (name, slice) = item;
@@ -231,26 +216,6 @@ impl TryFrom<(&str, Vec<u8>, Vec<i64>)> for BinaryArray {
             Field::new(name, DataType::Binary).into(),
             Box::new(bin_array),
         )
-    }
-}
-
-#[cfg(feature = "python")]
-impl
-    TryFrom<(
-        &str,
-        crate::array::pseudo_arrow::PseudoArrowArray<Arc<pyo3::PyObject>>,
-    )> for crate::datatypes::PythonArray
-{
-    type Error = DaftError;
-
-    fn try_from(
-        item: (
-            &str,
-            crate::array::pseudo_arrow::PseudoArrowArray<Arc<pyo3::PyObject>>,
-        ),
-    ) -> DaftResult<Self> {
-        let (name, array) = item;
-        Self::new(Field::new(name, DataType::Python).into(), Box::new(array))
     }
 }
 
@@ -319,37 +284,13 @@ impl TryFrom<(&str, &[Option<Series>])> for ListArray {
     }
 }
 
-impl<T: NumericNative> From<(&str, &[&[T]])> for ListArray
-where
-    T::DAFTTYPE: DaftNumericType<Native = T> + DaftArrowBackedType,
-    ArrayWrapper<DataArray<T::DAFTTYPE>>: SeriesLike,
-{
-    fn from(item: (&str, &[&[T]])) -> Self {
-        let (name, data) = item;
-        let flat_child_vec = data.iter().copied().flatten().copied().collect::<Vec<_>>();
-        let flat_child = DataArray::<T::DAFTTYPE>::from((name, flat_child_vec)).into_series();
-
-        let lengths = data.iter().map(|d| d.len());
-        let offsets = arrow2::offset::Offsets::try_from_lengths(lengths)
-            .unwrap()
-            .into();
-
-        Self::new(
-            flat_child.field().to_list_field().rename(name),
-            flat_child,
-            offsets,
-            None,
-        )
-    }
-}
-
-impl<T: NumericNative> From<(&str, &[Option<&[T]>])> for ListArray
-where
-    T::DAFTTYPE: DaftNumericType<Native = T>,
-    ArrayWrapper<DataArray<T::DAFTTYPE>>: SeriesLike,
-{
-    fn from(item: (&str, &[Option<&[T]>])) -> Self {
-        let (name, data) = item;
+impl ListArray {
+    pub fn from_slice<T>(name: &str, data: &[Option<&[T]>]) -> Self
+    where
+        T: NumericNative,
+        T::DAFTTYPE: DaftNumericType<Native = T>,
+        ArrayWrapper<DataArray<T::DAFTTYPE>>: SeriesLike,
+    {
         let flat_child_vec = data
             .iter()
             .copied()
@@ -360,6 +301,31 @@ where
         let flat_child = DataArray::<T::DAFTTYPE>::from((name, flat_child_vec)).into_series();
 
         let lengths = data.iter().map(|d| d.map_or(0, |d| d.len()));
+        let offsets = arrow2::offset::Offsets::try_from_lengths(lengths)
+            .unwrap()
+            .into();
+
+        let validity =
+            arrow2::bitmap::Bitmap::from_trusted_len_iter(data.iter().map(Option::is_some));
+
+        Self::new(
+            flat_child.field().to_list_field().rename(name),
+            flat_child,
+            offsets,
+            Some(validity),
+        )
+    }
+
+    pub fn from_vec<T>(name: &str, data: Vec<Option<Vec<T>>>) -> Self
+    where
+        T: NumericNative,
+        T::DAFTTYPE: DaftNumericType<Native = T>,
+        ArrayWrapper<DataArray<T::DAFTTYPE>>: SeriesLike,
+    {
+        let flat_child_vec = data.iter().flatten().flatten().copied().collect::<Vec<_>>();
+        let flat_child = DataArray::<T::DAFTTYPE>::from((name, flat_child_vec)).into_series();
+
+        let lengths = data.iter().map(|d| d.as_ref().map_or(0, |d| d.len()));
         let offsets = arrow2::offset::Offsets::try_from_lengths(lengths)
             .unwrap()
             .into();

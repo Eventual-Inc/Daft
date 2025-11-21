@@ -2,12 +2,13 @@ use std::sync::Arc;
 
 use arrow2::datatypes::ArrowDataType;
 use common_error::{DaftError, DaftResult};
+use common_ndarray::NdArray;
 use daft_schema::{dtype::DaftDataType, field::DaftField};
 
 use super::Series;
 use crate::{
-    array::ops::from_arrow::FromArrow, datatypes::Field, series::array_impl::IntoSeries,
-    with_match_daft_types,
+    array::ops::from_arrow::FromArrow, datatypes::Field, prelude::*,
+    series::array_impl::IntoSeries, with_match_daft_types,
 };
 
 impl Series {
@@ -21,6 +22,36 @@ impl Series {
         with_match_daft_types!(dtype, |$T| {
             Ok(<$T as DaftDataType>::ArrayType::from_arrow(field, array)?.into_series())
         })
+    }
+
+    pub fn from_ndarray_flattened(arr: NdArray) -> Self {
+        // set a default name for convenience. you can rename if you want a different name
+        let name = "ndarray";
+        match arr {
+            NdArray::I8(arr) => Int8Array::from((name, arr.flatten().to_vec())).into_series(),
+            NdArray::U8(arr) => UInt8Array::from((name, arr.flatten().to_vec())).into_series(),
+            NdArray::I16(arr) => Int16Array::from((name, arr.flatten().to_vec())).into_series(),
+            NdArray::U16(arr) => UInt16Array::from((name, arr.flatten().to_vec())).into_series(),
+            NdArray::I32(arr) => Int32Array::from((name, arr.flatten().to_vec())).into_series(),
+            NdArray::U32(arr) => UInt32Array::from((name, arr.flatten().to_vec())).into_series(),
+            NdArray::I64(arr) => Int64Array::from((name, arr.flatten().to_vec())).into_series(),
+            NdArray::U64(arr) => UInt64Array::from((name, arr.flatten().to_vec())).into_series(),
+            NdArray::F32(arr) => Float32Array::from((name, arr.flatten().to_vec())).into_series(),
+            NdArray::F64(arr) => Float64Array::from((name, arr.flatten().to_vec())).into_series(),
+            #[cfg(feature = "python")]
+            NdArray::Py(arr) => {
+                use pyo3::{Python, types::PyList};
+
+                use crate::python::PySeries;
+
+                Python::attach(|py| {
+                    let pylist = PyList::new(py, arr.iter().map(|obj| obj.0.as_ref())).unwrap();
+                    PySeries::from_pylist(&pylist, Some(name), None)
+                        .unwrap()
+                        .series
+                })
+            }
+        }
     }
 }
 

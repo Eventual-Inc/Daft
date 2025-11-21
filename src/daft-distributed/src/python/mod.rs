@@ -3,6 +3,7 @@ pub mod ray;
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
+use common_display::DisplayLevel;
 use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_logical_plan::PyLogicalPlanBuilder;
@@ -14,9 +15,13 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::{
-    plan::{DistributedPhysicalPlan, PlanResultStream, PlanRunner},
+    pipeline_node::{
+        logical_plan_to_pipeline_node, viz_distributed_pipeline_ascii,
+        viz_distributed_pipeline_mermaid,
+    },
+    plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
     python::ray::RayTaskResult,
-    statistics::{HttpSubscriber, StatisticsManager, StatisticsSubscriber},
+    statistics::StatisticsSubscriber,
 };
 
 #[pyclass(frozen)]
@@ -66,31 +71,63 @@ impl PyDistributedPhysicalPlan {
     #[staticmethod]
     fn from_logical_plan_builder(
         builder: &PyLogicalPlanBuilder,
+        query_id: String,
         config: &PyDaftExecutionConfig,
     ) -> PyResult<Self> {
         let plan = DistributedPhysicalPlan::from_logical_plan_builder(
             &builder.builder,
+            query_id.into(),
             config.config.clone(),
         )?;
         Ok(Self { plan })
     }
 
-    fn id(&self) -> String {
-        self.plan.id().to_string()
+    fn idx(&self) -> String {
+        self.plan.idx().to_string()
     }
 
     /// Visualize the distributed pipeline as ASCII text
     fn repr_ascii(&self, simple: bool) -> PyResult<String> {
-        // Create a pipeline node from the stage plan
-        let stage_plan = self.plan.stage_plan();
-        Ok(stage_plan.repr_ascii(self.plan.id().into(), simple)?)
+        // Create pipeline nodes from the logical plan
+        let plan_config = PlanConfig::new(
+            self.plan.idx(),
+            self.plan.query_id(),
+            self.plan.execution_config().clone(),
+        );
+        let pipeline_node = logical_plan_to_pipeline_node(
+            plan_config,
+            self.plan.logical_plan().clone(),
+            Default::default(),
+        )?;
+
+        Ok(viz_distributed_pipeline_ascii(&pipeline_node, simple))
     }
 
     /// Visualize the distributed pipeline as Mermaid markdown
     fn repr_mermaid(&self, simple: bool, bottom_up: bool) -> PyResult<String> {
         // Create a pipeline node from the stage plan
-        let stage_plan = self.plan.stage_plan();
-        Ok(stage_plan.repr_mermaid(self.plan.id().into(), simple, bottom_up)?)
+        let plan_config = PlanConfig::new(
+            self.plan.idx(),
+            self.plan.query_id(),
+            self.plan.execution_config().clone(),
+        );
+        let pipeline_node = logical_plan_to_pipeline_node(
+            plan_config,
+            self.plan.logical_plan().clone(),
+            Default::default(),
+        )?;
+
+        let display_level = if simple {
+            DisplayLevel::Compact
+        } else {
+            DisplayLevel::Default
+        };
+        Ok(viz_distributed_pipeline_mermaid(
+            &pipeline_node,
+            display_level,
+            bottom_up,
+            None,
+        ))
     }
 }
 impl_bincode_py_state_serialization!(PyDistributedPhysicalPlan);
@@ -103,8 +140,8 @@ struct PyDistributedPhysicalPlanRunner {
 #[pymethods]
 impl PyDistributedPhysicalPlanRunner {
     #[new]
-    fn new(py: Python) -> PyResult<Self> {
-        let worker_manager = RayWorkerManager::try_new(py)?;
+    fn new() -> PyResult<Self> {
+        let worker_manager = RayWorkerManager::new();
         Ok(Self {
             runner: Arc::new(PlanRunner::new(Arc::new(worker_manager))),
         })
@@ -128,25 +165,10 @@ impl PyDistributedPhysicalPlanRunner {
             })
             .collect();
 
-        let mut subscribers: Vec<Box<dyn StatisticsSubscriber>> =
+        let subscribers: Vec<Box<dyn StatisticsSubscriber>> =
             vec![Box::new(FlotillaProgressBar::try_new(py)?)];
 
-        tracing::info!("Checking DAFT_DASHBOARD_URL environment variable");
-        match std::env::var("DAFT_DASHBOARD_URL") {
-            Ok(url) => {
-                tracing::info!("DAFT_DASHBOARD_URL is set to: {}", url);
-                tracing::info!("Adding HttpSubscriber to statistics manager");
-                subscribers.push(Box::new(HttpSubscriber::new()));
-            }
-            Err(_) => {
-                tracing::info!("DAFT_DASHBOARD_URL not set, skipping HttpSubscriber");
-            }
-        }
-
-        let statistics_manager = StatisticsManager::new(subscribers);
-        let plan_result = self
-            .runner
-            .run_plan(&plan.plan, psets, statistics_manager)?;
+        let plan_result = self.runner.run_plan(&plan.plan, psets, subscribers)?;
         let part_stream = PythonPartitionRefStream {
             inner: Arc::new(Mutex::new(plan_result.into_stream())),
         };

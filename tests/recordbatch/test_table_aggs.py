@@ -212,13 +212,39 @@ def test_table_minmax_binary(case, type) -> None:
 
 
 test_table_sum_mean_cases = [
-    ([], {"sum": [None], "mean": [None]}),
-    ([None], {"sum": [None], "mean": [None]}),
-    ([None, None, None], {"sum": [None], "mean": [None]}),
-    ([0], {"sum": [0], "mean": [0]}),
-    ([1], {"sum": [1], "mean": [1]}),
-    ([None, 3, None, None, 1, 2, 0, None], {"sum": [6], "mean": [1.5]}),
+    ([], {"sum": [None], "mean": [None], "avg": [None]}),
+    ([None], {"sum": [None], "mean": [None], "avg": [None]}),
+    ([None, None, None], {"sum": [None], "mean": [None], "avg": [None]}),
+    ([0], {"sum": [0], "mean": [0], "avg": [0]}),
+    ([1], {"sum": [1], "mean": [1], "avg": [1]}),
+    ([None, 3, None, None, 1, 2, 0, None], {"sum": [6], "mean": [1.5], "avg": [1.5]}),
 ]
+
+test_table_product_cases = [
+    ([], {"product": [None]}),
+    ([None], {"product": [None]}),
+    ([None, None, None], {"product": [None]}),
+    ([0], {"product": [0]}),
+    ([1], {"product": [1]}),
+    ([2], {"product": [2]}),
+    ([None, 0, None, 0, None], {"product": [0]}),
+    ([None, 1, None, 1, None], {"product": [1]}),
+    ([None, 2, None, 3, None], {"product": [6]}),
+    ([None, 3, None, None, 1, 2, 0, None], {"product": [0]}),
+    ([None, 3, None, None, 1, 2, None], {"product": [6]}),
+]
+
+
+@pytest.mark.parametrize("idx_dtype", daft_numeric_types, ids=[f"{_}" for _ in daft_numeric_types])
+@pytest.mark.parametrize("case", test_table_product_cases, ids=[f"{_}" for _ in test_table_product_cases])
+def test_table_product(idx_dtype, case) -> None:
+    input, expected = case
+    daft_recordbatch = MicroPartition.from_pydict({"input": input})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").cast(idx_dtype)])
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").alias("product").product()])
+
+    res = daft_recordbatch.to_pydict()
+    assert res == expected
 
 
 @pytest.mark.parametrize("idx_dtype", daft_numeric_types, ids=[f"{_}" for _ in daft_numeric_types])
@@ -231,6 +257,7 @@ def test_table_sum_mean(idx_dtype, case) -> None:
         [
             col("input").alias("sum").sum(),
             col("input").alias("mean").mean(),
+            col("input").alias("avg").avg(),
         ]
     )
 
@@ -332,6 +359,7 @@ test_table_agg_global_cases = [
             "count": [0],
             "sum": [None],
             "mean": [None],
+            "avg": [None],
             "min": [None],
             "max": [None],
             "list": [[]],
@@ -344,6 +372,7 @@ test_table_agg_global_cases = [
             "count": [0],
             "sum": [None],
             "mean": [None],
+            "avg": [None],
             "min": [None],
             "max": [None],
             "list": [[None]],
@@ -356,6 +385,7 @@ test_table_agg_global_cases = [
             "count": [0],
             "sum": [None],
             "mean": [None],
+            "avg": [None],
             "min": [None],
             "max": [None],
             "list": [[None, None, None]],
@@ -368,6 +398,7 @@ test_table_agg_global_cases = [
             "count": [4],
             "sum": [6],
             "mean": [1.5],
+            "avg": [1.5],
             "min": [0],
             "max": [3],
             "list": [[None, 3, None, None, 1, 2, 0, None]],
@@ -387,6 +418,7 @@ def test_table_agg_global(case) -> None:
             col("input").cast(DataType.int32()).alias("count").count(),
             col("input").cast(DataType.int32()).alias("sum").sum(),
             col("input").cast(DataType.int32()).alias("mean").mean(),
+            col("input").cast(DataType.int32()).alias("avg").avg(),
             col("input").cast(DataType.int32()).alias("min").min(),
             col("input").cast(DataType.int32()).alias("max").max(),
             col("input").cast(DataType.int32()).alias("list").agg_list(),
@@ -544,11 +576,18 @@ def test_groupby_numeric_string_bool_some_nulls(dtype) -> None:
             "cookies": [2, 2, 3],
         }
     )
-    result_table = daft_recordbatch.agg([col("cookies").sum()], group_by=[col("group")])
+    result_table = daft_recordbatch.agg(
+        [
+            col("cookies").alias("sum").sum(),
+            col("cookies").alias("product").product(),
+        ],
+        group_by=[col("group")],
+    )
     expected_table = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([1, None]).cast(dtype),
-            "cookies": [4, 3],
+            "sum": [4, 3],  # sum
+            "product": [4, 3],  # product: 2*2=4, 3=3
         }
     )
 
@@ -569,11 +608,18 @@ def test_groupby_numeric_string_bool_no_nulls(dtype) -> None:
             "cookies": [1, 2, 2, 3],
         }
     )
-    result_table = daft_recordbatch.agg([col("cookies").sum()], group_by=[col("group")])
+    result_table = daft_recordbatch.agg(
+        [
+            col("cookies").alias("sum").sum(),
+            col("cookies").alias("product").product(),
+        ],
+        group_by=[col("group")],
+    )
     expected_table = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([0, 1]).cast(dtype),
-            "cookies": [5, 3],
+            "sum": [5, 3],  # sum
+            "product": [6, 2],  # product: 2*3=6, 1*2=2
         }
     )
 
@@ -726,7 +772,7 @@ def test_global_pyobj_list_aggs() -> None:
     input = [object(), object(), object()]
     table = MicroPartition.from_pydict({"input": input})
     result = table.eval_expression_list([col("input").alias("list").agg_list()])
-    assert result.get_column_by_name("list").datatype() == DataType.python()
+    assert result.get_column_by_name("list").datatype() == DataType.list(DataType.python())
     assert result.to_pydict()["list"][0] == input
 
 
@@ -899,7 +945,7 @@ def test_global_concat_aggs_pyobj() -> None:
 
     table = MicroPartition.from_pydict({"input": input})
     concatted = table.agg([col("input").alias("concat").agg_concat()])
-    assert concatted.get_column_by_name("concat").datatype() == DataType.python()
+    assert concatted.get_column_by_name("concat").datatype() == DataType.list(DataType.python())
     assert concatted.to_pydict()["concat"] == [expected]
 
 
@@ -942,12 +988,12 @@ def test_grouped_concat_aggs_pyobj() -> None:
 
     table = MicroPartition.from_pydict({"input": input, "groups": [1, 2, 3, 3, 4]})
     concatted = table.agg([col("input").alias("concat").agg_concat()], group_by=[col("groups")]).sort([col("groups")])
-    assert concatted.get_column_by_name("concat").datatype() == DataType.python()
+    assert concatted.get_column_by_name("concat").datatype() == DataType.list(DataType.python())
     assert concatted.to_pydict() == {
         "groups": [1, 2, 3, 4],
         "concat": [
             [objects[0], objects[1]],
-            [],
+            None,
             [objects[2]],
             [None, objects[3]],
         ],

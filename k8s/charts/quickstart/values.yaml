@@ -1,0 +1,414 @@
+# Default values for Daft quickstart Helm chart
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# -- Override the name of the chart
+nameOverride: ""
+
+# -- Override the full name of the chart
+fullnameOverride: ""
+
+# ============================================================================
+# Deployment Mode Configuration
+# ============================================================================
+
+# -- Deployment mode: false for simple mode (single job), true for distributed mode (Ray cluster + job)
+# Simple mode (distributed=false):
+#   - Single Kubernetes Job with native Daft runner
+#   - Minimal resource overhead
+#   - Best for: development, testing, small datasets (<10GB), single-node workloads
+# Distributed mode (distributed=true):
+#   - Full Ray cluster with head and worker nodes
+#   - Job connects to cluster via RAY_ADDRESS environment variable
+#   - Best for: production, large datasets (>10GB), multi-node distributed processing
+distributed: false
+
+# ============================================================================
+# Container Image Configuration
+# ============================================================================
+
+# -- Container image used for job, as well as Ray head and worker nodes (when distributed=true)
+# Use GPU-enabled images (e.g., rayproject/ray:2.46.0-py312-gpu) if workers need GPUs
+image: rayproject/ray:2.46.0-py312-cpu
+
+# -- Image pull policy for container image
+imagePullPolicy: IfNotPresent
+
+# ============================================================================
+# Job Configuration
+# ============================================================================
+# The job is the main workload that executes your code. It is always created,
+# regardless of the deployment mode.
+
+job:
+  # --------------------------------------------------------------------------
+  # Job Execution Methods
+  # --------------------------------------------------------------------------
+  # Choose ONE of two execution methods:
+  #
+  # Method 1: Script Injection (script)
+  #   - Provide Python script content via --set-file job.script=your_script.py
+  #   - Script is mounted as /usr/src/daft/main.py in the container
+  #   - Executed with: uv run --script /usr/src/daft/main.py
+  #   - Best for: quick testing, simple scripts
+  #   - No custom image required
+  #
+  # Method 2: Custom Image (command + args)
+  #   - Build a custom Docker image with your application code
+  #   - In distributed mode: MUST include ray[default] in the image
+  #   - In simple mode: ray is optional (job runs without cluster)
+  #   - Specify command and args to run your application
+  #   - Best for: production, complex dependencies, custom environments
+
+  # -- Python script content to execute (Method 1: Script Injection)
+  # Populated via: helm install my-release ./quickstart --set-file job.script=path/to/script.py
+  # When provided, the script is mounted as /usr/src/daft/main.py
+  # Leave empty if using Method 2 (custom image with command/args)
+  script: ""
+
+  # -- Command to run in the job container
+  # Example: ["python", "my_app.py"]
+  # Ignored if using Method 1 (script injection)
+  command: []
+
+  # -- Arguments to pass to the command
+  # Example: ["--input", "s3://bucket/data", "--output", "/data/results"]
+  args: []
+
+  # --------------------------------------------------------------------------
+  # Job Resource Allocation
+  # --------------------------------------------------------------------------
+
+  # -- CPU and memory resources for the job container
+  # Adjust based on your workload requirements
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      memory: "4Gi"
+
+  # --------------------------------------------------------------------------
+  # Job Environment Variables
+  # --------------------------------------------------------------------------
+
+  # -- Additional environment variables for the job
+  # In distributed mode, RAY_ADDRESS and DAFT_RUNNER are automatically set
+  # Example:
+  # env:
+  #   - name: AWS_REGION
+  #     value: "us-west-2"
+  #   - name: LOG_LEVEL
+  #     value: "INFO"
+  env: []
+
+  # --------------------------------------------------------------------------
+  # Job Volume Mounts
+  # --------------------------------------------------------------------------
+
+  # -- Volume mounts for the job container
+  # Mount volumes defined in the 'volumes' section at the root level
+  # Example:
+  # volumeMounts:
+  #   - name: data
+  #     mountPath: /data
+  #   - name: config
+  #     mountPath: /config
+  #     readOnly: true
+  volumeMounts: []
+
+  # --------------------------------------------------------------------------
+  # Job Execution Settings
+  # --------------------------------------------------------------------------
+
+  # -- Job restart policy (Never or OnFailure)
+  # Never: Job is not restarted on failure
+  # OnFailure: Job is restarted if it fails
+  restartPolicy: Never
+
+  # -- Number of retries before considering the job failed
+  # Set to 0 to disable retries
+  backoffLimit: 0
+
+  # -- Maximum time in seconds for the job to run
+  # Job is terminated if it exceeds this duration
+  activeDeadlineSeconds: 3600
+
+  # --------------------------------------------------------------------------
+  # Job Node Placement (Optional)
+  # --------------------------------------------------------------------------
+
+  # -- Node selector for job pod placement
+  # Example:
+  # nodeSelector:
+  #   disktype: ssd
+  #   workload: data-processing
+  nodeSelector: {}
+
+  # -- Tolerations for job pod scheduling
+  # Example:
+  # tolerations:
+  #   - key: "dedicated"
+  #     operator: "Equal"
+  #     value: "data-processing"
+  #     effect: "NoSchedule"
+  tolerations: []
+
+  # -- Affinity rules for job pod placement
+  # Example:
+  # affinity:
+  #   nodeAffinity:
+  #     requiredDuringSchedulingIgnoredDuringExecution:
+  #       nodeSelectorTerms:
+  #       - matchExpressions:
+  #         - key: node.kubernetes.io/instance-type
+  #           operator: In
+  #           values:
+  #           - c5.2xlarge
+  #           - c5.4xlarge
+  affinity: {}
+
+# ============================================================================
+# Ray Head Node Configuration (Distributed Mode Only)
+# ============================================================================
+# Only used when distributed=true
+# The head node is the Ray cluster control plane, responsible for:
+# - Global Control Store (GCS) for cluster metadata
+# - Cluster coordination and task scheduling
+# - Dashboard and metrics endpoints
+# - Entry point for Ray clients
+
+head:
+  # -- CPU and memory resources for the Ray head node
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      memory: "8Gi"
+
+  # -- Node selector for head pod placement
+  # Use to target specific node types (e.g., high-memory nodes)
+  # Example:
+  # nodeSelector:
+  #   node-type: high-memory
+  nodeSelector: {}
+
+  # -- Tolerations for head pod scheduling
+  # Example:
+  # tolerations:
+  #   - key: "ray-head"
+  #     operator: "Equal"
+  #     value: "true"
+  #     effect: "NoSchedule"
+  tolerations: []
+
+  # -- Affinity rules for head pod placement
+  # Example (anti-affinity with workers):
+  # affinity:
+  #   podAntiAffinity:
+  #     preferredDuringSchedulingIgnoredDuringExecution:
+  #     - weight: 100
+  #       podAffinityTerm:
+  #         labelSelector:
+  #           matchExpressions:
+  #           - key: ray.io/node-type
+  #             operator: In
+  #             values:
+  #             - worker
+  #         topologyKey: kubernetes.io/hostname
+  affinity: {}
+
+  # -- Additional environment variables for the head node
+  # Example:
+  # env:
+  #   - name: RAY_LOG_LEVEL
+  #     value: "DEBUG"
+  #   - name: RAY_BACKEND_LOG_LEVEL
+  #     value: "INFO"
+  env: []
+
+  # -- Volume mounts for the head node
+  # Mount volumes defined in the 'volumes' section
+  # Example:
+  # volumeMounts:
+  #   - name: ray-logs
+  #     mountPath: /tmp/ray/session_latest/logs
+  volumeMounts: []
+
+  # -- Service configuration for Ray head node
+  service:
+    # -- Service type (ClusterIP, NodePort, LoadBalancer)
+    # ClusterIP: Only accessible within the cluster (recommended)
+    # NodePort: Accessible from outside via node IP and static port
+    # LoadBalancer: Accessible via cloud load balancer
+    type: ClusterIP
+
+    # -- Port configuration for Ray services
+    # client: Ray client server (used by jobs to connect)
+    # dashboard: Ray dashboard UI
+    # gcs: Global Control Store (used by workers)
+    # metrics: Prometheus metrics endpoint
+    ports:
+      client: 10001
+      dashboard: 8265
+      gcs: 6379
+      metrics: 8080
+
+    # -- Service annotations
+    # Example (for AWS load balancer):
+    # annotations:
+    #   service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    annotations: {}
+
+# ============================================================================
+# Ray Worker Nodes Configuration (Distributed Mode Only)
+# ============================================================================
+# Only used when distributed=true
+# Worker nodes provide compute capacity for Ray tasks and actors
+
+worker:
+  # -- Number of worker replicas
+  # Scale based on workload requirements
+  # Can be adjusted dynamically with: kubectl scale deployment <name>-worker --replicas=N
+  replicas: 1
+
+  # -- CPU and memory resources for each worker node
+  # Workers execute the actual computation tasks
+  resources:
+    requests:
+      cpu: "2"
+      memory: "2Gi"
+    limits:
+      memory: "8Gi"
+
+  # -- Node selector for worker pod placement
+  # Example (GPU nodes):
+  # nodeSelector:
+  #   accelerator: nvidia-tesla-v100
+  nodeSelector: {}
+
+  # -- Tolerations for worker pod scheduling
+  # Example (GPU nodes):
+  # tolerations:
+  #   - key: "nvidia.com/gpu"
+  #     operator: "Exists"
+  #     effect: "NoSchedule"
+  tolerations: []
+
+  # -- Affinity rules for worker pod placement
+  # Example (spread across nodes):
+  # affinity:
+  #   podAntiAffinity:
+  #     preferredDuringSchedulingIgnoredDuringExecution:
+  #     - weight: 100
+  #       podAffinityTerm:
+  #         labelSelector:
+  #           matchExpressions:
+  #           - key: ray.io/node-type
+  #             operator: In
+  #             values:
+  #             - worker
+  #         topologyKey: kubernetes.io/hostname
+  affinity: {}
+
+  # -- Additional environment variables for worker nodes
+  # Example:
+  # env:
+  #   - name: RAY_LOG_LEVEL
+  #     value: "INFO"
+  env: []
+
+  # -- Volume mounts for worker nodes
+  # Example:
+  # volumeMounts:
+  #   - name: data
+  #     mountPath: /data
+  #     readOnly: true
+  volumeMounts: []
+
+# ============================================================================
+# Shared Volumes
+# ============================================================================
+
+# -- Volumes shared across head, worker, and job pods
+# Define volumes here and reference them in volumeMounts
+# Example:
+# volumes:
+#   - name: data
+#     persistentVolumeClaim:
+#       claimName: my-data-pvc
+#   - name: config
+#     configMap:
+#       name: my-config
+#   - name: secrets
+#     secret:
+#       secretName: my-secrets
+volumes: []
+
+# ============================================================================
+# Service Account Configuration
+# ============================================================================
+
+serviceAccount:
+  # -- Specifies whether a service account should be created
+  create: true
+
+  # -- Annotations to add to the service account
+  # Example (for AWS IAM role):
+  # annotations:
+  #   eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/my-role
+  annotations: {}
+
+  # -- The name of the service account to use
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# ============================================================================
+# Monitoring Configuration (Distributed Mode Only)
+# ============================================================================
+# Deploys Prometheus and Grafana as sidecars to enable the Ray Dashboard "Metrics" tab
+# Only applies when distributed=true
+# Uses Ray's auto-generated configs for guaranteed version compatibility
+# The Ray Dashboard embeds Grafana panels via iframes to display time-series metrics
+
+monitoring:
+  # -- Enable Prometheus and Grafana sidecars for Ray Dashboard metrics
+  # Enabled by default. Set to false to disable monitoring sidecars alongside the Ray head node
+  # You may want to do this if:
+  # 1. you are running in constrained environments (e.g. local machine, CI, etc.) and don't care for the Ray Dashboard "Metrics" tab
+  # 2. you would rather use an existing Prometheus and Grafana instance for monitoring. Make
+  #    sure to set the appropriate values for `RAY_PROMETHEUS_HOST`, `RAY_GRAFANA_HOST`, and
+  #   `RAY_GRAFANA_IFRAME_HOST` environment variables in `.Values.head.env`. See:
+  #    https://docs.ray.io/en/latest/cluster/configure-manage-dashboard.html#alternate-prometheus-host-location
+  enabled: true
+
+  # --------------------------------------------------------------------------
+  # Prometheus Configuration
+  # --------------------------------------------------------------------------
+  prometheus:
+    # -- Prometheus container image
+    image: prom/prometheus:v3.7.1
+
+    # -- Resource limits for Prometheus sidecar
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "512Mi"
+      limits:
+        memory: "2Gi"
+
+  # --------------------------------------------------------------------------
+  # Grafana Configuration
+  # --------------------------------------------------------------------------
+  grafana:
+    # -- Grafana container image
+    image: grafana/grafana:12.2.1
+
+    # -- Resource limits for Grafana sidecar
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "256Mi"
+      limits:
+        memory: "512Mi"

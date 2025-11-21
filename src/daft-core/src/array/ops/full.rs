@@ -4,10 +4,10 @@ use arrow2::offset::OffsetsBuffer;
 #[cfg(feature = "python")]
 use pyo3::Python;
 
+#[cfg(feature = "python")]
+use crate::prelude::PythonArray;
 use crate::{
-    array::{
-        DataArray, FixedSizeListArray, ListArray, StructArray, pseudo_arrow::PseudoArrowArray,
-    },
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field, logical::LogicalArray,
     },
@@ -30,17 +30,6 @@ where
             "Cannot create DataArray from dtype: {dtype} with physical type: {}",
             T::get_dtype()
         );
-        let field = Field::new(name, dtype.clone());
-        #[cfg(feature = "python")]
-        if dtype.is_python() {
-            let py_none = Arc::new(Python::with_gil(|py: Python| py.None()));
-
-            return Self::new(
-                field.into(),
-                Box::new(PseudoArrowArray::from_pyobj_vec(vec![py_none; length])),
-            )
-            .unwrap();
-        }
 
         let arrow_dtype = dtype.to_arrow();
         match arrow_dtype {
@@ -54,16 +43,6 @@ where
     }
 
     fn empty(name: &str, dtype: &DataType) -> Self {
-        let field = Field::new(name, dtype.clone());
-        #[cfg(feature = "python")]
-        if dtype.is_python() {
-            return Self::new(
-                field.into(),
-                Box::new(PseudoArrowArray::from_pyobj_vec(vec![])),
-            )
-            .unwrap();
-        }
-
         let arrow_dtype = dtype.to_arrow();
         match arrow_dtype {
             Ok(arrow_dtype) => Self::new(
@@ -189,6 +168,24 @@ impl FullNull for StructArray {
             }
             _ => panic!("Cannot create empty StructArray with dtype: {}", dtype),
         }
+    }
+}
+
+#[cfg(feature = "python")]
+impl FullNull for PythonArray {
+    fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
+        let pynone = Arc::new(Python::attach(|py: Python| py.None()));
+        let values = vec![pynone; length];
+
+        let validity = arrow2::bitmap::Bitmap::new_zeroed(length);
+
+        let field = Arc::new(Field::new(name, dtype.clone()));
+        Self::new(field, values.into(), Some(validity))
+    }
+
+    fn empty(name: &str, dtype: &DataType) -> Self {
+        let field = Arc::new(Field::new(name, dtype.clone()));
+        Self::new(field, arrow2::buffer::Buffer::new(), None)
     }
 }
 

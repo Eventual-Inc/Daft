@@ -1,24 +1,22 @@
 use std::sync::Arc;
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
-use super::{
-    DistributedPipelineNode, SubmittableTaskStream, make_new_task_from_materialized_outputs,
-};
+use super::{PipelineNodeImpl, SubmittableTaskStream, make_new_task_from_materialized_outputs};
 use crate::{
     pipeline_node::{
-        MaterializedOutput, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        PipelineNodeContext,
     },
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask},
         task::{SwordfishTask, TaskContext},
     },
-    stage::{StageConfig, StageExecutionContext, TaskIDCounter},
     utils::channel::{Sender, create_channel},
 };
 
@@ -26,7 +24,7 @@ pub(crate) struct IntoBatchesNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     batch_size: usize,
-    child: Arc<dyn DistributedPipelineNode>,
+    child: DistributedPipelineNode,
 }
 
 // The threshold at which we will emit a batch of data to the next task.
@@ -42,23 +40,20 @@ impl IntoBatchesNode {
 
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
-        stage_config: &StageConfig,
+        plan_config: &PlanConfig,
         batch_size: usize,
         schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            stage_config,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
-            stage_config.config.clone(),
+            plan_config.config.clone(),
             child.config().clustering_spec.clone(),
         );
         Self {
@@ -69,12 +64,8 @@ impl IntoBatchesNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
-    }
-
-    fn multiline_display(&self) -> Vec<String> {
-        vec![format!("IntoBatches: {}", self.batch_size)]
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn execute_into_batches(
@@ -105,13 +96,18 @@ impl IntoBatchesNode {
                     let task = make_new_task_from_materialized_outputs(
                         TaskContext::from((&self_clone.context, task_id_counter.next())),
                         std::mem::take(&mut current_group),
-                        &(self_clone.clone() as Arc<dyn DistributedPipelineNode>),
+                        self_clone.config.schema.clone(),
+                        &(self_clone.clone() as Arc<dyn PipelineNodeImpl>),
                         move |input| {
                             LocalPhysicalPlan::into_batches(
                                 input,
                                 group_size,
                                 true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
                                 StatsState::NotMaterialized,
+                                LocalNodeContext {
+                                    origin_node_id: Some(self_clone.node_id() as usize),
+                                    additional: None,
+                                },
                             )
                         },
                         None,
@@ -128,13 +124,18 @@ impl IntoBatchesNode {
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((&self_clone.context, task_id_counter.next())),
                 current_group,
-                &(self_clone.clone() as Arc<dyn DistributedPipelineNode>),
+                self_clone.config.schema.clone(),
+                &(self_clone.clone() as Arc<dyn PipelineNodeImpl>),
                 move |input| {
                     LocalPhysicalPlan::into_batches(
                         input,
                         current_group_size,
                         true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
                         StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(self_clone.node_id() as usize),
+                            additional: None,
+                        },
                     )
                 },
                 None,
@@ -145,32 +146,7 @@ impl IntoBatchesNode {
     }
 }
 
-impl TreeDisplay for IntoBatchesNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.name()).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.name().to_string()
-    }
-}
-
-impl DistributedPipelineNode for IntoBatchesNode {
+impl PipelineNodeImpl for IntoBatchesNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -179,38 +155,43 @@ impl DistributedPipelineNode for IntoBatchesNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        vec![format!("IntoBatches: {}", self.batch_size)]
     }
 
     fn produce_tasks(
         self: Arc<Self>,
-        stage_context: &mut StageExecutionContext,
+        plan_context: &mut PlanExecutionContext,
     ) -> SubmittableTaskStream {
-        let input_node = self.child.clone().produce_tasks(stage_context);
+        let input_node = self.child.clone().produce_tasks(plan_context);
         let self_clone = self.clone();
+        let node_id = self_clone.node_id();
         let local_into_batches_node = input_node.pipeline_instruction(self.clone(), move |input| {
             LocalPhysicalPlan::into_batches(
                 input,
                 self_clone.batch_size,
                 false, // No need strict batch sizes for the child tasks, as we coalesce them later on.
                 StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
+                },
             )
         });
 
         let (result_tx, result_rx) = create_channel(1);
         let execution_future = self.execute_into_batches(
             local_into_batches_node,
-            stage_context.task_id_counter(),
+            plan_context.task_id_counter(),
             result_tx,
-            stage_context.scheduler_handle(),
+            plan_context.scheduler_handle(),
         );
-        stage_context.spawn(execution_future);
+        plan_context.spawn(execution_future);
 
         SubmittableTaskStream::from(result_rx)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
     }
 }

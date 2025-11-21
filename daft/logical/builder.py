@@ -115,9 +115,9 @@ class LogicalPlanBuilder:
     def __repr__(self) -> str:
         return self._builder.repr_ascii(simple=False)
 
-    def optimize(self) -> LogicalPlanBuilder:
+    def optimize(self, execution_config: PyDaftExecutionConfig) -> LogicalPlanBuilder:
         """Optimize the underlying logical plan."""
-        builder = self._builder.optimize()
+        builder = self._builder.optimize(execution_config)
         return LogicalPlanBuilder(builder)
 
     @classmethod
@@ -148,6 +148,19 @@ class LogicalPlanBuilder:
         scan_operator: ScanOperatorHandle,
     ) -> LogicalPlanBuilder:
         builder = logical_plan_table_scan(scan_operator)
+        return cls(builder)
+
+    @classmethod
+    @_apply_daft_planning_config_to_initializer
+    def from_glob_scan(
+        cls,
+        glob_paths: list[str],
+        io_config: IOConfig | None = None,
+    ) -> LogicalPlanBuilder:
+        builder = _LogicalPlanBuilder.from_glob_scan(
+            glob_paths,
+            io_config,
+        )
         return cls(builder)
 
     def select(

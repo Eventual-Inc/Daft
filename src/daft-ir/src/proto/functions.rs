@@ -1,3 +1,7 @@
+use std::{num::NonZeroUsize, str::FromStr};
+
+use daft_dsl::functions::python::OnError;
+
 use super::ProtoResult;
 use crate::{
     non_null, not_implemented_err,
@@ -36,12 +40,49 @@ pub fn from_proto_function(message: proto::ScalarFn) -> ProtoResult<ir::Expr> {
             proto::scalar_fn::py_fn::Variant::RowWise(row_wise_fn) => {
                 let func = ir::functions::RowWisePyFn {
                     function_name: row_wise_fn.name.into(),
-                    inner: from_proto(row_wise_fn.inner)?,
+                    cls: from_proto(row_wise_fn.cls)?,
+                    method: from_proto(row_wise_fn.method)?,
+                    is_async: row_wise_fn.is_async,
                     return_dtype: from_proto(row_wise_fn.return_dtype)?,
                     original_args: from_proto(row_wise_fn.original_args)?,
                     args: args.into_inner(),
+                    gpus: row_wise_fn.gpus as usize,
+                    use_process: row_wise_fn.use_process,
+                    max_concurrency: row_wise_fn.max_concurrency.map(|c| {
+                        NonZeroUsize::new(c as usize)
+                            .expect("max_concurrency for udf should be non-zero")
+                    }),
+                    max_retries: row_wise_fn.max_retries.map(|c| c as usize),
+                    on_error: row_wise_fn
+                        .on_error
+                        .and_then(|s| OnError::from_str(&s).ok())
+                        .unwrap_or_default(),
                 };
                 ir::rex::from_py_rowwise_func(func)
+            }
+            proto::scalar_fn::py_fn::Variant::Batch(batch_fn) => {
+                let func = ir::functions::BatchPyFn {
+                    function_name: batch_fn.name.into(),
+                    cls: from_proto(batch_fn.cls)?,
+                    method: from_proto(batch_fn.method)?,
+                    is_async: batch_fn.is_async,
+                    return_dtype: from_proto(batch_fn.return_dtype)?,
+                    gpus: batch_fn.gpus as usize,
+                    use_process: batch_fn.use_process,
+                    max_concurrency: batch_fn.max_concurrency.map(|c| {
+                        NonZeroUsize::new(c as usize)
+                            .expect("max_concurrency for udf should be non-zero")
+                    }),
+                    batch_size: batch_fn.batch_size.map(|b| b as usize),
+                    original_args: from_proto(batch_fn.original_args)?,
+                    args: args.into_inner(),
+                    max_retries: batch_fn.max_retries.map(|c| c as usize),
+                    on_error: batch_fn
+                        .on_error
+                        .and_then(|s| OnError::from_str(&s).ok())
+                        .unwrap_or_default(),
+                };
+                ir::rex::from_py_batch_func(func)
             }
         },
         proto::scalar_fn::Descriptor::Builtin(builtin_fn) => {
@@ -98,8 +139,46 @@ pub fn scalar_fn_to_proto(sf: &ir::functions::scalar::ScalarFn) -> ProtoResult<p
                         proto::scalar_fn::py_fn::RowWiseFn {
                             name: row_wise_fn.function_name.to_string(),
                             return_dtype: Some(row_wise_fn.return_dtype.to_proto()?),
-                            inner: Some(row_wise_fn.inner.to_proto()?),
+                            cls: Some(row_wise_fn.cls.to_proto()?),
+                            method: Some(row_wise_fn.method.to_proto()?),
+                            is_async: row_wise_fn.is_async,
                             original_args: Some(row_wise_fn.original_args.to_proto()?),
+                            gpus: row_wise_fn.gpus as u64,
+                            use_process: row_wise_fn.use_process,
+                            max_concurrency: row_wise_fn.max_concurrency.map(|c| c.get() as u64),
+                            max_retries: row_wise_fn.max_retries.map(|c| c as u64),
+                            on_error: Some(row_wise_fn.on_error.to_string()),
+                        },
+                    )),
+                })),
+                args: Some(args),
+            })
+        }
+        ir::functions::scalar::ScalarFn::Python(ir::functions::PyScalarFn::Batch(batch_fn)) => {
+            let function_args = batch_fn
+                .args
+                .iter()
+                .map(|arg| ir::functions::FunctionArg::Unnamed(arg.clone()))
+                .collect();
+            let function_args = ir::functions::FunctionArgs::new_unchecked(function_args);
+            let args = function_args.to_proto()?;
+
+            Ok(proto::ScalarFn {
+                descriptor: Some(proto::scalar_fn::Descriptor::Py(proto::scalar_fn::PyFn {
+                    variant: Some(proto::scalar_fn::py_fn::Variant::Batch(
+                        proto::scalar_fn::py_fn::BatchFn {
+                            name: batch_fn.function_name.to_string(),
+                            is_async: batch_fn.is_async,
+                            return_dtype: Some(batch_fn.return_dtype.to_proto()?),
+                            cls: Some(batch_fn.cls.to_proto()?),
+                            method: Some(batch_fn.method.to_proto()?),
+                            original_args: Some(batch_fn.original_args.to_proto()?),
+                            gpus: batch_fn.gpus as u64,
+                            use_process: batch_fn.use_process,
+                            max_concurrency: batch_fn.max_concurrency.map(|c| c.get() as u64),
+                            batch_size: batch_fn.batch_size.map(|b| b as u64),
+                            max_retries: batch_fn.max_retries.map(|c| c as u64),
+                            on_error: Some(batch_fn.on_error.to_string()),
                         },
                     )),
                 })),
@@ -391,7 +470,8 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
             return_dtype: return_type,
             resource_request,
             batch_size,
-            concurrency,
+            concurrency: concurrency
+                .map(|c| NonZeroUsize::new(c).expect("concurrency for udf should be non-zero")),
             use_process,
         })
     }
@@ -422,7 +502,7 @@ impl ToFromProto for ir::functions::python::LegacyPythonUDF {
         let callable_call_args = self.bound_args.to_proto()?;
 
         // Now flatten out what is currently "resources" but will get renamed at some point.
-        let concurrency: Option<u64> = self.concurrency.map(|s| s as u64);
+        let concurrency: Option<u64> = self.concurrency.map(|s| s.get() as u64);
         let batch_size: Option<u64> = self.batch_size.map(|s| s as u64);
         let (num_cpus, num_gpus, max_memory_bytes) = match &self.resource_request {
             Some(req) => {
@@ -459,12 +539,12 @@ impl ToFromProto for ir::functions::python::RuntimePyObject {
     where
         Self: Sized,
     {
-        Ok(bincode::deserialize(&message.object)?)
+        Ok(bincode::serde::decode_from_slice(&message.object, bincode::config::legacy())?.0)
     }
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
         Ok(Self::Message {
-            object: bincode::serialize(self)?,
+            object: bincode::serde::encode_to_vec(self, bincode::config::legacy())?,
         })
     }
 }

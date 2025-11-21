@@ -30,6 +30,11 @@ def sum(expr: Expression) -> Expression:
     return Expression._from_pyexpr(expr._expr.sum())
 
 
+def product(expr: Expression) -> Expression:
+    """Calculates the product of the values in the expression."""
+    return Expression._from_pyexpr(expr._expr.product())
+
+
 def approx_count_distinct(expr: Expression) -> Expression:
     """Calculates the approximate number of non-`NULL` distinct values in the expression.
 
@@ -92,7 +97,7 @@ def approx_percentiles(expr: Expression, percentiles: float | list[float]) -> Ex
         ╭─────────────────────┬────────────────────────────────╮
         │ approx_median_score ┆ approx_percentiles_scores      │
         │ ---                 ┆ ---                            │
-        │ Float64             ┆ FixedSizeList[Float64; 3]      │
+        │ Float64             ┆ List[Float64; 3]               │
         ╞═════════════════════╪════════════════════════════════╡
         │ 2.9742334234767167  ┆ [1.993661701417351, 2.9742334… │
         ╰─────────────────────┴────────────────────────────────╯
@@ -111,17 +116,17 @@ def approx_percentiles(expr: Expression, percentiles: float | list[float]) -> Ex
         ...     .sort("class")
         ... )
         >>> df.show()
-        ╭───────┬─────────────────────┬────────────────────────────────╮
-        │ class ┆ approx_median_score ┆ approx_percentiles_scores      │
-        │ ---   ┆ ---                 ┆ ---                            │
-        │ Utf8  ┆ Float64             ┆ FixedSizeList[Float64; 3]      │
-        ╞═══════╪═════════════════════╪════════════════════════════════╡
-        │ a     ┆ 1.993661701417351   ┆ [0.9900000000000001, 1.993661… │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ b     ┆ 0.9900000000000001  ┆ [0.9900000000000001, 0.990000… │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ c     ┆ None                ┆ None                           │
-        ╰───────┴─────────────────────┴────────────────────────────────╯
+        ╭────────┬─────────────────────┬────────────────────────────────╮
+        │ class  ┆ approx_median_score ┆ approx_percentiles_scores      │
+        │ ---    ┆ ---                 ┆ ---                            │
+        │ String ┆ Float64             ┆ List[Float64; 3]               │
+        ╞════════╪═════════════════════╪════════════════════════════════╡
+        │ a      ┆ 1.993661701417351   ┆ [0.9900000000000001, 1.993661… │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ b      ┆ 0.9900000000000001  ┆ [0.9900000000000001, 0.990000… │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ c      ┆ None                ┆ None                           │
+        ╰────────┴─────────────────────┴────────────────────────────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -131,6 +136,11 @@ def approx_percentiles(expr: Expression, percentiles: float | list[float]) -> Ex
 
 def mean(expr: Expression) -> Expression:
     """Calculates the mean of the values in the expression."""
+    return Expression._from_pyexpr(expr._expr.mean())
+
+
+def avg(expr: Expression) -> Expression:
+    """Calculates the mean of the values in the expression. Alias for mean()."""
     return Expression._from_pyexpr(expr._expr.mean())
 
 
@@ -162,13 +172,13 @@ def bool_and(expr: Expression) -> Expression:
         >>> from daft.functions import bool_and
         >>> df = daft.from_pydict({"a": [True, None, True], "b": [True, False, None], "c": [None, None, None]})
         >>> df.agg(bool_and(df["a"]), bool_and(df["b"]), bool_and(df["c"])).show()
-        ╭─────────┬─────────┬─────────╮
-        │ a       ┆ b       ┆ c       │
-        │ ---     ┆ ---     ┆ ---     │
-        │ Boolean ┆ Boolean ┆ Boolean │
-        ╞═════════╪═════════╪═════════╡
-        │ true    ┆ false   ┆ None    │
-        ╰─────────┴─────────┴─────────╯
+        ╭──────┬───────┬──────╮
+        │ a    ┆ b     ┆ c    │
+        │ ---  ┆ ---   ┆ ---  │
+        │ Bool ┆ Bool  ┆ Bool │
+        ╞══════╪═══════╪══════╡
+        │ true ┆ false ┆ None │
+        ╰──────┴───────┴──────╯
         <BLANKLINE>
         (Showing first 1 of 1 rows)
     """
@@ -188,13 +198,13 @@ def bool_or(expr: Expression) -> Expression:
         >>> from daft.functions import bool_or
         >>> df = daft.from_pydict({"a": [False, None, False], "b": [False, True, None], "c": [None, None, None]})
         >>> df.agg(bool_or(df["a"]), bool_or(df["b"]), bool_or(df["c"])).show()
-        ╭─────────┬─────────┬─────────╮
-        │ a       ┆ b       ┆ c       │
-        │ ---     ┆ ---     ┆ ---     │
-        │ Boolean ┆ Boolean ┆ Boolean │
-        ╞═════════╪═════════╪═════════╡
-        │ false   ┆ true    ┆ None    │
-        ╰─────────┴─────────┴─────────╯
+        ╭───────┬──────┬──────╮
+        │ a     ┆ b    ┆ c    │
+        │ ---   ┆ ---  ┆ ---  │
+        │ Bool  ┆ Bool ┆ Bool │
+        ╞═══════╪══════╪══════╡
+        │ false ┆ true ┆ None │
+        ╰───────┴──────┴──────╯
         <BLANKLINE>
         (Showing first 1 of 1 rows)
     """

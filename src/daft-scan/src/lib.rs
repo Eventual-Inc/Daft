@@ -728,9 +728,8 @@ impl ScanTask {
                         .map_or_else(|| Cow::Owned(DaftExecutionConfig::default()), Cow::Borrowed);
                     let inflation_factor = match self.file_format_config.as_ref() {
                         FileFormatConfig::Parquet(_) => config.parquet_inflation_factor,
-                        FileFormatConfig::Csv(_) | FileFormatConfig::Json(_) => {
-                            config.csv_inflation_factor
-                        }
+                        FileFormatConfig::Csv(_) => config.csv_inflation_factor,
+                        FileFormatConfig::Json(_) => config.json_inflation_factor,
                         FileFormatConfig::Warc(_) => {
                             if self.is_gzipped() {
                                 5.0
@@ -741,7 +740,11 @@ impl ScanTask {
                         #[cfg(feature = "python")]
                         FileFormatConfig::Database(_) => 1.0,
                         #[cfg(feature = "python")]
-                        FileFormatConfig::PythonFunction => 1.0,
+                        FileFormatConfig::PythonFunction {
+                            source_type: _,
+                            module_name: _,
+                            function_name: _,
+                        } => 1.0,
                     };
                     let in_mem_size: f64 = (file_size as f64) * inflation_factor;
                     let read_row_size = if self.is_warc() {
@@ -1009,6 +1012,7 @@ mod test {
             infer_schema,
             Some(Arc::new(Schema::empty())),
             None,
+            false,
             false,
         )
         .await

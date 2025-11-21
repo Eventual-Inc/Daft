@@ -11,6 +11,7 @@ mod retry;
 pub mod s3_like;
 mod stats;
 mod stream_utils;
+mod tos;
 #[cfg(feature = "python")]
 mod unity;
 
@@ -21,6 +22,7 @@ use common_file_formats::FileFormat;
 pub use counting_reader::CountingReader;
 use google_cloud::GCSSource;
 use huggingface::HFSource;
+use tos::TosSource;
 #[cfg(feature = "python")]
 use unity::UnitySource;
 #[cfg(test)]
@@ -32,10 +34,10 @@ pub mod range;
 use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
-pub use common_io_config::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config};
+pub use common_io_config::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config, TosConfig};
 use futures::{FutureExt, stream::BoxStream};
 use object_io::StreamingRetryParams;
-pub use object_io::{FileMetadata, GetResult, ObjectSource};
+pub use object_io::{FileMetadata, FileType, GetResult, ObjectSource};
 #[cfg(feature = "python")]
 pub use python::register_modules;
 pub use s3_like::{S3LikeSource, S3MultipartWriter, S3PartBuffer, s3_config_from_env};
@@ -262,6 +264,9 @@ impl IOClient {
                     unimplemented!("Unity Catalog source currently requires Python");
                 }
             }
+            SourceType::Tos => {
+                TosSource::get_client(&self.config.tos).await? as Arc<dyn ObjectSource>
+            }
         };
 
         if w_handle.get(&source_type).is_none() {
@@ -402,6 +407,7 @@ pub enum SourceType {
     GCS,
     HF,
     Unity,
+    Tos,
 }
 
 impl std::fmt::Display for SourceType {
@@ -414,6 +420,7 @@ impl std::fmt::Display for SourceType {
             Self::GCS => write!(f, "gcs"),
             Self::HF => write!(f, "hf"),
             Self::Unity => write!(f, "UnityCatalog"),
+            Self::Tos => write!(f, "tos"),
         }
     }
 }
@@ -464,6 +471,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "az" | "abfs" | "abfss" => Ok((SourceType::AzureBlob, fixed_input)),
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
         "hf" => Ok((SourceType::HF, fixed_input)),
+        "tos" => Ok((SourceType::Tos, fixed_input)),
         "vol+dbfs" | "dbfs" => Ok((SourceType::Unity, fixed_input)),
         #[cfg(target_env = "msvc")]
         _ if scheme.len() == 1 && ("a" <= scheme.as_str() && (scheme.as_str() <= "z")) => {

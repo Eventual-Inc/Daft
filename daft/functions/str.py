@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from daft.daft import IOConfig, list_lit, sql_datatype
+from daft.daft import IOConfig, list_lit
 from daft.datatype import DataType, DataTypeLike
 from daft.expressions import Expression, col, lit
 from daft.series import item_to_series
@@ -21,11 +21,7 @@ def deserialize(expr: Expression, format: Literal["json"], dtype: DataTypeLike) 
     Returns:
         Expression: A new expression with the deserialized value.
     """
-    if isinstance(dtype, str):
-        dtype = DataType._from_pydatatype(sql_datatype(dtype))
-    else:
-        assert isinstance(dtype, (DataType, type))
-        dtype = DataType._infer_type(dtype)
+    dtype = DataType._infer(dtype)
     return Expression._call_builtin_scalar_fn("deserialize", expr, format=format, dtype=dtype._dtype)
 
 
@@ -40,11 +36,7 @@ def try_deserialize(expr: Expression, format: Literal["json"], dtype: DataTypeLi
     Returns:
         Expression: A new expression with the deserialized value (or null).
     """
-    if isinstance(dtype, str):
-        dtype = DataType._from_pydatatype(sql_datatype(dtype))
-    else:
-        assert isinstance(dtype, (DataType, type))
-        dtype = DataType._infer_type(dtype)
+    dtype = DataType._infer(dtype)
     return Expression._call_builtin_scalar_fn("try_deserialize", expr, format=format, dtype=dtype._dtype)
 
 
@@ -82,17 +74,17 @@ def jq(expr: Expression, filter: str) -> Expression:
         >>>
         >>> df = daft.from_pydict({"col": ['{"a": 1}', '{"a": 2}', '{"a": 3}']})
         >>> df.with_column("res", jq(df["col"], ".a")).collect()
-        ╭──────────┬──────╮
-        │ col      ┆ res  │
-        │ ---      ┆ ---  │
-        │ Utf8     ┆ Utf8 │
-        ╞══════════╪══════╡
-        │ {"a": 1} ┆ 1    │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ {"a": 2} ┆ 2    │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ {"a": 3} ┆ 3    │
-        ╰──────────┴──────╯
+        ╭──────────┬────────╮
+        │ col      ┆ res    │
+        │ ---      ┆ ---    │
+        │ String   ┆ String │
+        ╞══════════╪════════╡
+        │ {"a": 1} ┆ 1      │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ {"a": 2} ┆ 2      │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ {"a": 3} ┆ 3      │
+        ╰──────────┴────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
     """
@@ -119,7 +111,7 @@ def format(f_string: str, *args: Expression | str) -> Expression:
         ╭────────────┬───────────┬───────────────────╮
         │ first_name ┆ last_name ┆ greeting          │
         │ ---        ┆ ---       ┆ ---               │
-        │ Utf8       ┆ Utf8      ┆ Utf8              │
+        │ String     ┆ String    ┆ String            │
         ╞════════════╪═══════════╪═══════════════════╡
         │ Alice      ┆ Smith     ┆ Hello Alice Smith │
         ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -174,17 +166,17 @@ def contains(expr: Expression, substr: str | Expression) -> Expression:
         >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
         >>> df = df.select(contains(df["x"], "o"))
         >>> df.show()
-        ╭─────────╮
-        │ x       │
-        │ ---     │
-        │ Boolean │
-        ╞═════════╡
-        │ true    │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ false   │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ false   │
-        ╰─────────╯
+        ╭───────╮
+        │ x     │
+        │ ---   │
+        │ Bool  │
+        ╞═══════╡
+        │ true  │
+        ├╌╌╌╌╌╌╌┤
+        │ false │
+        ├╌╌╌╌╌╌╌┤
+        │ false │
+        ╰───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -200,7 +192,7 @@ def split(expr: Expression, split_on: str | Expression) -> Expression:
         split_on: The string on which each string should be split, or a column to pick such patterns from.
 
     Returns:
-        Expression: A List[Utf8] expression containing the string splits for each string in the column.
+        Expression: A List[String] expression containing the string splits for each string in the column.
 
     Examples:
         >>> import daft
@@ -210,7 +202,7 @@ def split(expr: Expression, split_on: str | Expression) -> Expression:
         ╭────────────────────────┬────────────────────────────╮
         │ data                   ┆ split                      │
         │ ---                    ┆ ---                        │
-        │ Utf8                   ┆ List[Utf8]                 │
+        │ String                 ┆ List[String]               │
         ╞════════════════════════╪════════════════════════════╡
         │ daft.distributed.query ┆ [daft, distributed, query] │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -236,17 +228,17 @@ def lower(expr: Expression) -> Expression:
         >>> df = daft.from_pydict({"x": ["FOO", "BAR", "BAZ"]})
         >>> df = df.select(lower(df["x"]))
         >>> df.show()
-        ╭──────╮
-        │ x    │
-        │ ---  │
-        │ Utf8 │
-        ╞══════╡
-        │ foo  │
-        ├╌╌╌╌╌╌┤
-        │ bar  │
-        ├╌╌╌╌╌╌┤
-        │ baz  │
-        ╰──────╯
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ foo    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ bar    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ baz    │
+        ╰────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -266,17 +258,17 @@ def upper(expr: Expression) -> Expression:
         >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
         >>> df = df.select(upper(df["x"]))
         >>> df.show()
-        ╭──────╮
-        │ x    │
-        │ ---  │
-        │ Utf8 │
-        ╞══════╡
-        │ FOO  │
-        ├╌╌╌╌╌╌┤
-        │ BAR  │
-        ├╌╌╌╌╌╌┤
-        │ BAZ  │
-        ╰──────╯
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ FOO    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ BAR    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ BAZ    │
+        ╰────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -296,17 +288,17 @@ def lstrip(expr: Expression) -> Expression:
         >>> df = daft.from_pydict({"x": ["foo", "bar", "  baz"]})
         >>> df = df.select(lstrip(df["x"]))
         >>> df.show()
-        ╭──────╮
-        │ x    │
-        │ ---  │
-        │ Utf8 │
-        ╞══════╡
-        │ foo  │
-        ├╌╌╌╌╌╌┤
-        │ bar  │
-        ├╌╌╌╌╌╌┤
-        │ baz  │
-        ╰──────╯
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ foo    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ bar    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ baz    │
+        ╰────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -326,17 +318,17 @@ def rstrip(expr: Expression) -> Expression:
         >>> df = daft.from_pydict({"x": ["foo", "bar", "baz   "]})
         >>> df = df.select(rstrip(df["x"]))
         >>> df.show()
-        ╭──────╮
-        │ x    │
-        │ ---  │
-        │ Utf8 │
-        ╞══════╡
-        │ foo  │
-        ├╌╌╌╌╌╌┤
-        │ bar  │
-        ├╌╌╌╌╌╌┤
-        │ baz  │
-        ╰──────╯
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ foo    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ bar    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ baz    │
+        ╰────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -356,17 +348,17 @@ def reverse(expr: Expression) -> Expression:
         >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
         >>> df = df.select(reverse(df["x"]))
         >>> df.show()
-        ╭──────╮
-        │ x    │
-        │ ---  │
-        │ Utf8 │
-        ╞══════╡
-        │ oof  │
-        ├╌╌╌╌╌╌┤
-        │ rab  │
-        ├╌╌╌╌╌╌┤
-        │ zab  │
-        ╰──────╯
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ oof    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ rab    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ zab    │
+        ╰────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -386,17 +378,17 @@ def capitalize(expr: Expression) -> Expression:
         >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
         >>> df = df.select(capitalize(df["x"]))
         >>> df.show()
-        ╭──────╮
-        │ x    │
-        │ ---  │
-        │ Utf8 │
-        ╞══════╡
-        │ Foo  │
-        ├╌╌╌╌╌╌┤
-        │ Bar  │
-        ├╌╌╌╌╌╌┤
-        │ Baz  │
-        ╰──────╯
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ Foo    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ Bar    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ Baz    │
+        ╰────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -416,17 +408,17 @@ def left(expr: Expression, nchars: int | Expression) -> Expression:
         >>> df = daft.from_pydict({"x": ["daft", "query", "engine"]})
         >>> df = df.select(left(df["x"], 4))
         >>> df.show()
-        ╭──────╮
-        │ x    │
-        │ ---  │
-        │ Utf8 │
-        ╞══════╡
-        │ daft │
-        ├╌╌╌╌╌╌┤
-        │ quer │
-        ├╌╌╌╌╌╌┤
-        │ engi │
-        ╰──────╯
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ daft   │
+        ├╌╌╌╌╌╌╌╌┤
+        │ quer   │
+        ├╌╌╌╌╌╌╌╌┤
+        │ engi   │
+        ╰────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -446,17 +438,17 @@ def right(expr: Expression, nchars: int | Expression) -> Expression:
         >>> df = daft.from_pydict({"x": ["daft", "distributed", "engine"]})
         >>> df = df.select(right(df["x"], 4))
         >>> df.show()
-        ╭──────╮
-        │ x    │
-        │ ---  │
-        │ Utf8 │
-        ╞══════╡
-        │ daft │
-        ├╌╌╌╌╌╌┤
-        │ uted │
-        ├╌╌╌╌╌╌┤
-        │ gine │
-        ╰──────╯
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ daft   │
+        ├╌╌╌╌╌╌╌╌┤
+        │ uted   │
+        ├╌╌╌╌╌╌╌╌┤
+        │ gine   │
+        ╰────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -483,7 +475,7 @@ def rpad(expr: Expression, length: int | Expression, pad: str | Expression) -> E
         ╭────────╮
         │ x      │
         │ ---    │
-        │ Utf8   │
+        │ String │
         ╞════════╡
         │ daft00 │
         ├╌╌╌╌╌╌╌╌┤
@@ -517,7 +509,7 @@ def lpad(expr: Expression, length: int | Expression, pad: str | Expression) -> E
         ╭────────╮
         │ x      │
         │ ---    │
-        │ Utf8   │
+        │ String │
         ╞════════╡
         │ 00daft │
         ├╌╌╌╌╌╌╌╌┤
@@ -547,7 +539,7 @@ def repeat(expr: Expression, n: int | Expression) -> Expression:
         ╭────────────────────────────────╮
         │ x                              │
         │ ---                            │
-        │ Utf8                           │
+        │ String                         │
         ╞════════════════════════════════╡
         │ daftdaftdaftdaftdaft           │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -577,17 +569,17 @@ def like(expr: Expression, pattern: str | Expression) -> Expression:
         >>> df = daft.from_pydict({"x": ["daft", "query", "engine"]})
         >>> df = df.select(like(df["x"], "daf%"))
         >>> df.show()
-        ╭─────────╮
-        │ x       │
-        │ ---     │
-        │ Boolean │
-        ╞═════════╡
-        │ true    │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ false   │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ false   │
-        ╰─────────╯
+        ╭───────╮
+        │ x     │
+        │ ---   │
+        │ Bool  │
+        ╞═══════╡
+        │ true  │
+        ├╌╌╌╌╌╌╌┤
+        │ false │
+        ├╌╌╌╌╌╌╌┤
+        │ false │
+        ╰───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -610,17 +602,17 @@ def ilike(expr: Expression, pattern: str | Expression) -> Expression:
         >>> df = daft.from_pydict({"x": ["daft", "query", "engine"]})
         >>> df = df.select(ilike(df["x"], "%ft%"))
         >>> df.show()
-        ╭─────────╮
-        │ x       │
-        │ ---     │
-        │ Boolean │
-        ╞═════════╡
-        │ true    │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ false   │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ false   │
-        ╰─────────╯
+        ╭───────╮
+        │ x     │
+        │ ---   │
+        │ Bool  │
+        ╞═══════╡
+        │ true  │
+        ├╌╌╌╌╌╌╌┤
+        │ false │
+        ├╌╌╌╌╌╌╌┤
+        │ false │
+        ╰───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -643,17 +635,17 @@ def substr(expr: Expression, start: int | Expression, length: int | Expression |
         >>> df = daft.from_pydict({"x": ["daft", "query", "engine"]})
         >>> df = df.select(substr(df["x"], 2, 4))
         >>> df.show()
-        ╭──────╮
-        │ x    │
-        │ ---  │
-        │ Utf8 │
-        ╞══════╡
-        │ ft   │
-        ├╌╌╌╌╌╌┤
-        │ ery  │
-        ├╌╌╌╌╌╌┤
-        │ gine │
-        ╰──────╯
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ ft     │
+        ├╌╌╌╌╌╌╌╌┤
+        │ ery    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ gine   │
+        ╰────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -676,17 +668,17 @@ def endswith(expr: Expression, suffix: str | Expression) -> Expression:
         >>> from daft.functions import endswith
         >>> df = daft.from_pydict({"x": ["geftdaft", "lazy", "daft.io"]})
         >>> df.with_column("match", endswith(df["x"], "daft")).collect()
-        ╭──────────┬─────────╮
-        │ x        ┆ match   │
-        │ ---      ┆ ---     │
-        │ Utf8     ┆ Boolean │
-        ╞══════════╪═════════╡
-        │ geftdaft ┆ true    │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ lazy     ┆ false   │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ daft.io  ┆ false   │
-        ╰──────────┴─────────╯
+        ╭──────────┬───────╮
+        │ x        ┆ match │
+        │ ---      ┆ ---   │
+        │ String   ┆ Bool  │
+        ╞══════════╪═══════╡
+        │ geftdaft ┆ true  │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ lazy     ┆ false │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ daft.io  ┆ false │
+        ╰──────────┴───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -709,17 +701,17 @@ def startswith(expr: Expression, prefix: str | Expression) -> Expression:
         >>> from daft.functions import startswith
         >>> df = daft.from_pydict({"x": ["geftdaft", "lazy", "daft.io"]})
         >>> df.with_column("match", startswith(df["x"], "daft")).collect()
-        ╭──────────┬─────────╮
-        │ x        ┆ match   │
-        │ ---      ┆ ---     │
-        │ Utf8     ┆ Boolean │
-        ╞══════════╪═════════╡
-        │ geftdaft ┆ false   │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ lazy     ┆ false   │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ daft.io  ┆ true    │
-        ╰──────────┴─────────╯
+        ╭──────────┬───────╮
+        │ x        ┆ match │
+        │ ---      ┆ ---   │
+        │ String   ┆ Bool  │
+        ╞══════════╪═══════╡
+        │ geftdaft ┆ false │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ lazy     ┆ false │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ daft.io  ┆ true  │
+        ╰──────────┴───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -759,7 +751,7 @@ def normalize(
         ╭───────────────┬─────────────╮
         │ x             ┆ normalized  │
         │ ---           ┆ ---         │
-        │ Utf8          ┆ Utf8        │
+        │ String        ┆ String      │
         ╞═══════════════╪═════════════╡
         │ hello world   ┆ hello world │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -945,17 +937,17 @@ def regexp(expr: Expression, pattern: str | Expression) -> Expression:
         >>>
         >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
         >>> df.with_column("match", regexp(df["x"], "ba.")).collect()
-        ╭──────┬─────────╮
-        │ x    ┆ match   │
-        │ ---  ┆ ---     │
-        │ Utf8 ┆ Boolean │
-        ╞══════╪═════════╡
-        │ foo  ┆ false   │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ bar  ┆ true    │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ baz  ┆ true    │
-        ╰──────┴─────────╯
+        ╭────────┬───────╮
+        │ x      ┆ match │
+        │ ---    ┆ ---   │
+        │ String ┆ Bool  │
+        ╞════════╪═══════╡
+        │ foo    ┆ false │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ bar    ┆ true  │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ baz    ┆ true  │
+        ╰────────┴───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -984,7 +976,7 @@ def regexp_count(
         ╭────────────────┬────────────╮
         │ x              ┆ word_count │
         │ ---            ┆ ---        │
-        │ Utf8           ┆ UInt64     │
+        │ String         ┆ UInt64     │
         ╞════════════════╪════════════╡
         │ hello world    ┆ 2          │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -999,7 +991,7 @@ def regexp_count(
         ╭────────────────┬─────────────╮
         │ x              ┆ digit_count │
         │ ---            ┆ ---         │
-        │ Utf8           ┆ UInt64      │
+        │ String         ┆ UInt64      │
         ╞════════════════╪═════════════╡
         │ hello world    ┆ 0           │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -1036,34 +1028,34 @@ def regexp_extract(expr: Expression, pattern: str | Expression, index: int = 0) 
         >>> regex = r"(\d)(\d*)"
         >>> df = daft.from_pydict({"x": ["123-456", "789-012", "345-678"]})
         >>> df.with_column("match", regexp_extract(df["x"], regex)).collect()
-        ╭─────────┬───────╮
-        │ x       ┆ match │
-        │ ---     ┆ ---   │
-        │ Utf8    ┆ Utf8  │
-        ╞═════════╪═══════╡
-        │ 123-456 ┆ 123   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 789-012 ┆ 789   │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 345-678 ┆ 345   │
-        ╰─────────┴───────╯
+        ╭─────────┬────────╮
+        │ x       ┆ match  │
+        │ ---     ┆ ---    │
+        │ String  ┆ String │
+        ╞═════════╪════════╡
+        │ 123-456 ┆ 123    │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 789-012 ┆ 789    │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 345-678 ┆ 345    │
+        ╰─────────┴────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
         Extract the first capture group
 
         >>> df.with_column("match", regexp_extract(df["x"], regex, 1)).collect()
-        ╭─────────┬───────╮
-        │ x       ┆ match │
-        │ ---     ┆ ---   │
-        │ Utf8    ┆ Utf8  │
-        ╞═════════╪═══════╡
-        │ 123-456 ┆ 1     │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 789-012 ┆ 7     │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ 345-678 ┆ 3     │
-        ╰─────────┴───────╯
+        ╭─────────┬────────╮
+        │ x       ┆ match  │
+        │ ---     ┆ ---    │
+        │ String  ┆ String │
+        ╞═════════╪════════╡
+        │ 123-456 ┆ 1      │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 789-012 ┆ 7      │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 345-678 ┆ 3      │
+        ╰─────────┴────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -1083,7 +1075,7 @@ def regexp_extract_all(expr: Expression, pattern: str | Expression, index: int =
         index: The index of the regex match group to extract
 
     Returns:
-        Expression: a List[Utf8] expression with the extracted regex matches
+        Expression: a List[String] expression with the extracted regex matches
 
     Note:
         This expression always returns a list of strings.
@@ -1096,34 +1088,34 @@ def regexp_extract_all(expr: Expression, pattern: str | Expression, index: int =
         >>> regex = r"(\d)(\d*)"
         >>> df = daft.from_pydict({"x": ["123-456", "789-012", "345-678"]})
         >>> df.with_column("match", regexp_extract_all(df["x"], regex)).collect()
-        ╭─────────┬────────────╮
-        │ x       ┆ match      │
-        │ ---     ┆ ---        │
-        │ Utf8    ┆ List[Utf8] │
-        ╞═════════╪════════════╡
-        │ 123-456 ┆ [123, 456] │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 789-012 ┆ [789, 012] │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 345-678 ┆ [345, 678] │
-        ╰─────────┴────────────╯
+        ╭─────────┬──────────────╮
+        │ x       ┆ match        │
+        │ ---     ┆ ---          │
+        │ String  ┆ List[String] │
+        ╞═════════╪══════════════╡
+        │ 123-456 ┆ [123, 456]   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 789-012 ┆ [789, 012]   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 345-678 ┆ [345, 678]   │
+        ╰─────────┴──────────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
         Extract the first capture group
 
         >>> df.with_column("match", regexp_extract_all(df["x"], regex, 1)).collect()
-        ╭─────────┬────────────╮
-        │ x       ┆ match      │
-        │ ---     ┆ ---        │
-        │ Utf8    ┆ List[Utf8] │
-        ╞═════════╪════════════╡
-        │ 123-456 ┆ [1, 4]     │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 789-012 ┆ [7, 0]     │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 345-678 ┆ [3, 6]     │
-        ╰─────────┴────────────╯
+        ╭─────────┬──────────────╮
+        │ x       ┆ match        │
+        │ ---     ┆ ---          │
+        │ String  ┆ List[String] │
+        ╞═════════╪══════════════╡
+        │ 123-456 ┆ [1, 4]       │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 789-012 ┆ [7, 0]       │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 345-678 ┆ [3, 6]       │
+        ╰─────────┴──────────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -1141,7 +1133,7 @@ def regexp_split(expr: Expression, pattern: str | Expression) -> Expression:
         pattern: The pattern on which each string should be split, or a column to pick such patterns from.
 
     Returns:
-        Expression: A List[Utf8] expression containing the string splits for each string in the column.
+        Expression: A List[String] expression containing the string splits for each string in the column.
 
     Examples:
         >>> import daft
@@ -1152,7 +1144,7 @@ def regexp_split(expr: Expression, pattern: str | Expression) -> Expression:
         ╭──────────────────────────┬────────────────────────────╮
         │ data                     ┆ split                      │
         │ ---                      ┆ ---                        │
-        │ Utf8                     ┆ List[Utf8]                 │
+        │ String                   ┆ List[String]               │
         ╞══════════════════════════╪════════════════════════════╡
         │ daft.distributed...query ┆ [daft, distributed, query] │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -1187,17 +1179,17 @@ def replace(
         >>>
         >>> df = daft.from_pydict({"data": ["foo", "bar", "baz"]})
         >>> df.with_column("replace", replace(df["data"], "ba", "123")).collect()
-        ╭──────┬─────────╮
-        │ data ┆ replace │
-        │ ---  ┆ ---     │
-        │ Utf8 ┆ Utf8    │
-        ╞══════╪═════════╡
-        │ foo  ┆ foo     │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ bar  ┆ 123r    │
-        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ baz  ┆ 123z    │
-        ╰──────┴─────────╯
+        ╭────────┬─────────╮
+        │ data   ┆ replace │
+        │ ---    ┆ ---     │
+        │ String ┆ String  │
+        ╞════════╪═════════╡
+        │ foo    ┆ foo     │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ bar    ┆ 123r    │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ baz    ┆ 123z    │
+        ╰────────┴─────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -1226,17 +1218,17 @@ def regexp_replace(
         >>>
         >>> df = daft.from_pydict({"data": ["foo", "fooo", "foooo"]})
         >>> df.with_column("replace", regexp_replace(df["data"], r"o+", "a")).collect()
-        ╭───────┬─────────╮
-        │ data  ┆ replace │
-        │ ---   ┆ ---     │
-        │ Utf8  ┆ Utf8    │
-        ╞═══════╪═════════╡
-        │ foo   ┆ fa      │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ fooo  ┆ fa      │
-        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-        │ foooo ┆ fa      │
-        ╰───────┴─────────╯
+        ╭────────┬─────────╮
+        │ data   ┆ replace │
+        │ ---    ┆ ---     │
+        │ String ┆ String  │
+        ╞════════╪═════════╡
+        │ foo    ┆ fa      │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ fooo   ┆ fa      │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ foooo  ┆ fa      │
+        ╰────────┴─────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 

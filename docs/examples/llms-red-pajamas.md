@@ -25,7 +25,7 @@ pip install "daft[aws]" sentence-transformers accelerate
 
 We will use a sample of the **StackExchange crawl from the [RedPajamas dataset](https://www.google.com/url?q=https%3A%2F%2Fhuggingface.co%2Fdatasets%2Ftogethercomputer%2FRedPajama-Data-1T)**. It is 75GB of jsonl files.
 
-**Note**: This demo runs best on a cluster with many GPUs available. Information on how to connect Daft to a cluster is available on our [scaling up guide](../distributed.md).
+**Note**: This demo runs best on a cluster with many GPUs available. Information on how to connect Daft to a cluster is available on our [scaling up guide](../distributed/index.md).
 
 If running on a single node, you can use the provided subsample of the data, which is 75MB in size. If you like, you can also truncate either dataset to a desired number of rows using `df.limit`.
 

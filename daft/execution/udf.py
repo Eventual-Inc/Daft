@@ -11,12 +11,12 @@ from multiprocessing.connection import Listener
 from typing import IO, TYPE_CHECKING, cast
 
 import daft.pickle
+from daft.daft import OperatorMetrics, PyRecordBatch
 from daft.errors import UDFException
 from daft.expressions import Expression, ExpressionsProjection
-from daft.recordbatch import MicroPartition
 
 if TYPE_CHECKING:
-    from daft.daft import PyExpr, PyMicroPartition
+    from daft.daft import PyExpr
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ class SharedMemoryTransport:
 
 
 class UdfHandle:
-    def __init__(self, project_expr: PyExpr, passthrough_exprs: list[PyExpr]) -> None:
+    def __init__(self, udf_expr: PyExpr) -> None:
         # Construct UNIX socket path for basic communication
         with tempfile.NamedTemporaryFile(delete=True) as tmp:
             self.socket_path = tmp.name
@@ -96,9 +96,7 @@ class UdfHandle:
         self.transport = SharedMemoryTransport()
 
         # Serialize and send the expression projection
-        expr_projection = ExpressionsProjection(
-            [Expression._from_pyexpr(expr) for expr in passthrough_exprs] + [Expression._from_pyexpr(project_expr)]
-        )
+        expr_projection = ExpressionsProjection([Expression._from_pyexpr(udf_expr)])
         expr_projection_bytes = daft.pickle.dumps(expr_projection)
         self.handle_conn.send((_ENTER, expr_projection_bytes))
         response = self.handle_conn.recv()
@@ -116,34 +114,48 @@ class UdfHandle:
             lines.append(line.decode().rstrip())
         return lines
 
-    def eval_input(self, input: PyMicroPartition) -> tuple[PyMicroPartition, list[str]]:
+    def eval_input(self, input: PyRecordBatch) -> tuple[PyRecordBatch, list[str], OperatorMetrics]:
         if self.process.poll() is not None:
             raise RuntimeError("UDF process has terminated")
 
-        serialized = input.write_to_ipc_stream()
+        serialized = input.to_ipc_stream()
         shm_name, shm_size = self.transport.write_and_close(serialized)
         self.handle_conn.send((shm_name, shm_size))
 
-        response = self.handle_conn.recv()
+        try:
+            response = self.handle_conn.recv()
+        except EOFError:
+            stdout = self.trace_output()
+            raise RuntimeError(f"UDF process closed the connection unexpectedly (EOF reached), stdout: {stdout}")
+
         stdout = self.trace_output()
         if response[0] == _UDF_ERROR:
             try:
                 base_exc: Exception | None = daft.pickle.loads(response[3])
-            except TypeError:
+            except Exception:
                 base_exc = None
 
+            tb_payload = response[2]
+            if isinstance(tb_payload, bytes):
+                try:
+                    tb_info = daft.pickle.loads(tb_payload)
+                except Exception:
+                    tb_info = None
+            else:
+                tb_info = tb_payload
+
             if base_exc is None and sys.version_info >= (3, 11):
-                raise UDFException(response[1], response[2])
-            if base_exc and sys.version_info >= (3, 11):
-                base_exc.add_note("\n".join(response[2].format()).rstrip())  # type: ignore[attr-defined]
-            raise UDFException(response[1]) from base_exc
+                raise UDFException(response[1], tb_info)
+            if base_exc and tb_info and sys.version_info >= (3, 11):
+                base_exc.add_note("\n".join(tb_info.format()).rstrip())  # type: ignore[attr-defined]
+            raise UDFException(response[1], tb_info if base_exc is None else None) from base_exc
         elif response[0] == _ERROR:
-            raise RuntimeError("UDF unexpectedly failed with traceback:\n" + "\n".join(response[1].format()))
+            raise RuntimeError("UDF unexpectedly failed with traceback:\n" + response[1])
         elif response[0] == _SUCCESS:
-            out_name, out_size = response[1], response[2]
+            _, out_name, out_size, metrics = response
             output_bytes = self.transport.read_and_release(out_name, out_size)
-            deserialized = MicroPartition.from_ipc_stream(output_bytes)
-            return (deserialized._micropartition, stdout)
+            deserialized = PyRecordBatch.from_ipc_stream(output_bytes)
+            return (deserialized, stdout, metrics)
         else:
             raise RuntimeError(f"Unknown response from actor: {response}")
 

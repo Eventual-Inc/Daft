@@ -1,14 +1,14 @@
 use common_error::{DaftError, DaftResult};
-use common_file::DaftFile;
 use common_io_config::IOConfig;
 #[cfg(feature = "python")]
-use pyo3::{PyClass, Python};
+use pyo3::{FromPyObject, Py, PyAny, PyClass, Python};
 
 use super::{FromLiteral, Literal, deserializer::LiteralDeserializer};
 #[cfg(feature = "python")]
 use crate::python::{PyDataType, PyTimeUnit};
 use crate::{
     datatypes::IntervalValue,
+    file::FileReference,
     prelude::{CountMode, DataType, ImageFormat, ImageMode, ImageProperty, TimeUnit},
     series::Series,
 };
@@ -44,12 +44,12 @@ impl_literal!(f64, Float64);
 impl_literal!(IntervalValue, Interval);
 impl_literal!(String, Utf8);
 impl_literal!(Series, List);
-impl_literal!(DaftFile, File);
+impl_literal!(FileReference, File);
 
 impl_literal!(&'_ str, Utf8, |s: &'_ str| s.to_owned());
 impl_literal!(&'_ [u8], Binary, |s: &'_ [u8]| s.to_vec());
 #[cfg(feature = "python")]
-impl_literal!(pyo3::PyObject, Python, |s: pyo3::PyObject| {
+impl_literal!(Py<PyAny>, Python, |s: Py<PyAny>| {
     common_py_serde::PyObjectWrapper(std::sync::Arc::new(s))
 });
 
@@ -166,10 +166,10 @@ macro_rules! impl_float_fromliteral {
 #[cfg(feature = "python")]
 fn try_extract_py_lit<T>(value: &Literal) -> Option<T>
 where
-    T: Clone + PyClass,
+    T: Clone + PyClass + for<'a, 'py> FromPyObject<'a, 'py>,
 {
     if let Literal::Python(py_value) = value {
-        Python::with_gil(|py| py_value.0.extract::<T>(py).ok())
+        Python::attach(|py| py_value.0.extract::<T>(py).ok())
     } else {
         None
     }
@@ -208,7 +208,7 @@ where
 
 impl_strict_fromliteral!(String, Utf8);
 impl_strict_fromliteral!(bool, Boolean);
-impl_strict_fromliteral!(DaftFile, File);
+impl_strict_fromliteral!(FileReference, File);
 impl_int_fromliteral!(i8);
 impl_int_fromliteral!(u8);
 impl_int_fromliteral!(i16);

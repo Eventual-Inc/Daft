@@ -7,7 +7,8 @@ use crate::{
         growable::make_growable,
         ops::{
             DaftApproxSketchAggable, DaftCountAggable, DaftHllMergeAggable, DaftMeanAggable,
-            DaftSetAggable, DaftSkewAggable as _, DaftStddevAggable, DaftSumAggable, GroupIndices,
+            DaftProductAggable, DaftSetAggable, DaftSkewAggable as _, DaftStddevAggable,
+            DaftSumAggable, GroupIndices,
         },
     },
     count_mode::CountMode,
@@ -89,6 +90,74 @@ impl Series {
             }
             other => Err(DaftError::TypeError(format!(
                 "Numeric sum is not implemented for type {}",
+                other
+            ))),
+        }
+    }
+
+    pub fn product(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
+        use crate::datatypes::try_product_supertype;
+        match self.data_type() {
+            // intX -> int64 (in line with numpy)
+            DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
+                let casted = self.cast(&DataType::Int64)?;
+                match groups {
+                    Some(groups) => {
+                        Ok(DaftProductAggable::grouped_product(&casted.i64()?, groups)?
+                            .into_series())
+                    }
+                    None => Ok(DaftProductAggable::product(&casted.i64()?)?.into_series()),
+                }
+            }
+            // uintX -> uint64 (in line with numpy)
+            DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
+                let casted = self.cast(&DataType::UInt64)?;
+                match groups {
+                    Some(groups) => {
+                        Ok(DaftProductAggable::grouped_product(&casted.u64()?, groups)?
+                            .into_series())
+                    }
+                    None => Ok(DaftProductAggable::product(&casted.u64()?)?.into_series()),
+                }
+            }
+            // floatX -> floatX (in line with numpy)
+            DataType::Float32 => match groups {
+                Some(groups) => Ok(DaftProductAggable::grouped_product(
+                    &self.downcast::<Float32Array>()?,
+                    groups,
+                )?
+                .into_series()),
+                None => Ok(
+                    DaftProductAggable::product(&self.downcast::<Float32Array>()?)?.into_series(),
+                ),
+            },
+            DataType::Float64 => match groups {
+                Some(groups) => Ok(DaftProductAggable::grouped_product(
+                    &self.downcast::<Float64Array>()?,
+                    groups,
+                )?
+                .into_series()),
+                None => Ok(
+                    DaftProductAggable::product(&self.downcast::<Float64Array>()?)?.into_series(),
+                ),
+            },
+            DataType::Decimal128(_, _) => {
+                let casted = self.cast(&try_product_supertype(self.data_type())?)?;
+
+                match groups {
+                    Some(groups) => Ok(DaftProductAggable::grouped_product(
+                        &casted.downcast::<Decimal128Array>()?,
+                        groups,
+                    )?
+                    .into_series()),
+                    None => Ok(DaftProductAggable::product(
+                        &casted.downcast::<Decimal128Array>()?,
+                    )?
+                    .into_series()),
+                }
+            }
+            other => Err(DaftError::TypeError(format!(
+                "Numeric product is not implemented for type {}",
                 other
             ))),
         }
@@ -256,16 +325,6 @@ impl Series {
                     None => Ok(DaftConcatAggable::concat(downcasted)?.into_series()),
                 }
             }
-            #[cfg(feature = "python")]
-            DataType::Python => {
-                let downcasted = self.downcast::<PythonArray>()?;
-                match groups {
-                    Some(groups) => {
-                        Ok(DaftConcatAggable::grouped_concat(downcasted, groups)?.into_series())
-                    }
-                    None => Ok(DaftConcatAggable::concat(downcasted)?.into_series()),
-                }
-            }
             DataType::Utf8 => {
                 let downcasted = self.downcast::<Utf8Array>()?;
                 match groups {
@@ -276,7 +335,7 @@ impl Series {
                 }
             }
             _ => Err(DaftError::TypeError(format!(
-                "concat aggregation is only valid for List, Python types, or Utf8, got {}",
+                "concat aggregation is only valid for List or Utf8, got {}",
                 self.data_type()
             ))),
         }

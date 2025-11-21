@@ -8,8 +8,8 @@ from transformers import AutoConfig, AutoModel, AutoProcessor
 
 from daft import DataType
 from daft.ai.protocols import ImageEmbedder, ImageEmbedderDescriptor
-from daft.ai.typing import EmbeddingDimensions, Options
-from daft.ai.utils import get_torch_device
+from daft.ai.typing import EmbeddingDimensions, Options, UDFOptions
+from daft.ai.utils import get_gpu_udf_options, get_torch_device
 from daft.dependencies import pil_image
 
 if TYPE_CHECKING:
@@ -35,6 +35,9 @@ class TransformersImageEmbedderDescriptor(ImageEmbedderDescriptor):
         # For CLIP models, the image embedding dimension is typically in projection_dim or hidden_size.
         embedding_size = getattr(config, "projection_dim", getattr(config, "hidden_size", 512))
         return EmbeddingDimensions(size=embedding_size, dtype=DataType.float32())
+
+    def get_udf_options(self) -> UDFOptions:
+        return get_gpu_udf_options()
 
     def instantiate(self) -> ImageEmbedder:
         return TransformersImageEmbedder(self.model, **self.options)

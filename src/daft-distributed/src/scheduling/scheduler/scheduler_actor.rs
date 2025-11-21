@@ -19,7 +19,7 @@ use crate::{
         task::{Task, TaskID},
         worker::{Worker, WorkerManager},
     },
-    statistics::{StatisticsEvent, StatisticsManagerRef},
+    statistics::{StatisticsManagerRef, TaskEvent},
     utils::{
         channel::{
             OneshotReceiver, OneshotSender, UnboundedReceiver, UnboundedSender,
@@ -44,17 +44,16 @@ impl<W: Worker> SchedulerActor<W, DefaultScheduler<W::Task>> {
     fn default_scheduler(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
         Self {
             worker_manager,
-            scheduler: DefaultScheduler::new(),
+            scheduler: DefaultScheduler::default(),
         }
     }
 }
 
-#[allow(dead_code)]
 impl<W: Worker> SchedulerActor<W, LinearScheduler<W::Task>> {
     fn linear_scheduler(worker_manager: Arc<dyn WorkerManager<Worker = W>>) -> Self {
         Self {
             worker_manager,
-            scheduler: LinearScheduler::new(),
+            scheduler: LinearScheduler::default(),
         }
     }
 }
@@ -111,7 +110,7 @@ where
             // Register statistics for all tasks
             for task in &enqueueable_tasks {
                 let task_context = task.task_context();
-                statistics_manager.handle_event(StatisticsEvent::TaskSubmitted {
+                statistics_manager.handle_event(TaskEvent::Submitted {
                     context: task_context,
                     name: task.task.task_name().clone(),
                 })?;
@@ -160,7 +159,7 @@ where
                 // Report to statistics manager
                 for task in &scheduled_tasks {
                     let task_context = task.task().task_context();
-                    statistics_manager.handle_event(StatisticsEvent::TaskScheduled {
+                    statistics_manager.handle_event(TaskEvent::Scheduled {
                         context: task_context,
                     })?;
                 }
@@ -198,7 +197,23 @@ where
     }
 }
 
-pub(crate) fn spawn_default_scheduler_actor<W: Worker>(
+pub(crate) fn spawn_scheduler_actor<W: Worker>(
+    worker_manager: Arc<dyn WorkerManager<Worker = W>>,
+    joinset: &mut JoinSet<DaftResult<()>>,
+    statistics_manager: StatisticsManagerRef,
+) -> SchedulerHandle<W::Task> {
+    // Check for environment variable to use linear scheduler
+    if std::env::var("DAFT_SCHEDULER_LINEAR")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+    {
+        spawn_linear_scheduler_actor(worker_manager, joinset, statistics_manager)
+    } else {
+        spawn_default_scheduler_actor(worker_manager, joinset, statistics_manager)
+    }
+}
+
+fn spawn_default_scheduler_actor<W: Worker>(
     worker_manager: Arc<dyn WorkerManager<Worker = W>>,
     joinset: &mut JoinSet<DaftResult<()>>,
     statistics_manager: StatisticsManagerRef,
@@ -209,8 +224,7 @@ pub(crate) fn spawn_default_scheduler_actor<W: Worker>(
     SchedulerActor::spawn_scheduler_actor(scheduler, joinset, statistics_manager)
 }
 
-#[allow(dead_code)]
-pub(crate) fn spawn_linear_scheduler_actor<W: Worker>(
+fn spawn_linear_scheduler_actor<W: Worker>(
     worker_manager: Arc<dyn WorkerManager<Worker = W>>,
     joinset: &mut JoinSet<DaftResult<()>>,
     statistics_manager: StatisticsManagerRef,

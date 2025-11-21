@@ -3,13 +3,16 @@ use std::{
     sync::Arc,
 };
 
+use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use daft_micropartition::MicroPartition;
 use tracing::{Span, instrument};
 
 use super::base::{
-    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
+    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
+    StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
-use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) struct LimitSinkState {
     // The remaining number of rows to skip
@@ -117,12 +120,12 @@ impl StreamingSink for LimitSink {
         &self,
         _states: Vec<Self::State>,
         _spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkFinalizeResult {
-        Ok(None).into()
+    ) -> StreamingSinkFinalizeResult<Self> {
+        Ok(StreamingSinkFinalizeOutput::Finished(None)).into()
     }
 
-    fn make_state(&self) -> Self::State {
-        LimitSinkState::new(self.limit, self.offset)
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(LimitSinkState::new(self.limit, self.offset))
     }
 
     fn max_concurrency(&self) -> usize {

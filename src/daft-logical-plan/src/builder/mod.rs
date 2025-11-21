@@ -6,7 +6,9 @@ use std::{
     sync::Arc,
 };
 
-use common_daft_config::DaftPlanningConfig;
+#[cfg(feature = "python")]
+use common_daft_config::PyDaftExecutionConfig;
+use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig};
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
@@ -26,6 +28,7 @@ use resolve_expr::ExprResolver;
 use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
     common_daft_config::PyDaftPlanningConfig,
+    common_io_config::python::IOConfig as PyIOConfig,
     daft_dsl::python::PyExpr,
     // daft_scan::python::pylib::ScanOperatorHandle,
     daft_schema::python::schema::PySchema,
@@ -46,7 +49,7 @@ use crate::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
     sink_info::{OutputFileInfo, SinkInfo},
-    source_info::{InMemoryInfo, SourceInfo},
+    source_info::{GlobScanInfo, InMemoryInfo, SourceInfo},
 };
 
 /// A logical plan builder, which simplifies constructing logical plans via
@@ -160,6 +163,19 @@ impl LogicalPlanBuilder {
             None,
         ));
         let logical_plan: LogicalPlan = ops::Source::new(schema, source_info.into()).into();
+
+        Ok(Self::from(Arc::new(logical_plan)))
+    }
+
+    /// Creates a `LogicalPlan::Source` from glob paths.
+    pub fn from_glob_scan(
+        glob_paths: Vec<String>,
+        io_config: Option<IOConfig>,
+    ) -> DaftResult<Self> {
+        let glob_scan_info = GlobScanInfo::new(glob_paths, io_config);
+        let schema = glob_scan_info.schema.clone();
+        let logical_plan: LogicalPlan =
+            ops::Source::new(schema, SourceInfo::GlobScan(glob_scan_info).into()).into();
 
         Ok(Self::from(Arc::new(logical_plan)))
     }
@@ -450,7 +466,7 @@ impl LogicalPlanBuilder {
     /// Creates a logical scan operator by collapsing the plan to just its schema.
     #[cfg(feature = "python")]
     pub fn describe(&self) -> DaftResult<Self> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             // schema = self.schema()
             let schema = py
                 .import(intern!(py, "daft.logical.schema"))?
@@ -713,8 +729,8 @@ impl LogicalPlanBuilder {
         table_location: String,
         partition_spec_id: i64,
         partition_cols: Vec<ExprRef>,
-        iceberg_schema: Arc<PyObject>,
-        iceberg_properties: Arc<PyObject>,
+        iceberg_schema: Arc<Py<PyAny>>,
+        iceberg_properties: Arc<Py<PyAny>>,
         io_config: Option<IOConfig>,
         catalog_columns: Vec<String>,
     ) -> DaftResult<Self> {
@@ -783,7 +799,7 @@ impl LogicalPlanBuilder {
         columns_name: Vec<String>,
         mode: String,
         io_config: Option<IOConfig>,
-        kwargs: Arc<PyObject>,
+        kwargs: Arc<Py<PyAny>>,
     ) -> DaftResult<Self> {
         use crate::sink_info::LanceCatalogInfo;
 
@@ -803,7 +819,7 @@ impl LogicalPlanBuilder {
     }
 
     #[cfg(feature = "python")]
-    pub fn datasink_write(&self, name: String, sink: Arc<PyObject>) -> DaftResult<Self> {
+    pub fn datasink_write(&self, name: String, sink: Arc<Py<PyAny>>) -> DaftResult<Self> {
         use crate::sink_info::DataSinkInfo;
 
         let sink_info = SinkInfo::DataSinkInfo(DataSinkInfo { name, sink });
@@ -814,7 +830,10 @@ impl LogicalPlanBuilder {
 
     /// Async equivalent of `optimize`
     /// This is safe to call from a tokio runtime
-    pub fn optimize_async(&self) -> impl Future<Output = DaftResult<Self>> {
+    pub fn optimize_async(
+        &self,
+        execution_config: Arc<DaftExecutionConfig>,
+    ) -> impl Future<Output = DaftResult<Self>> {
         let cfg = self.config.clone();
 
         // Run LogicalPlan optimizations
@@ -835,10 +854,11 @@ impl LogicalPlanBuilder {
                     },
                 )
                 .with_default_optimizations()
+                .enrich_with_stats(Some(execution_config.clone()))
                 .when(
                     !cfg.as_ref()
                         .is_some_and(|conf| conf.disable_join_reordering),
-                    |builder| builder.reorder_joins(),
+                    |builder| builder.reorder_joins(Some(execution_config.clone())),
                 )
                 .simplify_expressions()
                 .split_granular_projections()
@@ -882,7 +902,7 @@ impl LogicalPlanBuilder {
     ///
     /// **Important**: Do not call this method from the main thread as there is a `block_on` call deep within this method
     /// Calling will result in a runtime panic
-    pub fn optimize(&self) -> DaftResult<Self> {
+    pub fn optimize(&self, execution_config: Arc<DaftExecutionConfig>) -> DaftResult<Self> {
         // TODO: remove the `block_on` to make this method safe to call from the main thread
 
         let cfg = self.config.clone();
@@ -902,10 +922,11 @@ impl LogicalPlanBuilder {
                 },
             )
             .with_default_optimizations()
+            .enrich_with_stats(Some(execution_config.clone()))
             .when(
                 !cfg.as_ref()
                     .is_some_and(|conf| conf.disable_join_reordering),
-                |builder| builder.reorder_joins(),
+                |builder| builder.reorder_joins(Some(execution_config)),
             )
             .simplify_expressions()
             .split_granular_projections()
@@ -1037,7 +1058,7 @@ impl PyLogicalPlanBuilder {
     #[staticmethod]
     pub fn in_memory_scan(
         partition_key: &str,
-        cache_entry: PyObject,
+        cache_entry: pyo3::Py<pyo3::PyAny>,
         schema: PySchema,
         num_partitions: usize,
         size_bytes: usize,
@@ -1052,6 +1073,14 @@ impl PyLogicalPlanBuilder {
             num_rows,
         )?
         .into())
+    }
+
+    #[staticmethod]
+    pub fn from_glob_scan(
+        glob_paths: Vec<String>,
+        io_config: Option<PyIOConfig>,
+    ) -> PyResult<Self> {
+        Ok(LogicalPlanBuilder::from_glob_scan(glob_paths, io_config.map(|c| c.config))?.into())
     }
 
     pub fn with_planning_config(
@@ -1368,8 +1397,8 @@ impl PyLogicalPlanBuilder {
         table_location: String,
         partition_spec_id: i64,
         partition_cols: Vec<PyExpr>,
-        iceberg_schema: PyObject,
-        iceberg_properties: PyObject,
+        iceberg_schema: pyo3::Py<pyo3::PyAny>,
+        iceberg_properties: pyo3::Py<pyo3::PyAny>,
         catalog_columns: Vec<String>,
         io_config: Option<common_io_config::python::IOConfig>,
     ) -> PyResult<Self> {
@@ -1436,7 +1465,7 @@ impl PyLogicalPlanBuilder {
         columns_name: Vec<String>,
         mode: String,
         io_config: Option<common_io_config::python::IOConfig>,
-        kwargs: Option<PyObject>,
+        kwargs: Option<pyo3::Py<pyo3::PyAny>>,
     ) -> PyResult<Self> {
         let kwargs = Arc::new(kwargs.unwrap_or_else(|| py.None()));
         Ok(self
@@ -1452,7 +1481,7 @@ impl PyLogicalPlanBuilder {
     }
 
     #[pyo3(signature = (name, sink))]
-    pub fn datasink_write(&self, name: String, sink: PyObject) -> PyResult<Self> {
+    pub fn datasink_write(&self, name: String, sink: pyo3::Py<pyo3::PyAny>) -> PyResult<Self> {
         Ok(self.builder.datasink_write(name, Arc::new(sink))?.into())
     }
 
@@ -1461,8 +1490,8 @@ impl PyLogicalPlanBuilder {
     }
 
     /// Optimize the underlying logical plan, returning a new plan builder containing the optimized plan.
-    pub fn optimize(&self, py: Python) -> PyResult<Self> {
-        py.allow_threads(|| Ok(self.builder.optimize()?.into()))
+    pub fn optimize(&self, py: Python, execution_config: PyDaftExecutionConfig) -> PyResult<Self> {
+        py.detach(|| Ok(self.builder.optimize(execution_config.config)?.into()))
     }
 
     pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {

@@ -2,7 +2,7 @@
 
 mod wrappers;
 
-use std::sync::Arc;
+use std::{hash::Hasher, sync::Arc};
 
 use daft_core::{lit::Literal, python::PySchema};
 use daft_logical_plan::PyLogicalPlanBuilder;
@@ -34,7 +34,7 @@ impl PyCatalog {
         ident: PyIdentifier,
         schema: PySchema,
         py: Python,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         self.0.create_table(&ident.0, schema.schema)?.to_py(py)
     }
 
@@ -45,7 +45,7 @@ impl PyCatalog {
         Ok(self.0.drop_table(&ident.0)?)
     }
 
-    fn get_table(&self, ident: PyIdentifier, py: Python) -> PyResult<PyObject> {
+    fn get_table(&self, ident: PyIdentifier, py: Python) -> PyResult<Py<PyAny>> {
         self.0.get_table(&ident.0)?.to_py(py)
     }
 
@@ -78,7 +78,7 @@ impl PyCatalog {
     }
 
     #[staticmethod]
-    fn new_memory_catalog(name: String, py: Python) -> PyResult<PyObject> {
+    fn new_memory_catalog(name: String, py: Python) -> PyResult<Py<PyAny>> {
         MemoryCatalog::new(name).to_py(py)
     }
 }
@@ -94,7 +94,7 @@ impl PyTable {
                 .iter()
                 .map(|(key, val)| {
                     let key = key.extract()?;
-                    let val = daft_dsl::python::literal_value(val)?;
+                    let val = Literal::from_pyobj(&val, None)?;
 
                     Ok((key, val))
                 })
@@ -138,7 +138,7 @@ impl PyTable {
     }
 
     #[staticmethod]
-    fn new_memory_table(name: String, schema: PySchema, py: Python) -> PyResult<PyObject> {
+    fn new_memory_table(name: String, schema: PySchema, py: Python) -> PyResult<Py<PyAny>> {
         MemoryTable::new(name, schema.schema)?.to_py(py)
     }
 }
@@ -200,6 +200,14 @@ impl PyIdentifier {
 
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.0))
+    }
+
+    pub fn __hash__(&self) -> PyResult<u64> {
+        use std::{collections::hash_map::DefaultHasher, hash::Hash};
+
+        let mut hasher = DefaultHasher::new();
+        self.0.hash(&mut hasher);
+        Ok(hasher.finish())
     }
 }
 

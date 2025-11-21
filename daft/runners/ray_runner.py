@@ -1322,11 +1322,13 @@ class RayRunner(Runner[ray.ObjectRef]):
     ) -> Iterator[RayMaterializedResult]:
         track_runner_on_scarf(runner=self.name)
 
-        # Grab and freeze the current DaftExecutionConfig
-        daft_execution_config = get_context().daft_execution_config
+        # Grab and freeze the current context
+        ctx = get_context()
+        query_id = str(uuid.uuid4())
+        daft_execution_config = ctx.daft_execution_config
 
         # Optimize the logical plan.
-        builder = builder.optimize()
+        builder = builder.optimize(daft_execution_config)
 
         if daft_execution_config.use_legacy_ray_runner:
             if daft_execution_config.enable_aqe:
@@ -1381,10 +1383,11 @@ class RayRunner(Runner[ray.ObjectRef]):
                 yield from self._stream_plan(result_uuid)
         else:
             distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
-                builder._builder, daft_execution_config
+                builder._builder, query_id, daft_execution_config
             )
             if self.flotilla_plan_runner is None:
                 self.flotilla_plan_runner = FlotillaRunner()
+
             yield from self.flotilla_plan_runner.stream_plan(
                 distributed_plan, self._part_set_cache.get_all_partition_sets()
             )

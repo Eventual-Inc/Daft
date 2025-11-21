@@ -487,7 +487,7 @@ pub mod scalar_fn {
     /// For python functions (UDF), we need the pickled object and bound args.
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct PyFn {
-        #[prost(oneof = "py_fn::Variant", tags = "1, 2")]
+        #[prost(oneof = "py_fn::Variant", tags = "1, 2, 3")]
         pub variant: ::core::option::Option<py_fn::Variant>,
     }
     /// Nested message and enum types in `PyFn`.
@@ -530,9 +530,50 @@ pub mod scalar_fn {
             #[prost(message, optional, tag = "2")]
             pub return_dtype: ::core::option::Option<super::super::DataType>,
             #[prost(message, optional, tag = "3")]
-            pub inner: ::core::option::Option<super::super::PyObject>,
+            pub cls: ::core::option::Option<super::super::PyObject>,
             #[prost(message, optional, tag = "4")]
+            pub method: ::core::option::Option<super::super::PyObject>,
+            #[prost(message, optional, tag = "5")]
             pub original_args: ::core::option::Option<super::super::PyObject>,
+            #[prost(uint64, tag = "6")]
+            pub gpus: u64,
+            #[prost(bool, optional, tag = "7")]
+            pub use_process: ::core::option::Option<bool>,
+            #[prost(uint64, optional, tag = "8")]
+            pub max_concurrency: ::core::option::Option<u64>,
+            #[prost(bool, tag = "9")]
+            pub is_async: bool,
+            #[prost(uint64, optional, tag = "10")]
+            pub max_retries: ::core::option::Option<u64>,
+            #[prost(string, optional, tag = "11")]
+            pub on_error: ::core::option::Option<::prost::alloc::string::String>,
+        }
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct BatchFn {
+            #[prost(string, tag = "1")]
+            pub name: ::prost::alloc::string::String,
+            #[prost(message, optional, tag = "2")]
+            pub return_dtype: ::core::option::Option<super::super::DataType>,
+            #[prost(message, optional, tag = "3")]
+            pub cls: ::core::option::Option<super::super::PyObject>,
+            #[prost(message, optional, tag = "4")]
+            pub method: ::core::option::Option<super::super::PyObject>,
+            #[prost(message, optional, tag = "5")]
+            pub original_args: ::core::option::Option<super::super::PyObject>,
+            #[prost(uint64, tag = "6")]
+            pub gpus: u64,
+            #[prost(bool, optional, tag = "7")]
+            pub use_process: ::core::option::Option<bool>,
+            #[prost(uint64, optional, tag = "8")]
+            pub max_concurrency: ::core::option::Option<u64>,
+            #[prost(uint64, optional, tag = "9")]
+            pub batch_size: ::core::option::Option<u64>,
+            #[prost(uint64, optional, tag = "10")]
+            pub max_retries: ::core::option::Option<u64>,
+            #[prost(string, optional, tag = "11")]
+            pub on_error: ::core::option::Option<::prost::alloc::string::String>,
+            #[prost(bool, tag = "12")]
+            pub is_async: bool,
         }
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Variant {
@@ -540,6 +581,8 @@ pub mod scalar_fn {
             Legacy(LegacyFn),
             #[prost(message, tag = "2")]
             RowWise(RowWiseFn),
+            #[prost(message, tag = "3")]
+            Batch(BatchFn),
         }
     }
     #[derive(Clone, PartialEq, ::prost::Oneof)]
@@ -902,7 +945,7 @@ pub struct RelTopN {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SourceInfo {
-    #[prost(oneof = "source_info::Variant", tags = "1, 2")]
+    #[prost(oneof = "source_info::Variant", tags = "1, 2, 3")]
     pub variant: ::core::option::Option<source_info::Variant>,
 }
 /// Nested message and enum types in `SourceInfo`.
@@ -932,13 +975,202 @@ pub mod source_info {
         #[prost(message, optional, tag = "4")]
         pub tasks: ::core::option::Option<super::ScanTasks>,
     }
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GlobInfo {
+        #[prost(string, repeated, tag = "1")]
+        pub glob_paths: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+        #[prost(message, optional, tag = "2")]
+        pub schema: ::core::option::Option<super::Schema>,
+        #[prost(message, optional, boxed, tag = "3")]
+        pub pushdowns: ::core::option::Option<::prost::alloc::boxed::Box<super::Pushdowns>>,
+        #[prost(message, optional, tag = "4")]
+        pub io_config: ::core::option::Option<super::IoConfig>,
+    }
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Variant {
         #[prost(message, tag = "1")]
         CacheInfo(CacheInfo),
         #[prost(message, tag = "2")]
         ScanInfo(::prost::alloc::boxed::Box<ScanInfo>),
+        #[prost(message, tag = "3")]
+        GlobInfo(::prost::alloc::boxed::Box<GlobInfo>),
     }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IoConfig {
+    #[prost(message, optional, tag = "1")]
+    pub s3: ::core::option::Option<S3Config>,
+    #[prost(message, optional, tag = "2")]
+    pub azure: ::core::option::Option<AzureConfig>,
+    #[prost(message, optional, tag = "3")]
+    pub gcs: ::core::option::Option<GcsConfig>,
+    #[prost(message, optional, tag = "4")]
+    pub http: ::core::option::Option<HttpConfig>,
+    #[prost(message, optional, tag = "5")]
+    pub unity: ::core::option::Option<UnityConfig>,
+    #[prost(message, optional, tag = "6")]
+    pub hf: ::core::option::Option<HuggingFaceConfig>,
+    #[prost(message, optional, tag = "7")]
+    pub tos: ::core::option::Option<TosConfig>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct S3Config {
+    #[prost(string, optional, tag = "1")]
+    pub region_name: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "2")]
+    pub endpoint_url: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "3")]
+    pub key_id: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "4")]
+    pub session_token: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "5")]
+    pub access_key: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "6")]
+    pub credentials_provider: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(uint64, optional, tag = "7")]
+    pub buffer_time: ::core::option::Option<u64>,
+    #[prost(uint32, tag = "8")]
+    pub max_connections_per_io_thread: u32,
+    #[prost(uint64, tag = "9")]
+    pub retry_initial_backoff_ms: u64,
+    #[prost(uint64, tag = "10")]
+    pub connect_timeout_ms: u64,
+    #[prost(uint64, tag = "11")]
+    pub read_timeout_ms: u64,
+    #[prost(uint32, tag = "12")]
+    pub num_tries: u32,
+    #[prost(string, optional, tag = "13")]
+    pub retry_mode: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(bool, tag = "14")]
+    pub anonymous: bool,
+    #[prost(bool, tag = "15")]
+    pub use_ssl: bool,
+    #[prost(bool, tag = "16")]
+    pub verify_ssl: bool,
+    #[prost(bool, tag = "17")]
+    pub check_hostname_ssl: bool,
+    #[prost(bool, tag = "18")]
+    pub requester_pays: bool,
+    #[prost(bool, tag = "19")]
+    pub force_virtual_addressing: bool,
+    #[prost(string, optional, tag = "20")]
+    pub profile_name: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(uint64, tag = "21")]
+    pub multipart_size: u64,
+    #[prost(uint32, tag = "22")]
+    pub multipart_max_concurrency: u32,
+    #[prost(string, repeated, tag = "23")]
+    pub custom_retry_msgs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AzureConfig {
+    #[prost(string, optional, tag = "1")]
+    pub storage_account: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "2")]
+    pub access_key: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "3")]
+    pub sas_token: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "4")]
+    pub bearer_token: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "5")]
+    pub tenant_id: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "6")]
+    pub client_id: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "7")]
+    pub client_secret: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(bool, tag = "8")]
+    pub use_fabric_endpoint: bool,
+    #[prost(bool, tag = "9")]
+    pub anonymous: bool,
+    #[prost(string, optional, tag = "10")]
+    pub endpoint_url: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(bool, tag = "11")]
+    pub use_ssl: bool,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GcsConfig {
+    #[prost(string, optional, tag = "1")]
+    pub project_id: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "2")]
+    pub credentials: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "3")]
+    pub token: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(bool, tag = "4")]
+    pub anonymous: bool,
+    #[prost(uint32, tag = "5")]
+    pub max_connections_per_io_thread: u32,
+    #[prost(uint64, tag = "6")]
+    pub retry_initial_backoff_ms: u64,
+    #[prost(uint64, tag = "7")]
+    pub connect_timeout_ms: u64,
+    #[prost(uint64, tag = "8")]
+    pub read_timeout_ms: u64,
+    #[prost(uint32, tag = "9")]
+    pub num_tries: u32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct HttpConfig {
+    #[prost(string, tag = "1")]
+    pub user_agent: ::prost::alloc::string::String,
+    #[prost(string, optional, tag = "2")]
+    pub bearer_token: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(uint64, tag = "3")]
+    pub retry_initial_backoff_ms: u64,
+    #[prost(uint64, tag = "4")]
+    pub connect_timeout_ms: u64,
+    #[prost(uint64, tag = "5")]
+    pub read_timeout_ms: u64,
+    #[prost(uint32, tag = "6")]
+    pub num_tries: u32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UnityConfig {
+    #[prost(string, optional, tag = "1")]
+    pub endpoint: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "2")]
+    pub token: ::core::option::Option<::prost::alloc::string::String>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct HuggingFaceConfig {
+    #[prost(string, optional, tag = "1")]
+    pub token: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(bool, tag = "2")]
+    pub anonymous: bool,
+    #[prost(bool, optional, tag = "3")]
+    pub use_content_defined_chunking: ::core::option::Option<bool>,
+    #[prost(uint64, optional, tag = "4")]
+    pub row_group_size: ::core::option::Option<u64>,
+    #[prost(uint64, tag = "5")]
+    pub target_filesize: u64,
+    #[prost(uint64, tag = "6")]
+    pub max_operations_per_commit: u64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TosConfig {
+    #[prost(string, optional, tag = "1")]
+    pub region: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "2")]
+    pub endpoint: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "3")]
+    pub access_key: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "4")]
+    pub secret_key: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "5")]
+    pub security_token: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(bool, tag = "6")]
+    pub anonymous: bool,
+    #[prost(uint32, tag = "7")]
+    pub max_retries: u32,
+    #[prost(uint64, tag = "8")]
+    pub retry_timeout_ms: u64,
+    #[prost(uint64, tag = "9")]
+    pub connect_timeout_ms: u64,
+    #[prost(uint64, tag = "10")]
+    pub read_timeout_ms: u64,
+    #[prost(uint32, tag = "11")]
+    pub max_concurrent_requests: u32,
+    #[prost(uint32, tag = "12")]
+    pub max_connections_per_io_thread: u32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PartitionFields {

@@ -116,6 +116,7 @@ impl ParquetScanBuilder {
                 self.schema,
                 self.file_path_column,
                 self.hive_partitioning,
+                false,
             )
             .await?,
         );
@@ -251,6 +252,7 @@ impl CsvScanBuilder {
                 self.schema,
                 self.file_path_column,
                 self.hive_partitioning,
+                false,
             )
             .await?,
         );
@@ -340,6 +342,7 @@ impl JsonScanBuilder {
                 self.schema,
                 self.file_path_column,
                 self.hive_partitioning,
+                false,
             )
             .await?,
         );
@@ -355,7 +358,7 @@ pub fn delta_scan<T: AsRef<str>>(
 ) -> DaftResult<LogicalPlanBuilder> {
     use crate::storage_config::StorageConfig;
 
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let io_config = io_config.unwrap_or_default();
 
         let storage_config = StorageConfig {
@@ -401,7 +404,7 @@ pub fn iceberg_scan<T: AsRef<str>>(
 ) -> DaftResult<LogicalPlanBuilder> {
     use pyo3::IntoPyObjectExt;
     let storage_config: StorageConfig = io_config.unwrap_or_default().into();
-    let scan_operator = Python::with_gil(|py| -> DaftResult<ScanOperatorHandle> {
+    let scan_operator = Python::attach(|py| -> DaftResult<ScanOperatorHandle> {
         // iceberg_table = pyiceberg.table.StaticTable.from_metadata(metadata_location)
         let iceberg_table_module = PyModule::import(py, "pyiceberg.table")?;
         let iceberg_static_table = iceberg_table_module.getattr("StaticTable")?;

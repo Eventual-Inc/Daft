@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use daft_dsl::{
     Column, ExprRef, ResolvedColumn,
-    expr::bound_expr::BoundExpr,
+    expr::{VLLMExpr, bound_expr::BoundExpr},
     functions::{FunctionArgs, scalar::ScalarFn},
-    python_udf::{PyScalarFn, RowWisePyFn},
 };
 use daft_recordbatch::RecordBatch;
 use indexmap::IndexMap;
@@ -393,26 +392,21 @@ fn translate_clustering_spec_expr(
 
             Ok(expr.in_subquery(subquery.clone()))
         }
-        Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
-            function_name: name,
-            inner: func,
-            return_dtype,
-            original_args,
-            args: children,
-        }))) => {
-            let new_children = children
+        Expr::ScalarFn(ScalarFn::Python(udf)) => {
+            let new_children = udf
+                .args()
                 .iter()
                 .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Arc::new(Expr::ScalarFn(ScalarFn::Python(
-                PyScalarFn::RowWise(RowWisePyFn {
-                    function_name: name.clone(),
-                    inner: func.clone(),
-                    return_dtype: return_dtype.clone(),
-                    original_args: original_args.clone(),
-                    args: new_children,
-                }),
+                udf.with_new_children(new_children),
             ))))
+        }
+        Expr::VLLM(VLLMExpr { input, .. }) => {
+            let new_input = translate_clustering_spec_expr(input, old_colname_to_new_colname)?;
+            Ok(Arc::new(
+                clustering_spec_expr.with_new_children(vec![new_input]),
+            ))
         }
         // Cannot have agg exprs or references to other tables in clustering specs.
         Expr::Agg(_) | Expr::Column(..) | Expr::Over(..) | Expr::WindowFunction(_) => Err(()),

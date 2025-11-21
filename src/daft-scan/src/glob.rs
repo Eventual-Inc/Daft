@@ -7,7 +7,7 @@ use common_scan_info::{PartitionField, Pushdowns, ScanOperator, ScanTaskLike, Sc
 use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::CsvParseOptions;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_io::{FileMetadata, IOClient, IOStatsContext, IOStatsRef, parse_url};
+use daft_io::{FileMetadata, FileType, IOClient, IOStatsContext, IOStatsRef, parse_url};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_recordbatch::RecordBatch;
 use daft_schema::{
@@ -34,6 +34,9 @@ pub struct GlobScanOperator {
     hive_partitioning: bool,
     partitioning_keys: Vec<PartitionField>,
     generated_fields: SchemaRef,
+    // When true, we will skip globbing and directly convert paths to file metadata.
+    // This is an optimization when the glob scan operator is given a manifest of file paths.
+    skip_glob: bool,
     // When creating the glob scan operator, we might collect file metadata for the first file during schema inference.
     // Cache this metadata (along with the first filepath) so we can use it to populate the stats for the first scan task.
     first_metadata: Option<(String, TableMetadata)>,
@@ -73,6 +76,20 @@ impl From<Error> for DaftError {
             },
         }
     }
+}
+
+// Optimization for when the glob scan operator is given a manifest of file paths. In this case, we can avoid the overhead of globbing
+// and just return the file metadata for each file path.
+fn generate_metadata_from_manifest(
+    glob_paths: &[String],
+) -> impl Iterator<Item = DaftResult<FileMetadata>> {
+    glob_paths.iter().map(|path| {
+        Ok(FileMetadata {
+            filepath: path.clone(),
+            size: None,
+            filetype: FileType::File,
+        })
+    })
 }
 
 async fn run_glob(
@@ -131,6 +148,7 @@ fn run_glob_parallel(
     Ok(iterator)
 }
 
+#[allow(clippy::too_many_arguments)]
 impl GlobScanOperator {
     pub async fn try_new(
         glob_paths: Vec<String>,
@@ -140,6 +158,7 @@ impl GlobScanOperator {
         user_provided_schema: Option<SchemaRef>,
         file_path_column: Option<String>,
         hive_partitioning: bool,
+        skip_glob: bool,
     ) -> DaftResult<Self> {
         let first_glob_path = match glob_paths.first() {
             None => Err(DaftError::ValueError(
@@ -284,7 +303,11 @@ impl GlobScanOperator {
                         ));
                     }
                     #[cfg(feature = "python")]
-                    FileFormatConfig::PythonFunction => {
+                    FileFormatConfig::PythonFunction {
+                        source_type: _,
+                        module_name: _,
+                        function_name: _,
+                    } => {
                         return Err(DaftError::ValueError(
                             "Cannot glob a PythonFunction source".to_string(),
                         ));
@@ -312,6 +335,7 @@ impl GlobScanOperator {
             hive_partitioning,
             partitioning_keys,
             generated_fields: Arc::new(generated_fields),
+            skip_glob,
             first_metadata,
         })
     }
@@ -394,13 +418,17 @@ impl ScanOperator for GlobScanOperator {
         ));
         let file_format = self.file_format_config.file_format();
 
-        let files = run_glob_parallel(
-            self.glob_paths.clone(),
-            io_client,
-            io_runtime,
-            Some(io_stats),
-            file_format,
-        )?;
+        let files: Box<dyn Iterator<Item = DaftResult<FileMetadata>>> = if self.skip_glob {
+            Box::new(generate_metadata_from_manifest(&self.glob_paths))
+        } else {
+            Box::new(run_glob_parallel(
+                self.glob_paths.clone(),
+                io_client,
+                io_runtime,
+                Some(io_stats),
+                file_format,
+            )?)
+        };
 
         let file_format_config = self.file_format_config.clone();
         let schema = self.schema.clone();

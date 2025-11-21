@@ -31,7 +31,7 @@ See also [Window Functions API Docs](../api/window.md) in Daft Documentation.
 First, let's install the necessary python packages and import the libraries we'll use through this tutorial:
 
 * [**Daft**](https://www.daft.ai): Showcasing powerful window functions native in Daft, a unified data engine that leverage both a familiar Python DataFrame API and SQL
-* [**Pandas**](https://pola.rs/): While Daft handles our main data processing, we'll use Pandas to visualize results
+* [**Pandas**](https://pandas.pydata.org/): While Daft handles our main data processing, we'll use Pandas to visualize results
 * [**Matplotlib**](https://matplotlib.org/): For creating visualizations that help us understand the patterns in our data
 
 ```bash
@@ -210,7 +210,7 @@ df.join(agg_df, on=["contestant", "chocolates"], how="left").with_column(
 *With* window functions, the same analysis is simplified:
 
 1. Define a window partitioned by contestant and ordered by chocolates (descending)
-2. Apply the [`dense_rank()`](../api/window.md#daft.functions.dense_rank) function over this window
+2. Apply the [`dense_rank()`][daft.functions.dense_rank] function over this window
 
 The window functions handles all the comparison logic internally, making our code more concise and more efficient.
 
@@ -636,6 +636,6 @@ Key window function concepts we covered:
 * Basic partitioning with [`partition_by()`](../api/window.md#daft.window.Window.partition_by)
 * Ordering rows with partitions using [`order_by()`](../api/window.md#daft.window.Window.order_by)
 * Defining custom frames with [`rows_between()`](../api/window.md#daft.window.Window.rows_between) and [`range_between()`](../api/window.md#daft.window.Window.range_between)
-* Using aggregation functions ([`sum()`](../api/aggregations.md#daft.dataframe.dataframe.GroupedDataFrame.sum)) and ranking functions ([`rank()`](../api/window.md#daft.functions.rank) and [`dense_rank()`](../api/window.md#daft.functions.dense_rank))
+* Using aggregation functions ([`sum()`](../api/aggregations.md#daft.dataframe.dataframe.GroupedDataFrame.sum)) and ranking functions ([`rank()`][daft.functions.rank] and [`dense_rank()`][daft.functions.dense_rank])
 
 If you find yourself writing complex self-joins or struggling with cumulative calculations, try [Daft's window functions](../api/window.md#window-functions) instead!

@@ -1,0 +1,47 @@
+{{- if .Values.distributed }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "daft.headServiceName" . }}
+  labels:
+    {{- include "daft.labels" . | nindent 4 }}
+    app.kubernetes.io/component: head
+    ray.io/node-type: head
+  {{- with .Values.head.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.head.service.type }}
+  ports:
+  - name: gcs-server
+    port: {{ .Values.head.service.ports.gcs }}
+    targetPort: 6379
+    protocol: TCP
+  - name: dashboard
+    port: {{ .Values.head.service.ports.dashboard }}
+    targetPort: 8265
+    protocol: TCP
+  - name: client
+    port: {{ .Values.head.service.ports.client }}
+    targetPort: 10001
+    protocol: TCP
+  - name: metrics
+    port: {{ .Values.head.service.ports.metrics }}
+    targetPort: 8080
+    protocol: TCP
+  {{- if .Values.monitoring.enabled }}
+  - name: prometheus
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+  - name: grafana
+    port: 3000
+    targetPort: 3000
+    protocol: TCP
+  {{- end }}
+  selector:
+    {{- include "daft.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: head
+    ray.io/node-type: head
+{{- end }}

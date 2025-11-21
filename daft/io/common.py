@@ -25,6 +25,7 @@ def get_tabular_files_scan(
     storage_config: StorageConfig,
     file_path_column: str | None = None,
     hive_partitioning: bool = False,
+    skip_glob: bool = False,
 ) -> LogicalPlanBuilder:
     """Returns a TabularFilesScan LogicalPlan for a given glob filepath."""
     # Glob the path using the Runner
@@ -44,6 +45,7 @@ def get_tabular_files_scan(
         schema=_get_schema_from_dict(schema)._schema if schema is not None else None,
         file_path_column=file_path_column,
         hive_partitioning=hive_partitioning,
+        skip_glob=skip_glob,
     )
 
     builder = LogicalPlanBuilder.from_tabular_scan(

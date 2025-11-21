@@ -4,17 +4,20 @@ from typing import TYPE_CHECKING
 
 from daft.daft import (
     LocalPhysicalPlan,
+    PyDaftExecutionConfig,
+    PyMicroPartition,
 )
 from daft.daft import (
     NativeExecutor as _NativeExecutor,
 )
 from daft.dataframe.display import MermaidOptions
+from daft.event_loop import get_or_init_event_loop
 from daft.recordbatch import MicroPartition
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import AsyncGenerator, Iterator
 
-    from daft.daft import PyDaftExecutionConfig
+    from daft.context import DaftContext
     from daft.logical.builder import LogicalPlanBuilder
     from daft.runners.partitioning import (
         LocalMaterializedResult,
@@ -31,23 +34,40 @@ class NativeExecutor:
         self,
         local_physical_plan: LocalPhysicalPlan,
         psets: dict[str, list[MaterializedResult[PartitionT]]],
-        daft_execution_config: PyDaftExecutionConfig,
+        ctx: DaftContext,
         results_buffer_size: int | None,
+        context: dict[str, str] | None,
     ) -> Iterator[LocalMaterializedResult]:
         from daft.runners.partitioning import LocalMaterializedResult
 
         psets_mp = {
             part_id: [part.micropartition()._micropartition for part in parts] for part_id, parts in psets.items()
         }
-        return (
-            LocalMaterializedResult(MicroPartition._from_pymicropartition(part))
-            for part in self._executor.run(
+
+        async def run_executor() -> AsyncGenerator[PyMicroPartition, None]:
+            result_handle = self._executor.run(
                 local_physical_plan,
                 psets_mp,
-                daft_execution_config,
+                ctx._ctx,
                 results_buffer_size,
+                context,
             )
-        )
+
+            try:
+                async for batch in result_handle:
+                    yield batch
+            finally:
+                _ = await result_handle.finish()
+
+        event_loop = get_or_init_event_loop()
+        async_exec = run_executor()
+        while True:
+            part = event_loop.run(async_exec.asend(None))  # codespell:ignore asend
+            if part is None:
+                break
+            yield LocalMaterializedResult(MicroPartition._from_pymicropartition(part))
+        # Execution exception handling
+        event_loop.run(async_exec.aclose())
 
     def pretty_print(
         self,

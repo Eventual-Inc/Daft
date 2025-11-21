@@ -1,15 +1,13 @@
-use std::fmt::Write;
+use std::fmt::{Display, Write};
 
 use arrow2::datatypes::DataType as ArrowType;
 use common_error::{DaftError, DaftResult};
-use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
-use crate::{field::Field, image_mode::ImageMode, time_unit::TimeUnit};
-
+use crate::{field::Field, image_mode::ImageMode, media_type::MediaType, time_unit::TimeUnit};
 pub type DaftDataType = DataType;
 
-#[derive(Clone, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum DataType {
     // ArrowTypes:
     /// Null type
@@ -50,7 +48,6 @@ pub enum DataType {
 
     /// Fixed-precision decimal type.
     /// TODO: allow negative scale once Arrow2 allows it: https://github.com/jorgecarleitao/arrow2/issues/1518
-    #[display("Decimal(precision={_0}, scale={_1})")]
     Decimal128(usize, usize),
 
     /// A [`i64`] representing a timestamp measured in [`TimeUnit`] with an optional timezone.
@@ -67,7 +64,6 @@ pub enum DataType {
     ///
     /// When the timezone is not specified, the timestamp is considered to have no timezone
     /// and is represented _as is_
-    #[display("Timestamp({_0}, {_1:?})")]
     Timestamp(TimeUnit, Option<String>),
 
     /// An [`i32`] representing the elapsed time since UNIX epoch (1970-01-01)
@@ -76,100 +72,147 @@ pub enum DataType {
 
     /// A 64-bit time representing the elapsed time since midnight in the unit of `TimeUnit`.
     /// Only [`TimeUnit::Microsecond`] and [`TimeUnit::Nanosecond`] are supported on this variant.
-    #[display("Time({_0})")]
     Time(TimeUnit),
 
     /// Measure of elapsed time. This elapsed time is a physical duration (i.e. 1s as defined in S.I.)
-    #[display("Duration[{_0}]")]
     Duration(TimeUnit),
 
     /// A duration of **relative** time (year, day, etc).
     /// This is not a physical duration, but a calendar duration.
     /// This differs from `Duration` in that it is not a fixed amount of time, and is affected by calendar events (leap years, daylight savings, etc.)
-    #[display("Interval")]
     Interval,
 
     /// Opaque binary data of variable length whose offsets are represented as [`i64`].
     Binary,
 
     /// Opaque binary data of fixed size. Enum parameter specifies the number of bytes per value.
-    #[display("FixedSizeBinary[{_0}]")]
     FixedSizeBinary(usize),
 
     /// A variable-length UTF-8 encoded string whose offsets are represented as [`i64`].
     Utf8,
 
     /// A list of some logical data type with a fixed number of elements.
-    #[display("FixedSizeList[{_0}; {_1}]")]
     FixedSizeList(Box<DataType>, usize),
 
     /// A list of some logical data type whose offsets are represented as [`i64`].
-    #[display("List[{_0}]")]
     List(Box<DataType>),
 
     /// A nested [`DataType`] with a given number of [`Field`]s.
-    #[display("Struct[{}]", format_struct(_0)?)]
     Struct(Vec<Field>),
 
     /// A nested [`DataType`] that is represented as List<entries: Struct<key: K, value: V>>.
-    #[display("Map[{key}: {value}]")]
     Map {
         key: Box<DataType>,
         value: Box<DataType>,
     },
 
     /// Extension type.
-    #[display("Extension[{_0}; {_1}]")]
     Extension(String, Box<DataType>, Option<String>),
 
     // Non-ArrowTypes:
     /// A logical type for embeddings.
-    #[display("Embedding[{_0}; {_1}]")]
     Embedding(Box<DataType>, usize),
 
     /// A logical type for images with variable shapes.
-    #[display("Image[{}]", _0.map_or_else(|| "MIXED".to_string(), |mode| mode.to_string()))]
     Image(Option<ImageMode>),
 
     /// A logical type for images with the same size (height x width).
-    #[display("Image[{_0}; {_1} x {_2}]")]
     FixedShapeImage(ImageMode, u32, u32),
 
     /// A logical type for tensors with variable shapes.
-    #[display("Tensor({_0})")]
     Tensor(Box<DataType>),
 
     /// A logical type for tensors with the same shape.
-    #[display("FixedShapeTensor[{_0}; {_1:?}]")]
     FixedShapeTensor(Box<DataType>, Vec<u64>),
 
     /// A logical type for sparse tensors with variable shapes.
-    #[display("SparseTensor[{_0}; indices_offset: {_1}]")]
     SparseTensor(Box<DataType>, bool),
 
     /// A logical type for sparse tensors with the same shape.
-    #[display("FixedShapeSparseTensor[{_0}; {_1:?}; indices_offset: {_2}]")]
     FixedShapeSparseTensor(Box<DataType>, Vec<u64>, bool),
 
     #[cfg(feature = "python")]
     Python,
 
     Unknown,
-
-    File,
+    File(MediaType),
 }
 
-fn format_struct(fields: &[Field]) -> std::result::Result<String, std::fmt::Error> {
-    let mut f = String::default();
-    for (index, field) in fields.iter().enumerate() {
-        if index != 0 {
-            write!(&mut f, ", ")?;
-        }
-        if !(field.name.is_empty() && field.dtype.is_null()) {
-            write!(&mut f, "{}: {}", field.name, field.dtype)?;
+impl Display for DataType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Null => write!(f, "Null"),
+            Self::Boolean => write!(f, "Bool"),
+            Self::Int8 => write!(f, "Int8"),
+            Self::Int16 => write!(f, "Int16"),
+            Self::Int32 => write!(f, "Int32"),
+            Self::Int64 => write!(f, "Int64"),
+            Self::UInt8 => write!(f, "UInt8"),
+            Self::UInt16 => write!(f, "UInt16"),
+            Self::UInt32 => write!(f, "UInt32"),
+            Self::UInt64 => write!(f, "UInt64"),
+            Self::Float32 => write!(f, "Float32"),
+            Self::Float64 => write!(f, "Float64"),
+            Self::Decimal128(precision, scale) => {
+                write!(f, "Decimal[precision: {precision}, scale: {scale}]")
+            }
+            Self::Timestamp(unit, timezone) => {
+                if let Some(timezone) = timezone {
+                    write!(f, "Timestamp[{unit}; {timezone}]")
+                } else {
+                    write!(f, "Timestamp[{unit}]")
+                }
+            }
+            Self::Date => write!(f, "Date"),
+            Self::Time(unit) => write!(f, "Time[{unit}]"),
+            Self::Duration(unit) => write!(f, "Duration[{unit}]"),
+            Self::Interval => write!(f, "Interval"),
+            Self::Binary => write!(f, "Binary"),
+            Self::FixedSizeBinary(size) => write!(f, "Binary[{size}]"),
+            Self::Utf8 => write!(f, "String"),
+            Self::FixedSizeList(child_dtype, size) => write!(f, "List[{child_dtype}; {size}]"),
+            Self::List(child_dtype) => write!(f, "List[{child_dtype}]"),
+            Self::Struct(fields) => {
+                let mut contents = String::default();
+                for (index, field) in fields.iter().enumerate() {
+                    if index != 0 {
+                        write!(&mut contents, ", ")?;
+                    }
+                    if !(field.name.is_empty() && field.dtype.is_null()) {
+                        write!(&mut contents, "{}: {}", field.name, field.dtype)?;
+                    }
+                }
+
+                write!(f, "Struct[{}]", contents)
+            }
+            Self::Map { key, value } => write!(f, "Map[{key}: {value}]"),
+            Self::Extension(name, dtype, _) => write!(f, "Extension[{name}; {dtype}]"),
+            Self::Embedding(dtype, size) => write!(f, "Embedding[{dtype}; {size}]"),
+            Self::Image(mode) => {
+                if let Some(mode) = mode {
+                    write!(f, "Image[{mode}]")
+                } else {
+                    write!(f, "Image[MIXED]")
+                }
+            }
+            Self::FixedShapeImage(mode, height, width) => {
+                write!(f, "Image[{mode}; {height} x {width}]")
+            }
+            Self::Tensor(dtype) => write!(f, "Tensor[{dtype}]"),
+            Self::FixedShapeTensor(dtype, shape) => write!(f, "Tensor[{dtype}; {shape:?}]"),
+            Self::SparseTensor(dtype, indices_offset) => {
+                write!(f, "SparseTensor[{dtype}; indices_offset: {indices_offset}]")
+            }
+            Self::FixedShapeSparseTensor(dtype, shape, indices_offset) => write!(
+                f,
+                "FixedShapeSparseTensor[{dtype}; {shape:?}; indices_offset: {indices_offset}]"
+            ),
+            #[cfg(feature = "python")]
+            Self::Python => write!(f, "Python"),
+            Self::Unknown => write!(f, "Unknown"),
+            Self::File(format) => write!(f, "File[{format}]"),
         }
     }
-    Ok(f)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -272,7 +315,8 @@ impl DataType {
             | Self::Tensor(..)
             | Self::FixedShapeTensor(..)
             | Self::SparseTensor(..)
-            | Self::FixedShapeSparseTensor(..) => {
+            | Self::FixedShapeSparseTensor(..)
+            | Self::File(..) => {
                 let physical = Box::new(self.to_physical());
                 let logical_extension = Self::Extension(
                     DAFT_SUPER_EXTENSION_NAME.into(),
@@ -282,13 +326,16 @@ impl DataType {
                 logical_extension.to_arrow()
             }
             #[cfg(feature = "python")]
-            Self::Python => Err(DaftError::TypeError(format!(
-                "Can not convert {self:?} into arrow type"
-            ))),
+            Self::Python => {
+                let physical = Box::new(Self::Binary);
+                let logical_extension = Self::Extension(
+                    DAFT_SUPER_EXTENSION_NAME.into(),
+                    physical,
+                    Some(self.to_json()?),
+                );
+                logical_extension.to_arrow()
+            }
             Self::Unknown => Err(DaftError::TypeError(format!(
-                "Can not convert {self:?} into arrow type"
-            ))),
-            Self::File => Err(DaftError::TypeError(format!(
                 "Can not convert {self:?} into arrow type"
             ))),
         }
@@ -355,12 +402,9 @@ impl DataType {
                     Field::new("indices", List(Box::new(minimal_indices_dtype)))
                 },
             ]),
-            File => Struct(vec![
-                Field::new("discriminant", UInt8),
-                Field::new("data", Binary),
+            File(..) => Struct(vec![
                 Field::new("url", Utf8),
-                #[cfg(feature = "python")]
-                Field::new("io_config", Python),
+                Field::new("io_config", Binary),
             ]),
             _ => {
                 assert!(self.is_physical());
@@ -369,7 +413,10 @@ impl DataType {
         }
     }
 
+    /// Check if this datatype can be converted into an Arrow datatype.
+    /// This includes checking if the associated arrays can be converted into Arrow arrays.
     #[inline]
+    /// Is this DataType convertible to Arrow?
     pub fn is_arrow(&self) -> bool {
         self.to_arrow().is_ok()
     }
@@ -659,7 +706,7 @@ impl DataType {
     #[inline]
     pub fn is_file(&self) -> bool {
         match self {
-            Self::File => true,
+            Self::File(..) => true,
             Self::Extension(_, inner, _) => inner.is_file(),
             _ => false,
         }
@@ -746,7 +793,7 @@ impl DataType {
                 | Self::SparseTensor(..)
                 | Self::FixedShapeSparseTensor(..)
                 | Self::Map { .. }
-                | Self::File
+                | Self::File(..)
         )
     }
 

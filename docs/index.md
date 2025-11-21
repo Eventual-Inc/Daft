@@ -180,7 +180,7 @@ Daft is a high-performance data engine providing simple and reliable data proces
         <div class="description">
           <div class="stage-header">READ ANYTHING</div>
           <p>Daft reads raw unstructured and multimodal data collected from application systems</p>
-          <p>Object Store (AWS S3, GCS, R2)<br>Event Bus (Kafka)<br>Data Lake (Iceberg, Deltalake)</p>
+          <p>Object storage (AWS S3, GCS, R2)<br>Event bus (Kafka)<br>Data lake (Iceberg, Deltalake)</p>
         </div>
         <div class="pipeline-item">
           <span id="read" class="swap"></span>
@@ -205,8 +205,8 @@ Daft is a high-performance data engine providing simple and reliable data proces
       <div class="row">
         <div class="description">
           <div class="stage-header">WRITE</div>
-          <p>Daft lands data into specialized data systems for downstream use-cases</p>
-          <p>Search (full-text search and vector DBs)<br>Applications (SQL/NoSQL databases)<br>Analytics (data warehouses)<br>Model Training (S3 object storage)</p>
+          <p>Daft lands data into specialized data systems for downstream use cases</p>
+          <p>Search (full-text search and vector DBs)<br>Applications (SQL/NoSQL databases)<br>Analytics (data warehouses)<br>Model training (S3 object storage)</p>
         </div>
         <div class="pipeline-item">
           <span id="write" class="swap"></span>
@@ -474,7 +474,7 @@ setInterval(runCycle, 4600);
 
 **:octicons-image-24: Unified multimodal data processing**
 
-Break down data silos with a single framework that handles structured tables, unstructured text, and rich media like images—all with the same intuitive API. Why juggle multiple tools when one can do it all?
+While traditional dataframes struggle with anything beyond tables, Daft natively handles tables, images, text, and embeddings through a single Python API. No more stitching together specialized tools for different data types.
 
 **:material-language-python: Python-native, no JVM required**
 
@@ -486,23 +486,23 @@ Start local, scale global—without changing a line of code. Daft's Rust-powered
 
 ## Key Features
 
-* **Native Multimodal Processing**: Process any data type—from structured tables to unstructured text and rich media—with native support for images, embeddings, and tensors in a single, unified framework.
+* **Native multimodal processing**: Process any data type—from structured tables to unstructured text and rich media—with native support for images, embeddings, and tensors in a single, unified framework.
 
-* **Rust-Powered Performance**: Experience breakthrough speed with our Rust foundation delivering vectorized execution and non-blocking I/O that processes the same queries with 5x less memory while consistently outperforming industry standards by an order of magnitude.
+* **Rust-powered performance**: Experience breakthrough speed with our Rust foundation delivering vectorized execution and non-blocking I/O that processes the same queries with 5x less memory while consistently outperforming industry standards by an order of magnitude.
 
-* **Seamless ML Ecosystem Integration**: Slot directly into your existing ML workflows with zero friction—whether you're using [PyTorch](https://pytorch.org/), [NumPy](https://numpy.org/), [Pandas](https://pandas.pydata.org/), or [HuggingFace models](https://huggingface.co/models), Daft works where you work.
+* **Seamless ML ecosystem integration**: Slot directly into your existing ML workflows with zero friction—whether you're using [PyTorch](https://pytorch.org/), [NumPy](https://numpy.org/), [Pandas](https://pandas.pydata.org/), or [HuggingFace models](https://huggingface.co/models), Daft works where you work.
 
-* **Universal Data Connectivity**: Access data anywhere it lives—cloud storage ([S3](https://aws.amazon.com/s3/), [Azure](https://azure.microsoft.com/en-us/), [GCS](https://cloud.google.com/storage)), modern table formats ([Apache Iceberg](https://iceberg.apache.org/), [Delta Lake](https://delta.io/), [Apache Hudi](https://hudi.apache.org/)), or enterprise catalogs ([Unity](https://www.unitycatalog.io/), [AWS Glue](https://aws.amazon.com/glue/))—all with zero configuration.
+* **Universal data connectivity**: Access data anywhere it lives—cloud storage ([S3](https://aws.amazon.com/s3/), [Azure](https://azure.microsoft.com/en-us/), [GCS](https://cloud.google.com/storage)), modern table formats ([Apache Iceberg](https://iceberg.apache.org/), [Delta Lake](https://delta.io/), [Apache Hudi](https://hudi.apache.org/)), or enterprise catalogs ([Unity](https://www.unitycatalog.io/), [AWS Glue](https://aws.amazon.com/glue/))—all with zero configuration.
 
 * **Push your code to your data**: Bring your Python functions directly to your data with zero-copy UDFs powered by [Apache Arrow](https://arrow.apache.org/), eliminating data movement overhead and accelerating processing speeds.
 
-* **Out of the Box reliability**: Deploy with confidence—intelligent memory management prevents OOM errors while sensible defaults eliminate configuration headaches, letting you focus on results, not infrastructure.
+* **Out of the box reliability**: Deploy with confidence—intelligent memory management prevents OOM errors while sensible defaults eliminate configuration headaches, letting you focus on results, not infrastructure.
 
 !!! tip "Looking to get started with Daft ASAP?"
 
-    The Daft Guide is a useful resource to take deeper dives into specific Daft concepts, but if you are ready to jump into code you may wish to take a look at these resources:
+    If you are ready to jump into code, take a look at these resources:
 
-    1. [Quickstart](quickstart.md): Itching to run some Daft code? Hit the ground running with our 10 minute quickstart notebook.
+    1. [Quickstart](quickstart.md): Itching to run some Daft code? Hit the ground running with our 10 minute quickstart.
 
     2. [Examples](examples/index.md): See Daft in action with use cases across text, images, audio, and more.
 

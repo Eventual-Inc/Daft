@@ -1,10 +1,10 @@
-use std::sync::Arc;
+use std::{num::NonZeroUsize, sync::Arc};
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_resource_request::ResourceRequest;
 use common_treenode::TreeNode;
 use daft_dsl::{
-    Expr, ExprRef, count_actor_pool_udfs,
+    Expr, ExprRef,
     functions::{
         FunctionExpr,
         python::{LegacyPythonUDF, UDFProperties},
@@ -32,13 +32,6 @@ impl ActorPoolProject {
     ) -> DaftResult<Self> {
         let clustering_spec = translate_clustering_spec(input.clustering_spec(), &projection);
 
-        let num_actor_pool_udfs: usize = count_actor_pool_udfs(&projection);
-        if !num_actor_pool_udfs == 1 {
-            return Err(DaftError::InternalError(format!(
-                "Expected ActorPoolProject to have exactly 1 actor pool UDF expression but found: {num_actor_pool_udfs}"
-            )));
-        }
-
         Ok(Self {
             input,
             projection,
@@ -52,7 +45,7 @@ impl ActorPoolProject {
     }
 
     /// Retrieves the concurrency of this ActorPoolProject
-    pub fn concurrency(&self) -> usize {
+    pub fn concurrency(&self) -> NonZeroUsize {
         self.udf_properties
             .concurrency
             .expect("ActorPoolProject should have concurrency specified")

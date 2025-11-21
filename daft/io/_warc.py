@@ -60,6 +60,7 @@ def read_warc(
 
     schema = {
         "WARC-Record-ID": DataType.string(),
+        "WARC-Target-URI": DataType.string(),
         "WARC-Type": DataType.string(),
         "WARC-Date": DataType.timestamp(TimeUnit.ns(), timezone="Etc/UTC"),
         "Content-Length": DataType.int64(),
@@ -79,5 +80,6 @@ def read_warc(
         storage_config=storage_config,
         file_path_column=file_path_column,
         hive_partitioning=False,
+        skip_glob=True,
     )
     return DataFrame(builder)

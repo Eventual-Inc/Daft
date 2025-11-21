@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use common_metrics::ops::NodeType;
 use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array, prelude::*};
 use daft_dsl::{
-    WindowBoundary, WindowExpr, WindowFrame,
-    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
+    Expr, WindowExpr,
+    expr::bound_expr::{BoundExpr, BoundWindowExpr},
 };
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -18,7 +19,7 @@ use super::{
     },
     window_base::{WindowBaseState, WindowSinkParams},
 };
-use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 struct WindowPartitionAndOrderByParams {
     window_exprs: Vec<BoundWindowExpr>,
@@ -178,21 +179,15 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 {
                                     *partition = match window_expr.as_ref() {
                                         WindowExpr::Agg(agg_expr) => {
-                                            let dtype =
-                                                agg_expr.to_field(&params.original_schema)?.dtype;
-                                            // Default for aggregate functions in partition by + order by: rows from start of partition to current row
-                                            let frame = WindowFrame {
-                                                start: WindowBoundary::UnboundedPreceding,
-                                                end: WindowBoundary::Offset(0),
-                                            };
-                                            partition.window_agg_dynamic_frame(
-                                                name.clone(),
-                                                &BoundAggExpr::new_unchecked(agg_expr.clone()),
-                                                &params.order_by,
-                                                &params.descending,
-                                                1,
-                                                &dtype,
-                                                &frame,
+                                            let new_col = partition
+                                                .eval_expression(&BoundExpr::new_unchecked(
+                                                    Arc::new(Expr::Agg(agg_expr.clone())),
+                                                ))?
+                                                .broadcast(partition.len())?
+                                                .rename(name.clone());
+                                            partition.append_column(
+                                                params.original_schema.clone(),
+                                                new_col,
                                             )?
                                         }
                                         WindowExpr::RowNumber => {

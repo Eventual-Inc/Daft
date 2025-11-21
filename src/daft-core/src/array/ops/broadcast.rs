@@ -1,6 +1,8 @@
 use common_error::{DaftError, DaftResult};
 
 use super::full::FullNull;
+#[cfg(feature = "python")]
+use crate::prelude::PythonArray;
 use crate::{
     array::{
         DataArray, FixedSizeListArray, ListArray, StructArray,
@@ -88,6 +90,24 @@ impl Broadcastable for ListArray {
 }
 
 impl Broadcastable for StructArray {
+    fn broadcast(&self, num: usize) -> DaftResult<Self> {
+        if self.len() != 1 {
+            return Err(DaftError::ValueError(format!(
+                "Attempting to broadcast non-unit length Array named: {}",
+                self.name()
+            )));
+        }
+
+        if self.is_valid(0) {
+            generic_growable_broadcast(self, num, self.name(), self.data_type())
+        } else {
+            Ok(Self::full_null(self.name(), self.data_type(), num))
+        }
+    }
+}
+
+#[cfg(feature = "python")]
+impl Broadcastable for PythonArray {
     fn broadcast(&self, num: usize) -> DaftResult<Self> {
         if self.len() != 1 {
             return Err(DaftError::ValueError(format!(

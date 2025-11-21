@@ -1,13 +1,16 @@
 use std::sync::Arc;
 
+use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
 use tracing::{Span, instrument};
 
 use super::base::{
-    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
+    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
+    StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
-use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) struct MonotonicallyIncreasingIdState {
     id_offset: u64,
@@ -105,14 +108,14 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
         &self,
         _states: Vec<Self::State>,
         _spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkFinalizeResult {
-        Ok(None).into()
+    ) -> StreamingSinkFinalizeResult<Self> {
+        Ok(StreamingSinkFinalizeOutput::Finished(None)).into()
     }
 
-    fn make_state(&self) -> Self::State {
-        MonotonicallyIncreasingIdState {
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(MonotonicallyIncreasingIdState {
             id_offset: self.params.starting_offset.unwrap_or(0),
-        }
+        })
     }
 
     // Monotonically increasing id is a memory-bound operation, so there's no performance benefit to parallelizing it.

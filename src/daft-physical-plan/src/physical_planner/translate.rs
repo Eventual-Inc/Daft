@@ -111,6 +111,11 @@ pub(super) fn translate_single_logical_node(
                     "Placeholder should not get to translation. This should have been optimized away"
                 );
             }
+            SourceInfo::GlobScan(_) => {
+                return Err(DaftError::NotImplemented(
+                    "GlobScan is not yet implemented in physical plan translation".to_string(),
+                ));
+            }
         },
         LogicalPlan::Shard(_) => {
             return Err(DaftError::InternalError(
@@ -125,16 +130,16 @@ pub(super) fn translate_single_logical_node(
             )
         }
         LogicalPlan::UDFProject(LogicalUDFProject {
-            project,
-            passthrough_columns,
+            expr,
             udf_properties,
+            passthrough_columns,
             ..
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             let projection = passthrough_columns
                 .iter()
-                .chain(std::iter::once(&project.clone()))
                 .cloned()
+                .chain(std::iter::once(expr.clone()))
                 .collect();
             if udf_properties.is_actor_pool_udf() {
                 Ok(PhysicalPlan::ActorPoolProject(ActorPoolProject::try_new(
@@ -583,6 +588,9 @@ pub(super) fn translate_single_logical_node(
         LogicalPlan::Window(_window) => Err(DaftError::NotImplemented(
             "Window functions are currently only supported on the native runner.".to_string(),
         )),
+        LogicalPlan::VLLMProject(..) => Err(DaftError::NotImplemented(
+            "VLLMProject is currently only supported on the native runner.".to_string(),
+        )),
     }?;
     // TODO(desmond): We can't perform this check for now because ScanTasks currently provide
     // different size estimations depending on when the approximation is computed. Once we fix
@@ -620,6 +628,7 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                     AggExpr::CountDistinct(Expr::Alias(e, name.clone()).into())
                 }
                 AggExpr::Sum(e) => AggExpr::Sum(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Product(e) => AggExpr::Product(Expr::Alias(e, name.clone()).into()),
                 AggExpr::ApproxPercentile(ApproxPercentileParams {
                     child: e,
                     percentiles,
@@ -781,6 +790,11 @@ pub fn populate_aggregation_stages_bound_with_schema(
                 let sum_col = first_stage!(AggExpr::Sum(expr.clone()));
                 let global_sum_col = second_stage!(AggExpr::Sum(sum_col));
                 final_stage(global_sum_col);
+            }
+            AggExpr::Product(expr) => {
+                let product_col = first_stage!(AggExpr::Product(expr.clone()));
+                let global_product_col = second_stage!(AggExpr::Product(product_col));
+                final_stage(global_product_col);
             }
             AggExpr::ApproxPercentile(ApproxPercentileParams {
                 child,
@@ -1056,6 +1070,21 @@ pub fn populate_aggregation_stages(
                         resolved_col(sum_id.clone()).alias(sum_of_sum_id.clone()),
                     ));
                 final_exprs.push(resolved_col(sum_of_sum_id.clone()).alias(output_name));
+            }
+            AggExpr::Product(e) => {
+                let product_id = agg_expr.semantic_id(schema).id;
+                let product_of_product_id = AggExpr::Product(resolved_col(product_id.clone()))
+                    .semantic_id(schema)
+                    .id;
+                first_stage_aggs
+                    .entry(product_id.clone())
+                    .or_insert(AggExpr::Product(e.alias(product_id.clone()).clone()));
+                second_stage_aggs
+                    .entry(product_of_product_id.clone())
+                    .or_insert(AggExpr::Product(
+                        resolved_col(product_id.clone()).alias(product_of_product_id.clone()),
+                    ));
+                final_exprs.push(resolved_col(product_of_product_id.clone()).alias(output_name));
             }
             AggExpr::Mean(e) => {
                 let sum_id = AggExpr::Sum(e.clone()).semantic_id(schema).id;
@@ -1705,36 +1734,29 @@ fn translate_join(
                 ));
             }
 
-            let needs_presort = if cfg.sort_merge_join_sort_with_aligned_boundaries {
-                // Use the special-purpose presorting that ensures join inputs are sorted with aligned
-                // boundaries, allowing for a more efficient downstream merge-join (~one-to-one zip).
-                !is_left_sort_partitioned || !is_right_sort_partitioned
-            } else {
-                // Manually insert presorting ops for each side of the join that needs it.
-                // Note that these merge-join inputs will most likely not have aligned boundaries, which could
-                // result in less efficient merge-joins (~all-to-all broadcast).
-                if !is_left_sort_partitioned {
-                    left_physical = PhysicalPlan::Sort(Sort::new(
-                        left_physical,
-                        left_on.clone(),
-                        std::iter::repeat_n(false, left_on.len()).collect(),
-                        std::iter::repeat_n(false, left_on.len()).collect(),
-                        num_partitions,
-                    ))
-                    .arced();
-                }
-                if !is_right_sort_partitioned {
-                    right_physical = PhysicalPlan::Sort(Sort::new(
-                        right_physical,
-                        right_on.clone(),
-                        std::iter::repeat_n(false, right_on.len()).collect(),
-                        std::iter::repeat_n(false, right_on.len()).collect(),
-                        num_partitions,
-                    ))
-                    .arced();
-                }
-                false
-            };
+            // Manually insert presorting ops for each side of the join that needs it.
+            // Note that these merge-join inputs will most likely not have aligned boundaries, which could
+            // result in less efficient merge-joins (~all-to-all broadcast).
+            if !is_left_sort_partitioned {
+                left_physical = PhysicalPlan::Sort(Sort::new(
+                    left_physical,
+                    left_on.clone(),
+                    std::iter::repeat_n(false, left_on.len()).collect(),
+                    std::iter::repeat_n(false, left_on.len()).collect(),
+                    num_partitions,
+                ))
+                .arced();
+            }
+            if !is_right_sort_partitioned {
+                right_physical = PhysicalPlan::Sort(Sort::new(
+                    right_physical,
+                    right_on.clone(),
+                    std::iter::repeat_n(false, right_on.len()).collect(),
+                    std::iter::repeat_n(false, right_on.len()).collect(),
+                    num_partitions,
+                ))
+                .arced();
+            }
             Ok((
                 PhysicalPlan::SortMergeJoin(SortMergeJoin::new(
                     left_physical,
@@ -1744,7 +1766,7 @@ fn translate_join(
                     *join_type,
                     num_partitions,
                     left_is_larger,
-                    needs_presort,
+                    true,
                 ))
                 .arced(),
                 None,

@@ -20,7 +20,6 @@ mod concat;
 mod concat_agg;
 mod count;
 mod exp;
-pub mod file;
 mod filter;
 mod float;
 mod floor;
@@ -45,6 +44,7 @@ mod minhash;
 mod null;
 mod pairwise;
 mod pow;
+mod product;
 mod repr;
 mod round;
 mod search_sorted;
@@ -190,6 +190,12 @@ pub trait DaftSumAggable {
     type Output;
     fn sum(&self) -> Self::Output;
     fn grouped_sum(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftProductAggable {
+    type Output;
+    fn product(&self) -> Self::Output;
+    fn grouped_product(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftApproxSketchAggable {

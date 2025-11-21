@@ -11,7 +11,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub struct Image(pub DynamicImage);
 
 impl Image {
-    pub fn into_ndarray(self) -> Box<dyn NdArray> {
+    pub fn into_ndarray(self) -> NdArray {
         fn into_ndarray3<P: Pixel>(buf: ImageBuffer<P, Vec<P::Subpixel>>) -> Array3<P::Subpixel> {
             let SampleLayout {
                 channels,
@@ -27,16 +27,16 @@ impl Image {
         }
 
         match self.0 {
-            DynamicImage::ImageLuma8(buf) => Box::new(into_ndarray3(buf).into_dyn()),
-            DynamicImage::ImageLumaA8(buf) => Box::new(into_ndarray3(buf).into_dyn()),
-            DynamicImage::ImageRgb8(buf) => Box::new(into_ndarray3(buf).into_dyn()),
-            DynamicImage::ImageRgba8(buf) => Box::new(into_ndarray3(buf).into_dyn()),
-            DynamicImage::ImageLuma16(buf) => Box::new(into_ndarray3(buf).into_dyn()),
-            DynamicImage::ImageLumaA16(buf) => Box::new(into_ndarray3(buf).into_dyn()),
-            DynamicImage::ImageRgb16(buf) => Box::new(into_ndarray3(buf).into_dyn()),
-            DynamicImage::ImageRgba16(buf) => Box::new(into_ndarray3(buf).into_dyn()),
-            DynamicImage::ImageRgb32F(buf) => Box::new(into_ndarray3(buf).into_dyn()),
-            DynamicImage::ImageRgba32F(buf) => Box::new(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageLuma8(buf) => NdArray::U8(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageLumaA8(buf) => NdArray::U8(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageRgb8(buf) => NdArray::U8(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageRgba8(buf) => NdArray::U8(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageLuma16(buf) => NdArray::U16(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageLumaA16(buf) => NdArray::U16(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageRgb16(buf) => NdArray::U16(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageRgba16(buf) => NdArray::U16(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageRgb32F(buf) => NdArray::F32(into_ndarray3(buf).into_dyn()),
+            DynamicImage::ImageRgba32F(buf) => NdArray::F32(into_ndarray3(buf).into_dyn()),
             _ => unimplemented!("unsupported DynamicImage variant"),
         }
     }
@@ -326,10 +326,14 @@ mod tests {
         let wrapper = Image(DynamicImage::ImageLuma8(img));
 
         // Serialize
-        let serialized = bincode::serialize(&wrapper).unwrap();
+        let serialized =
+            bincode::serde::encode_to_vec(&wrapper, bincode::config::legacy()).unwrap();
 
         // Deserialize
-        let deserialized: Image = bincode::deserialize(&serialized).unwrap();
+        let deserialized: Image =
+            bincode::serde::decode_from_slice(&serialized, bincode::config::legacy())
+                .unwrap()
+                .0;
 
         // Check that it matches the original
         if let DynamicImage::ImageLuma8(result_img) = deserialized.0 {
@@ -348,10 +352,14 @@ mod tests {
         let wrapper = Image(DynamicImage::ImageRgb8(img));
 
         // Serialize
-        let serialized = bincode::serialize(&wrapper).unwrap();
+        let serialized =
+            bincode::serde::encode_to_vec(&wrapper, bincode::config::legacy()).unwrap();
 
         // Deserialize
-        let deserialized: Image = bincode::deserialize(&serialized).unwrap();
+        let deserialized: Image =
+            bincode::serde::decode_from_slice(&serialized, bincode::config::legacy())
+                .unwrap()
+                .0;
 
         // Check that it matches the original
         if let DynamicImage::ImageRgb8(result_img) = deserialized.0 {
@@ -370,10 +378,14 @@ mod tests {
         let wrapper = Image(DynamicImage::ImageRgba16(img));
 
         // Serialize
-        let serialized = bincode::serialize(&wrapper).unwrap();
+        let serialized =
+            bincode::serde::encode_to_vec(&wrapper, bincode::config::legacy()).unwrap();
 
         // Deserialize
-        let deserialized: Image = bincode::deserialize(&serialized).unwrap();
+        let deserialized: Image =
+            bincode::serde::decode_from_slice(&serialized, bincode::config::legacy())
+                .unwrap()
+                .0;
 
         // Check that it matches the original
         if let DynamicImage::ImageRgba16(result_img) = deserialized.0 {
@@ -392,10 +404,14 @@ mod tests {
         let wrapper = Image(DynamicImage::ImageRgb32F(img));
 
         // Serialize
-        let serialized = bincode::serialize(&wrapper).unwrap();
+        let serialized =
+            bincode::serde::encode_to_vec(&wrapper, bincode::config::legacy()).unwrap();
 
         // Deserialize
-        let deserialized: Image = bincode::deserialize(&serialized).unwrap();
+        let deserialized: Image =
+            bincode::serde::decode_from_slice(&serialized, bincode::config::legacy())
+                .unwrap()
+                .0;
 
         // Check that it matches the original
         if let DynamicImage::ImageRgb32F(result_img) = deserialized.0 {
@@ -413,8 +429,12 @@ mod tests {
         let img = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(1, 1, data).unwrap();
         let original = Image(DynamicImage::ImageRgba8(img));
 
-        let serialized = bincode::serialize(&original).unwrap();
-        let deserialized: Image = bincode::deserialize(&serialized).unwrap();
+        let serialized =
+            bincode::serde::encode_to_vec(&original, bincode::config::legacy()).unwrap();
+        let deserialized: Image =
+            bincode::serde::decode_from_slice(&serialized, bincode::config::legacy())
+                .unwrap()
+                .0;
 
         assert_eq!(original, deserialized);
     }

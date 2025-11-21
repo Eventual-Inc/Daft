@@ -7,7 +7,7 @@ pub mod prelude;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
 pub use agg_ops::{
-    try_mean_aggregation_supertype, try_skew_aggregation_supertype,
+    try_mean_aggregation_supertype, try_product_supertype, try_skew_aggregation_supertype,
     try_stddev_aggregation_supertype, try_sum_supertype,
 };
 use arrow2::{
@@ -27,11 +27,18 @@ use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero}
 use serde::Serialize;
 
 pub use crate::array::{DataArray, FixedSizeListArray, file_array::FileArray};
-use crate::array::{ListArray, StructArray, ops::as_arrow::AsArrow};
+#[cfg(feature = "python")]
+use crate::prelude::PythonArray;
+use crate::{
+    array::{ListArray, StructArray, ops::as_arrow::AsArrow},
+    file::{DaftMediaType, FileType},
+};
 
 pub mod interval;
 pub mod logical;
 pub use interval::*;
+#[cfg(feature = "python")]
+pub mod python;
 
 /// Trait that is implemented by all Array types
 ///
@@ -55,6 +62,20 @@ pub trait DaftDataType: Sync + Send + Clone + 'static {
     fn get_dtype() -> DataType
     where
         Self: Sized;
+}
+
+impl<T> DaftDataType for T
+where
+    T: DaftMediaType,
+{
+    type ArrayType = FileArray<T>;
+
+    fn get_dtype() -> DataType
+    where
+        Self: Sized,
+    {
+        DataType::File(T::get_type())
+    }
 }
 
 pub trait DaftPhysicalType: Send + Sync + DaftDataType {}
@@ -81,23 +102,6 @@ macro_rules! impl_daft_arrow_datatype {
         }
 
         impl DaftArrowBackedType for $ca {}
-        impl DaftPhysicalType for $ca {}
-    };
-}
-
-macro_rules! impl_daft_non_arrow_datatype {
-    ($ca:ident, $variant:ident) => {
-        #[derive(Clone, Debug)]
-        pub struct $ca {}
-
-        impl DaftDataType for $ca {
-            #[inline]
-            fn get_dtype() -> DataType {
-                DataType::$variant
-            }
-
-            type ArrayType = DataArray<$ca>;
-        }
         impl DaftPhysicalType for $ca {}
     };
 }
@@ -241,8 +245,6 @@ impl_daft_logical_data_array_datatype!(TimestampType, Unknown, Int64Type);
 impl_daft_logical_data_array_datatype!(DateType, Date, Int32Type);
 impl_daft_logical_data_array_datatype!(TimeType, Unknown, Int64Type);
 impl_daft_logical_data_array_datatype!(DurationType, Unknown, Int64Type);
-impl_daft_logical_data_array_datatype!(FileType, File, StructType);
-
 impl_daft_logical_data_array_datatype!(ImageType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(TensorType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(SparseTensorType, Unknown, StructType);
@@ -252,8 +254,38 @@ impl_daft_logical_fixed_size_list_datatype!(FixedShapeImageType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeTensorType, Unknown);
 impl_daft_logical_list_datatype!(MapType, Unknown);
 
+impl<T> DaftDataType for FileType<T>
+where
+    T: DaftMediaType,
+{
+    #[inline]
+    fn get_dtype() -> DataType {
+        DataType::File(T::get_type())
+    }
+    #[allow(clippy::use_self)]
+    type ArrayType = logical::LogicalArray<FileType<T>>;
+}
+
+impl<T> DaftLogicalType for FileType<T>
+where
+    T: DaftMediaType,
+{
+    type PhysicalType = StructType;
+}
+
 #[cfg(feature = "python")]
-impl_daft_non_arrow_datatype!(PythonType, Python);
+#[derive(Clone, Debug)]
+pub struct PythonType {}
+
+#[cfg(feature = "python")]
+impl DaftDataType for PythonType {
+    #[inline]
+    fn get_dtype() -> DataType {
+        DataType::Python
+    }
+
+    type ArrayType = PythonArray;
+}
 
 pub trait NumericNative:
     PartialOrd
@@ -412,9 +444,6 @@ pub type Utf8Array = DataArray<Utf8Type>;
 pub type ExtensionArray = DataArray<ExtensionType>;
 pub type IntervalArray = DataArray<IntervalType>;
 pub type Decimal128Array = DataArray<Decimal128Type>;
-
-#[cfg(feature = "python")]
-pub type PythonArray = DataArray<PythonType>;
 
 impl<T: DaftNumericType> DataArray<T> {
     pub fn as_slice(&self) -> &[T::Native] {

@@ -70,7 +70,7 @@ impl SparkAnalyzer<'_> {
         tables: Vec<RecordBatch>,
     ) -> ConnectResult<LogicalPlanBuilder> {
         let mp = MicroPartition::new_loaded(schema, Arc::new(tables), None);
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             // Convert MicroPartition to a logical plan using Python interop.
             let py_micropartition = py
                 .import(intern!(py, "daft.recordbatch"))?
@@ -255,7 +255,7 @@ impl SparkAnalyzer<'_> {
         let step = usize::try_from(step).wrap_err("step must be a positive integer")?;
         ensure!(step > 0, "step must be greater than 0");
 
-        let plan = Python::with_gil(|py| {
+        let plan = Python::attach(|py| {
             let range_module =
                 PyModule::import(py, "daft.io._range").wrap_err("Failed to import range module")?;
 

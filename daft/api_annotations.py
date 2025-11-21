@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import functools
 import inspect
-import sys
 from collections.abc import Callable as CallableABC
 from typing import (
     Any,
     Callable,
     ForwardRef,
     Literal,
+    ParamSpec,
     TypeVar,
     Union,
     get_args,
@@ -16,12 +16,6 @@ from typing import (
 )
 
 from daft.errors import UDFException
-
-if sys.version_info < (3, 10):
-    from typing_extensions import ParamSpec
-else:
-    from typing import ParamSpec
-
 
 T = TypeVar("T")
 P = ParamSpec("P")

@@ -16,6 +16,12 @@ use tokio::{
     task::JoinSet,
 };
 
+#[cfg(feature = "python")]
+pub mod python;
+
+#[cfg(feature = "python")]
+pub use python::execute_python_coroutine;
+
 static NUM_CPUS: LazyLock<usize> =
     LazyLock::new(|| std::thread::available_parallelism().unwrap().get());
 static THREADED_IO_RUNTIME_NUM_WORKER_THREADS: LazyLock<usize> = LazyLock::new(|| 8.min(*NUM_CPUS));
@@ -78,6 +84,13 @@ impl<T: Send + 'static> Future for RuntimeTask<T> {
     }
 }
 
+impl<T> std::fmt::Debug for RuntimeTask<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RuntimeTask(num_inflight_tasks={})", self.joinset.len())
+    }
+}
+
+#[derive(Debug)]
 pub struct Runtime {
     pub runtime: Arc<tokio::runtime::Runtime>,
     pool_type: PoolType,

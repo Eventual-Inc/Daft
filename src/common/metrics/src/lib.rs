@@ -1,11 +1,34 @@
-use std::{ops::Index, time::Duration};
+pub mod operator_metrics;
+pub mod ops;
+#[cfg(feature = "python")]
+pub mod python;
 
+use std::{ops::Index, sync::Arc, time::Duration};
+
+use bincode::{Decode, Encode};
 use indicatif::{HumanBytes, HumanCount, HumanDuration, HumanFloatCount};
+pub use operator_metrics::{
+    MetricsCollector, NoopMetricsCollector, OperatorCounter, OperatorMetrics,
+};
+#[cfg(feature = "python")]
+use pyo3::types::PyModule;
+#[cfg(feature = "python")]
+use pyo3::{Bound, PyResult};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 pub use smallvec::smallvec;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+// TODO: Make this global for all plans and executions
+
+/// Unique identifier for a query.
+pub type QueryID = Arc<str>;
+/// String representation of a query plan
+pub type QueryPlan = Arc<str>;
+/// Unique identifier for a node in the execution plan.
+pub type NodeID = usize;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[serde(tag = "type", content = "value")]
 pub enum Stat {
     // Integer Representations
     Count(u64),
@@ -38,33 +61,33 @@ impl std::fmt::Display for Stat {
 ///
 /// This is intended to be lightweight for execution to generate while still
 /// encoding to the same format as the receivable end.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct StatSnapshotSend(pub SmallVec<[(&'static str, Stat); 3]>);
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
+pub struct StatSnapshot(pub SmallVec<[(Arc<str>, Stat); 3]>);
 
-impl StatSnapshotSend {
-    pub fn names(&self) -> impl Iterator<Item = &'static str> + use<'_> {
-        self.0.iter().map(|(name, _)| *name)
+impl StatSnapshot {
+    pub fn names(&self) -> impl Iterator<Item = &str> + '_ {
+        self.0.iter().map(|(name, _)| name.as_ref())
     }
 
-    pub fn values(&self) -> impl Iterator<Item = &Stat> + use<'_> {
+    pub fn values(&self) -> impl Iterator<Item = &Stat> + '_ {
         self.0.iter().map(|(_, value)| value)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&'static str, &Stat)> + use<'_> {
-        self.0.iter().map(|(name, value)| (*name, value))
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &Stat)> + '_ {
+        self.0.iter().map(|(name, value)| (name.as_ref(), value))
     }
 }
 
-impl Index<usize> for StatSnapshotSend {
-    type Output = (&'static str, Stat);
+impl Index<usize> for StatSnapshot {
+    type Output = (Arc<str>, Stat);
     fn index(&self, index: usize) -> &Self::Output {
         &self.0[index]
     }
 }
 
-impl IntoIterator for StatSnapshotSend {
-    type Item = (&'static str, Stat);
-    type IntoIter = smallvec::IntoIter<[(&'static str, Stat); 3]>;
+impl IntoIterator for StatSnapshot {
+    type Item = (Arc<str>, Stat);
+    type IntoIter = smallvec::IntoIter<[(Arc<str>, Stat); 3]>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
@@ -73,16 +96,25 @@ impl IntoIterator for StatSnapshotSend {
 #[macro_export(local_inner_macros)]
 macro_rules! snapshot {
     ($($name:expr; $value:expr),* $(,)?) => {
-        StatSnapshotSend(smallvec![
-            $(($name, $value)),*
+        common_metrics::StatSnapshot(smallvec![
+            $( ($name.into(), $value) ),*
         ])
     };
 }
 
-/// A receivable statistics snapshot of the metrics for a given node.
-///
-/// This should match the format of the sendable snapshot, but is a different
-/// type for deserialization
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct StatSnapshotRecv(Vec<(String, Stat)>);
+// Common statistic names
+pub const ROWS_IN_KEY: &str = "rows in";
+pub const ROWS_OUT_KEY: &str = "rows out";
+pub const CPU_US_KEY: &str = "cpu us";
+
+#[cfg(feature = "python")]
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+    use pyo3::types::PyModuleMethods;
+
+    use crate::python::{PyNodeInfo, PyOperatorMetrics, StatType};
+
+    parent.add_class::<StatType>()?;
+    parent.add_class::<PyNodeInfo>()?;
+    parent.add_class::<PyOperatorMetrics>()?;
+    Ok(())
+}

@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-from .ai import (
-    classify_text,
-    embed_text,
-    embed_image,
-)
+from .ai import classify_image, classify_text, embed_text, embed_image, prompt
 from .agg import (
     count,
     count_distinct,
@@ -12,6 +8,7 @@ from .agg import (
     approx_count_distinct,
     approx_percentiles,
     mean,
+    avg,
     stddev,
     min,
     max,
@@ -22,6 +19,7 @@ from .agg import (
     list_agg,
     list_agg_distinct,
     string_agg,
+    product,
 )
 from .binary import encode, try_encode, compress, try_compress, decode, try_decode, decompress, try_decompress
 from .bitwise import bitwise_and, bitwise_or, bitwise_xor, shift_left, shift_right
@@ -64,6 +62,9 @@ from .datetime import (
     to_unix_epoch,
 )
 from .embedding import cosine_distance
+
+from .file_ import file, file_size, video_file
+
 from .image import (
     resize,
     crop,
@@ -97,7 +98,6 @@ from .list import (
 from .llm import llm_generate
 from .misc import (
     monotonically_increasing_id,
-    file,
     eq_null_safe,
     cast,
     is_null,
@@ -112,6 +112,7 @@ from .misc import (
     get,
     map_get,
     slice,
+    when,
 )
 from .numeric import (
     abs,
@@ -204,6 +205,7 @@ from .str import (
 )
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
+from .video import video_metadata, video_keyframes
 from .window import (
     row_number,
     rank,
@@ -225,6 +227,7 @@ __all__ = [
     "arctan",
     "arctan2",
     "arctanh",
+    "avg",
     "between",
     "bitwise_and",
     "bitwise_or",
@@ -236,6 +239,7 @@ __all__ = [
     "cbrt",
     "ceil",
     "chunk",
+    "classify_image",
     "classify_text",
     "clip",
     "coalesce",
@@ -280,6 +284,7 @@ __all__ = [
     "explode",
     "expm1",
     "file",
+    "file_size",
     "fill_nan",
     "fill_null",
     "find",
@@ -353,6 +358,8 @@ __all__ = [
     "partition_years",
     "pow",
     "power",
+    "product",
+    "prompt",
     "quarter",
     "radians",
     "rank",
@@ -416,6 +423,10 @@ __all__ = [
     "upload",
     "upper",
     "value_counts",
+    "video_file",
+    "video_keyframes",
+    "video_metadata",
     "week_of_year",
+    "when",
     "year",
 ]
