@@ -113,6 +113,6 @@ def setup_logger_level(
     if exclude_prefix:
         for prefix in exclude_prefix:
             for handler in root_logger.handlers:
-                handler.addFilter(lambda record: not record.name.startswith(prefix))
+                handler.addFilter(lambda r, p=prefix: not r.name.startswith(p))  # type: ignore
 
     refresh_logger()
