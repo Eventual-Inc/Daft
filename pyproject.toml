@@ -30,12 +30,13 @@ homepage = "https://www.daft.ai"
 repository = "https://github.com/Eventual-Inc/Daft"
 
 [project.optional-dependencies]
-all = ["daft[aws, azure, clickhouse, deltalake, gcp, hudi, huggingface, iceberg, lance, numpy, openai, pandas, postgres, ray, sentence-transformers, spark, sql, transformers, turbopuffer, unity, video]"]
+all = ["daft[aws, azure, clickhouse, deltalake, gcp, google, hudi, huggingface, iceberg, lance, numpy, openai, pandas, postgres, ray, sentence-transformers, spark, sql, transformers, turbopuffer, unity, video]"]
 aws = ["boto3"]
 azure = []
 clickhouse = ["clickhouse_connect"]
 deltalake = ["deltalake <= 1.2.1"]
 gcp = []
+google = ["google-genai"]
 hudi = ["pyarrow >= 8.0.0"]
 huggingface = ["huggingface-hub"]
 # TODO: pyiceberg 0.9.1 has a bug https://github.com/apache/iceberg-python/issues/1979. It was not
@@ -106,7 +107,7 @@ dev = [
   "jax>=0.4.30",
   "jaxtyping>=0.2.36",
   # Pyarrow
-  "pyarrow==20.0.0",
+  "pyarrow==22.0.0",
   "pyarrow-stubs==19.4",
   # Ray
   "ray[data, client]==2.48.0; python_version >= '3.13' or platform_system != \"Linux\" or platform_machine != \"x86_64\"",
@@ -152,6 +153,7 @@ dev = [
   "vllm>=0.5.0; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
   "vllm==0.11.0; platform_system != \"Linux\" or platform_machine != \"x86_64\"",
   "openai==1.100",
+  "google-genai",
   # AV
   "av==15.0.0",
   "soundfile>=0.13.0",
