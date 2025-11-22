@@ -40,14 +40,12 @@ Audio is inherently different from traditional structured data. Since audio isn'
 - Scaling parallelism requires multiprocessing/threading (error-prone, GIL limitations)
 - Memory management needs custom generators/lazy loading (overflows common)
 - Pipelining stages are hardcoded (modifications tedious, no retry mechanisms)
-- Storing and querying outputs requires custom scripts (performance degradation)
 
 **Daft solves these issues by:**
 
 - Providing a unified dataframe interface for multimodal data
 - Handling distributed parallelism automatically
 - Managing memory efficiently with Apache Arrow format
-- Enabling lazy evaluation for optimal query planning
 
 ## Setup and Imports
 
