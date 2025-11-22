@@ -7,3 +7,24 @@ services:
     environment:
       GRAVITINO_HTTP_PORT: 8090
     restart: unless-stopped
+
+  mysql:
+    image: mysql:8.0
+    platform: linux/amd64
+    container_name: daft-mysql
+    ports:
+    - "${MYSQL_PORT:-3306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_HOST: '%'
+    volumes:
+    - mysql-data:/var/lib/mysql
+    restart: unless-stopped
+    command:
+    - --default-authentication-plugin=mysql_native_password
+    - --binlog-expire-logs-seconds=60
+    - --character-set-server=utf8mb4
+    - --collation-server=utf8mb4_unicode_ci
+
+volumes:
+  mysql-data:

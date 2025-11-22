@@ -102,9 +102,21 @@ def _delete_schema(client, metalake: str, catalog_name: str, schema_name: str):
         pass
 
 
+def _set_catalog_in_use(client, metalake: str, catalog_name: str, in_use: bool):
+    """Set the catalog's in-use property."""
+    path = f"/metalakes/{metalake}/catalogs/{catalog_name}"
+    try:
+        payload = {"inUse": in_use}
+        _api_request(client, "PATCH", path, json=payload)
+    except Exception:
+        pass
+
+
 def _delete_catalog(client, metalake: str, catalog_name: str):
     path = f"/metalakes/{metalake}/catalogs/{catalog_name}"
     try:
+        # Set in-use to false before deleting
+        _set_catalog_in_use(client, metalake, catalog_name, False)
         _api_request(client, "DELETE", path)
     except Exception:
         pass
