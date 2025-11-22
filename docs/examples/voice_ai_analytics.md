@@ -31,10 +31,9 @@ Audio is inherently different from traditional structured data. Since audio isn'
 
 **Before we can run our STT models on audio data we'll need to:**
 
-- Read and preprocess raw audio files into a form that the model can receive
-- Handle memory constraints (e.g., one hour of 48 kHz/24-bit stereo audio can be 518 MB)
+- Read and preprocess raw audio files into a form that the model can process
+- Handle memory constraints (e.g., one hour of 48 kHz/24-bit stereo audio can be close to a gigabyte)
 - Decode, buffer, and resample audio files into chunks
-- Manage streaming architectures with message queues for back pressure
 
 **Traditional approaches face challenges:**
 
