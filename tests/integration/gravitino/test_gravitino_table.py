@@ -9,6 +9,8 @@ import pytest
 
 from daft.catalog import Catalog, NotFoundError
 
+from .test_utils import api_request, delete_catalog, delete_schema, ensure_metalake
+
 
 @pytest.mark.integration()
 def test_catalog_from_gravitino(local_gravitino_client, gravitino_metalake):
@@ -41,45 +43,6 @@ def test_catalog_get_table_not_found(local_gravitino_client):
         catalog.get_table("nonexistent.schema.table")
 
 
-_API_HEADERS = {
-    "Accept": "application/vnd.gravitino.v1+json",
-    "Content-Type": "application/json",
-}
-
-
-def _api_request(client, method: str, path: str, **kwargs):
-    """Helper to make Gravitino REST API requests."""
-    url = f"{client._endpoint.rstrip('/')}/api{path}"
-    response = client._session.request(method, url, headers=_API_HEADERS, timeout=30, **kwargs)
-    response.raise_for_status()
-    return response.json() if response.content else {}
-
-
-def _ensure_metalake(client, metalake: str):
-    """Ensure metalake exists, create if it doesn't."""
-    url = f"{client._endpoint.rstrip('/')}/api/metalakes/{metalake}"
-    response = client._session.get(url, headers=_API_HEADERS, timeout=30)
-    if response.status_code == 404:
-        payload = {
-            "name": metalake,
-            "comment": "Daft integration metalake",
-            "properties": {},
-        }
-        _api_request(client, "POST", "/metalakes", json=payload)
-    else:
-        response.raise_for_status()
-
-
-def _set_catalog_in_use(client, metalake: str, catalog_name: str, in_use: bool):
-    """Set the catalog's in-use property."""
-    path = f"/metalakes/{metalake}/catalogs/{catalog_name}"
-    try:
-        payload = {"inUse": in_use}
-        _api_request(client, "PATCH", path, json=payload)
-    except Exception:
-        pass
-
-
 def _wait_for_mysql(host: str = "127.0.0.1", port: int = 3306, timeout_secs: int = 60) -> None:
     """Wait for MySQL to be ready."""
     import socket
@@ -107,7 +70,7 @@ def _wait_for_mysql(host: str = "127.0.0.1", port: int = 3306, timeout_secs: int
 def mysql_gravitino_catalog(local_gravitino_client, gravitino_metalake):
     """Create a MySQL catalog in Gravitino and set up test schemas and tables."""
     _wait_for_mysql()
-    _ensure_metalake(local_gravitino_client, gravitino_metalake)
+    ensure_metalake(local_gravitino_client, gravitino_metalake)
 
     catalog_name = f"mysql_catalog_{uuid.uuid4().hex[:8]}"
 
@@ -125,7 +88,7 @@ def mysql_gravitino_catalog(local_gravitino_client, gravitino_metalake):
             "jdbc-password": "root",
         },
     }
-    _api_request(local_gravitino_client, "POST", f"/metalakes/{gravitino_metalake}/catalogs", json=catalog_payload)
+    api_request(local_gravitino_client, "POST", f"/metalakes/{gravitino_metalake}/catalogs", json=catalog_payload)
 
     # Create two schemas using Gravitino API
     schema1_name = f"schema_{uuid.uuid4().hex[:8]}"
@@ -136,7 +99,7 @@ def mysql_gravitino_catalog(local_gravitino_client, gravitino_metalake):
             "name": schema_name,
             "properties": {},
         }
-        _api_request(
+        api_request(
             local_gravitino_client,
             "POST",
             f"/metalakes/{gravitino_metalake}/catalogs/{catalog_name}/schemas",
@@ -155,7 +118,7 @@ def mysql_gravitino_catalog(local_gravitino_client, gravitino_metalake):
         ],
         "properties": {},
     }
-    _api_request(
+    api_request(
         local_gravitino_client,
         "POST",
         f"/metalakes/{gravitino_metalake}/catalogs/{catalog_name}/schemas/{schema1_name}/tables",
@@ -172,7 +135,7 @@ def mysql_gravitino_catalog(local_gravitino_client, gravitino_metalake):
         ],
         "properties": {},
     }
-    _api_request(
+    api_request(
         local_gravitino_client,
         "POST",
         f"/metalakes/{gravitino_metalake}/catalogs/{catalog_name}/schemas/{schema1_name}/tables",
@@ -190,7 +153,7 @@ def mysql_gravitino_catalog(local_gravitino_client, gravitino_metalake):
         ],
         "properties": {},
     }
-    _api_request(
+    api_request(
         local_gravitino_client,
         "POST",
         f"/metalakes/{gravitino_metalake}/catalogs/{catalog_name}/schemas/{schema2_name}/tables",
@@ -213,7 +176,7 @@ def mysql_gravitino_catalog(local_gravitino_client, gravitino_metalake):
         for schema_name in [schema1_name, schema2_name]:
             for table_name in ["users", "orders", "products"]:
                 try:
-                    _api_request(
+                    api_request(
                         local_gravitino_client,
                         "DELETE",
                         f"/metalakes/{gravitino_metalake}/catalogs/{catalog_name}/schemas/{schema_name}/tables/{table_name}",
@@ -221,22 +184,12 @@ def mysql_gravitino_catalog(local_gravitino_client, gravitino_metalake):
                 except Exception:
                     pass
 
-        # Delete schemas using Gravitino API
+        # Delete schemas using Gravitino API (with cascade to delete any remaining tables)
         for schema_name in [schema1_name, schema2_name]:
-            try:
-                _api_request(
-                    local_gravitino_client,
-                    "DELETE",
-                    f"/metalakes/{gravitino_metalake}/catalogs/{catalog_name}/schemas/{schema_name}?cascade=true",
-                )
-            except Exception:
-                pass
-
-        # Set catalog in-use to false before deleting
-        _set_catalog_in_use(local_gravitino_client, gravitino_metalake, catalog_name, False)
+            delete_schema(local_gravitino_client, gravitino_metalake, catalog_name, schema_name, cascade=True)
 
         # Delete catalog from Gravitino
-        _api_request(local_gravitino_client, "DELETE", f"/metalakes/{gravitino_metalake}/catalogs/{catalog_name}")
+        delete_catalog(local_gravitino_client, gravitino_metalake, catalog_name)
     except Exception:
         pass
 

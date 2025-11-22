@@ -1,4 +1,4 @@
-"""Integration tests for the Gravitino catalog adapter."""
+"""Integration tests for Gravitino fileset catalog operations."""
 
 from __future__ import annotations
 
@@ -13,31 +13,7 @@ import daft
 from daft.daft import FileFormat
 from daft.filesystem import glob_path_with_stats
 
-_API_HEADERS = {
-    "Accept": "application/vnd.gravitino.v1+json",
-    "Content-Type": "application/json",
-}
-
-
-def _ensure_metalake(client, metalake: str):
-    url = f"{client._endpoint.rstrip('/')}/api/metalakes/{metalake}"
-    response = client._session.get(url, headers=_API_HEADERS, timeout=30)
-    if response.status_code == 404:
-        payload = {
-            "name": metalake,
-            "comment": "Daft integration metalake",
-            "properties": {},
-        }
-        _api_request(client, "POST", "/metalakes", json=payload)
-    else:
-        response.raise_for_status()
-
-
-def _api_request(client, method: str, path: str, **kwargs):
-    url = f"{client._endpoint.rstrip('/')}/api{path}"
-    response = client._session.request(method, url, headers=_API_HEADERS, timeout=30, **kwargs)
-    response.raise_for_status()
-    return response.json() if response.content else {}
+from .test_utils import api_request, delete_catalog, delete_schema, ensure_metalake
 
 
 def _create_catalog(client, metalake: str, catalog_name: str):
@@ -47,7 +23,7 @@ def _create_catalog(client, metalake: str, catalog_name: str):
         "comment": "Daft integration catalog",
         "properties": {},
     }
-    _api_request(client, "POST", f"/metalakes/{metalake}/catalogs", json=payload)
+    api_request(client, "POST", f"/metalakes/{metalake}/catalogs", json=payload)
 
 
 def _create_schema(client, metalake: str, catalog_name: str, schema_name: str):
@@ -56,7 +32,7 @@ def _create_schema(client, metalake: str, catalog_name: str, schema_name: str):
         "comment": "Daft integration schema",
         "properties": {},
     }
-    _api_request(client, "POST", f"/metalakes/{metalake}/catalogs/{catalog_name}/schemas", json=payload)
+    api_request(client, "POST", f"/metalakes/{metalake}/catalogs/{catalog_name}/schemas", json=payload)
 
 
 def _create_fileset(
@@ -78,7 +54,7 @@ def _create_fileset(
         "storageLocation": storage_uri,
         "storageLocations": {"default": storage_uri},
     }
-    _api_request(
+    api_request(
         client,
         "POST",
         f"/metalakes/{metalake}/catalogs/{catalog_name}/schemas/{schema_name}/filesets",
@@ -89,35 +65,7 @@ def _create_fileset(
 def _delete_fileset(client, metalake: str, catalog_name: str, schema_name: str, fileset_name: str):
     path = f"/metalakes/{metalake}/catalogs/{catalog_name}/schemas/{schema_name}/filesets/{fileset_name}"
     try:
-        _api_request(client, "DELETE", path)
-    except Exception:
-        pass
-
-
-def _delete_schema(client, metalake: str, catalog_name: str, schema_name: str):
-    path = f"/metalakes/{metalake}/catalogs/{catalog_name}/schemas/{schema_name}"
-    try:
-        _api_request(client, "DELETE", path)
-    except Exception:
-        pass
-
-
-def _set_catalog_in_use(client, metalake: str, catalog_name: str, in_use: bool):
-    """Set the catalog's in-use property."""
-    path = f"/metalakes/{metalake}/catalogs/{catalog_name}"
-    try:
-        payload = {"inUse": in_use}
-        _api_request(client, "PATCH", path, json=payload)
-    except Exception:
-        pass
-
-
-def _delete_catalog(client, metalake: str, catalog_name: str):
-    path = f"/metalakes/{metalake}/catalogs/{catalog_name}"
-    try:
-        # Set in-use to false before deleting
-        _set_catalog_in_use(client, metalake, catalog_name, False)
-        _api_request(client, "DELETE", path)
+        api_request(client, "DELETE", path)
     except Exception:
         pass
 
@@ -161,7 +109,7 @@ def prepared_fileset(local_gravitino_client, gravitino_metalake, tmp_path_factor
     fileset_name = f"daft_fileset_{uuid.uuid4().hex[:8]}"
     storage_uri = base_dir.as_uri()
 
-    _ensure_metalake(local_gravitino_client, gravitino_metalake)
+    ensure_metalake(local_gravitino_client, gravitino_metalake)
     _create_catalog(local_gravitino_client, gravitino_metalake, catalog_name)
     _create_schema(local_gravitino_client, gravitino_metalake, catalog_name, schema_name)
     _create_fileset(
@@ -188,8 +136,8 @@ def prepared_fileset(local_gravitino_client, gravitino_metalake, tmp_path_factor
         }
     finally:
         _delete_fileset(local_gravitino_client, gravitino_metalake, catalog_name, schema_name, fileset_name)
-        _delete_schema(local_gravitino_client, gravitino_metalake, catalog_name, schema_name)
-        _delete_catalog(local_gravitino_client, gravitino_metalake, catalog_name)
+        delete_schema(local_gravitino_client, gravitino_metalake, catalog_name, schema_name)
+        delete_catalog(local_gravitino_client, gravitino_metalake, catalog_name)
         shutil.rmtree(base_dir, ignore_errors=True)
 
 
