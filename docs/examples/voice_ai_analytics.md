@@ -4,15 +4,15 @@
 
 This tutorial walks through how to build a Voice AI analytics pipeline using Daft and Faster-Whisper from raw audio to searchable, multilingual transcripts. You'll learn how to:
 
-- Transcribe long-form audio using Faster-Whisper with built-in VAD for speaker segmentation
+- Transcribe long-form audio using Faster-Whisper with built-in VAD for speech segmentation
 - Use Daft's dataframe engine to orchestrate and parallelize multimodal processing at scale
 - Generate summaries, translations, and embeddings directly from transcripts
 
-In short, Daft simplifies multimodal AI pipelines letting developers process, enrich, and query audio data with the same ease as tabular data.
+In short, learn how Daft simplifies multimodal AI pipelines letting you process, enrich, and query audio data with the same ease as tabular data.
 
 ## Introduction to Voice AI
 
-Behind every AI meeting note, podcast description, and voice agent lies an AI pipeline that transcribes raw audio into text and enriches those transcripts to make it retrieval performant for downstream applications.
+Behind every AI meeting note, podcast summary, and voice agent lies an AI pipeline that transcribes raw audio and enriches those transcripts to make it easy to retrieve for downstream applications.
 
 Voice AI encompasses a broad range of tasks:
 
@@ -23,11 +23,11 @@ Voice AI encompasses a broad range of tasks:
 5. **Text-to-Speech (TTS)** - Brings LLM responses and translations to life in spoken form
 6. **Turn Detection** - Useful for live voice chat
 
-In this tutorial we will focus on **Speech-to-Text (STT)** and **LLM Text Generation**, exploring common techniques for preprocessing and enriching human speech from audio to support downstream applications like meeting summaries, short-form editing, and embeddings.
+In this tutorial we will focus on **Speech-to-Text (STT)** and **LLM Text Generation**, exploring common techniques for preprocessing and enriching speech from audio to support downstream applications like meeting summaries, highlight extraction, and embeddings.
 
 ## Challenges in Processing Audio for AI Pipelines
 
-Audio is inherently different from traditional analytics processing. Most multimodal AI workloads require some level of preprocessing before inference, but since audio isn't stored in neat rows and columns in a table, running frontier models on audio data comes with some extra challenges.
+Audio is inherently different from traditional structured data. Since audio isn't stored in neat rows and columns in a table, running frontier models on audio data comes with some extra challenges.
 
 **Before we can run our STT models on audio data we'll need to:**
 
