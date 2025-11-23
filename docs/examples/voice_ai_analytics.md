@@ -12,7 +12,7 @@ In short, learn how Daft simplifies multimodal AI pipelines letting you process,
 
 ## Introduction to Voice AI
 
-Behind every AI meeting note, podcast description, and voice agent lies an AI pipeline that transcribes raw audio into text and enriches those transcripts to make it retrieval performant for downstream applications.
+Behind every AI meeting note, podcast summary, and voice agent lies an AI pipeline that transcribes raw audio and enriches those transcripts to make it easy to retrieve for downstream applications.
 
 Voice AI encompasses a broad range of tasks:
 
