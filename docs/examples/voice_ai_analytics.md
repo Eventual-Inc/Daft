@@ -8,7 +8,7 @@ This tutorial walks through how to build a Voice AI analytics pipeline using Daf
 - Use Daft's dataframe engine to orchestrate and parallelize multimodal processing at scale
 - Generate summaries, translations, and embeddings directly from transcripts
 
-In short, Daft simplifies multimodal AI pipelines letting developers process, enrich, and query audio data with the same ease as tabular data.
+In short, learn how Daft simplifies multimodal AI pipelines letting you process, enrich, and query audio data with the same ease as tabular data.
 
 ## Introduction to Voice AI
 
