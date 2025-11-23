@@ -39,6 +39,15 @@ def test_invalid_level_raises() -> None:
         setup_logger_level(level="INVALID")
 
 
+def test_default_level_is_debug() -> None:
+    import daft
+    from daft.logging import setup_logger_level
+
+    setup_logger_level()
+    rust_level = daft.daft.get_max_log_level()
+    assert rust_level == "DEBUG"
+
+
 def test_debug_logger() -> None:
     import daft
     from daft.logging import setup_logger_level

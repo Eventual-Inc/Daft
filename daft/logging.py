@@ -23,7 +23,7 @@ LOG_LEVEL_MAP = {
 
 
 def setup_logger_level(
-    level: str,
+    level: str = "debug",
     exclude_prefix: typing.Iterable[str] | None = None,
     daft_only: bool = True,
 ) -> None:
