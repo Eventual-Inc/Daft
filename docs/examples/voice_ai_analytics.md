@@ -23,7 +23,7 @@ Voice AI encompasses a broad range of tasks:
 5. **Text-to-Speech (TTS)** - Brings LLM responses and translations to life in spoken form
 6. **Turn Detection** - Useful for live voice chat
 
-In this tutorial we will focus on **Speech-to-Text (STT)** and **LLM Text Generation**, exploring common techniques for preprocessing and enriching human speech from audio to support downstream applications like meeting summaries, short-form editing, and embeddings.
+In this tutorial we will focus on **Speech-to-Text (STT)** and **LLM Text Generation**, exploring common techniques for preprocessing and enriching speech from audio to support downstream applications like meeting summaries, highlight extraction, and embeddings.
 
 ## Challenges in Processing Audio for AI Pipelines
 
