@@ -4,7 +4,7 @@
 
 This tutorial walks through how to build a Voice AI analytics pipeline using Daft and Faster-Whisper from raw audio to searchable, multilingual transcripts. You'll learn how to:
 
-- Transcribe long-form audio using Faster-Whisper with built-in VAD for speaker segmentation
+- Transcribe long-form audio using Faster-Whisper with built-in VAD for speech segmentation
 - Use Daft's dataframe engine to orchestrate and parallelize multimodal processing at scale
 - Generate summaries, translations, and embeddings directly from transcripts
 
