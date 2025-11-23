@@ -473,6 +473,26 @@ where
     let config = submittable_task.task().config().clone();
     let mut task_context = submittable_task.task().task_context();
     task_context.add_node_id(node.node_id());
+    // Update last_node_id to reflect current pipeline end
+    task_context.last_node_id = node.node_id();
+
+    // Preserve context: keep origin_node_name if present; update current node_name; backfill origin with previous node_name if available
+    let mut context = submittable_task.task().context().clone();
+    let prev_node_name = context.get("node_name").cloned();
+    context.insert(
+        "node_name".to_string(),
+        node.context().node_name.to_string(),
+    );
+    if !context.contains_key("origin_node_name") {
+        if let Some(prev) = prev_node_name {
+            context.insert("origin_node_name".to_string(), prev);
+        } else {
+            context.insert(
+                "origin_node_name".to_string(),
+                node.context().node_name.to_string(),
+            );
+        }
+    }
 
     submittable_task.with_new_task(SwordfishTask::new(
         task_context,
@@ -480,6 +500,6 @@ where
         config,
         psets,
         scheduling_strategy,
-        node.context().to_hashmap(),
+        context,
     ))
 }
