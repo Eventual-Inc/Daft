@@ -151,9 +151,25 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         let memory_request = self.memory_request;
         #[cfg(feature = "python")]
         {
+            tracing::info!(
+                target: "daft.dispatch",
+                op_name = %self.name(),
+                rows = input.len(),
+                bytes = input.size_bytes().unwrap_or(0),
+                "op=udf_submit",
+            );
+
             let fut = task_spawner.spawn_with_memory_request(
                 memory_request,
                 async move {
+                    tracing::info!(
+                        target: "daft.dispatch",
+                        op_name = "DistributedActorPoolProject",
+                        rows = input.len(),
+                        bytes = input.size_bytes().unwrap_or(0),
+                        "op=udf_start",
+                    );
+
                     let res =
                         state.actor_handle.eval_input(input).await.map(|result| {
                             IntermediateOperatorResult::NeedMoreInput(Some(result))

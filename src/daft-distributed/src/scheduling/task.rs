@@ -116,6 +116,10 @@ pub(crate) trait Task: Send + Sync + Clone + Debug + 'static {
     }
 
     fn task_name(&self) -> TaskName;
+
+    fn op_kind(&self) -> String {
+        "Unknown".to_string()
+    }
 }
 
 #[derive(Clone)]
@@ -230,6 +234,24 @@ impl SwordfishTask {
         let resource_request = TaskResourceRequest::new(plan.resource_request());
         context.insert("task_id".to_string(), task_context.task_id.to_string());
 
+        if !context.contains_key("origin_node_name")
+            && let Some(current) = context.get("node_name").cloned()
+        {
+            context.insert("origin_node_name".to_string(), current);
+        }
+
+        // Log task creation with ID, Name, and OpKind (first non InMemoryScan)
+        let task_id = task_context.task_id;
+        let task_name = plan.single_line_display();
+        let mut parts = task_name.split("->");
+        let first = parts.next().unwrap_or("Unknown");
+        let op_kind = if first == "InMemoryScan" {
+            parts.next().unwrap_or(first).to_string()
+        } else {
+            first.to_string()
+        };
+        tracing::debug!(target: "daft_distributed.scheduling.task", task_id = task_id, task_name = %task_name, op_kind = %op_kind, "created_task");
+
         Self {
             task_context,
             plan,
@@ -267,6 +289,16 @@ impl SwordfishTask {
 }
 
 impl Task for SwordfishTask {
+    fn op_kind(&self) -> String {
+        let line = self.name();
+        let mut parts = line.split("->");
+        let first = parts.next().unwrap_or("Unknown");
+        if first == "InMemoryScan" {
+            parts.next().unwrap_or(first).to_string()
+        } else {
+            first.to_string()
+        }
+    }
     fn task_context(&self) -> TaskContext {
         self.task_context.clone()
     }
