@@ -27,7 +27,7 @@ In this tutorial we will focus on **Speech-to-Text (STT)** and **LLM Text Genera
 
 ## Challenges in Processing Audio for AI Pipelines
 
-Audio is inherently different from traditional analytics processing. Most multimodal AI workloads require some level of preprocessing before inference, but since audio isn't stored in neat rows and columns in a table, running frontier models on audio data comes with some extra challenges.
+Audio is inherently different from traditional structured data. Since audio isn't stored in neat rows and columns in a table, running frontier models on audio data comes with some extra challenges.
 
 **Before we can run our STT models on audio data we'll need to:**
 
