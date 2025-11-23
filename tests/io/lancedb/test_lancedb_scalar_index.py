@@ -261,7 +261,7 @@ class TestDistributedIndexing:
         path = Path(temp_dir) / "non_string_test.lance"
         dataset.write_lance(uri=path, max_rows_per_file=2)
 
-        with pytest.raises(TypeError, match="must be string type"):
+        with pytest.raises(TypeError, match="Column numeric_col must be string type"):
             create_scalar_index(
                 uri=path,
                 column="numeric_col",

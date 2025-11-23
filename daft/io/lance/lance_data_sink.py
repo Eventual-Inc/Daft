@@ -33,6 +33,25 @@ def pyarrow_schema_castable(src: pa.Schema, dst: pa.Schema) -> bool:
     return True
 
 
+def table_schema_subset_castable(data_schema: pa.Schema, table_schema: pa.Schema) -> bool:
+    """Checks whether data_schema is a superset of table_schema and every table field is castable from data.
+
+    For each field in the existing table schema, ensure there is a field with the same name in the data schema,
+    and that Arrow can cast from the data field type to the table field type.
+    """
+    data_fields_by_name = {f.name: f for f in data_schema}
+    for table_field in table_schema:
+        src_field = data_fields_by_name.get(table_field.name)
+        if src_field is None:
+            return False
+        empty_array = pa.array([], type=src_field.type)
+        try:
+            empty_array.cast(table_field.type)
+        except Exception:
+            return False
+    return True
+
+
 class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
     """WriteSink for writing data to a Lance dataset."""
 
@@ -48,7 +67,7 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
         self,
         uri: str | pathlib.Path,
         schema: Schema | pa.Schema,
-        mode: Literal["create", "append", "overwrite"],
+        mode: Literal["create", "append", "overwrite", "merge"],
         io_config: IOConfig | None = None,
         **kwargs: Any,
     ) -> None:
@@ -61,7 +80,9 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
         self._mode = mode
         self._io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
         self._kwargs = kwargs
-
+        # Strip merge-specific kwargs that are not applicable to non-merge write paths
+        self._kwargs.pop("left_on", None)
+        self._kwargs.pop("right_on", None)
         self._storage_options = io_config_to_storage_options(self._io_config, self._table_uri)
 
         if isinstance(schema, Schema):
@@ -70,6 +91,13 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
             self._pyarrow_schema = schema
         else:
             raise TypeError(f"Expected schema to be Schema or pa.Schema, got {type(schema)}")
+
+        # Filter out internal metadata fields that should not be part of the validation
+        # These fields are used internally by Lance but should not affect schema validation
+        meta_exclusions = {"fragment_id", "_rowaddr", "_rowid"}
+        # Create a filtered schema without internal metadata fields for validation
+        filtered_fields = [field for field in self._pyarrow_schema if field.name not in meta_exclusions]
+        self._filtered_schema = pa.schema(filtered_fields)
 
         self._version: int = 0
         self._table_schema: pa.Schema | None = None
@@ -101,8 +129,8 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
     def _validate_dataset(self, table: Any) -> None:
         """Validate dataset against the current mode."""
         if table is None:
-            if self._mode == "append":
-                raise ValueError("Cannot append to non-existent Lance dataset.")
+            if self._mode == "append" or self._mode == "merge":
+                raise ValueError("Cannot append or merge to non-existent Lance dataset.")
             if self._mode == "create" and self._storage_options is None:
                 p = pathlib.Path(self._table_uri)
                 if p.is_file():
@@ -137,15 +165,26 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
             # - the user-provided schema (if specified and different from incoming data), or
             # - the incoming data schema (no-op) while attaching metadata/order from _pyarrow_schema.
             input_table = micropartition.to_arrow()
+
+            if self._mode == "merge":
+                target_schema = self._filtered_schema
+            else:
+                target_schema = self._table_schema
+
+            # Handle case where target_schema is None (e.g., creating a new dataset)
+            if target_schema is None:
+                # Use the user-provided schema or the input schema
+                target_schema = self._pyarrow_schema
+
             if self._table_schema is not None:
                 # Dataset exists: always cast to the table schema to ensure compatibility on append
                 arrow_table = input_table.cast(self._table_schema)
-            elif not pa.Schema.equals(self._pyarrow_schema, input_table.schema):
+            elif not pa.Schema.equals(target_schema, input_table.schema):
                 # New dataset or overwrite with a user-provided schema: cast to enforce order/types/nullability
-                arrow_table = input_table.cast(self._pyarrow_schema)
+                arrow_table = input_table.cast(target_schema)
             else:
                 # Schemas are identical: rebuild table with the desired schema instance to preserve metadata
-                arrow_table = pa.Table.from_batches(input_table.to_batches(), self._pyarrow_schema)
+                arrow_table = pa.Table.from_batches(input_table.to_batches(), target_schema)
 
             bytes_written = arrow_table.nbytes
             rows_written = arrow_table.num_rows

@@ -104,7 +104,7 @@ dev = [
   "jax==0.6.2",
   "jaxtyping==0.3.3",
   # Pyarrow
-  "pyarrow==22.0.0",
+  "pyarrow >= 8.0.0,<23.0.0",
   "pyarrow-stubs==19.4",
   # Ray
   "ray[data, client]==2.52.1",
