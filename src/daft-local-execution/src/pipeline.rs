@@ -1573,7 +1573,6 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
-        
     };
 
     Ok(pipeline_node)

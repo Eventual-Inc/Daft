@@ -1,17 +1,14 @@
 use std::{
     sync::{Arc, Mutex},
-    time::Instant,
 };
 
 use daft_micropartition::MicroPartition;
-use tracing::Span;
 
 use crate::{
     dynamic_batching::BatchingStrategy,
     intermediate_ops::intermediate_op::{
         IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
     },
-    pipeline::MorselSizeRequirement,
 };
 
 pub struct DynamicBatchingState<S1> {

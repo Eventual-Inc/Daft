@@ -12,14 +12,9 @@ use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
 
 use crate::{
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
-    channel::{Receiver, create_channel},
-    dispatcher::{DispatchSpawner, UnorderedDispatcher},
-    pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
-    resource_manager::MemoryManager,
-    runtime_stats::{
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet, channel::{Receiver, create_channel}, dispatcher::{DispatchSpawner, UnorderedDispatcher}, dynamic_batching::{BatchingContext, DefaultBatchingStrategy}, pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext}, resource_manager::MemoryManager, runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
-    },
+    }
 };
 
 pub enum BlockingSinkStatus<Op: BlockingSink> {
@@ -261,10 +256,15 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         let num_workers = op.max_concurrency();
 
         let dispatch_spawner = op.dispatch_spawner(Some(self.morsel_size_requirement));
+        let strategy = DefaultBatchingStrategy::new(&self.morsel_size_requirement);
+        let mut handle = runtime_handle.handle();
+        let batching_ctx = Arc::new(BatchingContext::new(strategy, &mut handle));
+
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             vec![counting_receiver],
             num_workers,
             &mut runtime_handle.handle(),
+            batching_ctx,
         );
         runtime_handle.spawn(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },

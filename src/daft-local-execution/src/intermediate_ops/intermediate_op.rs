@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
@@ -19,7 +22,7 @@ use crate::{
         create_ordering_aware_receiver_channel,
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    dynamic_batching::{BatchingContext, DefaultBatchingStrategy},
+    dynamic_batching::{BatchingContext, LatencyConstrainedBatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
@@ -129,6 +132,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         sender: Sender<Arc<MicroPartition>>,
         runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
+        batching_ctx: Arc<BatchingContext>,
     ) -> DaftResult<()> {
         let span = info_span!("IntermediateOp::execute");
         let compute_runtime = get_compute_runtime();
@@ -137,7 +141,12 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         let mut state = op.make_state()?;
         while let Some(morsel) = receiver.recv().await {
             loop {
+                let now = Instant::now();
                 let result = op.execute(morsel.clone(), state, &task_spawner).await??;
+                let elapsed = now.elapsed();
+                batching_ctx
+                    .record_execution_stats(runtime_stats.clone(), elapsed)
+                    .await;
                 state = result.0;
                 match result.1 {
                     IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
@@ -166,6 +175,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         runtime_handle: &mut ExecutionRuntimeContext,
         maintain_order: bool,
         memory_manager: Arc<MemoryManager>,
+        batching_ctx: Arc<BatchingContext>,
     ) -> OrderingAwareReceiver<Arc<MicroPartition>> {
         let (output_sender, output_receiver) =
             create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
@@ -177,6 +187,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                     output_sender,
                     self.runtime_stats.clone(),
                     memory_manager.clone(),
+                    batching_ctx.clone(),
                 ),
                 &self.intermediate_op.name(),
             );
@@ -285,9 +296,15 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
 
         let (destination_sender, destination_receiver) = create_channel(0);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
-        let strategy = DefaultBatchingStrategy::new(&self.morsel_size_requirement);
+        let strategy = LatencyConstrainedBatchingStrategy::new(
+            Duration::from_secs_f64(2.0),
+            Duration::from_millis(1000),
+            16,
+            10,
+            &self.morsel_size_requirement,
+        );
         let mut handle = runtime_handle.handle();
-        let batching_ctx = BatchingContext::new(strategy, &mut handle);
+        let batching_ctx = Arc::new(BatchingContext::new(strategy, &mut handle));
         let dispatch_spawner = self
             .intermediate_op
             .dispatch_spawner(self.morsel_size_requirement, maintain_order);
@@ -295,7 +312,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
             child_result_receivers,
             num_workers,
             &mut runtime_handle.handle(),
-            batching_ctx,
+            batching_ctx.clone(),
         );
         runtime_handle.spawn(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },
@@ -307,6 +324,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
             runtime_handle,
             maintain_order,
             runtime_handle.memory_manager(),
+            batching_ctx,
         );
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();

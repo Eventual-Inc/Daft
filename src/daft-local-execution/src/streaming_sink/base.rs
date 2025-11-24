@@ -18,6 +18,7 @@ use crate::{
         create_ordering_aware_receiver_channel,
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    dynamic_batching::{BatchingContext, DefaultBatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
@@ -317,12 +318,15 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
-
+        let mut handle = runtime_handle.handle();
+        let strategy = DefaultBatchingStrategy::new(&self.morsel_size_requirement);
+        let batching_ctx = Arc::new(BatchingContext::new(strategy, &mut handle));
         let dispatch_spawner = op.dispatch_spawner(self.morsel_size_requirement, maintain_order);
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             child_result_receivers,
             num_workers,
             &mut runtime_handle.handle(),
+            batching_ctx,
         );
         runtime_handle.spawn(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },

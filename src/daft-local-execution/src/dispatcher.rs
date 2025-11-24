@@ -8,6 +8,7 @@ use crate::{
     RuntimeHandle, SpawnedTask,
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
+    dynamic_batching::BatchingContext,
     pipeline::MorselSizeRequirement,
     runtime_stats::InitializingCountingReceiver,
 };
@@ -28,6 +29,7 @@ pub(crate) trait DispatchSpawner {
         input_receivers: Vec<InitializingCountingReceiver>,
         num_workers: usize,
         runtime_handle: &mut RuntimeHandle,
+        batching_context: Arc<BatchingContext>,
     ) -> SpawnedDispatchResult;
 }
 
@@ -60,6 +62,7 @@ impl RoundRobinDispatcher {
         input_receivers: Vec<InitializingCountingReceiver>,
         morsel_size_lower_bound: usize,
         morsel_size_upper_bound: usize,
+        batching_context: Arc<BatchingContext>,
     ) -> DaftResult<()> {
         let mut next_worker_idx = 0;
         let mut send_to_next_worker = |data: Arc<MicroPartition>| {
@@ -70,7 +73,8 @@ impl RoundRobinDispatcher {
 
         for receiver in input_receivers {
             let mut buffer = RowBasedBuffer::new(morsel_size_lower_bound, morsel_size_upper_bound);
-
+            let batch_size = batching_context.current_batch_size();
+            dbg!(batch_size);
             while let Some(morsel) = receiver.recv().await {
                 buffer.push(&morsel);
                 if let Some(ready) = buffer.pop_enough()? {
@@ -99,6 +103,7 @@ impl DispatchSpawner for RoundRobinDispatcher {
         input_receivers: Vec<InitializingCountingReceiver>,
         num_workers: usize,
         runtime_handle: &mut RuntimeHandle,
+        batching_context: Arc<BatchingContext>,
     ) -> SpawnedDispatchResult {
         let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
             (0..num_workers).map(|_| create_channel(0)).unzip();
@@ -110,6 +115,7 @@ impl DispatchSpawner for RoundRobinDispatcher {
                 input_receivers,
                 morsel_size_lower_bound,
                 morsel_size_upper_bound,
+                batching_context,
             )
             .await
         });
@@ -184,6 +190,7 @@ impl DispatchSpawner for UnorderedDispatcher {
         receiver: Vec<InitializingCountingReceiver>,
         num_workers: usize,
         runtime_handle: &mut RuntimeHandle,
+        batching_context: Arc<BatchingContext>,
     ) -> SpawnedDispatchResult {
         let (worker_sender, worker_receiver) = create_channel(num_workers);
         let worker_receivers = vec![worker_receiver; num_workers];
@@ -244,6 +251,7 @@ impl DispatchSpawner for PartitionedDispatcher {
         input_receivers: Vec<InitializingCountingReceiver>,
         num_workers: usize,
         runtime_handle: &mut RuntimeHandle,
+        batching_context: Arc<BatchingContext>,
     ) -> SpawnedDispatchResult {
         let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
             (0..num_workers).map(|_| create_channel(0)).unzip();

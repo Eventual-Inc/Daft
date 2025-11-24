@@ -2,7 +2,6 @@ mod aimd;
 mod latency_constrained;
 
 use std::{
-    marker::PhantomData,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -47,7 +46,7 @@ pub trait BatchingStrategy: Send + Sync {
         _runtime_stats: &dyn RuntimeStats,
         current_run_duration: Duration,
     ) -> usize;
-    fn current_batch_size(&self) -> usize;
+    fn current_batch_size(&self, state: &Self::State) -> usize;
 }
 pub struct DefaultBatchingStrategy {
     current_batch_size: usize,
@@ -74,23 +73,22 @@ impl BatchingStrategy for DefaultBatchingStrategy {
     ) -> usize {
         self.current_batch_size
     }
-    fn current_batch_size(&self) -> usize {
+    fn current_batch_size(&self, _state: &Self::State) -> usize {
         self.current_batch_size
     }
 }
 
-pub struct BatchingContext<S: BatchingStrategy> {
+pub struct BatchingContext {
     current_batch_size: Arc<AtomicUsize>,
-    _phantom: PhantomData<S>,
     tx: Sender<(Arc<dyn RuntimeStats>, Duration)>,
 }
 
-impl<S> BatchingContext<S>
-where
-    S: BatchingStrategy + 'static,
-    S::State: 'static,
-{
-    pub fn new(strategy: S, runtime_handle: &mut RuntimeHandle) -> Self {
+impl BatchingContext {
+    pub fn new<S>(strategy: S, runtime_handle: &mut RuntimeHandle) -> Self
+    where
+        S: BatchingStrategy + 'static,
+        S::State: 'static,
+    {
         let (tx, rx) = create_channel::<(Arc<dyn RuntimeStats>, Duration)>(0);
         let mut state = strategy.make_state();
         let initial_size = 1000; // or whatever default
@@ -101,21 +99,21 @@ where
         let current_batch_size_clone = current_batch_size.clone();
         runtime_handle.spawn(async move {
             while let Some(report) = rx.recv().await {
-                dbg!(&report.1);
                 let new_size = strategy.adjust_batch_size(&mut state, report.0.as_ref(), report.1);
                 current_batch_size_clone.store(new_size, Ordering::Relaxed);
             }
-            Ok(())
         });
 
         Self {
             current_batch_size,
-            _phantom: PhantomData,
             tx,
         }
     }
 
     pub fn current_batch_size(&self) -> usize {
         self.current_batch_size.load(Ordering::Relaxed)
+    }
+    pub async fn record_execution_stats(&self, stats: Arc<dyn RuntimeStats>, duration: Duration) {
+        self.tx.send((stats, duration)).await.unwrap();
     }
 }

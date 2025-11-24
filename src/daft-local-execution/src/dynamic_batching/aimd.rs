@@ -1,7 +1,5 @@
 use std::time::Duration;
 
-use crate::{dynamic_batching::BatchingStrategy, runtime_stats::RuntimeStats};
-
 /// Additive Increase/Multiplicative Decrease (AIMD) algorithm for dynamic batch sizing.
 ///
 /// AIMD is a feedback control algorithm originally developed for TCP congestion control
