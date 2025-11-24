@@ -1331,6 +1331,7 @@ class Expression:
 
     def hash(
         self,
+        *exprs: Expression,
         seed: Any | None = None,
         hash_function: Literal["xxhash", "xxhash32", "xxhash64", "xxhash3_64", "murmurhash3", "sha1"] | None = "xxhash",
     ) -> Expression:
@@ -1341,7 +1342,7 @@ class Expression:
         """
         from daft.functions import hash
 
-        return hash(self, seed=seed, hash_function=hash_function)
+        return hash(self, *exprs, seed=seed, hash_function=hash_function)
 
     def minhash(
         self,

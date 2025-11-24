@@ -53,6 +53,44 @@ def test_table_expr_struct_hash():
     assert res[0] != res[1] and res[1] != res[3] and res[0] != res[3]
 
 
+def _row_hash_via_kernel(df: daft.DataFrame, columns: list[str], seed_expr: col | None = None) -> list[int | None]:
+    expr = col(columns[0]).hash()
+    for name in columns[1:]:
+        expr = col(name).hash(seed=expr)
+    if seed_expr is not None:
+        expr = expr.hash(seed=seed_expr)
+    return df.select(expr.alias("row_hash")).to_pydict()["row_hash"]
+
+
+def test_expression_hash_multiple_columns_matches_list_row_hash():
+    df = daft.from_pydict(
+        {
+            "ints": [1, 2, None],
+            "strings": ["x", "y", None],
+            "bools": [True, False, True],
+        }
+    )
+
+    expected = _row_hash_via_kernel(df, df.column_names)
+    result = df.select(col("ints").hash(col("strings"), col("bools")).alias("row_hash")).to_pydict()["row_hash"]
+    assert result == expected
+
+
+def test_expression_hash_multiple_columns_with_seed_expression():
+    df = daft.from_pydict(
+        {
+            "a": [1, 2, 3, 4],
+            "b": ["foo", "bar", "foo", "baz"],
+            "c": [True, False, True, False],
+            "seed": [0, 1, 2, 3],
+        }
+    )
+
+    expected = _row_hash_via_kernel(df, ["a", "c"], seed_expr=col("seed"))
+    result = df.select(col("a").hash(col("c"), seed=col("seed")).alias("row_hash")).to_pydict()["row_hash"]
+    assert result == expected
+
+
 def test_table_expr_hash_with_different_algorithms():
     """Test hash function with different algorithms in DataFrame context."""
     df = daft.from_pydict(

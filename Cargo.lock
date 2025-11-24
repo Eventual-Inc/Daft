@@ -2761,6 +2761,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-hash",
+ "daft-recordbatch",
  "num-traits",
  "pyo3",
  "serde",
