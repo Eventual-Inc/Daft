@@ -25,16 +25,13 @@ type BatchReport = Vec<(Arc<dyn RuntimeStats>, usize, Duration)>;
 /// the number of items processed together in a batch based on runtime performance metrics.
 /// Different algorithms use various strategies to find the optimal batch size.
 pub trait BatchingStrategy: Send + Sync {
-    type State: BatchingState + Send + Sync + Unpin;
+    type State: Send + Sync + Unpin;
     fn make_state(&self) -> Self::State;
     /// adjust the batch size based on runtime performance metrics
     fn calculate_new_batch_size(&self, state: &mut Self::State, reports: BatchReport) -> usize;
 
     fn initial_batch_size(&self) -> usize;
 }
-
-pub trait BatchingState {}
-impl BatchingState for () {}
 
 #[derive(Clone)]
 pub struct StaticBatchingStrategy {
@@ -70,7 +67,6 @@ impl BatchingStrategy for StaticBatchingStrategy {
 pub struct DynBatchingState {
     update_fn: Box<dyn FnMut(BatchReport) -> usize + Send + Sync>,
 }
-impl BatchingState for DynBatchingState {}
 
 #[allow(dead_code)]
 pub struct DynBatchingStrategy {

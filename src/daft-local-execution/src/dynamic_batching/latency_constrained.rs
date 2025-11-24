@@ -1,8 +1,7 @@
 use std::time::Duration;
 
 use crate::{
-    dynamic_batching::{BatchingState, BatchingStrategy},
-    pipeline::MorselSizeRequirement,
+    dynamic_batching::BatchingStrategy, pipeline::MorselSizeRequirement,
     runtime_stats::RuntimeStats,
 };
 
@@ -153,7 +152,6 @@ impl LatencyConstrainedBatchingState {
         }
     }
 }
-impl BatchingState for LatencyConstrainedBatchingState {}
 
 impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
     type State = LatencyConstrainedBatchingState;
