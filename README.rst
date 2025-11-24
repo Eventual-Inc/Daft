@@ -52,28 +52,7 @@ For more advanced installations (e.g. installing from source or with extra depen
 Quickstart
 ^^^^^^^^^^
 
-  Check out our `quickstart <https://docs.daft.ai/en/stable/quickstart/>`_!
-
-In this example, we load images from an AWS S3 bucket's URLs and resize each image in the dataframe:
-
-.. code:: python
-
-    import daft
-
-    # Load a dataframe from filepaths in an S3 bucket
-    df = daft.from_glob_path("s3://daft-public-data/laion-sample-images/*")
-
-    # 1. Download column of image URLs as a column of bytes
-    # 2. Decode the column of bytes into a column of images
-    df = df.with_column("image", df["path"].url.download().image.decode())
-
-    # Resize each image into 32x32
-    df = df.with_column("resized", df["image"].image.resize(32, 32))
-
-    df.show(3)
-
-
-|Quickstart Image|
+Get started in minutes with our `Quickstart <https://docs.daft.ai/en/latest/quickstart/>`_ - load a real-world e-commerce dataset, process product images, and run AI inference at scale.
 
 
 Benchmarks
