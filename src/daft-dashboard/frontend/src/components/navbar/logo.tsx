@@ -3,12 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 
-import "./logo.css"
+
 
 interface LogoProps {
   onComplete?: () => void;
   textColor?: string;
 }
+
+
 
 const Logo = ({ onComplete, textColor = "text-white" }: LogoProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
