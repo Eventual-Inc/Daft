@@ -13,6 +13,12 @@ use crate::{
 /// Bowen Pang, Kai Li, Feifan Wang (2025)
 /// https://arxiv.org/abs/2503.05248
 ///
+/// Note: this was slightly modified from the paper. In the paper, the batch size logic is performed per batch,
+/// but since we have multiple workers, we cannot guarantee that batch size adjustment can be done in between batches.
+/// So we need to batch up the runtime statistics then average them during our computation.
+///
+/// While instead, the paper was able to perform batch size adjustments in between every batch.
+///
 /// # Problem Statement
 ///
 /// There is a fundamental tradeoff between:
@@ -42,29 +48,6 @@ use crate::{
 /// - Figure 3: Shows relationship between batch size, throughput, and decoding time
 /// - Equation (3): target constraint formulation: D(b_t) - D_SLA ≤ ε_D
 ///
-/// # Example
-///
-/// ```rust,ignore
-/// use std::time::Duration;
-///
-/// // Target: 100ms max batch latency
-/// let batching = LatencyConstrainedBatching::new(
-///     Duration::from_millis(100),  // target_batch_latency
-///     Duration::from_millis(10),   // latency_tolerance
-///     50,                          // step_size_alpha
-///     5,                           // correction_delta
-///     1,                           // min_batch_size
-///     256,                         // max_batch_size
-/// );
-///
-/// let mut state = batching.make_state();
-///
-/// // After each batch processes:
-/// let new_batch_size = batching.adjust_batch_size(
-///     &mut state,
-///     measured_latency,
-///     None,
-/// );
 /// ```
 #[derive(Clone)]
 pub struct LatencyConstrainedBatchingStrategy {
