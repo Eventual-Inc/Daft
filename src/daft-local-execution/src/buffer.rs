@@ -79,14 +79,15 @@ impl RowBasedBuffer {
                 }
             }
             BufferState::AboveUpperBound => {
-                let effective_upper =
-                    target_size.map_or(self.upper_bound, |size| size.min(self.upper_bound));
+                let effective_upper = target_size
+                    .map_or(self.upper_bound, |size| size.min(self.upper_bound))
+                    .max(1);
                 let num_ready_chunks = self.curr_len / effective_upper;
                 let concated = MicroPartition::concat(std::mem::take(&mut self.buffer))?;
                 let mut start = 0;
                 let mut parts_to_return = Vec::with_capacity(num_ready_chunks);
                 for _ in 0..num_ready_chunks {
-                    let end = start + self.upper_bound;
+                    let end = start + effective_upper;
                     let part = concated.slice(start, end)?;
                     parts_to_return.push(part.into());
                     start = end;
