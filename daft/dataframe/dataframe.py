@@ -619,11 +619,10 @@ class DataFrame:
         if results is None:
             return
 
-        preview_partition_invalid = (
-            self._preview.partition is None or len(self._preview.partition) < self._num_preview_rows
-        )
+        num_preview_rows = min(self._num_preview_rows, len(self))
+        preview_partition_invalid = self._preview.partition is None or len(self._preview.partition) != num_preview_rows
         if preview_partition_invalid:
-            preview_parts = results._get_preview_micropartitions(self._num_preview_rows)
+            preview_parts = results._get_preview_micropartitions(num_preview_rows)
             preview_results = LocalPartitionSet()
             for i, part in enumerate(preview_parts):
                 preview_results.set_partition_from_table(i, part)
@@ -2073,6 +2072,7 @@ class DataFrame:
                 If `size` exceeds the total number of rows:
                 - When `with_replacement=False`: raises ValueError
                 - When `with_replacement=True`: returns `size` rows (may contain duplicates)
+                Note: Sample by size only works on the native runner right now.
             with_replacement (bool, optional): whether to sample with replacement. Defaults to False.
             seed (Optional[int], optional): random seed. Defaults to None.
 
@@ -2122,6 +2122,12 @@ class DataFrame:
         if size is not None:
             if size < 0:
                 raise ValueError(f"size should be non-negative, but got {size}")
+            if get_or_create_runner().name == "ray":
+                raise ValueError(
+                    "Sample by size only works on the native runner right now. "
+                    "Please use `daft.set_runner_native()` to switch to the native runner, "
+                    "or use `fraction` instead of `size` for sampling."
+                )
 
         builder = self._builder.sample(fraction, size, with_replacement, seed)
         return DataFrame(builder)

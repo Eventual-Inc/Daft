@@ -158,6 +158,7 @@ plugins:
       spark_connect.md: api/spark_connect.md
       core_concepts.md: index.md
 - mkdocstrings:
+    custom_templates: docs/templates
     handlers:
       python:
         options:

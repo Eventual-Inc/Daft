@@ -18,8 +18,8 @@ use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, GlobScan, HashAggregate,
     HashJoin, InMemoryScan, IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan,
-    MonotonicallyIncreasingId, PhysicalWrite, Pivot, Project, Sample, SamplingMethod, Sort,
-    SortMergeJoin, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
+    MonotonicallyIncreasingId, PhysicalWrite, Pivot, Project, Sample, Sort, SortMergeJoin, TopN,
+    UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
     WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
@@ -40,8 +40,8 @@ use crate::{
         distributed_actor_pool_project::DistributedActorPoolProjectOperator,
         explode::ExplodeOperator, filter::FilterOperator,
         inner_hash_join_probe::InnerHashJoinProbeOperator, intermediate_op::IntermediateNode,
-        into_batches::IntoBatchesOperator, project::ProjectOperator, sample::SampleOperator,
-        udf::UdfOperator, unpivot::UnpivotOperator,
+        into_batches::IntoBatchesOperator, project::ProjectOperator, udf::UdfOperator,
+        unpivot::UnpivotOperator,
     },
     runtime_stats::RuntimeStats,
     sinks::{
@@ -69,8 +69,8 @@ use crate::{
         anti_semi_hash_join_probe::AntiSemiProbeSink, async_udf::AsyncUdfSink,
         base::StreamingSinkNode, concat::ConcatSink, limit::LimitSink,
         monotonically_increasing_id::MonotonicallyIncreasingIdSink,
-        outer_hash_join_probe::OuterHashJoinProbeSink, sort_merge_join_probe::SortMergeJoinProbe,
-        vllm::VLLMSink,
+        outer_hash_join_probe::OuterHashJoinProbeSink, sample::SampleSink,
+        sort_merge_join_probe::SortMergeJoinProbe, vllm::VLLMSink,
     },
 };
 
@@ -655,17 +655,11 @@ fn physical_plan_to_pipeline(
             stats_state,
             context,
         }) => {
-            let sample_op = match sampling_method {
-                SamplingMethod::Fraction(fraction) => {
-                    SampleOperator::new(*fraction, *with_replacement, *seed)
-                }
-                SamplingMethod::Size(size) => {
-                    SampleOperator::new_size(*size, *with_replacement, *seed)
-                }
-            };
+            let sample_sink =
+                SampleSink::new(*sampling_method, *with_replacement, *seed, schema.clone());
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            IntermediateNode::new(
-                Arc::new(sample_op),
+            StreamingSinkNode::new(
+                Arc::new(sample_sink),
                 vec![child_node],
                 stats_state.clone(),
                 ctx,

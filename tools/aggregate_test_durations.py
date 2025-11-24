@@ -101,9 +101,9 @@ class TestDurationAggregator:
         self, title: str, data: dict[str, list[float]], sort_key: str = "total", limit: Optional[int] = None
     ):
         """Print aggregated results in a formatted table with phase breakdown."""
-        print(f"\n{'='*80}")
+        print(f"\n{'=' * 80}")
         print(f"{title}")
-        print(f"{'='*80}")
+        print(f"{'=' * 80}")
 
         # Calculate stats for each item with phase breakdown
         results = []
@@ -179,9 +179,9 @@ class TestDurationAggregator:
 
     def print_summary(self):
         """Print overall summary statistics."""
-        print(f"\n{'='*80}")
+        print(f"\n{'=' * 80}")
         print("OVERALL SUMMARY")
-        print(f"{'='*80}")
+        print(f"{'=' * 80}")
 
         total_tests = len(self.test_times)
         total_time = sum(test["time"] for test in self.test_times)
@@ -222,9 +222,9 @@ class TestDurationAggregator:
 
     def print_slowest_tests(self):
         """Print the slowest individual tests."""
-        print(f"\n{'='*80}")
+        print(f"\n{'=' * 80}")
         print("SLOWEST INDIVIDUAL TESTS")
-        print(f"{'='*80}")
+        print(f"{'=' * 80}")
 
         # Sort tests by time (descending)
         sorted_tests = sorted(self.test_times, key=lambda x: x["time"], reverse=True)
