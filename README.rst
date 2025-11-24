@@ -14,7 +14,7 @@ Daft: High-Performance Data Engine for AI and Multimodal Workloads
 * **Native multimodal processing:** Process images, audio, video, and embeddings alongside structured data in a single framework
 * **Built-in AI operations:** Run LLM prompts, generate embeddings, and classify data using OpenAI, Transformers, or custom models
 * **Python-native, Rust-powered:** Skip the JVM complexity with Python at its core and Rust under the hood for blazing performance
-* **Seamless scaling:** Start local, scale to distributed clusters on `Ray <https://docs.daft.ai/en/stable/distributed/ray/>`_, `Kubernetes <https://docs.daft.ai/en/stable/distributed/kubernetes/>`_, or `Daft Cloud <https://www.eventual.ai/early-access>`_
+* **Seamless scaling:** Start local, scale to distributed clusters on `Ray <https://docs.daft.ai/en/stable/distributed/ray/>`_, `Kubernetes <https://docs.daft.ai/en/stable/distributed/kubernetes/>`_, or `Daft Cloud <https://www.daft.ai/cloud>`_
 * **Universal connectivity:** Access data anywhere (S3, GCS, Iceberg, Delta Lake, Hugging Face, Unity Catalog)
 * **Out-of-box reliability:** Intelligent memory management and sensible defaults eliminate configuration headaches
 
@@ -35,7 +35,7 @@ Daft was designed with the following principles in mind:
 
 1. **AI-Native**: Built-in support for LLM prompts, embeddings, and image classification. Run AI operations at scale without writing boilerplate code or managing infrastructure.
 2. **Any Modality**: Process images, audio, video, and embeddings alongside structured data in a single framework, with native types purpose-built for multimodal workloads.
-3. **Any Scale**: Start on your laptop, scale to thousands of CPUs/GPUs on `Ray <https://docs.daft.ai/en/stable/distributed/ray/>`_, `Kubernetes <https://docs.daft.ai/en/stable/distributed/kubernetes/>`_, or `Daft Cloud <https://www.eventual.ai/early-access>`_ without changing your code.
+3. **Any Scale**: Start on your laptop, scale to thousands of CPUs/GPUs on `Ray <https://docs.daft.ai/en/stable/distributed/ray/>`_, `Kubernetes <https://docs.daft.ai/en/stable/distributed/kubernetes/>`_, or `Daft Cloud <https://www.daft.ai/cloud>`_ without changing your code.
 
 Getting Started
 ---------------
