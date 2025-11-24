@@ -31,24 +31,21 @@ Audio is inherently different from traditional structured data. Since audio isn'
 
 **Before we can run our STT models on audio data we'll need to:**
 
-- Read and preprocess raw audio files into a form that the model can receive
-- Handle memory constraints (e.g., one hour of 48 kHz/24-bit stereo audio can be 518 MB)
+- Read and preprocess raw audio files into a form that the model can process
+- Handle memory constraints (e.g., one hour of 48 kHz/24-bit stereo audio can be close to a gigabyte)
 - Decode, buffer, and resample audio files into chunks
-- Manage streaming architectures with message queues for back pressure
 
 **Traditional approaches face challenges:**
 
 - Scaling parallelism requires multiprocessing/threading (error-prone, GIL limitations)
 - Memory management needs custom generators/lazy loading (overflows common)
 - Pipelining stages are hardcoded (modifications tedious, no retry mechanisms)
-- Storing and querying outputs requires custom scripts (performance degradation)
 
 **Daft solves these issues by:**
 
 - Providing a unified dataframe interface for multimodal data
 - Handling distributed parallelism automatically
 - Managing memory efficiently with Apache Arrow format
-- Enabling lazy evaluation for optimal query planning
 
 ## Setup and Imports
 
@@ -342,7 +339,7 @@ df_segments.select(
 ).show(format="fancy", max_width=40)
 ```
 
-```{title:"Output"} text
+```{title:"Output"}
 ╭────────────────────────────────────────┬────────────────────────────────────────┬──────────────────────────────────────────────────────────────╮
 │ path                                   ┆ text                                   ┆ segment_text_chinese                                         │
 ╞════════════════════════════════════════╪════════════════════════════════════════╪══════════════════════════════════════════════════════════════╡
