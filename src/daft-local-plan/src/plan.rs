@@ -1227,7 +1227,7 @@ impl LocalPhysicalPlan {
                     ..
                 }) => Self::sample(
                     new_child.clone(),
-                    sampling_method.clone(),
+                    *sampling_method,
                     *with_replacement,
                     *seed,
                     StatsState::NotMaterialized,
@@ -1794,7 +1794,7 @@ pub struct TopN {
     pub context: LocalNodeContext,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum SamplingMethod {
     Fraction(f64),
     Size(usize),

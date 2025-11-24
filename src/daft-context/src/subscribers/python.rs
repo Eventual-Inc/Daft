@@ -7,8 +7,8 @@ use daft_micropartition::{MicroPartitionRef, python::PyMicroPartition};
 use pyo3::{IntoPyObject, Py, PyAny, Python, intern};
 
 use crate::{
-    python::PyQueryMetadata,
-    subscribers::{NodeID, QueryMetadata, Subscriber},
+    python::{PyQueryMetadata, PyQueryResult},
+    subscribers::{NodeID, QueryMetadata, QueryResult, Subscriber},
 };
 
 /// Wrapper around a Python object that implements the Subscriber trait
@@ -28,10 +28,14 @@ impl Subscriber for PySubscriberWrapper {
         })
     }
 
-    fn on_query_end(&self, query_id: QueryID) -> DaftResult<()> {
+    #[allow(unused_variables)]
+    fn on_query_end(&self, query_id: QueryID, end_result: QueryResult) -> DaftResult<()> {
         Python::attach(|py| {
-            self.0
-                .call_method1(py, intern!(py, "on_query_end"), (query_id.to_string(),))?;
+            self.0.call_method1(
+                py,
+                intern!(py, "on_query_end"),
+                (query_id.to_string(), PyQueryResult::from(end_result)),
+            )?;
             Ok(())
         })
     }
