@@ -142,6 +142,11 @@ impl IntermediateOperator for FilterOperator {
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(())
     }
+    fn batching_strategy(&self) -> Self::BatchingStrategy {
+        crate::dynamic_batching::DefaultBatchingStrategy::new(
+            self.morsel_size_requirement().as_ref(),
+        )
+    }
 }
 
 #[cfg(test)]

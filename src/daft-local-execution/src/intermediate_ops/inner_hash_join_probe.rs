@@ -220,4 +220,9 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
             self.probe_state_bridge.clone(),
         ))
     }
+    fn batching_strategy(&self) -> Self::BatchingStrategy {
+        crate::dynamic_batching::DefaultBatchingStrategy::new(
+            self.morsel_size_requirement().as_ref(),
+        )
+    }
 }

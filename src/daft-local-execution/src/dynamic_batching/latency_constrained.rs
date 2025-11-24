@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{collections::VecDeque, time::Duration};
 
 use crate::{
     dynamic_batching::BatchingStrategy, pipeline::MorselSizeRequirement,
@@ -105,11 +105,12 @@ impl LatencyConstrainedBatchingStrategy {
         latency_slack: Duration,
         step_size_alpha: usize,
         correction_delta: usize,
-        morsel_size_req: &MorselSizeRequirement,
+        morsel_size_req: Option<&MorselSizeRequirement>,
     ) -> Self {
         let (min, max) = match morsel_size_req {
-            MorselSizeRequirement::Strict(v) => (0, *v),
-            MorselSizeRequirement::Flexible(min, max) => (*min, *max),
+            Some(MorselSizeRequirement::Strict(v)) => (0, *v),
+            Some(MorselSizeRequirement::Flexible(min, max)) => (*min, *max),
+            None => (0, 128 * 1024),
         };
         Self {
             target_batch_latency: target_decoding_latency,
@@ -143,6 +144,8 @@ pub struct LatencyConstrainedBatchingState {
     current_batch_size: usize,
     search_low: usize,
     search_high: usize,
+    recent_latencies: VecDeque<Duration>,
+    recent_batch_sizes: VecDeque<usize>,
 }
 
 impl LatencyConstrainedBatchingState {
@@ -151,6 +154,24 @@ impl LatencyConstrainedBatchingState {
             current_batch_size: initial_batch_size,
             search_low: min,
             search_high: max,
+            recent_latencies: VecDeque::with_capacity(16),
+            recent_batch_sizes: VecDeque::with_capacity(16),
+        }
+    }
+    fn avg_latency(&self) -> Duration {
+        if self.recent_latencies.is_empty() {
+            Duration::from_millis(0)
+        } else {
+            let sum: Duration = self.recent_latencies.iter().sum();
+            sum / self.recent_latencies.len() as u32
+        }
+    }
+
+    fn avg_batch_size(&self) -> usize {
+        if self.recent_batch_sizes.is_empty() {
+            self.current_batch_size
+        } else {
+            self.recent_batch_sizes.iter().sum::<usize>() / self.recent_batch_sizes.len()
         }
     }
 }
@@ -251,6 +272,93 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
     }
 
     fn current_batch_size(&self, state: &Self::State) -> usize {
+        state.current_batch_size
+    }
+
+    fn adjust_batch_size_batched(
+        &self,
+        state: &mut Self::State,
+        batch: Vec<(std::sync::Arc<dyn RuntimeStats>, usize, Duration)>,
+    ) -> usize {
+        for (_, batch_size, latency) in batch {
+            state.recent_latencies.push_back(latency);
+            state.recent_batch_sizes.push_back(batch_size);
+        }
+        let latency = state.avg_latency();
+        let batch_size = state.avg_batch_size();
+        let search_space = state.search_high.saturating_sub(state.search_low);
+
+        log::debug!(
+            "[{}] observed_latency={}ms, target={}ms±{}ms, batch_size={}, search=[{}, {}], search_space={}",
+            std::thread::current().name().unwrap_or("unknown"),
+            latency.as_millis(),
+            self.target_batch_latency.as_millis(),
+            self.latency_tolerance.as_millis(),
+            batch_size,
+            state.search_low,
+            state.search_high,
+            search_space,
+        );
+
+        // Binary search adjustment - conservative expansion
+        if latency > self.target_batch_latency + self.latency_tolerance {
+            // Latency too high, reduce search space
+            log::debug!(
+                "[{}] LATENCY TOO HIGH ({}ms > {}ms), contracting search space",
+                std::thread::current().name().unwrap_or("unknown"),
+                latency.as_millis(),
+                (self.target_batch_latency + self.latency_tolerance).as_millis(),
+            );
+
+            state.search_high = (batch_size / 2).max(state.search_low + 1);
+            state.search_low = state.search_low.saturating_sub(self.correction_delta);
+        } else if latency < self.target_batch_latency - self.latency_tolerance {
+            // Latency good, expand search space
+            log::debug!(
+                "[{}] LATENCY GOOD ({}ms < {}ms), expanding search space",
+                std::thread::current().name().unwrap_or("unknown"),
+                latency.as_millis(),
+                (self.target_batch_latency - self.latency_tolerance).as_millis(),
+            );
+
+            state.search_low = batch_size.max(state.search_low);
+            state.search_high = state
+                .search_high
+                .saturating_add(self.step_size_alpha)
+                .min(self.max_batch_size);
+        } else {
+            // Within range - tighten search around current point
+            log::debug!(
+                "[{}] WITHIN RANGE ({}ms in range), tightening search space",
+                std::thread::current().name().unwrap_or("unknown"),
+                latency.as_millis(),
+            );
+
+            let tighten_amount = (self.step_size_alpha / 2).max(1);
+
+            state.search_high = batch_size
+                .saturating_add(tighten_amount)
+                .min(self.max_batch_size);
+            state.search_low = batch_size
+                .saturating_sub(tighten_amount)
+                .max(self.min_batch_size);
+        }
+
+        // Midpoint of search space
+        state.current_batch_size = usize::midpoint(state.search_low, state.search_high);
+        state.current_batch_size = state
+            .current_batch_size
+            .max(self.min_batch_size)
+            .min(self.max_batch_size);
+
+        log::debug!(
+            "[{}] new_search=[{}, {}], new_batch_size={}",
+            std::thread::current().name().unwrap_or("unknown"),
+            state.search_low,
+            state.search_high,
+            state.current_batch_size,
+        );
+
         state.current_batch_size
     }
 }

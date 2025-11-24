@@ -1,6 +1,4 @@
-use std::{
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use daft_micropartition::MicroPartition;
 
@@ -86,5 +84,10 @@ where
 
     fn make_runtime_stats(&self, id: usize) -> Arc<dyn crate::runtime_stats::RuntimeStats> {
         self.inner_op.make_runtime_stats(id)
+    }
+    fn batching_strategy(&self) -> Self::BatchingStrategy {
+        crate::dynamic_batching::DefaultBatchingStrategy::new(
+            self.morsel_size_requirement().as_ref(),
+        )
     }
 }

@@ -256,7 +256,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         let num_workers = op.max_concurrency();
 
         let dispatch_spawner = op.dispatch_spawner(Some(self.morsel_size_requirement));
-        let strategy = DefaultBatchingStrategy::new(&self.morsel_size_requirement);
+        let strategy = DefaultBatchingStrategy::new(Some(&self.morsel_size_requirement));
         let mut handle = runtime_handle.handle();
         let batching_ctx = Arc::new(BatchingContext::new(strategy, &mut handle));
 

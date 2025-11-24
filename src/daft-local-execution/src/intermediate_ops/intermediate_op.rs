@@ -22,7 +22,10 @@ use crate::{
         create_ordering_aware_receiver_channel,
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    dynamic_batching::{BatchingContext, LatencyConstrainedBatchingStrategy},
+    dynamic_batching::{
+        BatchingContext, BatchingStrategy, DefaultBatchingStrategy,
+        LatencyConstrainedBatchingStrategy,
+    },
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
@@ -43,7 +46,7 @@ pub(crate) type IntermediateOpExecuteResult<Op> = OperatorOutput<
 >;
 pub(crate) trait IntermediateOperator: Send + Sync {
     type State: Send + Sync + Unpin;
-
+    type BatchingStrategy: BatchingStrategy + 'static = DefaultBatchingStrategy;
     fn execute(
         &self,
         input: Arc<MicroPartition>,
@@ -68,11 +71,13 @@ pub(crate) trait IntermediateOperator: Send + Sync {
         None
     }
 
+    fn batching_strategy(&self) -> Self::BatchingStrategy;
+
     fn dispatch_spawner(
         &self,
         morsel_size_requirement: MorselSizeRequirement,
         maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner> {
+    ) -> Arc<dyn DispatchSpawner<Self::BatchingStrategy>> {
         if maintain_order {
             Arc::new(RoundRobinDispatcher::new(morsel_size_requirement))
         } else {
@@ -132,7 +137,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         sender: Sender<Arc<MicroPartition>>,
         runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
-        batching_ctx: Arc<BatchingContext>,
+        batching_ctx: Arc<BatchingContext<Op::BatchingStrategy>>,
     ) -> DaftResult<()> {
         let span = info_span!("IntermediateOp::execute");
         let compute_runtime = get_compute_runtime();
@@ -144,21 +149,29 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 let now = Instant::now();
                 let result = op.execute(morsel.clone(), state, &task_spawner).await??;
                 let elapsed = now.elapsed();
-                batching_ctx
-                    .record_execution_stats(runtime_stats.clone(), elapsed)
-                    .await;
+
                 state = result.0;
                 match result.1 {
                     IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
+                        batching_ctx
+                            .record_execution_stats(runtime_stats.clone(), mp.len(), elapsed)
+                            .await;
+
                         if sender.send(mp).await.is_err() {
                             return Ok(());
                         }
                         break;
                     }
                     IntermediateOperatorResult::NeedMoreInput(None) => {
+                        batching_ctx
+                            .record_execution_stats(runtime_stats.clone(), 0, elapsed)
+                            .await;
                         break;
                     }
                     IntermediateOperatorResult::HasMoreOutput(mp) => {
+                        batching_ctx
+                            .record_execution_stats(runtime_stats.clone(), mp.len(), elapsed)
+                            .await;
                         if sender.send(mp).await.is_err() {
                             return Ok(());
                         }
@@ -175,7 +188,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         runtime_handle: &mut ExecutionRuntimeContext,
         maintain_order: bool,
         memory_manager: Arc<MemoryManager>,
-        batching_ctx: Arc<BatchingContext>,
+        batching_ctx: Arc<BatchingContext<Op::BatchingStrategy>>,
     ) -> OrderingAwareReceiver<Arc<MicroPartition>> {
         let (output_sender, output_receiver) =
             create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
@@ -296,13 +309,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
 
         let (destination_sender, destination_receiver) = create_channel(0);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
-        let strategy = LatencyConstrainedBatchingStrategy::new(
-            Duration::from_secs_f64(2.0),
-            Duration::from_millis(1000),
-            1024,
-            16,
-            &self.morsel_size_requirement,
-        );
+        let strategy = op.batching_strategy();
         let mut handle = runtime_handle.handle();
         let batching_ctx = Arc::new(BatchingContext::new(strategy, &mut handle));
         let dispatch_spawner = self

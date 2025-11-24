@@ -8,7 +8,7 @@ use crate::{
     RuntimeHandle, SpawnedTask,
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
-    dynamic_batching::BatchingContext,
+    dynamic_batching::{BatchingContext, BatchingStrategy, DefaultBatchingStrategy},
     pipeline::MorselSizeRequirement,
     runtime_stats::InitializingCountingReceiver,
 };
@@ -23,13 +23,13 @@ use crate::{
 ///
 /// Implementations must spawn a task on the runtime handle that reads from the
 /// input receivers and distributes morsels to the worker receivers.
-pub(crate) trait DispatchSpawner {
+pub(crate) trait DispatchSpawner<S: BatchingStrategy = DefaultBatchingStrategy> {
     fn spawn_dispatch(
         &self,
         input_receivers: Vec<InitializingCountingReceiver>,
         num_workers: usize,
         runtime_handle: &mut RuntimeHandle,
-        batching_context: Arc<BatchingContext>,
+        batching_context: Arc<BatchingContext<S>>,
     ) -> SpawnedDispatchResult;
 }
 
@@ -57,12 +57,12 @@ impl RoundRobinDispatcher {
         }
     }
 
-    async fn dispatch_inner(
+    async fn dispatch_inner<S: BatchingStrategy + 'static>(
         worker_senders: Vec<Sender<Arc<MicroPartition>>>,
         input_receivers: Vec<InitializingCountingReceiver>,
         morsel_size_lower_bound: usize,
         morsel_size_upper_bound: usize,
-        batching_context: Arc<BatchingContext>,
+        batching_context: Arc<BatchingContext<S>>,
     ) -> DaftResult<()> {
         let mut next_worker_idx = 0;
         let mut send_to_next_worker = |data: Arc<MicroPartition>| {
@@ -76,12 +76,13 @@ impl RoundRobinDispatcher {
 
             while let Some(morsel) = receiver.recv().await {
                 buffer.push(&morsel);
-                let batch_size = batching_context.current_batch_size();
-                dbg!(batch_size);
+                let mut batch_size = batching_context.calculate_batch_size().await;
                 while let Some(batch) = buffer.next_batch_if_ready(Some(batch_size))? {
                     if send_to_next_worker(batch).await.is_err() {
                         return Ok(());
                     }
+
+                    batch_size = batching_context.calculate_batch_size().await;
                 }
             }
 
@@ -96,13 +97,13 @@ impl RoundRobinDispatcher {
     }
 }
 
-impl DispatchSpawner for RoundRobinDispatcher {
+impl<S: BatchingStrategy + 'static> DispatchSpawner<S> for RoundRobinDispatcher {
     fn spawn_dispatch(
         &self,
         input_receivers: Vec<InitializingCountingReceiver>,
         num_workers: usize,
         runtime_handle: &mut RuntimeHandle,
-        batching_context: Arc<BatchingContext>,
+        batching_context: Arc<BatchingContext<S>>,
     ) -> SpawnedDispatchResult {
         let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
             (0..num_workers).map(|_| create_channel(0)).unzip();
@@ -183,13 +184,13 @@ impl UnorderedDispatcher {
     }
 }
 
-impl DispatchSpawner for UnorderedDispatcher {
+impl<S: BatchingStrategy + 'static> DispatchSpawner<S> for UnorderedDispatcher {
     fn spawn_dispatch(
         &self,
         receiver: Vec<InitializingCountingReceiver>,
         num_workers: usize,
         runtime_handle: &mut RuntimeHandle,
-        batching_context: Arc<BatchingContext>,
+        batching_context: Arc<BatchingContext<S>>,
     ) -> SpawnedDispatchResult {
         let (worker_sender, worker_receiver) = create_channel(num_workers);
         let worker_receivers = vec![worker_receiver; num_workers];
@@ -244,13 +245,13 @@ impl PartitionedDispatcher {
     }
 }
 
-impl DispatchSpawner for PartitionedDispatcher {
+impl<S: BatchingStrategy + 'static> DispatchSpawner<S> for PartitionedDispatcher {
     fn spawn_dispatch(
         &self,
         input_receivers: Vec<InitializingCountingReceiver>,
         num_workers: usize,
         runtime_handle: &mut RuntimeHandle,
-        batching_context: Arc<BatchingContext>,
+        batching_context: Arc<BatchingContext<S>>,
     ) -> SpawnedDispatchResult {
         let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
             (0..num_workers).map(|_| create_channel(0)).unzip();

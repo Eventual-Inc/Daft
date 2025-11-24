@@ -144,4 +144,9 @@ impl IntermediateOperator for CrossJoinOperator {
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(CrossJoinState::new(self.state_bridge.clone()))
     }
+    fn batching_strategy(&self) -> Self::BatchingStrategy {
+        crate::dynamic_batching::DefaultBatchingStrategy::new(
+            self.morsel_size_requirement().as_ref(),
+        )
+    }
 }

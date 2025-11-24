@@ -21,6 +21,7 @@ use super::intermediate_op::{
 };
 use crate::{
     ExecutionTaskSpawner,
+    dynamic_batching::DefaultBatchingStrategy,
     pipeline::{MorselSizeRequirement, NodeName},
 };
 
@@ -140,7 +141,6 @@ impl DistributedActorPoolProjectOperator {
 
 impl IntermediateOperator for DistributedActorPoolProjectOperator {
     type State = DistributedActorPoolProjectState;
-
     #[instrument(skip_all, name = "DistributedActorPoolProjectOperator::execute")]
     fn execute(
         &self,
@@ -215,5 +215,8 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
         self.batch_size.map(MorselSizeRequirement::Strict)
+    }
+    fn batching_strategy(&self) -> Self::BatchingStrategy {
+        DefaultBatchingStrategy::new(self.morsel_size_requirement().as_ref())
     }
 }

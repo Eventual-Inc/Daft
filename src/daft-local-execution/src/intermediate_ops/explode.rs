@@ -141,4 +141,9 @@ impl IntermediateOperator for ExplodeOperator {
     fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
         Arc::new(ExplodeStats::new(id))
     }
+    fn batching_strategy(&self) -> Self::BatchingStrategy {
+        crate::dynamic_batching::DefaultBatchingStrategy::new(
+            self.morsel_size_requirement().as_ref(),
+        )
+    }
 }
