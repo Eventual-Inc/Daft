@@ -22,7 +22,7 @@ use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
     StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, dynamic_batching::StaticBatchingStrategy, pipeline::NodeName};
 
 fn build_rng(seed: Option<u64>) -> StdRng {
     match seed {
@@ -253,7 +253,7 @@ impl SampleSink {
 
 impl StreamingSink for SampleSink {
     type State = SampleState;
-
+    type BatchingStrategy = StaticBatchingStrategy;
     #[instrument(skip_all, name = "SampleSink::execute")]
     fn execute(
         &self,
@@ -373,5 +373,9 @@ impl StreamingSink for SampleSink {
             SamplingMethod::Fraction(_) => get_compute_pool_num_threads(),
             SamplingMethod::Size(_) => 1,
         }
+    }
+
+    fn batching_strategy(&self) -> Self::BatchingStrategy {
+        StaticBatchingStrategy::new(self.morsel_size_requirement().as_ref())
     }
 }
