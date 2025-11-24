@@ -299,8 +299,8 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         let strategy = LatencyConstrainedBatchingStrategy::new(
             Duration::from_secs_f64(2.0),
             Duration::from_millis(1000),
+            1024,
             16,
-            10,
             &self.morsel_size_requirement,
         );
         let mut handle = runtime_handle.handle();

@@ -73,15 +73,14 @@ impl RoundRobinDispatcher {
 
         for receiver in input_receivers {
             let mut buffer = RowBasedBuffer::new(morsel_size_lower_bound, morsel_size_upper_bound);
-            let batch_size = batching_context.current_batch_size();
-            dbg!(batch_size);
+
             while let Some(morsel) = receiver.recv().await {
                 buffer.push(&morsel);
-                if let Some(ready) = buffer.pop_enough()? {
-                    for r in ready {
-                        if send_to_next_worker(r).await.is_err() {
-                            return Ok(());
-                        }
+                let batch_size = batching_context.current_batch_size();
+                dbg!(batch_size);
+                while let Some(batch) = buffer.next_batch_if_ready(Some(batch_size))? {
+                    if send_to_next_worker(batch).await.is_err() {
+                        return Ok(());
                     }
                 }
             }
@@ -164,7 +163,7 @@ impl UnorderedDispatcher {
 
             while let Some(morsel) = receiver.recv().await {
                 buffer.push(&morsel);
-                if let Some(ready) = buffer.pop_enough()? {
+                if let Some(ready) = buffer.pop_enough(None)? {
                     for r in ready {
                         if worker_sender.send(r).await.is_err() {
                             return Ok(());

@@ -2,6 +2,7 @@ mod aimd;
 mod latency_constrained;
 
 use std::{
+    marker::PhantomData,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
