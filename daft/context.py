@@ -318,7 +318,7 @@ def set_execution_config(
             Whether to enable dynamic batching. Defaults to False.
             Note: dynamic_batching is only possible when maintain_order is False.
             If maintain_order=True and enable_dynamic_batching=True, dynamic batching will be disabled.
-        dynamic_batching_algorithm: The algorithm to use for dynamic batching. Defaults to 'aimd'.
+        dynamic_batching_algorithm: The algorithm to use for dynamic batching. Defaults to 'auto'.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()

@@ -623,11 +623,7 @@ impl IntermediateOperator for UdfOperator {
                 "latency_constrained" | "auto" => LatencyConstrainedBatchingStrategy::default()
                     .with_step_size(16)
                     .into(),
-                "aimd" => todo!(),
-                _ => panic!(
-                    "Invalid dynamic batching algorithm: {}",
-                    self.dynamic_batching_algorithm
-                ),
+                _ => unreachable!("should already be checked in the ctx"),
             }
         } else {
             StaticBatchingStrategy::new(self.morsel_size_requirement().as_ref()).into()
