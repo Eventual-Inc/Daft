@@ -305,6 +305,8 @@ impl StreamingSink for AntiSemiProbeSink {
         common_runtime::get_compute_pool_num_threads()
     }
     fn batching_strategy(&self) -> Self::BatchingStrategy {
-        crate::dynamic_batching::DefaultBatchingStrategy::new(self.morsel_size_requirement().as_ref())
+        crate::dynamic_batching::StaticBatchingStrategy::new(
+            self.morsel_size_requirement().as_ref(),
+        )
     }
 }

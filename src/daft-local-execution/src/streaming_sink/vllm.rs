@@ -23,7 +23,7 @@ use tracing::Span;
 
 use crate::{
     ExecutionTaskSpawner,
-    dynamic_batching::LatencyConstrainedBatchingStrategy,
+    dynamic_batching::StaticBatchingStrategy,
     pipeline::{MorselSizeRequirement, NodeName},
     streaming_sink::base::{
         StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
@@ -364,7 +364,7 @@ impl VLLMSink {
 
 impl StreamingSink for VLLMSink {
     type State = VLLMState;
-    type BatchingStrategy = LatencyConstrainedBatchingStrategy;
+    type BatchingStrategy = StaticBatchingStrategy;
 
     fn execute(
         &self,
@@ -472,6 +472,6 @@ impl StreamingSink for VLLMSink {
             .map(MorselSizeRequirement::Strict)
     }
     fn batching_strategy(&self) -> Self::BatchingStrategy {
-        LatencyConstrainedBatchingStrategy::default().with_step_size(16)
+        StaticBatchingStrategy::new(self.morsel_size_requirement().as_ref()).into()
     }
 }

@@ -18,7 +18,7 @@ use super::intermediate_op::{
 };
 use crate::{
     ExecutionTaskSpawner,
-    dynamic_batching::DefaultBatchingStrategy,
+    dynamic_batching::StaticBatchingStrategy,
     pipeline::{MorselSizeRequirement, NodeName},
 };
 
@@ -107,7 +107,7 @@ impl ProjectOperator {
 
 impl IntermediateOperator for ProjectOperator {
     type State = ();
-    type BatchingStrategy = DefaultBatchingStrategy;
+    type BatchingStrategy = StaticBatchingStrategy;
 
     #[instrument(skip_all, name = "ProjectOperator::execute")]
     fn execute(
@@ -174,7 +174,7 @@ impl IntermediateOperator for ProjectOperator {
     fn batching_strategy(&self) -> Self::BatchingStrategy {
         // TODO: instead of just using the default strategy here,
         // do something like the `try_get_batch_size` function, but for getting the batching_strategy
-        DefaultBatchingStrategy::new(self.morsel_size_requirement().as_ref())
+        StaticBatchingStrategy::new(self.morsel_size_requirement().as_ref())
     }
 }
 

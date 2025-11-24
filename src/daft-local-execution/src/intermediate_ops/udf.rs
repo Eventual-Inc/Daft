@@ -44,7 +44,9 @@ use super::intermediate_op::{
 };
 use crate::{
     ExecutionTaskSpawner,
-    dynamic_batching::LatencyConstrainedBatchingStrategy,
+    dynamic_batching::{
+        DynBatchingStrategy, LatencyConstrainedBatchingStrategy, StaticBatchingStrategy,
+    },
     pipeline::{MorselSizeRequirement, NodeName},
     runtime_stats::{Counter, RuntimeStats},
 };
@@ -404,6 +406,8 @@ pub(crate) struct UdfOperator {
     concurrency: usize,
     memory_request: u64,
     input_schema: SchemaRef,
+    enable_dynamic_batching: bool,
+    dynamic_batching_algorithm: String,
 }
 
 impl UdfOperator {
@@ -413,6 +417,8 @@ impl UdfOperator {
         passthrough_columns: Vec<BoundExpr>,
         output_schema: &SchemaRef,
         input_schema: &SchemaRef,
+        enable_dynamic_batching: bool,
+        dynamic_batching_algorithm: String,
     ) -> DaftResult<Self> {
         // Determine optimal parallelism
         let resource_request = udf_properties.resource_request.as_ref();
@@ -443,6 +449,8 @@ impl UdfOperator {
             concurrency,
             memory_request,
             input_schema: input_schema.clone(),
+            enable_dynamic_batching,
+            dynamic_batching_algorithm,
         })
     }
 
@@ -476,7 +484,7 @@ impl UdfOperator {
 
 impl IntermediateOperator for UdfOperator {
     type State = UdfState;
-    type BatchingStrategy = LatencyConstrainedBatchingStrategy;
+    type BatchingStrategy = DynBatchingStrategy;
 
     #[instrument(skip_all, name = "UdfOperator::execute")]
     fn execute(
@@ -610,6 +618,19 @@ impl IntermediateOperator for UdfOperator {
     }
 
     fn batching_strategy(&self) -> Self::BatchingStrategy {
-        LatencyConstrainedBatchingStrategy::default().with_step_size(16)
+        if self.enable_dynamic_batching {
+            match self.dynamic_batching_algorithm.as_str() {
+                "latency_constrained" | "auto" => LatencyConstrainedBatchingStrategy::default()
+                    .with_step_size(16)
+                    .into(),
+                "aimd" => todo!(),
+                _ => panic!(
+                    "Invalid dynamic batching algorithm: {}",
+                    self.dynamic_batching_algorithm
+                ),
+            }
+        } else {
+            StaticBatchingStrategy::new(self.morsel_size_requirement().as_ref()).into()
+        }
     }
 }

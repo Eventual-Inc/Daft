@@ -21,7 +21,7 @@ use super::intermediate_op::{
 };
 use crate::{
     ExecutionTaskSpawner,
-    dynamic_batching::DefaultBatchingStrategy,
+    dynamic_batching::StaticBatchingStrategy,
     pipeline::{MorselSizeRequirement, NodeName},
 };
 
@@ -217,6 +217,6 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         self.batch_size.map(MorselSizeRequirement::Strict)
     }
     fn batching_strategy(&self) -> Self::BatchingStrategy {
-        DefaultBatchingStrategy::new(self.morsel_size_requirement().as_ref())
+        StaticBatchingStrategy::new(self.morsel_size_requirement().as_ref())
     }
 }

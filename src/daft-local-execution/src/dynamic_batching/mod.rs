@@ -37,11 +37,11 @@ pub trait BatchingState {}
 impl BatchingState for () {}
 
 #[derive(Clone)]
-pub struct DefaultBatchingStrategy {
+pub struct StaticBatchingStrategy {
     batch_size: usize,
 }
 
-impl DefaultBatchingStrategy {
+impl StaticBatchingStrategy {
     pub fn new(morsel_size_req: Option<&MorselSizeRequirement>) -> Self {
         let batch_size = match morsel_size_req {
             Some(MorselSizeRequirement::Strict(v)) => *v,
@@ -49,11 +49,11 @@ impl DefaultBatchingStrategy {
             None => 128 * 1024,
         };
 
-        DefaultBatchingStrategy { batch_size }
+        StaticBatchingStrategy { batch_size }
     }
 }
 
-impl BatchingStrategy for DefaultBatchingStrategy {
+impl BatchingStrategy for StaticBatchingStrategy {
     type State = ();
     fn make_state(&self) -> Self::State {}
 

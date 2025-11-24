@@ -15,7 +15,7 @@ use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
     channel::{Receiver, create_channel},
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
-    dynamic_batching::{BatchingContext, DefaultBatchingStrategy},
+    dynamic_batching::{BatchingContext, StaticBatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
@@ -72,7 +72,7 @@ pub(crate) trait BlockingSink: Send + Sync {
     fn dispatch_spawner(
         &self,
         morsel_size_requirement: Option<MorselSizeRequirement>,
-    ) -> Arc<dyn DispatchSpawner<DefaultBatchingStrategy>> {
+    ) -> Arc<dyn DispatchSpawner<StaticBatchingStrategy>> {
         match morsel_size_requirement {
             Some(morsel_size_requirement) => {
                 Arc::new(UnorderedDispatcher::new(morsel_size_requirement))
@@ -262,7 +262,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         let num_workers = op.max_concurrency();
 
         let dispatch_spawner = op.dispatch_spawner(Some(self.morsel_size_requirement));
-        let strategy = DefaultBatchingStrategy::new(Some(&self.morsel_size_requirement));
+        let strategy = StaticBatchingStrategy::new(Some(&self.morsel_size_requirement));
         let mut handle = runtime_handle.handle();
         let batching_ctx = Arc::new(BatchingContext::new(strategy, &mut handle));
 

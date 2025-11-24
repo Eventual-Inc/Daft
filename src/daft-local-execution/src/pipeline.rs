@@ -598,6 +598,8 @@ fn physical_plan_to_pipeline(
                     passthrough_columns.clone(),
                     schema,
                     input.schema(),
+                    cfg.enable_dynamic_batching,
+                    cfg.dynamic_batching_algorithm.clone()
                 )
                 .with_context(|_| PipelineCreationSnafu {
                     plan_name: physical_plan.name(),
