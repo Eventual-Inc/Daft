@@ -43,9 +43,7 @@ Getting Started
 Installation
 ^^^^^^^^^^^^
 
-Install Daft with ``pip install daft``.
-
-Requires Python 3.10 or higher.
+Install Daft with ``pip install daft``. Requires Python 3.10 or higher.
 
 For more advanced installations (e.g. installing from source or with extra dependencies such as Ray and AWS utilities), please see our `Installation Guide <https://docs.daft.ai/en/stable/install/>`_
 
@@ -66,7 +64,6 @@ To see the full benchmarks, detailed setup, and logs, check out our `benchmarkin
 More Resources
 ^^^^^^^^^^^^^^
 
-* `Daft Quickstart <https://docs.daft.ai/en/stable/quickstart/>`_ - learn more about Daft's full range of capabilities including dataloading from URLs, joins, user-defined functions (UDF), groupby, aggregations and more.
 * `Examples <https://docs.daft.ai/en/stable/examples/>`_ - see Daft in action with use cases across text, images, audio, and more
 * `User Guide <https://docs.daft.ai/en/stable/>`_ - take a deep-dive into each topic within Daft
 * `API Reference <https://docs.daft.ai/en/stable/api/>`_ - API reference for public classes/functions of Daft
