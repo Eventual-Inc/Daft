@@ -4,12 +4,12 @@
 
 `Website <https://www.daft.ai>`_ • `Docs <https://docs.daft.ai>`_ • `Installation <https://docs.daft.ai/en/stable/install/>`_ • `Daft Quickstart <https://docs.daft.ai/en/stable/quickstart/>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
 
-Daft: Unified Engine for Data Analytics, Engineering & ML/AI
-============================================================
+Daft: High-Performance Data Engine for AI and Multimodal Workloads
+==================================================================
 
 |TrendShift|
 
-`Daft <https://www.daft.ai>`_ is a distributed query engine for large-scale data processing using Python or SQL, implemented in Rust.
+`Daft <https://www.daft.ai>`_ is a high-performance data engine for AI and multimodal workloads. Process images, audio, video, and structured data at any scale.
 
 * **Familiar interactive API:** Lazy Python Dataframe for rapid and interactive iteration, or SQL for analytical queries
 * **Focus on the what:** Powerful Query Optimizer that rewrites queries to be as efficient as possible
