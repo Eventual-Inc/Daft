@@ -66,7 +66,7 @@ def timingcontext(name: str) -> Generator[None, Any, None]:
     finally:
         end = time.time()
 
-        logger.debug("log_event:%s:%sms", name, f"{(end-start)*1000:.3f}")
+        logger.debug("log_event:%s:%sms", name, f"{(end - start) * 1000:.3f}")
 
 
 def log_event(name: str) -> _GeneratorContextManager[None]:
