@@ -210,6 +210,24 @@ def test_repr_functions_log1p() -> None:
     assert repr_out == repr(copied)
 
 
+def test_repr_functions_pow() -> None:
+    a = col("a")
+    y = a.pow(1.0)
+    repr_out = repr(y)
+    assert repr_out == "pow(col(a), lit(1.0))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
+def test_repr_functions_power() -> None:
+    a = col("a")
+    y = a.power(1.2)
+    repr_out = repr(y)
+    assert repr_out == "power(col(a), lit(1.2))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 def test_repr_functions_shift_left() -> None:
     a = col("a")
     b = col("b")
