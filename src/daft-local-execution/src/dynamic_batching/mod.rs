@@ -123,7 +123,7 @@ impl BatchingStrategy for DynBatchingStrategy {
 }
 
 pub struct BatchingContext<S: BatchingStrategy> {
-    current_batch_size: Arc<AtomicUsize>,
+    current_batch_size: AtomicUsize,
     pending_reports: Arc<Mutex<BatchReport>>,
     state: Arc<Mutex<S::State>>,
     strategy: S,
@@ -138,7 +138,7 @@ where
     pub fn new(strategy: S, runtime_handle: &RuntimeHandle) -> Self {
         let (tx, rx) = create_channel::<(Arc<dyn RuntimeStats>, usize, Duration)>(0);
         let state = strategy.make_state();
-        let current_batch_size = Arc::new(AtomicUsize::new(strategy.initial_batch_size()));
+        let current_batch_size = AtomicUsize::new(strategy.initial_batch_size());
         let state = Arc::new(Mutex::new(state));
         let pending_reports = Arc::new(Mutex::new(Vec::new()));
 
