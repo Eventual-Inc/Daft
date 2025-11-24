@@ -17,6 +17,7 @@ from daft.logical.schema import Schema
 from daft.recordbatch import RecordBatch
 
 from ..pushdowns import SupportsPushdownFilters
+from .point_lookup import detect_point_lookup_columns
 
 logger = logging.getLogger(__name__)
 
@@ -236,32 +237,40 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         fragments = self._ds.get_fragments()
         pushed_expr = self._combine_filters_to_arrow()
 
+        def _python_factory_func_scan_task(
+            fragment_ids: Optional[list[int]], *, limit: Optional[int] = None
+        ) -> ScanTask:
+            return ScanTask.python_factory_func_scan_task(
+                module=_lancedb_table_factory_function.__module__,
+                func_name=_lancedb_table_factory_function.__name__,
+                func_args=(
+                    self._ds.uri,
+                    open_kwargs,
+                    fragment_ids,
+                    required_columns,
+                    pushed_expr,
+                    limit,
+                ),
+                schema=self.schema()._schema,
+                num_rows=None,
+                size_bytes=None,
+                pushdowns=pushdowns,
+                stats=None,
+                source_type=self.name(),
+            )
+
+        if self._should_use_index_for_point_lookup():
+            yield _python_factory_func_scan_task(None, limit=self._compute_limit_pushdown_with_filter(pushdowns))
+            return
+
         if self._fragment_group_size is None or self._fragment_group_size <= 1:
-            # Default behavior: one fragment per task
+            # default behavior: one fragment per task
             for fragment in fragments:
-                size_bytes = None
-                stats = None
-                num_rows = None
                 if fragment.count_rows(pushed_expr) == 0:
                     continue
 
-                yield ScanTask.python_factory_func_scan_task(
-                    module=_lancedb_table_factory_function.__module__,
-                    func_name=_lancedb_table_factory_function.__name__,
-                    func_args=(
-                        self._ds.uri,
-                        open_kwargs,
-                        [fragment.fragment_id],
-                        required_columns,
-                        pushed_expr,
-                        self._compute_limit_pushdown_with_filter(pushdowns),
-                    ),
-                    schema=self.schema()._schema,
-                    num_rows=num_rows,
-                    size_bytes=size_bytes,
-                    pushdowns=pushdowns,
-                    stats=stats,
-                    source_type=self.name(),
+                yield _python_factory_func_scan_task(
+                    [fragment.fragment_id], limit=self._compute_limit_pushdown_with_filter(pushdowns)
                 )
         else:
             # Group fragments
@@ -283,27 +292,8 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             # Create scan tasks for each fragment group
             for fragment_group in fragment_groups:
                 fragment_ids = [fragment.fragment_id for fragment in fragment_group]
-                size_bytes = None
-                stats = None
-                num_rows = None
-
-                yield ScanTask.python_factory_func_scan_task(
-                    module=_lancedb_table_factory_function.__module__,
-                    func_name=_lancedb_table_factory_function.__name__,
-                    func_args=(
-                        self._ds.uri,
-                        open_kwargs,
-                        fragment_ids,
-                        required_columns,
-                        pushed_expr,
-                        self._compute_limit_pushdown_with_filter(pushdowns),
-                    ),
-                    schema=self.schema()._schema,
-                    num_rows=num_rows,
-                    size_bytes=size_bytes,
-                    pushdowns=pushdowns,
-                    stats=stats,
-                    source_type=self.name(),
+                yield _python_factory_func_scan_task(
+                    fragment_ids, limit=self._compute_limit_pushdown_with_filter(pushdowns)
                 )
 
     def _combine_filters_to_arrow(self) -> Optional["pa.compute.Expression"]:
@@ -323,3 +313,50 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             return None
 
         return pushdowns.limit
+
+    def _should_use_index_for_point_lookup(self) -> bool:
+        if not self._pushed_filters:
+            return False
+
+        try:
+            point_columns = detect_point_lookup_columns(
+                [Expression._from_pyexpr(expr) for expr in self._pushed_filters]
+            )
+        except Exception:
+            logger.warning("Failed to analyze filters for point lookup", exc_info=True)
+            return False
+
+        if not point_columns:
+            return False
+
+        point_column_set = set(point_columns)
+
+        try:
+            indices = self._ds.list_indices()
+        except Exception:
+            logger.warning("Unable to fetch Lance indices for dataset %s", self._ds.uri, exc_info=True)
+            return False
+
+        if not indices:
+            return False
+
+        for index in indices:
+            # Only enable index usage for equality/IN point-lookups on scalar-friendly indices.
+            # Lance supports many index types (BTREE, BITMAP, NGRAM, ZONEMAP, LABEL_LIST, INVERTED, BLOOMFILTER),
+            # but only BTREE/BITMAP/BLOOMFILTER are appropriate for exact equality/IN semantics.
+            index_type = str(index.get("type") or "").upper()
+            if index_type not in {"BTREE", "BITMAP", "BLOOMFILTER"}:
+                continue
+            fields = index.get("fields")
+            if not fields:
+                continue
+            prefix_len = 0
+            for field in fields:
+                if field in point_column_set:
+                    prefix_len += 1
+                else:
+                    break
+            if prefix_len > 0:
+                return True
+
+        return False

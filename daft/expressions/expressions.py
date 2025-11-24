@@ -244,6 +244,15 @@ class Expression:
         expr._expr = pyexpr
         return expr
 
+    def is_column(self) -> bool:
+        return bool(getattr(self._expr, "is_column", lambda: False)())
+
+    def is_literal(self) -> bool:
+        return bool(getattr(self._expr, "is_literal", lambda: False)())
+
+    def column_name(self) -> builtins.str | None:
+        return getattr(self._expr, "column_name", lambda: None)()
+
     @staticmethod
     def _to_expression(obj: object) -> Expression:
         if isinstance(obj, Expression):
