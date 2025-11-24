@@ -110,8 +110,7 @@ dev = [
   "pyarrow==22.0.0",
   "pyarrow-stubs==19.4",
   # Ray
-  "ray[data, client]==2.48.0; python_version >= '3.13' or platform_system != \"Linux\" or platform_machine != \"x86_64\"",
-  "ray[data, client]==2.34.0; python_version < '3.13' and platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+  "ray[data, client]==2.48.0",
   # Lance
   "pylance>=0.37.0",
   # Iceberg
