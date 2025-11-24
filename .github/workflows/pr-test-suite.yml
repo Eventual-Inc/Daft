@@ -29,7 +29,7 @@ jobs:
     outputs:
       skip: ${{ steps.filter.outputs.skip }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Detect non-trivial changes
       id: filter
@@ -110,7 +110,7 @@ jobs:
         docker-images: false
         swap-storage: true
 
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -125,7 +125,7 @@ jobs:
       run: rustup component add llvm-tools-preview
 
     - name: Setup Python and uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ matrix.python-version }}
         enable-cache: true
@@ -175,13 +175,13 @@ jobs:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
 
     - name: Upload coverage report
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: coverage-reports-unit-tests-${{ join(matrix.*, '-') }}
         path: ./report-output
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -222,12 +222,12 @@ jobs:
       matrix:
         python-version: ['3.10']
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
         fetch-depth: 0
     - name: Setup Python and uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ matrix.python-version }}
         enable-cache: true
@@ -260,7 +260,7 @@ jobs:
         source .venv/bin/activate
         maturin build --release --compatibility linux --out dist
     - name: Upload wheels
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: wheels-${{ matrix.python-version }}
         path: dist
@@ -273,18 +273,18 @@ jobs:
     env:
       package-name: daft
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v6
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
     - name: Setup Python and uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@v7
       with:
         python-version: '3.10'
         enable-cache: true
@@ -329,7 +329,7 @@ jobs:
         DAFT_RUNNER: ray
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -371,18 +371,18 @@ jobs:
         large-packages: false
         docker-images: false
         swap-storage: true
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v6
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
     - name: Setup Python and uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ matrix.python-version }}
         enable-cache: true
@@ -407,7 +407,7 @@ jobs:
         mkdir -p /tmp/daft-integration-testing/nginx
         chmod +rw /tmp/daft-integration-testing/nginx
     - name: Spin up IO services
-      uses: isbang/compose-action@v2.0.2
+      uses: isbang/compose-action@v2.4.1
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes
@@ -421,7 +421,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -469,18 +469,18 @@ jobs:
         large-packages: false
         docker-images: false
         swap-storage: true
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v6
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
     - name: Setup Python and uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ matrix.python-version }}
         enable-cache: true
@@ -505,13 +505,13 @@ jobs:
         mkdir -p /tmp/daft-integration-testing/nginx
         chmod +rw /tmp/daft-integration-testing/nginx
     - name: Assume GitHub Actions AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v5
       with:
         aws-region: us-west-2
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
         role-session-name: DaftPythonPackageGitHubWorkflow
     - name: Assume GitHub Actions GCloud Credentials
-      uses: google-github-actions/auth@v2
+      uses: google-github-actions/auth@v3
       with:
         credentials_json: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT_JSON }}
         # NOTE: Workload Identity seems to be having problems with our Rust crate, so we use JSON instead
@@ -519,7 +519,7 @@ jobs:
         # workload_identity_provider: ${{ secrets.ACTIONS_GCP_WORKLOAD_IDENTITY_PROVIDER }}
         # service_account: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT }}
     - name: Spin up IO services
-      uses: isbang/compose-action@v2.0.2
+      uses: isbang/compose-action@v2.4.1
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes
@@ -533,7 +533,7 @@ jobs:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         HF_TOKEN: ${{ secrets.ACTIONS_HF_TOKEN }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() }}
       with:
         payload: |
@@ -570,18 +570,18 @@ jobs:
         large-packages: false
         docker-images: false
         swap-storage: true
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v6
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
     - name: Setup Python and uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@v7
       with:
         python-version: '3.10'
         enable-cache: true
@@ -631,7 +631,7 @@ jobs:
         DAFT_RUNNER: ray
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -668,15 +668,15 @@ jobs:
         large-packages: false
         docker-images: false
         swap-storage: true
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-java@v4
+    - uses: actions/setup-java@v5
       with:
         distribution: 'temurin'
         java-version: '17'
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         repository: unitycatalog/unitycatalog
         ref: 20dd3820be332ac04deec4e063099fb863eb3392
@@ -686,13 +686,13 @@ jobs:
       working-directory: ./unitycatalog
       run: bin/start-uc-server -p 3000 &
     - name: Download built wheels
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v6
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
     - name: Setup Python and uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@v7
       with:
         python-version: '3.10'
         enable-cache: true
@@ -714,7 +714,7 @@ jobs:
           rm -rf daft
     # Iceberg test setup
     - uses: docker/setup-buildx-action@v3
-    - uses: docker/build-push-action@v5
+    - uses: docker/build-push-action@v6
       with:
         context: ./tests/integration/iceberg/docker-compose/
         file: ./tests/integration/iceberg/docker-compose/Dockerfile
@@ -824,7 +824,7 @@ jobs:
         popd
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -856,18 +856,18 @@ jobs:
         python-version: ['3.10']
         daft-runner: [ray, native]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v6
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
     - name: Setup Python and uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ matrix.python-version }}
         enable-cache: true
@@ -896,7 +896,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -928,18 +928,18 @@ jobs:
         python-version: ['3.10']
         daft-runner: [ray, native]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v6
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
     - name: Setup Python and uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ matrix.python-version }}
         enable-cache: true
@@ -969,7 +969,7 @@ jobs:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         OPENAI_API_KEY: ${{ secrets.ACTIONS_OPENAI_API_KEY }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -995,18 +995,18 @@ jobs:
     env:
       package-name: daft
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v6
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
     - name: Setup Python and uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@v7
       with:
         python-version: '3.10'
         enable-cache: true
@@ -1040,7 +1040,7 @@ jobs:
         DAFT_RUNNER: ray
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -1087,7 +1087,7 @@ jobs:
       package-name: daft
       RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1098,7 +1098,7 @@ jobs:
         cache-all-crates: 'true'
         cache-provider: buildjet
     - name: Setup Python and uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@v7
       with:
         python-version: '3.12'  # Codspeed requires Python 3.12
         enable-cache: true
@@ -1127,13 +1127,14 @@ jobs:
         path: data/tpch-dbgen
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
     - name: Run benchmarks
-      uses: CodSpeedHQ/action@v3
+      uses: CodSpeedHQ/action@v4
       with:
         run: source .venv/bin/activate; pytest tests/benchmarks/test_local_tpch.py tests/benchmarks/test_interactive_reads.py -m benchmark --codspeed
+        mode: "simulation"
       env:
         DAFT_RUNNER: native
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -1167,7 +1168,7 @@ jobs:
         - os: Windows
           on-main: false
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1185,12 +1186,12 @@ jobs:
     - name: Generate code coverage
       run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --exclude spark-connect --lcov --output-path ./report-output/lcov.info
     - name: Upload coverage report
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: coverage-reports-rust-tests-${{ runner.os }}
         path: ./report-output
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -1224,7 +1225,7 @@ jobs:
   check-unused-cargo-deps:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1251,7 +1252,7 @@ jobs:
         large-packages: false
         docker-images: false
         swap-storage: true
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1260,7 +1261,7 @@ jobs:
         prefix-key: ${{ runner.os }}-build
         cache-all-crates: 'true'
     - name: Setup Python and uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ env.python-version }}
         enable-cache: true
@@ -1292,8 +1293,8 @@ jobs:
     - unit-test
     - rust-tests-platform
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/download-artifact@v4
+    - uses: actions/checkout@v5
+    - uses: actions/download-artifact@v6
       with:
         pattern: coverage-reports*
         merge-multiple: true
@@ -1304,7 +1305,7 @@ jobs:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         files: ./report-output/*
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -1333,7 +1334,7 @@ jobs:
         os: [ubuntu, Windows]
         python-version: ['3.10']
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1343,7 +1344,7 @@ jobs:
         cache-all-crates: 'true'
 
     - name: Setup Python and uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ matrix.python-version }}
         enable-cache: true
@@ -1388,7 +1389,7 @@ jobs:
         python -c 'import daft; from daft import *'
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
@@ -1426,9 +1427,9 @@ jobs:
     env:
       python-version: '3.10'
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - name: Setup Python and uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ env.python-version }}
     - name: Setup Virtual Env
@@ -1456,7 +1457,7 @@ jobs:
         pre-commit run --all-files -v
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.0.0
+      uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
       with:
         payload: |
