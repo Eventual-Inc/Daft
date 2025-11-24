@@ -564,18 +564,15 @@ fn physical_plan_to_pipeline(
                 }
             })?;
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            match maybe_dynamically_batched(
-                cfg,
-                ctx,
-                schema,
-                stats_state,
-                context,
+            IntermediateNode::new(
                 Arc::new(proj_op),
-                child_node,
-            ) {
-                Ok(value) => value,
-                Err(value) => return value,
-            }
+                vec![child_node],
+                stats_state.clone(),
+                ctx,
+                schema.clone(),
+                context,
+            )
+            .boxed()
         }
         LocalPhysicalPlan::UDFProject(UDFProject {
             input,
@@ -617,18 +614,15 @@ fn physical_plan_to_pipeline(
                 .with_context(|_| PipelineCreationSnafu {
                     plan_name: physical_plan.name(),
                 })?;
-                match maybe_dynamically_batched(
-                    cfg,
-                    ctx,
-                    schema,
-                    stats_state,
-                    context,
+                IntermediateNode::new(
                     Arc::new(proj_op),
-                    child_node,
-                ) {
-                    Ok(value) => value,
-                    Err(value) => return value,
-                }
+                    vec![child_node],
+                    stats_state.clone(),
+                    ctx,
+                    schema.clone(),
+                    context,
+                )
+                .boxed()
             }
         }
         #[cfg(feature = "python")]
@@ -1579,78 +1573,79 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
+        
     };
 
     Ok(pipeline_node)
 }
 
-fn maybe_dynamically_batched<Op: IntermediateOperator + 'static>(
-    cfg: &Arc<DaftExecutionConfig>,
-    ctx: &RuntimeContext,
-    schema: &Arc<Schema>,
-    stats_state: &StatsState,
-    context: &LocalNodeContext,
-    proj_op: Arc<Op>,
-    child_node: Box<dyn PipelineNode>,
-) -> Result<Box<dyn PipelineNode>, Result<Box<dyn PipelineNode>, crate::Error>> {
-    if !cfg.maintain_order && cfg.enable_dynamic_batching {
-        Ok(match cfg.dynamic_batching_algorithm.as_str() {
-            "aimd" => {
-                let increase_amount = match proj_op.op_type() {
-                    NodeType::UDFProject => 16, // use a really increase amount for udfs as they are often expensive
-                    _ => 2048, // these are native functions and can usually handle larger batches
-                };
+// fn maybe_dynamically_batched<Op: IntermediateOperator + 'static>(
+//     cfg: &Arc<DaftExecutionConfig>,
+//     ctx: &RuntimeContext,
+//     schema: &Arc<Schema>,
+//     stats_state: &StatsState,
+//     context: &LocalNodeContext,
+//     proj_op: Arc<Op>,
+//     child_node: Box<dyn PipelineNode>,
+// ) -> Result<Box<dyn PipelineNode>, Result<Box<dyn PipelineNode>, crate::Error>> {
+//     if !cfg.maintain_order && cfg.enable_dynamic_batching {
+//         Ok(match cfg.dynamic_batching_algorithm.as_str() {
+//             "aimd" => {
+//                 let increase_amount = match proj_op.op_type() {
+//                     NodeType::UDFProject => 16, // use a really increase amount for udfs as they are often expensive
+//                     _ => 2048, // these are native functions and can usually handle larger batches
+//                 };
 
-                IntermediateNode::new(
-                    Arc::new(DynamicallyBatchedIntermediateOperator::new(
-                        proj_op,
-                        Arc::new(Mutex::new(
-                            AimdBatching::default().with_increase_amount(increase_amount),
-                        )),
-                    )),
-                    vec![child_node],
-                    stats_state.clone(),
-                    ctx,
-                    schema.clone(),
-                    context,
-                )
-                .boxed()
-            }
-            "latency_constrained" | "auto" => {
-                let step_size = match proj_op.op_type() {
-                    NodeType::UDFProject => 16, // use a really small step size for udfs as they are often expensive
-                    _ => 2048, // these are native functions and can usually handle larger batches
-                };
-                IntermediateNode::new(
-                    Arc::new(DynamicallyBatchedIntermediateOperator::new(
-                        proj_op,
-                        Arc::new(Mutex::new(
-                            LatencyConstrainedBatchingStrategy::default().with_step_size(step_size),
-                        )),
-                    )),
-                    vec![child_node],
-                    stats_state.clone(),
-                    ctx,
-                    schema.clone(),
-                    context,
-                )
-                .boxed()
-            }
-            _ => {
-                return Err(Err(crate::Error::ValueError {
-                    message: "Unsupported dynamic batching algorithm".to_string(),
-                }));
-            }
-        })
-    } else {
-        Ok(IntermediateNode::new(
-            proj_op,
-            vec![child_node],
-            stats_state.clone(),
-            ctx,
-            schema.clone(),
-            context,
-        )
-        .boxed())
-    }
-}
+//                 IntermediateNode::new(
+//                     Arc::new(DynamicallyBatchedIntermediateOperator::new(
+//                         proj_op,
+//                         Arc::new(Mutex::new(
+//                             AimdBatching::default().with_increase_amount(increase_amount),
+//                         )),
+//                     )),
+//                     vec![child_node],
+//                     stats_state.clone(),
+//                     ctx,
+//                     schema.clone(),
+//                     context,
+//                 )
+//                 .boxed()
+//             }
+//             "latency_constrained" | "auto" => {
+//                 let step_size = match proj_op.op_type() {
+//                     NodeType::UDFProject => 16, // use a really small step size for udfs as they are often expensive
+//                     _ => 2048, // these are native functions and can usually handle larger batches
+//                 };
+//                 IntermediateNode::new(
+//                     Arc::new(DynamicallyBatchedIntermediateOperator::new(
+//                         proj_op,
+//                         Arc::new(Mutex::new(
+//                             LatencyConstrainedBatchingStrategy::default().with_step_size(step_size),
+//                         )),
+//                     )),
+//                     vec![child_node],
+//                     stats_state.clone(),
+//                     ctx,
+//                     schema.clone(),
+//                     context,
+//                 )
+//                 .boxed()
+//             }
+//             _ => {
+//                 return Err(Err(crate::Error::ValueError {
+//                     message: "Unsupported dynamic batching algorithm".to_string(),
+//                 }));
+//             }
+//         })
+//     } else {
+//         Ok(IntermediateNode::new(
+//             proj_op,
+//             vec![child_node],
+//             stats_state.clone(),
+//             ctx,
+//             schema.clone(),
+//             context,
+//         )
+//         .boxed())
+//     }
+// }

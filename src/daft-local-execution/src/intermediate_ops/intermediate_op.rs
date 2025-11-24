@@ -19,6 +19,7 @@ use crate::{
         create_ordering_aware_receiver_channel,
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    dynamic_batching::{BatchingContext, DefaultBatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
@@ -281,9 +282,12 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         let num_workers = op.max_concurrency().context(PipelineExecutionSnafu {
             node_name: self.name().to_string(),
         })?;
+
         let (destination_sender, destination_receiver) = create_channel(0);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
-
+        let strategy = DefaultBatchingStrategy::new(&self.morsel_size_requirement);
+        let mut handle = runtime_handle.handle();
+        let batching_ctx = BatchingContext::new(strategy, &mut handle);
         let dispatch_spawner = self
             .intermediate_op
             .dispatch_spawner(self.morsel_size_requirement, maintain_order);
@@ -291,6 +295,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
             child_result_receivers,
             num_workers,
             &mut runtime_handle.handle(),
+            batching_ctx,
         );
         runtime_handle.spawn(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },

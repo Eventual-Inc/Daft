@@ -55,77 +55,7 @@ where
         mut state: Self::State,
         task_spawner: &crate::ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self> {
-        let inner_op = self.inner_op.clone();
-
-        let dynamic_batcher = self.dynamic_batcher.clone();
-        let task_spawner_clone = task_spawner.clone();
-        let morsel_size_requirement = self.morsel_size_requirement();
-
-        let fut = async move {
-            // if it has strict morsel size requirements. We don't do anything.
-            if let Some(MorselSizeRequirement::Strict(_)) = morsel_size_requirement {
-                let (inner_state, op_result) = inner_op
-                    .execute(input, state.inner_state, &task_spawner_clone)
-                    .await??;
-                state.inner_state = inner_state;
-                return Ok((state, op_result));
-            }
-
-            if state.current_input.is_none() {
-                state.current_input = Some(input);
-            }
-            if let Some(ref current_input) = state.current_input {
-                let total_rows = current_input.len();
-
-                // If we've processed all rows, we need more input
-                if state.row_offset >= total_rows {
-                    state.current_input = None;
-                    state.row_offset = 0;
-                    return Ok((state, IntermediateOperatorResult::NeedMoreInput(None)));
-                }
-
-                // Process a dynamic batch size
-                let batch_size = {
-                    dynamic_batcher
-                        .lock()
-                        .unwrap()
-                        .current_batch_size()
-                        .min(total_rows - state.row_offset)
-                };
-
-                let sub_partition =
-                    Arc::new(current_input.slice(state.row_offset, state.row_offset + batch_size)?);
-
-                let start_time = Instant::now();
-                let (inner_state, op_result) = inner_op
-                    .execute(sub_partition, state.inner_state, &task_spawner_clone)
-                    .await??;
-                let duration = start_time.elapsed();
-                state.inner_state = inner_state;
-                state.row_offset += batch_size;
-
-                // Update dynamic batching state
-                dynamic_batcher
-                    .lock()
-                    .unwrap()
-                    .adjust_batch_size(task_spawner_clone.runtime_stats.as_ref(), duration);
-                match op_result {
-                    IntermediateOperatorResult::HasMoreOutput(output) => {
-                        Ok((state, IntermediateOperatorResult::HasMoreOutput(output)))
-                    }
-                    IntermediateOperatorResult::NeedMoreInput(Some(output)) => {
-                        Ok((state, IntermediateOperatorResult::HasMoreOutput(output)))
-                    }
-                    IntermediateOperatorResult::NeedMoreInput(None) => {
-                        Ok((state, IntermediateOperatorResult::NeedMoreInput(None)))
-                    }
-                }
-            } else {
-                Ok((state, IntermediateOperatorResult::NeedMoreInput(None)))
-            }
-        };
-
-        task_spawner.spawn(fut, Span::current()).into()
+        todo!()
     }
 
     fn name(&self) -> crate::pipeline::NodeName {
