@@ -347,9 +347,9 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
-        let mut handle = runtime_handle.handle();
+        let handle = runtime_handle.handle();
         let strategy = op.batching_strategy();
-        let batching_ctx = Arc::new(BatchingContext::new(strategy, &mut handle));
+        let batching_ctx = Arc::new(BatchingContext::new(strategy, &handle));
         let dispatch_spawner = op.dispatch_spawner(self.morsel_size_requirement, maintain_order);
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             child_result_receivers,

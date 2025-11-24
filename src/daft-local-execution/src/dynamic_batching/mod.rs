@@ -49,7 +49,7 @@ impl StaticBatchingStrategy {
             None => 128 * 1024,
         };
 
-        StaticBatchingStrategy { batch_size }
+        Self { batch_size }
     }
 }
 
@@ -128,10 +128,10 @@ impl BatchingStrategy for DynBatchingStrategy {
 
 pub struct BatchingContext<S: BatchingStrategy> {
     current_batch_size: Arc<AtomicUsize>,
-    tx: Sender<(Arc<dyn RuntimeStats>, usize, Duration)>,
     pending_reports: Arc<Mutex<BatchReport>>,
-    strategy: S,
     state: Arc<Mutex<S::State>>,
+    strategy: S,
+    tx: Sender<(Arc<dyn RuntimeStats>, usize, Duration)>,
 }
 
 impl<S> BatchingContext<S>
@@ -139,7 +139,7 @@ where
     S: BatchingStrategy + 'static,
     S::State: 'static,
 {
-    pub fn new(strategy: S, runtime_handle: &mut RuntimeHandle) -> Self {
+    pub fn new(strategy: S, runtime_handle: &RuntimeHandle) -> Self {
         let (tx, rx) = create_channel::<(Arc<dyn RuntimeStats>, usize, Duration)>(0);
         let state = strategy.make_state();
         let current_batch_size = Arc::new(AtomicUsize::new(strategy.initial_batch_size()));
@@ -155,10 +155,10 @@ where
 
         Self {
             current_batch_size,
-            tx,
-            strategy,
-            state,
             pending_reports,
+            state,
+            strategy,
+            tx,
         }
     }
 

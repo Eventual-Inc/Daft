@@ -304,8 +304,8 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         let (destination_sender, destination_receiver) = create_channel(0);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
         let strategy = op.batching_strategy();
-        let mut handle = runtime_handle.handle();
-        let batching_ctx = Arc::new(BatchingContext::new(strategy, &mut handle));
+        let handle = runtime_handle.handle();
+        let batching_ctx = Arc::new(BatchingContext::new(strategy, &handle));
         let dispatch_spawner = self
             .intermediate_op
             .dispatch_spawner(self.morsel_size_requirement, maintain_order);
