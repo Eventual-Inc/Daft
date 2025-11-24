@@ -174,7 +174,7 @@ impl IntermediateOperator for ProjectOperator {
     fn batching_strategy(&self) -> Self::BatchingStrategy {
         // TODO: instead of just using the default strategy here,
         // do something like the `try_get_batch_size` function, but for getting the batching_strategy
-        StaticBatchingStrategy::new(self.morsel_size_requirement().as_ref())
+        StaticBatchingStrategy::new(self.morsel_size_requirement().unwrap_or_default())
     }
 }
 

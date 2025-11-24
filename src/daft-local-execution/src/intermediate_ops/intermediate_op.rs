@@ -69,13 +69,15 @@ pub(crate) trait IntermediateOperator: Send + Sync {
 
     fn dispatch_spawner(
         &self,
-        morsel_size_requirement: MorselSizeRequirement,
+        batching_ctx: Arc<BatchingContext<Self::BatchingStrategy>>,
         maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner<Self::BatchingStrategy>> {
+    ) -> Arc<dyn DispatchSpawner> {
         if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(morsel_size_requirement))
+            Arc::new(RoundRobinDispatcher::new(batching_ctx))
         } else {
-            Arc::new(UnorderedDispatcher::new(morsel_size_requirement))
+            Arc::new(UnorderedDispatcher::new(
+                batching_ctx.initial_requirements(),
+            ))
         }
     }
 }
@@ -308,12 +310,11 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         let batching_ctx = Arc::new(BatchingContext::new(strategy, &handle));
         let dispatch_spawner = self
             .intermediate_op
-            .dispatch_spawner(self.morsel_size_requirement, maintain_order);
+            .dispatch_spawner(batching_ctx.clone(), maintain_order);
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             child_result_receivers,
             num_workers,
             &mut runtime_handle.handle(),
-            batching_ctx.clone(),
         );
         runtime_handle.spawn(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },

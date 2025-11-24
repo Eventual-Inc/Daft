@@ -17,7 +17,7 @@ use crate::{
         OrderingAwareReceiver, Receiver, Sender, create_channel,
         create_ordering_aware_receiver_channel,
     },
-    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    dispatcher::{DispatchSpawner, DynamicUnorderedDispatcher, RoundRobinDispatcher},
     dynamic_batching::{BatchingContext, BatchingStrategy, StaticBatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
@@ -96,13 +96,13 @@ pub(crate) trait StreamingSink: Send + Sync {
     fn batching_strategy(&self) -> Self::BatchingStrategy;
     fn dispatch_spawner(
         &self,
-        morsel_size_requirement: MorselSizeRequirement,
+        batching_context: Arc<BatchingContext<Self::BatchingStrategy>>,
         maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner<Self::BatchingStrategy>> {
+    ) -> Arc<dyn DispatchSpawner> {
         if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(morsel_size_requirement))
+            Arc::new(RoundRobinDispatcher::new(batching_context))
         } else {
-            Arc::new(UnorderedDispatcher::new(morsel_size_requirement))
+            Arc::new(DynamicUnorderedDispatcher::new(batching_context))
         }
     }
 }
@@ -350,12 +350,11 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         let handle = runtime_handle.handle();
         let strategy = op.batching_strategy();
         let batching_ctx = Arc::new(BatchingContext::new(strategy, &handle));
-        let dispatch_spawner = op.dispatch_spawner(self.morsel_size_requirement, maintain_order);
+        let dispatch_spawner = op.dispatch_spawner(batching_ctx.clone(), maintain_order);
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             child_result_receivers,
             num_workers,
             &mut runtime_handle.handle(),
-            batching_ctx.clone(),
         );
         runtime_handle.spawn(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },

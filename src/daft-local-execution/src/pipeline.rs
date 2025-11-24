@@ -139,6 +139,13 @@ impl MorselSizeRequirement {
             }
         }
     }
+
+    pub fn values(&self) -> (usize, usize) {
+        match self {
+            Self::Strict(size) => (*size, *size),
+            Self::Flexible(lower, upper) => (*lower, *upper),
+        }
+    }
 }
 
 pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {

@@ -217,6 +217,6 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         self.batch_size.map(MorselSizeRequirement::Strict)
     }
     fn batching_strategy(&self) -> Self::BatchingStrategy {
-        StaticBatchingStrategy::new(self.morsel_size_requirement().as_ref())
+        StaticBatchingStrategy::new(self.morsel_size_requirement().unwrap_or_default())
     }
 }

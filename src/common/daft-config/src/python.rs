@@ -282,8 +282,9 @@ impl PyDaftExecutionConfig {
             config.enable_dynamic_batching = enable_dynamic_batching;
         }
         if let Some(dynamic_batching_algorithm) = dynamic_batching_algorithm {
-            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "dynamic_batching_algorithm must be 'auto', 'latency_constrained'",
+            if !matches!(dynamic_batching_algorithm, "latency_constrained" | "auto") {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "dynamic_batching_algorithm must be 'auto' or 'latency_constrained'",
                 ));
             }
             config.dynamic_batching_algorithm = dynamic_batching_algorithm.to_string();

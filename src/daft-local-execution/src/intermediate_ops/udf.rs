@@ -626,7 +626,7 @@ impl IntermediateOperator for UdfOperator {
                 _ => unreachable!("should already be checked in the ctx"),
             }
         } else {
-            StaticBatchingStrategy::new(self.morsel_size_requirement().as_ref()).into()
+            StaticBatchingStrategy::new(self.morsel_size_requirement().unwrap_or_default()).into()
         }
     }
 }

@@ -28,6 +28,11 @@ impl RowBasedBuffer {
             upper_bound,
         }
     }
+    pub fn update_bounds(&mut self, lower_bound: usize, upper_bound: usize) {
+        assert!(lower_bound <= upper_bound);
+        self.lower_bound = lower_bound;
+        self.upper_bound = upper_bound;
+    }
 
     // Push a morsel to the buffer
     pub fn push(&mut self, part: &Arc<MicroPartition>) {
@@ -35,18 +40,10 @@ impl RowBasedBuffer {
         self.buffer.push_back(part.clone());
     }
 
-    fn buffer_state(&self, target_size: Option<usize>) -> BufferState {
-        let (effective_lower, effective_upper) = match target_size {
-            Some(target_size) => (
-                target_size.min(self.lower_bound),
-                target_size.min(self.upper_bound),
-            ),
-            None => (self.lower_bound, self.upper_bound),
-        };
-
+    fn buffer_state(&self) -> BufferState {
         match (
-            effective_lower <= self.curr_len,
-            self.curr_len <= effective_upper,
+            self.lower_bound <= self.curr_len,
+            self.curr_len <= self.upper_bound,
         ) {
             (true, true) => BufferState::WithinRange,
             (true, false) => BufferState::AboveUpperBound,
@@ -61,11 +58,8 @@ impl RowBasedBuffer {
     // - If the buffer has more than enough morsels, return a vec of morsels, each correctly sized to the threshold.
     //   The remaining morsels will be pushed back to the buffer
     #[allow(dead_code)]
-    pub fn pop_enough(
-        &mut self,
-        target_size: Option<usize>,
-    ) -> DaftResult<Option<Vec<Arc<MicroPartition>>>> {
-        match self.buffer_state(target_size) {
+    pub fn pop_enough(&mut self) -> DaftResult<Option<Vec<Arc<MicroPartition>>>> {
+        match self.buffer_state() {
             BufferState::BelowLowerBound => Ok(None),
             BufferState::WithinRange => {
                 if self.buffer.len() == 1 {
@@ -79,15 +73,12 @@ impl RowBasedBuffer {
                 }
             }
             BufferState::AboveUpperBound => {
-                let effective_upper = target_size
-                    .map_or(self.upper_bound, |size| size.min(self.upper_bound))
-                    .max(1);
-                let num_ready_chunks = self.curr_len / effective_upper;
+                let num_ready_chunks = self.curr_len / self.upper_bound;
                 let concated = MicroPartition::concat(std::mem::take(&mut self.buffer))?;
                 let mut start = 0;
                 let mut parts_to_return = Vec::with_capacity(num_ready_chunks);
                 for _ in 0..num_ready_chunks {
-                    let end = start + effective_upper;
+                    let end = start + self.upper_bound;
                     let part = concated.slice(start, end)?;
                     parts_to_return.push(part.into());
                     start = end;
@@ -115,14 +106,11 @@ impl RowBasedBuffer {
             Ok(Some(concated.into()))
         }
     }
-    pub fn next_batch_if_ready(
-        &mut self,
-        target_size: Option<usize>,
-    ) -> DaftResult<Option<Arc<MicroPartition>>> {
+    pub fn next_batch_if_ready(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
         if self.buffer.is_empty() {
             Ok(None)
         } else {
-            match self.buffer_state(target_size) {
+            match self.buffer_state() {
                 BufferState::BelowLowerBound => Ok(None),
                 BufferState::WithinRange => {
                     // Return all data as one batch
@@ -138,17 +126,13 @@ impl RowBasedBuffer {
                 }
                 BufferState::AboveUpperBound => {
                     // Return one batch of target size, keep rest
-                    let effective_upper = target_size
-                        .map_or(self.upper_bound, |size| size.min(self.upper_bound))
-                        .max(1);
-
                     let concated = MicroPartition::concat(std::mem::take(&mut self.buffer))?;
 
-                    let batch = concated.slice(0, effective_upper)?;
+                    let batch = concated.slice(0, self.upper_bound)?;
 
                     // Put remainder back if any
-                    if effective_upper < concated.len() {
-                        let remainder = concated.slice(effective_upper, concated.len())?;
+                    if self.upper_bound < concated.len() {
+                        let remainder = concated.slice(self.upper_bound, concated.len())?;
                         self.curr_len = remainder.len();
                         self.buffer.push_back(remainder.into());
                     } else {
@@ -173,28 +157,28 @@ mod tests {
     fn test_buffer_state_transitions() -> DaftResult<()> {
         let mut buffer = RowBasedBuffer::new(10, 20);
 
-        assert_eq!(buffer.buffer_state(None), BufferState::BelowLowerBound);
+        assert_eq!(buffer.buffer_state(), BufferState::BelowLowerBound);
 
         // Add small chunk - should stay below lower bound
         buffer.push(&make_dummy_mp(5));
-        assert_eq!(buffer.buffer_state(None), BufferState::BelowLowerBound);
-        assert!(buffer.pop_enough(None)?.is_none());
+        assert_eq!(buffer.buffer_state(), BufferState::BelowLowerBound);
+        assert!(buffer.pop_enough()?.is_none());
 
         // Add more to get within range
         buffer.push(&make_dummy_mp(10));
-        assert_eq!(buffer.buffer_state(None), BufferState::WithinRange);
+        assert_eq!(buffer.buffer_state(), BufferState::WithinRange);
 
         // Pop should return combined chunks
-        let popped = buffer.pop_enough(None)?.unwrap();
+        let popped = buffer.pop_enough()?.unwrap();
         assert_eq!(popped.len(), 1);
         assert_eq!(popped[0].len(), 15);
 
         // Add chunks to exceed upper bound
         buffer.push(&make_dummy_mp(25));
-        assert_eq!(buffer.buffer_state(None), BufferState::AboveUpperBound);
+        assert_eq!(buffer.buffer_state(), BufferState::AboveUpperBound);
 
         // Should return chunks of upper_bound size
-        let popped = buffer.pop_enough(None)?.unwrap();
+        let popped = buffer.pop_enough()?.unwrap();
         assert_eq!(popped.len(), 1);
         assert_eq!(popped[0].len(), 20);
 

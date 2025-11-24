@@ -1,13 +1,8 @@
 mod latency_constrained;
 
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 
+use arc_swap::ArcSwap;
 pub use latency_constrained::*;
 use tokio::sync::Mutex;
 
@@ -28,25 +23,23 @@ pub trait BatchingStrategy: Send + Sync {
     type State: Send + Sync + Unpin;
     fn make_state(&self) -> Self::State;
     /// adjust the batch size based on runtime performance metrics
-    fn calculate_new_batch_size(&self, state: &mut Self::State, reports: BatchReport) -> usize;
+    fn calculate_new_requirements(
+        &self,
+        state: &mut Self::State,
+        reports: BatchReport,
+    ) -> MorselSizeRequirement;
 
-    fn initial_batch_size(&self) -> usize;
+    fn initial_requirements(&self) -> MorselSizeRequirement;
 }
 
 #[derive(Clone)]
 pub struct StaticBatchingStrategy {
-    batch_size: usize,
+    req: MorselSizeRequirement,
 }
 
 impl StaticBatchingStrategy {
-    pub fn new(morsel_size_req: Option<&MorselSizeRequirement>) -> Self {
-        let batch_size = match morsel_size_req {
-            Some(MorselSizeRequirement::Strict(v)) => *v,
-            Some(MorselSizeRequirement::Flexible(_, v)) => *v,
-            None => 128 * 1024,
-        };
-
-        Self { batch_size }
+    pub fn new(req: MorselSizeRequirement) -> Self {
+        Self { req }
     }
 }
 
@@ -54,23 +47,27 @@ impl BatchingStrategy for StaticBatchingStrategy {
     type State = ();
     fn make_state(&self) -> Self::State {}
 
-    fn calculate_new_batch_size(&self, _state: &mut Self::State, _reports: BatchReport) -> usize {
-        self.batch_size
+    fn calculate_new_requirements(
+        &self,
+        _state: &mut Self::State,
+        _reports: BatchReport,
+    ) -> MorselSizeRequirement {
+        self.req
     }
 
-    fn initial_batch_size(&self) -> usize {
-        self.batch_size
+    fn initial_requirements(&self) -> MorselSizeRequirement {
+        self.req
     }
 }
 
 #[allow(dead_code)]
 pub struct DynBatchingState {
-    update_fn: Box<dyn FnMut(BatchReport) -> usize + Send + Sync>,
+    update_fn: Box<dyn FnMut(BatchReport) -> MorselSizeRequirement + Send + Sync>,
 }
 
 #[allow(dead_code)]
 pub struct DynBatchingStrategy {
-    initial_size: usize,
+    initial_req: MorselSizeRequirement,
     make_state_fn: Box<dyn Fn() -> DynBatchingState + Send + Sync>,
 }
 
@@ -80,17 +77,17 @@ impl DynBatchingStrategy {
     where
         S::State: 'static,
     {
-        let initial_size = strategy.initial_batch_size();
+        let initial_req = strategy.initial_requirements();
 
         Self {
-            initial_size,
+            initial_req,
             make_state_fn: Box::new(move || {
                 let mut state = strategy.make_state();
                 let strategy_clone = strategy.clone();
 
                 DynBatchingState {
                     update_fn: Box::new(move |reports| {
-                        strategy_clone.calculate_new_batch_size(&mut state, reports)
+                        strategy_clone.calculate_new_requirements(&mut state, reports)
                     }),
                 }
             }),
@@ -113,17 +110,21 @@ impl BatchingStrategy for DynBatchingStrategy {
         (self.make_state_fn)()
     }
 
-    fn calculate_new_batch_size(&self, state: &mut Self::State, reports: BatchReport) -> usize {
+    fn calculate_new_requirements(
+        &self,
+        state: &mut Self::State,
+        reports: BatchReport,
+    ) -> MorselSizeRequirement {
         (state.update_fn)(reports)
     }
 
-    fn initial_batch_size(&self) -> usize {
-        self.initial_size
+    fn initial_requirements(&self) -> MorselSizeRequirement {
+        self.initial_req
     }
 }
 
 pub struct BatchingContext<S: BatchingStrategy> {
-    current_batch_size: AtomicUsize,
+    requirements: ArcSwap<MorselSizeRequirement>,
     pending_reports: Arc<Mutex<BatchReport>>,
     state: Arc<Mutex<S::State>>,
     strategy: S,
@@ -138,7 +139,8 @@ where
     pub fn new(strategy: S, runtime_handle: &RuntimeHandle) -> Self {
         let (tx, rx) = create_channel::<(Arc<dyn RuntimeStats>, usize, Duration)>(0);
         let state = strategy.make_state();
-        let current_batch_size = AtomicUsize::new(strategy.initial_batch_size());
+        let requirements = strategy.initial_requirements();
+        let requirements = ArcSwap::new(Arc::new(requirements));
         let state = Arc::new(Mutex::new(state));
         let pending_reports = Arc::new(Mutex::new(Vec::new()));
 
@@ -150,7 +152,7 @@ where
         });
 
         Self {
-            current_batch_size,
+            requirements,
             pending_reports,
             state,
             strategy,
@@ -158,18 +160,19 @@ where
         }
     }
 
-    pub async fn calculate_batch_size(&self) -> usize {
+    pub async fn calculate_batch_size(&self) -> MorselSizeRequirement {
         // Drain pending reports and process them all
         let mut reports = self.pending_reports.lock().await;
 
         if !reports.is_empty() {
             let mut state = self.state.lock().await;
-            let new_size = self
+            let new_reqs = self
                 .strategy
-                .calculate_new_batch_size(&mut state, std::mem::take(&mut *reports));
-            self.current_batch_size.store(new_size, Ordering::Relaxed);
+                .calculate_new_requirements(&mut state, std::mem::take(&mut *reports));
+            self.requirements.store(Arc::new(new_reqs));
         }
-        self.current_batch_size.load(Ordering::Relaxed)
+
+        *self.requirements.load().as_ref()
     }
 
     pub async fn record_execution_stats(
@@ -179,5 +182,9 @@ where
         duration: Duration,
     ) {
         self.tx.send((stats, batch_size, duration)).await.unwrap();
+    }
+
+    pub fn initial_requirements(&self) -> MorselSizeRequirement {
+        self.strategy.initial_requirements()
     }
 }

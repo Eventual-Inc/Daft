@@ -89,13 +89,13 @@ impl LatencyConstrainedBatchingStrategy {
         latency_slack: Duration,
         step_size_alpha: usize,
         correction_delta: usize,
-        morsel_size_req: Option<&MorselSizeRequirement>,
+        morsel_size_req: MorselSizeRequirement,
     ) -> Self {
         let (min, max) = match morsel_size_req {
-            Some(MorselSizeRequirement::Strict(v)) => (0, *v),
-            Some(MorselSizeRequirement::Flexible(min, max)) => (*min, *max),
-            None => (0, 128 * 1024),
+            MorselSizeRequirement::Strict(v) => (0, v),
+            MorselSizeRequirement::Flexible(min, max) => (min, max),
         };
+
         Self {
             target_batch_latency: target_decoding_latency,
             latency_tolerance: latency_slack,
@@ -165,15 +165,15 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
         LatencyConstrainedBatchingState::new(self.min_batch_size, self.min_batch_size, 256)
     }
 
-    fn initial_batch_size(&self) -> usize {
-        self.min_batch_size
+    fn initial_requirements(&self) -> MorselSizeRequirement {
+        MorselSizeRequirement::Flexible(1, 256)
     }
 
-    fn calculate_new_batch_size(
+    fn calculate_new_requirements(
         &self,
         state: &mut Self::State,
         batch: Vec<(std::sync::Arc<dyn RuntimeStats>, usize, Duration)>,
-    ) -> usize {
+    ) -> MorselSizeRequirement {
         let latency = avg_latency(batch.iter().map(|(_, _, latency)| *latency));
         let batch_size = avg_batch_size(batch.iter().map(|(_, batch_size, _)| *batch_size));
         let search_space = state.search_high.saturating_sub(state.search_low);
@@ -249,7 +249,7 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
             state.current_batch_size,
         );
 
-        state.current_batch_size
+        MorselSizeRequirement::Flexible(self.min_batch_size, state.current_batch_size)
     }
 }
 
