@@ -1,4 +1,4 @@
-use std::{cmp::max, sync::Arc, time::Duration};
+use std::{cmp::max, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
@@ -18,7 +18,7 @@ use super::intermediate_op::{
 };
 use crate::{
     ExecutionTaskSpawner,
-    dynamic_batching::LatencyConstrainedBatchingStrategy,
+    dynamic_batching::{DefaultBatchingStrategy, DynBatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName},
 };
 
@@ -107,7 +107,8 @@ impl ProjectOperator {
 
 impl IntermediateOperator for ProjectOperator {
     type State = ();
-    type BatchingStrategy = LatencyConstrainedBatchingStrategy;
+    type BatchingStrategy = DefaultBatchingStrategy;
+
     #[instrument(skip_all, name = "ProjectOperator::execute")]
     fn execute(
         &self,
@@ -169,14 +170,11 @@ impl IntermediateOperator for ProjectOperator {
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(())
     }
+
     fn batching_strategy(&self) -> Self::BatchingStrategy {
-        LatencyConstrainedBatchingStrategy::new(
-            Duration::from_millis(2000),
-            Duration::from_millis(1000),
-            1024,
-            16,
-            self.morsel_size_requirement().as_ref(),
-        )
+        // TODO: instead of just using the default strategy here,
+        // do something like the `try_get_batch_size` function, but for getting the batching_strategy
+        DefaultBatchingStrategy::new(self.morsel_size_requirement().as_ref())
     }
 }
 

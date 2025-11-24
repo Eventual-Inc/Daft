@@ -131,4 +131,9 @@ impl StreamingSink for LimitSink {
     fn max_concurrency(&self) -> usize {
         1
     }
+    fn batching_strategy(&self) -> Self::BatchingStrategy {
+        crate::dynamic_batching::DefaultBatchingStrategy::new(
+            self.morsel_size_requirement().as_ref(),
+        )
+    }
 }

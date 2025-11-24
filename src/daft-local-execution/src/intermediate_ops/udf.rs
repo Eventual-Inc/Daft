@@ -44,6 +44,7 @@ use super::intermediate_op::{
 };
 use crate::{
     ExecutionTaskSpawner,
+    dynamic_batching::LatencyConstrainedBatchingStrategy,
     pipeline::{MorselSizeRequirement, NodeName},
     runtime_stats::{Counter, RuntimeStats},
 };
@@ -475,6 +476,7 @@ impl UdfOperator {
 
 impl IntermediateOperator for UdfOperator {
     type State = UdfState;
+    type BatchingStrategy = LatencyConstrainedBatchingStrategy;
 
     #[instrument(skip_all, name = "UdfOperator::execute")]
     fn execute(
@@ -606,10 +608,8 @@ impl IntermediateOperator for UdfOperator {
             .batch_size
             .map(MorselSizeRequirement::Strict)
     }
-    
+
     fn batching_strategy(&self) -> Self::BatchingStrategy {
-        crate::dynamic_batching::DefaultBatchingStrategy::new(
-            self.morsel_size_requirement().as_ref(),
-        )
+        LatencyConstrainedBatchingStrategy::default().with_step_size(16)
     }
 }

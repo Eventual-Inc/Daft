@@ -1,4 +1,3 @@
-mod aimd;
 mod latency_constrained;
 
 use std::{
@@ -10,16 +9,16 @@ use std::{
     time::Duration,
 };
 
-pub use aimd::*;
 pub use latency_constrained::*;
 use tokio::sync::Mutex;
 
 use crate::{
-    ExecutionRuntimeContext, RuntimeHandle,
-    channel::{Receiver, Sender, create_channel},
+    RuntimeHandle,
+    channel::{Sender, create_channel},
     pipeline::MorselSizeRequirement,
     runtime_stats::RuntimeStats,
 };
+type BatchReport = (Arc<dyn RuntimeStats>, usize, Duration);
 
 /// Trait for algorithms that dynamically adjust batch sizes based on execution performance.
 ///
@@ -39,62 +38,117 @@ use crate::{
 /// let new_batch_size = algorithm.adjust_batch_size(&mut state, &rt_stats, Duration::from_millis(100));
 /// ```
 pub trait BatchingStrategy: Send + Sync {
-    type State: Send + Sync + Unpin;
+    type State: BatchingState + Send + Sync + Unpin;
     fn make_state(&self) -> Self::State;
     /// adjust the batch size based on runtime performance metrics
-    fn adjust_batch_size(
-        &self,
-        state: &mut Self::State,
-        _runtime_stats: &dyn RuntimeStats,
-        current_run_duration: Duration,
-    ) -> usize;
+    fn calculate_new_batch_size(&self, state: &mut Self::State, reports: Vec<BatchReport>)
+    -> usize;
 
-    fn adjust_batch_size_batched(
-        &self,
-        state: &mut Self::State,
-        batch: Vec<(Arc<dyn RuntimeStats>, usize, Duration)>,
-    ) -> usize {
-        self.current_batch_size(state)
-    }
-
-    fn current_batch_size(&self, state: &Self::State) -> usize;
+    fn initial_batch_size(&self) -> usize;
 }
+
+pub trait BatchingState {}
+impl BatchingState for () {}
+
+#[derive(Clone)]
 pub struct DefaultBatchingStrategy {
-    current_batch_size: usize,
+    batch_size: usize,
 }
+
 impl DefaultBatchingStrategy {
     pub fn new(morsel_size_req: Option<&MorselSizeRequirement>) -> Self {
-        let current_batch_size = match morsel_size_req {
+        let batch_size = match morsel_size_req {
             Some(MorselSizeRequirement::Strict(v)) => *v,
             Some(MorselSizeRequirement::Flexible(_, v)) => *v,
             None => 128 * 1024,
         };
 
-        DefaultBatchingStrategy { current_batch_size }
+        DefaultBatchingStrategy { batch_size }
     }
 }
 
 impl BatchingStrategy for DefaultBatchingStrategy {
     type State = ();
     fn make_state(&self) -> Self::State {}
-    fn adjust_batch_size(
+
+    fn calculate_new_batch_size(
         &self,
         _state: &mut Self::State,
-        _runtime_stats: &dyn RuntimeStats,
-        _current_run_duration: Duration,
+        _reports: Vec<BatchReport>,
     ) -> usize {
-        self.current_batch_size
+        self.batch_size
     }
 
-    fn current_batch_size(&self, _state: &Self::State) -> usize {
-        self.current_batch_size
+    fn initial_batch_size(&self) -> usize {
+        self.batch_size
+    }
+}
+
+pub struct DynBatchingState {
+    update_fn: Box<dyn FnMut(Vec<BatchReport>) -> usize + Send + Sync>,
+}
+impl BatchingState for DynBatchingState {}
+
+pub struct DynBatchingStrategy {
+    initial_size: usize,
+    make_state_fn: Box<dyn Fn() -> DynBatchingState + Send + Sync>,
+}
+
+impl DynBatchingStrategy {
+    pub fn new<S: BatchingStrategy + Clone + 'static>(strategy: S) -> Self
+    where
+        S::State: 'static,
+    {
+        let initial_size = strategy.initial_batch_size();
+
+        Self {
+            initial_size,
+            make_state_fn: Box::new(move || {
+                let mut state = strategy.make_state();
+                let strategy_clone = strategy.clone();
+
+                DynBatchingState {
+                    update_fn: Box::new(move |reports| {
+                        strategy_clone.calculate_new_batch_size(&mut state, reports)
+                    }),
+                }
+            }),
+        }
+    }
+}
+impl<S: BatchingStrategy + Clone + 'static> From<S> for DynBatchingStrategy
+where
+    S::State: 'static,
+{
+    fn from(strategy: S) -> Self {
+        Self::new(strategy)
+    }
+}
+
+impl BatchingStrategy for DynBatchingStrategy {
+    type State = DynBatchingState;
+
+    fn make_state(&self) -> Self::State {
+        (self.make_state_fn)()
+    }
+
+    fn calculate_new_batch_size(
+        &self,
+        state: &mut Self::State,
+        reports: Vec<BatchReport>,
+    ) -> usize {
+        (state.update_fn)(reports)
+    }
+
+    fn initial_batch_size(&self) -> usize {
+        self.initial_size
     }
 }
 
 pub struct BatchingContext<S: BatchingStrategy> {
     current_batch_size: Arc<AtomicUsize>,
-    tx: Sender<(Arc<dyn RuntimeStats>, usize, Duration)>,
-    pending_reports: Arc<Mutex<VecDeque<(Arc<dyn RuntimeStats>, usize, Duration)>>>,
+    tx: Sender<BatchReport>,
+    pending_reports: Arc<Mutex<VecDeque<BatchReport>>>,
     strategy: S,
     state: Arc<Mutex<S::State>>,
 }
@@ -107,7 +161,7 @@ where
     pub fn new(strategy: S, runtime_handle: &mut RuntimeHandle) -> Self {
         let (tx, rx) = create_channel::<(Arc<dyn RuntimeStats>, usize, Duration)>(0);
         let state = strategy.make_state();
-        let current_batch_size = Arc::new(AtomicUsize::new(strategy.current_batch_size(&state)));
+        let current_batch_size = Arc::new(AtomicUsize::new(strategy.initial_batch_size()));
         let state = Arc::new(Mutex::new(state));
         let pending_reports = Arc::new(Mutex::new(VecDeque::new()));
 
@@ -134,7 +188,7 @@ where
         if !reports.is_empty() {
             let mut state = self.state.lock().await;
             let reports = reports.drain(..).collect::<Vec<_>>();
-            let new_size = self.strategy.adjust_batch_size_batched(&mut state, reports);
+            let new_size = self.strategy.calculate_new_batch_size(&mut state, reports);
             self.current_batch_size.store(new_size, Ordering::Relaxed);
         }
         self.current_batch_size.load(Ordering::Relaxed)

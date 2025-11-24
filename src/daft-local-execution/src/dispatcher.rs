@@ -153,23 +153,25 @@ impl UnorderedDispatcher {
         }
     }
 
-    async fn dispatch_inner(
+    async fn dispatch_inner<S: BatchingStrategy + 'static>(
         worker_sender: Sender<Arc<MicroPartition>>,
         input_receivers: Vec<InitializingCountingReceiver>,
         morsel_size_lower_bound: usize,
         morsel_size_upper_bound: usize,
+        batching_context: Arc<BatchingContext<S>>,
     ) -> DaftResult<()> {
         for receiver in input_receivers {
             let mut buffer = RowBasedBuffer::new(morsel_size_lower_bound, morsel_size_upper_bound);
 
             while let Some(morsel) = receiver.recv().await {
                 buffer.push(&morsel);
-                if let Some(ready) = buffer.pop_enough(None)? {
-                    for r in ready {
-                        if worker_sender.send(r).await.is_err() {
-                            return Ok(());
-                        }
+                let mut batch_size = batching_context.calculate_batch_size().await;
+                while let Some(batch) = buffer.next_batch_if_ready(Some(batch_size))? {
+                    if worker_sender.send(batch).await.is_err() {
+                        return Ok(());
                     }
+
+                    batch_size = batching_context.calculate_batch_size().await;
                 }
             }
 
@@ -203,6 +205,7 @@ impl<S: BatchingStrategy + 'static> DispatchSpawner<S> for UnorderedDispatcher {
                 receiver,
                 morsel_size_lower_bound,
                 morsel_size_upper_bound,
+                batching_context,
             )
             .await
         });

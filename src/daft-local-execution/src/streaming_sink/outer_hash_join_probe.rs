@@ -712,4 +712,9 @@ impl StreamingSink for OuterHashJoinProbeSink {
     fn max_concurrency(&self) -> usize {
         common_runtime::get_compute_pool_num_threads()
     }
+    fn batching_strategy(&self) -> Self::BatchingStrategy {
+        crate::dynamic_batching::DefaultBatchingStrategy::new(
+            self.morsel_size_requirement().as_ref(),
+        )
+    }
 }

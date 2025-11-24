@@ -18,7 +18,7 @@ use crate::{
         create_ordering_aware_receiver_channel,
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    dynamic_batching::{BatchingContext, DefaultBatchingStrategy},
+    dynamic_batching::{BatchingContext, BatchingStrategy, DefaultBatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
@@ -47,6 +47,8 @@ pub(crate) type StreamingSinkFinalizeResult<Op> =
     OperatorOutput<DaftResult<StreamingSinkFinalizeOutput<Op>>>;
 pub(crate) trait StreamingSink: Send + Sync {
     type State: Send + Sync + Unpin;
+    type BatchingStrategy: BatchingStrategy + 'static = DefaultBatchingStrategy;
+
     /// Execute the StreamingSink operator on the morsel of input data,
     /// received from the child with the given index,
     /// with the given state.
@@ -91,7 +93,7 @@ pub(crate) trait StreamingSink: Send + Sync {
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
         None
     }
-
+    fn batching_strategy(&self) -> Self::BatchingStrategy;
     fn dispatch_spawner(
         &self,
         morsel_size_requirement: MorselSizeRequirement,

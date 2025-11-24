@@ -1,9 +1,4 @@
-use std::{
-    borrow::Cow,
-    collections::HashMap,
-    fmt::Display,
-    sync::{Arc, Mutex},
-};
+use std::{borrow::Cow, collections::HashMap, fmt::Display, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{
@@ -40,20 +35,13 @@ use snafu::ResultExt;
 use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
     channel::Receiver,
-    dynamic_batching::{AimdBatching, LatencyConstrainedBatchingStrategy},
     intermediate_ops::{
         cross_join::CrossJoinOperator,
         distributed_actor_pool_project::DistributedActorPoolProjectOperator,
-        dynamic_batching::DynamicallyBatchedIntermediateOperator,
-        explode::ExplodeOperator,
-        filter::FilterOperator,
-        inner_hash_join_probe::InnerHashJoinProbeOperator,
-        intermediate_op::{IntermediateNode, IntermediateOperator},
-        into_batches::IntoBatchesOperator,
-        project::ProjectOperator,
-        sample::SampleOperator,
-        udf::UdfOperator,
-        unpivot::UnpivotOperator,
+        explode::ExplodeOperator, filter::FilterOperator,
+        inner_hash_join_probe::InnerHashJoinProbeOperator, intermediate_op::IntermediateNode,
+        into_batches::IntoBatchesOperator, project::ProjectOperator, sample::SampleOperator,
+        udf::UdfOperator, unpivot::UnpivotOperator,
     },
     runtime_stats::RuntimeStats,
     sinks::{
@@ -1577,74 +1565,3 @@ fn physical_plan_to_pipeline(
 
     Ok(pipeline_node)
 }
-
-// fn maybe_dynamically_batched<Op: IntermediateOperator + 'static>(
-//     cfg: &Arc<DaftExecutionConfig>,
-//     ctx: &RuntimeContext,
-//     schema: &Arc<Schema>,
-//     stats_state: &StatsState,
-//     context: &LocalNodeContext,
-//     proj_op: Arc<Op>,
-//     child_node: Box<dyn PipelineNode>,
-// ) -> Result<Box<dyn PipelineNode>, Result<Box<dyn PipelineNode>, crate::Error>> {
-//     if !cfg.maintain_order && cfg.enable_dynamic_batching {
-//         Ok(match cfg.dynamic_batching_algorithm.as_str() {
-//             "aimd" => {
-//                 let increase_amount = match proj_op.op_type() {
-//                     NodeType::UDFProject => 16, // use a really increase amount for udfs as they are often expensive
-//                     _ => 2048, // these are native functions and can usually handle larger batches
-//                 };
-
-//                 IntermediateNode::new(
-//                     Arc::new(DynamicallyBatchedIntermediateOperator::new(
-//                         proj_op,
-//                         Arc::new(Mutex::new(
-//                             AimdBatching::default().with_increase_amount(increase_amount),
-//                         )),
-//                     )),
-//                     vec![child_node],
-//                     stats_state.clone(),
-//                     ctx,
-//                     schema.clone(),
-//                     context,
-//                 )
-//                 .boxed()
-//             }
-//             "latency_constrained" | "auto" => {
-//                 let step_size = match proj_op.op_type() {
-//                     NodeType::UDFProject => 16, // use a really small step size for udfs as they are often expensive
-//                     _ => 2048, // these are native functions and can usually handle larger batches
-//                 };
-//                 IntermediateNode::new(
-//                     Arc::new(DynamicallyBatchedIntermediateOperator::new(
-//                         proj_op,
-//                         Arc::new(Mutex::new(
-//                             LatencyConstrainedBatchingStrategy::default().with_step_size(step_size),
-//                         )),
-//                     )),
-//                     vec![child_node],
-//                     stats_state.clone(),
-//                     ctx,
-//                     schema.clone(),
-//                     context,
-//                 )
-//                 .boxed()
-//             }
-//             _ => {
-//                 return Err(Err(crate::Error::ValueError {
-//                     message: "Unsupported dynamic batching algorithm".to_string(),
-//                 }));
-//             }
-//         })
-//     } else {
-//         Ok(IntermediateNode::new(
-//             proj_op,
-//             vec![child_node],
-//             stats_state.clone(),
-//             ctx,
-//             schema.clone(),
-//             context,
-//         )
-//         .boxed())
-//     }
-// }
