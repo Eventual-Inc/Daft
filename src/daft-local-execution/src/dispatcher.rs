@@ -196,7 +196,7 @@ impl DispatchSpawner for UnorderedDispatcher {
 
 /// A dispatcher that distributes morsels to workers in an unordered fashion.
 /// Used if the operator does not require maintaining the order of the input.
-/// Same as UnorderedDispatcher but can dynamically adjust the batch size based off the batching strategy
+/// Same as UnorderedDispatcher but can dynamically adjust the batch size based on the batching strategy
 pub(crate) struct DynamicUnorderedDispatcher<S: BatchingStrategy + 'static> {
     batching_context: Arc<BatchingContext<S>>,
 }
