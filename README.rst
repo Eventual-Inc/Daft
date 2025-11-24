@@ -33,9 +33,9 @@ About Daft
 
 Daft was designed with the following principles in mind:
 
-1. **Any Data**: Beyond the usual strings/numbers/dates, Daft columns can also hold complex or nested multimodal data such as Images, Embeddings and Python objects efficiently with its Arrow based memory representation. Ingestion and basic transformations of multimodal data is extremely easy and performant in Daft.
-2. **Interactive Computing**: Daft is built for the interactive developer experience through notebooks or REPLs - intelligent caching/query optimizations accelerates your experimentation and data exploration.
-3. **Distributed Computing**: Some workloads can quickly outgrow your local laptop's computational resources - Daft integrates natively with `Ray <https://www.ray.io>`_ for running dataframes on large clusters of machines with thousands of CPUs/GPUs.
+1. **AI-Native**: Built-in support for LLM prompts, embeddings, and image classification. Run AI operations at scale without writing boilerplate code or managing infrastructure.
+2. **Any Modality**: Process images, audio, video, and embeddings alongside structured data in a single framework, with native types purpose-built for multimodal workloads.
+3. **Any Scale**: Start on your laptop, scale to thousands of CPUs/GPUs on `Ray <https://docs.daft.ai/en/stable/distributed/ray/>`_, `Kubernetes <https://docs.daft.ai/en/stable/distributed/kubernetes/>`_, or `Daft Cloud <https://www.eventual.ai/early-access>`_ without changing your code.
 
 Getting Started
 ---------------
