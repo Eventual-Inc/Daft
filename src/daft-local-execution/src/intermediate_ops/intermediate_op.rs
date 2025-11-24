@@ -65,7 +65,7 @@ pub(crate) trait IntermediateOperator: Send + Sync {
         None
     }
 
-    fn batching_strategy(&self) -> Self::BatchingStrategy;
+    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy>;
 
     fn dispatch_spawner(
         &self,
@@ -305,7 +305,9 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
 
         let (destination_sender, destination_receiver) = create_channel(0);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
-        let strategy = op.batching_strategy();
+        let strategy = op.batching_strategy().context(PipelineExecutionSnafu {
+            node_name: self.name().to_string(),
+        })?;
         let handle = runtime_handle.handle();
         let batching_ctx = Arc::new(BatchingContext::new(strategy, &handle));
         let dispatch_spawner = self

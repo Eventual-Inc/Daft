@@ -472,6 +472,6 @@ impl StreamingSink for VLLMSink {
             .map(MorselSizeRequirement::Strict)
     }
     fn batching_strategy(&self) -> Self::BatchingStrategy {
-        StaticBatchingStrategy::new(self.morsel_size_requirement().unwrap_or_default()).into()
+        StaticBatchingStrategy::new(self.morsel_size_requirement().unwrap_or_default())
     }
 }

@@ -406,8 +406,6 @@ pub(crate) struct UdfOperator {
     concurrency: usize,
     memory_request: u64,
     input_schema: SchemaRef,
-    enable_dynamic_batching: bool,
-    dynamic_batching_algorithm: String,
 }
 
 impl UdfOperator {
@@ -417,8 +415,6 @@ impl UdfOperator {
         passthrough_columns: Vec<BoundExpr>,
         output_schema: &SchemaRef,
         input_schema: &SchemaRef,
-        enable_dynamic_batching: bool,
-        dynamic_batching_algorithm: String,
     ) -> DaftResult<Self> {
         // Determine optimal parallelism
         let resource_request = udf_properties.resource_request.as_ref();
@@ -449,8 +445,6 @@ impl UdfOperator {
             concurrency,
             memory_request,
             input_schema: input_schema.clone(),
-            enable_dynamic_batching,
-            dynamic_batching_algorithm,
         })
     }
 
@@ -617,16 +611,35 @@ impl IntermediateOperator for UdfOperator {
             .map(MorselSizeRequirement::Strict)
     }
 
-    fn batching_strategy(&self) -> Self::BatchingStrategy {
-        if self.enable_dynamic_batching {
-            match self.dynamic_batching_algorithm.as_str() {
-                "latency_constrained" | "auto" => LatencyConstrainedBatchingStrategy::default()
-                    .with_step_size(16)
-                    .into(),
+    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
+        let cfg = daft_context::get_context().execution_config();
+
+        Ok(if cfg.enable_dynamic_batching {
+            match cfg.dynamic_batching_algorithm.as_str() {
+                "latency_constrained" | "auto" => {
+                    // TODO: allow udf to accept a min/max batch size instead of just a strict batch size.
+                    let reqs = self.morsel_size_requirement().unwrap_or_default();
+                    let MorselSizeRequirement::Flexible(min_batch_size, max_batch_size) = reqs
+                    else {
+                        return Err(DaftError::ValueError(
+                            "cannot use strict batch size requirement with dynamic batching"
+                                .to_string(),
+                        ));
+                    };
+                    LatencyConstrainedBatchingStrategy {
+                        target_batch_latency: Duration::from_millis(5000),
+                        latency_tolerance: Duration::from_millis(1000), // udf's have high variance so we have a high tolerance
+                        step_size_alpha: 16, // step size is small as udfs are expensive
+                        correction_delta: 4, // similarly the correction delta is small because the step size is small
+                        min_batch_size,
+                        max_batch_size,
+                    }
+                    .into()
+                }
                 _ => unreachable!("should already be checked in the ctx"),
             }
         } else {
             StaticBatchingStrategy::new(self.morsel_size_requirement().unwrap_or_default()).into()
-        }
+        })
     }
 }

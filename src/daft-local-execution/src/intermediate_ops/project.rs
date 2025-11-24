@@ -1,6 +1,6 @@
-use std::{cmp::max, sync::Arc};
+use std::{cmp::max, sync::Arc, time::Duration};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
 use common_runtime::get_compute_pool_num_threads;
 use daft_dsl::{
@@ -18,7 +18,9 @@ use super::intermediate_op::{
 };
 use crate::{
     ExecutionTaskSpawner,
-    dynamic_batching::StaticBatchingStrategy,
+    dynamic_batching::{
+        DynBatchingStrategy, LatencyConstrainedBatchingStrategy, StaticBatchingStrategy,
+    },
     pipeline::{MorselSizeRequirement, NodeName},
 };
 
@@ -107,7 +109,7 @@ impl ProjectOperator {
 
 impl IntermediateOperator for ProjectOperator {
     type State = ();
-    type BatchingStrategy = StaticBatchingStrategy;
+    type BatchingStrategy = DynBatchingStrategy;
 
     #[instrument(skip_all, name = "ProjectOperator::execute")]
     fn execute(
@@ -171,10 +173,35 @@ impl IntermediateOperator for ProjectOperator {
         Ok(())
     }
 
-    fn batching_strategy(&self) -> Self::BatchingStrategy {
-        // TODO: instead of just using the default strategy here,
-        // do something like the `try_get_batch_size` function, but for getting the batching_strategy
-        StaticBatchingStrategy::new(self.morsel_size_requirement().unwrap_or_default())
+    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
+        let cfg = daft_context::get_context().execution_config();
+
+        Ok(if cfg.enable_dynamic_batching {
+            match cfg.dynamic_batching_algorithm.as_str() {
+                "latency_constrained" | "auto" => {
+                    let reqs = self.morsel_size_requirement().unwrap_or_default();
+                    let MorselSizeRequirement::Flexible(min_batch_size, max_batch_size) = reqs
+                    else {
+                        return Err(DaftError::ValueError(
+                            "cannot use strict batch size requirement with dynamic batching"
+                                .to_string(),
+                        ));
+                    };
+                    LatencyConstrainedBatchingStrategy {
+                        target_batch_latency: Duration::from_millis(5000),
+                        latency_tolerance: Duration::from_millis(1000),
+                        step_size_alpha: 2048,
+                        correction_delta: 64,
+                        min_batch_size,
+                        max_batch_size,
+                    }
+                    .into()
+                }
+                _ => unreachable!("should already be checked in the ctx"),
+            }
+        } else {
+            StaticBatchingStrategy::new(self.morsel_size_requirement().unwrap_or_default()).into()
+        })
     }
 }
 

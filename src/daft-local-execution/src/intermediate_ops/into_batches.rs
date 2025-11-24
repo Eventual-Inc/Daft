@@ -78,9 +78,9 @@ impl IntermediateOperator for IntoBatchesOperator {
             }
         }
     }
-    fn batching_strategy(&self) -> Self::BatchingStrategy {
-        crate::dynamic_batching::StaticBatchingStrategy::new(
+    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
+        Ok(crate::dynamic_batching::StaticBatchingStrategy::new(
             self.morsel_size_requirement().unwrap_or_default(),
-        )
+        ))
     }
 }

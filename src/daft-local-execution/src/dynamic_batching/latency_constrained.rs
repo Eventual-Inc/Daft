@@ -53,88 +53,33 @@ pub struct LatencyConstrainedBatchingStrategy {
     /// Target maximum batch latency
     ///
     /// From paper Equation (3): D(b_t) ≤ D_SLA
-    target_batch_latency: Duration,
+    pub target_batch_latency: Duration,
     /// Slack/tolerance around target latency for stability.
     ///
     /// Prevents oscillation when latency hovers near the boundary.
     /// Typical value: 5-10% of target_batch_latency
-    latency_tolerance: Duration,
+    pub latency_tolerance: Duration,
     /// Step size (α) for adjusting search bounds when latency is out of range.
     ///
     /// Controls how aggressively the algorithm expands/contracts the search space.
     /// Larger values = faster adaptation but potentially more oscillation.
-    step_size_alpha: usize,
+    pub step_size_alpha: usize,
     /// Correction factor (δ) for small nudges when inside latency range.
     ///
     /// When latency is within the target, this controls how much to explore
     /// the search space around the current batch size.
     /// Typical value: 5-10
-    correction_delta: usize,
+    pub correction_delta: usize,
     /// Minimum allowed batch size (hard lower bound).
     ///
     /// Ensures we always process at least this many requests together.
     /// Typical value: 1
-    min_batch_size: usize,
+    pub min_batch_size: usize,
     /// Maximum allowed batch size (hard upper bound).
     ///
     /// Prevents excessive memory usage or OOM errors.
     /// From paper: corresponds to B_max constraint
-    max_batch_size: usize,
-}
-
-#[allow(dead_code)]
-impl LatencyConstrainedBatchingStrategy {
-    pub fn new(
-        target_decoding_latency: Duration,
-        latency_slack: Duration,
-        step_size_alpha: usize,
-        correction_delta: usize,
-        morsel_size_req: MorselSizeRequirement,
-    ) -> Self {
-        let (min, max) = match morsel_size_req {
-            MorselSizeRequirement::Strict(v) => (0, v),
-            MorselSizeRequirement::Flexible(min, max) => (min, max),
-        };
-
-        Self {
-            target_batch_latency: target_decoding_latency,
-            latency_tolerance: latency_slack,
-            step_size_alpha,
-            correction_delta,
-            min_batch_size: min,
-            max_batch_size: max,
-        }
-    }
-    pub fn with_target_batch_latency(mut self, target_batch_latency: Duration) -> Self {
-        self.target_batch_latency = target_batch_latency;
-        self
-    }
-    pub fn with_latency_tolerance(mut self, latency_tolerance: Duration) -> Self {
-        self.latency_tolerance = latency_tolerance;
-        self
-    }
-    pub fn with_correction_delta(mut self, correction_delta: usize) -> Self {
-        self.correction_delta = correction_delta;
-        self
-    }
-
-    pub fn with_step_size(mut self, step_size: usize) -> Self {
-        self.step_size_alpha = step_size;
-        self
-    }
-}
-
-impl Default for LatencyConstrainedBatchingStrategy {
-    fn default() -> Self {
-        Self {
-            target_batch_latency: Duration::from_millis(5000),
-            latency_tolerance: Duration::from_millis(1000),
-            step_size_alpha: 1024,
-            correction_delta: 10,
-            min_batch_size: 1,
-            max_batch_size: 128 * 1024,
-        }
-    }
+    pub max_batch_size: usize,
 }
 
 pub struct LatencyConstrainedBatchingState {
@@ -146,7 +91,7 @@ pub struct LatencyConstrainedBatchingState {
 impl LatencyConstrainedBatchingState {
     pub fn new(initial_batch_size: usize, min: usize, max: usize) -> Self {
         Self {
-            current_batch_size: initial_batch_size,
+            current_batch_size: initial_batch_size.max(1),
             search_low: min,
             search_high: max,
         }
@@ -166,6 +111,7 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
     }
 
     fn initial_requirements(&self) -> MorselSizeRequirement {
+        // start with a small initial batch size that matches our search space
         MorselSizeRequirement::Flexible(1, 256)
     }
 
