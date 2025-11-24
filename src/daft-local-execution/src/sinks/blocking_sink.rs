@@ -12,9 +12,15 @@ use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
 
 use crate::{
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet, channel::{Receiver, create_channel}, dispatcher::{DispatchSpawner, UnorderedDispatcher}, dynamic_batching::{BatchingContext, DefaultBatchingStrategy}, pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext}, resource_manager::MemoryManager, runtime_stats::{
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
+    channel::{Receiver, create_channel},
+    dispatcher::{DispatchSpawner, UnorderedDispatcher},
+    dynamic_batching::{BatchingContext, DefaultBatchingStrategy},
+    pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
+    resource_manager::MemoryManager,
+    runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
-    }
+    },
 };
 
 pub enum BlockingSinkStatus<Op: BlockingSink> {
@@ -66,7 +72,7 @@ pub(crate) trait BlockingSink: Send + Sync {
     fn dispatch_spawner(
         &self,
         morsel_size_requirement: Option<MorselSizeRequirement>,
-    ) -> Arc<dyn DispatchSpawner> {
+    ) -> Arc<dyn DispatchSpawner<DefaultBatchingStrategy>> {
         match morsel_size_requirement {
             Some(morsel_size_requirement) => {
                 Arc::new(UnorderedDispatcher::new(morsel_size_requirement))

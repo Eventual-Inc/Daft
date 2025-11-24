@@ -21,6 +21,7 @@ use super::blocking_sink::{
 use crate::{
     ExecutionTaskSpawner,
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
+    dynamic_batching::DefaultBatchingStrategy,
     pipeline::{MorselSizeRequirement, NodeName},
     runtime_stats::{Counter, RuntimeStats},
 };
@@ -228,7 +229,7 @@ impl BlockingSink for WriteSink {
     fn dispatch_spawner(
         &self,
         _morsel_size_requirement: Option<MorselSizeRequirement>,
-    ) -> Arc<dyn DispatchSpawner> {
+    ) -> Arc<dyn DispatchSpawner<DefaultBatchingStrategy>> {
         if let Some(partition_by) = &self.partition_by {
             Arc::new(PartitionedDispatcher::new(partition_by.clone()))
         } else {

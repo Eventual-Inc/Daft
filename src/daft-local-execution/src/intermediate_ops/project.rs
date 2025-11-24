@@ -18,7 +18,7 @@ use super::intermediate_op::{
 };
 use crate::{
     ExecutionTaskSpawner,
-    dynamic_batching::{DefaultBatchingStrategy, DynBatchingStrategy},
+    dynamic_batching::DefaultBatchingStrategy,
     pipeline::{MorselSizeRequirement, NodeName},
 };
 

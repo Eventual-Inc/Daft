@@ -100,8 +100,8 @@ pub struct LatencyConstrainedBatchingStrategy {
     max_batch_size: usize,
 }
 
+#[allow(dead_code)]
 impl LatencyConstrainedBatchingStrategy {
-    #[allow(dead_code)]
     pub fn new(
         target_decoding_latency: Duration,
         latency_slack: Duration,

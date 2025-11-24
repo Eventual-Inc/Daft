@@ -60,6 +60,7 @@ impl RowBasedBuffer {
     // - If the buffer has exactly enough morsels, return the morsels
     // - If the buffer has more than enough morsels, return a vec of morsels, each correctly sized to the threshold.
     //   The remaining morsels will be pushed back to the buffer
+    #[allow(dead_code)]
     pub fn pop_enough(
         &mut self,
         target_size: Option<usize>,

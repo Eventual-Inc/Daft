@@ -8,7 +8,7 @@ use crate::{
     RuntimeHandle, SpawnedTask,
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
-    dynamic_batching::{BatchingContext, BatchingStrategy, DefaultBatchingStrategy},
+    dynamic_batching::{BatchingContext, BatchingStrategy},
     pipeline::MorselSizeRequirement,
     runtime_stats::InitializingCountingReceiver,
 };
@@ -23,7 +23,7 @@ use crate::{
 ///
 /// Implementations must spawn a task on the runtime handle that reads from the
 /// input receivers and distributes morsels to the worker receivers.
-pub(crate) trait DispatchSpawner<S: BatchingStrategy = DefaultBatchingStrategy> {
+pub(crate) trait DispatchSpawner<S: BatchingStrategy> {
     fn spawn_dispatch(
         &self,
         input_receivers: Vec<InitializingCountingReceiver>,
@@ -254,7 +254,7 @@ impl<S: BatchingStrategy + 'static> DispatchSpawner<S> for PartitionedDispatcher
         input_receivers: Vec<InitializingCountingReceiver>,
         num_workers: usize,
         runtime_handle: &mut RuntimeHandle,
-        batching_context: Arc<BatchingContext<S>>,
+        _batching_context: Arc<BatchingContext<S>>, // partitioned dispatcher does not use the batching strategy
     ) -> SpawnedDispatchResult {
         let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
             (0..num_workers).map(|_| create_channel(0)).unzip();
