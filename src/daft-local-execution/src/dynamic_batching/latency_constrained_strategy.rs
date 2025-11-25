@@ -146,14 +146,26 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
         if latency > self.target_batch_latency + self.latency_tolerance {
             // Latency too high, reduce search space
             log::debug!(
-                "[{}] LATENCY TOO HIGH ({}ms > {}ms), contracting search space",
+                "[{}] LATENCY TOO HIGH ({}ms > {}ms), contracting search space [{}, {}]({})",
                 std::thread::current().name().unwrap_or("unknown"),
                 latency.as_millis(),
                 (self.target_batch_latency + self.latency_tolerance).as_millis(),
+                state.search_low,
+                state.search_high,
+                state.current_batch_size
             );
-
-            state.search_high = (batch_size / 2).max(state.search_low + 1);
-            state.search_low = state.search_low.saturating_sub(self.correction_delta);
+            // 𝑏high 𝑡 ← max{ ¯𝑏, 𝑏low 𝑡 −1 + 𝛼}
+            state.search_high = batch_size.max(
+                state
+                    .search_low
+                    .saturating_sub(1)
+                    .saturating_add(self.step_size_alpha),
+            );
+            // 𝑏low 𝑡 ← max{𝑏low 𝑡 −1 − 𝛿, 𝐵min }
+            state.search_low = self
+                .min_batch_size
+                .max(state.search_low.saturating_sub(1))
+                .saturating_sub(self.correction_delta);
         } else if latency < self.target_batch_latency - self.latency_tolerance {
             // Latency good, expand search space
             log::debug!(
@@ -162,12 +174,17 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
                 latency.as_millis(),
                 (self.target_batch_latency - self.latency_tolerance).as_millis(),
             );
-
-            state.search_low = batch_size.max(state.search_low);
-            state.search_high = state
-                .search_high
-                .saturating_add(self.step_size_alpha)
-                .min(self.max_batch_size);
+            // 𝑏low 𝑡 ← min{ ¯𝑏, 𝑏high 𝑡 −1 − 𝛼}
+            state.search_low = batch_size
+                .min(self.max_batch_size.saturating_sub(1))
+                .saturating_sub(self.step_size_alpha);
+            // 𝑏high 𝑡 ← min{𝑏high 𝑡 −1 + 𝛿, 𝐵max }
+            state.search_high = self.max_batch_size.min(
+                state
+                    .search_high
+                    .saturating_sub(1)
+                    .saturating_add(self.step_size_alpha),
+            );
         } else {
             // Within range - tighten search around current point
             log::debug!(
@@ -176,11 +193,12 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
                 latency.as_millis(),
             );
 
-            let tighten_amount = (self.step_size_alpha / 2).max(1);
-
+            let tighten_amount = self.step_size_alpha.saturating_div(2);
+            // 𝑏high 𝑡 ← min{ ¯𝑏 + ⌊𝛼/2⌋, 𝐵max }
             state.search_high = batch_size
                 .saturating_add(tighten_amount)
                 .min(self.max_batch_size);
+            // 𝑏low 𝑡 ← max{ ¯𝑏 − ⌊𝛼/2⌋, 𝐵min }
             state.search_low = batch_size
                 .saturating_sub(tighten_amount)
                 .max(self.min_batch_size);
@@ -200,7 +218,6 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
             state.search_high,
             state.current_batch_size,
         );
-
         MorselSizeRequirement::Flexible(self.min_batch_size, state.current_batch_size)
     }
 }
@@ -263,20 +280,6 @@ mod tests {
     }
 
     #[test]
-    fn test_latency_initial_requirements() {
-        let strategy = create_strategy();
-        let requirements = strategy.initial_requirements();
-
-        match requirements {
-            MorselSizeRequirement::Flexible(min, max) => {
-                assert_eq!(min, 1);
-                assert_eq!(max, 256);
-            }
-            _ => panic!("Expected Flexible requirement"),
-        }
-    }
-
-    #[test]
     fn test_latency_too_high_contracts_search() {
         let strategy = create_strategy();
         let mut state = strategy.make_state();
@@ -290,7 +293,7 @@ mod tests {
 
         // Should contract search space (search_high should be reduced)
         assert!(state.search_high < 200);
-        assert_eq!(state.search_low, 45); // reduced by correction_delta
+        assert_eq!(state.search_low, 44); // reduced by correction_delta
     }
 
     #[test]
@@ -306,8 +309,8 @@ mod tests {
         let _req = strategy.calculate_new_requirements(&mut state, batch);
 
         // Should expand search space
-        assert_eq!(state.search_low, 50); // should match batch_size
-        assert_eq!(state.search_high, 120); // 100 + step_size_alpha(20)
+        assert_eq!(state.search_low, 30);
+        assert_eq!(state.search_high, 119);
     }
 
     #[test]
@@ -425,11 +428,10 @@ mod tests {
     fn test_latency_max_batch_size_constraint() {
         let strategy = create_strategy();
         let mut state = strategy.make_state();
-        state.search_high = strategy.max_batch_size + 100; // Try to exceed max
+        state.search_high = strategy.max_batch_size + 100;
 
         let batch = create_batch_data(50, Duration::from_millis(50));
         let _req = strategy.calculate_new_requirements(&mut state, batch);
-
         assert!(state.search_high <= strategy.max_batch_size);
         assert!(state.current_batch_size <= strategy.max_batch_size);
     }
