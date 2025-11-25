@@ -207,7 +207,7 @@ pub(super) mod tests {
             let idle_secs_threshold: u64 = std::env::var("DAFT_AUTOSCALING_DOWNSCALE_IDLE_SECONDS")
                 .ok()
                 .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(60);
+                .unwrap_or(0);
             // Record test-only logs
             {
                 let mut calls = self.idle_calls.lock().expect("lock");
