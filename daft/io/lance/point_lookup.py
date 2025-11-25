@@ -1,13 +1,16 @@
-from __future__ import annotations
-
 """Utilities for detecting point-look-up style filter predicates."""
 
-from dataclasses import dataclass
-from typing import Iterable, Sequence
+from __future__ import annotations
 
-from daft.expressions import Expression
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
+    from daft.expressions import Expression
+    from daft.logical.schema import DataType
 from daft.expressions.visitor import PredicateVisitor
-from daft.logical.schema import DataType
 
 
 @dataclass(frozen=True)
@@ -16,7 +19,11 @@ class _PointPredicate:
 
 
 class _PointLookupVisitor(PredicateVisitor[list[_PointPredicate] | None]):
-    """Visitor that returns a list of point predicates or ``None`` if unsupported."""
+    """Visitor that returns a list of point predicates or ``None`` if unsupported.
+
+    Methods are typed against Expression only for type-checking; at runtime we rely on
+    Expression's duck-typed helpers (is_column, is_literal, column_name).
+    """
 
     def visit_and(self, left: Expression, right: Expression) -> list[_PointPredicate] | None:
         left_res = self.visit(left)
@@ -69,7 +76,13 @@ class _PointLookupVisitor(PredicateVisitor[list[_PointPredicate] | None]):
         return [_PointPredicate(column)]
 
     def visit_is_null(self, expr: Expression) -> list[_PointPredicate] | None:
-        return None
+        # Treat IS NULL as a point-lookup on the column; supported by BTREE.
+        if not expr.is_column():
+            return None
+        column = expr.column_name()
+        if column is None:
+            return None
+        return [_PointPredicate(column)]
 
     def visit_not_null(self, expr: Expression) -> list[_PointPredicate] | None:
         return None
@@ -106,7 +119,6 @@ def detect_point_lookup_columns(filters: Iterable[Expression]) -> list[str]:
 
     If any filter is not a supported point predicate, an empty list is returned.
     """
-
     visitor = _PointLookupVisitor()
     columns: list[str] = []
     for flt in filters:

@@ -40,10 +40,14 @@ def _lancedb_table_factory_function(
 
     # Attempt to import lance and reconstruct with best-effort kwargs
     ds = lance.dataset(ds_uri, **(open_kwargs or {}))
-    fragments = [ds.get_fragment(id) for id in (fragment_ids or [])]
-    if not fragments:
-        raise RuntimeError(f"Unable to find lance fragments {fragment_ids}")
-    scanner = ds.scanner(fragments=fragments, columns=required_columns, filter=filter, limit=limit)
+    # If fragment_ids is None, let Lance choose fragments via index; omit the fragments parameter.
+    if fragment_ids is None:
+        scanner = ds.scanner(columns=required_columns, filter=filter, limit=limit)
+    else:
+        fragments = [ds.get_fragment(id) for id in fragment_ids]
+        if not fragments:
+            raise RuntimeError(f"Unable to find lance fragments {fragment_ids}")
+        scanner = ds.scanner(fragments=fragments, columns=required_columns, filter=filter, limit=limit)
     return (RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch for rb in scanner.to_batches())
 
 
@@ -315,6 +319,11 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         return pushdowns.limit
 
     def _should_use_index_for_point_lookup(self) -> bool:
+        """Use index-driven scan only when all point-lookup columns have BTREE.
+
+        Otherwise fall back to fragment enumeration. Passing fragment_ids=None signals
+        index-driven scan; factory omits fragments so Lance selects them using indices.
+        """
         if not self._pushed_filters:
             return False
 
@@ -340,23 +349,19 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         if not indices:
             return False
 
+        # Decision: point-lookup uses index only if each column in the predicate has a BTREE index.
+        # Rationale: avoid partial/non-exact indices (e.g., bitmap/bloom) and Lance lacks composite-prefix semantics.
+        btree_indexed_columns: set[str] = set()
         for index in indices:
-            # Only enable index usage for equality/IN point-lookups on scalar-friendly indices.
-            # Lance supports many index types (BTREE, BITMAP, NGRAM, ZONEMAP, LABEL_LIST, INVERTED, BLOOMFILTER),
-            # but only BTREE/BITMAP/BLOOMFILTER are appropriate for exact equality/IN semantics.
             index_type = str(index.get("type") or "").upper()
-            if index_type not in {"BTREE", "BITMAP", "BLOOMFILTER"}:
+            if index_type != "BTREE":
                 continue
             fields = index.get("fields")
             if not fields:
                 continue
-            prefix_len = 0
             for field in fields:
-                if field in point_column_set:
-                    prefix_len += 1
-                else:
-                    break
-            if prefix_len > 0:
-                return True
-
+                btree_indexed_columns.add(field)
+        # Use index-driven scan only if every point-lookup column has a BTREE index.
+        if point_column_set and point_column_set.issubset(btree_indexed_columns):
+            return True
         return False
