@@ -152,7 +152,7 @@ impl<B: StorageBackend> AsyncFileWriter for JsonWriter<B> {
     }
 
     async fn close(&mut self) -> DaftResult<Self::Result> {
-        // Notes: if we have no data to write, we still need to create an empty parquet file.
+        // Notes: if we have no data to write, we still need to create an empty json file.
         if self.file_writer.is_none() {
             self.create_writer().await?;
         }
