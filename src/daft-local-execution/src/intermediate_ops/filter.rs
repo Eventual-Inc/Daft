@@ -100,7 +100,7 @@ impl FilterOperator {
 
 impl IntermediateOperator for FilterOperator {
     type State = ();
-
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "FilterOperator::execute")]
     fn execute(
         &self,

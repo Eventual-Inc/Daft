@@ -96,7 +96,7 @@ impl ExplodeOperator {
 
 impl IntermediateOperator for ExplodeOperator {
     type State = ();
-
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "ExplodeOperator::execute")]
     fn execute(
         &self,

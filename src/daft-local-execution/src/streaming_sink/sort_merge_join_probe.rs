@@ -72,7 +72,7 @@ impl SortMergeJoinProbe {
 
 impl StreamingSink for SortMergeJoinProbe {
     type State = SortMergeJoinProbeState;
-
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "SortMergeJoinProbe::execute")]
     fn execute(
         &self,

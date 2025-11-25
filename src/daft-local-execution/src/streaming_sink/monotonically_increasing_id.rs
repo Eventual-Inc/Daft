@@ -51,6 +51,7 @@ impl MonotonicallyIncreasingIdSink {
 
 impl StreamingSink for MonotonicallyIncreasingIdSink {
     type State = MonotonicallyIncreasingIdState;
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "MonotonicallyIncreasingIdSink::sink")]
     fn execute(
         &self,

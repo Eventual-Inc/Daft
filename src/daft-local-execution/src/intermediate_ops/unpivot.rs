@@ -42,7 +42,7 @@ impl UnpivotOperator {
 
 impl IntermediateOperator for UnpivotOperator {
     type State = ();
-
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "UnpivotOperator::execute")]
     fn execute(
         &self,

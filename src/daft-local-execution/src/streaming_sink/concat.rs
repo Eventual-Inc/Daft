@@ -16,6 +16,7 @@ pub struct ConcatSink {}
 
 impl StreamingSink for ConcatSink {
     type State = ();
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     /// By default, if the streaming_sink is called with maintain_order = true, input is distributed round-robin to the workers,
     /// and the output is received in the same order. Therefore, the 'execute' method does not need to do anything.
     /// If maintain_order = false, the input is distributed randomly to the workers, and the output is received in random order.

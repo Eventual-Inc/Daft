@@ -202,6 +202,7 @@ impl AntiSemiProbeSink {
 
 impl StreamingSink for AntiSemiProbeSink {
     type State = AntiSemiProbeState;
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "AntiSemiProbeSink::execute")]
     fn execute(
         &self,

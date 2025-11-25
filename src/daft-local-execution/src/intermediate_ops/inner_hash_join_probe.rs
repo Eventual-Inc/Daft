@@ -152,7 +152,7 @@ impl InnerHashJoinProbeOperator {
 
 impl IntermediateOperator for InnerHashJoinProbeOperator {
     type State = InnerHashJoinProbeState;
-
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "InnerHashJoinOperator::execute")]
     fn execute(
         &self,

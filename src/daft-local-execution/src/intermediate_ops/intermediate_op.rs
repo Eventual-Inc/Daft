@@ -19,7 +19,7 @@ use crate::{
         create_ordering_aware_receiver_channel,
     },
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    dynamic_batching::{BatchManager, BatchingStrategy, StaticBatchingStrategy},
+    dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
@@ -40,7 +40,7 @@ pub(crate) type IntermediateOpExecuteResult<Op> = OperatorOutput<
 >;
 pub(crate) trait IntermediateOperator: Send + Sync {
     type State: Send + Sync + Unpin;
-    type BatchingStrategy: BatchingStrategy + 'static = StaticBatchingStrategy;
+    type BatchingStrategy: BatchingStrategy + 'static;
     fn execute(
         &self,
         input: Arc<MicroPartition>,

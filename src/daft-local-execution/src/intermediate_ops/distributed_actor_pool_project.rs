@@ -140,6 +140,7 @@ impl DistributedActorPoolProjectOperator {
 
 impl IntermediateOperator for DistributedActorPoolProjectOperator {
     type State = DistributedActorPoolProjectState;
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "DistributedActorPoolProjectOperator::execute")]
     fn execute(
         &self,

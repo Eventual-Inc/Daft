@@ -29,7 +29,7 @@ impl IntoBatchesOperator {
 
 impl IntermediateOperator for IntoBatchesOperator {
     type State = ();
-
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     fn execute(
         &self,
         input: Arc<MicroPartition>,

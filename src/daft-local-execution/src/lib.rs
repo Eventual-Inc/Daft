@@ -1,4 +1,3 @@
-#![feature(associated_type_defaults)]
 mod buffer;
 mod channel;
 mod dispatcher;

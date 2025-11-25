@@ -538,6 +538,7 @@ impl OuterHashJoinProbeSink {
 
 impl StreamingSink for OuterHashJoinProbeSink {
     type State = OuterHashJoinState;
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "OuterHashJoinProbeSink::execute")]
     fn execute(
         &self,

@@ -47,7 +47,7 @@ impl LimitSink {
 
 impl StreamingSink for LimitSink {
     type State = LimitSinkState;
-
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "LimitSink::sink")]
     fn execute(
         &self,
