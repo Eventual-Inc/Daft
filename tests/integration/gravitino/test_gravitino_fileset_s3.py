@@ -126,7 +126,6 @@ def prepared_s3_fileset(
     )
 
     # Update catalog s3-endpoint to point to localhost for tests running outside Docker
-    print("[DEBUG] Updating catalog s3-endpoint from Docker network to localhost")
     update_catalog(
         local_gravitino_client,
         gravitino_metalake,
@@ -159,78 +158,39 @@ def prepared_s3_fileset(
 @pytest.mark.integration()
 def test_read_s3_fileset_over_gvfs(prepared_s3_fileset, gravitino_io_config):
     """Test reading parquet files from S3-backed fileset via gvfs:// protocol."""
-    print(f"\n[DEBUG] Step 1: Fixture prepared with data: {prepared_s3_fileset}")
-    print(f"[DEBUG] Step 2: GVFS root: {prepared_s3_fileset['gvfs_root']}")
-    print(f"[DEBUG] Step 3: File name: {prepared_s3_fileset['file_name']}")
-    print(f"[DEBUG] Step 4: Written files in S3: {prepared_s3_fileset['written_files']}")
-
     gvfs_file = f"{prepared_s3_fileset['gvfs_root']}/{prepared_s3_fileset['file_name']}"
-    print(f"[DEBUG] Step 5: Reading from GVFS path: {gvfs_file}")
-
     df = daft.read_parquet(gvfs_file, io_config=gravitino_io_config)
-    print("[DEBUG] Step 6: Successfully created dataframe, now sorting by 'id'")
-
     result = df.sort("id").to_pydict()
-    print(f"[DEBUG] Step 7: Sorted result: {result}")
-    print(f"[DEBUG] Step 8: Expected data: {prepared_s3_fileset['data']}")
-
     assert result == prepared_s3_fileset["data"]
-    print("[DEBUG] Step 9: Assertion passed - test completed successfully")
 
 
 @pytest.mark.integration()
 def test_list_s3_files_via_glob(prepared_s3_fileset, gravitino_io_config):
     """Test listing files in S3-backed fileset using glob patterns."""
-    print(f"\n[DEBUG] Step 1: Starting glob test with GVFS root: {prepared_s3_fileset['gvfs_root']}")
-
     glob_pattern = f"{prepared_s3_fileset['gvfs_root']}/**/*.parquet"
-    print(f"[DEBUG] Step 2: Glob pattern: {glob_pattern}")
-
     file_infos = glob_path_with_stats(glob_pattern, FileFormat.Parquet, gravitino_io_config)
-    print(f"[DEBUG] Step 3: Found {len(file_infos.file_paths)} files")
-    print(f"[DEBUG] Step 4: File paths: {file_infos.file_paths}")
 
     # write_parquet creates a directory, so we expect files inside test_data.parquet/
     expected_prefix = f"{prepared_s3_fileset['gvfs_root']}/{prepared_s3_fileset['file_name']}/"
-    print(f"[DEBUG] Step 5: Expected prefix: {expected_prefix}")
 
     assert len(file_infos.file_paths) > 0
-    print("[DEBUG] Step 6: Verified file count > 0")
-
     assert all(path.startswith(expected_prefix) for path in file_infos.file_paths)
-    print("[DEBUG] Step 7: Verified all paths start with expected prefix")
-
     assert all(path.endswith(".parquet") for path in file_infos.file_paths)
-    print("[DEBUG] Step 8: Verified all paths end with .parquet - test completed successfully")
 
 
 @pytest.mark.integration()
 def test_from_glob_path_s3_reads_files(prepared_s3_fileset, gravitino_io_config):
     """Test using from_glob_path to read files from S3-backed fileset."""
-    print(f"\n[DEBUG] Step 1: Starting from_glob_path test with GVFS root: {prepared_s3_fileset['gvfs_root']}")
-
     glob_pattern = f"{prepared_s3_fileset['gvfs_root']}/**/*.parquet"
-    print(f"[DEBUG] Step 2: Glob pattern: {glob_pattern}")
-
     files_df = daft.from_glob_path(glob_pattern, io_config=gravitino_io_config)
-    print("[DEBUG] Step 3: Created dataframe from glob path")
-
     collected = files_df.collect().to_pydict()
-    print(f"[DEBUG] Step 4: Collected {len(collected['path'])} paths")
-    print(f"[DEBUG] Step 5: Paths: {collected['path']}")
 
     # write_parquet creates a directory, so we expect files inside test_data.parquet/
     expected_prefix = f"{prepared_s3_fileset['gvfs_root']}/{prepared_s3_fileset['file_name']}/"
-    print(f"[DEBUG] Step 6: Expected prefix: {expected_prefix}")
 
     assert len(collected["path"]) > 0
-    print("[DEBUG] Step 7: Verified path count > 0")
-
     assert all(path.startswith(expected_prefix) for path in collected["path"])
-    print("[DEBUG] Step 8: Verified all paths start with expected prefix")
-
     assert all(path.endswith(".parquet") for path in collected["path"])
-    print("[DEBUG] Step 9: Verified all paths end with .parquet - test completed successfully")
 
 
 @pytest.mark.integration()
@@ -242,8 +202,6 @@ def test_s3_fileset_partitioned_data(
     s3_bucket,
 ):
     """Test S3 fileset with partitioned parquet data."""
-    print(f"\n[DEBUG] Step 1: Starting partitioned data test with bucket: {s3_bucket}")
-
     # Create partitioned data in a subfolder
     sample_data = {
         "id": [1, 2, 3, 4, 5, 6],
@@ -251,14 +209,10 @@ def test_s3_fileset_partitioned_data(
         "value": [10, 20, 30, 40, 50, 60],
     }
     df = daft.from_pydict(sample_data)
-    print("[DEBUG] Step 2: Created dataframe with partitioned data")
 
     test_subfolder = f"partitioned_data_{uuid.uuid4().hex[:8]}"
     s3_path = f"s3://{s3_bucket}/{test_subfolder}"
-    print(f"[DEBUG] Step 3: Writing partitioned data to: {s3_path}")
-
     df.write_parquet(s3_path, partition_cols=["category"], io_config=gravitino_minio_io_config)
-    print("[DEBUG] Step 4: Finished writing partitioned parquet data")
 
     # Verify the file was written by listing the bucket
     fs = s3fs.S3FileSystem(
@@ -268,11 +222,9 @@ def test_s3_fileset_partitioned_data(
     )
 
     written_files = fs.find(f"{s3_bucket}/{test_subfolder}")
-    print(f"[DEBUG] Step 5: Found {len(written_files)} files in S3")
     assert len(written_files) > 0, f"No files written to s3://{s3_bucket}/{test_subfolder}"
 
     parquet_files = [f for f in written_files if f.endswith(".parquet")]
-    print(f"[DEBUG] Step 6: Found {len(parquet_files)} parquet files: {parquet_files}")
     assert len(parquet_files) > 0, f"No parquet files found in s3://{s3_bucket}/{test_subfolder}"
 
     # Create fileset
@@ -280,11 +232,8 @@ def test_s3_fileset_partitioned_data(
     schema_name = f"part_schema_{uuid.uuid4().hex[:8]}"
     fileset_name = f"part_fileset_{uuid.uuid4().hex[:8]}"
     storage_uri = f"s3a://{s3_bucket}/{test_subfolder}/"
-    print(f"[DEBUG] Step 7: Creating Gravitino fileset: {catalog_name}.{schema_name}.{fileset_name}")
 
     ensure_metalake(local_gravitino_client, gravitino_metalake)
-    print("[DEBUG] Step 8: Ensured metalake exists")
-
     create_catalog(
         local_gravitino_client,
         gravitino_metalake,
@@ -296,11 +245,7 @@ def test_s3_fileset_partitioned_data(
             "s3-secret-access-key": "minioadmin",
         },
     )
-    print("[DEBUG] Step 9: Created catalog")
-
     create_schema(local_gravitino_client, gravitino_metalake, catalog_name, schema_name)
-    print("[DEBUG] Step 10: Created schema")
-
     create_fileset(
         local_gravitino_client,
         gravitino_metalake,
@@ -309,43 +254,31 @@ def test_s3_fileset_partitioned_data(
         fileset_name,
         storage_uri,
     )
-    print(f"[DEBUG] Step 11: Created fileset with storage URI: {storage_uri}")
 
     # Update catalog s3-endpoint to point to localhost for tests running outside Docker
-    print("[DEBUG] Updating catalog s3-endpoint from Docker network to localhost")
     update_catalog(
         local_gravitino_client,
         gravitino_metalake,
         catalog_name,
         updates=[{"@type": "setProperty", "property": "s3-endpoint", "value": "http://127.0.0.1:9000"}],
     )
+
     try:
         gvfs_root = f"gvfs://fileset/{catalog_name}/{schema_name}/{fileset_name}"
         glob_pattern = f"{gvfs_root}/**/*.parquet"
-        print(f"[DEBUG] Step 12: Reading from GVFS path: {glob_pattern}")
 
         # Read all partitions
         read_df = daft.read_parquet(glob_pattern, io_config=gravitino_io_config)
-        print("[DEBUG] Step 13: Created dataframe, now sorting")
-
         result = read_df.sort("id").to_pydict()
-        print(f"[DEBUG] Step 14: Sorted result: {result}")
 
         assert len(result["id"]) == 6
-        print("[DEBUG] Step 15: Verified result has 6 rows")
-
         assert result["id"] == [1, 2, 3, 4, 5, 6]
-        print("[DEBUG] Step 16: Verified id values")
-
         assert result["category"] == ["A", "A", "B", "B", "C", "C"]
-        print("[DEBUG] Step 17: Verified category values - test completed successfully")
 
     finally:
-        print("[DEBUG] Step 18: Cleaning up Gravitino resources")
         delete_fileset(local_gravitino_client, gravitino_metalake, catalog_name, schema_name, fileset_name)
         delete_schema(local_gravitino_client, gravitino_metalake, catalog_name, schema_name)
         delete_catalog(local_gravitino_client, gravitino_metalake, catalog_name)
-        print("[DEBUG] Step 19: Cleanup completed")
 
 
 @pytest.mark.integration()
@@ -394,7 +327,6 @@ def test_s3_fileset_empty_glob(
     )
 
     # Update catalog s3-endpoint to point to localhost for tests running outside Docker
-    print("[DEBUG] Updating catalog s3-endpoint from Docker network to localhost")
     update_catalog(
         local_gravitino_client,
         gravitino_metalake,
