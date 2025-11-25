@@ -59,8 +59,8 @@ impl<S: BatchingStrategy + 'static> RoundRobinDispatcher<S> {
             next_worker_idx = (next_worker_idx + 1) % worker_senders.len();
             next_worker_sender.send(data)
         };
-        let (lower, upper) = batch_manager.initial_requirements().values();
 
+        let (lower, upper) = batch_manager.initial_requirements().values();
         for receiver in input_receivers {
             let mut buffer = RowBasedBuffer::new(lower, upper);
 

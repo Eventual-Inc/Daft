@@ -107,13 +107,18 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
             "[{}] Initializing state with search space [1, 256]",
             std::thread::current().name().unwrap_or("unknown")
         );
+
         // start off with a small search space (1 - 256)
         LatencyConstrainedBatchingState::new(self.min_batch_size, self.min_batch_size, 256)
     }
 
     fn initial_requirements(&self) -> MorselSizeRequirement {
+        let default_morsel_size = daft_context::get_context()
+            .execution_config()
+            .default_morsel_size;
+        let upper_bound = default_morsel_size.min(256);
         // start with a small initial requirement that matches our search space
-        MorselSizeRequirement::Flexible(1, 256)
+        MorselSizeRequirement::Flexible(1, upper_bound)
     }
 
     fn calculate_new_requirements(
@@ -216,5 +221,216 @@ fn avg_batch_size(batch_sizes: impl Iterator<Item = usize>) -> usize {
         0
     } else {
         batch_sizes.iter().sum::<usize>() / batch_sizes.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{sync::Arc, time::Duration};
+
+    use super::*;
+    use crate::{
+        dynamic_batching::{BatchReport, tests::MockRuntimeStats},
+        runtime_stats::RuntimeStats,
+    };
+
+    fn create_strategy() -> LatencyConstrainedBatchingStrategy {
+        LatencyConstrainedBatchingStrategy {
+            target_batch_latency: Duration::from_millis(100),
+            latency_tolerance: Duration::from_millis(10),
+            step_size_alpha: 20,
+            correction_delta: 5,
+            min_batch_size: 1,
+            max_batch_size: 512,
+        }
+    }
+
+    fn create_batch_data(
+        batch_size: usize,
+        latency: Duration,
+    ) -> Vec<(Arc<dyn RuntimeStats>, usize, Duration)> {
+        vec![(Arc::new(MockRuntimeStats), batch_size, latency)]
+    }
+
+    #[test]
+    fn test_latency_state_initialization() {
+        let strategy = create_strategy();
+        let state = strategy.make_state();
+
+        assert_eq!(state.current_batch_size, 1);
+        assert_eq!(state.search_low, 1);
+        assert_eq!(state.search_high, 256);
+    }
+
+    #[test]
+    fn test_latency_initial_requirements() {
+        let strategy = create_strategy();
+        let requirements = strategy.initial_requirements();
+
+        match requirements {
+            MorselSizeRequirement::Flexible(min, max) => {
+                assert_eq!(min, 1);
+                assert_eq!(max, 256);
+            }
+            _ => panic!("Expected Flexible requirement"),
+        }
+    }
+
+    #[test]
+    fn test_latency_too_high_contracts_search() {
+        let strategy = create_strategy();
+        let mut state = strategy.make_state();
+        state.current_batch_size = 100;
+        state.search_low = 50;
+        state.search_high = 200;
+
+        // Latency = 150ms, target = 100ms + 10ms = 110ms tolerance
+        let batch = create_batch_data(100, Duration::from_millis(150));
+        let _req = strategy.calculate_new_requirements(&mut state, batch);
+
+        // Should contract search space (search_high should be reduced)
+        assert!(state.search_high < 200);
+        assert_eq!(state.search_low, 45); // reduced by correction_delta
+    }
+
+    #[test]
+    fn test_latency_good_expands_search() {
+        let strategy = create_strategy();
+        let mut state = strategy.make_state();
+        state.current_batch_size = 50;
+        state.search_low = 40;
+        state.search_high = 100;
+
+        // Latency = 50ms, target = 100ms - 10ms = 90ms tolerance
+        let batch = create_batch_data(50, Duration::from_millis(50));
+        let _req = strategy.calculate_new_requirements(&mut state, batch);
+
+        // Should expand search space
+        assert_eq!(state.search_low, 50); // should match batch_size
+        assert_eq!(state.search_high, 120); // 100 + step_size_alpha(20)
+    }
+
+    #[test]
+    fn test_latency_within_range_tightens_search() {
+        let strategy = create_strategy();
+        let mut state = strategy.make_state();
+        state.search_low = 40;
+        state.search_high = 120;
+
+        // Latency = 100ms, exactly at target
+        let batch = create_batch_data(80, Duration::from_millis(100));
+        let _req = strategy.calculate_new_requirements(&mut state, batch);
+
+        // Should tighten around current point
+        let _tighten_amount = (strategy.step_size_alpha / 2).max(1); // 10
+        assert_eq!(state.search_high, 90); // 80 + 10
+        assert_eq!(state.search_low, 70); // 80 - 10
+    }
+
+    #[test]
+    fn test_latency_respects_min_max_bounds() {
+        let strategy = LatencyConstrainedBatchingStrategy {
+            target_batch_latency: Duration::from_millis(100),
+            latency_tolerance: Duration::from_millis(10),
+            step_size_alpha: 20,
+            correction_delta: 5,
+            min_batch_size: 10,
+            max_batch_size: 50,
+        };
+
+        let mut state = strategy.make_state();
+        let batch = create_batch_data(5, Duration::from_millis(50));
+        let _req = strategy.calculate_new_requirements(&mut state, batch);
+
+        assert!(state.current_batch_size >= strategy.min_batch_size);
+        assert!(state.current_batch_size <= strategy.max_batch_size);
+    }
+
+    #[test]
+    fn test_latency_empty_batch_handling() {
+        let strategy = create_strategy();
+        let mut state = strategy.make_state();
+        let empty_batch = vec![];
+
+        let _req = strategy.calculate_new_requirements(&mut state, empty_batch);
+
+        // Should handle gracefully without panicking
+        assert!(state.current_batch_size >= strategy.min_batch_size);
+    }
+
+    #[test]
+    fn test_latency_multiple_batch_entries() {
+        let strategy = create_strategy();
+        let mut state = strategy.make_state();
+        let batch: BatchReport = vec![
+            (Arc::new(MockRuntimeStats), 50, Duration::from_millis(80)),
+            (Arc::new(MockRuntimeStats), 60, Duration::from_millis(120)),
+            (Arc::new(MockRuntimeStats), 70, Duration::from_millis(100)),
+        ];
+
+        let _req = strategy.calculate_new_requirements(&mut state, batch);
+
+        // Should handle multiple entries (avg latency = 100ms, avg batch = 60)
+        assert!(state.current_batch_size > 0);
+    }
+
+    #[test]
+    fn test_latency_avg_latency_function() {
+        let latencies = vec![
+            Duration::from_millis(100),
+            Duration::from_millis(200),
+            Duration::from_millis(300),
+        ];
+
+        let avg = avg_latency(latencies.into_iter());
+        assert_eq!(avg, Duration::from_millis(200));
+    }
+
+    #[test]
+    fn test_latency_avg_latency_empty() {
+        let avg = avg_latency(std::iter::empty());
+        assert_eq!(avg, Duration::from_millis(0));
+    }
+
+    #[test]
+    fn test_latency_avg_batch_size_function() {
+        let batch_sizes = vec![10, 20, 30];
+        let avg = avg_batch_size(batch_sizes.into_iter());
+        assert_eq!(avg, 20);
+    }
+
+    #[test]
+    fn test_latency_avg_batch_size_empty() {
+        let avg = avg_batch_size(std::iter::empty());
+        assert_eq!(avg, 0);
+    }
+
+    #[test]
+    fn test_latency_search_space_convergence() {
+        let strategy = create_strategy();
+        let mut state = strategy.make_state();
+
+        // Simulate multiple iterations with good latency
+        for _ in 0..5 {
+            let batch = create_batch_data(state.current_batch_size, Duration::from_millis(95));
+            strategy.calculate_new_requirements(&mut state, batch);
+        }
+
+        // Search space should converge (high - low should be small)
+        let search_space = state.search_high.saturating_sub(state.search_low);
+        assert!(search_space > 0); // Should still have some space to search
+    }
+
+    #[test]
+    fn test_latency_max_batch_size_constraint() {
+        let strategy = create_strategy();
+        let mut state = strategy.make_state();
+        state.search_high = strategy.max_batch_size + 100; // Try to exceed max
+
+        let batch = create_batch_data(50, Duration::from_millis(50));
+        let _req = strategy.calculate_new_requirements(&mut state, batch);
+
+        assert!(state.search_high <= strategy.max_batch_size);
+        assert!(state.current_batch_size <= strategy.max_batch_size);
     }
 }

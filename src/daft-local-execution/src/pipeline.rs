@@ -76,7 +76,7 @@ use crate::{
 
 pub type NodeName = Cow<'static, str>;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum MorselSizeRequirement {
     // Fixed size morsel
     Strict(usize),
