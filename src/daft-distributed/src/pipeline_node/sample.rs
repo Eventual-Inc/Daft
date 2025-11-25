@@ -101,14 +101,14 @@ impl PipelineNodeImpl for SampleNode {
         let input_node = self.child.clone().produce_tasks(plan_context);
 
         // Create the plan builder closure
-        let sampling_method = self.sampling_method.clone();
+        let sampling_method = self.sampling_method;
         let with_replacement = self.with_replacement;
         let seed = self.seed;
         let node_id = self.node_id();
         let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
             LocalPhysicalPlan::sample(
                 input,
-                sampling_method.clone(),
+                sampling_method,
                 with_replacement,
                 seed,
                 StatsState::NotMaterialized,
