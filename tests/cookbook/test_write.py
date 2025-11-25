@@ -55,6 +55,8 @@ def test_empty_parquet_write_without_partitioning(tmp_path, write_mode, with_mor
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
     assert len(pd_df) == 1
+    assert pd_df._preview.partition is None
+    pd_df.__repr__()
     assert len(pd_df._preview.partition) == 1
 
 
