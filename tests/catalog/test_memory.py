@@ -149,7 +149,7 @@ def test_namespace_operations():
 
     # List tables should show namespaced table
     assert sorted(str(ident) for ident in catalog.list_tables()) == ["ns1.table1"]
-    assert sorted(str(ident) for ident in catalog.list_tables("ns1")) == ["ns1.table1"]
+    assert sorted(str(ident) for ident in catalog.list_tables("ns1.%")) == ["ns1.table1"]
 
     # Create another namespace
     catalog.create_namespace("ns2")

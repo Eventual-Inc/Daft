@@ -328,7 +328,7 @@ def test_current_session_drop_table():
 
     cata = daft.current_catalog()
     assert cata.list_namespaces() == [Identifier.from_str("ns")]
-    assert cata.list_tables("ns") == [Identifier.from_str("ns.t1"), Identifier.from_str("ns.t2")]
+    assert cata.list_tables("ns.%") == [Identifier.from_str("ns.t1"), Identifier.from_str("ns.t2")]
 
     daft.drop_table("ns.t1")
 
