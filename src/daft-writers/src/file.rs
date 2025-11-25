@@ -16,7 +16,6 @@ struct TargetFileSizeWriter {
     bytes_per_file: Vec<usize>,
     current_writer:
         Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
-    write_idx: usize,
     writer_factory:
         Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
     size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
@@ -43,7 +42,6 @@ impl TargetFileSizeWriter {
             total_physical_bytes_written: 0,
             bytes_per_file: vec![],
             current_writer: writer,
-            write_idx: 0,
             writer_factory,
             size_calculator,
             results: vec![],
@@ -92,8 +90,7 @@ impl TargetFileSizeWriter {
         self.current_in_memory_bytes_written = 0;
         self.current_writer = self
             .writer_factory
-            .create_writer(self.write_idx, self.partition_values.as_ref())?;
-        self.write_idx += 1;
+            .create_writer(self.results.len(), self.partition_values.as_ref())?;
         Ok(())
     }
 }
@@ -172,8 +169,8 @@ impl AsyncFileWriter for TargetFileSizeWriter {
     }
 
     async fn close(&mut self) -> DaftResult<Self::Result> {
-        // write_idx == 0 means no available data wrote, but we still need to close the writer to make file visible.
-        if (self.write_idx == 0 || self.current_in_memory_bytes_written > 0)
+        // empty results means no available data wrote, but we still need to close the writer to make file visible.
+        if (self.results.is_empty() || self.current_in_memory_bytes_written > 0)
             && let Some(result) = self.current_writer.close().await?
         {
             self.results.push(result);

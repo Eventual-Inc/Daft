@@ -4,6 +4,7 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
+from daft import DataType
 from daft.dependencies import pa, pacsv, pafs, pq
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
@@ -215,11 +216,14 @@ class CSVFileWriter(FileWriterBase):
         return bytes_written
 
     def close(self) -> RecordBatch:
+        # The close method will be invoked even no data is written, and since we will create the empty file later,
+        # so just return empty result. A better way is to create the empty file here, but we cannot infer the schema if no data received.
+        metadata = {"path": Series.from_pylist([], dtype=DataType.string())}
         if self.current_writer is not None:
             self.current_writer.close()
+            metadata = {"path": Series.from_pylist([self.full_path])}
 
         self.is_closed = True
-        metadata = {"path": Series.from_pylist([self.full_path])}
         if self.partition_values is not None:
             for column in self.partition_values.columns():
                 metadata[column.name()] = column
