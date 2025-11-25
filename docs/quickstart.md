@@ -384,7 +384,7 @@ Now that you have a basic sense of Daft's functionality and features, here are s
 
     This same pipeline can process thousands or millions of products by leveraging Daft's distributed computing capabilities. Check out our [distributed computing guide](distributed/index.md) to run this analysis at scale on Ray or Kubernetes clusters.
 
-#### Work with your favorite table and catalog formats:
+**Work with your favorite table and catalog formats:**
 
 <div class="grid cards" markdown>
 
@@ -407,7 +407,7 @@ Now that you have a basic sense of Daft's functionality and features, here are s
 
 </div> -->
 
-#### Explore our [Examples](examples/index.md) to see Daft in action:
+**Explore our [Examples](examples/index.md) to see Daft in action:**
 
 <div class="grid cards" markdown>
 
