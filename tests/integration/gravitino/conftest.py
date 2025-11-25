@@ -89,3 +89,19 @@ def gravitino_sample_file() -> str:
 def gravitino_sample_dir() -> str:
     """Returns a gvfs:// directory URL for sample fileset access."""
     return os.environ.get("GRAVITINO_TEST_DIR", "gvfs://fileset/s3_fileset_catalog3/test_schema/test_fileset/")
+
+
+@pytest.fixture(scope="session")
+def gravitino_minio_io_config():
+    """IOConfig for MinIO S3-compatible storage used in Gravitino tests."""
+    import daft
+
+    return daft.io.IOConfig(
+        s3=daft.io.S3Config(
+            endpoint_url="http://127.0.0.1:9000",
+            key_id="minioadmin",
+            access_key="minioadmin",
+            region_name="us-east-1",
+            use_ssl=False,
+        )
+    )

@@ -13,61 +13,15 @@ import daft
 from daft.daft import FileFormat
 from daft.filesystem import glob_path_with_stats
 
-from .test_utils import api_request, delete_catalog, delete_schema, ensure_metalake
-
-
-def _create_catalog(client, metalake: str, catalog_name: str):
-    payload = {
-        "name": catalog_name,
-        "type": "fileset",
-        "comment": "Daft integration catalog",
-        "properties": {},
-    }
-    api_request(client, "POST", f"/metalakes/{metalake}/catalogs", json=payload)
-
-
-def _create_schema(client, metalake: str, catalog_name: str, schema_name: str):
-    payload = {
-        "name": schema_name,
-        "comment": "Daft integration schema",
-        "properties": {},
-    }
-    api_request(client, "POST", f"/metalakes/{metalake}/catalogs/{catalog_name}/schemas", json=payload)
-
-
-def _create_fileset(
-    client,
-    metalake: str,
-    catalog_name: str,
-    schema_name: str,
-    fileset_name: str,
-    storage_uri: str,
-):
-    payload = {
-        "name": fileset_name,
-        "type": "EXTERNAL",
-        "comment": "Daft integration fileset",
-        "properties": {
-            "default-location-name": "default",
-            "location": storage_uri,
-        },
-        "storageLocation": storage_uri,
-        "storageLocations": {"default": storage_uri},
-    }
-    api_request(
-        client,
-        "POST",
-        f"/metalakes/{metalake}/catalogs/{catalog_name}/schemas/{schema_name}/filesets",
-        json=payload,
-    )
-
-
-def _delete_fileset(client, metalake: str, catalog_name: str, schema_name: str, fileset_name: str):
-    path = f"/metalakes/{metalake}/catalogs/{catalog_name}/schemas/{schema_name}/filesets/{fileset_name}"
-    try:
-        api_request(client, "DELETE", path)
-    except Exception:
-        pass
+from .test_utils import (
+    create_catalog,
+    create_fileset,
+    create_schema,
+    delete_catalog,
+    delete_fileset,
+    delete_schema,
+    ensure_metalake,
+)
 
 
 def _resolve_storage_uri(client, gvfs_path: str) -> str:
@@ -110,9 +64,9 @@ def prepared_fileset(local_gravitino_client, gravitino_metalake, tmp_path_factor
     storage_uri = base_dir.as_uri()
 
     ensure_metalake(local_gravitino_client, gravitino_metalake)
-    _create_catalog(local_gravitino_client, gravitino_metalake, catalog_name)
-    _create_schema(local_gravitino_client, gravitino_metalake, catalog_name, schema_name)
-    _create_fileset(
+    create_catalog(local_gravitino_client, gravitino_metalake, catalog_name)
+    create_schema(local_gravitino_client, gravitino_metalake, catalog_name, schema_name)
+    create_fileset(
         local_gravitino_client,
         gravitino_metalake,
         catalog_name,
@@ -135,7 +89,7 @@ def prepared_fileset(local_gravitino_client, gravitino_metalake, tmp_path_factor
             "fileset_fqn": f"{catalog_name}.{schema_name}.{fileset_name}",
         }
     finally:
-        _delete_fileset(local_gravitino_client, gravitino_metalake, catalog_name, schema_name, fileset_name)
+        delete_fileset(local_gravitino_client, gravitino_metalake, catalog_name, schema_name, fileset_name)
         delete_schema(local_gravitino_client, gravitino_metalake, catalog_name, schema_name)
         delete_catalog(local_gravitino_client, gravitino_metalake, catalog_name)
         shutil.rmtree(base_dir, ignore_errors=True)

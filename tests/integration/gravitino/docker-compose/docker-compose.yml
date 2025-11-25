@@ -6,6 +6,9 @@ services:
     - "${GRAVITINO_PORT:-8090}:8090"
     environment:
       GRAVITINO_HTTP_PORT: 8090
+    volumes:
+    - ./gravitino-entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
     restart: unless-stopped
 
   mysql:
@@ -26,5 +29,21 @@ services:
     - --character-set-server=utf8mb4
     - --collation-server=utf8mb4_unicode_ci
 
+  minio:
+    image: quay.io/minio/minio
+    container_name: daft-gravitino-minio
+    volumes:
+    - minio-data:/data
+    ports:
+    - "${MINIO_PORT:-9000}:9000"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command:
+    - server
+    - /data
+    restart: unless-stopped
+
 volumes:
   mysql-data:
+  minio-data:
