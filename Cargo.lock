@@ -2568,6 +2568,7 @@ dependencies = [
  "daft-runners",
  "indexmap 2.11.4",
  "pyo3",
+ "regex",
  "snafu",
  "sqlparser",
 ]
