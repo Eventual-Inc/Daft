@@ -58,7 +58,7 @@ spark = ["googleapis-common-protos >= 1.56.4,<1.73.0", "grpcio >= 1.48,<1.77.0",
 # connectorx 0.4.4 is needed for pgvector support.
 sql = ["connectorx>=0.4.4,<0.5.0", "sqlalchemy<2.1.0", "sqlglot<28.1.0"]
 turbopuffer = ["turbopuffer<1.8.0"]
-unity = ["httpx<0.29.0", "unitycatalog<0.2.0"]
+unity = ["httpx<= 0.27.2", "unitycatalog<0.2.0"]
 video = ["av >= 15.0.0,<16.1.0"]
 audio = ["soundfile >= 0.13.0,<0.14.0", "librosa >= 0.11.0,<0.12.0"]
 viz = []
@@ -72,7 +72,7 @@ dev = [
   # Pinned aiohttp due to Ray connection issue in aiohttp==3.12.6
   "aiohttp==3.12.4",
   # Pinned httpx due to unitycatalog-python issue: https://github.com/unitycatalog/unitycatalog-python/issues/9
-  "httpx==0.28.1",
+  "httpx==0.27.2",
   # Tracing
   "orjson==3.11.4",
   "py-spy==0.4.1",
@@ -151,7 +151,8 @@ dev = [
   # AI
   "vllm==0.11.0",
   "openai==2.8.1",
-  "google-genai==1.52.0",
+  # Downgraded to 1.2.0 for httpx 0.27.2 compatibility (1.3.0+ requires httpx>=0.28.1)
+  "google-genai==1.2.0",
   # AV
   "av==16.0.1",
   "soundfile==0.13.1",
