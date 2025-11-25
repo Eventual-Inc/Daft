@@ -425,6 +425,22 @@ class Series:
         """
         return self._eval_expressions("log", base=base)
 
+    def pow(self, exp: float) -> Series:
+        """The elementwise exponentiation of a series.
+
+        Args:
+            exp: The exponent to raise each element to.
+        """
+        return self._eval_expressions("pow", exp=exp)
+
+    def power(self, exp: float) -> Series:
+        """The elementwise exponentiation of a series.
+
+        Args:
+            exp: The exponent to raise each element to.
+        """
+        return self._eval_expressions("power", exp=exp)
+
     def ln(self) -> Series:
         """The elementwise ln of a numeric series."""
         return self._eval_expressions("ln")
@@ -838,25 +854,15 @@ class SeriesStringNamespace(SeriesNamespace):
     def match(self, pattern: Series) -> Series:
         return self._eval_expressions("regexp_match", pattern)
 
-    def split(self, pattern: Series, regex: bool = False) -> Series:
+    def split(self, pattern: Series) -> Series:
         """Splits each string on the given literal pattern, into a list of strings.
 
         Args:
             pattern: The literal pattern on which each string should be split.
-            regex: DEPRECATED. Use regexp_split() instead for regex patterns.
 
         Returns:
             Series: A List[String] series containing the string splits for each string.
         """
-        if regex:
-            import warnings
-
-            warnings.warn(
-                "The 'regex' parameter in str.split() is deprecated and will be removed in v0.7.0. Use str.regexp_split() instead for regex patterns.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            return self.regexp_split(pattern)
         return self._eval_expressions("split", pattern)
 
     def regexp_split(self, pattern: Series) -> Series:

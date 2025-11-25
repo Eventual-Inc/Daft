@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 
-import lance
 import pytest
 
 import daft
@@ -13,8 +12,9 @@ from tests.utils import clean_explain_output
 
 @pytest.fixture
 def input_df(tmp_path):
+    lance = pytest.importorskip("lance")
     lance.write_dataset(pa.Table.from_pydict({"id": [id for id in range(16)]}), uri=tmp_path)
-    return daft.read_lance(url=str(tmp_path))
+    return daft.read_lance(uri=str(tmp_path))
 
 
 @pytest.mark.skipif(

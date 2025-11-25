@@ -1,5 +1,6 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
+import pathlib
 from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 
 from daft import context
@@ -22,7 +23,7 @@ if TYPE_CHECKING:
 
 @PublicAPI
 def read_lance(
-    url: str,
+    uri: Union[str, pathlib.Path],
     io_config: Optional[IOConfig] = None,
     version: Optional[Union[str, int]] = None,
     asof: Optional[str] = None,
@@ -36,7 +37,7 @@ def read_lance(
     """Create a DataFrame from a LanceDB table.
 
     Args:
-        url: URL to the LanceDB table (supports remote URLs to object stores such as `s3://` or `gs://`)
+        uri: The URI of the Lance table to read from (supports remote URLs to object stores such as `s3://` or `gs://`)
         io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
         version : optional, int | str
             If specified, load a specific version of the Lance dataset. Else, loads the
@@ -111,10 +112,10 @@ def read_lance(
         ) from e
 
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
-    storage_options = io_config_to_storage_options(io_config, url)
+    storage_options = io_config_to_storage_options(io_config, str(uri) if isinstance(uri, pathlib.Path) else uri)
 
     ds = lance.dataset(
-        url,
+        uri,
         storage_options=storage_options,
         version=version,
         asof=asof,
@@ -135,7 +136,6 @@ def read_lance(
         "metadata_cache_size_bytes": metadata_cache_size_bytes,
     }
     lance_operator = LanceDBScanOperator(ds, fragment_group_size=fragment_group_size)
-
     handle = ScanOperatorHandle.from_python_scan_operator(lance_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
     return DataFrame(builder)
@@ -143,7 +143,7 @@ def read_lance(
 
 @PublicAPI
 def merge_columns(
-    url: str,
+    uri: Union[str, pathlib.Path],
     io_config: Optional[IOConfig] = None,
     *,
     transform: Union[dict[str, str], "BatchUDF", Callable[["pa.lib.RecordBatch"], "pa.lib.RecordBatch"]] = None,
@@ -166,7 +166,7 @@ def merge_columns(
     from existing data using a transformation function. It does not return a DataFrame.
 
     Args:
-        url: URL to the LanceDB table (supports remote URLs to object stores such as `s3://` or `gs://`)
+        uri: The URI of the Lance table (supports remote URLs to object stores such as `s3://` or `gs://`)
         io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
         transform: A transformation function or UDF to apply to the data.
         read_columns: List of column names to read for the transformation.
@@ -205,10 +205,12 @@ def merge_columns(
             "Unable to import the `lance` package, please ensure that Daft is installed with the lance extra dependency: `pip install daft[lance]`"
         ) from e
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
-    storage_options = storage_options or io_config_to_storage_options(io_config, url)
+    storage_options = storage_options or io_config_to_storage_options(
+        io_config, str(uri) if isinstance(uri, pathlib.Path) else uri
+    )
 
     lance_ds = lance.dataset(
-        url,
+        uri,
         storage_options=storage_options,
         version=version,
         asof=asof,
@@ -221,7 +223,7 @@ def merge_columns(
 
     merge_columns_internal(
         lance_ds,
-        url,
+        uri,
         transform=transform,
         read_columns=read_columns,
         reader_schema=reader_schema,
@@ -233,7 +235,7 @@ def merge_columns(
 
 @PublicAPI
 def create_scalar_index(
-    url: str,
+    uri: Union[str, pathlib.Path],
     io_config: Optional[IOConfig] = None,
     *,
     column: str,
@@ -259,7 +261,7 @@ def create_scalar_index(
     merged and committed as a single index.
 
     Args:
-        url: URL to the LanceDB table (supports remote URLs to object stores such as `s3://` or `gs://`)
+        uri: The URI of the Lance table (supports remote URLs to object stores such as `s3://` or `gs://`)
         io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
         column: Column name to index
         index_type: Type of index to build ("INVERTED" or "FTS")
@@ -324,10 +326,12 @@ def create_scalar_index(
         ) from e
 
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
-    storage_options = storage_options or io_config_to_storage_options(io_config, url)
+    storage_options = storage_options or io_config_to_storage_options(
+        io_config, str(uri) if isinstance(uri, pathlib.Path) else uri
+    )
 
     lance_ds = lance.dataset(
-        url,
+        uri,
         storage_options=storage_options,
         version=version,
         asof=asof,
@@ -340,7 +344,7 @@ def create_scalar_index(
 
     create_scalar_index_internal(
         lance_ds=lance_ds,
-        uri=url,
+        uri=uri,
         column=column,
         index_type=index_type,
         name=name,
