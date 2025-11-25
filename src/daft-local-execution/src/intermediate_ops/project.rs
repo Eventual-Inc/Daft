@@ -177,7 +177,7 @@ impl IntermediateOperator for ProjectOperator {
         let cfg = daft_context::get_context().execution_config();
 
         Ok(if cfg.enable_dynamic_batching {
-            match cfg.dynamic_batching_algorithm.as_str() {
+            match cfg.dynamic_batching_strategy.as_str() {
                 "latency_constrained" | "auto" => {
                     let reqs = self.morsel_size_requirement().unwrap_or_default();
 

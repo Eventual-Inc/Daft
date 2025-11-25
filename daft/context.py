@@ -264,7 +264,7 @@ def set_execution_config(
     actor_udf_ready_timeout: int | None = None,
     maintain_order: bool | None = None,
     enable_dynamic_batching: bool | None = None,
-    dynamic_batching_algorithm: str | None = None,
+    dynamic_batching_strategy: str | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -316,9 +316,7 @@ def set_execution_config(
         maintain_order: Whether to maintain order during execution. Defaults to True. Some blocking sink operators (e.g. write_parquet) won't respect this flag and will always keep maintain_order as false, and propagate to child operators. It's useful to set this to False for running df.collect() when no ordering is required.
         enable_dynamic_batching:
             Whether to enable dynamic batching. Defaults to False.
-            Note: dynamic_batching is only possible when maintain_order is False.
-            If maintain_order=True and enable_dynamic_batching=True, dynamic batching will be disabled.
-        dynamic_batching_algorithm: The algorithm to use for dynamic batching. Defaults to 'auto'.
+        dynamic_batching_strategy: The strategy to use for dynamic batching. Defaults to 'auto'.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -358,7 +356,7 @@ def set_execution_config(
             actor_udf_ready_timeout=actor_udf_ready_timeout,
             maintain_order=maintain_order,
             enable_dynamic_batching=enable_dynamic_batching,
-            dynamic_batching_algorithm=dynamic_batching_algorithm,
+            dynamic_batching_strategy=dynamic_batching_strategy,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config

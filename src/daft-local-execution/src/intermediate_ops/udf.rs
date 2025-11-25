@@ -615,7 +615,7 @@ impl IntermediateOperator for UdfOperator {
         let cfg = daft_context::get_context().execution_config();
 
         Ok(if cfg.enable_dynamic_batching {
-            match cfg.dynamic_batching_algorithm.as_str() {
+            match cfg.dynamic_batching_strategy.as_str() {
                 "latency_constrained" | "auto" => {
                     // TODO: allow udf to accept a min/max batch size instead of just a strict batch size.
                     let reqs = self.morsel_size_requirement().unwrap_or_default();

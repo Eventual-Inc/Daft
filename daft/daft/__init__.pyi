@@ -2145,7 +2145,7 @@ class PyDaftExecutionConfig:
         actor_udf_ready_timeout: int | None = None,
         maintain_order: bool | None = None,
         enable_dynamic_batching: bool | None = None,
-        dynamic_batching_algorithm: str | None = None,
+        dynamic_batching_strategy: str | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -2204,7 +2204,7 @@ class PyDaftExecutionConfig:
     @property
     def enable_dynamic_batching(self) -> bool: ...
     @property
-    def dynamic_batching_algorithm(self) -> str: ...
+    def dynamic_batching_strategy(self) -> str: ...
 
 class PyDaftPlanningConfig:
     @staticmethod
