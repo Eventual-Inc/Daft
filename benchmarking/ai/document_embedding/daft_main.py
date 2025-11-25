@@ -20,7 +20,7 @@ CHUNK_SIZE = 2048
 CHUNK_OVERLAP = 200
 EMBEDDING_BATCH_SIZE = 10
 
-daft.context.set_runner_ray()
+daft.set_runner_ray()
 
 # Wait for Ray cluster to be ready
 @ray.remote
