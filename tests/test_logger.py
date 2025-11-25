@@ -32,64 +32,71 @@ def test_logger_initialization() -> None:
     assert rust_level == "WARN"
 
 
+def test_use_deprecated_method() -> None:
+    from daft.logging import setup_debug_logger
+
+    with pytest.warns(DeprecationWarning):
+        setup_debug_logger()
+
+
 def test_invalid_level_raises() -> None:
-    from daft.logging import setup_logger_level
+    from daft.logging import setup_logger
 
     with pytest.raises(ValueError):
-        setup_logger_level(level="INVALID")
+        setup_logger(level="INVALID")
 
 
 def test_default_level_is_debug() -> None:
     import daft
-    from daft.logging import setup_logger_level
+    from daft.logging import setup_logger
 
-    setup_logger_level()
+    setup_logger()
     rust_level = daft.daft.get_max_log_level()
     assert rust_level == "DEBUG"
 
 
 def test_debug_logger() -> None:
     import daft
-    from daft.logging import setup_logger_level
+    from daft.logging import setup_logger
 
-    setup_logger_level("debug")
+    setup_logger("debug")
     rust_level = daft.daft.get_max_log_level()
     assert rust_level == "DEBUG"
 
 
 def test_info_logger() -> None:
     import daft
-    from daft.logging import setup_logger_level
+    from daft.logging import setup_logger
 
-    setup_logger_level("info")
+    setup_logger("info")
     rust_level = daft.daft.get_max_log_level()
     assert rust_level == "INFO"
 
 
 def test_warn_logger() -> None:
     import daft
-    from daft.logging import setup_logger_level
+    from daft.logging import setup_logger
 
-    setup_logger_level("warn")
+    setup_logger("warn")
     rust_level = daft.daft.get_max_log_level()
     assert rust_level == "WARN"
 
 
 def test_error_logger() -> None:
     import daft
-    from daft.logging import setup_logger_level
+    from daft.logging import setup_logger
 
-    setup_logger_level("error")
+    setup_logger("error")
     rust_level = daft.daft.get_max_log_level()
     assert rust_level == "ERROR"
 
 
 def test_daft_contains_only_daft_logs() -> None:
-    from daft.logging import setup_logger_level
+    from daft.logging import setup_logger
 
     _, capture = new_root_logger()
 
-    setup_logger_level(level="DEBUG", exclude_prefix=[], daft_only=True)
+    setup_logger(level="DEBUG", exclude_prefix=[], daft_only=True)
 
     logging.getLogger("daft.core").debug("pass")
     logging.getLogger("other.module").debug("excluded")
@@ -99,11 +106,11 @@ def test_daft_contains_only_daft_logs() -> None:
 
 
 def test_exclude_prefix_filters_daft_logs() -> None:
-    from daft.logging import setup_logger_level
+    from daft.logging import setup_logger
 
     _, capture = new_root_logger()
 
-    setup_logger_level(level="DEBUG", exclude_prefix=["daft"], daft_only=False)
+    setup_logger(level="DEBUG", exclude_prefix=["daft"], daft_only=False)
 
     logging.getLogger("daft.core").debug("excluded")
     logging.getLogger("spark.executor").debug("pass")
@@ -114,11 +121,11 @@ def test_exclude_prefix_filters_daft_logs() -> None:
 
 
 def test_daft_only_and_exclude_prefix() -> None:
-    from daft.logging import setup_logger_level
+    from daft.logging import setup_logger
 
     _, capture = new_root_logger()
 
-    setup_logger_level(level="DEBUG", exclude_prefix=["daft"], daft_only=False)
+    setup_logger(level="DEBUG", exclude_prefix=["daft"], daft_only=False)
 
     logging.getLogger("daft.debug.cache").debug("excluded")
     logging.getLogger("daft.core").debug("excluded")
@@ -132,11 +139,11 @@ def test_daft_only_and_exclude_prefix() -> None:
 
 
 def test_exclude_prefix_multiple_prefixes() -> None:
-    from daft.logging import setup_logger_level
+    from daft.logging import setup_logger
 
     _, capture = new_root_logger()
 
-    setup_logger_level(
+    setup_logger(
         level="DEBUG",
         exclude_prefix=["daft", "spark"],
         daft_only=False,
@@ -154,11 +161,11 @@ def test_exclude_prefix_multiple_prefixes() -> None:
 
 
 def test_daft_only_false_does_not_filter_other_modules() -> None:
-    from daft.logging import setup_logger_level
+    from daft.logging import setup_logger
 
     _, capture = new_root_logger()
 
-    setup_logger_level(level="DEBUG", daft_only=False)
+    setup_logger(level="DEBUG", daft_only=False)
 
     logging.getLogger("daft.core").debug("ok")
     logging.getLogger("spark").debug("ok")
@@ -181,11 +188,11 @@ def test_daft_only_and_exclude_prefix_multiple():
     #   - spark.* excluded by both rules
     #   - other modules also excluded by daft_only
 
-    from daft.logging import setup_logger_level
+    from daft.logging import setup_logger
 
     _, capture = new_root_logger()
 
-    setup_logger_level(level="DEBUG", daft_only=True, exclude_prefix=["daft.debug", "spark"])
+    setup_logger(level="DEBUG", daft_only=True, exclude_prefix=["daft.debug", "spark"])
 
     logging.getLogger("daft.debug.cache").debug("excluded")
     logging.getLogger("daft.core").debug("allowed")

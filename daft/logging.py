@@ -22,7 +22,18 @@ LOG_LEVEL_MAP = {
 }
 
 
-def setup_logger_level(
+def setup_debug_logger() -> None:
+    import warnings
+
+    warnings.warn(
+        "setup_debug_logger() is deprecated. Use setup_logger('debug') instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return setup_logger("debug")
+
+
+def setup_logger(
     level: str = "debug",
     exclude_prefix: typing.Iterable[str] | None = None,
     daft_only: bool = True,
