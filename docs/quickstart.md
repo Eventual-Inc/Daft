@@ -382,7 +382,7 @@ Now that you have a basic sense of Daft's functionality and features, here are s
 
 !!! tip "Scaling Further"
 
-    This same pipeline can process thousands or millions of products by leveraging Daft's distributed computing capabilities. Check out our [distributed computing guide](distributed/index.md) to run this analysis at scale on Ray or Kubernetes clusters.
+    This same pipeline can process thousands or millions of products by leveraging Daft's distributed computing capabilities. Check out our [distributed computing guide](distributed/index.md) to run this analysis at scale on Ray or Kubernetes clusters. Alternatively, [Daft Cloud](https://www.daft.ai/cloud) provides a fully managed serverless experience.
 
 **Work with your favorite table and catalog formats:**
 
