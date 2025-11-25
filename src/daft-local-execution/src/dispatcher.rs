@@ -8,7 +8,7 @@ use crate::{
     RuntimeHandle, SpawnedTask,
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
-    dynamic_batching::{BatchingContext, BatchingStrategy},
+    dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::MorselSizeRequirement,
     runtime_stats::InitializingCountingReceiver,
 };
@@ -40,18 +40,18 @@ pub(crate) struct SpawnedDispatchResult {
 /// A dispatcher that distributes morsels to workers in a round-robin fashion.
 /// Used if the operator requires maintaining the order of the input.
 pub(crate) struct RoundRobinDispatcher<S: BatchingStrategy + 'static> {
-    batching_context: Arc<BatchingContext<S>>,
+    batch_manager: Arc<BatchManager<S>>,
 }
 
 impl<S: BatchingStrategy + 'static> RoundRobinDispatcher<S> {
-    pub(crate) fn new(batching_context: Arc<BatchingContext<S>>) -> Self {
-        Self { batching_context }
+    pub(crate) fn new(batch_manager: Arc<BatchManager<S>>) -> Self {
+        Self { batch_manager }
     }
 
     async fn dispatch_inner(
         worker_senders: Vec<Sender<Arc<MicroPartition>>>,
         input_receivers: Vec<InitializingCountingReceiver>,
-        batching_context: Arc<BatchingContext<S>>,
+        batch_manager: Arc<BatchManager<S>>,
     ) -> DaftResult<()> {
         let mut next_worker_idx = 0;
         let mut send_to_next_worker = |data: Arc<MicroPartition>| {
@@ -59,7 +59,7 @@ impl<S: BatchingStrategy + 'static> RoundRobinDispatcher<S> {
             next_worker_idx = (next_worker_idx + 1) % worker_senders.len();
             next_worker_sender.send(data)
         };
-        let (lower, upper) = batching_context.initial_requirements().values();
+        let (lower, upper) = batch_manager.initial_requirements().values();
 
         for receiver in input_receivers {
             let mut buffer = RowBasedBuffer::new(lower, upper);
@@ -71,7 +71,7 @@ impl<S: BatchingStrategy + 'static> RoundRobinDispatcher<S> {
                     if send_to_next_worker(batch).await.is_err() {
                         return Ok(());
                     }
-                    let new_requirements = batching_context.calculate_batch_size().await;
+                    let new_requirements = batch_manager.calculate_batch_size().await;
                     let (lower, upper) = new_requirements.values();
 
                     buffer.update_bounds(lower, upper);
@@ -98,9 +98,9 @@ impl<S: BatchingStrategy + 'static> DispatchSpawner for RoundRobinDispatcher<S> 
     ) -> SpawnedDispatchResult {
         let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
             (0..num_workers).map(|_| create_channel(0)).unzip();
-        let batching_context = self.batching_context.clone();
+        let batch_manager = self.batch_manager.clone();
         let task = runtime_handle.spawn(async move {
-            Self::dispatch_inner(worker_senders, input_receivers, batching_context).await
+            Self::dispatch_inner(worker_senders, input_receivers, batch_manager).await
         });
 
         SpawnedDispatchResult {
@@ -198,20 +198,20 @@ impl DispatchSpawner for UnorderedDispatcher {
 /// Used if the operator does not require maintaining the order of the input.
 /// Same as UnorderedDispatcher but can dynamically adjust the batch size based on the batching strategy
 pub(crate) struct DynamicUnorderedDispatcher<S: BatchingStrategy + 'static> {
-    batching_context: Arc<BatchingContext<S>>,
+    batch_manager: Arc<BatchManager<S>>,
 }
 
 impl<S: BatchingStrategy + 'static> DynamicUnorderedDispatcher<S> {
-    pub(crate) fn new(batching_context: Arc<BatchingContext<S>>) -> Self {
-        Self { batching_context }
+    pub(crate) fn new(batch_manager: Arc<BatchManager<S>>) -> Self {
+        Self { batch_manager }
     }
 
     async fn dispatch_inner(
         worker_sender: Sender<Arc<MicroPartition>>,
         input_receivers: Vec<InitializingCountingReceiver>,
-        batching_context: Arc<BatchingContext<S>>,
+        batch_manager: Arc<BatchManager<S>>,
     ) -> DaftResult<()> {
-        let (lower, upper) = batching_context.initial_requirements().values();
+        let (lower, upper) = batch_manager.initial_requirements().values();
 
         for receiver in input_receivers {
             let mut buffer = RowBasedBuffer::new(lower, upper);
@@ -223,7 +223,7 @@ impl<S: BatchingStrategy + 'static> DynamicUnorderedDispatcher<S> {
                         return Ok(());
                     }
 
-                    let new_requirements = batching_context.calculate_batch_size().await;
+                    let new_requirements = batch_manager.calculate_batch_size().await;
                     let (lower, upper) = new_requirements.values();
 
                     buffer.update_bounds(lower, upper);
@@ -250,10 +250,10 @@ impl<S: BatchingStrategy + 'static> DispatchSpawner for DynamicUnorderedDispatch
     ) -> SpawnedDispatchResult {
         let (worker_sender, worker_receiver) = create_channel(num_workers);
         let worker_receivers = vec![worker_receiver; num_workers];
-        let batching_context = self.batching_context.clone();
+        let batch_manager = self.batch_manager.clone();
 
         let dispatch_task = runtime_handle.spawn(async move {
-            Self::dispatch_inner(worker_sender, receiver, batching_context).await
+            Self::dispatch_inner(worker_sender, receiver, batch_manager).await
         });
 
         SpawnedDispatchResult {

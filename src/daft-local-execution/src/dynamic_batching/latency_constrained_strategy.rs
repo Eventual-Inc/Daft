@@ -49,6 +49,7 @@ use crate::{
 ///
 /// ```
 #[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct LatencyConstrainedBatchingStrategy {
     /// Target maximum batch latency
     ///
@@ -111,7 +112,7 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
     }
 
     fn initial_requirements(&self) -> MorselSizeRequirement {
-        // start with a small initial batch size that matches our search space
+        // start with a small initial requirement that matches our search space
         MorselSizeRequirement::Flexible(1, 256)
     }
 

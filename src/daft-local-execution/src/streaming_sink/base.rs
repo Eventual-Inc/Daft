@@ -18,7 +18,7 @@ use crate::{
         create_ordering_aware_receiver_channel,
     },
     dispatcher::{DispatchSpawner, DynamicUnorderedDispatcher, RoundRobinDispatcher},
-    dynamic_batching::{BatchingContext, BatchingStrategy, StaticBatchingStrategy},
+    dynamic_batching::{BatchManager, BatchingStrategy, StaticBatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
@@ -96,13 +96,13 @@ pub(crate) trait StreamingSink: Send + Sync {
     fn batching_strategy(&self) -> Self::BatchingStrategy;
     fn dispatch_spawner(
         &self,
-        batching_context: Arc<BatchingContext<Self::BatchingStrategy>>,
+        batch_manager: Arc<BatchManager<Self::BatchingStrategy>>,
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
         if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(batching_context))
+            Arc::new(RoundRobinDispatcher::new(batch_manager))
         } else {
-            Arc::new(DynamicUnorderedDispatcher::new(batching_context))
+            Arc::new(DynamicUnorderedDispatcher::new(batch_manager))
         }
     }
 }
@@ -157,7 +157,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         output_sender: Sender<Arc<MicroPartition>>,
         runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
-        batching_ctx: Arc<BatchingContext<Op::BatchingStrategy>>,
+        batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
     ) -> DaftResult<Op::State> {
         let span = info_span!("StreamingSink::Execute");
         let compute_runtime = get_compute_runtime();
@@ -173,7 +173,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 state = result.0;
                 match result.1 {
                     StreamingSinkOutput::NeedMoreInput(mp) => {
-                        batching_ctx
+                        batch_manager
                             .record_execution_stats(
                                 runtime_stats.clone(),
                                 mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
@@ -188,7 +188,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                         break;
                     }
                     StreamingSinkOutput::HasMoreOutput(mp) => {
-                        batching_ctx
+                        batch_manager
                             .record_execution_stats(
                                 runtime_stats.clone(),
                                 mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
@@ -202,7 +202,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                         }
                     }
                     StreamingSinkOutput::Finished(mp) => {
-                        batching_ctx
+                        batch_manager
                             .record_execution_stats(
                                 runtime_stats.clone(),
                                 mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
@@ -228,7 +228,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         runtime_stats: Arc<dyn RuntimeStats>,
         maintain_order: bool,
         memory_manager: Arc<MemoryManager>,
-        batching_ctx: Arc<BatchingContext<Op::BatchingStrategy>>,
+        batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
     ) -> OrderingAwareReceiver<Arc<MicroPartition>> {
         let (output_sender, output_receiver) =
             create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
@@ -239,7 +239,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 output_sender,
                 runtime_stats.clone(),
                 memory_manager.clone(),
-                batching_ctx.clone(),
+                batch_manager.clone(),
             ));
         }
         output_receiver
@@ -349,8 +349,8 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         let num_workers = op.max_concurrency();
         let handle = runtime_handle.handle();
         let strategy = op.batching_strategy();
-        let batching_ctx = Arc::new(BatchingContext::new(strategy, &handle));
-        let dispatch_spawner = op.dispatch_spawner(batching_ctx.clone(), maintain_order);
+        let batch_manager = Arc::new(BatchManager::new(strategy, &handle));
+        let dispatch_spawner = op.dispatch_spawner(batch_manager.clone(), maintain_order);
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             child_result_receivers,
             num_workers,
@@ -374,7 +374,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                     runtime_stats.clone(),
                     maintain_order,
                     memory_manager.clone(),
-                    batching_ctx,
+                    batch_manager,
                 );
 
                 while let Some(morsel) = output_receiver.recv().await {

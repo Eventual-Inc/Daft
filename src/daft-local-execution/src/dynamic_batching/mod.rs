@@ -1,9 +1,12 @@
-mod latency_constrained;
-
+mod dyn_strategy;
+mod latency_constrained_strategy;
+mod static_strategy;
 use std::{sync::Arc, time::Duration};
 
 use arc_swap::ArcSwap;
-pub use latency_constrained::*;
+pub use dyn_strategy::*;
+pub use latency_constrained_strategy::*;
+pub use static_strategy::*;
 use tokio::sync::Mutex;
 
 use crate::{
@@ -19,6 +22,7 @@ type BatchReport = Vec<(Arc<dyn RuntimeStats>, usize, Duration)>;
 /// Dynamic batching is a technique used to optimize throughput and latency by adjusting
 /// the number of items processed together in a batch based on runtime performance metrics.
 /// Different algorithms use various strategies to find the optimal batch size.
+#[cfg(not(debug_assertions))]
 pub trait BatchingStrategy: Send + Sync {
     type State: Send + Sync + Unpin;
     fn make_state(&self) -> Self::State;
@@ -32,106 +36,46 @@ pub trait BatchingStrategy: Send + Sync {
     fn initial_requirements(&self) -> MorselSizeRequirement;
 }
 
-#[derive(Clone)]
-pub struct StaticBatchingStrategy {
-    req: MorselSizeRequirement,
-}
-
-impl StaticBatchingStrategy {
-    pub fn new(req: MorselSizeRequirement) -> Self {
-        Self { req }
-    }
-}
-
-impl BatchingStrategy for StaticBatchingStrategy {
-    type State = ();
-    fn make_state(&self) -> Self::State {}
-
-    fn calculate_new_requirements(
-        &self,
-        _state: &mut Self::State,
-        _reports: BatchReport,
-    ) -> MorselSizeRequirement {
-        self.req
-    }
-
-    fn initial_requirements(&self) -> MorselSizeRequirement {
-        self.req
-    }
-}
-
-#[allow(dead_code)]
-pub struct DynBatchingState {
-    update_fn: Box<dyn FnMut(BatchReport) -> MorselSizeRequirement + Send + Sync>,
-}
-
-#[allow(dead_code)]
-pub struct DynBatchingStrategy {
-    initial_req: MorselSizeRequirement,
-    make_state_fn: Box<dyn Fn() -> DynBatchingState + Send + Sync>,
-}
-
-#[allow(dead_code)]
-impl DynBatchingStrategy {
-    pub fn new<S: BatchingStrategy + Clone + 'static>(strategy: S) -> Self
-    where
-        S::State: 'static,
-    {
-        let initial_req = strategy.initial_requirements();
-
-        Self {
-            initial_req,
-            make_state_fn: Box::new(move || {
-                let mut state = strategy.make_state();
-                let strategy_clone = strategy.clone();
-
-                DynBatchingState {
-                    update_fn: Box::new(move |reports| {
-                        strategy_clone.calculate_new_requirements(&mut state, reports)
-                    }),
-                }
-            }),
-        }
-    }
-}
-impl<S: BatchingStrategy + Clone + 'static> From<S> for DynBatchingStrategy
-where
-    S::State: 'static,
-{
-    fn from(strategy: S) -> Self {
-        Self::new(strategy)
-    }
-}
-
-impl BatchingStrategy for DynBatchingStrategy {
-    type State = DynBatchingState;
-
-    fn make_state(&self) -> Self::State {
-        (self.make_state_fn)()
-    }
-
+#[cfg(debug_assertions)]
+pub trait BatchingStrategy: Send + Sync + std::fmt::Debug {
+    type State: Send + Sync + Unpin;
+    fn make_state(&self) -> Self::State;
     fn calculate_new_requirements(
         &self,
         state: &mut Self::State,
         reports: BatchReport,
-    ) -> MorselSizeRequirement {
-        (state.update_fn)(reports)
-    }
+    ) -> MorselSizeRequirement;
 
-    fn initial_requirements(&self) -> MorselSizeRequirement {
-        self.initial_req
-    }
+    fn initial_requirements(&self) -> MorselSizeRequirement;
 }
 
-pub struct BatchingContext<S: BatchingStrategy> {
+/// Manages dynamic batch sizing by collecting execution metrics and adjusting
+/// batch requirements using pluggable batching strategies.
+///
+/// Reports are collected asynchronously in the background, and batch size
+/// calculations are performed lazily when `calculate_batch_size()` is called.
+/// This allows workers to report metrics without blocking while the dispatcher
+/// gets updated requirements on-demand.
+///
+/// # Usage
+/// ```rust,ignore
+/// let manager = BatchManager::new(strategy, &runtime_handle);
+///
+/// manager.record_execution_stats(stats, batch_size, duration).await;
+///
+/// let requirements = manager.calculate_batch_size().await;
+/// ```
+pub struct BatchManager<S: BatchingStrategy> {
     requirements: ArcSwap<MorselSizeRequirement>,
+    // TODO: all we should need is to look at the runtime stats, but currently runtime stats only provides a cumulative value
+    // If we update runtimestats to have a windowed value of recent reports, we can use that alone to calculate the new requirements
     pending_reports: Arc<Mutex<BatchReport>>,
     state: Arc<Mutex<S::State>>,
     strategy: S,
     tx: Sender<(Arc<dyn RuntimeStats>, usize, Duration)>,
 }
 
-impl<S> BatchingContext<S>
+impl<S> BatchManager<S>
 where
     S: BatchingStrategy + 'static,
     S::State: 'static,
@@ -159,7 +103,11 @@ where
             tx,
         }
     }
-
+    /// Processes pending execution reports and returns updated batch size requirements.
+    ///
+    /// This method triggers lazy evaluation - it processes all reports collected since
+    /// the last call and updates the internal requirements accordingly. If no new reports
+    /// are available, returns the current cached requirements.
     pub async fn calculate_batch_size(&self) -> MorselSizeRequirement {
         // Drain pending reports and process them all
         let mut reports = self.pending_reports.lock().await;
@@ -175,6 +123,10 @@ where
         *self.requirements.load().as_ref()
     }
 
+    /// Records execution metrics for a processed batch.
+    ///
+    /// Sends the execution stats asynchronously to a background task for later processing.
+    /// This method is non-blocking and designed to be called frequently by workers.
     pub async fn record_execution_stats(
         &self,
         stats: Arc<dyn RuntimeStats>,

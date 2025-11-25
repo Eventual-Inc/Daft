@@ -180,6 +180,7 @@ impl IntermediateOperator for ProjectOperator {
             match cfg.dynamic_batching_algorithm.as_str() {
                 "latency_constrained" | "auto" => {
                     let reqs = self.morsel_size_requirement().unwrap_or_default();
+
                     let MorselSizeRequirement::Flexible(min_batch_size, max_batch_size) = reqs
                     else {
                         return Err(DaftError::ValueError(

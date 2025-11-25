@@ -97,7 +97,9 @@ impl Default for MorselSizeRequirement {
     fn default() -> Self {
         Self::Flexible(
             0,
-            common_daft_config::DaftExecutionConfig::default().default_morsel_size,
+            daft_context::get_context()
+                .execution_config()
+                .default_morsel_size,
         )
     }
 }
