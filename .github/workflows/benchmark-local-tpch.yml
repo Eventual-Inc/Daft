@@ -20,7 +20,7 @@ env:
   AWS_REGION: us-west-2
 
   DAFT_ANALYTICS_ENABLED: "0"
-  PYTHON_VERSION: "3.9"
+  PYTHON_VERSION: "3.10"
 
 jobs:
   build:
@@ -43,11 +43,11 @@ jobs:
         sudo mkfs.ext4 /dev/nvme2n1
         sudo mount -t ext4 /dev/nvme2n1 /tmp
         sudo chmod 777 /tmp
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
     - name: Assume GitHub Actions AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v5
       with:
         aws-region: ${{ env.AWS_REGION }}
         role-session-name: DaftLocalTpchGitHubWorkflow
@@ -55,7 +55,7 @@ jobs:
       run: aws s3 cp s3://eventual-dev-benchmarking-fixtures/uncompressed/tpch-dbgen/100_0/32/parquet /tmp/tpch-data --recursive --no-progress
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ env.PYTHON_VERSION }}
         enable-cache: true

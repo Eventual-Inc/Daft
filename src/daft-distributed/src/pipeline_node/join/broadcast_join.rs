@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, TryStreamExt};
@@ -42,7 +42,6 @@ impl BroadcastJoinNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         left_on: Vec<BoundExpr>,
         right_on: Vec<BoundExpr>,
@@ -54,12 +53,10 @@ impl BroadcastJoinNode {
         output_schema: SchemaRef,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![broadcaster.node_id(), receiver.node_id()],
-            vec![broadcaster.name(), receiver.name()],
-            logical_node_id,
         );
 
         // For broadcast joins, we use the receiver's clustering spec since the broadcaster
@@ -104,7 +101,7 @@ impl BroadcastJoinNode {
         let materialized_broadcast_data_plan = make_in_memory_scan_from_materialized_outputs(
             &materialized_broadcast_data,
             self.broadcaster_schema.clone(),
-            self.node_id().to_string(),
+            self.node_id(),
         )?;
         let broadcast_psets = HashMap::from([(
             self.node_id().to_string(),
@@ -133,6 +130,10 @@ impl BroadcastJoinNode {
                 self.join_type,
                 self.config.schema.clone(),
                 StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(self.node_id() as usize),
+                    additional: None,
+                },
             );
 
             let mut psets = task.task().psets().clone();

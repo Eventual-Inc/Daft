@@ -9,14 +9,13 @@ import io
 import multiprocessing
 import os
 import pathlib
-import sys
 import typing
 import warnings
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial, reduce
-from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypeVar, Union, overload
+from typing import TYPE_CHECKING, Any, Callable, Concatenate, Literal, Optional, ParamSpec, TypeVar, Union, overload
 
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
@@ -53,11 +52,6 @@ if TYPE_CHECKING:
     from daft.io.catalog import DataCatalogTable
     from daft.io.sink import WriteResultType
     from daft.unity_catalog import UnityCatalogTable
-
-if sys.version_info < (3, 10):
-    from typing_extensions import Concatenate, ParamSpec
-else:
-    from typing import Concatenate, ParamSpec
 
 from daft.schema import Schema
 
@@ -281,19 +275,19 @@ class DataFrame:
         print_to_file(builder.pretty_print(simple, format=format))
         if show_all:
             print_to_file("\n== Optimized Logical Plan ==\n")
-            builder = builder.optimize()
+            execution_config = get_context().daft_execution_config
+            builder = builder.optimize(execution_config)
             print_to_file(builder.pretty_print(simple))
             print_to_file("\n== Physical Plan ==\n")
             if get_or_create_runner().name != "native":
-                daft_execution_config = get_context().daft_execution_config
-                if daft_execution_config.use_legacy_ray_runner:
-                    physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
+                if execution_config.use_legacy_ray_runner:
+                    physical_plan_scheduler = builder.to_physical_plan_scheduler(execution_config)
                     print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
                 else:
                     from daft.daft import DistributedPhysicalPlan
 
                     distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
-                        builder._builder, daft_execution_config
+                        builder._builder, "<tmp>", execution_config
                     )
                     if format == "ascii":
                         print_to_file(distributed_plan.repr_ascii(simple))
@@ -336,9 +330,8 @@ class DataFrame:
             10
         """
         # We need to run the optimizer since that could change the number of partitions
-        return (
-            self.__builder.optimize().to_physical_plan_scheduler(get_context().daft_execution_config).num_partitions()
-        )
+        execution_config = get_context().daft_execution_config
+        return self.__builder.optimize(execution_config).to_physical_plan_scheduler(execution_config).num_partitions()
 
     @DataframePublicAPI
     def schema(self) -> Schema:
@@ -626,11 +619,10 @@ class DataFrame:
         if results is None:
             return
 
-        preview_partition_invalid = (
-            self._preview.partition is None or len(self._preview.partition) < self._num_preview_rows
-        )
+        num_preview_rows = min(self._num_preview_rows, len(self))
+        preview_partition_invalid = self._preview.partition is None or len(self._preview.partition) != num_preview_rows
         if preview_partition_invalid:
-            preview_parts = results._get_preview_micropartitions(self._num_preview_rows)
+            preview_parts = results._get_preview_micropartitions(num_preview_rows)
             preview_results = LocalPartitionSet()
             for i, part in enumerate(preview_parts):
                 preview_results.set_partition_from_table(i, part)
@@ -1464,10 +1456,6 @@ class DataFrame:
               to ensure compatibility unless ``mode="overwrite"``.
           **kwargs: Additional keyword arguments to pass to the Lance writer.
 
-        Note:
-            `write_lance` requires python 3.9 or higher
-            This call is **blocking** and will execute the DataFrame when called
-
         Returns:
             DataFrame: A DataFrame containing metadata about the written Lance table, such as number of fragments, number of deleted rows, number of small files, and version.
 
@@ -1752,7 +1740,7 @@ class DataFrame:
             │ Int64 ┆ Int64 │
             ╰───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
             >>> df[["a", "c"]]  # Get multiple columns by name
             ╭───────┬───────╮
             │ a     ┆ c     │
@@ -1760,7 +1748,7 @@ class DataFrame:
             │ Int64 ┆ Int64 │
             ╰───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
             >>> df[["a", 1]]  # Get multiple columns by name and index
             ╭───────┬───────╮
             │ a     ┆ b     │
@@ -1768,7 +1756,7 @@ class DataFrame:
             │ Int64 ┆ Int64 │
             ╰───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
             >>> df[0:2]  # Get a slice of columns by index
             ╭───────┬───────╮
             │ a     ┆ b     │
@@ -1776,7 +1764,7 @@ class DataFrame:
             │ Int64 ┆ Int64 │
             ╰───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
             >>> df[["a", "b", 2]]  # Get a mix of column names and indices
             ╭───────┬───────┬───────╮
             │ a     ┆ b     ┆ c     │
@@ -1784,7 +1772,7 @@ class DataFrame:
             │ Int64 ┆ Int64 ┆ Int64 │
             ╰───────┴───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
 
         """
         result: Optional[Expression]
@@ -1935,7 +1923,7 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
-            >>> df.summarize().show()
+            >>> df.summarize().show()  # doctest: +SKIP
             ╭────────┬────────┬────────┬────────────┬────────┬─────────────┬───────────────────────╮
             │ column ┆ type   ┆ min    ┆      …     ┆ count  ┆ count_nulls ┆ approx_count_distinct │
             │ ---    ┆ ---    ┆ ---    ┆            ┆ ---    ┆ ---         ┆ ---                   │
@@ -2068,23 +2056,33 @@ class DataFrame:
     @DataframePublicAPI
     def sample(
         self,
-        fraction: float,
+        fraction: Optional[float] = None,
+        size: Optional[int] = None,
         with_replacement: bool = False,
         seed: Optional[int] = None,
     ) -> "DataFrame":
-        """Samples a fraction of rows from the DataFrame.
+        """Samples rows from the DataFrame.
 
         Args:
-            fraction (float): fraction of rows to sample.
+            fraction (Optional[float]): fraction of rows to sample (between 0.0 and 1.0).
+                Must specify either `fraction` or `size`, but not both.
+                For backward compatibility, can also be passed as a positional argument.
+            size (Optional[int]): exact number of rows to sample.
+                Must specify either `fraction` or `size`, but not both.
+                If `size` exceeds the total number of rows:
+                - When `with_replacement=False`: raises ValueError
+                - When `with_replacement=True`: returns `size` rows (may contain duplicates)
+                Note: Sample by size only works on the native runner right now.
             with_replacement (bool, optional): whether to sample with replacement. Defaults to False.
             seed (Optional[int], optional): random seed. Defaults to None.
 
         Returns:
-            DataFrame: DataFrame with a fraction of rows.
+            DataFrame: DataFrame with sampled rows.
 
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
+            >>> # Sample by fraction (backward compatible positional argument)
             >>> sampled_df = df.sample(0.5)
             >>> sampled_df = sampled_df.collect()
             >>> # sampled_df.show()
@@ -2110,11 +2108,28 @@ class DataFrame:
             >>> # ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             >>> # │ 3     ┆ 6     ┆ 9     │
             >>> # ╰───────┴───────┴───────╯
+            >>> # Sample by exact number of rows
+            >>> sampled_df = df.sample(size=2)
+            >>> sampled_df = sampled_df.collect()
         """
-        if fraction < 0.0 or fraction > 1.0:
-            raise ValueError(f"fraction should be between 0.0 and 1.0, but got {fraction}")
+        if fraction is not None and size is not None:
+            raise ValueError("Must specify either `fraction` or `size`, but not both")
+        if fraction is None and size is None:
+            raise ValueError("Must specify either `fraction` or `size`")
+        if fraction is not None:
+            if fraction < 0.0 or fraction > 1.0:
+                raise ValueError(f"fraction should be between 0.0 and 1.0, but got {fraction}")
+        if size is not None:
+            if size < 0:
+                raise ValueError(f"size should be non-negative, but got {size}")
+            if get_or_create_runner().name == "ray":
+                raise ValueError(
+                    "Sample by size only works on the native runner right now. "
+                    "Please use `daft.set_runner_native()` to switch to the native runner, "
+                    "or use `fraction` instead of `size` for sampling."
+                )
 
-        builder = self._builder.sample(fraction, with_replacement, seed)
+        builder = self._builder.sample(fraction, size, with_replacement, seed)
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -2697,7 +2712,7 @@ class DataFrame:
         on: Optional[Union[list[ColumnInputType], ColumnInputType]] = None,
         left_on: Optional[Union[list[ColumnInputType], ColumnInputType]] = None,
         right_on: Optional[Union[list[ColumnInputType], ColumnInputType]] = None,
-        how: Literal["inner", "inner", "left", "right", "outer", "anti", "semi", "cross"] = "inner",
+        how: Literal["inner", "left", "right", "outer", "anti", "semi", "cross"] = "inner",
         strategy: Optional[Literal["hash", "sort_merge", "broadcast"]] = None,
         prefix: Optional[str] = None,
         suffix: Optional[str] = None,
@@ -4064,7 +4079,7 @@ class DataFrame:
                 if seen >= n:
                     break
 
-            preview_partition = MicroPartition.concat(tables)
+            preview_partition = MicroPartition.concat_or_empty(tables, self.schema())
             if len(preview_partition) > n:
                 preview_partition = preview_partition.slice(0, n)
             elif len(preview_partition) < n:
@@ -4750,14 +4765,6 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.list_agg, cols, self.group_by)
 
-    def agg_list(self, *cols: ColumnInputType) -> DataFrame:
-        """(DEPRECATED) Please use `DataFrame.list_agg` instead."""
-        warnings.warn(
-            "`DataFrame.agg_list` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `DataFrame.list_agg` instead.",
-            category=DeprecationWarning,
-        )
-        return self.list_agg(*cols)
-
     def list_agg_distinct(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped list distinct on this GroupedDataFrame (ignoring nulls).
 
@@ -4769,14 +4776,6 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.list_agg_distinct, cols, self.group_by)
 
-    def agg_set(self, *cols: ColumnInputType) -> DataFrame:
-        """(DEPRECATED) Please use `DataFrame.list_agg_distinct` instead."""
-        warnings.warn(
-            "`DataFrame.agg_set` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `DataFrame.list_agg_distinct` instead.",
-            category=DeprecationWarning,
-        )
-        return self.list_agg_distinct(*cols)
-
     def string_agg(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped string concat on this GroupedDataFrame.
 
@@ -4784,14 +4783,6 @@ class GroupedDataFrame:
             DataFrame: DataFrame with grouped string concatenated per column.
         """
         return self.df._apply_agg_fn(Expression.string_agg, cols, self.group_by)
-
-    def agg_concat(self, *cols: ColumnInputType) -> DataFrame:
-        """(DEPRECATED) Please use `DataFrame.string_agg` instead."""
-        warnings.warn(
-            "`DataFrame.agg_concat` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `DataFrame.string_agg` instead.",
-            category=DeprecationWarning,
-        )
-        return self.string_agg(*cols)
 
     def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> DataFrame:
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.

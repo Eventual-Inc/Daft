@@ -6,7 +6,7 @@ use axum::{
     http::StatusCode,
     routing::post,
 };
-use common_metrics::{QueryID, QueryPlan, Stat, ops::NodeInfo};
+use common_metrics::{QueryEndState, QueryID, QueryPlan, Stat, ops::NodeInfo};
 use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +14,8 @@ use crate::state::{
     DashboardState, ExecInfo, OperatorInfo, OperatorStatus, PlanInfo, QueryInfo, QueryState,
 };
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct StartQueryArgs {
     pub start_sec: u64,
     pub unoptimized_plan: QueryPlan,
@@ -47,7 +48,8 @@ async fn query_start(
     StatusCode::OK
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PlanStartArgs {
     pub plan_start_sec: u64,
 }
@@ -75,7 +77,8 @@ async fn plan_start(
     StatusCode::OK
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PlanEndArgs {
     pub plan_end_sec: u64,
     pub optimized_plan: QueryPlan,
@@ -106,7 +109,8 @@ async fn plan_end(
     StatusCode::OK
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct ExecStartArgs {
     pub exec_start_sec: u64,
     pub node_infos: Vec<NodeInfo>,
@@ -186,12 +190,14 @@ async fn exec_op_end(
     StatusCode::OK
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct ExecEmitStatsArgsSend<'a> {
-    pub stats: Vec<(usize, HashMap<&'a str, Stat>)>,
+#[derive(Clone, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct ExecEmitStatsArgsSend {
+    pub stats: Vec<(usize, HashMap<String, Stat>)>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct ExecEmitStatsArgsRecv {
     pub stats: Vec<(usize, HashMap<String, Stat>)>,
 }
@@ -217,7 +223,8 @@ async fn exec_emit_stats(
     StatusCode::OK
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct ExecEndArgs {
     pub exec_end_sec: u64,
 }
@@ -249,9 +256,12 @@ async fn exec_end(
     StatusCode::OK
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct FinalizeArgs {
     pub end_sec: u64,
+    pub end_state: QueryEndState,
+    pub error_message: Option<String>,
     // IPC-serialized RecordBatch
     pub results: Option<Vec<u8>>,
 }
@@ -292,12 +302,27 @@ async fn query_end(
         None
     };
 
-    query_info.state = QueryState::Finished {
-        plan_info: plan_info.clone(),
-        exec_info: exec_info.clone(),
-        exec_end_sec: *exec_end_sec,
-        end_sec: args.end_sec,
-        results,
+    query_info.state = match args.end_state {
+        QueryEndState::Finished => QueryState::Finished {
+            plan_info: plan_info.clone(),
+            exec_info: exec_info.clone(),
+            exec_end_sec: *exec_end_sec,
+            end_sec: args.end_sec,
+            results,
+        },
+        QueryEndState::Canceled => QueryState::Canceled {
+            plan_info: plan_info.clone(),
+            exec_info: exec_info.clone(),
+            end_sec: args.end_sec,
+            message: args.error_message,
+        },
+        QueryEndState::Failed => QueryState::Failed {
+            plan_info: plan_info.clone(),
+            exec_info: exec_info.clone(),
+            end_sec: args.end_sec,
+            message: args.error_message,
+        },
+        QueryEndState::Dead => todo!(),
     };
 
     state.ping_clients_on_query_update(query_info.value());

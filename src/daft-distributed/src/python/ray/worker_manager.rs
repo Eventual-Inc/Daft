@@ -64,22 +64,17 @@ impl RayWorkerManagerState {
 // Wrapper around the RaySwordfishWorkerManager class in the distributed_swordfish module.
 pub(crate) struct RayWorkerManager {
     state: Arc<Mutex<RayWorkerManagerState>>,
-    task_locals: pyo3_async_runtimes::TaskLocals,
 }
 
 impl RayWorkerManager {
-    pub fn try_new(py: Python) -> DaftResult<Self> {
-        let task_locals = pyo3_async_runtimes::tokio::get_current_locals(py)
-            .expect("Failed to get current task locals");
-
-        Ok(Self {
+    pub fn new() -> Self {
+        Self {
             state: Arc::new(Mutex::new(RayWorkerManagerState {
                 ray_workers: HashMap::new(),
                 last_refresh: None,
                 max_resources_requested: ResourceRequest::default(),
             })),
-            task_locals,
-        })
+        }
     }
 }
 
@@ -107,7 +102,7 @@ impl WorkerManager for RayWorkerManager {
                             "Worker {worker_id} not found in RayWorkerManager when submitting tasks"
                         ))
                     })?
-                    .submit_tasks(tasks, py, &self.task_locals)?;
+                    .submit_tasks(tasks, py)?;
                 task_result_handles.extend(handles);
             }
             DaftResult::Ok(())

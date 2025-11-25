@@ -19,6 +19,7 @@ from .agg import (
     list_agg,
     list_agg_distinct,
     string_agg,
+    product,
 )
 from .binary import encode, try_encode, compress, try_compress, decode, try_decode, decompress, try_decompress
 from .bitwise import bitwise_and, bitwise_or, bitwise_xor, shift_left, shift_right
@@ -62,7 +63,7 @@ from .datetime import (
 )
 from .embedding import cosine_distance
 
-from .file_ import file, file_size
+from .file_ import file, file_size, video_file, audio_file
 
 from .image import (
     resize,
@@ -146,6 +147,8 @@ from .numeric import (
     log,
     ln,
     log1p,
+    pow,
+    power,
     exp,
     expm1,
     between,
@@ -202,6 +205,8 @@ from .str import (
 )
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
+from .audio import audio_metadata, resample
+from .video import video_metadata, video_keyframes
 from .window import (
     row_number,
     rank,
@@ -223,6 +228,8 @@ __all__ = [
     "arctan",
     "arctan2",
     "arctanh",
+    "audio_file",
+    "audio_metadata",
     "avg",
     "between",
     "bitwise_and",
@@ -235,6 +242,7 @@ __all__ = [
     "cbrt",
     "ceil",
     "chunk",
+    "classify_image",
     "classify_text",
     "clip",
     "coalesce",
@@ -351,6 +359,9 @@ __all__ = [
     "partition_iceberg_truncate",
     "partition_months",
     "partition_years",
+    "pow",
+    "power",
+    "product",
     "prompt",
     "quarter",
     "radians",
@@ -363,6 +374,7 @@ __all__ = [
     "regexp_split",
     "repeat",
     "replace",
+    "resample",
     "resize",
     "reverse",
     "right",
@@ -415,6 +427,9 @@ __all__ = [
     "upload",
     "upper",
     "value_counts",
+    "video_file",
+    "video_keyframes",
+    "video_metadata",
     "week_of_year",
     "when",
     "year",

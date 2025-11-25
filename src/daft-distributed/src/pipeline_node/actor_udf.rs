@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_py_serde::PyObjectWrapper;
 use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties, python::PyExpr};
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
@@ -37,7 +37,6 @@ impl UDFActors {
         udf_properties: &UDFProperties,
         actor_ready_timeout: usize,
     ) -> DaftResult<Vec<PyObjectWrapper>> {
-        let task_locals = Python::attach(crate::utils::runtime::get_task_locals);
         let py_exprs = projection
             .iter()
             .map(|e| PyExpr {
@@ -56,8 +55,9 @@ impl UDFActors {
             None => (0.0, 1.0, 0),
         };
 
-        let result: Vec<Py<PyAny>> = common_runtime::python::execute_python_coroutine(
-            move |py| {
+        let actor_name = udf_properties.name.clone();
+        let result =
+            common_runtime::python::execute_python_coroutine::<_, Vec<Py<PyAny>>>(move |py| {
                 let ray_actor_pool_udf_module =
                     py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
                 ray_actor_pool_udf_module.call_method1(
@@ -69,12 +69,11 @@ impl UDFActors {
                         cpu_request,
                         memory_request,
                         actor_ready_timeout,
+                        actor_name,
                     ),
                 )
-            },
-            task_locals,
-        )
-        .await?;
+            })
+            .await?;
 
         let actors = result
             .into_iter()
@@ -126,7 +125,6 @@ impl ActorUDF {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         projection: Vec<BoundExpr>,
         udf_properties: UDFProperties,
@@ -134,12 +132,10 @@ impl ActorUDF {
         child: DistributedPipelineNode,
     ) -> DaftResult<Self> {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -205,6 +201,7 @@ impl ActorUDF {
 
         let batch_size = self.udf_properties.batch_size;
         let schema = self.config.schema.clone();
+        let node_id = self.node_id();
         append_plan_to_existing_task(
             submittable_task,
             &(self.clone() as Arc<dyn PipelineNodeImpl>),
@@ -216,6 +213,10 @@ impl ActorUDF {
                     memory_request,
                     schema.clone(),
                     StatsState::NotMaterialized,
+                    LocalNodeContext {
+                        origin_node_id: Some(node_id as usize),
+                        additional: None,
+                    },
                 )
             },
         )
@@ -237,19 +238,18 @@ impl PipelineNodeImpl for ActorUDF {
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         use itertools::Itertools;
-        let mut res = vec![];
-        res.push("ActorUDF:".to_string());
-        res.push(format!(
-            "Projection = [{}]",
-            self.projection.iter().map(|e| e.to_string()).join(", ")
-        ));
-        res.push(format!("UDF = {}", self.udf_properties.name));
-        res.push(format!(
-            "Concurrency = {}",
-            self.udf_properties
-                .concurrency
-                .expect("ActorUDF should have concurrency specified")
-        ));
+        let mut res = vec![
+            format!("ActorUDF: {}", self.udf_properties.name),
+            format!(
+                "Projection = [{}]",
+                self.projection.iter().map(|e| e.to_string()).join(", ")
+            ),
+            format!(
+                "Properties = {{ {} }}",
+                self.udf_properties.multiline_display(false).join(", ")
+            ),
+        ];
+
         if let Some(resource_request) = &self.udf_properties.resource_request {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
@@ -259,6 +259,7 @@ impl PipelineNodeImpl for ActorUDF {
         } else {
             res.push("Resource request = None".to_string());
         }
+
         res
     }
 

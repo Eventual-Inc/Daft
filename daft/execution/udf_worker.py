@@ -8,6 +8,7 @@ from pickle import PicklingError
 from traceback import TracebackException
 
 import daft.pickle
+from daft.daft import set_compute_runtime_num_worker_threads
 from daft.errors import UDFException
 from daft.execution.udf import (
     _ENTER,
@@ -36,6 +37,9 @@ def udf_event_loop(
         raise ValueError(f"Expected '{_ENTER}' but got {name}")
 
     transport = SharedMemoryTransport()
+
+    # Set the compute runtime num worker threads to 1 for the UDF worker
+    set_compute_runtime_num_worker_threads(1)
     try:
         conn.send(_READY)
 
@@ -52,7 +56,8 @@ def udf_event_loop(
 
             input_bytes = transport.read_and_release(name, size)
             input = RecordBatch.from_ipc_stream(input_bytes)
-            evaluated = input.eval_expression_list(expression_projection)
+
+            evaluated, metrics = input.eval_expression_list_with_metrics(expression_projection)
 
             output_bytes = evaluated.to_ipc_stream()
             out_name, out_size = transport.write_and_close(output_bytes)
@@ -62,21 +67,25 @@ def udf_event_loop(
             sys.stdout.flush()
             sys.stderr.flush()
 
-            conn.send((_SUCCESS, out_name, out_size))
+            conn.send((_SUCCESS, out_name, out_size, metrics))
     except UDFException as e:
         exc = e.__cause__
         assert exc is not None
         try:
             exc_bytes = daft.pickle.dumps(exc)
-        except (PicklingError, AttributeError):
+        except (PicklingError, AttributeError, TypeError):
             exc_bytes = None
-        conn.send((_UDF_ERROR, e.message, TracebackException.from_exception(exc), exc_bytes))
+        try:
+            tb_bytes = daft.pickle.dumps(TracebackException.from_exception(exc))
+        except (PicklingError, AttributeError, TypeError):
+            tb_bytes = None
+        conn.send((_UDF_ERROR, e.message, tb_bytes, exc_bytes))
     except Exception as e:
         try:
             tb = "\n".join(TracebackException.from_exception(e).format())
         except Exception:
             # If serialization fails, just send the exception's repr
-            # This sometimes happens on 3.9 & 3.10, but unclear why
+            # This sometimes happens on 3.10, but unclear why
             # The repr doesn't contain the full traceback
             tb = repr(e)
 
@@ -92,7 +101,10 @@ def udf_event_loop(
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
-        print("Usage: python -m daft.execution.udf_worker <socket_path> <secret>", file=sys.stderr)
+        print(
+            "Usage: python -m daft.execution.udf_worker <socket_path> <secret>",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     socket_path = sys.argv[1]

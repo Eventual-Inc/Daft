@@ -13,7 +13,12 @@ use common_image::CowImage;
 use indexmap::IndexMap;
 use itertools::Itertools;
 
-use crate::{array::ops::image::image_array_from_img_buffers, datatypes::FileArray, prelude::*};
+use crate::{
+    array::ops::image::image_array_from_img_buffers,
+    datatypes::FileArray,
+    file::{MediaTypeAudio, MediaTypeUnknown, MediaTypeVideo},
+    prelude::*,
+};
 
 /// Downcasts a datatype to one that's compatible with literals.
 /// example:
@@ -342,57 +347,24 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
 
             PythonArray::from_iter("literal", iter).into_series()
         }
-        DataType::File => {
-            let values = values.collect::<Vec<_>>();
-
-            use common_file::FileReference;
-
-            let discriminant = UInt8Array::from_iter(
-                Field::new("discriminant", DataType::UInt8),
-                values
-                    .iter()
-                    .map(|(i, lit)| unwrap_inner!(lit, *i, File).map(|f| f.get_type() as u8)),
-            )
-            .into_series();
-            let validity = discriminant.validity().cloned();
-
-            let (files_and_configs, data): (Vec<_>, Vec<Option<Vec<u8>>>) = values
-                .into_iter()
-                .map(|(i, lit)| {
-                    let Some(f) = unwrap_inner!(lit, i, File) else {
-                        return ((None, None), None);
-                    };
-
-                    match f {
-                        FileReference::Reference(file, ioconfig) => {
-                            let io_conf = ioconfig.map(|c| {
-                                bincode::serialize(&c)
-                                    .expect("Failed to serialize IO configuration")
-                            });
-
-                            ((Some(file), io_conf), None)
-                        }
-                        FileReference::Data(items) => ((None, None), Some(items.as_ref().clone())),
-                    }
-                })
-                .unzip();
-            let (files, io_confs): (Vec<Option<String>>, Vec<_>) =
-                files_and_configs.into_iter().unzip();
-            let sa_field = Field::new("literal", DataType::File.to_physical());
-            let io_configs = BinaryArray::from_iter("io_config", io_confs.into_iter());
-            let urls = Utf8Array::from_iter("url", files.into_iter());
-            let data = BinaryArray::from_iter("data", data.into_iter());
-            let sa = StructArray::new(
-                sa_field,
-                vec![
-                    discriminant,
-                    data.into_series(),
-                    urls.into_series(),
-                    io_configs.into_series(),
-                ],
-                validity,
-            );
-            FileArray::new(Field::new("literal", DataType::File), sa).into_series()
+        DataType::File(media_type) => {
+            let iter = values
+                .map(|(i, lit)| unwrap_inner!(lit, i, File))
+                .map(DaftResult::Ok);
+            match media_type {
+                daft_schema::media_type::MediaType::Unknown => {
+                    FileArray::<MediaTypeUnknown>::new_from_file_references("literal", iter)?
+                        .into_series()
+                }
+                daft_schema::media_type::MediaType::Video => {
+                    FileArray::<MediaTypeVideo>::new_from_file_references("literal", iter)?
+                        .into_series()
+                }
+                daft_schema::media_type::MediaType::Audio => {
+                    FileArray::<MediaTypeAudio>::new_from_file_references("literal", iter)?
+                        .into_series()
+                }
+            }
         }
         DataType::Tensor(_) => {
             let (data, shapes) = values

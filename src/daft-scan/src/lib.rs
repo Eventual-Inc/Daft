@@ -414,7 +414,8 @@ impl DisplayAs for DataSource {
     }
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize, Hash)]
+#[derive(PartialEq, Serialize, Deserialize, Hash)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct ScanTask {
     pub sources: Vec<DataSource>,
 
@@ -434,6 +435,13 @@ pub struct ScanTask {
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
     pub generated_fields: Option<SchemaRef>,
+}
+
+#[cfg(not(debug_assertions))]
+impl std::fmt::Debug for ScanTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ScanTask")
+    }
 }
 
 #[typetag::serde]
@@ -728,9 +736,8 @@ impl ScanTask {
                         .map_or_else(|| Cow::Owned(DaftExecutionConfig::default()), Cow::Borrowed);
                     let inflation_factor = match self.file_format_config.as_ref() {
                         FileFormatConfig::Parquet(_) => config.parquet_inflation_factor,
-                        FileFormatConfig::Csv(_) | FileFormatConfig::Json(_) => {
-                            config.csv_inflation_factor
-                        }
+                        FileFormatConfig::Csv(_) => config.csv_inflation_factor,
+                        FileFormatConfig::Json(_) => config.json_inflation_factor,
                         FileFormatConfig::Warc(_) => {
                             if self.is_gzipped() {
                                 5.0

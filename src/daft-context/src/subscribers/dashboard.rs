@@ -1,8 +1,8 @@
-use std::{sync::Arc, time::SystemTime};
+use std::{collections::HashMap, sync::Arc, time::SystemTime};
 
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
-use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshotView, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryPlan, Stat, StatSnapshot, ops::NodeInfo};
 use common_runtime::{RuntimeRef, get_io_runtime};
 use daft_io::IOStatsContext;
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
@@ -10,7 +10,7 @@ use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;
 use reqwest::{Client, RequestBuilder};
 
-use crate::subscribers::{QueryMetadata, Subscriber};
+use crate::subscribers::{QueryMetadata, QueryResult, Subscriber};
 
 /// Get the number of seconds from the current timesince the UNIX epoch
 fn secs_from_epoch() -> u64 {
@@ -20,12 +20,22 @@ fn secs_from_epoch() -> u64 {
         .as_secs()
 }
 
-#[derive(Debug)]
 pub struct DashboardSubscriber {
     url: String,
     client: Client,
     runtime: RuntimeRef,
     preview_rows: DashMap<QueryID, MicroPartitionRef>,
+}
+
+impl std::fmt::Debug for DashboardSubscriber {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DashboardSubscriber")
+            .field("url", &self.url)
+            .field("client", &self.client)
+            .field("runtime", &self.runtime.runtime)
+            .field("preview_rows", &self.preview_rows)
+            .finish()
+    }
 }
 
 impl DashboardSubscriber {
@@ -134,7 +144,7 @@ impl Subscriber for DashboardSubscriber {
         Ok(())
     }
 
-    fn on_query_end(&self, query_id: QueryID) -> DaftResult<()> {
+    fn on_query_end(&self, query_id: QueryID, end_result: QueryResult) -> DaftResult<()> {
         let io_stats = IOStatsContext::new("DashboardSubscriber::on_query_end");
         let Some((_, results)) = self.preview_rows.remove(&query_id) else {
             return Err(DaftError::ValueError(format!(
@@ -162,6 +172,8 @@ impl Subscriber for DashboardSubscriber {
                     .post(format!("{}/engine/query/{}/end", self.url, query_id))
                     .json(&daft_dashboard::engine::FinalizeArgs {
                         end_sec,
+                        end_state: end_result.end_state,
+                        error_message: end_result.error_message.clone(),
                         results: results_ipc,
                     }),
             )
@@ -231,7 +243,7 @@ impl Subscriber for DashboardSubscriber {
     async fn on_exec_emit_stats(
         &self,
         query_id: QueryID,
-        stats: &[(NodeID, StatSnapshotView)],
+        stats: &[(NodeID, StatSnapshot)],
     ) -> DaftResult<()> {
         Self::handle_request(
             self.client
@@ -246,9 +258,9 @@ impl Subscriber for DashboardSubscriber {
                             (
                                 *node_id,
                                 stats
-                                    .into_iter()
-                                    .map(|(name, stat)| (*name, stat.clone()))
-                                    .collect(),
+                                    .iter()
+                                    .map(|(name, stat)| (name.to_string(), stat.clone()))
+                                    .collect::<HashMap<String, Stat>>(),
                             )
                         })
                         .collect::<Vec<_>>(),

@@ -73,6 +73,13 @@ def get_http_udf_options() -> UDFOptions:
                 if "Resources" in node and "CPU" in node["Resources"] and node["Resources"]["CPU"] > 0
             ]
         )
-        return UDFOptions(concurrency=num_nodes, num_gpus=None)
+
+        if num_nodes > 0:
+            return UDFOptions(concurrency=num_nodes, num_gpus=None)
+        else:
+            # If there are no nodes it means that there are no workers available yet.
+            # So we set concurrency to 1 as a fallback.
+            # TODO: We should enable autoscaling UDFs in the future.
+            return UDFOptions(concurrency=1, num_gpus=None)
     else:
         raise ValueError(f"Invalid runner type: {runner}, expected 'native' or 'ray'")

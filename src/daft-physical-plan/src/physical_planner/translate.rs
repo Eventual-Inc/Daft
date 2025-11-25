@@ -327,6 +327,7 @@ pub(super) fn translate_single_logical_node(
         }
         LogicalPlan::Sample(LogicalSample {
             fraction,
+            size,
             with_replacement,
             seed,
             ..
@@ -335,6 +336,7 @@ pub(super) fn translate_single_logical_node(
             Ok(PhysicalPlan::Sample(Sample::new(
                 input_physical,
                 *fraction,
+                *size,
                 *with_replacement,
                 *seed,
             ))
@@ -588,6 +590,9 @@ pub(super) fn translate_single_logical_node(
         LogicalPlan::Window(_window) => Err(DaftError::NotImplemented(
             "Window functions are currently only supported on the native runner.".to_string(),
         )),
+        LogicalPlan::VLLMProject(..) => Err(DaftError::NotImplemented(
+            "VLLMProject is currently only supported on the native runner.".to_string(),
+        )),
     }?;
     // TODO(desmond): We can't perform this check for now because ScanTasks currently provide
     // different size estimations depending on when the approximation is computed. Once we fix
@@ -625,6 +630,7 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                     AggExpr::CountDistinct(Expr::Alias(e, name.clone()).into())
                 }
                 AggExpr::Sum(e) => AggExpr::Sum(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Product(e) => AggExpr::Product(Expr::Alias(e, name.clone()).into()),
                 AggExpr::ApproxPercentile(ApproxPercentileParams {
                     child: e,
                     percentiles,
@@ -786,6 +792,11 @@ pub fn populate_aggregation_stages_bound_with_schema(
                 let sum_col = first_stage!(AggExpr::Sum(expr.clone()));
                 let global_sum_col = second_stage!(AggExpr::Sum(sum_col));
                 final_stage(global_sum_col);
+            }
+            AggExpr::Product(expr) => {
+                let product_col = first_stage!(AggExpr::Product(expr.clone()));
+                let global_product_col = second_stage!(AggExpr::Product(product_col));
+                final_stage(global_product_col);
             }
             AggExpr::ApproxPercentile(ApproxPercentileParams {
                 child,
@@ -1061,6 +1072,21 @@ pub fn populate_aggregation_stages(
                         resolved_col(sum_id.clone()).alias(sum_of_sum_id.clone()),
                     ));
                 final_exprs.push(resolved_col(sum_of_sum_id.clone()).alias(output_name));
+            }
+            AggExpr::Product(e) => {
+                let product_id = agg_expr.semantic_id(schema).id;
+                let product_of_product_id = AggExpr::Product(resolved_col(product_id.clone()))
+                    .semantic_id(schema)
+                    .id;
+                first_stage_aggs
+                    .entry(product_id.clone())
+                    .or_insert(AggExpr::Product(e.alias(product_id.clone()).clone()));
+                second_stage_aggs
+                    .entry(product_of_product_id.clone())
+                    .or_insert(AggExpr::Product(
+                        resolved_col(product_id.clone()).alias(product_of_product_id.clone()),
+                    ));
+                final_exprs.push(resolved_col(product_of_product_id.clone()).alias(output_name));
             }
             AggExpr::Mean(e) => {
                 let sum_id = AggExpr::Sum(e.clone()).semantic_id(schema).id;

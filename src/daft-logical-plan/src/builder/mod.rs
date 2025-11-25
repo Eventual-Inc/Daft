@@ -6,7 +6,9 @@ use std::{
     sync::Arc,
 };
 
-use common_daft_config::DaftPlanningConfig;
+#[cfg(feature = "python")]
+use common_daft_config::PyDaftExecutionConfig;
+use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig};
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
@@ -55,7 +57,8 @@ use crate::{
 ///
 /// This builder holds the current root (sink) of the logical plan, and the building methods return
 /// a brand new builder holding a new plan; i.e., this is an immutable builder.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct LogicalPlanBuilder {
     // The current root of the logical plan in this builder.
     pub plan: Arc<LogicalPlan>,
@@ -512,12 +515,13 @@ impl LogicalPlanBuilder {
 
     pub fn sample(
         &self,
-        fraction: f64,
+        fraction: Option<f64>,
+        size: Option<usize>,
         with_replacement: bool,
         seed: Option<u64>,
     ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            ops::Sample::new(self.plan.clone(), fraction, with_replacement, seed).into();
+            ops::Sample::new(self.plan.clone(), fraction, size, with_replacement, seed).into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -828,7 +832,10 @@ impl LogicalPlanBuilder {
 
     /// Async equivalent of `optimize`
     /// This is safe to call from a tokio runtime
-    pub fn optimize_async(&self) -> impl Future<Output = DaftResult<Self>> {
+    pub fn optimize_async(
+        &self,
+        execution_config: Arc<DaftExecutionConfig>,
+    ) -> impl Future<Output = DaftResult<Self>> {
         let cfg = self.config.clone();
 
         // Run LogicalPlan optimizations
@@ -849,10 +856,11 @@ impl LogicalPlanBuilder {
                     },
                 )
                 .with_default_optimizations()
+                .enrich_with_stats(Some(execution_config.clone()))
                 .when(
                     !cfg.as_ref()
                         .is_some_and(|conf| conf.disable_join_reordering),
-                    |builder| builder.reorder_joins(),
+                    |builder| builder.reorder_joins(Some(execution_config.clone())),
                 )
                 .simplify_expressions()
                 .split_granular_projections()
@@ -862,6 +870,7 @@ impl LogicalPlanBuilder {
                 unoptimized_plan,
                 |new_plan, rule_batch, pass, transformed, seen| {
                     if transformed {
+
                         log::debug!(
                             "Rule batch {:?} transformed plan on pass {}, and produced {} plan:\n{}",
                             rule_batch,
@@ -896,7 +905,7 @@ impl LogicalPlanBuilder {
     ///
     /// **Important**: Do not call this method from the main thread as there is a `block_on` call deep within this method
     /// Calling will result in a runtime panic
-    pub fn optimize(&self) -> DaftResult<Self> {
+    pub fn optimize(&self, execution_config: Arc<DaftExecutionConfig>) -> DaftResult<Self> {
         // TODO: remove the `block_on` to make this method safe to call from the main thread
 
         let cfg = self.config.clone();
@@ -916,10 +925,11 @@ impl LogicalPlanBuilder {
                 },
             )
             .with_default_optimizations()
+            .enrich_with_stats(Some(execution_config.clone()))
             .when(
                 !cfg.as_ref()
                     .is_some_and(|conf| conf.disable_join_reordering),
-                |builder| builder.reorder_joins(),
+                |builder| builder.reorder_joins(Some(execution_config)),
             )
             .simplify_expressions()
             .split_granular_projections()
@@ -1028,7 +1038,8 @@ impl LogicalPlanBuilder {
 /// as possible, converting pyo3 wrapper type arguments into their underlying Rust-native types
 /// (e.g. PySchema -> Schema).
 #[cfg_attr(feature = "python", pyclass(name = "LogicalPlanBuilder"))]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PyLogicalPlanBuilder {
     // Internal logical plan builder.
     pub builder: LogicalPlanBuilder,
@@ -1206,16 +1217,17 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.distinct(columns)?.into())
     }
 
-    #[pyo3(signature = (fraction, with_replacement, seed=None))]
+    #[pyo3(signature = (fraction=None, size=None, with_replacement=false, seed=None))]
     pub fn sample(
         &self,
-        fraction: f64,
+        fraction: Option<f64>,
+        size: Option<usize>,
         with_replacement: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
         Ok(self
             .builder
-            .sample(fraction, with_replacement, seed)?
+            .sample(fraction, size, with_replacement, seed)?
             .into())
     }
 
@@ -1483,8 +1495,8 @@ impl PyLogicalPlanBuilder {
     }
 
     /// Optimize the underlying logical plan, returning a new plan builder containing the optimized plan.
-    pub fn optimize(&self, py: Python) -> PyResult<Self> {
-        py.detach(|| Ok(self.builder.optimize()?.into()))
+    pub fn optimize(&self, py: Python, execution_config: PyDaftExecutionConfig) -> PyResult<Self> {
+        py.detach(|| Ok(self.builder.optimize(execution_config.config)?.into()))
     }
 
     pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {

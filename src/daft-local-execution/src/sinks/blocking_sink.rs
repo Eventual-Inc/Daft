@@ -5,6 +5,8 @@ use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
+use daft_core::prelude::SchemaRef;
+use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
@@ -60,8 +62,8 @@ pub(crate) trait BlockingSink: Send + Sync {
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Self::State>;
-    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::default())
+    fn make_runtime_stats(&self, name: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(DefaultRuntimeStats::new(name))
     }
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
         None
@@ -97,10 +99,18 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         child: Box<dyn PipelineNode>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
+        output_schema: SchemaRef,
+        context: &LocalNodeContext,
     ) -> Self {
-        let name = op.name().into();
-        let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::BlockingSink);
-        let runtime_stats = op.make_runtime_stats();
+        let name: Arc<str> = op.name().into();
+        let node_info = ctx.next_node_info(
+            name,
+            op.op_type(),
+            NodeCategory::BlockingSink,
+            output_schema,
+            context,
+        );
+        let runtime_stats = op.make_runtime_stats(node_info.id);
 
         let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
@@ -161,7 +171,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
     }
 }
 
-impl<Op: BlockingSink> TreeDisplay for BlockingSinkNode<Op> {
+impl<Op: BlockingSink + 'static> TreeDisplay for BlockingSinkNode<Op> {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -181,12 +191,20 @@ impl<Op: BlockingSink> TreeDisplay for BlockingSinkNode<Op> {
                 if matches!(level, DisplayLevel::Verbose) {
                     let rt_result = self.runtime_stats.snapshot();
                     for (name, value) in rt_result {
-                        writeln!(display, "{} = {}", name.capitalize(), value).unwrap();
+                        writeln!(display, "{} = {}", name.as_ref().capitalize(), value).unwrap();
                     }
                 }
             }
         }
         display
+    }
+
+    fn repr_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "id": self.id(),
+            "type": self.op.op_type().to_string(),
+            "name": self.name(),
+        })
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
@@ -227,7 +245,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         _maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
-        let child_results_receiver = self.child.start(false, runtime_handle)?;
+        let child_results_receiver = self.child.start(true, runtime_handle)?;
         let counting_receiver = InitializingCountingReceiver::new(
             child_results_receiver,
             self.node_id(),

@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Iterator
 
+import pytest
+
 import daft
 from daft import DataType
 
@@ -88,10 +90,11 @@ def test_cls_multiple_instances():
     }
 
 
-def test_cls_async_method():
+@pytest.mark.parametrize("concurrency", [None, 1, 2])
+def test_cls_async_method(concurrency):
     df = daft.from_pydict({"a": [1, 2, 3]})
 
-    @daft.cls
+    @daft.cls(max_concurrency=concurrency)
     class AsyncProcessor:
         def __init__(self, delay: float):
             self.delay = delay
@@ -102,7 +105,7 @@ def test_cls_async_method():
 
     processor = AsyncProcessor(0.01)
     result = df.select(processor.process(df["a"]))
-    assert result.to_pydict() == {"a": [2, 4, 6]}
+    assert sorted(result.to_pydict()["a"]) == [2, 4, 6]
 
 
 def test_cls_generator_method():
@@ -274,3 +277,38 @@ def test_cls_batch_method_scalar_eval():
     # When called with a scalar, should execute eagerly
     a = daft.Series.from_pylist([1, 2, 3])
     assert multiplier.multiply(a).to_pylist() == [5, 10, 15]
+
+
+@pytest.mark.parametrize("concurrency", [None, 1, 2])
+def test_cls_async_batch_method(concurrency):
+    df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+
+    @daft.cls(max_concurrency=concurrency)
+    class AsyncBatchProcessor:
+        def __init__(self, delay: float):
+            self.delay = delay
+
+        @daft.method.batch(return_dtype=DataType.int64())
+        async def process(self, a: daft.Series) -> daft.Series:
+            await asyncio.sleep(self.delay)
+            return a
+
+    processor = AsyncBatchProcessor(delay=0.01)
+    result = df.select(processor.process(df["a"]))
+    assert sorted(result.to_pydict()["a"]) == [1, 2, 3]
+
+
+def test_cls_max_concurrency_zero():
+    with pytest.raises(ValueError, match="max_concurrency for udf must be non-zero"):
+
+        @daft.cls(max_concurrency=0)
+        class MaxConcurrencyZero:
+            def __init__(self):
+                pass
+
+            def __call__(self, x: int) -> int:
+                return x
+
+        df = daft.from_pydict({"a": [1, 2, 3]})
+        result = df.select(MaxConcurrencyZero()(df["a"])).to_pydict()
+        assert result == {"a": [1, 2, 3]}

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
 use common_resource_request::ResourceRequest;
@@ -45,7 +45,7 @@ impl ActorPoolProject {
     }
 
     /// Retrieves the concurrency of this ActorPoolProject
-    pub fn concurrency(&self) -> usize {
+    pub fn concurrency(&self) -> NonZeroUsize {
         self.udf_properties
             .concurrency
             .expect("ActorPoolProject should have concurrency specified")

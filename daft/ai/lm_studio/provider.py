@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import sys
+import warnings
 from typing import TYPE_CHECKING, Any
 
-from typing_extensions import Unpack
+if sys.version_info < (3, 11):
+    from typing_extensions import Unpack
+else:
+    from typing import Unpack
 
 from daft.ai.openai.provider import OpenAIProvider
 
@@ -34,8 +39,15 @@ class LMStudioProvider(OpenAIProvider):
                 options["base_url"] = base_url.rstrip("/") + "/v1"
         super().__init__(name or "lm_studio", **options)
 
-    def get_text_embedder(self, model: str | None = None, **options: Any) -> TextEmbedderDescriptor:
+    def get_text_embedder(
+        self, model: str | None = None, dimensions: int | None = None, **options: Any
+    ) -> TextEmbedderDescriptor:
         from daft.ai.lm_studio.protocols.text_embedder import LMStudioTextEmbedderDescriptor
+
+        if dimensions is not None:
+            warnings.warn(
+                f"embed_text dimensions was specified but provider {self.name} currently ignores this property: see https://github.com/Eventual-Inc/Daft/issues/5555"
+            )
 
         return LMStudioTextEmbedderDescriptor(
             provider_name=self._name,

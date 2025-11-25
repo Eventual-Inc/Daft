@@ -13,7 +13,7 @@ use crate::{
 mod ir {
     pub use crate::*;
     pub use common_io_config::{
-        AzureConfig, GCSConfig, HTTPConfig, HuggingFaceConfig, IOConfig, S3Config, UnityConfig,
+        AzureConfig, GCSConfig, HTTPConfig, HuggingFaceConfig, IOConfig, S3Config, UnityConfig, TosConfig
     };
     pub use common_scan_info::Pushdowns;
 }
@@ -203,7 +203,8 @@ impl ToFromProto for ir::rel::LogicalPlan {
             | Self::SubqueryAlias(_)
             | Self::Window(_)
             | Self::TopN(_)
-            | Self::Offset(_) => {
+            | Self::Offset(_)
+            | Self::VLLMProject(..) => {
                 not_implemented_err!("{}", self.name());
             }
         };
@@ -809,12 +810,12 @@ impl ToFromProto for ir::ScanTaskLikeRef {
     where
         Self: Sized,
     {
-        Ok(bincode::deserialize(&message.task)?)
+        Ok(bincode::serde::decode_from_slice(&message.task, bincode::config::legacy())?.0)
     }
 
     fn to_proto(&self) -> ProtoResult<Self::Message> {
         Ok(Self::Message {
-            task: bincode::serialize(self)?,
+            task: bincode::serde::encode_to_vec(self, bincode::config::legacy())?,
         })
     }
 }
@@ -833,6 +834,7 @@ impl ToFromProto for ir::IOConfig {
         let unity = ir::UnityConfig::from_proto(non_null!(message.unity))?;
         let hf = ir::HuggingFaceConfig::from_proto(non_null!(message.hf))?;
         let disable_suffix_range = message.disable_suffix_range;
+        let tos = ir::TosConfig::from_proto(non_null!(message.tos))?;
 
         Ok(Self {
             s3,
@@ -842,6 +844,7 @@ impl ToFromProto for ir::IOConfig {
             unity,
             hf,
             disable_suffix_range,
+            tos,
         })
     }
 
@@ -853,6 +856,7 @@ impl ToFromProto for ir::IOConfig {
         let unity = self.unity.to_proto()?;
         let hf = self.hf.to_proto()?;
         let disable_suffix_range = self.disable_suffix_range;
+        let tos = self.tos.to_proto()?;
 
         Ok(proto::IoConfig {
             s3: Some(s3),
@@ -862,6 +866,7 @@ impl ToFromProto for ir::IOConfig {
             unity: Some(unity),
             hf: Some(hf),
             disable_suffix_range,
+            tos: Some(tos),
         })
     }
 }
@@ -896,6 +901,7 @@ impl ToFromProto for ir::S3Config {
             profile_name: message.profile_name,
             multipart_size: message.multipart_size,
             multipart_max_concurrency: message.multipart_max_concurrency,
+            custom_retry_msgs: message.custom_retry_msgs,
         })
     }
 
@@ -923,6 +929,7 @@ impl ToFromProto for ir::S3Config {
             profile_name: self.profile_name.clone(),
             multipart_size: self.multipart_size,
             multipart_max_concurrency: self.multipart_max_concurrency,
+            custom_retry_msgs: self.custom_retry_msgs.clone(),
         })
     }
 }
@@ -1076,6 +1083,47 @@ impl ToFromProto for ir::HuggingFaceConfig {
             row_group_size: self.row_group_size.map(|s| s as u64),
             target_filesize: self.target_filesize as u64,
             max_operations_per_commit: self.max_operations_per_commit as u64,
+        })
+    }
+}
+
+impl ToFromProto for ir::TosConfig {
+    type Message = proto::TosConfig;
+
+    fn from_proto(message: Self::Message) -> ProtoResult<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self {
+            region: message.region,
+            endpoint: message.endpoint,
+            access_key: message.access_key.map(|s| s.into()),
+            secret_key: message.secret_key.map(|s| s.into()),
+            security_token: message.security_token.map(|s| s.into()),
+            anonymous: message.anonymous,
+            max_retries: message.max_retries,
+            retry_timeout_ms: message.retry_timeout_ms,
+            connect_timeout_ms: message.connect_timeout_ms,
+            read_timeout_ms: message.read_timeout_ms,
+            max_concurrent_requests: message.max_concurrent_requests,
+            max_connections_per_io_thread: message.max_connections_per_io_thread,
+        })
+    }
+
+    fn to_proto(&self) -> ProtoResult<Self::Message> {
+        Ok(proto::TosConfig {
+            region: self.region.clone(),
+            endpoint: self.endpoint.clone(),
+            access_key: self.access_key.clone(),
+            secret_key: self.secret_key.as_ref().map(|s| s.as_string().clone()),
+            security_token: self.security_token.as_ref().map(|s| s.as_string().clone()),
+            anonymous: self.anonymous,
+            max_retries: self.max_retries,
+            retry_timeout_ms: self.retry_timeout_ms,
+            connect_timeout_ms: self.connect_timeout_ms,
+            read_timeout_ms: self.read_timeout_ms,
+            max_concurrent_requests: self.max_concurrent_requests,
+            max_connections_per_io_thread: self.max_connections_per_io_thread,
         })
     }
 }

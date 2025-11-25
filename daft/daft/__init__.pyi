@@ -1,14 +1,8 @@
 import builtins
 import datetime
-import sys
 from collections.abc import AsyncIterator, Iterator
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar
-
-if sys.version_info < (3, 10):
-    from typing_extensions import Concatenate
-else:
-    from typing import Concatenate
+from typing import TYPE_CHECKING, Any, Callable, Concatenate, Literal, TypeVar
 
 from daft.dataframe.display import MermaidOptions
 from daft.execution import physical_plan
@@ -510,6 +504,7 @@ class S3Config:
         profile_name (str, optional): Name of AWS_PROFILE to load, defaults to None which will then check the Environment Variable `AWS_PROFILE` then fall back to `default`
         multipart_size (int, optional): The size of multipart part (bytes), the size range should be 5MB to 5GB, defaults to 8MB.
         multipart_max_concurrency (int, optional): The max concurrency of upload part per object, defaults to 100.
+        custom_retry_msgs (list[str], optional): Will retry the request if any custom retry message appeared in the error message of response, defaults to None.
 
     Examples:
         >>> # For AWS S3
@@ -551,6 +546,7 @@ class S3Config:
     profile_name: str | None
     multipart_size: int | None
     multipart_max_concurrency: int | None
+    custom_retry_msgs: list[str] | None
 
     def __init__(
         self,
@@ -576,6 +572,7 @@ class S3Config:
         profile_name: str | None = None,
         multipart_size: int | None = None,
         multipart_max_concurrency: int | None = None,
+        custom_retry_msgs: list[str] | None = None,
     ): ...
     def replace(
         self,
@@ -600,6 +597,7 @@ class S3Config:
         profile_name: str | None = None,
         multipart_size: int | None = None,
         multipart_max_concurrency: int | None = None,
+        custom_retry_msgs: list[str] | None = None,
     ) -> S3Config:
         """Replaces values if provided, returning a new S3Config."""
         ...
@@ -773,6 +771,94 @@ class HuggingFaceConfig:
         """Replaces values if provided, returning a new HuggingFaceConfig."""
         ...
 
+class TosConfig:
+    """I/O configuration for accessing Volcengine TOS (Torch Object Storage).
+
+    Args:
+        region (str, optional): Name of the region to be used, defaults to None, it can be detected automatically from endpoint if standard endpoint is set.
+        endpoint (str, optional): URL to the TOS endpoint, defaults to None for Volcengine TOS, it can be inferred from region.
+        access_key (str, optional): TOS Access Key, defaults to None.
+        secret_key (str, optional): TOS Secret Key, defaults to None.
+        security_token (str, optional): TOS Security Token, required for temporary credentials, defaults to None.
+        anonymous (bool, optional): Whether to use "anonymous mode" or not, which will access TOS without any credentials. Defaults to False.
+        max_retries (int, optional): Maximum number of retries for failed requests, defaults to 3.
+        retry_timeout_ms (int, optional): Timeout duration for retry attempts in milliseconds, defaults to 30000ms.
+        connect_timeout_ms (int, optional): Timeout duration to wait to make a connection to TOS in milliseconds, defaults to 10000ms.
+        read_timeout_ms (int, optional): Timeout duration to wait to read the first byte from TOS in milliseconds, defaults to 30000ms.
+        max_concurrent_requests (int, optional): Maximum number of concurrent requests to TOS at any time, defaults to 50.
+        max_connections_per_io_thread (int, optional): Maximum number of connections to TOS per IO thread, defaults to 50.
+
+    Examples:
+        >>> # For Volcengine & byteplus TOS, refer to https://www.volcengine.com/docs/6349/107356
+        >>> # or https://docs.byteplus.com/en/docs/tos/docs-region-and-endpoint or get endpoint and region info.
+        >>>
+        >>> io_config = IOConfig(
+        ...     tos=TosConfig(
+        ...         region="cn-beijing",
+        ...         endpoint="https://tos-cn-beijing.volces.com",
+        ...         access_key="your-access-key",
+        ...         secret_key="your-secret-key",
+        ...     )
+        ... )
+        >>> daft.read_parquet("tos://some-path", io_config=io_config)
+    """
+
+    region: str | None
+    endpoint: str | None
+    access_key: str | None
+    secret_key: str | None
+    security_token: str | None
+    anonymous: bool
+    max_retries: int
+    retry_timeout_ms: int
+    connect_timeout_ms: int
+    read_timeout_ms: int
+    max_concurrent_requests: int
+    max_connections_per_io_thread: int
+
+    def __init__(
+        self,
+        region: str | None = None,
+        endpoint: str | None = None,
+        access_key: str | None = None,
+        secret_key: str | None = None,
+        security_token: str | None = None,
+        anonymous: bool | None = None,
+        max_retries: int | None = None,
+        retry_timeout_ms: int | None = None,
+        connect_timeout_ms: int | None = None,
+        read_timeout_ms: int | None = None,
+        max_concurrent_requests: int | None = None,
+        max_connections_per_io_thread: int | None = None,
+    ): ...
+    def replace(
+        self,
+        region: str | None = None,
+        endpoint: str | None = None,
+        access_key: str | None = None,
+        secret_key: str | None = None,
+        security_token: str | None = None,
+        anonymous: bool | None = None,
+        max_retries: int | None = None,
+        retry_timeout_ms: int | None = None,
+        connect_timeout_ms: int | None = None,
+        read_timeout_ms: int | None = None,
+        max_concurrent_requests: int | None = None,
+        max_connections_per_io_thread: int | None = None,
+    ) -> TosConfig:
+        """Replaces values if provided, returning a new TosConfig."""
+        ...
+    @staticmethod
+    def from_env() -> TosConfig:
+        """Creates a TosConfig, retrieving credentials and configurations from the current environment.
+
+        TOS_ENDPOINT: Endpoint of the TOS service.
+        TOS_REGION: Region of the TOS service.
+        TOS_ACCESS_KEY: Access key for TOS authentication.
+        TOS_SECRET_KEY: Secret key for TOS authentication.
+        TOS_SECURITY_TOKEN: Security token for TOS authentication.
+        """
+
 class IOConfig:
     """Configuration for the native I/O layer, e.g. credentials for accessing cloud storage systems."""
 
@@ -783,6 +869,7 @@ class IOConfig:
     unity: UnityConfig
     hf: HuggingFaceConfig
     disable_suffix_range: bool
+    tos: TosConfig
 
     def __init__(
         self,
@@ -793,6 +880,7 @@ class IOConfig:
         unity: UnityConfig | None = None,
         hf: HuggingFaceConfig | None = None,
         disable_suffix_range: bool | None = None,
+        tos: TosConfig | None = None,
     ): ...
     def replace(
         self,
@@ -803,6 +891,7 @@ class IOConfig:
         unity: UnityConfig | None = None,
         hf: HuggingFaceConfig | None = None,
         disable_suffix_range: bool | None = None,
+        tos: TosConfig | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig."""
         ...
@@ -1141,7 +1230,7 @@ class PyDataType:
     @staticmethod
     def python() -> PyDataType: ...
     @staticmethod
-    def file() -> PyDataType: ...
+    def file(media_type: PyMediaType) -> PyDataType: ...
     def to_arrow(self, cast_tensor_type_for_ray: builtins.bool | None = None) -> pa.DataType: ...
     def is_null(self) -> builtins.bool: ...
     def is_boolean(self) -> builtins.bool: ...
@@ -1236,6 +1325,7 @@ class PyExpr:
     def count(self, mode: CountMode) -> PyExpr: ...
     def count_distinct(self) -> PyExpr: ...
     def sum(self) -> PyExpr: ...
+    def product(self) -> PyExpr: ...
     def approx_count_distinct(self) -> PyExpr: ...
     def approx_percentiles(self, percentiles: float | list[float]) -> PyExpr: ...
     def mean(self) -> PyExpr: ...
@@ -1289,6 +1379,20 @@ class PyExpr:
     def partitioning_years(self) -> PyExpr: ...
     def partitioning_iceberg_bucket(self, n: int) -> PyExpr: ...
     def partitioning_iceberg_truncate(self, w: int) -> PyExpr: ...
+    def vllm(
+        self,
+        model: str,
+        concurrency: int,
+        gpus_per_actor: int,
+        do_prefix_routing: bool,
+        max_buffer_size: int,
+        min_bucket_size: int,
+        prefix_match_threshold: float,
+        load_balance_threshold: int,
+        batch_size: int | None,
+        engine_args: Any,
+        generate_args: Any,
+    ) -> PyExpr: ...
 
     ###
     # Visitor methods
@@ -1359,6 +1463,8 @@ def row_wise_udf(
     gpus: int,
     use_process: bool | None,
     max_concurrency: int | None,
+    max_retries: int | None,
+    on_error: str | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
 ) -> PyExpr: ...
@@ -1366,11 +1472,14 @@ def batch_udf(
     name: str,
     cls: ClsBase[Any],
     method: Callable[Concatenate[Any, ...], Any],
+    is_async: bool,
     return_dtype: PyDataType,
     gpus: int,
     use_process: bool | None,
     max_concurrency: int | None,
     batch_size: int | None,
+    max_retries: int | None,
+    on_error: str | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
 ) -> PyExpr: ...
@@ -1468,6 +1577,7 @@ class PySeries:
     def count(self, mode: CountMode) -> PySeries: ...
     def count_distinct(self) -> PySeries: ...
     def sum(self) -> PySeries: ...
+    def product(self) -> PySeries: ...
     def mean(self) -> PySeries: ...
     def stddev(self) -> PySeries: ...
     def min(self) -> PySeries: ...
@@ -1475,6 +1585,7 @@ class PySeries:
     def agg_list(self) -> PySeries: ...
     def agg_set(self) -> PySeries: ...
     def cast(self, dtype: PyDataType) -> PySeries: ...
+    def pow(self, exp: float) -> PySeries: ...
     def log2(self) -> PySeries: ...
     def log10(self) -> PySeries: ...
     def log(self, base: float) -> PySeries: ...
@@ -1515,9 +1626,20 @@ class PySeriesIterator:
 class PyShowOptions:
     pass
 
+class OperatorMetrics:
+    def inc_counter(
+        self,
+        name: str,
+        value: int,
+        *,
+        description: str | None = None,
+        attributes: dict[str, str] | None = None,
+    ) -> None: ...
+
 class PyRecordBatch:
     def schema(self) -> PySchema: ...
     def eval_expression_list(self, exprs: list[PyExpr]) -> PyRecordBatch: ...
+    def eval_expression_list_with_metrics(self, exprs: list[PyExpr]) -> tuple[PyRecordBatch, OperatorMetrics]: ...
     def take(self, idx: PySeries) -> PyRecordBatch: ...
     def filter(self, exprs: list[PyExpr]) -> PyRecordBatch: ...
     def sort(self, sort_keys: list[PyExpr], descending: list[bool], nulls_first: list[bool]) -> PyRecordBatch: ...
@@ -1827,7 +1949,9 @@ class LogicalPlanBuilder:
     def into_batches(self, batch_size: int) -> LogicalPlanBuilder: ...
     def coalesce(self, num_partitions: int) -> LogicalPlanBuilder: ...
     def distinct(self, on: list[PyExpr]) -> LogicalPlanBuilder: ...
-    def sample(self, fraction: float, with_replacement: bool, seed: int | None) -> LogicalPlanBuilder: ...
+    def sample(
+        self, fraction: float | None, size: int | None, with_replacement: bool, seed: int | None
+    ) -> LogicalPlanBuilder: ...
     def aggregate(self, agg_exprs: list[PyExpr], groupby_exprs: list[PyExpr]) -> LogicalPlanBuilder: ...
     def pivot(
         self,
@@ -1894,7 +2018,7 @@ class LogicalPlanBuilder:
     def schema(self) -> PySchema: ...
     def describe(self) -> LogicalPlanBuilder: ...
     def summarize(self) -> LogicalPlanBuilder: ...
-    def optimize(self) -> LogicalPlanBuilder: ...
+    def optimize(self, execution_config: PyDaftExecutionConfig) -> LogicalPlanBuilder: ...
     def to_physical_plan_scheduler(self, cfg: PyDaftExecutionConfig) -> PhysicalPlanScheduler: ...
     def to_adaptive_physical_plan_scheduler(self, cfg: PyDaftExecutionConfig) -> AdaptivePhysicalPlanScheduler: ...
     def repr_ascii(self, simple: bool) -> str: ...
@@ -1904,9 +2028,9 @@ class LogicalPlanBuilder:
 class DistributedPhysicalPlan:
     @staticmethod
     def from_logical_plan_builder(
-        builder: LogicalPlanBuilder, config: PyDaftExecutionConfig
+        builder: LogicalPlanBuilder, query_id: str, config: PyDaftExecutionConfig
     ) -> DistributedPhysicalPlan: ...
-    def id(self) -> str: ...
+    def idx(self) -> str: ...
     def repr_ascii(self, simple: bool) -> str: ...
     def repr_mermaid(self, options: MermaidOptions) -> str: ...
 
@@ -1936,7 +2060,7 @@ class RaySwordfishTask:
 
 class RayTaskResult:
     @staticmethod
-    def success(ray_part_refs: list[RayPartitionRef]) -> RayTaskResult: ...
+    def success(ray_part_refs: list[RayPartitionRef], stats: bytes) -> RayTaskResult: ...
     @staticmethod
     def worker_died() -> RayTaskResult: ...
     @staticmethod
@@ -1952,6 +2076,11 @@ class RaySwordfishWorker:
         total_memory_bytes: int,
     ) -> None: ...
 
+class PyExecutionEngineResult:
+    def __aiter__(self) -> PyExecutionEngineResult: ...
+    async def __anext__(self) -> PyMicroPartition | None: ...
+    async def finish(self) -> bytes: ...
+
 class NativeExecutor:
     def __init__(self) -> None: ...
     def run(
@@ -1959,18 +2088,9 @@ class NativeExecutor:
         plan: LocalPhysicalPlan,
         psets: dict[str, list[PyMicroPartition]],
         daft_ctx: PyDaftContext,
-        results_buffer_size: int | None,
-        context: dict[str, str] | None = None,
-    ) -> Iterator[PyMicroPartition]: ...
-    # Primarily used for Flotilla, so subscribers are unused
-    def run_async(
-        self,
-        plan: LocalPhysicalPlan,
-        psets: dict[str, list[PyMicroPartition]],
-        daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: int | None = None,
         context: dict[str, str] | None = None,
-    ) -> AsyncIterator[PyMicroPartition]: ...
+    ) -> PyExecutionEngineResult: ...
     @staticmethod
     def repr_ascii(builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, simple: bool) -> str: ...
     @staticmethod
@@ -2009,6 +2129,7 @@ class PyDaftExecutionConfig:
         parquet_inflation_factor: float | None = None,
         csv_target_filesize: int | None = None,
         csv_inflation_factor: float | None = None,
+        json_inflation_factor: float | None = None,
         shuffle_aggregation_default_partitions: int | None = None,
         partial_aggregation_threshold: int | None = None,
         high_cardinality_aggregation_threshold: float | None = None,
@@ -2025,6 +2146,7 @@ class PyDaftExecutionConfig:
         use_legacy_ray_runner: bool | None = None,
         min_cpu_per_task: float | None = None,
         actor_udf_ready_timeout: int | None = None,
+        maintain_order: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -2050,6 +2172,8 @@ class PyDaftExecutionConfig:
     def csv_target_filesize(self) -> int: ...
     @property
     def csv_inflation_factor(self) -> float: ...
+    @property
+    def json_inflation_factor(self) -> float: ...
     @property
     def shuffle_aggregation_default_partitions(self) -> int: ...
     @property
@@ -2099,6 +2223,13 @@ class StatType(Enum):
     FLOAT = 3
     DURATION = 5
 
+# TODO(void001): Implement Dead state
+class QueryEndState(Enum):
+    Finished = 0
+    Canceled = 1
+    Failed = 2
+    Dead = 3
+
 class PyNodeInfo:
     # Note, these are all read-only getters
     id: int
@@ -2112,6 +2243,12 @@ class PyQueryMetadata:
     unoptimized_plan: str
 
     def __init__(self, output_schema: PySchema, unoptimized_plan: str) -> None: ...
+
+class PyQueryResult:
+    end_state: QueryEndState
+    error_message: str | None
+
+    def __init__(self, end_state: QueryEndState, error_message: str | None) -> None: ...
 
 class PyDaftContext:
     def __init__(self) -> None: ...
@@ -2128,7 +2265,7 @@ class PyDaftContext:
     def attach_subscriber(self, alias: str, subscriber: Subscriber) -> None: ...
     def detach_subscriber(self, alias: str) -> None: ...
     def notify_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None: ...
-    def notify_query_end(self, query_id: str) -> None: ...
+    def notify_query_end(self, query_id: str, query_result: PyQueryResult) -> None: ...
     def notify_result_out(self, query_id: str, result: PartitionT) -> None: ...
     def notify_optimization_start(self, query_id: str) -> None: ...
     def notify_optimization_end(self, query_id: str, optimized_plan: str) -> None: ...
@@ -2200,6 +2337,7 @@ class PyIdentifier:
     def getitem(self, index: int) -> str: ...
     def __len__(self) -> int: ...
     def __repr__(self) -> str: ...
+    def __hash__(self) -> int: ...
 
 class PyTableSource:
     @staticmethod
@@ -2310,3 +2448,13 @@ class PyDaftFile:
     def _from_file_reference(ref: PyFileReference) -> PyDaftFile: ...
     def __enter__(self) -> PyDaftFile: ...
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None: ...
+
+class PyMediaType:
+    @staticmethod
+    def unknown() -> PyMediaType: ...
+    @staticmethod
+    def video() -> PyMediaType: ...
+    @staticmethod
+    def audio() -> PyMediaType: ...
+
+def guess_mimetype_from_content(bytes: bytes) -> str | None: ...

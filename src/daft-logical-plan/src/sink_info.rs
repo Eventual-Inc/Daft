@@ -12,7 +12,8 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 #[allow(clippy::large_enum_variant)]
-#[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub enum SinkInfo<E = ExprRef> {
     OutputFileInfo(OutputFileInfo<E>),
     #[cfg(feature = "python")]
@@ -21,7 +22,8 @@ pub enum SinkInfo<E = ExprRef> {
     DataSinkInfo(DataSinkInfo),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct OutputFileInfo<E = ExprRef> {
     pub root_dir: String,
     pub write_mode: WriteMode,
@@ -32,14 +34,16 @@ pub struct OutputFileInfo<E = ExprRef> {
 }
 
 #[cfg(feature = "python")]
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct CatalogInfo<E = ExprRef> {
     pub catalog: CatalogType<E>,
     pub catalog_columns: Vec<String>,
 }
 
 #[cfg(feature = "python")]
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub enum CatalogType<E = ExprRef> {
     Iceberg(IcebergCatalogInfo<E>),
     DeltaLake(DeltaLakeCatalogInfo<E>),
@@ -47,7 +51,8 @@ pub enum CatalogType<E = ExprRef> {
 }
 
 #[cfg(feature = "python")]
-#[derive(Educe, Debug, Clone, Serialize, Deserialize)]
+#[derive(Educe, Clone, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 #[educe(PartialEq, Eq, Hash)]
 pub struct IcebergCatalogInfo<E = ExprRef> {
     pub table_name: String,
@@ -86,7 +91,8 @@ impl<E> IcebergCatalogInfo<E> {
 }
 
 #[cfg(feature = "python")]
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct DeltaLakeCatalogInfo<E = ExprRef> {
     pub path: String,
     pub mode: String,
@@ -122,8 +128,9 @@ where
 }
 
 #[cfg(feature = "python")]
-#[derive(Educe, Debug, Clone, Serialize, Deserialize)]
+#[derive(Educe, Clone, Serialize, Deserialize)]
 #[educe(PartialEq, Eq, Hash)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct LanceCatalogInfo {
     pub path: String,
     pub mode: String,
@@ -152,7 +159,8 @@ impl LanceCatalogInfo {
 }
 
 #[cfg(feature = "python")]
-#[derive(Educe, Debug, Clone, Serialize, Deserialize)]
+#[derive(Educe, Clone, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 #[educe(PartialEq, Eq, Hash)]
 pub struct DataSinkInfo {
     pub name: String,

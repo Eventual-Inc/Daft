@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::{create_broadcasted_str_iter, parse_inputs};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RegexpReplace;
 
 #[typetag::serde]
@@ -41,7 +41,7 @@ impl ScalarUDF for RegexpReplace {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Replace;
 
 #[typetag::serde]

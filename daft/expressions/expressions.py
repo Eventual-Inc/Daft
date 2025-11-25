@@ -913,6 +913,26 @@ class Expression:
 
         return log1p(self)
 
+    def pow(self, exp: Expression) -> Expression:
+        """The elementwise exponentiation of a numeric series.
+
+        Args:
+            exp: The exponent to raise each element to.
+        """
+        from daft.functions import pow
+
+        return pow(self, exp)
+
+    def power(self, exp: Expression) -> Expression:
+        """The elementwise exponentiation of a numeric series.
+
+        Args:
+            exp: The exponent to raise each element to.
+        """
+        from daft.functions import power
+
+        return power(self, exp)
+
     def exp(self) -> Expression:
         """The e^self of a numeric expression.
 
@@ -1012,6 +1032,16 @@ class Expression:
         from daft.functions import sum
 
         return sum(self)
+
+    def product(self) -> Expression:
+        """Calculates the product of the values in the expression.
+
+        Tip: See Also
+            [`daft.functions.product`](https://docs.daft.ai/en/stable/api/functions/product/)
+        """
+        from daft.functions import product
+
+        return product(self)
 
     def approx_count_distinct(self) -> Expression:
         """Calculates the approximate number of non-`NULL` distinct values in the expression.

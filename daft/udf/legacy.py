@@ -3,15 +3,8 @@ from __future__ import annotations
 import dataclasses
 import functools
 import inspect
-import sys
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
-
-from .udf_v2 import check_serializable
-
-if sys.version_info >= (3, 10):
-    from typing import TypeAlias
-else:
-    from typing_extensions import TypeAlias
+import warnings
+from typing import TYPE_CHECKING, Any, Callable, Optional, TypeAlias, Union, cast
 
 import daft
 from daft.daft import PyDataType, PySeries, ResourceRequest
@@ -20,6 +13,8 @@ from daft.dependencies import np, pa
 from daft.errors import UDFException
 from daft.expressions import Expression
 from daft.series import Series
+
+from .udf_v2 import check_serializable
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -475,7 +470,7 @@ def udf(
     concurrency: int | None = None,
     use_process: bool | None = None,
 ) -> Callable[[UserDefinedPyFuncLike], UDF]:
-    """`@udf` Decorator to convert a Python function/class into a `UDF`.
+    """(DEPRECATED) `@udf` Decorator to convert a Python function/class into a `UDF`.
 
     UDFs allow users to run arbitrary Python code on the outputs of Expressions.
 
@@ -613,6 +608,12 @@ def udf(
         ...         return self.model(data.to_pylist())
 
     """
+    warnings.warn(
+        "The `@daft.udf` decorator is deprecated since Daft version >= 0.7.0 and will be removed in >= 0.8.0. Please use `@daft.func` and `@daft.cls` instead.\nSee the migration guide for more details: https://docs.daft.ai/en/stable/custom-code/migration/",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
+
     inferred_return_dtype = DataType._infer(return_dtype)
 
     def _udf(f: UserDefinedPyFuncLike) -> UDF:

@@ -19,7 +19,7 @@ use crate::{
         task::{Task, TaskID},
         worker::{Worker, WorkerManager},
     },
-    statistics::{StatisticsEvent, StatisticsManagerRef},
+    statistics::{StatisticsManagerRef, TaskEvent},
     utils::{
         channel::{
             OneshotReceiver, OneshotSender, UnboundedReceiver, UnboundedSender,
@@ -110,7 +110,7 @@ where
             // Register statistics for all tasks
             for task in &enqueueable_tasks {
                 let task_context = task.task_context();
-                statistics_manager.handle_event(StatisticsEvent::TaskSubmitted {
+                statistics_manager.handle_event(TaskEvent::Submitted {
                     context: task_context,
                     name: task.task.task_name().clone(),
                 })?;
@@ -159,7 +159,7 @@ where
                 // Report to statistics manager
                 for task in &scheduled_tasks {
                     let task_context = task.task().task_context();
-                    statistics_manager.handle_event(StatisticsEvent::TaskScheduled {
+                    statistics_manager.handle_event(TaskEvent::Scheduled {
                         context: task_context,
                     })?;
                 }

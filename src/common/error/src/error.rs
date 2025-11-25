@@ -103,6 +103,13 @@ impl From<arrow2::error::Error> for DaftError {
     }
 }
 
+#[cfg(feature = "python")]
+impl<'py> From<pyo3::pyclass::PyClassGuardError<'_, 'py>> for DaftError {
+    fn from(error: pyo3::pyclass::PyClassGuardError<'_, 'py>) -> Self {
+        Self::PyO3Error(error.into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

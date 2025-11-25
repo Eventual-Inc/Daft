@@ -63,8 +63,9 @@ impl FromStr for FileFormat {
 
 impl_bincode_py_state_serialization!(FileFormat);
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Copy)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Copy)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub enum WriteMode {
     Overwrite,
     OverwritePartitions,

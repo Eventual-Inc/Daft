@@ -10,7 +10,6 @@ mod sinks;
 mod sources;
 mod state_bridge;
 mod streaming_sink;
-
 use std::{
     future::Future,
     pin::Pin,
@@ -90,8 +89,18 @@ impl<T: Send + 'static> TaskSet<T> {
             .map(|r| r.map_err(|e| Error::JoinError { source: e }))
     }
 
-    async fn shutdown(&mut self) {
-        self.inner.shutdown().await;
+    fn try_join_next(&mut self) -> Option<Result<T, Error>> {
+        self.inner
+            .try_join_next()
+            .map(|r| r.map_err(|e| Error::JoinError { source: e }))
+    }
+
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    fn abort_all(&mut self) {
+        self.inner.abort_all();
     }
 }
 
@@ -150,8 +159,18 @@ impl ExecutionRuntimeContext {
         self.worker_set.join_next().await
     }
 
-    pub async fn shutdown(&mut self) {
-        self.worker_set.shutdown().await;
+    pub async fn shutdown(&mut self) -> DaftResult<()> {
+        self.worker_set.abort_all();
+        while let Some(result) = self.join_next().await {
+            match result {
+                Ok(Err(e)) | Err(e) if !matches!(&e, Error::JoinError { source } if source.is_cancelled()) =>
+                {
+                    return Err(e.into());
+                }
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn handle(&self) -> RuntimeHandle {

@@ -1,4 +1,5 @@
 [dependencies]
+common-metrics = {path = "../common/metrics", default-features = false}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
@@ -22,15 +23,15 @@ futures = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 pyo3-async-runtimes = {workspace = true, optional = true}
 rand = {workspace = true}
-reqwest = {workspace = true, default-features = false}
 serde = {workspace = true}
 serde_json = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}
 tokio-util = {workspace = true}
 tracing = {workspace = true}
-uuid = {workspace = true}
-itertools.workspace = true
+itertools = {workspace = true}
+opentelemetry = {workspace = true}
+bincode = {workspace = true}
 
 [features]
 python = [

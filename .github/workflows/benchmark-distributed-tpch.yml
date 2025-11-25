@@ -45,7 +45,7 @@ env:
   RAY_NUM_WORKERS: ${{ inputs.num_workers }}
 
   DAFT_ANALYTICS_ENABLED: "0"
-  PYTHON_VERSION: "3.9"
+  PYTHON_VERSION: "3.10"
 
 jobs:
   build:
@@ -63,16 +63,16 @@ jobs:
       contents: read
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
     - name: Assume GitHub Actions AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v5
       with:
         aws-region: ${{ env.AWS_REGION }}
         role-session-name: DaftDistributedTpchGitHubWorkflow
     - name: Install uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ env.PYTHON_VERSION }}
         enable-cache: true

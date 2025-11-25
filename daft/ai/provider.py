@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import sys
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
-from typing_extensions import Literal, Unpack
+if sys.version_info < (3, 11):
+    from typing_extensions import Unpack
+else:
+    from typing import Unpack
 
 if TYPE_CHECKING:
+    from daft.ai.google.typing import GoogleProviderOptions
     from daft.ai.openai.typing import OpenAIProviderOptions
     from daft.ai.protocols import (
         ImageClassifierDescriptor,
@@ -20,6 +25,15 @@ class ProviderImportError(ImportError):
     def __init__(self, dependencies: list[str]):
         deps = ", ".join(f"'{d}'" for d in dependencies)
         super().__init__(f"Missing required dependencies: {deps}. Please install {deps} to use this provider.")
+
+
+def load_google(name: str | None = None, **options: Unpack[GoogleProviderOptions]) -> Provider:
+    try:
+        from daft.ai.google.provider import GoogleProvider
+
+        return GoogleProvider(name, **options)
+    except ImportError as e:
+        raise ProviderImportError(["google"]) from e
 
 
 def load_lm_studio(name: str | None = None, **options: Any) -> Provider:
@@ -49,11 +63,22 @@ def load_transformers(name: str | None = None, **options: Any) -> Provider:
         raise ProviderImportError(["torch", "torchvision", "transformers", "sentence-transformers", "Pillow"]) from e
 
 
-ProviderType = Literal["lm_studio", "openai", "transformers"]
+def load_vllm_prefix_caching(name: str | None = None, **options: Any) -> Provider:
+    try:
+        from daft.ai.vllm.provider import VLLMPrefixCachingProvider
+
+        return VLLMPrefixCachingProvider(name, **options)
+    except ImportError as e:
+        raise ProviderImportError(["vllm"]) from e
+
+
+ProviderType = Literal["google", "lm_studio", "openai", "transformers", "vllm-prefix-caching"]
 PROVIDERS: dict[ProviderType, Callable[..., Provider]] = {
+    "google": load_google,
     "lm_studio": load_lm_studio,
     "openai": load_openai,
     "transformers": load_transformers,
+    "vllm-prefix-caching": load_vllm_prefix_caching,
 }
 
 
@@ -86,7 +111,9 @@ class Provider(ABC):
         """Returns the provider's name."""
         ...
 
-    def get_text_embedder(self, model: str | None = None, **options: Any) -> TextEmbedderDescriptor:
+    def get_text_embedder(
+        self, model: str | None = None, dimensions: int | None = None, **options: Any
+    ) -> TextEmbedderDescriptor:
         """Returns a TextEmbedderDescriptor for this provider."""
         raise not_implemented_err(self, method="embed_text")
 

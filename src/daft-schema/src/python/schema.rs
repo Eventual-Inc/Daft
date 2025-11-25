@@ -8,7 +8,8 @@ use super::{datatype::PyDataType, field::PyField};
 use crate::{field::Field, schema};
 
 #[pyclass(module = "daft.daft", eq)]
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PySchema {
     pub schema: schema::SchemaRef,
 }

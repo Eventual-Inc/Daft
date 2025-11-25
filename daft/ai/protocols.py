@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from daft.ai.typing import Descriptor
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable
+
     from daft.ai.typing import Embedding, EmbeddingDimensions, Image, Label
 
 
@@ -13,9 +15,8 @@ if TYPE_CHECKING:
 class TextEmbedder(Protocol):
     """Protocol for text embedding implementations."""
 
-    def embed_text(self, text: list[str]) -> list[Embedding]:
+    def embed_text(self, text: list[str]) -> list[Embedding] | Awaitable[list[Embedding]]:
         """Embeds a batch of text strings into an embedding vector."""
-        ...
 
 
 class TextEmbedderDescriptor(Descriptor[TextEmbedder]):
@@ -24,6 +25,10 @@ class TextEmbedderDescriptor(Descriptor[TextEmbedder]):
     @abstractmethod
     def get_dimensions(self) -> EmbeddingDimensions:
         """Returns the dimensions of the embeddings produced by the described TextEmbedder."""
+
+    def is_async(self) -> bool:
+        """Whether the described TextEmbedder produces awaitable results."""
+        return False
 
 
 @runtime_checkable
@@ -73,7 +78,7 @@ class ImageClassifierDescriptor(Descriptor[ImageClassifier]):
 class Prompter(Protocol):
     """Protocol for prompt/chat completion implementations."""
 
-    async def prompt(self, message: str) -> Any:
+    async def prompt(self, messages: tuple[Any, ...]) -> Any:
         """Generates responses for a batch of message strings."""
         ...
 

@@ -220,6 +220,32 @@ test_table_sum_mean_cases = [
     ([None, 3, None, None, 1, 2, 0, None], {"sum": [6], "mean": [1.5], "avg": [1.5]}),
 ]
 
+test_table_product_cases = [
+    ([], {"product": [None]}),
+    ([None], {"product": [None]}),
+    ([None, None, None], {"product": [None]}),
+    ([0], {"product": [0]}),
+    ([1], {"product": [1]}),
+    ([2], {"product": [2]}),
+    ([None, 0, None, 0, None], {"product": [0]}),
+    ([None, 1, None, 1, None], {"product": [1]}),
+    ([None, 2, None, 3, None], {"product": [6]}),
+    ([None, 3, None, None, 1, 2, 0, None], {"product": [0]}),
+    ([None, 3, None, None, 1, 2, None], {"product": [6]}),
+]
+
+
+@pytest.mark.parametrize("idx_dtype", daft_numeric_types, ids=[f"{_}" for _ in daft_numeric_types])
+@pytest.mark.parametrize("case", test_table_product_cases, ids=[f"{_}" for _ in test_table_product_cases])
+def test_table_product(idx_dtype, case) -> None:
+    input, expected = case
+    daft_recordbatch = MicroPartition.from_pydict({"input": input})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").cast(idx_dtype)])
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").alias("product").product()])
+
+    res = daft_recordbatch.to_pydict()
+    assert res == expected
+
 
 @pytest.mark.parametrize("idx_dtype", daft_numeric_types, ids=[f"{_}" for _ in daft_numeric_types])
 @pytest.mark.parametrize("case", test_table_sum_mean_cases, ids=[f"{_}" for _ in test_table_sum_mean_cases])
@@ -550,11 +576,18 @@ def test_groupby_numeric_string_bool_some_nulls(dtype) -> None:
             "cookies": [2, 2, 3],
         }
     )
-    result_table = daft_recordbatch.agg([col("cookies").sum()], group_by=[col("group")])
+    result_table = daft_recordbatch.agg(
+        [
+            col("cookies").alias("sum").sum(),
+            col("cookies").alias("product").product(),
+        ],
+        group_by=[col("group")],
+    )
     expected_table = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([1, None]).cast(dtype),
-            "cookies": [4, 3],
+            "sum": [4, 3],  # sum
+            "product": [4, 3],  # product: 2*2=4, 3=3
         }
     )
 
@@ -575,11 +608,18 @@ def test_groupby_numeric_string_bool_no_nulls(dtype) -> None:
             "cookies": [1, 2, 2, 3],
         }
     )
-    result_table = daft_recordbatch.agg([col("cookies").sum()], group_by=[col("group")])
+    result_table = daft_recordbatch.agg(
+        [
+            col("cookies").alias("sum").sum(),
+            col("cookies").alias("product").product(),
+        ],
+        group_by=[col("group")],
+    )
     expected_table = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([0, 1]).cast(dtype),
-            "cookies": [5, 3],
+            "sum": [5, 3],  # sum
+            "product": [6, 2],  # product: 2*3=6, 1*2=2
         }
     )
 
@@ -981,7 +1021,7 @@ def test_groupby_list(dtype) -> None:
             "b": [0, 1, 2, 3, 4, 5, 6],
         }
     ).with_column("a", col("a").cast(DataType.list(dtype)))
-    res = df.groupby("a").agg_list("b").to_pydict()
+    res = df.groupby("a").list_agg("b").to_pydict()
     expected = [[0, 1, 4], [2, 6], [3, 5]]
     for lt in expected:
         assert lt in res["b"]
@@ -1003,7 +1043,7 @@ def test_groupby_fixed_size_list(dtype) -> None:
             "b": [0, 1, 2, 3, 4, 5, 6],
         }
     ).with_column("a", col("a").cast(DataType.fixed_size_list(dtype, 3)))
-    res = df.groupby("a").agg_list("b").to_pydict()
+    res = df.groupby("a").list_agg("b").to_pydict()
     expected = [[0, 1, 4], [2, 6], [3, 5]]
     for lt in expected:
         assert lt in res["b"]
@@ -1025,7 +1065,7 @@ def test_groupby_struct(dtype) -> None:
             "b": [0, 1, 2, 3, 4, 5, 6],
         }
     ).with_column("a", col("a").cast(DataType.struct({"c": dtype, "d": DataType.string()})))
-    res = df.groupby("a").agg_list("b").to_pydict()
+    res = df.groupby("a").list_agg("b").to_pydict()
     expected = [[0, 1, 4], [2, 6], [3, 5]]
     for lt in expected:
         assert lt in res["b"]
@@ -1039,7 +1079,7 @@ def test_agg_concat_on_string() -> None:
 
 def test_agg_concat_on_string_groupby() -> None:
     df3 = from_pydict({"a": ["the", " quick", " brown", " fox"], "b": [1, 2, 1, 2]})
-    res = df3.groupby("b").agg_concat("a").to_pydict()
+    res = df3.groupby("b").string_agg("a").to_pydict()
     expected = ["the brown", " quick fox"]
     for txt in expected:
         assert txt in res["a"]
@@ -1054,7 +1094,7 @@ def test_agg_concat_on_string_null() -> None:
 
 def test_agg_concat_on_string_groupby_null() -> None:
     df3 = from_pydict({"a": ["the", " quick", None, " fox"], "b": [1, 2, 1, 2]})
-    res = df3.groupby("b").agg_concat("a").to_pydict()
+    res = df3.groupby("b").string_agg("a").to_pydict()
     expected = ["the", " quick fox"]
     for txt in expected:
         assert txt in res["a"]
@@ -1074,7 +1114,7 @@ def test_agg_concat_on_string_groupby_null_list() -> None:
     df3 = from_pydict({"a": [None, None, None, None], "b": [1, 2, 1, 2]}).with_column(
         "a", col("a").cast(DataType.string())
     )
-    res = df3.groupby("b").agg_concat("a").to_pydict()
+    res = df3.groupby("b").string_agg("a").to_pydict()
     expected = [None, None]
     assert res["a"] == expected
     assert len(res["a"]) == len(expected)

@@ -26,8 +26,8 @@ mod simplify_expressions;
 mod simplify_null_filtered_join;
 mod split_explode_from_project;
 mod split_udfs;
+mod split_vllm;
 mod unnest_subquery;
-
 pub use detect_monotonic_id::DetectMonotonicId;
 pub use drop_into_batches::DropIntoBatches;
 pub use drop_repartition::DropRepartition;
@@ -56,4 +56,5 @@ pub use simplify_expressions::SimplifyExpressionsRule;
 pub use simplify_null_filtered_join::SimplifyNullFilteredJoin;
 pub use split_explode_from_project::SplitExplodeFromProject;
 pub use split_udfs::{SplitUDFs, SplitUDFsFromFilters};
+pub use split_vllm::SplitVLLM;
 pub use unnest_subquery::{UnnestPredicateSubquery, UnnestScalarSubquery};

@@ -2,7 +2,7 @@ use std::{future, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::{LocalPhysicalPlan, SamplingMethod};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, SamplingMethod};
 use daft_logical_plan::{
     partitioning::{RangeRepartitionConfig, RepartitionSpec},
     stats::StatsState,
@@ -40,7 +40,7 @@ pub(crate) async fn get_partition_boundaries_from_samples(
     num_partitions: usize,
 ) -> DaftResult<RecordBatch> {
     use daft_io::IOStatsContext;
-    use pyo3::{Python, prelude::*};
+    use pyo3::prelude::*;
 
     // Extract partition refs from samples
     let ray_partition_refs = samples
@@ -57,15 +57,6 @@ pub(crate) async fn get_partition_boundaries_from_samples(
         })
         .collect::<DaftResult<Vec<_>>>()?;
 
-    let (task_locals, py_object_refs) = Python::attach(|py| {
-        let task_locals = crate::utils::runtime::get_task_locals(py);
-        let py_object_refs = ray_partition_refs
-            .into_iter()
-            .map(|pr| pr.get_object_ref(py))
-            .collect::<Vec<_>>();
-
-        (task_locals, py_object_refs)
-    });
     let py_sort_by = partition_by
         .iter()
         .map(|e| daft_dsl::python::PyExpr {
@@ -73,24 +64,27 @@ pub(crate) async fn get_partition_boundaries_from_samples(
         })
         .collect::<Vec<_>>();
 
-    let boundaries: daft_micropartition::python::PyMicroPartition =
-        common_runtime::python::execute_python_coroutine(
-            move |py| {
-                let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
-                flotilla_module.call_method1(
-                    pyo3::intern!(py, "get_boundaries"),
-                    (
-                        py_object_refs,
-                        py_sort_by,
-                        descending,
-                        nulls_first,
-                        num_partitions,
-                    ),
-                )
-            },
-            task_locals,
+    let boundaries = common_runtime::python::execute_python_coroutine::<
+        _,
+        daft_micropartition::python::PyMicroPartition,
+    >(move |py| {
+        let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+        let py_object_refs = ray_partition_refs
+            .into_iter()
+            .map(|pr| pr.get_object_ref(py))
+            .collect::<Vec<_>>();
+        flotilla_module.call_method1(
+            pyo3::intern!(py, "get_boundaries"),
+            (
+                py_object_refs,
+                py_sort_by,
+                descending,
+                nulls_first,
+                num_partitions,
+            ),
         )
-        .await?;
+    })
+    .await?;
 
     let boundaries = boundaries
         .inner
@@ -140,6 +134,7 @@ pub(crate) fn create_sample_tasks(
             let sample_by = sample_by.clone();
             let input_schema = input_schema.clone();
             let sample_schema = sample_schema.clone();
+            let node_id = pipeline_node.node_id();
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((context, task_id_counter.next())),
                 vec![mo],
@@ -149,15 +144,23 @@ pub(crate) fn create_sample_tasks(
                     let sample = LocalPhysicalPlan::sample(
                         input,
                         SamplingMethod::Size(sample_size),
-                        false,
+                        true,
                         None,
                         StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
                     );
                     LocalPhysicalPlan::project(
                         sample,
                         sample_by,
                         sample_schema,
                         StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
                     )
                 },
                 None,
@@ -183,6 +186,7 @@ pub(crate) fn create_range_repartition_tasks(
     scheduler_handle: &SchedulerHandle<SwordfishTask>,
 ) -> DaftResult<Vec<SubmittedTask>> {
     let context = pipeline_node.context();
+    let node_id = pipeline_node.node_id();
     materialized_outputs
         .into_iter()
         .map(|mo| {
@@ -207,6 +211,10 @@ pub(crate) fn create_range_repartition_tasks(
                         num_partitions,
                         input_schema,
                         StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
                     )
                 },
                 None,
@@ -233,7 +241,6 @@ impl SortNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         sort_by: Vec<BoundExpr>,
         descending: Vec<bool>,
@@ -242,12 +249,10 @@ impl SortNode {
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
-            logical_node_id,
         );
 
         let config = PipelineNodeConfig::new(
@@ -286,6 +291,8 @@ impl SortNode {
             return Ok(());
         }
 
+        let node_id = self.node_id();
+
         if materialized_outputs.len() == 1 {
             let self_clone = self.clone();
             let task = make_new_task_from_materialized_outputs(
@@ -300,6 +307,10 @@ impl SortNode {
                         self_clone.descending.clone(),
                         self_clone.nulls_first.clone(),
                         StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
                     )
                 },
                 None,
@@ -372,6 +383,10 @@ impl SortNode {
                         self_clone.descending.clone(),
                         self_clone.nulls_first.clone(),
                         StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(self_clone.node_id() as usize),
+                            additional: None,
+                        },
                     )
                 },
                 None,

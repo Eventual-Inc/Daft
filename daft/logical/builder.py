@@ -115,9 +115,9 @@ class LogicalPlanBuilder:
     def __repr__(self) -> str:
         return self._builder.repr_ascii(simple=False)
 
-    def optimize(self) -> LogicalPlanBuilder:
+    def optimize(self, execution_config: PyDaftExecutionConfig) -> LogicalPlanBuilder:
         """Optimize the underlying logical plan."""
-        builder = self._builder.optimize()
+        builder = self._builder.optimize(execution_config)
         return LogicalPlanBuilder(builder)
 
     @classmethod
@@ -237,8 +237,14 @@ class LogicalPlanBuilder:
         builder = self._builder.distinct(on_pyexprs)
         return LogicalPlanBuilder(builder)
 
-    def sample(self, fraction: float, with_replacement: bool, seed: int | None) -> LogicalPlanBuilder:
-        builder = self._builder.sample(fraction, with_replacement, seed)
+    def sample(
+        self,
+        fraction: float | None = None,
+        size: int | None = None,
+        with_replacement: bool = False,
+        seed: int | None = None,
+    ) -> LogicalPlanBuilder:
+        builder = self._builder.sample(fraction, size, with_replacement, seed)
         return LogicalPlanBuilder(builder)
 
     def sort(
