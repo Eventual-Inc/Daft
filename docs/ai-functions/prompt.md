@@ -64,6 +64,12 @@ df.show()
 ╰─────────────────────────────┴─────────────────────────────╯
 ```
 
+### Supported Providers for `prompt`
+
+1. **OpenAI** (Default) - Leverage models from OpenAI or any OpenAI-compatible provider.
+2. **Google** - Take advantage of Google's latests models like *Gemini 3 Pro*.
+3. **vLLM Prefix Caching** (Beta) - Distributed batch inference on vLLM [built by the Daft Cloud team](https://www.daft.ai/blog/cutting-llm-batch-inference-time-in-half-dynamic-prefix-bucketing-at-scale).
+
 ## Prompt Basics
 
 The `prompt` function supports a wide range of tasks, from simple text generation to complex agentic workflows with tool calling. Daft's native multimodal data handling and scalable execution make it easy to process large datasets efficiently. This section covers core patterns for working with prompts, including templates, parameters, and model configuration.

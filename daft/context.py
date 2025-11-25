@@ -6,7 +6,7 @@ import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig
+from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig, PyQueryResult
 from daft.daft import get_context as _get_context
 
 if TYPE_CHECKING:
@@ -68,8 +68,8 @@ class DaftContext:
     def _notify_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None:
         self._ctx.notify_query_start(query_id, metadata)
 
-    def _notify_query_end(self, query_id: str) -> None:
-        self._ctx.notify_query_end(query_id)
+    def _notify_query_end(self, query_id: str, query_result: PyQueryResult) -> None:
+        self._ctx.notify_query_end(query_id, query_result)
 
     def _notify_optimization_start(self, query_id: str) -> None:
         self._ctx.notify_optimization_start(query_id)

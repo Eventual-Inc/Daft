@@ -43,6 +43,7 @@ mod merge_sketch;
 mod minhash;
 mod null;
 mod pairwise;
+mod pow;
 mod product;
 mod repr;
 mod round;

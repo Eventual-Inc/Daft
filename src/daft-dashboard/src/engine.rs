@@ -6,7 +6,7 @@ use axum::{
     http::StatusCode,
     routing::post,
 };
-use common_metrics::{QueryID, QueryPlan, Stat, ops::NodeInfo};
+use common_metrics::{QueryEndState, QueryID, QueryPlan, Stat, ops::NodeInfo};
 use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
 
@@ -260,6 +260,8 @@ async fn exec_end(
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct FinalizeArgs {
     pub end_sec: u64,
+    pub end_state: QueryEndState,
+    pub error_message: Option<String>,
     // IPC-serialized RecordBatch
     pub results: Option<Vec<u8>>,
 }
@@ -300,12 +302,27 @@ async fn query_end(
         None
     };
 
-    query_info.state = QueryState::Finished {
-        plan_info: plan_info.clone(),
-        exec_info: exec_info.clone(),
-        exec_end_sec: *exec_end_sec,
-        end_sec: args.end_sec,
-        results,
+    query_info.state = match args.end_state {
+        QueryEndState::Finished => QueryState::Finished {
+            plan_info: plan_info.clone(),
+            exec_info: exec_info.clone(),
+            exec_end_sec: *exec_end_sec,
+            end_sec: args.end_sec,
+            results,
+        },
+        QueryEndState::Canceled => QueryState::Canceled {
+            plan_info: plan_info.clone(),
+            exec_info: exec_info.clone(),
+            end_sec: args.end_sec,
+            message: args.error_message,
+        },
+        QueryEndState::Failed => QueryState::Failed {
+            plan_info: plan_info.clone(),
+            exec_info: exec_info.clone(),
+            end_sec: args.end_sec,
+            message: args.error_message,
+        },
+        QueryEndState::Dead => todo!(),
     };
 
     state.ping_clients_on_query_update(query_info.value());
