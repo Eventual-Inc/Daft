@@ -192,6 +192,7 @@ impl IOConfig {
         disable_suffix_range=None,
         tos=None,
     ))]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         s3: Option<S3Config>,
         azure: Option<AzureConfig>,
