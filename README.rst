@@ -54,19 +54,18 @@ Quickstart
 Get started in minutes with our `Quickstart <https://docs.daft.ai/en/latest/quickstart/>`_ - load a real-world e-commerce dataset, process product images, and run AI inference at scale.
 
 
-Benchmarks
-----------
-|Benchmark Image|
-
-To see the full benchmarks, detailed setup, and logs, check out our `benchmarking page. <https://docs.daft.ai/en/stable/benchmarks>`_
-
-
 More Resources
 ^^^^^^^^^^^^^^
 
 * `Examples <https://docs.daft.ai/en/stable/examples/>`_ - see Daft in action with use cases across text, images, audio, and more
 * `User Guide <https://docs.daft.ai/en/stable/>`_ - take a deep-dive into each topic within Daft
 * `API Reference <https://docs.daft.ai/en/stable/api/>`_ - API reference for public classes/functions of Daft
+
+Benchmarks
+----------
+|Benchmark Image|
+
+To see the full benchmarks, detailed setup, and logs, check out our `benchmarking page. <https://docs.daft.ai/en/stable/benchmarks>`_
 
 Contributing
 ------------
