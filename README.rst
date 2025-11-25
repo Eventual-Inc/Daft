@@ -12,7 +12,7 @@ Daft: High-Performance Data Engine for AI and Multimodal Workloads
 `Daft <https://www.daft.ai>`_ is a high-performance data engine for AI and multimodal workloads. Process images, audio, video, and structured data at any scale.
 
 * **Native multimodal processing:** Process images, audio, video, and embeddings alongside structured data in a single framework
-* **Built-in AI operations:** Run LLM prompts, generate embeddings, and classify data at scale using OpenAI, Transformers, or custom models, without boilerplate code
+* **Built-in AI operations:** Run LLM prompts, generate embeddings, and classify data at scale using OpenAI, Transformers, or custom models
 * **Python-native, Rust-powered:** Skip the JVM complexity with Python at its core and Rust under the hood for blazing performance
 * **Seamless scaling:** Start local, scale to distributed clusters on `Ray <https://docs.daft.ai/en/stable/distributed/ray/>`_, `Kubernetes <https://docs.daft.ai/en/stable/distributed/kubernetes/>`_, or `Daft Cloud <https://www.daft.ai/cloud>`_
 * **Universal connectivity:** Access data anywhere (S3, GCS, Iceberg, Delta Lake, Hugging Face, Unity Catalog)
