@@ -245,7 +245,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         _maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
-        let child_results_receiver = self.child.start(false, runtime_handle)?;
+        let child_results_receiver = self.child.start(true, runtime_handle)?;
         let counting_receiver = InitializingCountingReceiver::new(
             child_results_receiver,
             self.node_id(),
