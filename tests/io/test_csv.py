@@ -77,3 +77,11 @@ def test_roundtrip_simple_arrow_types(tmp_path, data, pa_type, expected_dtype, e
     assert before.schema()["foo"].dtype == expected_dtype
     assert after.schema()["foo"].dtype == expected_inferred_dtype
     assert before.to_arrow() == after.with_column("foo", after["foo"].cast(expected_dtype)).to_arrow()
+
+
+def test_write_and_read_empty_csv(tmp_path_factory):
+    empty_csv_files = str(tmp_path_factory.mktemp("empty_csv"))
+    df = daft.from_pydict({"a": []})
+    df.write_csv(empty_csv_files, write_mode="overwrite")
+
+    assert daft.read_csv(empty_csv_files).to_pydict() == {"a": []}
