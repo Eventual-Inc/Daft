@@ -18,15 +18,6 @@ Daft: High-Performance Data Engine for AI and Multimodal Workloads
 * **Universal connectivity:** Access data anywhere (S3, GCS, Iceberg, Delta Lake, Hugging Face, Unity Catalog)
 * **Out-of-box reliability:** Intelligent memory management and sensible defaults eliminate configuration headaches
 
-About Daft
-----------
-
-Daft was designed with the following principles in mind:
-
-1. **AI-Native**: Built-in support for LLM prompts, embeddings, and image classification. Run AI operations at scale without writing boilerplate code or managing infrastructure.
-2. **Any Modality**: Process images, audio, video, and embeddings alongside structured data in a single framework, with native types purpose-built for multimodal workloads.
-3. **Any Scale**: Start on your laptop, scale to thousands of CPUs/GPUs on `Ray <https://docs.daft.ai/en/stable/distributed/ray/>`_, `Kubernetes <https://docs.daft.ai/en/stable/distributed/kubernetes/>`_, or `Daft Cloud <https://www.daft.ai/cloud>`_ without changing your code.
-
 Getting Started
 ---------------
 
