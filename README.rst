@@ -18,16 +18,6 @@ Daft: High-Performance Data Engine for AI and Multimodal Workloads
 * **Universal connectivity:** Access data anywhere (S3, GCS, Iceberg, Delta Lake, Hugging Face, Unity Catalog)
 * **Out-of-box reliability:** Intelligent memory management and sensible defaults eliminate configuration headaches
 
-**Table of Contents**
-
-* `About Daft`_
-* `Getting Started`_
-* `Benchmarks`_
-* `Contributing`_
-* `Telemetry`_
-* `Related Projects`_
-* `License`_
-
 About Daft
 ----------
 
