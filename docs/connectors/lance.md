@@ -1,6 +1,6 @@
 # Reading from and Writing to Lance
 
-[Lance](https://lancedb.github.io/lance/) is a next-generation columnar storage format for multimodal datasets (images, video, audio, and general columnar data). It supports local POSIX filesystems and cloud object stores (e.g., S3/GCS). Lance is known for extremely fast random access, zero-copy reads, deep integration with PyArrow/DuckDB, and strong performance for vector retrieval workloads.
+[Lance](https://lance.org/) is a next-generation columnar storage format for multimodal datasets (images, video, audio, and general columnar data). It supports local POSIX filesystems and cloud object stores (e.g., S3/GCS). Lance is known for extremely fast random access, zero-copy reads, deep integration with PyArrow/DuckDB, and strong performance for vector retrieval workloads.
 
 Daft currently supports:
 
@@ -152,3 +152,73 @@ merge_columns(
     read_columns=["c"],
 )
 ```
+
+### Compaction
+
+Compaction is the process of rewriting a Lance dataset to optimize its structure for query performance. This operation can:
+
+- **Merge small files**: Combine multiple small data fragments into fewer, larger fragments to reduce metadata overhead and improve read throughput.
+- **Materialize deletions**: Physically remove rows that have been marked for deletion, which can reduce storage and accelerate scans.
+- **Improve data layout**: Reorganize data to improve compression and read efficiency.
+
+Use compaction when a dataset has undergone many small appends, has a high number of deleted rows, or contains a large number of small files.
+
+
+Daft provides a distributed implementation of compaction through [`daft.io.lance.compact_files`][daft.io.lance.compact_files].
+
+```python
+daft.io.lance.compact_files(
+    uri,
+    compaction_options=None,
+    io_config=None,
+    # --- other options ---
+    index_cache_size=None,
+    block_size=None,
+    default_scan_options=None,
+    metadata_cache_size_bytes=None,
+    partition_num=None,
+)
+```
+
+- **`uri`**: Path to the Lance dataset.
+- **`compaction_options`**: A dictionary of options to control compaction behavior (e.g., `target_rows_per_fragment`, `materialize_deletions`), see [Lance documentation](https://lance-format.github.io/lance-python-doc/all-modules.html#lance.dataset.DatasetOptimizer.compact_files) for more details.
+- **Returns**: A `CompactionMetrics` object with statistics if compaction was performed, or `None` if no action was needed. The `CompactionMetrics` object contains the following fields:
+    - `fragments_removed`: Number of fragments removed during compaction.
+    - `fragments_added`: Number of fragments added during compaction.
+    - `files_removed`: Number of files removed during compaction.
+    - `files_added`: Number of files added during compaction.
+- **`partition_num`**: On the Ray Runner, this controls the number of parallel compaction tasks. Defaults to 1. On the native runner, this option is ignored.
+
+
+This example compacts a dataset with multiple fragments into a single, larger fragment, and uses `partition_num` to control the number of parallel compaction tasks.
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+    import lance
+    import pandas as pd
+    import pyarrow as pa
+
+    daft.set_runner_ray()
+
+    # Create a dataset and delete some rows
+    data = pa.table({"a": range(800), "b": range(800)})
+    dataset_path = "/tmp/dataset.lance"
+    dataset = lance.write_dataset(data, dataset_path, max_rows_per_file=200)
+
+    # The initial row count is 800, and the initial fragment count is 4
+    print(f"Initial row count: {dataset.count_rows()}, and initial fragment count: {len(dataset.get_fragments())}")
+
+    metrics = daft.io.lance.compact_files(
+        dataset_path,
+        compaction_options={
+            "target_rows_per_fragment": 400,
+        },
+        partition_num=2,
+    )
+
+    dataset = lance.dataset(dataset_path)
+    # The final row count is 800, and the final fragment count is 2
+    print(f"Final row count: {dataset.count_rows()}, and final fragment count: {len(dataset.get_fragments())}")
+    ```
