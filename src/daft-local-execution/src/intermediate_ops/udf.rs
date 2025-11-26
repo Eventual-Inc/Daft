@@ -631,8 +631,8 @@ impl IntermediateOperator for UdfOperator {
                         latency_tolerance: Duration::from_millis(1000), // udf's have high variance so we have a high tolerance
                         step_size_alpha: 16, // step size is small as udfs are expensive
                         correction_delta: 4, // similarly the correction delta is small because the step size is small
-                        min_batch_size,
-                        max_batch_size,
+                        b_min: min_batch_size,
+                        b_max: max_batch_size,
                     }
                     .into()
                 }

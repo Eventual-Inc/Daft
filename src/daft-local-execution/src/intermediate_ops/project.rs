@@ -193,8 +193,8 @@ impl IntermediateOperator for ProjectOperator {
                         latency_tolerance: Duration::from_millis(1000),
                         step_size_alpha: 2048,
                         correction_delta: 64,
-                        min_batch_size,
-                        max_batch_size,
+                        b_min: min_batch_size,
+                        b_max: max_batch_size,
                     }
                     .into()
                 }
