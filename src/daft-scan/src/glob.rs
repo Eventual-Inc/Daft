@@ -314,10 +314,18 @@ impl GlobScanOperator {
                     }
                 };
                 match user_provided_schema {
-                    Some(hint) => (
-                        Arc::new(inferred_schema.apply_hints(&hint)?),
-                        first_metadata,
-                    ),
+                    Some(hint) => {
+                        // JSON schema hints act as "add missing + override" because read_json installs
+                        // placeholders for hinted-but-not-inferred columns and preserves planner dtypes.
+                        // Other formats still treat hints as strict overrides via apply_hints.
+                        let merged = match file_format_config.as_ref() {
+                            FileFormatConfig::Json(_) => {
+                                inferred_schema.non_distinct_union(&hint)?
+                            }
+                            _ => inferred_schema.apply_hints(&hint)?,
+                        };
+                        (Arc::new(merged), first_metadata)
+                    }
                     None => (Arc::new(inferred_schema), first_metadata),
                 }
             }

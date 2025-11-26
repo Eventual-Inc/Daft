@@ -21,6 +21,7 @@ serde = {workspace = true}
 serde_json = {workspace = true, features = ["raw_value"]}
 simd-json = {version = "0.13", features = ["known-key"]}
 snafu = {workspace = true}
+tempfile = "3.23.0"
 tokio = {workspace = true}
 tokio-stream = {workspace = true, features = ["io-util"]}
 tokio-util = {workspace = true}

@@ -1,8 +1,13 @@
-use std::{borrow::Cow, collections::HashSet, num::NonZeroUsize, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+    num::NonZeroUsize,
+    sync::Arc,
+};
 
 use common_error::DaftResult;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
-use daft_dsl::{Expr, ExprRef, expr::bound_expr::BoundExpr};
+use daft_dsl::{Expr, ExprRef, expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_recordbatch::RecordBatch;
 use indexmap::IndexMap;
 use num_traits::Pow;
@@ -21,6 +26,16 @@ use crate::{
 
 const NEWLINE: u8 = b'\n';
 const CLOSING_BRACKET: u8 = b'}';
+
+#[inline]
+fn can_pushdown(schema: &Schema, required_pred_cols: &HashSet<String>) -> bool {
+    required_pred_cols
+        .iter()
+        .all(|c| match schema.get_field(c) {
+            Ok(f) => f.dtype != DataType::Null,
+            Err(_) => false,
+        })
+}
 
 pub fn read_json_local(
     uri: &str,
@@ -43,12 +58,108 @@ pub fn read_json_local(
         .into());
     }
     if bytes[0] == b'[' {
-        let schema = infer_schema(bytes, None, None)?;
+        // Prefer provided schema; otherwise infer once and reuse
+        let mut decode_schema: Schema = match convert_options
+            .as_ref()
+            .and_then(|options| options.schema.as_ref())
+        {
+            Some(schema) => schema.as_ref().clone(),
+            None => infer_schema(bytes, None, None)?.into(),
+        };
+        // Reuse inferred schema if no provided schema
+        let inferred_for_hints: Option<Schema> = if convert_options
+            .as_ref()
+            .and_then(|options| options.schema.as_ref())
+            .is_none()
+        {
+            Some(decode_schema.clone())
+        } else {
+            None
+        };
 
         let predicate = convert_options
             .as_ref()
             .and_then(|options| options.predicate.clone());
-        read_json_array_impl(bytes, schema.into(), predicate)
+
+        // Build hints once (use owned String keys to avoid lifetimes issues)
+        let mut hinted_dtypes: HashMap<String, Field> = HashMap::new();
+        if let Some(schema_hint) = convert_options.as_ref().and_then(|co| co.schema.as_ref()) {
+            for field in schema_hint.fields() {
+                hinted_dtypes.insert(field.name.clone(), field.clone());
+            }
+        }
+        if let Some(local_inferred) = inferred_for_hints.as_ref() {
+            for field in local_inferred.fields() {
+                hinted_dtypes
+                    .entry(field.name.clone())
+                    .or_insert_with(|| field.clone());
+            }
+        } else {
+            // Fallback: infer once (only if provided schema exists and we still want extra hints)
+            let local_inferred: Schema = infer_schema(bytes, None, None)?.into();
+            for field in local_inferred.fields() {
+                hinted_dtypes
+                    .entry(field.name.clone())
+                    .or_insert_with(|| field.clone());
+            }
+        }
+
+        let output_columns: Option<Vec<String>> = convert_options
+            .as_ref()
+            .and_then(|co| co.include_columns.clone());
+
+        let mut required_pred_cols: HashSet<String> = HashSet::new();
+        if let Some(pred) = &predicate {
+            for rc in get_required_columns(pred) {
+                required_pred_cols.insert(rc);
+            }
+        }
+
+        let existing: HashSet<&str> = decode_schema
+            .fields()
+            .iter()
+            .map(|f| f.name.as_str())
+            .collect();
+        let mut fields = decode_schema.fields().to_vec();
+        if let Some(ref include_columns) = output_columns {
+            for col in include_columns {
+                if !existing.contains(col.as_str()) {
+                    if let Some(hinted) = hinted_dtypes.get(col) {
+                        fields.push(hinted.clone());
+                    } else {
+                        fields.push(Field::new(col.as_str(), DataType::Null));
+                    }
+                }
+            }
+        }
+        for col in &required_pred_cols {
+            if !existing.contains(col.as_str()) {
+                if let Some(hinted) = hinted_dtypes.get(col) {
+                    fields.push(hinted.clone());
+                } else {
+                    fields.push(Field::new(col.as_str(), DataType::Null));
+                }
+            }
+        }
+        decode_schema = Schema::new(fields);
+
+        let can_pd = can_pushdown(&decode_schema, &required_pred_cols);
+        let mut batch = read_json_array_impl(
+            bytes,
+            decode_schema.clone(),
+            if can_pd { predicate } else { None },
+        )?;
+
+        if let Some(include_columns) = output_columns {
+            let projected_schema = batch.schema.clone().project(&include_columns)?;
+            let column_indices = include_columns
+                .iter()
+                .map(|col| batch.schema.get_index(col))
+                .collect::<DaftResult<Vec<_>>>()?;
+            batch = batch.get_columns(&column_indices);
+            batch.schema = projected_schema.into();
+        }
+        Ok(batch)
     } else {
         let reader = JsonReader::try_new(
             bytes,
@@ -153,9 +264,11 @@ pub fn read_json_array_impl(
 
 struct JsonReader<'a> {
     bytes: &'a [u8],
-    schema: SchemaRef,
+    decode_schema: SchemaRef,
+    output_columns: Option<Vec<String>>,
     n_threads: usize,
     predicate: Option<Arc<Expr>>,
+    can_pushdown: bool,
     sample_size: usize,
     n_rows: Option<usize>,
     chunk_size: Option<usize>,
@@ -184,7 +297,7 @@ impl<'a> JsonReader<'a> {
             .unwrap_or(NonZeroUsize::new(2).unwrap())
             .into();
 
-        let schema = match convert_options
+        let base_schema: SchemaRef = match convert_options
             .as_ref()
             .and_then(|options| options.schema.as_ref())
         {
@@ -199,15 +312,79 @@ impl<'a> JsonReader<'a> {
         }
         .context(RayonThreadPoolSnafu)?;
 
-        let projected_schema = match convert_options.and_then(|options| options.include_columns) {
-            Some(projected_columns) => Arc::new(schema.project(&projected_columns)?),
-            None => schema,
-        };
+        let output_columns = convert_options
+            .as_ref()
+            .and_then(|options| options.include_columns.clone());
+
+        let mut hinted_dtypes: HashMap<String, Field> = HashMap::new();
+        if let Some(schema_hint) = convert_options.as_ref().and_then(|co| co.schema.as_ref()) {
+            for field in schema_hint.fields() {
+                hinted_dtypes.insert(field.name.clone(), field.clone());
+            }
+        }
+        // Reuse base_schema as hints if it was inferred; else infer once for hints
+        if convert_options
+            .as_ref()
+            .and_then(|options| options.schema.as_ref())
+            .is_none()
+        {
+            for field in base_schema.fields() {
+                hinted_dtypes
+                    .entry(field.name.clone())
+                    .or_insert_with(|| field.clone());
+            }
+        } else {
+            let local_inferred: Schema = infer_schema(bytes, None, None)?.into();
+            for field in local_inferred.fields() {
+                hinted_dtypes
+                    .entry(field.name.clone())
+                    .or_insert_with(|| field.clone());
+            }
+        }
+
+        let mut required_pred_cols: HashSet<String> = HashSet::new();
+        if let Some(pred) = &predicate {
+            for rc in get_required_columns(pred) {
+                required_pred_cols.insert(rc);
+            }
+        }
+
+        let existing: HashSet<&str> = base_schema
+            .fields()
+            .iter()
+            .map(|f| f.name.as_str())
+            .collect();
+        let mut fields = base_schema.fields().to_vec();
+        if let Some(ref include_columns) = output_columns {
+            for col in include_columns {
+                if !existing.contains(col.as_str()) {
+                    if let Some(hinted) = hinted_dtypes.get(col) {
+                        fields.push(hinted.clone());
+                    } else {
+                        fields.push(Field::new(col.as_str(), DataType::Null));
+                    }
+                }
+            }
+        }
+        for col in &required_pred_cols {
+            if !existing.contains(col.as_str()) {
+                if let Some(hinted) = hinted_dtypes.get(col) {
+                    fields.push(hinted.clone());
+                } else {
+                    fields.push(Field::new(col.as_str(), DataType::Null));
+                }
+            }
+        }
+        let decode_schema = Arc::new(Schema::new(fields));
+
+        let can_pushdown_flag = can_pushdown(&decode_schema, &required_pred_cols);
 
         Ok(Self {
             bytes,
-            schema: projected_schema,
+            decode_schema,
+            output_columns,
             predicate,
+            can_pushdown: can_pushdown_flag,
             n_threads,
             sample_size,
             n_rows,
@@ -227,7 +404,6 @@ impl<'a> JsonReader<'a> {
             total_rows = (bytes.len() as f32 / 0.01f32.mul_add(-std, mean)) as usize;
             if let Some(n_rows) = self.n_rows {
                 total_rows = std::cmp::min(n_rows, total_rows);
-                // the guessed upper bound of the no. of bytes in the file
                 let n_bytes = (line_length_upper_bound * (n_rows as f32)) as usize;
 
                 if n_bytes < bytes.len()
@@ -256,14 +432,31 @@ impl<'a> JsonReader<'a> {
                 .collect::<DaftResult<Vec<RecordBatch>>>()
         })?;
 
-        let tbl = tables_concat(tbls)?;
+        let mut tbl = tables_concat(tbls)?;
 
-        // The `limit` is not guaranteed to be fully applied from the byte slice, so we need to properly apply the limit after concatenating the tables
         if let Some(limit) = self.n_rows
             && tbl.len() > limit
         {
-            return tbl.head(limit);
+            tbl = tbl.head(limit)?;
         }
+
+        if let Some(pred) = &self.predicate
+            && self.can_pushdown
+        {
+            let bound = BoundExpr::try_new(pred.clone(), &self.decode_schema)?;
+            tbl = tbl.filter(&[bound])?;
+        }
+
+        if let Some(include_columns) = &self.output_columns {
+            let projected_schema = tbl.schema.clone().project(include_columns)?;
+            let column_indices = include_columns
+                .iter()
+                .map(|col| tbl.schema.get_index(col))
+                .collect::<DaftResult<Vec<_>>>()?;
+            tbl = tbl.get_columns(&column_indices);
+            tbl.schema = projected_schema.into();
+        }
+
         Ok(tbl)
     }
 
@@ -271,14 +464,10 @@ impl<'a> JsonReader<'a> {
         let mut scratch = vec![];
         let scratch = &mut scratch;
 
-        let daft_fields = self.schema.into_iter().cloned().map(Arc::new);
+        let daft_fields = self.decode_schema.into_iter().cloned().map(Arc::new);
 
-        let arrow_schema = self.schema.to_arrow()?;
+        let arrow_schema = self.decode_schema.to_arrow()?;
 
-        // The `RawValue` is a pointer to the original JSON string and does not perform any deserialization.
-        // This is a trick to use the line-based deserializer from serde_json to iterate over the lines
-        // This is more accurate than using a `Lines` iterator.
-        // Ideally, we would instead use a line-based deserializer from simd_json, but that is not available.
         let iter =
             serde_json::Deserializer::from_slice(bytes).into_iter::<&serde_json::value::RawValue>();
 
@@ -327,17 +516,9 @@ impl<'a> JsonReader<'a> {
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let tbl = RecordBatch::new_with_size(self.schema.clone(), columns, num_rows)?;
-
-        if let Some(pred) = &self.predicate {
-            let pred = BoundExpr::try_new(pred.clone(), &self.schema)?;
-            tbl.filter(&[pred])
-        } else {
-            Ok(tbl)
-        }
+        RecordBatch::new_with_size(self.decode_schema.clone(), columns, num_rows)
     }
 
-    /// Get the start and end positions of the chunks of the file
     fn get_file_chunks(
         &self,
         bytes: &[u8],
@@ -375,14 +556,13 @@ impl<'a> JsonReader<'a> {
     }
 }
 
-// TODO: there should be much more shared code between this and the async version
 fn infer_schema(
     bytes: &[u8],
     max_rows: Option<usize>,
     max_bytes: Option<usize>,
 ) -> DaftResult<arrow2::datatypes::Schema> {
-    let max_bytes = max_bytes.unwrap_or(1024 * 1024); // todo: make this configurable
-    let max_records = max_rows.unwrap_or(1024); // todo: make this configurable
+    let max_bytes = max_bytes.unwrap_or(1024 * 1024);
+    let max_records = max_rows.unwrap_or(1024);
 
     let mut total_bytes = 0;
 
@@ -402,7 +582,6 @@ fn infer_schema(
 
         let inferred_schema = infer_records_schema(&v).context(ArrowSnafu)?;
         for field in inferred_schema.fields {
-            // Get-and-mutate-or-insert.
             match column_types.entry(field.name) {
                 indexmap::map::Entry::Occupied(mut v) => {
                     v.get_mut().insert(field.data_type);
@@ -425,7 +604,6 @@ fn infer_schema(
     Ok(fields.into())
 }
 
-/// Get the mean and standard deviation of length of lines in bytes
 fn get_line_stats_json(bytes: &[u8], n_lines: usize) -> Option<(f32, f32)> {
     let mut lengths = Vec::with_capacity(n_lines);
 
@@ -436,7 +614,6 @@ fn get_line_stats_json(bytes: &[u8], n_lines: usize) -> Option<(f32, f32)> {
 
     let bytes_len = bytes.len();
 
-    // sample from 0, and 75% in the file
     for offset in [0, (bytes_len as f32 * 0.75) as usize] {
         bytes_trunc = &bytes[offset..];
         let pos = next_line_position(bytes_trunc)?;
@@ -471,25 +648,8 @@ fn get_line_stats_json(bytes: &[u8], n_lines: usize) -> Option<(f32, f32)> {
     Some((mean, std))
 }
 
-/// Calculate the max number of chunks to split the file into
-/// It looks for the largest number divisible by `n_threads` and less than `chunk_size`
-/// It has an arbitrary limit of `n_threads * n_threads`, which seems to work well in practice.
-///
-/// Example:
-///
-/// ```text
-/// n_threads = 4
-/// chunk_size = 2048
-/// calculate_chunks_and_size(n_threads, chunk_size) = (16, 128)
-/// ```
 fn calculate_chunks_and_size(n_threads: usize, chunk_size: usize, total: usize) -> (usize, usize) {
     let mut max_divisible_chunks = n_threads;
-
-    // The maximum number of chunks is n_threads * n_threads
-    // This was chosen based on some crudely done benchmarks. It seems to work well in practice.
-    // The idea is to have a number of chunks that is a divisible by the number threads to maximize parallelism.
-    // But we dont want to have too small chunks, as that would increase the overhead of the parallelism.
-    // This is a heuristic and could be improved.
     let max_chunks = n_threads * n_threads;
 
     while max_divisible_chunks <= chunk_size && max_divisible_chunks < max_chunks {
@@ -510,8 +670,6 @@ fn parse_raw_value<'a>(
 ) -> crate::Result<Value<'a>> {
     let bytes = raw_value.get().as_bytes();
     scratch.clear();
-    // We need to clone the bytes here because the deserializer expects a mutable slice
-    // and `RawValue` only provides an immutable slice.
     scratch.extend_from_slice(bytes);
     crate::deserializer::to_value(scratch).map_err(|e| super::Error::JsonDeserializationError {
         string: e.to_string(),
@@ -537,6 +695,7 @@ mod tests {
     use arrow2::datatypes::{
         DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema,
     };
+    use tempfile::NamedTempFile;
 
     use super::*;
 
@@ -545,7 +704,7 @@ mod tests {
         let json = r#"
 {"floats": 1.0, "utf8": "hello", "bools": true}
 {"floats": 2.0, "utf8": "world", "bools": false}
-{"floats": 3.0, "utf8": "!", "bools": true}
+{"floats": 3.0, "utf8": "!\n", "bools": true}
 "#;
 
         let result = infer_schema(json.as_bytes(), None, None);
@@ -575,5 +734,96 @@ mod tests {
 "#;
         let reader = JsonReader::try_new(json.as_bytes(), None, None, None, None).unwrap();
         let _result = reader.finish();
+    }
+
+    #[test]
+    fn test_array_local_pushdown_include_disjoint_predicate() -> DaftResult<()> {
+        let json =
+            r#"[{"x":1,"y":"a","z":true},{"x":2,"y":"b","z":false},{"x":3,"y":"c","z":true}]"#;
+        let tmp = NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), json).unwrap();
+        let uri = format!("file://{}", tmp.path().to_string_lossy());
+
+        let pred: ExprRef = daft_dsl::unresolved_col("x").eq(daft_dsl::lit(2));
+        let co = Some(
+            JsonConvertOptions::default()
+                .with_include_columns(Some(vec!["y".to_string()]))
+                .with_predicate(Some(pred.clone())),
+        );
+
+        let out = read_json_local(&uri, co, None, None, None)?;
+        assert_eq!(out.len(), 1);
+        assert!(out.schema.get_index("y").is_ok());
+        let y_idx = out.schema.get_index("y")?;
+        let col_y = out.get_column(y_idx);
+        assert_eq!(
+            col_y
+                .to_arrow()
+                .as_any()
+                .downcast_ref::<arrow2::array::Utf8Array<i64>>()
+                .unwrap()
+                .value(0),
+            "b"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_array_local_predicate_only_with_provided_schema_missing_pred_col() -> DaftResult<()> {
+        let json = r#"[{"x":1,"y":"a"},{"x":2,"y":"b"},{"x":3,"y":"c"}]"#;
+        let tmp = NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), json).unwrap();
+        let uri = format!("file://{}", tmp.path().to_string_lossy());
+
+        let provided_schema = Schema::new(vec![Field::new("y", DataType::Utf8)]);
+        let pred: ExprRef = daft_dsl::unresolved_col("x").eq(daft_dsl::lit(2));
+        let co = Some(
+            JsonConvertOptions::default()
+                .with_schema(Some(provided_schema.into()))
+                .with_predicate(Some(pred.clone())),
+        );
+
+        let out = read_json_local(&uri, co, None, None, None)?;
+        assert_eq!(out.len(), 1);
+        assert!(out.schema.get_index("y").is_ok());
+        Ok(())
+    }
+
+    #[test]
+    fn test_line_local_pushdown_include_disjoint_predicate_missing_pred_in_provided_schema()
+    -> DaftResult<()> {
+        let json = r#"
+{"x":1,"y":"a"}
+{"x":2,"y":"b"}
+{"x":3,"y":"c"}
+"#;
+        let tmp = NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), json).unwrap();
+        let uri = format!("file://{}", tmp.path().to_string_lossy());
+
+        let provided_schema = Schema::new(vec![Field::new("y", DataType::Utf8)]);
+        let pred: ExprRef = daft_dsl::unresolved_col("x").eq(daft_dsl::lit(2));
+        let co = Some(
+            JsonConvertOptions::default()
+                .with_schema(Some(provided_schema.into()))
+                .with_include_columns(Some(vec!["y".to_string()]))
+                .with_predicate(Some(pred.clone())),
+        );
+
+        let out = read_json_local(&uri, co, None, None, None)?;
+        assert_eq!(out.len(), 1);
+        assert!(out.schema.get_index("y").is_ok());
+        let y_idx = out.schema.get_index("y")?;
+        let col_y = out.get_column(y_idx);
+        assert_eq!(
+            col_y
+                .to_arrow()
+                .as_any()
+                .downcast_ref::<arrow2::array::Utf8Array<i64>>()
+                .unwrap()
+                .value(0),
+            "b"
+        );
+        Ok(())
     }
 }

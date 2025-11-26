@@ -32,10 +32,17 @@ def read_json(
     Args:
         path (str): Path to JSON files (allows for wildcards)
         infer_schema (bool): Whether to infer the schema of the JSON, defaults to True.
-        schema (dict[str, DataType]): A schema that is used as the definitive schema for the JSON if infer_schema is False, otherwise it is used as a schema hint that is applied after the schema is inferred.
+        schema (dict[str, DataType]):
+            - If infer_schema is False: treated as the definitive schema.
+            - If infer_schema is True: treated as schema hints that are merged with the inferred schema using add-missing + override semantics.
+              This applies recursively to nested Structs. Any columns present in hints but missing in the data will exist in the final schema and materialize as nulls for rows where absent.
         io_config (IOConfig): Config to be used with the native downloader
         file_path_column: Include the source path(s) as a column with this name. Defaults to None.
         hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
+
+    Notes:
+        - When infer_schema is True and schema hints are provided, Daft merges the inferred schema with hints by overriding matching fields' dtypes and adding any missing fields from hints.
+        - During decoding, columns are allocated from the final merged schema; if a field is missing in a row/file, its value is set to null. This ensures predicates like `where(col("x").is_null())` work correctly even for sparsely-present columns.
 
     Returns:
         DataFrame: parsed DataFrame
