@@ -148,44 +148,56 @@ def parse_markdown_to_cells(content: str) -> list[dict]:
     """Parse markdown content into notebook cells."""
     cells = []
 
-    # Split content into sections based on code blocks
-    # Pattern matches ```python or ```{python} code blocks
+    # Pattern matches ```python or ```{python} code blocks, optionally followed by output blocks
+    # Output blocks are ``` {title="Output"}\n...\n```
     code_block_pattern = r"```(?:\{?)python\}?\n(.*?)```"
+    output_block_pattern = r'```\s*\{title="Output"\}\n(.*?)```'
 
     parts = []
     last_end = 0
 
-    # Find all code blocks and output blocks
+    # Find all code blocks
     for match in re.finditer(code_block_pattern, content, re.DOTALL):
         # Add markdown before this code block
         if match.start() > last_end:
             md_content = content[last_end : match.start()].strip()
             if md_content:
-                parts.append(("markdown", md_content))
+                parts.append(("markdown", md_content, None))
 
         code_content = match.group(1).strip()
-        # Skip pip install commands that are meant as shell commands
-        if code_content.startswith("pip install"):
-            # Convert to notebook !pip install
-            parts.append(("code", "!" + code_content))
-        else:
-            parts.append(("code", code_content))
 
-        last_end = match.end()
+        # Check if there's an output block immediately after this code block
+        output_content = None
+        after_code = content[match.end() :].lstrip()
+        output_match = re.match(output_block_pattern, after_code, re.DOTALL)
+        if output_match:
+            output_content = output_match.group(1).rstrip()
+            # Update last_end to skip the output block too
+            # Calculate actual position in original content
+            whitespace_len = len(content[match.end() :]) - len(after_code)
+            last_end = match.end() + whitespace_len + output_match.end()
+        else:
+            last_end = match.end()
+
+        # Handle pip install commands
+        if code_content.startswith("pip install"):
+            parts.append(("code", "!" + code_content, output_content))
+        else:
+            parts.append(("code", code_content, output_content))
 
     # Add remaining markdown
     if last_end < len(content):
         md_content = content[last_end:].strip()
         if md_content:
-            parts.append(("markdown", md_content))
+            parts.append(("markdown", md_content, None))
 
     # Process parts into cells
-    for part_type, part_content in parts:
+    for part_type, part_content, output_content in parts:
         if part_type == "markdown":
             # Process markdown content
             processed = process_markdown_content(part_content)
 
-            # Remove output blocks from markdown (they were shown after code)
+            # Remove any remaining output blocks from markdown
             processed = re.sub(r'```\s*\{title="Output"\}\n.*?```', "", processed, flags=re.DOTALL)
 
             # Clean up extra whitespace
@@ -200,7 +212,20 @@ def parse_markdown_to_cells(content: str) -> list[dict]:
         elif part_type == "code":
             source_lines = part_content.split("\n")
             source = [line + "\n" for line in source_lines[:-1]] + [source_lines[-1]]
-            cells.append(create_notebook_cell("code", source))
+            cell = create_notebook_cell("code", source)
+
+            # Add output if present
+            if output_content:
+                cell["outputs"] = [
+                    {
+                        "output_type": "stream",
+                        "name": "stdout",
+                        "text": [line + "\n" for line in output_content.split("\n")],
+                    }
+                ]
+                cell["execution_count"] = 1
+
+            cells.append(cell)
 
     return cells
 
