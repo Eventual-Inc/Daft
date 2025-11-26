@@ -5,6 +5,11 @@ import pyarrow.parquet as papq
 import pytest
 
 import daft
+from tests.conftest import get_tests_daft_runner_name
+
+pytestmark = pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray", reason="Merge scan tasks are only supported on the Ray runner"
+)
 
 
 @pytest.fixture(scope="function")
@@ -30,7 +35,7 @@ def test_split_parquet_read(parquet_files):
 
 @pytest.mark.skip(reason="Not implemented yet")
 def test_split_parquet_read_some_splits(tmpdir):
-    with daft.execution_config_ctx(enable_scan_task_split_and_merge=True, scantask_splitting_level=2):
+    with daft.execution_config_ctx(enable_scan_task_split_and_merge=True):
         # Write a mix of 20 large and 20 small files
         # Small ones should not be split, large ones should be split into 10 rowgroups each
         # This gives us a total of 200 + 20 scantasks

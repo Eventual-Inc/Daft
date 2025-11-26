@@ -111,7 +111,6 @@ impl PyDaftExecutionConfig {
         default_morsel_size=None,
         shuffle_algorithm=None,
         pre_shuffle_merge_threshold=None,
-        scantask_splitting_level=None,
         scantask_max_parallel=None,
         native_parquet_writer=None,
         min_cpu_per_task=None,
@@ -144,7 +143,6 @@ impl PyDaftExecutionConfig {
         default_morsel_size: Option<usize>,
         shuffle_algorithm: Option<&str>,
         pre_shuffle_merge_threshold: Option<usize>,
-        scantask_splitting_level: Option<i32>,
         scantask_max_parallel: Option<usize>,
         native_parquet_writer: Option<bool>,
         min_cpu_per_task: Option<f64>,
@@ -231,15 +229,6 @@ impl PyDaftExecutionConfig {
         }
         if let Some(pre_shuffle_merge_threshold) = pre_shuffle_merge_threshold {
             config.pre_shuffle_merge_threshold = pre_shuffle_merge_threshold;
-        }
-
-        if let Some(scantask_splitting_level) = scantask_splitting_level {
-            if !matches!(scantask_splitting_level, 1 | 2) {
-                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "scantask_splitting_level must be 1 or 2",
-                ));
-            }
-            config.scantask_splitting_level = scantask_splitting_level;
         }
 
         if let Some(scantask_max_parallel) = scantask_max_parallel {
@@ -382,11 +371,6 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn pre_shuffle_merge_threshold(&self) -> PyResult<usize> {
         Ok(self.config.pre_shuffle_merge_threshold)
-    }
-
-    #[getter]
-    fn scantask_splitting_level(&self) -> PyResult<i32> {
-        Ok(self.config.scantask_splitting_level)
     }
 
     #[getter]

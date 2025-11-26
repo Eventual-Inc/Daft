@@ -163,7 +163,6 @@ def set_execution_config(
     default_morsel_size: int | None = None,
     shuffle_algorithm: str | None = None,
     pre_shuffle_merge_threshold: int | None = None,
-    scantask_splitting_level: int | None = None,
     scantask_max_parallel: int | None = None,
     native_parquet_writer: bool | None = None,
     min_cpu_per_task: float | None = None,
@@ -185,7 +184,6 @@ def set_execution_config(
         scan_tasks_max_size_bytes: Maximum size of scan tasks in bytes. Defaults to 384MB.
         max_sources_per_scan_task: Maximum number of sources per scan task. Defaults to 10.
         parquet_split_row_groups_max_files: Maximum number of files to read in which the row group splitting should happen. (Defaults to 10)
-        scantask_splitting_level: How aggressively to split scan tasks. Setting this to `2` will use a more aggressive ScanTask splitting algorithm which might be more expensive to run but results in more even splits of partitions. Defaults to 1.
         broadcast_join_size_bytes_threshold: If one side of a join is smaller than this threshold, a broadcast join will be used.
             Default is 10 MiB.
         hash_join_partition_size_leniency: If the left side of a hash join is already correctly partitioned and the right side isn't,
@@ -244,7 +242,6 @@ def set_execution_config(
             default_morsel_size=default_morsel_size,
             shuffle_algorithm=shuffle_algorithm,
             pre_shuffle_merge_threshold=pre_shuffle_merge_threshold,
-            scantask_splitting_level=scantask_splitting_level,
             scantask_max_parallel=scantask_max_parallel,
             native_parquet_writer=native_parquet_writer,
             min_cpu_per_task=min_cpu_per_task,

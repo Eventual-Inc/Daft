@@ -109,7 +109,6 @@ pub struct DaftExecutionConfig {
     pub scan_tasks_min_size_bytes: usize,
     pub scan_tasks_max_size_bytes: usize,
     pub max_sources_per_scan_task: usize,
-    pub scantask_splitting_level: i32,
     pub parquet_split_row_groups_max_files: usize,
     pub broadcast_join_size_bytes_threshold: usize,
     pub hash_join_partition_size_leniency: f64,
@@ -171,7 +170,6 @@ impl Default for DaftExecutionConfig {
             default_morsel_size: 128 * 1024,
             shuffle_algorithm: "auto".to_string(),
             pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
-            scantask_splitting_level: 1,
             scantask_max_parallel: 8,
             native_parquet_writer: true,
             min_cpu_per_task: 0.5,
@@ -185,7 +183,6 @@ impl Default for DaftExecutionConfig {
 
 impl DaftExecutionConfig {
     const ENV_DAFT_SHUFFLE_ALGORITHM: &'static str = "DAFT_SHUFFLE_ALGORITHM";
-    const ENV_DAFT_SCANTASK_SPLITTING_LEVEL: &'static str = "DAFT_SCANTASK_SPLITTING_LEVEL";
     const ENV_DAFT_SCANTASK_MAX_PARALLEL: &'static str = "DAFT_SCANTASK_MAX_PARALLEL";
     const ENV_DAFT_NATIVE_PARQUET_WRITER: &'static str = "DAFT_NATIVE_PARQUET_WRITER";
     const ENV_DAFT_MIN_CPU_PER_TASK: &'static str = "DAFT_MIN_CPU_PER_TASK";
@@ -201,10 +198,6 @@ impl DaftExecutionConfig {
 
         if let Some(val) = parse_string_from_env(Self::ENV_DAFT_SHUFFLE_ALGORITHM, true) {
             cfg.shuffle_algorithm = val;
-        }
-
-        if let Some(val) = parse_number_from_env(Self::ENV_DAFT_SCANTASK_SPLITTING_LEVEL, 0) {
-            cfg.scantask_splitting_level = val;
         }
 
         if let Some(val) = parse_number_from_env_with_custom_parser(
@@ -371,31 +364,6 @@ mod tests {
 
             unsafe {
                 std::env::remove_var(DaftExecutionConfig::ENV_DAFT_SHUFFLE_ALGORITHM);
-            }
-        }
-
-        // ENV_DAFT_SCANTASK_SPLITTING_LEVEL
-        {
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.scantask_splitting_level, 1);
-
-            unsafe {
-                std::env::set_var(DaftExecutionConfig::ENV_DAFT_SCANTASK_SPLITTING_LEVEL, "5");
-            }
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.scantask_splitting_level, 5);
-
-            unsafe {
-                std::env::set_var(
-                    DaftExecutionConfig::ENV_DAFT_SCANTASK_SPLITTING_LEVEL,
-                    "invalid",
-                );
-            }
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.scantask_splitting_level, 0);
-
-            unsafe {
-                std::env::remove_var(DaftExecutionConfig::ENV_DAFT_SCANTASK_SPLITTING_LEVEL);
             }
         }
 
