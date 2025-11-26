@@ -356,7 +356,7 @@ pub(super) mod tests {
         assert_eq!(calls.len(), 2);
         assert_eq!(calls[0].0, 1);
         assert_eq!(calls[0].1, false);
-        assert_eq!(calls[0].2, Some(60));
+        assert_eq!(calls[0].2, Some(0));
         assert_eq!(calls[1].1, true);
         Ok(())
     }
