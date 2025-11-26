@@ -868,6 +868,7 @@ class IOConfig:
     http: HTTPConfig
     unity: UnityConfig
     hf: HuggingFaceConfig
+    disable_suffix_range: bool
     tos: TosConfig
 
     def __init__(
@@ -878,6 +879,7 @@ class IOConfig:
         http: HTTPConfig | None = None,
         unity: UnityConfig | None = None,
         hf: HuggingFaceConfig | None = None,
+        disable_suffix_range: bool | None = None,
         tos: TosConfig | None = None,
     ): ...
     def replace(
@@ -888,6 +890,7 @@ class IOConfig:
         http: HTTPConfig | None = None,
         unity: UnityConfig | None = None,
         hf: HuggingFaceConfig | None = None,
+        disable_suffix_range: bool | None = None,
         tos: TosConfig | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig."""
@@ -2144,6 +2147,8 @@ class PyDaftExecutionConfig:
         min_cpu_per_task: float | None = None,
         actor_udf_ready_timeout: int | None = None,
         maintain_order: bool | None = None,
+        enable_dynamic_batching: bool | None = None,
+        dynamic_batching_strategy: str | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -2199,6 +2204,10 @@ class PyDaftExecutionConfig:
     def actor_udf_ready_timeout(self) -> int: ...
     @property
     def scantask_max_parallel(self) -> int: ...
+    @property
+    def enable_dynamic_batching(self) -> bool: ...
+    @property
+    def dynamic_batching_strategy(self) -> str: ...
 
 class PyDaftPlanningConfig:
     @staticmethod

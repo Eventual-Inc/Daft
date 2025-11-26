@@ -3,11 +3,9 @@ from __future__ import annotations
 import contextlib
 import logging
 import threading
-import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from daft import runners
 from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig, PyQueryResult
 from daft.daft import get_context as _get_context
 
@@ -16,7 +14,6 @@ if TYPE_CHECKING:
 
     from daft.daft import PyQueryMetadata
     from daft.runners.partitioning import PartitionT
-    from daft.runners.runner import Runner
     from daft.subscribers import Subscriber
 
 logger = logging.getLogger(__name__)
@@ -39,33 +36,6 @@ class DaftContext:
             self._ctx = ctx
         else:
             self._ctx = PyDaftContext()
-
-    def get_or_infer_runner_type(self) -> str:
-        """DEPRECATED: Use daft.get_or_infer_runner_type instead. This method will be removed in v0.7.0.
-
-        Get or infer the runner type.
-
-        This API will get or infer the currently used runner type according to the following strategies:
-        1. If the `runner` has been set, return its type directly;
-        2. Try to determine whether it's currently running on a ray cluster. If so, consider it to be a ray type;
-        3. Try to determine based on `DAFT_RUNNER` env variable.
-
-        :return: runner type string ("native" or "ray")
-        """
-        warnings.warn(
-            "This method is deprecated and will be removed in v0.7.0. Use daft.get_or_infer_runner_type instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return runners.get_or_infer_runner_type()
-
-    def get_or_create_runner(self) -> Runner[PartitionT]:
-        warnings.warn(
-            "This method is deprecated and will be removed in v0.7.0. Use daft.get_or_create_runner instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return runners.get_or_create_runner()
 
     @property
     def daft_execution_config(self) -> PyDaftExecutionConfig:
@@ -120,67 +90,6 @@ def get_context() -> DaftContext:
     return DaftContext(_get_context())
 
 
-def set_runner_ray(
-    address: str | None = None,
-    noop_if_initialized: bool = False,
-    max_task_backlog: int | None = None,
-    force_client_mode: bool = False,
-) -> DaftContext:
-    """DEPRECATED: Use daft.set_runner_ray instead. This method will be removed in v0.7.0.
-
-    Configure Daft to execute dataframes using the Ray distributed computing framework.
-
-    Args:
-        address: Ray cluster address to connect to. If None, connects to or starts a local Ray instance.
-        noop_if_initialized: If True, skip initialization if Ray is already running.
-        max_task_backlog: Maximum number of tasks that can be queued. None means Daft will automatically determine a good default.
-        force_client_mode: If True, forces Ray to run in client mode.
-
-    Returns:
-        DaftContext: Updated Daft execution context configured for Ray.
-
-    Note:
-        Can also be configured via environment variable: DAFT_RUNNER=ray
-    """
-    warnings.warn(
-        "This method is deprecated and will be removed in v0.7.0. Use daft.set_runner_ray instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-
-    _ = runners.set_runner_ray(
-        address=address,
-        noop_if_initialized=noop_if_initialized,
-        max_task_backlog=max_task_backlog,
-        force_client_mode=force_client_mode,
-    )
-
-    return DaftContext._from_native(_get_context())
-
-
-def set_runner_native(num_threads: int | None = None) -> DaftContext:
-    """DEPRECATED: Use daft.set_runner_native instead. This method will be removed in v0.7.0.
-
-    Configure Daft to execute dataframes using native multi-threaded processing.
-
-    This is the default execution mode for Daft.
-
-    Returns:
-        DaftContext: Updated Daft execution context configured for native execution.
-
-    Note:
-        Can also be configured via environment variable: DAFT_RUNNER=native
-    """
-    warnings.warn(
-        "This method is deprecated and will be removed in v0.7.0. Use daft.set_runner_native instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-
-    _ = runners.set_runner_native(num_threads=num_threads)
-    return DaftContext._from_native(_get_context())
-
-
 @contextlib.contextmanager
 def planning_config_ctx(**kwargs: Any) -> Generator[None, None, None]:
     """Context manager that wraps set_planning_config to reset the config to its original setting afternwards."""
@@ -204,7 +113,7 @@ def set_planning_config(
     Args:
         config: A PyDaftPlanningConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
             that the old (current) config should be used.
-        default_io_config: A default IOConfig to use in the absence of one being explicitly passed into any Expression (e.g. `.url.download()`)
+        default_io_config: A default IOConfig to use in the absence of one being explicitly passed into any Expression (e.g. `.download()`)
             or Dataframe operation (e.g. `daft.read_parquet()`).
     """
     # Replace values in the DaftPlanningConfig with user-specified overrides
@@ -263,6 +172,8 @@ def set_execution_config(
     min_cpu_per_task: float | None = None,
     actor_udf_ready_timeout: int | None = None,
     maintain_order: bool | None = None,
+    enable_dynamic_batching: bool | None = None,
+    dynamic_batching_strategy: str | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -312,6 +223,9 @@ def set_execution_config(
         min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 0.5.
         actor_udf_ready_timeout: Timeout for UDF actors to be ready. Defaults to 120 seconds.
         maintain_order: Whether to maintain order during execution. Defaults to True. Some blocking sink operators (e.g. write_parquet) won't respect this flag and will always keep maintain_order as false, and propagate to child operators. It's useful to set this to False for running df.collect() when no ordering is required.
+        enable_dynamic_batching:
+            Whether to enable dynamic batching. Defaults to False.
+        dynamic_batching_strategy: The strategy to use for dynamic batching. Defaults to 'auto'.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -350,6 +264,8 @@ def set_execution_config(
             min_cpu_per_task=min_cpu_per_task,
             actor_udf_ready_timeout=actor_udf_ready_timeout,
             maintain_order=maintain_order,
+            enable_dynamic_batching=enable_dynamic_batching,
+            dynamic_batching_strategy=dynamic_batching_strategy,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config

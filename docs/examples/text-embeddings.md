@@ -185,7 +185,7 @@ we ran on a ray cluster with 8 [g5.2xlarge](https://aws.amazon.com/ec2/instance-
 
 ```python
 # Configure Daft to use Ray to schedule work on different worker nodes
-daft.context.set_runner_ray()
+daft.set_runner_ray()
 
 # Configure S3 access for reading data
 daft.set_planning_config(
@@ -210,7 +210,7 @@ Now we'll execute the complete data processing pipeline:
     .with_column("embedding", EncodingUDF(col("text")))
     .with_column(
         "id",
-        col("url").str.right(50) + "-" + col("chunk_id").cast(daft.DataType.string())
+        col("url").right(50) + "-" + col("chunk_id").cast(daft.DataType.string())
     )
     .select("id", "url", "language", "source", "text", "embedding")
     .write_turbopuffer(
@@ -326,7 +326,7 @@ class EncodingUDF:
 
 def main():
     # Configure Daft to use Ray to schedule work on different worker nodes
-    daft.context.set_runner_ray()
+    daft.set_runner_ray()
 
     # Configure S3 access for reading data
     daft.set_planning_config(
@@ -345,7 +345,7 @@ def main():
         .with_column("embedding", EncodingUDF(col("text")))
         .with_column(
             "id",
-            col("url").str.right(50) + "-" + col("chunk_id").cast(daft.DataType.string())
+            col("url").right(50) + "-" + col("chunk_id").cast(daft.DataType.string())
         )
         .select("id", "url", "language", "source", "text", "embedding")
         .write_turbopuffer(

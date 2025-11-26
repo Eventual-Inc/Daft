@@ -137,7 +137,10 @@ pub struct DaftExecutionConfig {
     pub min_cpu_per_task: f64,
     pub actor_udf_ready_timeout: usize,
     pub maintain_order: bool,
+    pub enable_dynamic_batching: bool,
+    pub dynamic_batching_strategy: String,
 }
+
 #[cfg(not(debug_assertions))]
 impl std::fmt::Debug for DaftExecutionConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -180,6 +183,8 @@ impl Default for DaftExecutionConfig {
             min_cpu_per_task: 0.5,
             actor_udf_ready_timeout: 120,
             maintain_order: true,
+            enable_dynamic_batching: false,
+            dynamic_batching_strategy: "auto".to_string(),
         }
     }
 }

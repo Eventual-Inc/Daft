@@ -571,7 +571,7 @@ class DataFrame:
         Examples:
             >>> import daft
             >>>
-            >>> daft.context.set_runner_ray()  # doctest: +SKIP
+            >>> daft.set_runner_ray()  # doctest: +SKIP
             >>>
             >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]}).into_partitions(2)
             >>> for part in df.iter_partitions():
@@ -1828,7 +1828,7 @@ class DataFrame:
 
         Examples:
             >>> import daft
-            >>> daft.context.set_runner_ray()  # doctest: +SKIP
+            >>> daft.set_runner_ray()  # doctest: +SKIP
             >>>
             >>> df = daft.from_pydict({"a": [1, 2, 3, 4]}).into_partitions(2)
             >>> df = df._add_monotonically_increasing_id()
@@ -2635,7 +2635,7 @@ class DataFrame:
         """
         if get_or_create_runner().name == "native":
             warnings.warn(
-                "DataFrame.repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.context.set_runner_ray()` instead if you need to repartition."
+                "DataFrame.repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.set_runner_ray()` instead if you need to repartition."
             )
         if len(partition_by) == 0:
             warnings.warn(
@@ -2670,7 +2670,7 @@ class DataFrame:
         """
         if get_or_create_runner().name == "native":
             warnings.warn(
-                "DataFrame.into_partitions not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.context.set_runner_ray()` instead if you need to repartition."
+                "DataFrame.into_partitions not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.set_runner_ray()` instead if you need to repartition."
             )
 
         builder = self._builder.into_partitions(num)
@@ -2911,10 +2911,12 @@ class DataFrame:
         if not float_columns:
             return self
 
+        from daft.functions import is_nan, when
+
         return self.where(
             ~reduce(
-                lambda x, y: x.is_null().if_else(lit(False), x) | y.is_null().if_else(lit(False), y),
-                (x.float.is_nan() for x in float_columns),
+                lambda x, y: when(x.is_null(), lit(False)).otherwise(x) | when(y.is_null(), lit(False)).otherwise(y),
+                (is_nan(x) for x in float_columns),
             )
         )
 
@@ -3240,11 +3242,11 @@ class DataFrame:
         elif op == "any_value":
             return expr.any_value()
         elif op == "list":
-            return expr.agg_list()
+            return expr.list_agg()
         elif op == "set":
-            return expr.agg_set()
+            return expr.list_agg_distinct()
         elif op == "concat":
-            return expr.agg_concat()
+            return expr.string_agg()
         elif op == "skew":
             return expr.skew()
 
@@ -3525,7 +3527,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        return self._apply_agg_fn(Expression.agg_list, cols)
+        return self._apply_agg_fn(Expression.list_agg, cols)
 
     @DataframePublicAPI
     def agg_set(self, *cols: ColumnInputType) -> "DataFrame":
@@ -3553,7 +3555,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        return self._apply_agg_fn(Expression.agg_set, cols)
+        return self._apply_agg_fn(Expression.list_agg_distinct, cols)
 
     @DataframePublicAPI
     def agg_concat(self, *cols: ColumnInputType) -> "DataFrame":
@@ -3580,7 +3582,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        return self._apply_agg_fn(Expression.agg_concat, cols)
+        return self._apply_agg_fn(Expression.string_agg, cols)
 
     @DataframePublicAPI
     def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> "DataFrame":
@@ -4456,7 +4458,7 @@ class DataFrame:
 
         Examples:
             >>> import daft
-            >>> daft.context.set_runner_ray()  # doctest: +SKIP
+            >>> daft.set_runner_ray()  # doctest: +SKIP
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
             >>> ray_dataset = df.to_ray_dataset()  # doctest: +SKIP
 
@@ -4564,7 +4566,7 @@ class DataFrame:
 
         Examples:
             >>> import daft
-            >>> daft.context.set_runner_ray()  # doctest: +SKIP
+            >>> daft.set_runner_ray()  # doctest: +SKIP
             >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
             >>> dask_df = df.to_dask_dataframe()  # doctest: +SKIP
 

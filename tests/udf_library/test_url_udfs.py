@@ -34,18 +34,21 @@ def test_download(files):
     # Run it twice to ensure runtime works
     for _ in range(2):
         df = daft.from_pydict({"filenames": [str(f) for f in files]})
-        df = df.with_column("bytes", col("filenames").url.download())
+        df = df.with_column("bytes", col("filenames").download())
         pd_df = pd.DataFrame.from_dict({"filenames": [str(f) for f in files]})
         pd_df["bytes"] = pd.Series([pathlib.Path(fn).read_bytes() for fn in files])
         assert_df_equals(df.to_pandas(), pd_df, sort_key="filenames")
 
 
 def test_download_with_none(files):
-    data = {"id": list(range(len(files) * 2)), "filenames": [str(f) for f in files] + [None for _ in range(len(files))]}
+    data = {
+        "id": list(range(len(files) * 2)),
+        "filenames": [str(f) for f in files] + [None for _ in range(len(files))],
+    }
     # Run it twice to ensure runtime works
     for _ in range(2):
         df = daft.from_pydict(data)
-        df = df.with_column("bytes", col("filenames").url.download())
+        df = df.with_column("bytes", col("filenames").download())
         pd_df = pd.DataFrame.from_dict(data)
         pd_df["bytes"] = pd.Series([pathlib.Path(fn).read_bytes() if fn is not None else None for fn in files])
         assert_df_equals(df.to_pandas(), pd_df, sort_key="id")
@@ -61,7 +64,7 @@ def test_download_with_missing_urls(files):
         df = daft.from_pydict(data)
         df = df.with_column(
             "bytes",
-            col("filenames").url.download(
+            col("filenames").download(
                 on_error="null",
             ),
         )
@@ -82,7 +85,7 @@ def test_download_with_missing_urls_reraise_errors(files):
         df = daft.from_pydict(data)
         df = df.with_column(
             "bytes",
-            col("filenames").url.download(
+            col("filenames").download(
                 on_error="raise",
             ),
         )
@@ -100,7 +103,7 @@ def test_download_with_duplicate_urls(files):
     # Run it twice to ensure runtime works
     for _ in range(2):
         df = daft.from_pydict(data)
-        df = df.with_column("bytes", col("filenames").url.download())
+        df = df.with_column("bytes", col("filenames").download())
         pd_df = pd.DataFrame.from_dict(data)
         pd_df["bytes"] = pd.Series(
             [pathlib.Path(fn).read_bytes() if pathlib.Path(fn).exists() else None for fn in files * 2]
