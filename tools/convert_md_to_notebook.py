@@ -179,8 +179,14 @@ def parse_markdown_to_cells(content: str) -> list[dict]:
     return cells
 
 
-def create_colab_badge_markdown(notebook_path: str, branch: str = "main") -> str:
-    """Create markdown for Colab badge to be inserted after the title."""
+def create_colab_badge_markdown(notebook_path: str, branch: str = "main", for_mkdocs: bool = False) -> str:
+    """Create markdown for Colab badge to be inserted after the title.
+
+    Args:
+        notebook_path: Path to the notebook file relative to repo root
+        branch: Git branch name for the Colab badge link
+        for_mkdocs: If True, use MkDocs-compatible markdown syntax instead of HTML
+    """
     from urllib.parse import quote
 
     # Assume notebooks will be in the repo under docs/notebooks/
@@ -189,11 +195,69 @@ def create_colab_badge_markdown(notebook_path: str, branch: str = "main") -> str
     github_path = f"Eventual-Inc/Daft/blob/{encoded_branch}/{notebook_path}"
     colab_url = f"https://colab.research.google.com/github/{github_path}"
 
+    if for_mkdocs:
+        # Use markdown image link syntax for MkDocs compatibility
+        return f'[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)]({colab_url})\n'
+
     return f"""
 <a target="_blank" href="{colab_url}">
   <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
 </a>
 """
+
+
+def has_colab_badge(content: str) -> bool:
+    """Check if the content already has a Colab badge."""
+    return "colab.research.google.com" in content
+
+
+# Regex pattern to match Colab badge in markdown (both HTML and markdown syntax)
+COLAB_BADGE_PATTERN = r'(\[!\[Open In Colab\].*?\]\(https://colab\.research\.google\.com/github/[^\)]+\)\n*|<a[^>]*href="https://colab\.research\.google\.com/github/[^"]*"[^>]*>[\s\S]*?</a>\n*)'
+
+
+def update_colab_badge_in_markdown(
+    input_path: Path,
+    notebook_path: Path,
+    branch: str = "main",
+) -> str:
+    """Add or update a Colab badge in a markdown file.
+
+    Args:
+        input_path: Path to the markdown file to update
+        notebook_path: Path to the notebook file (for generating the Colab link)
+        branch: Git branch name for the Colab badge link
+
+    Returns:
+        "added" if badge was added, "updated" if existing badge was updated, "unchanged" if no change needed
+    """
+    content = input_path.read_text()
+
+    # Calculate relative path from repo root for the notebook
+    try:
+        repo_root = Path(__file__).parent.parent
+        rel_notebook_path = notebook_path.relative_to(repo_root)
+    except ValueError:
+        rel_notebook_path = notebook_path
+
+    badge_md = create_colab_badge_markdown(str(rel_notebook_path), branch=branch, for_mkdocs=True)
+
+    # Check if badge already exists
+    if has_colab_badge(content):
+        # Replace existing badge with new one
+        new_content = re.sub(COLAB_BADGE_PATTERN, badge_md + "\n", content, count=1)
+        if new_content != content:
+            input_path.write_text(new_content)
+            return "updated"
+        return "unchanged"
+
+    # Insert badge after the first # heading line
+    new_content = re.sub(r"(^# .+\n)", r"\1\n" + badge_md + "\n", content, count=1, flags=re.MULTILINE)
+
+    if new_content != content:
+        input_path.write_text(new_content)
+        return "added"
+
+    return "unchanged"
 
 
 def convert_md_to_notebook(
@@ -219,8 +283,8 @@ def convert_md_to_notebook(
     # Read markdown content
     content = input_path.read_text()
 
-    # Add Colab badge after the title (# heading)
-    if add_colab_badge:
+    # Add Colab badge after the title (# heading) if not already present
+    if add_colab_badge and not has_colab_badge(content):
         # Calculate relative path from repo root
         try:
             repo_root = Path(__file__).parent.parent
@@ -283,6 +347,11 @@ Examples:
         default="main",
         help="Git branch for Colab badge link (default: main)",
     )
+    parser.add_argument(
+        "--update-source",
+        action="store_true",
+        help="Also add Colab badge to the source markdown file (skips if already present)",
+    )
 
     args = parser.parse_args()
 
@@ -294,6 +363,16 @@ Examples:
     )
 
     print(f"Created notebook: {output_path}")
+
+    # Optionally update the source markdown file
+    if args.update_source and not args.no_colab_badge:
+        result = update_colab_badge_in_markdown(args.input, output_path, branch=args.branch)
+        if result == "added":
+            print(f"Added Colab badge to: {args.input}")
+        elif result == "updated":
+            print(f"Updated Colab badge in: {args.input}")
+        else:
+            print(f"Colab badge unchanged in: {args.input}")
 
 
 if __name__ == "__main__":

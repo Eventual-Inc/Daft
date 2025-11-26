@@ -1,5 +1,7 @@
 # Quickstart
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Eventual-Inc/Daft/blob/tools%2Fdocs-to-notebook-converter/docs/notebooks/quickstart.ipynb)
+
 <!--
 todo(docs - jay): Incorporate SQL examples
 
