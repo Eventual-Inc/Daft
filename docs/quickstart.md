@@ -20,13 +20,13 @@ Daft requires **Python 3.10 or higher**.
 
 You can install Daft using `pip`. Run the following command in your terminal or notebook:
 
-```python
+```bash
 pip install -U "daft[openai]"  # Includes OpenAI extras needed for this quickstart
 ```
 
 Additionally, install these packages for image processing (used later in this quickstart):
 
-```python
+```bash
 pip install numpy pillow
 ```
 

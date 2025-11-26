@@ -185,10 +185,11 @@ def parse_markdown_to_cells(content: str) -> list[dict]:
     """Parse markdown content into notebook cells."""
     cells = []
 
-    # Pattern matches ```python or ```{python} code blocks, optionally followed by output blocks
+    # Pattern matches ```python, ```{python}, or ```bash code blocks, optionally followed by output blocks
     # Output blocks are ``` {title="Output"}\n...\n```
     # Use ^ to only match code blocks at the start of a line (not indented, e.g., inside admonitions)
-    code_block_pattern = r"^```(?:\{?)python\}?\n(.*?)^```"
+    # Capture the language tag to distinguish python from bash
+    code_block_pattern = r"^```(?:\{?)(python|bash)\}?\n(.*?)^```"
     output_block_pattern = r'```\s*\{title="Output"\}\n(.*?)```'
 
     parts = []
@@ -202,7 +203,8 @@ def parse_markdown_to_cells(content: str) -> list[dict]:
             if md_content:
                 parts.append(("markdown", md_content, None))
 
-        code_content = match.group(1).strip()
+        language = match.group(1)
+        code_content = match.group(2).strip()
 
         # Check if there's an output block immediately after this code block
         output_content = None
@@ -217,11 +219,12 @@ def parse_markdown_to_cells(content: str) -> list[dict]:
         else:
             last_end = match.end()
 
-        # Handle pip install commands
-        if code_content.startswith("pip install"):
-            parts.append(("code", "!" + code_content, output_content))
-        else:
-            parts.append(("code", code_content, output_content))
+        # Handle bash code blocks - prepend ! to each line for notebook shell commands
+        if language == "bash":
+            lines = code_content.split("\n")
+            code_content = "\n".join("!" + line for line in lines)
+
+        parts.append(("code", code_content, output_content))
 
     # Add remaining markdown
     if last_end < len(content):
