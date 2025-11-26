@@ -57,29 +57,15 @@ def convert_admonition_to_html(match: re.Match) -> str:
 
 def process_markdown_content(content: str) -> str:
     """Process markdown content to convert MkDocs-specific syntax."""
-    # Convert !!! admonitions to HTML
-    # Pattern: !!! type "optional title"\n    content (indented)
-    admonition_pattern = r'!!!\s+(\w+)(?:\s+"([^"]*)")?\s*\n((?:[ ]{4}[^\n]*\n?)+)'
-
-    def replace_admonition(match: re.Match) -> str:
-        admonition_type = match.group(1)
-        title = match.group(2)
-        # Remove the 4-space indentation from content
-        content_lines = match.group(3).split("\n")
-        content = "\n".join(line[4:] if line.startswith("    ") else line for line in content_lines)
-        # Create a fake match object for the converter
-        return convert_admonition_to_html_direct(admonition_type, title, content.strip())
-
-    content = re.sub(admonition_pattern, replace_admonition, content)
-
-    # Remove HTML comments
+    # Remove HTML comments first
     content = re.sub(r"<!--[\s\S]*?-->", "", content)
 
     # Remove MkDocs grid cards (these don't render well in notebooks)
     # Match the entire grid card block including its closing </div>
     content = re.sub(r'<div class="grid cards" markdown>\s*([\s\S]*?)\n</div>\s*', r"\1\n", content)
 
-    # Convert relative links to absolute docs links
+    # Convert relative links to absolute docs links BEFORE converting admonitions
+    # This ensures links inside admonitions get converted properly
     # [text](connectors/iceberg.md) -> [text](https://docs.daft.ai/en/stable/connectors/iceberg/)
     def convert_link(match: re.Match) -> str:
         text = match.group(1)
@@ -93,7 +79,35 @@ def process_markdown_content(content: str) -> str:
 
     content = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", convert_link, content)
 
+    # Convert !!! admonitions to HTML (AFTER link conversion so links are absolute)
+    # Pattern: !!! type "optional title"\n    content (indented)
+    admonition_pattern = r'!!!\s+(\w+)(?:\s+"([^"]*)")?\s*\n((?:[ ]{4}[^\n]*\n?)+)'
+
+    def replace_admonition(match: re.Match) -> str:
+        admonition_type = match.group(1)
+        title = match.group(2)
+        # Remove the 4-space indentation from content
+        content_lines = match.group(3).split("\n")
+        admon_content = "\n".join(line[4:] if line.startswith("    ") else line for line in content_lines)
+        return convert_admonition_to_html_direct(admonition_type, title, admon_content.strip())
+
+    content = re.sub(admonition_pattern, replace_admonition, content)
+
     return content
+
+
+def convert_markdown_links_to_html(content: str) -> str:
+    """Convert markdown links [text](url) to HTML <a> tags.
+
+    This is needed because markdown inside HTML tags doesn't get rendered.
+    """
+
+    def replace_link(match: re.Match) -> str:
+        text = match.group(1)
+        url = match.group(2)
+        return f'<a href="{url}">{text}</a>'
+
+    return re.sub(r"\[([^\]]+)\]\(([^)]+)\)", replace_link, content)
 
 
 def convert_admonition_to_html_direct(admonition_type: str, title: str | None, content: str) -> str:
@@ -109,10 +123,13 @@ def convert_admonition_to_html_direct(admonition_type: str, title: str | None, c
     color, default_title = type_styles.get(admonition_type.lower(), ("#448aff", "Note"))
     display_title = title if title else default_title
 
+    # Convert markdown links to HTML since markdown doesn't render inside HTML tags
+    content_html = convert_markdown_links_to_html(content)
+
     return f"""
 <div style="background-color: {color}22; border-left: 4px solid {color}; padding: 12px; margin: 16px 0;">
 <strong style="color: {color};">{display_title}</strong><br/>
-{content}
+{content_html}
 </div>
 
 """
