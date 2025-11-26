@@ -105,6 +105,22 @@ def process_markdown_content(content: str) -> str:
     return content
 
 
+def escape_angle_brackets_in_backticks(content: str) -> str:
+    """Escape angle brackets inside backticks so they render as text, not HTML.
+
+    For example: `<Image>` -> `&lt;Image&gt;`
+    This prevents inline code like `<Image>` from being treated as HTML tags.
+    """
+
+    def escape_brackets(match: re.Match) -> str:
+        code = match.group(1)
+        # Escape < and > inside the backticks
+        escaped = code.replace("<", "&lt;").replace(">", "&gt;")
+        return f"`{escaped}`"
+
+    return re.sub(r"`([^`]+)`", escape_brackets, content)
+
+
 def convert_markdown_links_to_html(content: str) -> str:
     """Convert markdown links [text](url) to HTML <a> tags.
 
@@ -132,8 +148,11 @@ def convert_admonition_to_html_direct(admonition_type: str, title: str | None, c
     color, default_title = type_styles.get(admonition_type.lower(), ("#448aff", "Note"))
     display_title = title if title else default_title
 
+    # Escape angle brackets in inline code (e.g., `<Image>` -> `&lt;Image&gt;`)
+    # This must be done before converting markdown links to HTML
+    content_html = escape_angle_brackets_in_backticks(content)
     # Convert markdown links to HTML since markdown doesn't render inside HTML tags
-    content_html = convert_markdown_links_to_html(content)
+    content_html = convert_markdown_links_to_html(content_html)
 
     return f"""
 <div style="background-color: {color}22; border-left: 4px solid {color}; padding: 12px; margin: 16px 0;">
@@ -248,7 +267,7 @@ def create_colab_badge_markdown(notebook_path: str, branch: str = "main", for_mk
 
     if for_mkdocs:
         # Use markdown image link syntax for MkDocs compatibility
-        return f'[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)]({colab_url})\n'
+        return f"[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)]({colab_url})\n"
 
     return f"""
 <a target="_blank" href="{colab_url}">
