@@ -206,10 +206,6 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
 
         // Midpoint of search space
         state.current_batch_size = usize::midpoint(state.search_low, state.search_high);
-        state.current_batch_size = state
-            .current_batch_size
-            .max(self.min_batch_size)
-            .min(self.max_batch_size);
 
         log::debug!(
             "[{}] new_search=[{}, {}], new_batch_size={}",
