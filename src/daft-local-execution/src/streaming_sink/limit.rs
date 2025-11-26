@@ -47,7 +47,7 @@ impl LimitSink {
 
 impl StreamingSink for LimitSink {
     type State = LimitSinkState;
-
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "LimitSink::sink")]
     fn execute(
         &self,
@@ -130,5 +130,10 @@ impl StreamingSink for LimitSink {
 
     fn max_concurrency(&self) -> usize {
         1
+    }
+    fn batching_strategy(&self) -> Self::BatchingStrategy {
+        crate::dynamic_batching::StaticBatchingStrategy::new(
+            self.morsel_size_requirement().unwrap_or_default(),
+        )
     }
 }

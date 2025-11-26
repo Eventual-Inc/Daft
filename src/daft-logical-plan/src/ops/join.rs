@@ -172,7 +172,8 @@ impl TryFrom<ExprRef> for JoinPredicate {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Join {
     pub plan_id: Option<usize>,
     pub node_id: Option<usize>,

@@ -16,7 +16,7 @@ OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/image
 BATCH_SIZE = 100
 IMAGE_DIM = (3, 224, 224)
 
-daft.context.set_runner_ray()
+daft.set_runner_ray()
 
 # Wait for Ray cluster to be ready
 @ray.remote
@@ -60,7 +60,7 @@ start_time = time.time()
 df = daft.read_parquet(INPUT_PATH)
 df = df.with_column(
     "decoded_image",
-    df["image_url"].url.download().image.decode(mode=daft.ImageMode.RGB),
+    df["image_url"].download().decode_image(mode=daft.ImageMode.RGB),
 )
 df = df.with_column(
     "norm_image",

@@ -64,19 +64,29 @@ def test_show_not_from_cached_repr(make_df, valid_data, data_source):
     df = df.collect(2)
     df.__repr__()
     collected_preview = df._preview
-    df_preview = df._construct_show_preview(8)
-
+    
     variant = data_source
     if variant == "parquet":
-        # Cached preview from df.__repr__() is NOT USED because data was not materialized from parquet.
+        # For parquet, when requesting more rows than collected, we need to read from file.
+        # Cached preview is NOT USED because data was not fully materialized from parquet.
+        df_preview = df._construct_show_preview(8)
         assert df_preview != collected_preview
+        # Check lengths are valid - we should get all 3 rows
+        assert len(df_preview.partition) == len(valid_data)
+        assert df_preview.total_rows == 3
     elif variant == "arrow":
-        # Cached preview from df.__repr__() is USED because data was materialized from arrow.
-        assert df_preview == collected_preview
-
-    # Check lengths are valid
-    assert len(df_preview.partition) == len(valid_data)
-    assert df_preview.total_rows == 3
+        # For arrow, data is fully materialized in memory.
+        # When requesting the same number of rows as collected, cached preview should be reused.
+        df_preview_same = df._construct_show_preview(2)
+        assert df_preview_same is collected_preview
+        
+        # When requesting more rows than collected, we need to fetch more from materialized data.
+        # Cached preview is NOT USED because it doesn't have enough rows.
+        df_preview_more = df._construct_show_preview(8)
+        assert df_preview_more != collected_preview
+        # Check lengths are valid - we should get all 3 rows
+        assert len(df_preview_more.partition) == len(valid_data)
+        assert df_preview_more.total_rows == 3
 
 
 ###

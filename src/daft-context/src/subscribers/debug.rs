@@ -6,7 +6,7 @@ use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshot, ops::NodeInfo};
 use daft_micropartition::MicroPartitionRef;
 use dashmap::DashMap;
 
-use crate::subscribers::{QueryMetadata, Subscriber};
+use crate::subscribers::{QueryMetadata, QueryResult, Subscriber};
 
 #[derive(Debug)]
 pub struct DebugSubscriber {
@@ -33,7 +33,8 @@ impl Subscriber for DebugSubscriber {
         Ok(())
     }
 
-    fn on_query_end(&self, query_id: QueryID) -> DaftResult<()> {
+    #[allow(unused_variables)]
+    fn on_query_end(&self, query_id: QueryID, end_result: QueryResult) -> DaftResult<()> {
         eprintln!(
             "Ended query `{}` with result of {} rows",
             query_id,

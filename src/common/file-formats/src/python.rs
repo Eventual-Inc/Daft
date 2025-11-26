@@ -10,7 +10,8 @@ use crate::{
 };
 
 /// Configuration for parsing a particular file format.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 #[serde(transparent)]
 #[cfg_attr(
     feature = "python",

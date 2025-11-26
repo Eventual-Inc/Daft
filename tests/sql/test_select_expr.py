@@ -38,7 +38,9 @@ def test_select_expr_multi():
 
 def test_select_expr_functions():
     actual = daft.sql("SELECT lower('ABC') AS l, upper('xyz') AS u")
-    expect = singleton().select(lit("ABC").str.lower().alias("l"), lit("xyz").str.upper().alias("u"))
+    expect = singleton().select(
+        daft.functions.lower(lit("ABC")).alias("l"), daft.functions.upper(lit("xyz")).alias("u")
+    )
     assert_eq(actual, expect)
 
 

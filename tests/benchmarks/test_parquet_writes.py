@@ -248,11 +248,11 @@ def test_data_dir():
     for i, (config_name, config) in enumerate(TEST_CONFIGS.items()):
         output_path = data_dir / f"{config_name}-{config.num_rows:_}.parquet"
         if not output_path.exists():
-            print(f"\n[{i+1}/{len(TEST_CONFIGS)}] Generating {config_name}...")
+            print(f"\n[{i + 1}/{len(TEST_CONFIGS)}] Generating {config_name}...")
             generate_parquet_file(config, output_path)
         else:
             file_size_mb = output_path.stat().st_size / (1024 * 1024)
-            print(f"[{i+1}/{len(TEST_CONFIGS)}] {config_name}: Using existing file ({file_size_mb:.2f} MB)")
+            print(f"[{i + 1}/{len(TEST_CONFIGS)}] {config_name}: Using existing file ({file_size_mb:.2f} MB)")
 
     print(f"\nBenchmark data ready in {data_dir}")
     return data_dir

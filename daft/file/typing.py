@@ -10,3 +10,11 @@ class VideoMetadata(TypedDict):
     duration: float | None
     frame_count: int | None
     time_base: float | None
+
+
+class AudioMetadata(TypedDict):
+    sample_rate: int
+    channels: int
+    frames: int
+    format: str
+    subtype: str | None

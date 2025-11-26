@@ -33,7 +33,8 @@ pub struct LocalNodeContext {
 }
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
-#[derive(Debug, strum::IntoStaticStr, Serialize, Deserialize)]
+#[derive(strum::IntoStaticStr, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub enum LocalPhysicalPlan {
     InMemoryScan(InMemoryScan),
     PhysicalScan(PhysicalScan),
@@ -88,6 +89,12 @@ pub enum LocalPhysicalPlan {
     #[cfg(feature = "python")]
     DistributedActorPoolProject(DistributedActorPoolProject),
     VLLMProject(VLLMProject),
+}
+#[cfg(not(debug_assertions))]
+impl std::fmt::Debug for LocalPhysicalPlan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name())
+    }
 }
 
 impl LocalPhysicalPlan {
@@ -1220,7 +1227,7 @@ impl LocalPhysicalPlan {
                     ..
                 }) => Self::sample(
                     new_child.clone(),
-                    sampling_method.clone(),
+                    *sampling_method,
                     *with_replacement,
                     *seed,
                     StatsState::NotMaterialized,
@@ -1639,14 +1646,16 @@ impl DynTreeNode for LocalPhysicalPlan {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct InMemoryScan {
     pub info: InMemoryInfo,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PhysicalScan {
     pub scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
     pub pushdowns: Pushdowns,
@@ -1655,7 +1664,8 @@ pub struct PhysicalScan {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct GlobScan {
     pub glob_paths: Arc<Vec<String>>,
     pub pushdowns: Pushdowns,
@@ -1665,21 +1675,24 @@ pub struct GlobScan {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PlaceholderScan {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct EmptyScan {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Project {
     pub input: LocalPhysicalPlanRef,
     pub projection: Vec<BoundExpr>,
@@ -1688,7 +1701,8 @@ pub struct Project {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct UDFProject {
     pub input: LocalPhysicalPlanRef,
     pub expr: BoundExpr,
@@ -1700,7 +1714,8 @@ pub struct UDFProject {
 }
 
 #[cfg(feature = "python")]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct DistributedActorPoolProject {
     pub input: LocalPhysicalPlanRef,
     pub actor_objects: Vec<PyObjectWrapper>,
@@ -1711,7 +1726,8 @@ pub struct DistributedActorPoolProject {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Filter {
     pub input: LocalPhysicalPlanRef,
     pub predicate: BoundExpr,
@@ -1720,7 +1736,8 @@ pub struct Filter {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct IntoBatches {
     pub input: LocalPhysicalPlanRef,
     pub batch_size: usize,
@@ -1730,7 +1747,8 @@ pub struct IntoBatches {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Limit {
     pub input: LocalPhysicalPlanRef,
     pub limit: u64,
@@ -1740,7 +1758,8 @@ pub struct Limit {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Explode {
     pub input: LocalPhysicalPlanRef,
     pub to_explode: Vec<BoundExpr>,
@@ -1749,7 +1768,8 @@ pub struct Explode {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Sort {
     pub input: LocalPhysicalPlanRef,
     pub sort_by: Vec<BoundExpr>,
@@ -1760,7 +1780,8 @@ pub struct Sort {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct TopN {
     pub input: LocalPhysicalPlanRef,
     pub sort_by: Vec<BoundExpr>,
@@ -1773,13 +1794,14 @@ pub struct TopN {
     pub context: LocalNodeContext,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum SamplingMethod {
     Fraction(f64),
     Size(usize),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Sample {
     pub input: LocalPhysicalPlanRef,
     pub sampling_method: SamplingMethod,
@@ -1790,7 +1812,8 @@ pub struct Sample {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct MonotonicallyIncreasingId {
     pub input: LocalPhysicalPlanRef,
     pub column_name: String,
@@ -1800,7 +1823,8 @@ pub struct MonotonicallyIncreasingId {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct UnGroupedAggregate {
     pub input: LocalPhysicalPlanRef,
     pub aggregations: Vec<BoundAggExpr>,
@@ -1809,7 +1833,8 @@ pub struct UnGroupedAggregate {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct HashAggregate {
     pub input: LocalPhysicalPlanRef,
     pub aggregations: Vec<BoundAggExpr>,
@@ -1819,7 +1844,8 @@ pub struct HashAggregate {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Dedup {
     pub input: LocalPhysicalPlanRef,
     pub columns: Vec<BoundExpr>,
@@ -1828,7 +1854,8 @@ pub struct Dedup {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Unpivot {
     pub input: LocalPhysicalPlanRef,
     pub ids: Vec<BoundExpr>,
@@ -1840,7 +1867,8 @@ pub struct Unpivot {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Pivot {
     pub input: LocalPhysicalPlanRef,
     pub group_by: Vec<BoundExpr>,
@@ -1854,7 +1882,8 @@ pub struct Pivot {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct HashJoin {
     pub left: LocalPhysicalPlanRef,
     pub right: LocalPhysicalPlanRef,
@@ -1868,7 +1897,8 @@ pub struct HashJoin {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct CrossJoin {
     pub left: LocalPhysicalPlanRef,
     pub right: LocalPhysicalPlanRef,
@@ -1877,7 +1907,8 @@ pub struct CrossJoin {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct SortMergeJoin {
     pub left: LocalPhysicalPlanRef,
     pub right: LocalPhysicalPlanRef,
@@ -1889,7 +1920,8 @@ pub struct SortMergeJoin {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Concat {
     pub input: LocalPhysicalPlanRef,
     pub other: LocalPhysicalPlanRef,
@@ -1898,7 +1930,8 @@ pub struct Concat {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PhysicalWrite {
     pub input: LocalPhysicalPlanRef,
     pub data_schema: SchemaRef,
@@ -1908,7 +1941,8 @@ pub struct PhysicalWrite {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct CommitWrite {
     pub input: LocalPhysicalPlanRef,
     pub file_schema: SchemaRef,
@@ -1918,7 +1952,8 @@ pub struct CommitWrite {
 }
 
 #[cfg(feature = "python")]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct CatalogWrite {
     pub input: LocalPhysicalPlanRef,
     pub catalog_type: daft_logical_plan::CatalogType<BoundExpr>,
@@ -1929,7 +1964,8 @@ pub struct CatalogWrite {
 }
 
 #[cfg(feature = "python")]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct LanceWrite {
     pub input: LocalPhysicalPlanRef,
     pub lance_info: daft_logical_plan::LanceCatalogInfo,
@@ -1940,7 +1976,8 @@ pub struct LanceWrite {
 }
 
 #[cfg(feature = "python")]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct DataSink {
     pub input: LocalPhysicalPlanRef,
     pub data_sink_info: daft_logical_plan::DataSinkInfo,
@@ -1949,7 +1986,8 @@ pub struct DataSink {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct WindowPartitionOnly {
     pub input: LocalPhysicalPlanRef,
     pub partition_by: Vec<BoundExpr>,
@@ -1960,7 +1998,8 @@ pub struct WindowPartitionOnly {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct WindowPartitionAndOrderBy {
     pub input: LocalPhysicalPlanRef,
     pub partition_by: Vec<BoundExpr>,
@@ -1974,7 +2013,8 @@ pub struct WindowPartitionAndOrderBy {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct WindowPartitionAndDynamicFrame {
     pub input: LocalPhysicalPlanRef,
     pub partition_by: Vec<BoundExpr>,
@@ -1990,7 +2030,8 @@ pub struct WindowPartitionAndDynamicFrame {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct WindowOrderByOnly {
     pub input: LocalPhysicalPlanRef,
     pub order_by: Vec<BoundExpr>,
@@ -2003,7 +2044,8 @@ pub struct WindowOrderByOnly {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Repartition {
     pub input: LocalPhysicalPlanRef,
     pub repartition_spec: RepartitionSpec,
@@ -2013,7 +2055,8 @@ pub struct Repartition {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct IntoPartitions {
     pub input: LocalPhysicalPlanRef,
     pub num_partitions: usize,
@@ -2022,7 +2065,8 @@ pub struct IntoPartitions {
     pub context: LocalNodeContext,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct VLLMProject {
     pub input: LocalPhysicalPlanRef,
     pub expr: BoundVLLMExpr,

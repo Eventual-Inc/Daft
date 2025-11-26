@@ -47,3 +47,10 @@ def random_numerical_embedding(
         v = rng.random(size=(size,), dtype=np.float32)
         c = np.rint(v * mult_for_int_like)
         return c.astype(dtype)
+
+
+def clean_explain_output(output: str) -> str:
+    _pattern = re.compile("|".join(map(re.escape, ["\n", "|", " ", "*", "\\"])))
+    _rep = {"\n": "", "|": "", " ": "", "*": "", "\\": ""}
+    output = _pattern.sub(lambda m: _rep[m.group(0)], output)
+    return output.strip()

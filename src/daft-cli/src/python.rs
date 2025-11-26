@@ -7,7 +7,7 @@ use clap::{Args, Parser, Subcommand, arg};
 use pyo3::prelude::*;
 use tracing_subscriber::{self, filter::Directive, layer::SubscriberExt, util::SubscriberInitExt};
 
-#[derive(Debug, Args)]
+#[derive(Args)]
 struct DashboardArgs {
     /// The address to launch the dashboard on
     #[arg(short, long, default_value = "0.0.0.0")]
@@ -20,13 +20,13 @@ struct DashboardArgs {
     verbose: bool,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand)]
 enum Commands {
     /// Start the Daft dashboard server
     Dashboard(DashboardArgs),
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]

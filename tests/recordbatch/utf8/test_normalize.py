@@ -67,7 +67,7 @@ def test_utf8_normalize(remove_punct, lowercase, nfd_unicode, white_space):
     table = MicroPartition.from_pydict({"col": NORMALIZE_TEST_DATA})
     result = table.eval_expression_list(
         [
-            col("col").str.normalize(
+            col("col").normalize(
                 remove_punct=remove_punct,
                 lowercase=lowercase,
                 nfd_unicode=nfd_unicode,

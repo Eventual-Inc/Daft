@@ -15,10 +15,11 @@ use daft_micropartition::MicroPartitionRef;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
-use crate::subscribers::QueryMetadata;
 pub use crate::subscribers::Subscriber;
+use crate::subscribers::{QueryMetadata, QueryResult};
 
-#[derive(Debug, Default)]
+#[derive(Default)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Config {
     pub execution: Arc<DaftExecutionConfig>,
     pub planning: Arc<DaftPlanningConfig>,
@@ -33,7 +34,7 @@ impl Config {
     }
 }
 
-#[derive(Debug)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 struct ContextState {
     /// Shared configuration for the context
     config: Config,
@@ -43,10 +44,17 @@ struct ContextState {
 /// Wrapper around the ContextState to provide a thread-safe interface.
 /// IMPORTANT: Do not create this directly, use `get_context` instead.
 /// This is a singleton, and should only be created once.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct DaftContext {
     /// Private state field - access only through state() and state_mut() methods
     state: Arc<RwLock<ContextState>>,
+}
+#[cfg(not(debug_assertions))]
+impl std::fmt::Debug for DaftContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DaftContext").finish()
+    }
 }
 
 impl DaftContext {
@@ -133,10 +141,10 @@ impl DaftContext {
         })
     }
 
-    pub fn notify_query_end(&self, query_id: QueryID) -> DaftResult<()> {
+    pub fn notify_query_end(&self, query_id: QueryID, result: QueryResult) -> DaftResult<()> {
         self.with_state(move |state| {
             for subscriber in state.subscribers.values() {
-                subscriber.on_query_end(query_id.clone())?;
+                subscriber.on_query_end(query_id.clone(), result.clone())?;
             }
             Ok::<(), DaftError>(())
         })
@@ -213,5 +221,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::get_context, parent)?)?;
     parent.add_class::<python::PyDaftContext>()?;
     parent.add_class::<python::PyQueryMetadata>()?;
+    parent.add_class::<python::PyQueryResult>()?;
     Ok(())
 }

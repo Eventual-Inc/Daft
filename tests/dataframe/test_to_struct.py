@@ -5,13 +5,14 @@ import pytest
 import daft
 import daft.exceptions
 from daft import col
+from daft.functions import to_struct
 
 
 def test_to_struct_empty_structs():
     df = daft.from_pydict({"a": [1, 2, 3]})
 
     with pytest.raises(daft.exceptions.DaftCoreException, match="Cannot call struct with no inputs"):
-        df.select(daft.struct()).collect()
+        df.select(to_struct()).collect()
 
 
 # there was a bug with pushdowns onto to_struct previously
@@ -22,6 +23,6 @@ def test_to_struct_pushdown():
             "b": ["a", "b", "c", "", "e", None, None],
         }
     )
-    df = df.select(daft.struct(col("a"), col("b")))
-    df = df.select(col("struct").struct.get("a"))
+    df = df.select(to_struct(col("a"), col("b")))
+    df = df.select(df["struct"].get("a"))
     assert df.to_pydict() == {"a": [1, 2, 3, 4, None, 6, None]}

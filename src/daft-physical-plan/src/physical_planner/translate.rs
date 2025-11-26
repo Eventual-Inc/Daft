@@ -327,6 +327,7 @@ pub(super) fn translate_single_logical_node(
         }
         LogicalPlan::Sample(LogicalSample {
             fraction,
+            size,
             with_replacement,
             seed,
             ..
@@ -335,6 +336,7 @@ pub(super) fn translate_single_logical_node(
             Ok(PhysicalPlan::Sample(Sample::new(
                 input_physical,
                 *fraction,
+                *size,
                 *with_replacement,
                 *seed,
             ))

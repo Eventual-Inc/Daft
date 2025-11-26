@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use super::NotNan;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct FillNan;
 
 #[derive(FunctionArgs)]

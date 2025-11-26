@@ -9,7 +9,7 @@ use super::PyIdentifier;
 use crate::{Catalog, Identifier, Table, TableRef, error::CatalogResult};
 
 /// Newtype to implement the Catalog trait for a Python catalog
-#[derive(Debug)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PyCatalogWrapper(pub(super) Py<PyAny>);
 
 impl Catalog for PyCatalogWrapper {
@@ -140,7 +140,7 @@ impl Catalog for PyCatalogWrapper {
 }
 
 /// Newtype to implement the Table trait for a Python table
-#[derive(Debug)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PyTableWrapper(pub(super) Py<PyAny>);
 
 impl Table for PyTableWrapper {

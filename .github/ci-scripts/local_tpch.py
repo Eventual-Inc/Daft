@@ -37,7 +37,7 @@ def run_benchmark():
 
 
 def main():
-    daft.context.set_runner_native()
+    daft.set_runner_native()
 
     metadata = get_run_metadata()
 

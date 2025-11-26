@@ -64,7 +64,7 @@ class ExtractImageFeatures:
         return daft.Series.from_pylist([self.to_features(res) for res in self.model(stack)])
 
 
-daft.context.set_runner_ray()
+daft.set_runner_ray()
 
 daft.set_planning_config(default_io_config=daft.io.IOConfig(s3=daft.io.S3Config.from_env()))
 
@@ -77,7 +77,7 @@ df = daft.read_video_frames(
 )
 df = df.with_column("features", ExtractImageFeatures()(col("data")))
 df = df.explode("features")
-df = df.with_column("object", daft.col("data").image.crop(daft.col("features")["bbox"]).image.encode("png"))
+df = df.with_column("object", daft.col("data").crop(daft.col("features")["bbox"]).encode_image("png"))
 df = df.exclude("data")
 df.write_parquet(OUTPUT_PATH)
 

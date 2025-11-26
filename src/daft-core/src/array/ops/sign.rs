@@ -11,15 +11,7 @@ where
         self.apply(|v| v.signum())
     }
 
-    pub fn signum(&self) -> DaftResult<Self> {
-        self.apply(|v| v.signum())
-    }
-
     pub fn negate(&self) -> DaftResult<Self> {
-        self.apply(|v| -v)
-    }
-
-    pub fn negative(&self) -> DaftResult<Self> {
         self.apply(|v| -v)
     }
 }

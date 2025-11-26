@@ -18,14 +18,14 @@ def test_list_get():
 
     result = table.eval_expression_list(
         [
-            col("col1").list.get(0).alias("col1"),
-            col("col1").list.get(col("idx")).alias("col1-idx"),
-            col("col2").list.get(0).alias("col2"),
-            col("col2").list.get(col("idx")).alias("col2-idx"),
-            col("col1").list.get(0, default="z").alias("col1-default"),
-            col("col1").list.get(col("idx"), default="z").alias("col1-idx-default"),
-            col("col2").list.get(0, default=-1).alias("col2-default"),
-            col("col2").list.get(col("idx"), default=-1).alias("col2-idx-default"),
+            col("col1").get(0).alias("col1"),
+            col("col1").get(col("idx")).alias("col1-idx"),
+            col("col2").get(0).alias("col2"),
+            col("col2").get(col("idx")).alias("col2-idx"),
+            col("col1").get(0, default="z").alias("col1-default"),
+            col("col1").get(col("idx"), default="z").alias("col1-idx-default"),
+            col("col2").get(0, default=-1).alias("col2-default"),
+            col("col2").get(col("idx"), default=-1).alias("col2-idx-default"),
         ]
     )
 
@@ -43,7 +43,10 @@ def test_list_get():
 
 def test_fixed_size_list_get():
     table = MicroPartition.from_pydict(
-        {"col": [["a", "b"], ["aa", "bb"], None, [None, "bbbb"], ["aaaaa", None]], "idx": [0, -1, 1, 3, -4]}
+        {
+            "col": [["a", "b"], ["aa", "bb"], None, [None, "bbbb"], ["aaaaa", None]],
+            "idx": [0, -1, 1, 3, -4],
+        }
     )
 
     dtype = DataType.fixed_size_list(DataType.string(), 2)
@@ -52,12 +55,12 @@ def test_fixed_size_list_get():
 
     result = table.eval_expression_list(
         [
-            col("col").list.get(0, default="c").alias("0"),
-            col("col").list.get(-1).alias("-1"),
-            col("col").list.get(2).alias("2"),
-            col("col").list.get(-2, default="c").alias("-2"),
-            col("col").list.get(col("idx")).alias("variable"),
-            col("col").list.get(col("idx"), default="c").alias("variable_default"),
+            col("col").get(0, default="c").alias("0"),
+            col("col").get(-1).alias("-1"),
+            col("col").get(2).alias("2"),
+            col("col").get(-2, default="c").alias("-2"),
+            col("col").get(col("idx")).alias("variable"),
+            col("col").get(col("idx"), default="c").alias("variable_default"),
         ]
     )
 
@@ -75,4 +78,4 @@ def test_list_get_bad_type():
     table = MicroPartition.from_pydict({"col": ["a", "b", "c"]})
 
     with pytest.raises(ValueError):
-        table.eval_expression_list([col("col").list.get(0)])
+        table.eval_expression_list([col("col").get(0)])

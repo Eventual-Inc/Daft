@@ -97,7 +97,7 @@ def test_set(make_df, npartitions, with_morsel_size):
         },
         repartition=npartitions,
     )
-    df = df.agg([col("values").agg_set().alias("set")])
+    df = df.agg([col("values").list_agg_distinct().alias("set")])
     df.collect()
     result = df.to_pydict()["set"][0]
     _assert_all_hashable(result, "test_set")

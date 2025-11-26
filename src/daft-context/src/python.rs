@@ -1,11 +1,15 @@
 use std::sync::Arc;
 
 use common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
+use common_metrics::QueryEndState;
 use daft_core::python::PySchema;
 use daft_micropartition::python::PyMicroPartition;
 use pyo3::prelude::*;
 
-use crate::{DaftContext, subscribers, subscribers::QueryMetadata};
+use crate::{
+    DaftContext, subscribers,
+    subscribers::{QueryMetadata, QueryResult},
+};
 
 #[pyclass(frozen)]
 #[derive(Clone)]
@@ -31,6 +35,31 @@ impl PyQueryMetadata {
     }
 }
 
+#[pyclass(frozen)]
+#[derive(Clone, Debug)]
+pub struct PyQueryResult(pub(crate) Arc<QueryResult>);
+
+#[pymethods]
+impl PyQueryResult {
+    // Query Result contains the final state of a query, and if there is any error, contains an error message
+    #[new]
+    #[pyo3(signature = (end_state, error_message))]
+    fn __new__(end_state: QueryEndState, error_message: Option<String>) -> Self {
+        Self(Arc::new(QueryResult {
+            end_state,
+            error_message,
+        }))
+    }
+    #[getter]
+    pub fn end_state(&self) -> QueryEndState {
+        self.0.end_state.clone().into()
+    }
+    #[getter]
+    pub fn error_message(&self) -> Option<String> {
+        self.0.error_message.clone()
+    }
+}
+
 impl From<Arc<QueryMetadata>> for PyQueryMetadata {
     fn from(metadata: Arc<QueryMetadata>) -> Self {
         Self(metadata)
@@ -46,6 +75,30 @@ impl From<PyQueryMetadata> for Arc<QueryMetadata> {
 impl<'a> From<&'a PyQueryMetadata> for &'a Arc<QueryMetadata> {
     fn from(ctx: &'a PyQueryMetadata) -> Self {
         &ctx.0
+    }
+}
+
+impl From<Arc<QueryResult>> for PyQueryResult {
+    fn from(result: Arc<QueryResult>) -> Self {
+        Self(result)
+    }
+}
+
+impl From<PyQueryResult> for Arc<QueryResult> {
+    fn from(result: PyQueryResult) -> Self {
+        result.0
+    }
+}
+
+impl From<PyQueryResult> for QueryResult {
+    fn from(result: PyQueryResult) -> Self {
+        (*result.0).clone()
+    }
+}
+
+impl From<QueryResult> for PyQueryResult {
+    fn from(result: QueryResult) -> Self {
+        Self(Arc::new(result))
     }
 }
 
@@ -120,8 +173,16 @@ impl PyDaftContext {
         Ok(())
     }
 
-    pub fn notify_query_end(&self, py: Python, query_id: String) -> PyResult<()> {
-        py.detach(|| self.inner.notify_query_end(query_id.into()))?;
+    pub fn notify_query_end(
+        &self,
+        py: Python,
+        query_id: String,
+        query_result: PyQueryResult,
+    ) -> PyResult<()> {
+        py.detach(|| {
+            self.inner
+                .notify_query_end(query_id.into(), query_result.into())
+        })?;
         Ok(())
     }
 

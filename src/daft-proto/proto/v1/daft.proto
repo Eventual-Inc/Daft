@@ -707,7 +707,8 @@ message IOConfig {
   HTTPConfig http = 4;
   UnityConfig unity = 5;
   HuggingFaceConfig hf = 6;
-  TosConfig tos = 7;
+  bool disable_suffix_range = 7;
+  TosConfig tos = 8;
 }
 
 message S3Config {

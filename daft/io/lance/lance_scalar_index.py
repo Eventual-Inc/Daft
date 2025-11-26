@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import pathlib
 
 import lance
 
@@ -92,7 +95,7 @@ class FragmentIndexHandler:
 
 def create_scalar_index_internal(
     lance_ds: lance.LanceDataset,
-    uri: str,
+    uri: str | pathlib.Path,
     *,
     column: str,
     index_type: str = "INVERTED",

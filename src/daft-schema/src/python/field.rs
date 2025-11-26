@@ -11,7 +11,8 @@ use super::datatype::PyDataType;
 use crate::field::Field;
 
 #[pyclass(module = "daft.daft")]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PyField {
     pub field: Field,
 }

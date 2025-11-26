@@ -133,8 +133,8 @@ def test_bitwise_functions(daft_expr: Expression, arrow_expr: str):
         (lit(1).ceil(), "ceil(1)"),
         (lit(1).floor(), "floor(1)"),
         (lit(1).sign(), "sign(1)"),
-        (lit(1).signum(), "sign(1)"),
-        (lit(1).negative(), "negate(1)"),
+        (lit(1).sign(), "sign(1)"),
+        (lit(1).negate(), "negate(1)"),
         (lit(1).round(2), pc.round(pc.scalar(1), 2)),
         (lit(1).sqrt(), "sqrt(1)"),
         (lit(1).sin(), "sin(1)"),
@@ -173,13 +173,13 @@ def test_math_functions(daft_expr: Expression, arrow_expr: str):
 @pytest.mark.parametrize(
     ["daft_expr", "arrow_expr"],
     [
-        (lit("hello").str.capitalize(), 'utf8_capitalize("hello")'),
-        (lit("hello").str.concat(lit("world")), 'add("hello", "world")'),
+        (lit("hello").capitalize(), 'utf8_capitalize("hello")'),
+        (lit("hello").concat(lit("world")), 'add("hello", "world")'),
         # containment tests
-        (lit("hello").str.count_matches(lit("l")), pc.count_substring(pc.scalar("hello"), "l")),
-        (lit("hello").str.contains(lit("ll")), pc.match_substring(pc.scalar("hello"), "ll")),
-        (lit("hello").str.endswith(lit("o")), pc.ends_with(pc.scalar("hello"), "o")),
-        (lit("hello").str.startswith(lit("h")), pc.starts_with(pc.scalar("hello"), "h")),
+        (lit("hello").count_matches(lit("l")), pc.count_substring(pc.scalar("hello"), "l")),
+        (lit("hello").contains(lit("ll")), pc.match_substring(pc.scalar("hello"), "ll")),
+        (lit("hello").endswith(lit("o")), pc.ends_with(pc.scalar("hello"), "o")),
+        (lit("hello").startswith(lit("h")), pc.starts_with(pc.scalar("hello"), "h")),
         # TODO
         # (lit("hello").str.extract(lit("h(.*)o")), "extract('hello', 'h(.*)o')"),
         # (lit("hello").str.extract_all(lit("l")), "extract_all('hello', 'l')"),

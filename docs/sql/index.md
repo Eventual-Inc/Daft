@@ -191,7 +191,7 @@ Pretty sweet! Of course, this support for running Expressions on your columns ex
 
 SQL also has access to all of Daft's powerful [`daft.Expression`][daft.Expression] functionality through SQL functions.
 
-However, unlike the Python Expression API which encourages method-chaining (e.g. `col("a").url.download().image.decode()`), in SQL you have to do function nesting instead (e.g. `"image_decode(url_download(a))"`).
+However, unlike the Python Expression API which encourages method-chaining (e.g. `col("a").download().decode_image()`), in SQL you have to do function nesting instead (e.g. `"image_decode(url_download(a))"`).
 
 Here is an example of an equivalent function call in SQL vs Python:
 
@@ -213,7 +213,7 @@ Here is an example of an equivalent function call in SQL vs Python:
         "https://user-images.githubusercontent.com/17691182/190476440-28f29e87-8e3b-41c4-9c28-e112e595f558.png",
         "https://user-images.githubusercontent.com/17691182/190476440-28f29e87-8e3b-41c4-9c28-e112e595f558.png",
     ]})
-    df = df.select(daft.col("urls").url.download().image.decode())
+    df = df.select(daft.col("urls").download().decode_image())
     df.show()
     ```
 

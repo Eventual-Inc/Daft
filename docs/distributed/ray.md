@@ -25,11 +25,11 @@ Ray runtime started.
 ...
 ```
 
-You can take the IP address and port and pass it to Daft with [`set_runner_ray`][daft.context.set_runner_ray]:
+You can take the IP address and port and pass it to Daft with [`set_runner_ray`][daft.set_runner_ray]:
 
 ```python
 >>> import daft
->>> daft.context.set_runner_ray("ray://127.0.0.1:10001")
+>>> daft.set_runner_ray("ray://127.0.0.1:10001")
 DaftContext(_daft_execution_config=<daft.daft.PyDaftExecutionConfig object at 0x100fbd1f0>, _daft_planning_config=<daft.daft.PyDaftPlanningConfig object at 0x100fbd270>, _runner_config=_RayRunnerConfig(address='127.0.0.1:10001', max_task_backlog=None), _disallow_set_runner=True, _runner=None)
 
 >>> df = daft.from_pydict({
@@ -54,18 +54,18 @@ DaftContext(_daft_execution_config=<daft.daft.PyDaftExecutionConfig object at 0x
 
 By default, if no address is specified, Daft will spin up a Ray cluster locally on your machine. If you are running Daft on a powerful machine (such as an AWS P3 machine which is equipped with multiple GPUs) this is already very useful because Daft can parallelize its execution of computation across your CPUs and GPUs.
 
-!!! tip "Deploy on Kubernetes"
+!!! tip "Daft Cloud"
 
-    Looking to try out Daft with Ray on Kubernetes? Check out our [Kubernetes quickstart](kubernetes.md).
+    Looking for a fully managed experience? [Daft Cloud](https://www.daft.ai/cloud) provides serverless execution with automatic scaling, so you can focus on your data pipelines without managing infrastructure.
 
 ### Connecting to Remote Ray Clusters
 
-If you already have your own Ray cluster running remotely, you can connect Daft to it by supplying an address with [`set_runner_ray`][daft.context.set_runner_ray]:
+If you already have your own Ray cluster running remotely, you can connect Daft to it by supplying an address with [`set_runner_ray`][daft.set_runner_ray]:
 
 === "🐍 Python"
 
     ```python
-    daft.context.set_runner_ray(address="ray://url-to-mycluster")
+    daft.set_runner_ray(address="ray://url-to-mycluster")
     ```
 
 For more information about the `address` keyword argument, please see the [Ray documentation on initialization](https://docs.ray.io/en/latest/ray-core/api/doc/ray.init.html).
@@ -87,7 +87,7 @@ ray.init("ray://<head_node_host>:10001", runtime_env={"pip": ["daft"]})
 
 # Starts the Ray client and tells Daft to use Ray to execute queries
 # If ray.init() has already been called, it uses the existing client
-daft.context.set_runner_ray("ray://<head_node_host>:10001")
+daft.set_runner_ray("ray://<head_node_host>:10001")
 
 df = daft.from_pydict({
     "a": [3, 2, 5, 6, 1, 4],
@@ -126,7 +126,7 @@ import daft
 
 def main():
     # call without any arguments to connect to Ray from the head node
-    daft.context.set_runner_ray()
+    daft.set_runner_ray()
 
     # ... Run Daft commands here ...
 

@@ -113,7 +113,7 @@ def common_crawl(
         │                ┆                 ┆           ┆ "Etc/UTC"]         ┆            ┆ String             ┆              ┆              │
         ╰────────────────┴─────────────────┴───────────┴────────────────────┴────────────┴────────────────────┴──────────────┴──────────────╯
         <BLANKLINE>
-        (No data to display: Dataframe not materialized)
+        (No data to display: Dataframe not materialized, use .collect() to materialize)
 
         >>> # Show a sample of extracted text content
         >>> daft.datasets.common_crawl("CC-MAIN-2025-33", content="text", in_aws=True).limit(2).show()  # doctest: +SKIP

@@ -7,7 +7,7 @@ use common_treenode::{Transformed, TreeNode};
 use super::OptimizerRule;
 use crate::{LogicalPlan, stats::StatsState};
 
-#[derive(Debug)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct EnrichWithStats {
     cfg: Arc<DaftExecutionConfig>,
 }

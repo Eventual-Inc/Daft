@@ -1,6 +1,6 @@
 use daft_dsl::functions::prelude::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ToString;
 
 #[derive(FunctionArgs)]

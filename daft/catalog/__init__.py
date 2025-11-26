@@ -638,6 +638,9 @@ class Identifier(Sequence[str]):
             return False
         return self._ident.eq(other._ident)
 
+    def __hash__(self) -> int:
+        return self._ident.__hash__()
+
     @overload
     def __getitem__(self, index: int, /) -> str: ...
 

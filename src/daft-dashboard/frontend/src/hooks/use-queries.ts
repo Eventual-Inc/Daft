@@ -28,13 +28,30 @@ export type FinishedStatus = {
   duration_sec: number;
 };
 
+export type FailedStatus = {
+  status: "Failed";
+  message: string;
+};
+
+export type CanceledStatus = {
+  status: "Canceled";
+  message: string;
+};
+
+export type DeadStatus = {
+  status: "Dead";
+};
+
 export type QueryStatus =
   | PendingStatus
   | PlanningStatus
   | SetupStatus
   | ExecutingStatus
   | FinalizingStatus
-  | FinishedStatus;
+  | FinishedStatus
+  | FailedStatus
+  | CanceledStatus
+  | DeadStatus;
 
 export type QueryStatusName =
   | "Pending"
@@ -42,7 +59,10 @@ export type QueryStatusName =
   | "Setup"
   | "Executing"
   | "Finalizing"
-  | "Finished";
+  | "Finished"
+  | "Failed"
+  | "Canceled"
+  | "Dead";
 
 export type QuerySummary = {
   id: string;
@@ -72,7 +92,10 @@ export function useActiveQueries() {
     .filter(
       query =>
         query.status.status !== "Finished" &&
-        query.status.status !== "Finalizing"
+        query.status.status !== "Finalizing" &&
+        query.status.status !== "Dead" &&
+        query.status.status !== "Canceled" &&
+        query.status.status !== "Failed"
     )
     .sort((a, b) => {
       return a.start_sec - b.start_sec;

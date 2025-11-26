@@ -6,11 +6,11 @@ Configure the execution backend, Daft in various ways during execution, and how 
 
 Control the execution backend that Daft will run on by calling these functions once at the start of your application.
 
-::: daft.context.set_runner_native
+::: daft.set_runner_native
     options:
         heading_level: 3
 
-::: daft.context.set_runner_ray
+::: daft.set_runner_ray
     options:
         heading_level: 3
 

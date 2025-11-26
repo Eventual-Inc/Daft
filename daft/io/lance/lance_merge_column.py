@@ -7,6 +7,8 @@ from daft.datatype import DataType
 from daft.udf import udf
 
 if TYPE_CHECKING:
+    import pathlib
+
     import lance
 
     from daft.dependencies import pa
@@ -37,7 +39,7 @@ class FragmentHandler:
 
 def merge_columns_internal(
     lance_ds: lance.LanceDataset,
-    uri: str,
+    uri: str | pathlib.Path,
     *,
     transform: dict[str, str] | lance.udf.BatchUDF | Callable[[pa.RecordBatch], pa.RecordBatch],
     read_columns: list[str] | None = None,

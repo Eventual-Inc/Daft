@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::binary_utf8_to_field;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ToDate;
 
 #[typetag::serde]

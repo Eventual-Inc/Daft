@@ -63,7 +63,7 @@ from .datetime import (
 )
 from .embedding import cosine_distance
 
-from .file_ import file, file_size, video_file
+from .file_ import file, file_size, video_file, audio_file
 
 from .image import (
     resize,
@@ -147,6 +147,8 @@ from .numeric import (
     log,
     ln,
     log1p,
+    pow,
+    power,
     exp,
     expm1,
     between,
@@ -203,6 +205,7 @@ from .str import (
 )
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
+from .audio import audio_metadata, resample
 from .video import video_metadata, video_keyframes
 from .window import (
     row_number,
@@ -225,6 +228,8 @@ __all__ = [
     "arctan",
     "arctan2",
     "arctanh",
+    "audio_file",
+    "audio_metadata",
     "avg",
     "between",
     "bitwise_and",
@@ -354,6 +359,8 @@ __all__ = [
     "partition_iceberg_truncate",
     "partition_months",
     "partition_years",
+    "pow",
+    "power",
     "product",
     "prompt",
     "quarter",
@@ -367,6 +374,7 @@ __all__ = [
     "regexp_split",
     "repeat",
     "replace",
+    "resample",
     "resize",
     "reverse",
     "right",

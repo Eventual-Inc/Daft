@@ -65,7 +65,7 @@ def test_fixed_size_binary_concat(
     # Verify inputs are FixedSizeBinary before concatenating
     assert table.schema()["a"].dtype == DataType.fixed_size_binary(size1)
     assert table.schema()["b"].dtype == DataType.fixed_size_binary(size2)
-    result = table.eval_expression_list([col("a").binary.concat(col("b"))])
+    result = table.eval_expression_list([col("a").concat(col("b"))])
     assert result.to_pydict() == {"a": expected_result}
     # Result should be FixedSizeBinary with combined size when both inputs are FixedSizeBinary
     assert result.schema()["a"].dtype == DataType.fixed_size_binary(size1 + size2)
@@ -88,7 +88,7 @@ def test_fixed_size_binary_concat_large() -> None:
     assert table.schema()["a"].dtype == DataType.fixed_size_binary(size1)
     assert table.schema()["b"].dtype == DataType.fixed_size_binary(size2)
 
-    result = table.eval_expression_list([col("a").binary.concat(col("b"))])
+    result = table.eval_expression_list([col("a").concat(col("b"))])
     assert result.to_pydict() == {
         "a": [
             b"x" * size1 + b"y" * size2,  # Large + Large
@@ -138,13 +138,13 @@ def test_fixed_size_binary_concat_broadcast(
     assert table.schema()["a"].dtype == DataType.fixed_size_binary(size)
 
     # Test right-side broadcasting
-    result = table.eval_expression_list([col("a").binary.concat(lit(literal))])
+    result = table.eval_expression_list([col("a").concat(lit(literal))])
     assert result.to_pydict() == {"a": expected_result}
     # Result should be Binary when using literals
     assert result.schema()["a"].dtype == DataType.binary()
 
     # Test left-side broadcasting
-    result = table.eval_expression_list([lit(literal).binary.concat(col("a"))])
+    result = table.eval_expression_list([lit(literal).concat(col("a"))])
     assert result.to_pydict() == {"literal": [literal + data if data is not None else None for data in input_data]}
     # Result should be Binary when using literals
     assert result.schema()["literal"].dtype == DataType.binary()
@@ -183,7 +183,7 @@ def test_fixed_size_binary_concat_edge_cases() -> None:
         # Verify inputs are FixedSizeBinary
         assert table.schema()["a"].dtype == DataType.fixed_size_binary(size1)
         assert table.schema()["b"].dtype == DataType.fixed_size_binary(size2)
-        result = table.eval_expression_list([col("a").binary.concat(col("b"))])
+        result = table.eval_expression_list([col("a").concat(col("b"))])
         assert result.to_pydict() == {"a": expected_result}
         # Result should be FixedSizeBinary with combined size
         assert result.schema()["a"].dtype == DataType.fixed_size_binary(size1 + size2)
@@ -202,13 +202,13 @@ def test_fixed_size_binary_concat_with_binary() -> None:
     assert table.schema()["b"].dtype == DataType.binary()
 
     # Test FixedSizeBinary + Binary
-    result = table.eval_expression_list([col("a").binary.concat(col("b"))])
+    result = table.eval_expression_list([col("a").concat(col("b"))])
     assert result.to_pydict() == {"a": [b"abcx", b"defyz", None]}
     # Result should be Binary when mixing types
     assert result.schema()["a"].dtype == DataType.binary()
 
     # Test Binary + FixedSizeBinary
-    result = table.eval_expression_list([col("b").binary.concat(col("a"))])
+    result = table.eval_expression_list([col("b").concat(col("a"))])
     assert result.to_pydict() == {"b": [b"xabc", b"yzdef", None]}
     # Result should be Binary when mixing types
     assert result.schema()["b"].dtype == DataType.binary()
@@ -224,13 +224,13 @@ def test_fixed_size_binary_concat_with_literals() -> None:
     assert table.schema()["a"].dtype == DataType.fixed_size_binary(3)
 
     # Test with literal
-    result = table.eval_expression_list([col("a").binary.concat(lit(b"xyz"))])
+    result = table.eval_expression_list([col("a").concat(lit(b"xyz"))])
     assert result.to_pydict() == {"a": [b"abcxyz", b"defxyz", None]}
     # Result should be Binary when using literals
     assert result.schema()["a"].dtype == DataType.binary()
 
     # Test with null literal
-    result = table.eval_expression_list([col("a").binary.concat(lit(None))])
+    result = table.eval_expression_list([col("a").concat(lit(None))])
     assert result.to_pydict() == {"a": [None, None, None]}
     # Result should be Binary when using literals
     assert result.schema()["a"].dtype == DataType.fixed_size_binary(3)
@@ -247,4 +247,4 @@ def test_fixed_size_binary_concat_errors() -> None:
 
     # Test concat with wrong type
     with pytest.raises(Exception, match="Cannot infer supertypes for addition on types: Binary\[3\], Int64"):
-        table.eval_expression_list([col("a").binary.concat(col("b"))])
+        table.eval_expression_list([col("a").concat(col("b"))])

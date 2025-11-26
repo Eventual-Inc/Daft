@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import Any, Literal
 
 from daft import DataType, Expression, Series, udf
@@ -81,6 +82,12 @@ def llm_generate(
     Note:
         Make sure the required provider packages are installed (e.g. vllm, transformers, openai).
     """
+    warnings.warn(
+        "This method is deprecated and will be removed in v0.8.0. Use daft.functions.prompt instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
     cls: Any = None
     if provider == "vllm":
         cls = _vLLMGenerator

@@ -80,7 +80,7 @@ df = (
     # Discover a few images from HuggingFace
     daft.from_glob_path("hf://datasets/datasets-examples/doc-image-3/images")
     # Read the 4 PNG, JPEG, TIFF, WEBP Images
-    .with_column("image_bytes", daft.col("path").url.download())
+    .with_column("image_bytes", daft.col("path").download())
     # Decode the image bytes into a daft Image DataType
     .with_column("image_type", decode_image(daft.col("image_bytes")))
     # Convert Image to RGB and resize the image to 288x288

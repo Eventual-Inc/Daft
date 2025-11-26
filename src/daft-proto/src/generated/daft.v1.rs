@@ -1010,7 +1010,9 @@ pub struct IoConfig {
     pub unity: ::core::option::Option<UnityConfig>,
     #[prost(message, optional, tag = "6")]
     pub hf: ::core::option::Option<HuggingFaceConfig>,
-    #[prost(message, optional, tag = "7")]
+    #[prost(bool, tag = "7")]
+    pub disable_suffix_range: bool,
+    #[prost(message, optional, tag = "8")]
     pub tos: ::core::option::Option<TosConfig>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]

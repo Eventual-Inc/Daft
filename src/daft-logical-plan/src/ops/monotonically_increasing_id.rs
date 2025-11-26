@@ -9,7 +9,8 @@ use crate::{
     stats::StatsState,
 };
 
-#[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct MonotonicallyIncreasingId {
     pub plan_id: Option<usize>,
     pub node_id: Option<usize>,

@@ -10,7 +10,8 @@ use crate::error::{CatalogError, CatalogResult};
 pub type TableRef = Arc<dyn Table>;
 
 /// Table sources for now are just references.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub enum TableSource {
     /// Table source for CREATE TABLE t (<schema>)
     Schema(SchemaRef),
@@ -37,6 +38,7 @@ impl From<LogicalPlanBuilder> for TableSource {
 }
 
 /// TODO consider moving out to daft-table, but this isn't necessary or helpful right now.
+#[cfg(debug_assertions)]
 pub trait Table: Sync + Send + std::fmt::Debug {
     /// Returns the table name.
     fn name(&self) -> String;
@@ -65,9 +67,39 @@ pub trait Table: Sync + Send + std::fmt::Debug {
     fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>>;
 }
 
+#[cfg(not(debug_assertions))]
+pub trait Table: Sync + Send {
+    /// Returns the table name.
+    fn name(&self) -> String;
+
+    /// Returns the table schema
+    fn schema(&self) -> CatalogResult<SchemaRef>;
+
+    /// Returns a logical plan for this table.
+    fn to_logical_plan(&self) -> CatalogResult<LogicalPlanBuilder>;
+
+    /// Append data to the table. Equivalent to `INSERT INTO` in SQL
+    fn append(
+        &self,
+        plan: LogicalPlanBuilder,
+        options: IndexMap<String, Literal>,
+    ) -> CatalogResult<()>;
+    /// Overwrite table with data. Equivalent to `INSERT OVERWRITE` in SQL
+    fn overwrite(
+        &self,
+        plan: LogicalPlanBuilder,
+        options: IndexMap<String, Literal>,
+    ) -> CatalogResult<()>;
+
+    /// Create/extract a Python object that subclasses the Table ABC
+    #[cfg(feature = "python")]
+    fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>>;
+}
+
 /// View is an immutable Table backed by a DataFrame.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[cfg_attr(feature = "python", pyo3::pyclass)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct View {
     name: String,
     plan: LogicalPlanBuilder,

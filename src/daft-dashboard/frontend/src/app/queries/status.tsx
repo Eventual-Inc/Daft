@@ -1,13 +1,22 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { LoaderCircle } from "lucide-react";
+import { Ban, CircleX, LoaderCircle, Skull } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { main, toHumanReadableDuration } from "@/lib/utils";
 import {
   QueryStatus,
   PlanningStatus,
   ExecutingStatus,
   FinishedStatus,
+  FailedStatus,
+  CanceledStatus,
+  DeadStatus
 } from "@/hooks/use-queries";
 import { AnimatedFish, Naruto } from "@/components/icons";
 
@@ -20,21 +29,45 @@ const StatusBadgeInner = ({
   text,
   icon,
   textColor,
+  tooltipText,
 }: {
   label: string;
   text?: string;
   icon: React.ReactNode;
   textColor: string;
-}) => (
-  <div className="flex items-center py-2 gap-x-2">
-    {icon}
-    <div className="px-[0.1px]" />
-    <span className={`${main.className} ${textColor} font-bold text-sm`}>
-      {label}
-    </span>
-    <span className={`${main.className} font-semibold text-sm`}>{text}</span>
-  </div>
-);
+  tooltipText?: string | null;
+}) => {
+  const badge = (
+    <div className="flex items-center py-2 gap-x-2">
+      {icon}
+      <div className="px-[0.1px]" />
+      <span className={`${main.className} ${textColor} font-bold text-sm`}>
+        {label}
+      </span>
+      <span className={`${main.className} font-semibold text-sm`}>{text}</span>
+    </div>
+  );
+
+  if (!tooltipText) {
+    return badge;
+  }
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>{badge}</TooltipTrigger>
+        <TooltipContent
+          side="bottom"
+          align="center"
+          sideOffset={5}
+          className="max-w-xs rounded-lg bg-gray-900 px-3 py-2 text-sm text-white shadow-lg dark:bg-gray-800"
+        >
+          <p>{tooltipText}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+};
 
 const Pending = () => (
   <StatusBadgeInner
@@ -117,6 +150,32 @@ const Finished = ({ state }: { state: FinishedStatus }) => (
   />
 );
 
+const Canceled = ({ state }: { state: CanceledStatus }) => (
+  <StatusBadgeInner
+    icon={<Ban size={16} strokeWidth={3} className="text-gray-500" />}
+    label="Canceled"
+    textColor="text-gray-500"
+    tooltipText={state.message}
+  />
+);
+
+const Failed = ({ state }: { state: FailedStatus }) => (
+  <StatusBadgeInner
+    icon={<CircleX size={16} strokeWidth={3} className="text-red-500" />}
+    label="Failed"
+    textColor="text-red-500"
+    tooltipText={state.message}
+  />
+);
+
+const Dead = () => (
+  <StatusBadgeInner
+    icon={<Skull size={16} strokeWidth={3} className="text-gray-500" />}
+    label="Dead"
+    textColor="text-gray-500"
+  />
+);
+
 const Unknown = () => (
   <StatusBadgeInner
     icon={<LoaderCircle size={16} strokeWidth={3} className="text-chart-2" />}
@@ -139,6 +198,12 @@ export default function Status({ state }: StatusBadgeProps) {
       return <Finalizing />;
     case "Finished":
       return <Finished state={state} />;
+    case "Failed":
+      return <Failed state={state} />;
+    case "Canceled":
+      return <Canceled state={state} />;
+    case "Dead":
+      return <Dead />;
     default:
       return <Unknown />;
   }

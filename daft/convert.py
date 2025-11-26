@@ -171,7 +171,7 @@ def from_ray_dataset(ds: "RayDataset") -> "DataFrame":
         >>> import ray
         >>> import daft
         >>>
-        >>> daft.context.set_runner_ray()  # doctest: +SKIP
+        >>> daft.set_runner_ray()  # doctest: +SKIP
         >>>
         >>> ds = ray.data.from_items([{"a": 1, "b": "foo"}, {"a": 2, "b": "bar"}])  # doctest: +SKIP
         >>> df = daft.from_ray_dataset(ds)  # doctest: +SKIP
@@ -215,7 +215,7 @@ def from_dask_dataframe(ddf: "dask.DataFrame") -> "DataFrame":
         >>> import daft
         >>> import ray
         >>>
-        >>> daft.context.set_runner_ray()  # doctest: +SKIP
+        >>> daft.set_runner_ray()  # doctest: +SKIP
         >>>
         >>> ddf = dd.from_pandas(pd.DataFrame({"a": [1, 2], "b": ["foo", "bar"]}), npartitions=2)  # doctest: +SKIP
         >>> df = daft.from_dask_dataframe(ddf)  # doctest: +SKIP

@@ -175,6 +175,8 @@ class OpenAITextEmbedder(TextEmbedder):
                 embeddings.append(chunked_vec)
             elif input_text_token_count + curr_batch_token_count >= batch_token_limit:
                 await flush()
+                curr_batch.append(input_text)
+                curr_batch_token_count += input_text_token_count
             else:
                 curr_batch.append(input_text)
                 curr_batch_token_count += input_text_token_count

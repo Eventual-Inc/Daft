@@ -6,6 +6,7 @@ import pytest
 
 import daft
 from daft import DataFrame
+from daft.functions import when
 from daft.recordbatch import MicroPartition
 
 NUM_ROWS = 1_000_000
@@ -15,7 +16,7 @@ NUM_ROWS = 1_000_000
 def generate_int64_params() -> tuple[dict, daft.Expression, list]:
     return (
         {"lhs": [0 for _ in range(NUM_ROWS)], "rhs": [1 for _ in range(NUM_ROWS)], "pred": list(range(NUM_ROWS))},
-        (daft.col("pred") < NUM_ROWS // 2).if_else(daft.col("lhs"), daft.col("rhs")),
+        when(daft.col("pred") < NUM_ROWS // 2, daft.col("lhs")).otherwise(daft.col("rhs")),
         [0 for _ in range(NUM_ROWS // 2)] + [1 for _ in range(NUM_ROWS // 2)],
     )
 
@@ -29,7 +30,7 @@ def generate_int64_with_nulls_params() -> tuple[dict, daft.Expression, list]:
     expected = [x if p is not None else None for x, p in zip(lhs[: NUM_ROWS // 2] + rhs[NUM_ROWS // 2 :], pred)]
     return (
         {"lhs": lhs, "rhs": rhs, "pred": pred},
-        (daft.col("pred") < NUM_ROWS // 2).if_else(daft.col("lhs"), daft.col("rhs")),
+        when(daft.col("pred") < NUM_ROWS // 2, daft.col("lhs")).otherwise(daft.col("rhs")),
         expected,
     )
 
@@ -38,7 +39,7 @@ def generate_int64_with_nulls_params() -> tuple[dict, daft.Expression, list]:
 def generate_int64_broadcast_lhs_params() -> tuple[dict, daft.Expression, list]:
     return (
         {"rhs": [1 for _ in range(NUM_ROWS)], "pred": list(range(NUM_ROWS))},
-        (daft.col("pred") < NUM_ROWS // 2).if_else(daft.lit(0), daft.col("rhs")),
+        when(daft.col("pred") < NUM_ROWS // 2, daft.lit(0)).otherwise(daft.col("rhs")),
         [0 for _ in range(NUM_ROWS // 2)] + [1 for _ in range(NUM_ROWS // 2)],
     )
 
@@ -52,7 +53,7 @@ def generate_int64_broadcast_lhs_with_nulls_params() -> tuple[dict, daft.Express
     ]
     return (
         {"rhs": [1 for _ in range(NUM_ROWS)], "pred": pred},
-        (daft.col("pred") < NUM_ROWS // 2).if_else(daft.lit(0), daft.col("rhs")),
+        when(daft.col("pred") < NUM_ROWS // 2, daft.lit(0)).otherwise(daft.col("rhs")),
         expected,
     )
 
@@ -63,7 +64,7 @@ def generate_string_params() -> tuple[dict, daft.Expression, list]:
     rhs = [str(uuid.uuid4()) for _ in range(NUM_ROWS)]
     return (
         {"lhs": lhs, "rhs": rhs, "pred": list(range(NUM_ROWS))},
-        (daft.col("pred") < NUM_ROWS // 2).if_else(daft.col("lhs"), daft.col("rhs")),
+        when(daft.col("pred") < NUM_ROWS // 2, daft.col("lhs")).otherwise(daft.col("rhs")),
         lhs[: NUM_ROWS // 2] + rhs[NUM_ROWS // 2 :],
     )
 
@@ -74,7 +75,7 @@ def generate_list_params() -> tuple[dict, daft.Expression, list]:
     rhs = [[1 for _ in range(5)] for _ in range(NUM_ROWS)]
     return (
         {"lhs": lhs, "rhs": rhs, "pred": list(range(NUM_ROWS))},
-        (daft.col("pred") < NUM_ROWS // 2).if_else(daft.col("lhs"), daft.col("rhs")),
+        when(daft.col("pred") < NUM_ROWS // 2, daft.col("lhs")).otherwise(daft.col("rhs")),
         lhs[: NUM_ROWS // 2] + rhs[NUM_ROWS // 2 :],
     )
 

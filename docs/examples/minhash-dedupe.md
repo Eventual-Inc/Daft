@@ -195,7 +195,7 @@ See docs: [normalize][daft.Expression.normalize]
 ```python
 # Normalize text
 df_norm = df_ready.with_column("content_normalized",
-    col(content_col).str.normalize(
+    col(content_col).normalize(
         remove_punct=True,
         lowercase=True,
         nfd_unicode=True,
@@ -412,6 +412,7 @@ First we need a few utilities
 
 ```python
 from daft import struct, Expression, DataFrame
+from daft.functions import when
 
 def ee(u: Expression, v: Expression):
     """Create a struct Expression with fields 'u' and 'v' for representing edges."""
@@ -421,8 +422,8 @@ def canonicalize(edges: DataFrame) -> DataFrame:
     """Order edges so u < v and deduplicate for canonical representation."""
     return (
         edges
-        .with_column("u_can", (col("u") < col("v")).if_else(col("u"), col("v")))
-        .with_column("v_can", (col("u") < col("v")).if_else(col("v"), col("u")))
+        .with_column("u_can", when(col("u") < col("v"), col("u")).otherwise(col("v")))
+        .with_column("v_can", when(col("u") < col("v"), col("v")).otherwise(col("u")))
         .select(col("u_can").alias("u"), col("v_can").alias("v"))
         .distinct()
     )
@@ -480,9 +481,8 @@ def large_star(edges: DataFrame) -> DataFrame:
     neigh = neigh.with_column("m", col("nbrs").list.min())
     neigh = neigh.with_column(
         "m",
-        col("m").is_null().if_else(
-            col("u"),
-            (col("u") < col("m")).if_else(col("u"), col("m"))
+        when(col("m").is_null(), col("u")).otherwise(
+            when(col("u") < col("m"), col("u")).otherwise(col("m"))
         )
     )
 
@@ -512,10 +512,7 @@ def small_star(edges: DataFrame) -> DataFrame:
     # Step 1: For each edge, emit to the larger node as key, smaller as value
     directed =  (
         edges.select(
-            (col("u") < col("v")).if_else(
-                ee(col("u"), col("v")),
-                ee(col("v"), col("u"))
-            ).alias("e"))
+            when(col("u") < col("v"), ee(col("u"), col("v"))).otherwise(ee(col("v"), col("u"))).alias("e"))
         .select(col("e")["*"])
         .where(col("u") != col("v"))
         .distinct()
@@ -532,9 +529,8 @@ def small_star(edges: DataFrame) -> DataFrame:
     neigh = neigh.with_column("m", col("nbrs").list.min())
     neigh = neigh.with_column(
         "m",
-        col("m").is_null().if_else(
-            col("u"),
-            (col("u") < col("m")).if_else(col("u"), col("m"))
+        when(col("m").is_null(), col("u")).otherwise(
+            when(col("u") < col("m"), col("u")).otherwise(col("m"))
         )
     )
 
@@ -624,8 +620,7 @@ assignments = (
     .join(rep_map, on="u", how="left")     # left join to keep all nodes
     .with_column(
         "rep",
-        col("rep").is_null()               # if no neighbor was found
-        .if_else(col("u"), col("rep"))     # use the node itself as rep
+        when(col("rep").is_null(), col("u")).otherwise(col("rep"))  # if no neighbor was found, use the node itself as rep
     )
     .select("u", "rep")                    # keep only node and its rep
     .distinct()                            # deduplicate any duplicates
@@ -786,9 +781,8 @@ while lp_iters < lp_max_iters:
         .join(nbr_min, left_on="u", right_on="node", how="left")
         .with_column(
             "label",
-            col("nbr_min").is_null().if_else(
-                col("label"),
-                (col("label") <= col("nbr_min")).if_else(col("label"), col("nbr_min")),
+            when(col("nbr_min").is_null(), col("label")).otherwise(
+                when(col("label") <= col("nbr_min"), col("label")).otherwise(col("nbr_min"))
             ),
         )
         .select(col("u"), col("label"))

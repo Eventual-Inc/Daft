@@ -11,7 +11,7 @@ def test_upload_local(tmpdir):
     bytes_data = [b"a", b"b", b"c"]
     data = {"data": bytes_data}
     df = daft.from_pydict(data)
-    df = df.with_column("files", df["data"].url.upload(str(tmpdir + "/nested")))
+    df = df.with_column("files", df["data"].upload(str(tmpdir + "/nested")))
     df.collect()
 
     results = df.to_pydict()
@@ -32,7 +32,7 @@ def test_upload_local_single_file_url(tmpdir):
     # Even though there is only one row, since we pass in the upload URL via an expression, we
     # should treat the given path as a per-row path and write directly to that path, instead of
     # treating the path as a directory and writing to `{path}/uuid`.
-    df = df.with_column("files", df["data"].url.upload(df["paths"]))
+    df = df.with_column("files", df["data"].upload(df["paths"]))
     df.collect()
 
     results = df.to_pydict()
@@ -53,7 +53,7 @@ def test_upload_local_row_specifc_urls(tmpdir):
     paths = [f"{tmpdir}/0", f"{tmpdir}/1", f"{tmpdir}/2"]
     data = {"data": bytes_data, "paths": paths}
     df = daft.from_pydict(data)
-    df = df.with_column("files", df["data"].url.upload(df["paths"]))
+    df = df.with_column("files", df["data"].upload(df["paths"]))
     df.collect()
 
     results = df.to_pydict()
@@ -78,11 +78,11 @@ def test_upload_local_no_write_permissions(tmpdir):
     expected_data = b"b"
     data = {"data": bytes_data, "paths": paths}
     df = daft.from_pydict(data)
-    df_raise_error = df.with_column("files", df["data"].url.upload(df["paths"]))
+    df_raise_error = df.with_column("files", df["data"].upload(df["paths"]))
     with pytest.raises(daft.exceptions.DaftCoreException):
         df_raise_error.collect()
     # Retry with `on_error` set to `null`.
-    df_null = df.with_column("files", df["data"].url.upload(df["paths"], on_error="null"))
+    df_null = df.with_column("files", df["data"].upload(df["paths"], on_error="null"))
     df_null.collect()
     results = df_null.to_pydict()
     for path, expected_path in zip(results["files"], expected_paths):

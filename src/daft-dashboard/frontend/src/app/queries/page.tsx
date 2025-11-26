@@ -75,7 +75,7 @@ const columns = [
     header: "Start Time",
     cell: info => toHumanReadableDate(info.getValue()),
     sortingFn: "basic",
-  }),
+  })
 ];
 
 const Header = () => (

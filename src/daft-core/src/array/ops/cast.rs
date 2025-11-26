@@ -36,7 +36,7 @@ use crate::{
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
     },
-    file::{DaftMediaType, MediaTypeUnknown, MediaTypeVideo},
+    file::{DaftMediaType, MediaTypeAudio, MediaTypeUnknown, MediaTypeVideo},
     lit::Literal,
     series::{IntoSeries, Series},
     utils::display::display_time64,
@@ -554,17 +554,23 @@ where
         use daft_schema::media_type::MediaType::*;
         match dtype {
             DataType::File(media_type) => match (media_type, T::get_type()) {
-                (Unknown, Unknown) | (Video, Video) => Ok(self.clone().into_series()),
+                (Unknown, Unknown) | (Video, Video) | (Audio, Audio) => {
+                    Ok(self.clone().into_series())
+                }
                 (Unknown, Video) => Ok(self.clone().change_type::<MediaTypeVideo>().into_series()),
-                (Video, Unknown) => {
+                (Unknown, Audio) => Ok(self.clone().change_type::<MediaTypeAudio>().into_series()),
+                (Video, Unknown) | (Audio, Unknown) => {
                     Ok(self.clone().change_type::<MediaTypeUnknown>().into_series())
+                }
+                (Video, Audio) | (Audio, Video) => {
+                    Err(DaftError::TypeError("invalid cast".to_string()))
                 }
             },
             DataType::Null => {
                 Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
             }
             dtype if dtype == self.data_type() => Ok(self.clone().into_series()),
-            dtype => todo!("cast {dtype} for FileArray"),
+            _ => Err(DaftError::TypeError("invalid cast".to_string())),
         }
     }
 }

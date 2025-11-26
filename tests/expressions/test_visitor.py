@@ -9,10 +9,10 @@ import pytest
 from daft.expressions import (
     Expression,
     col,
-    list_,
     lit,
 )
 from daft.expressions.visitor import PredicateVisitor
+from daft.functions import to_list
 from daft.logical.schema import DataType
 from daft.series import Series
 
@@ -309,7 +309,7 @@ def test_visit_cast(data_type):
 
 
 def test_visit_list():
-    exp = list_(lit(1), lit(2), lit(3))
+    exp = to_list(lit(1), lit(2), lit(3))
     assert trace(exp) == [
         Trace("visit_lit", [1]),
         Trace("visit_lit", [2]),

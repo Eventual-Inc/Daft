@@ -39,6 +39,11 @@ class MediaType:
         """Represents a video media type."""
         return cls._from_pyfileformat(PyMediaType.video())
 
+    @classmethod
+    def audio(cls) -> MediaType:
+        """Represents an audio media type."""
+        return cls._from_pyfileformat(PyMediaType.audio())
+
 
 class TimeUnit:
     _timeunit: PyTimeUnit

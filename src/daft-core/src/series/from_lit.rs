@@ -16,7 +16,7 @@ use itertools::Itertools;
 use crate::{
     array::ops::image::image_array_from_img_buffers,
     datatypes::FileArray,
-    file::{MediaTypeUnknown, MediaTypeVideo},
+    file::{MediaTypeAudio, MediaTypeUnknown, MediaTypeVideo},
     prelude::*,
 };
 
@@ -358,6 +358,10 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 }
                 daft_schema::media_type::MediaType::Video => {
                     FileArray::<MediaTypeVideo>::new_from_file_references("literal", iter)?
+                        .into_series()
+                }
+                daft_schema::media_type::MediaType::Audio => {
+                    FileArray::<MediaTypeAudio>::new_from_file_references("literal", iter)?
                         .into_series()
                 }
             }

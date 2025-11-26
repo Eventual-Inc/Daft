@@ -1,7 +1,7 @@
 use daft_core::{array::ListArray, series::IntoSeries};
 use daft_dsl::functions::prelude::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ListMap;
 
 #[derive(FunctionArgs)]

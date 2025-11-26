@@ -63,7 +63,7 @@ def test_fixed_size_binary_slice(
     )
     # Verify input is FixedSizeBinary before slicing
     assert table.schema()["a"].dtype == DataType.fixed_size_binary(size)
-    result = table.eval_expression_list([col("a").binary.slice(col("start"), col("length"))])
+    result = table.eval_expression_list([col("a").slice(col("start"), col("start") + col("length"))])
     assert result.to_pydict() == {"a": expected_result}
     # Result should be regular Binary since slice might be smaller
     assert result.schema()["a"].dtype == DataType.binary()
@@ -96,7 +96,7 @@ def test_fixed_size_binary_slice_no_length(
     )
     # Verify input is FixedSizeBinary before slicing
     assert table.schema()["a"].dtype == DataType.fixed_size_binary(size)
-    result = table.eval_expression_list([col("a").binary.slice(col("start"))])
+    result = table.eval_expression_list([col("a").slice(col("start"))])
     assert result.to_pydict() == {"a": expected_result}
     # Result should be regular Binary since slice might be smaller
     assert result.schema()["a"].dtype == DataType.binary()
@@ -124,9 +124,9 @@ def test_fixed_size_binary_slice_computed() -> None:
     # Test with computed start (size - 2) and fixed length
     result = table.eval_expression_list(
         [
-            col("a").binary.slice(
+            col("a").slice(
                 (lit(size) - 2).cast(DataType.int32()),  # Start 2 chars from end
-                2,  # Take 2 chars
+                (lit(size) - 2).cast(DataType.int32()) + 2,  # End at start + 2
             )
         ]
     )
@@ -136,9 +136,9 @@ def test_fixed_size_binary_slice_computed() -> None:
     # Test with fixed start and computed length (size - start)
     result = table.eval_expression_list(
         [
-            col("a").binary.slice(
+            col("a").slice(
                 1,  # Start at second char
-                (lit(size) - 1).cast(DataType.int32()),  # Take remaining chars
+                1 + (lit(size) - 1).cast(DataType.int32()),  # End at start + remaining chars
             )
         ]
     )
@@ -185,7 +185,7 @@ def test_fixed_size_binary_slice_edge_cases() -> None:
         )
         # Verify input is FixedSizeBinary
         assert table.schema()["a"].dtype == DataType.fixed_size_binary(size)
-        result = table.eval_expression_list([col("a").binary.slice(col("start"), col("length"))])
+        result = table.eval_expression_list([col("a").slice(col("start"), col("start") + col("length"))])
         assert result.to_pydict() == {"a": expected}
         assert result.schema()["a"].dtype == DataType.binary()
 
@@ -200,22 +200,22 @@ def test_fixed_size_binary_slice_with_literals() -> None:
     assert table.schema()["a"].dtype == DataType.fixed_size_binary(3)
 
     # Test with literal start and length
-    result = table.eval_expression_list([col("a").binary.slice(lit(1), lit(1))])
+    result = table.eval_expression_list([col("a").slice(lit(1), lit(1) + lit(1))])
     assert result.to_pydict() == {"a": [b"b", b"e", None]}
     assert result.schema()["a"].dtype == DataType.binary()
 
     # Test with only start
-    result = table.eval_expression_list([col("a").binary.slice(lit(0))])
+    result = table.eval_expression_list([col("a").slice(lit(0))])
     assert result.to_pydict() == {"a": [b"abc", b"def", None]}
     assert result.schema()["a"].dtype == DataType.binary()
 
     # Test with start beyond length
-    result = table.eval_expression_list([col("a").binary.slice(lit(3), lit(1))])
+    result = table.eval_expression_list([col("a").slice(lit(3), lit(3) + lit(1))])
     assert result.to_pydict() == {"a": [b"", b"", None]}
     assert result.schema()["a"].dtype == DataType.binary()
 
     # Test with zero length
-    result = table.eval_expression_list([col("a").binary.slice(lit(0), lit(0))])
+    result = table.eval_expression_list([col("a").slice(lit(0), lit(0))])
     assert result.to_pydict() == {"a": [b"", b"", None]}
     assert result.schema()["a"].dtype == DataType.binary()
 
@@ -233,17 +233,15 @@ def test_fixed_size_binary_slice_errors() -> None:
 
     # Test slice on wrong type
     with pytest.raises(Exception, match="Input to `slice` must be list or binary, received: Int64"):
-        table.eval_expression_list([col("b").binary.slice(lit(0))])
+        table.eval_expression_list([col("b").slice(lit(0))])
 
     # Test with wrong number of arguments (too many)
     with pytest.raises(
         Exception,
-        match="(?:ExpressionBinaryNamespace.)?slice\\(\\) takes from 2 to 3 positional arguments but 4 were given",
+        match="slice\\(\\) takes from 2 to 3 positional arguments but 4 were given",
     ):
-        table.eval_expression_list([col("a").binary.slice(lit(0), lit(1), lit(2))])
+        table.eval_expression_list([col("a").slice(lit(0), lit(1), lit(2))])
 
     # Test with wrong number of arguments (too few)
-    with pytest.raises(
-        Exception, match="(?:ExpressionBinaryNamespace.)?slice\\(\\) missing 1 required positional argument: 'start'"
-    ):
-        table.eval_expression_list([col("a").binary.slice()])
+    with pytest.raises(Exception, match="slice\\(\\) missing 1 required positional argument: 'start'"):
+        table.eval_expression_list([col("a").slice()])

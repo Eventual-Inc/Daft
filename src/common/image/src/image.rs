@@ -7,7 +7,7 @@ use ndarray::{Array3, ShapeBuilder};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Wrapper around image::DynamicImage to implement certain traits
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Image(pub DynamicImage);
 
 impl Image {

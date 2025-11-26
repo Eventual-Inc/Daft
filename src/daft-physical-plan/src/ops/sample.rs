@@ -5,7 +5,8 @@ use crate::PhysicalPlanRef;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Sample {
     pub input: PhysicalPlanRef,
-    pub fraction: f64,
+    pub fraction: Option<f64>,
+    pub size: Option<usize>,
     pub with_replacement: bool,
     pub seed: Option<u64>,
 }
@@ -13,13 +14,15 @@ pub struct Sample {
 impl Sample {
     pub(crate) fn new(
         input: PhysicalPlanRef,
-        fraction: f64,
+        fraction: Option<f64>,
+        size: Option<usize>,
         with_replacement: bool,
         seed: Option<u64>,
     ) -> Self {
         Self {
             input,
             fraction,
+            size,
             with_replacement,
             seed,
         }
@@ -27,7 +30,11 @@ impl Sample {
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push(format!("Sample: {}", self.fraction));
+        if let Some(fraction) = self.fraction {
+            res.push(format!("Sample: {} (fraction)", fraction));
+        } else if let Some(size) = self.size {
+            res.push(format!("Sample: {} rows", size));
+        }
         res.push(format!("With replacement = {}", self.with_replacement));
         res.push(format!("Seed = {:?}", self.seed));
         res

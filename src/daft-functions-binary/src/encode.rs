@@ -13,10 +13,10 @@ use serde::{Deserialize, Serialize};
 use super::codecs::Codec;
 use crate::kernels::BinaryArrayExtension;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct BinaryEncode;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, FunctionArgs)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash, FunctionArgs)]
 struct Args<T> {
     input: T,
     codec: Codec,
@@ -69,7 +69,7 @@ impl ScalarUDF for BinaryEncode {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct BinaryTryEncode;
 
 #[typetag::serde]

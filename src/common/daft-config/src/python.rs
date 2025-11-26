@@ -120,6 +120,8 @@ impl PyDaftExecutionConfig {
         min_cpu_per_task=None,
         actor_udf_ready_timeout=None,
         maintain_order=None,
+        enable_dynamic_batching=None,
+        dynamic_batching_strategy=None,
         max_limit_tasks_submittable_in_parallel=None,
     ))]
     fn with_config_values(
@@ -155,6 +157,8 @@ impl PyDaftExecutionConfig {
         min_cpu_per_task: Option<f64>,
         actor_udf_ready_timeout: Option<usize>,
         maintain_order: Option<bool>,
+        enable_dynamic_batching: Option<bool>,
+        dynamic_batching_strategy: Option<&str>,
         max_limit_tasks_submittable_in_parallel: Option<usize>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
@@ -275,6 +279,17 @@ impl PyDaftExecutionConfig {
 
         if let Some(maintain_order) = maintain_order {
             config.maintain_order = maintain_order;
+        }
+        if let Some(enable_dynamic_batching) = enable_dynamic_batching {
+            config.enable_dynamic_batching = enable_dynamic_batching;
+        }
+        if let Some(dynamic_batching_strategy) = dynamic_batching_strategy {
+            if !matches!(dynamic_batching_strategy, "latency_constrained" | "auto") {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "dynamic_batching_strategy must be 'auto' or 'latency_constrained'",
+                ));
+            }
+            config.dynamic_batching_strategy = dynamic_batching_strategy.to_string();
         }
 
         if let Some(max_limit_tasks_submittable_in_parallel) =
@@ -428,6 +443,15 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn maintain_order(&self) -> PyResult<bool> {
         Ok(self.config.maintain_order)
+    }
+
+    #[getter]
+    fn enable_dynamic_batching(&self) -> PyResult<bool> {
+        Ok(self.config.enable_dynamic_batching)
+    }
+    #[getter]
+    fn dynamic_batching_strategy(&self) -> PyResult<&str> {
+        Ok(self.config.dynamic_batching_strategy.as_str())
     }
 
     #[getter]

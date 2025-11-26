@@ -13,7 +13,8 @@ use {
 use crate::FileFormat;
 
 /// Configuration for parsing a particular file format.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub enum FileFormatConfig {
     Parquet(ParquetSourceConfig),
     Csv(CsvSourceConfig),
@@ -27,6 +28,12 @@ pub enum FileFormatConfig {
         module_name: Option<String>,
         function_name: Option<String>,
     },
+}
+#[cfg(not(debug_assertions))]
+impl std::fmt::Debug for FileFormatConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.var_name())
+    }
 }
 
 impl FileFormatConfig {
@@ -78,8 +85,9 @@ impl FileFormatConfig {
 }
 
 /// Configuration for a Parquet data source.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct ParquetSourceConfig {
     pub coerce_int96_timestamp_unit: TimeUnit,
 
@@ -180,7 +188,8 @@ impl ParquetSourceConfig {
 impl_bincode_py_state_serialization!(ParquetSourceConfig);
 
 /// Configuration for a CSV data source.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
 pub struct CsvSourceConfig {
     pub delimiter: Option<char>,
@@ -278,7 +287,8 @@ impl CsvSourceConfig {
 impl_bincode_py_state_serialization!(CsvSourceConfig);
 
 /// Configuration for a JSON data source.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
 pub struct JsonSourceConfig {
     pub buffer_size: Option<usize>,
@@ -332,7 +342,8 @@ impl JsonSourceConfig {
 impl_bincode_py_state_serialization!(JsonSourceConfig);
 
 /// Configuration for a Database data source.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 #[cfg(feature = "python")]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct DatabaseSourceConfig {
@@ -395,7 +406,8 @@ impl DatabaseSourceConfig {
 impl_bincode_py_state_serialization!(DatabaseSourceConfig);
 
 /// Configuration for a Warc data source.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
 pub struct WarcSourceConfig {}
 

@@ -11,10 +11,10 @@ REGEX = r"^\d+$"  # match only digits
 @pytest.mark.parametrize(
     ["expr", "data", "expected"],
     [
-        (col("col").str.match(REGEX), ["123", "456", "789", "abc"], [True, True, True, False]),
-        (col("col").str.match(lit(REGEX)), ["123", "456", "789", "abc"], [True, True, True, False]),
+        (col("col").regexp(REGEX), ["123", "456", "789", "abc"], [True, True, True, False]),
+        (col("col").regexp(lit(REGEX)), ["123", "456", "789", "abc"], [True, True, True, False]),
         (
-            col("col").str.match(col("emptystrings") + lit(REGEX)),
+            col("col").regexp(col("emptystrings") + lit(REGEX)),
             ["123", "456", "789", "abc"],
             [True, True, True, False],
         ),

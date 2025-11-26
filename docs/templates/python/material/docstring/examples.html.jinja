@@ -1,0 +1,57 @@
+{#- Template for "Examples" sections in docstrings.
+
+This template renders a list of documented examples.
+It alternates between rendering text and code examples.
+
+Context:
+  section (griffe.DocstringSectionAttributes): The section to render.
+-#}
+
+{% block logs scoped %}
+  {#- Logging block.
+
+  This block can be used to log debug messages, deprecation messages, warnings, etc.
+  -#}
+  {{ log.debug("Rendering examples section") }}
+{% endblock logs %}
+
+{# YORE: Bump 2: Replace `"|get_template` with `.html.jinja"` within line. #}
+{% import "language"|get_template as lang with context %}
+{#- Language module providing the `t` translation method. -#}
+
+<p><span class="doc-section-title">{{ section.title or lang.t("Examples:") }}</span></p>
+{% for section_type, sub_section in section.value %}
+  {% if section_type.value == "text" %}
+    {{ sub_section|convert_markdown(heading_level, html_id, autoref_hook=autoref_hook) }}
+  {% elif section_type.value == "examples" %}
+    {#- Parse all examples to separate input and output -#}
+    {% set lines = sub_section.split('\n') %}
+    {% set input_lines = [] %}
+    {% set output_lines = [] %}
+    {% set in_output = false %}
+
+    {% for line in lines %}
+      {% if line.strip().startswith('>>>') or line.strip().startswith('...') %}
+        {% set _ = input_lines.append(line) %}
+        {% set in_output = false %}
+      {% else %}
+        {#- Once we hit non-input, everything else is output -#}
+        {% if line.strip() or in_output %}
+          {% set _ = output_lines.append(line) %}
+          {% set in_output = true %}
+        {% endif %}
+      {% endif %}
+    {% endfor %}
+
+    {#- Render the separated input and output -#}
+    {#- Input as Python code -#}
+    {{ input_lines|join('\n')|highlight(language="pycon") }}
+
+    {#- Output in a separate block -#}
+    {% if output_lines %}
+      <div class="highlight">
+        <pre><code>{{ output_lines|join('\n') }}</code></pre>
+      </div>
+    {% endif %}
+  {% endif %}
+{% endfor %}

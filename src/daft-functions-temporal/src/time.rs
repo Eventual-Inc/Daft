@@ -2,7 +2,7 @@ use common_error::DaftError;
 use daft_core::prelude::TimeUnit;
 use daft_dsl::functions::{UnaryArg, prelude::*};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Time;
 
 #[typetag::serde]

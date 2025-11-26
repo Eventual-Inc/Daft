@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 pub enum MediaType {
     Unknown,
     Video,
+    Audio,
 }
 
 #[cfg(feature = "python")]
@@ -22,6 +23,10 @@ impl MediaType {
     pub fn video() -> Self {
         Self::Video
     }
+    #[staticmethod]
+    pub fn audio() -> Self {
+        Self::Audio
+    }
 }
 
 impl std::fmt::Display for MediaType {
@@ -29,6 +34,7 @@ impl std::fmt::Display for MediaType {
         match self {
             Self::Unknown => write!(f, "Unknown"),
             Self::Video => write!(f, "Video"),
+            Self::Audio => write!(f, "Audio"),
         }
     }
 }

@@ -97,4 +97,4 @@ def test_mcap_read_s3(data_from_s3):
 
     assert len(pdf) == 100
     assert pdf["sequence"].nunique() == 100
-    assert pdf["data"].str.startswith("Chatter #").all()
+    assert pdf["data"].startswith("Chatter #").all()

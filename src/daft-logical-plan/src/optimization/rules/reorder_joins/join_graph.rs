@@ -24,7 +24,8 @@ use crate::{
 /// given JoinOrderTree.
 ///
 /// TODO(desmond): In the future these trees should keep track of current cost estimates.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub(super) enum JoinOrderTree {
     Relation(usize, usize), // (ID, cardinality).
     Join(
@@ -93,7 +94,8 @@ pub(super) trait JoinOrderer {
     fn order(&self, graph: &JoinGraph) -> JoinOrderTree;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub(super) struct JoinNode {
     relation_name: String,
     plan: LogicalPlanRef,
@@ -124,7 +126,8 @@ impl Display for JoinNode {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub(super) struct JoinCondition {
     pub left_on: String,
     pub right_on: String,
@@ -465,7 +468,7 @@ impl JoinAdjList {
     }
 }
 
-#[derive(Debug)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub(super) enum ProjectionOrFilter {
     Projection(Vec<ExprRef>),
     Filter(ExprRef),

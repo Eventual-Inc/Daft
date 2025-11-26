@@ -27,23 +27,23 @@ fixed_table = table.eval_expression_list([col("a").cast(fixed_dtype)])
 
 @pytest.mark.parametrize("table", [table, fixed_table])
 def test_list_bool_and(table):
-    result = table.eval_expression_list([col("a").list.bool_and()])
+    result = table.eval_expression_list([col("a").list_bool_and()])
     assert result.to_pydict() == {"a": [True, False, False, True, False, None, None]}
 
 
 @pytest.mark.parametrize("table", [table, fixed_table])
 def test_list_bool_or(table):
-    result = table.eval_expression_list([col("a").list.bool_or()])
+    result = table.eval_expression_list([col("a").list_bool_or()])
     assert result.to_pydict() == {"a": [True, True, False, True, False, None, None]}
 
 
 @pytest.mark.parametrize("table", [table, fixed_table])
 def test_list_bool_max(table):
-    result = table.eval_expression_list([col("a").list.max()])
+    result = table.eval_expression_list([col("a").list_max()])
     assert result.to_pydict() == {"a": [True, True, False, True, False, None, None]}
 
 
 @pytest.mark.parametrize("table", [table, fixed_table])
 def test_list_bool_min(table):
-    result = table.eval_expression_list([col("a").list.min()])
+    result = table.eval_expression_list([col("a").list_min()])
     assert result.to_pydict() == {"a": [True, False, False, True, False, None, None]}

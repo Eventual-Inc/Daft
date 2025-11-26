@@ -3,7 +3,7 @@ use daft_core::prelude::*;
 use daft_dsl::functions::{prelude::*, scalar::ScalarFn};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct MonotonicallyIncreasingId;
 
 #[typetag::serde]

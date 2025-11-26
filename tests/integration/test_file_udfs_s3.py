@@ -42,5 +42,5 @@ def test_file_read_from_s3_udf():
         return len(file.read())
 
     actual = df.select(file(df["path"])).select(n_bytes(df["path"])).to_pydict()
-    expected = df.select(df["path"].url.download().binary.length()).to_pydict()
+    expected = df.select(df["path"].download().binary.length()).to_pydict()
     assert actual == expected

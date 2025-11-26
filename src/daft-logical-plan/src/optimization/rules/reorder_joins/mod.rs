@@ -16,7 +16,7 @@ use crate::{
     optimization::rules::{OptimizerRule, reorder_joins::join_graph::JoinOrderer},
 };
 
-#[derive(Debug)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct ReorderJoins {
     cfg: Arc<DaftExecutionConfig>,
 }

@@ -14,16 +14,17 @@ class MockException(Exception):
 
 
 @pytest.mark.parametrize("materialized", [False, True])
-def test_iter_rows(make_df, materialized):
+@pytest.mark.parametrize("dynamic_batching", [True, False])
+def test_iter_rows(make_df, materialized, dynamic_batching):
     # Test that df.__iter__ produces the correct rows in the correct order.
     # It should work regardless of whether the dataframe has already been materialized or not.
+    with daft.execution_config_ctx(enable_dynamic_batching=dynamic_batching):
+        df = make_df({"a": list(range(10))}).into_partitions(5).with_column("b", daft.col("a") + 100)
+        if materialized:
+            df = df.collect()
 
-    df = make_df({"a": list(range(10))}).into_partitions(5).with_column("b", daft.col("a") + 100)
-    if materialized:
-        df = df.collect()
-
-    rows = list(iter(df))
-    assert rows == [{"a": x, "b": x + 100} for x in range(10)]
+        rows = list(iter(df))
+        assert rows == [{"a": x, "b": x + 100} for x in range(10)]
 
 
 @pytest.mark.parametrize(
@@ -84,15 +85,16 @@ def test_iter_rows(make_df, materialized):
         ),
     ],
 )
-def test_iter_rows_column_formats(make_df, format, data, expected):
-    df = make_df({"a": data})
+@pytest.mark.parametrize("dynamic_batching", [True, False])
+def test_iter_rows_column_formats(make_df, format, data, expected, dynamic_batching):
+    with daft.execution_config_ctx(enable_dynamic_batching=dynamic_batching):
+        df = make_df({"a": data})
+        rows = list(df.iter_rows(column_format=format))
 
-    rows = list(df.iter_rows(column_format=format))
-
-    # Compare each row
-    assert len(rows) == len(expected)
-    for actual_row, expected_row in zip(rows, [{"a": e} for e in expected]):
-        assert actual_row == expected_row
+        # Compare each row
+        assert len(rows) == len(expected)
+        for actual_row, expected_row in zip(rows, [{"a": e} for e in expected]):
+            assert actual_row == expected_row
 
 
 @pytest.mark.parametrize(
@@ -116,24 +118,27 @@ def test_iter_rows_column_formats(make_df, format, data, expected):
         ),
     ],
 )
-def test_iter_rows_lists_to_numpy(make_df, data, expected):
-    df = make_df({"a": data})
+@pytest.mark.parametrize("dynamic_batching", [True, False])
+def test_iter_rows_lists_to_numpy(make_df, data, expected, dynamic_batching):
+    with daft.execution_config_ctx(enable_dynamic_batching=dynamic_batching):
+        df = make_df({"a": data})
 
-    rows = list(df.iter_rows(column_format="arrow"))
+        rows = list(df.iter_rows(column_format="arrow"))
 
-    # Compare each row
-    assert len(rows) == len(expected)
-    for actual_row, expected_row in zip(rows, [{"a": e} for e in expected]):
-        np_data = actual_row["a"].values.to_numpy()
-        np.testing.assert_array_equal(np_data, expected_row["a"])
+        # Compare each row
+        assert len(rows) == len(expected)
+        for actual_row, expected_row in zip(rows, [{"a": e} for e in expected]):
+            np_data = actual_row["a"].values.to_numpy()
+            np.testing.assert_array_equal(np_data, expected_row["a"])
 
 
 @pytest.mark.parametrize("materialized", [False, True])
-def test_iter_partitions(make_df, materialized):
+@pytest.mark.parametrize("dynamic_batching", [True, False])
+def test_iter_partitions(make_df, materialized, dynamic_batching):
     # Test that df.iter_partitions() produces partitions in the correct order.
     # It should work regardless of whether the dataframe has already been materialized or not.
 
-    with daft.execution_config_ctx(default_morsel_size=2):
+    with daft.execution_config_ctx(default_morsel_size=2, enable_dynamic_batching=dynamic_batching):
         df = make_df({"a": list(range(10))}).into_partitions(5).with_column("b", daft.col("a") + 100)
 
         if materialized:
@@ -186,7 +191,8 @@ def test_iter_exception(make_df):
         assert str(exc_info.value).endswith("failed when executing on inputs:\n  - a (Int64, length=2)")
 
 
-def test_iter_partitions_exception(make_df):
+@pytest.mark.parametrize("dynamic_batching", [True, False])
+def test_iter_partitions_exception(make_df, dynamic_batching):
     # Test that df.iter_partitions actually returns results before completing execution.
     # We test this by raising an exception in a UDF if too many partitions are executed.
 
@@ -198,7 +204,7 @@ def test_iter_partitions_exception(make_df):
         else:
             return s
 
-    with daft.execution_config_ctx(default_morsel_size=2):
+    with daft.execution_config_ctx(default_morsel_size=2, enable_dynamic_batching=dynamic_batching):
         df = make_df({"a": list(range(200))}).into_partitions(100).with_column("b", echo_or_trigger(daft.col("a")))
 
         it = df.iter_partitions()

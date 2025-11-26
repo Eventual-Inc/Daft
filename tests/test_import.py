@@ -35,5 +35,5 @@ if len(pyarrow_modules) > 0:
     )
     if result.returncode != 0:
         raise AssertionError(
-            f"PyArrow modules were imported during daft import:\n" f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+            f"PyArrow modules were imported during daft import:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )

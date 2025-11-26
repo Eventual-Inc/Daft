@@ -7,6 +7,7 @@ from daft.lazy_import import LazyImport
 if TYPE_CHECKING:
     import av
     import fsspec
+    import librosa
     import numpy as np
     import pandas as pd
     import PIL.Image as pil_image
@@ -18,24 +19,27 @@ if TYPE_CHECKING:
     import pyarrow.fs as pafs
     import pyarrow.json as pajson
     import pyarrow.parquet as pq
+    import soundfile as sf
     import tensorflow as tf
     import torch
 else:
     av = LazyImport("av")
+    flight = LazyImport("pyarrow.flight")
     fsspec = LazyImport("fsspec")
+    librosa = LazyImport("librosa")
     np = LazyImport("numpy")
-    pd = LazyImport("pandas")
-    pil_image = LazyImport("PIL.Image")
     pa = LazyImport("pyarrow")
     pacsv = LazyImport("pyarrow.csv")
     pads = LazyImport("pyarrow.dataset")
     pafs = LazyImport("pyarrow.fs")
     pajson = LazyImport("pyarrow.json")
     pc = LazyImport("pyarrow.compute")
+    pd = LazyImport("pandas")
+    pil_image = LazyImport("PIL.Image")
     pq = LazyImport("pyarrow.parquet")
-    flight = LazyImport("pyarrow.flight")
-    torch = LazyImport("torch")
+    sf = LazyImport("soundfile")
     tf = LazyImport("tensorflow")
+    torch = LazyImport("torch")
 
 unity_catalog = LazyImport("daft.unity_catalog")
 
@@ -43,6 +47,7 @@ __all__ = [
     "av",
     "flight",
     "fsspec",
+    "librosa",
     "np",
     "pa",
     "pacsv",
@@ -53,6 +58,7 @@ __all__ = [
     "pd",
     "pil_image",
     "pq",
+    "sf",
     "tf",
     "torch",
     "unity_catalog",

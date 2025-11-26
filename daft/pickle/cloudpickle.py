@@ -159,7 +159,7 @@ def register_pickle_by_value(module):
     # this introspection yet, in order to avoid a possible breaking change
     # later, we still enforce the presence of module inside sys.modules.
     if module.__name__ not in sys.modules:
-        raise ValueError(f"{module} was not imported correctly, have you used an " "`import` statement to access it?")
+        raise ValueError(f"{module} was not imported correctly, have you used an `import` statement to access it?")
     _PICKLE_BY_VALUE_MODULES.add(module.__name__)
 
 

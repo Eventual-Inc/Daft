@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 macro_rules! exp {
     ($name:ident, $impl:ident, $variant:ident, $docstring:literal) => {
-        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+        #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
         pub struct $variant;
 
         #[typetag::serde]

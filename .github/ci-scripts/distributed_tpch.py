@@ -57,7 +57,7 @@ def run_benchmark():
 
 
 def main():
-    daft.context.set_runner_native()
+    daft.set_runner_native()
 
     metadata = get_run_metadata()
     scale_factor = int(os.getenv("TPCH_SCALE_FACTOR"))

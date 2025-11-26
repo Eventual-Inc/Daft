@@ -9,13 +9,13 @@ from daft.recordbatch import MicroPartition
 @pytest.mark.parametrize(
     ["expr", "data"],
     [
-        (col("col").str.find("oo"), ["foo", "quux"]),
+        (col("col").find("oo"), ["foo", "quux"]),
         (
-            col("col").str.find(lit("oo")),
+            col("col").find(lit("oo")),
             ["foo", "quux"],
         ),
         (
-            col("col").str.find(col("emptystrings") + lit("oo")),
+            col("col").find(col("emptystrings") + lit("oo")),
             ["foo", "quux"],
         ),
     ],

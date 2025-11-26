@@ -415,11 +415,11 @@ def explode(list_expr: Expression) -> Expression:
 
         >>> # df.select(
         >>> #     df["sentence"]
-        >>> #             .str.split(" ")
+        >>> #             .split(" ")
         >>> #             .explode()
         >>> #             .alias("word"),
         >>> #     df["sentence"]
-        >>> #             .str.split("a")
+        >>> #             .split("a")
         >>> #             .explode()
         >>> #             .alias("split_on_a")
         >>> # ).show()

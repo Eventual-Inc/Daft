@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use super::to_field_floating;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Sqrt;
 
 #[typetag::serde]

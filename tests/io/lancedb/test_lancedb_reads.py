@@ -101,7 +101,7 @@ def test_lancedb_read_limit_large_dataset(large_lance_dataset_path, limit_size, 
 
 
 def test_lancedb_with_version(lance_dataset_path):
-    df = daft.read_lance(lance_dataset_path, version=1)
+    df = daft.read_lance(uri=lance_dataset_path, version=1)
     assert df.to_pydict() == data
 
     # test pushdown filters with limit and projection
@@ -147,7 +147,7 @@ def test_lancedb_read_parallelism_fragment_merging(large_lance_dataset_path):
     df_no_fragment_group = daft.read_lance(large_lance_dataset_path)
     assert len(lance.dataset(large_lance_dataset_path).get_fragments()) == df_no_fragment_group.num_partitions()
 
-    df = daft.read_lance(large_lance_dataset_path, fragment_group_size=3)
+    df = daft.read_lance(uri=large_lance_dataset_path, fragment_group_size=3)
     df.explain(show_all=True)
     assert df.num_partitions() == 4  # 10 fragments, group size 3 -> 4 scan tasks
 
@@ -273,7 +273,7 @@ class TestLanceDBCountPushdown:
         empty_data = {"a": [], "b": []}
         lance.write_dataset(pa.Table.from_pydict(empty_data), tmp_dir)
 
-        df = daft.read_lance(str(tmp_dir)).count()
+        df = daft.read_lance(tmp_dir).count()
 
         _ = capsys.readouterr()
         df.explain(True)
@@ -316,7 +316,7 @@ def test_lancedb_filter_then_limit_behavior(lance_dataset_path, enable_strict_fi
 
 def test_lancedb_limit_with_filter_and_fragment_grouping_single_task(large_lance_dataset_path):
     """Validate filter+limit correctness when fragment grouping is enabled."""
-    df = daft.read_lance(large_lance_dataset_path, fragment_group_size=4)
+    df = daft.read_lance(uri=large_lance_dataset_path, fragment_group_size=4)
     df = df.filter("big_int = 999").limit(1).select("big_int")
 
     result = df.to_pydict()

@@ -17,7 +17,7 @@ use crate::{
 };
 
 /// Represents a window frame boundary
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum WindowBoundary {
     /// Represents UNBOUNDED PRECEDING or UNBOUNDED FOLLOWING
     UnboundedPreceding,

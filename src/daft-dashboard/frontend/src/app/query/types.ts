@@ -78,6 +78,19 @@ export type QueryState =
       exec_info: ExecInfo;
       exec_end_sec: number;
       end_sec: number;
+    }
+  | {
+      status: "Failed";
+      end_sec: number;
+      message: string;
+    }
+  | {
+      status: "Canceled";
+      end_sec: number;
+      message: string;
+    }
+  | {
+      status: "Dead";
     };
 
 export type QueryInfo = {

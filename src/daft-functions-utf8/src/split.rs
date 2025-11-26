@@ -15,10 +15,10 @@ use crate::utils::{
     binary_utf8_evaluate, binary_utf8_to_field, create_broadcasted_str_iter, parse_inputs,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Split;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RegexpSplit;
 
 #[typetag::serde]

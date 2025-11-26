@@ -6,16 +6,18 @@ import daft
 from daft import DataType, col
 
 
-@pytest.fixture
-def input_df():
-    df = daft.range(start=0, end=1024, partitions=100)
-    df = df.with_columns(
-        {
-            "name": df["id"].apply(func=lambda x: f"user_{x}", return_dtype=DataType.string()),
-            "email": df["id"].apply(func=lambda x: f"user_{x}@getdaft.io", return_dtype=DataType.string()),
-        }
-    )
-    return df
+@pytest.fixture(params=[True, False])
+def input_df(request):
+    dynamic_batching = request.param
+    with daft.execution_config_ctx(enable_dynamic_batching=dynamic_batching):
+        df = daft.range(start=0, end=1024, partitions=100)
+        df = df.with_columns(
+            {
+                "name": df["id"].apply(func=lambda x: f"user_{x}", return_dtype=DataType.string()),
+                "email": df["id"].apply(func=lambda x: f"user_{x}@getdaft.io", return_dtype=DataType.string()),
+            }
+        )
+        return df
 
 
 def test_negative_limit(input_df):

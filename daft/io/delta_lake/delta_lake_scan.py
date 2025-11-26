@@ -3,10 +3,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 from urllib.error import HTTPError
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
 
+import deltalake
 from deltalake.table import DeltaTable
+from packaging.version import parse
 
 import daft
 import daft.exceptions
@@ -58,7 +60,10 @@ def get_s3_bucket_region(bucket_name: str) -> str | None:
 
 class DeltaLakeScanOperator(ScanOperator):
     def __init__(
-        self, table_uri: str, storage_config: StorageConfig, version: int | str | datetime | None = None
+        self,
+        table_uri: str,
+        storage_config: StorageConfig,
+        version: int | str | datetime | None = None,
     ) -> None:
         super().__init__()
 
@@ -81,7 +86,12 @@ class DeltaLakeScanOperator(ScanOperator):
                     )
 
             # Try to get config from the environment
-            if any([deltalake_sdk_io_config.s3.key_id is None, deltalake_sdk_io_config.s3.region_name is None]):
+            if any(
+                [
+                    deltalake_sdk_io_config.s3.key_id is None,
+                    deltalake_sdk_io_config.s3.region_name is None,
+                ]
+            ):
                 try:
                     s3_config_from_env = S3Config.from_env()
                 # Sometimes S3Config.from_env throws an error, for example on CI machines with weird metadata servers.
@@ -114,7 +124,8 @@ class DeltaLakeScanOperator(ScanOperator):
             pass
 
         self._table = DeltaTable(
-            table_uri, storage_options=io_config_to_storage_options(deltalake_sdk_io_config, table_uri)
+            table_uri,
+            storage_options=io_config_to_storage_options(deltalake_sdk_io_config, table_uri),
         )
 
         if version is not None:
@@ -157,7 +168,6 @@ class DeltaLakeScanOperator(ScanOperator):
         # TODO(Clark): Push limit and filter expressions into deltalake action fetch, to prune the files returned.
         # Issue: https://github.com/Eventual-Inc/Daft/issues/1953
         add_actions = pa.record_batch(self._table.get_add_actions())
-
         if len(self.partitioning_keys()) > 0 and pushdowns.partition_filters is None:
             logger.warning(
                 "%s has partitioning keys = %s, but no partition filter was specified. This will result in a full table scan.",
@@ -179,17 +189,32 @@ class DeltaLakeScanOperator(ScanOperator):
         limit_files = pushdowns.limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None
         rows_left = pushdowns.limit if pushdowns.limit is not None else 0
         scan_tasks = []
+
+        # Determine which partition field name is used in the schema
+        # Deltalake versions <1.2.0 use "partition_values", >=1.2.0 use "partition"
+        is_deltalake_v1_2_or_above = parse(deltalake.__version__) >= parse("1.2.0")
+
+        partition_field_name = "partition" if is_deltalake_v1_2_or_above else "partition_values"
         is_partitioned = (
-            "partition_values" in add_actions.schema.names
-            and add_actions.schema.field("partition_values").type.num_fields > 0
+            partition_field_name in add_actions.schema.names
+            and add_actions.schema.field(partition_field_name).type.num_fields > 0
         )
         for task_idx in range(add_actions.num_rows):
             if limit_files and rows_left <= 0:
                 break
 
             # NOTE: The paths in the transaction log consist of the post-table-uri suffix.
+            # Workaround for deltalake >= 1.2.0: paths are double-encoded in the log but single-encoded on disk.
             scheme = urlparse(self._table.table_uri).scheme
-            path = construct_delta_file_path(scheme, self._table.table_uri, add_actions["path"][task_idx].as_py())
+            raw_path = add_actions["path"][task_idx].as_py()
+            if is_deltalake_v1_2_or_above:
+                # For Delta Lake >= 1.2.0, decode double-encoded paths
+                unquoted = unquote(raw_path)
+                decoded_path = unquoted if unquoted != raw_path else raw_path
+            else:
+                # For Delta Lake < 1.2.0, use path as-is
+                decoded_path = raw_path
+            path = construct_delta_file_path(scheme, self._table.table_uri, decoded_path)
 
             try:
                 record_count = add_actions["num_records"][task_idx].as_py()
@@ -203,16 +228,23 @@ class DeltaLakeScanOperator(ScanOperator):
             file_format_config = FileFormatConfig.from_parquet_config(ParquetSourceConfig())
 
             if is_partitioned:
-                dtype = add_actions.schema.field("partition_values").type
-                part_values = add_actions["partition_values"][task_idx]
+                dtype = add_actions.schema.field(partition_field_name).type
+                part_values = add_actions[partition_field_name][task_idx]
                 arrays = {}
                 for field_idx in range(dtype.num_fields):
                     field_name = dtype.field(field_idx).name
                     try:
                         arrow_arr = pa.array([part_values[field_name]], type=dtype.field(field_idx).type)
-                    except (pa.ArrowInvalid, pa.ArrowTypeError, pa.ArrowNotImplementedError):
+                    except (
+                        pa.ArrowInvalid,
+                        pa.ArrowTypeError,
+                        pa.ArrowNotImplementedError,
+                    ):
                         # pyarrow < 13.0.0 doesn't accept pyarrow scalars in the array constructor.
-                        arrow_arr = pa.array([part_values[field_name].as_py()], type=dtype.field(field_idx).type)
+                        arrow_arr = pa.array(
+                            [part_values[field_name].as_py()],
+                            type=dtype.field(field_idx).type,
+                        )
                     arrays[field_name] = daft.Series.from_arrow(arrow_arr, field_name)
                 partition_values = daft.recordbatch.RecordBatch.from_pydict(arrays)._recordbatch
             else:
@@ -231,12 +263,20 @@ class DeltaLakeScanOperator(ScanOperator):
                     field_name = dtype.field(field_idx).name
                     try:
                         arrow_arr = pa.array(
-                            [min_values[field_name], max_values[field_name]], type=dtype.field(field_idx).type
+                            [min_values[field_name], max_values[field_name]],
+                            type=dtype.field(field_idx).type,
                         )
-                    except (pa.ArrowInvalid, pa.ArrowTypeError, pa.ArrowNotImplementedError):
+                    except (
+                        pa.ArrowInvalid,
+                        pa.ArrowTypeError,
+                        pa.ArrowNotImplementedError,
+                    ):
                         # pyarrow < 13.0.0 doesn't accept pyarrow scalars in the array constructor.
                         arrow_arr = pa.array(
-                            [min_values[field_name].as_py(), max_values[field_name].as_py()],
+                            [
+                                min_values[field_name].as_py(),
+                                max_values[field_name].as_py(),
+                            ],
                             type=dtype.field(field_idx).type,
                         )
                     arrays[field_name] = daft.Series.from_arrow(arrow_arr, field_name)

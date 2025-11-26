@@ -29,7 +29,8 @@ use crate::{
 ///
 /// Multiple window function expressions can be stored in a single Window operator
 /// as long as they share the same window specification.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Window {
     /// An id for the plan.
     pub plan_id: Option<usize>,

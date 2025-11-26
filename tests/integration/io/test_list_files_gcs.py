@@ -13,7 +13,7 @@ def gcsfs_recursive_list(fs, path) -> list:
     curr_level_result = fs.ls(path, detail=True)
     for item in curr_level_result:
         if item["type"] == "directory":
-            new_path = f'gs://{item["name"]}'
+            new_path = f"gs://{item['name']}"
             all_results.extend(gcsfs_recursive_list(fs, new_path))
             item["name"] += "/"
             all_results.append(item)

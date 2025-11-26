@@ -10,19 +10,19 @@ from daft.recordbatch import MicroPartition
 @pytest.mark.parametrize(
     ["expr", "data", "expected"],
     [
-        (col("col").str.replace("a", "b"), daft.Series.from_pylist([]).cast(daft.DataType.string()), []),
-        (col("col").str.replace("a", "b"), ["a", "ab", "c"], ["b", "bb", "c"]),
-        (col("col").str.replace(lit("a"), lit("b")), ["a", "ab", "c"], ["b", "bb", "c"]),
+        (col("col").replace("a", "b"), daft.Series.from_pylist([]).cast(daft.DataType.string()), []),
+        (col("col").replace("a", "b"), ["a", "ab", "c"], ["b", "bb", "c"]),
+        (col("col").replace(lit("a"), lit("b")), ["a", "ab", "c"], ["b", "bb", "c"]),
         (
-            col("col").str.replace(col("emptystrings") + lit("a"), col("emptystrings") + lit("b")),
+            col("col").replace(col("emptystrings") + lit("a"), col("emptystrings") + lit("b")),
             ["a", "ab", "c"],
             ["b", "bb", "c"],
         ),
         # regex pattern
-        (col("col").str.replace(r"a+", "b", regex=True), ["aaa", "ab", "c"], ["b", "bb", "c"]),
-        (col("col").str.replace(lit(r"a+"), lit("b"), regex=True), ["aaa", "ab", "c"], ["b", "bb", "c"]),
+        (col("col").regexp_replace(r"a+", "b"), ["aaa", "ab", "c"], ["b", "bb", "c"]),
+        (col("col").regexp_replace(lit(r"a+"), lit("b")), ["aaa", "ab", "c"], ["b", "bb", "c"]),
         (
-            col("col").str.replace(col("emptystrings") + lit(r"a+"), col("emptystrings") + lit("b"), regex=True),
+            col("col").regexp_replace(col("emptystrings") + lit(r"a+"), col("emptystrings") + lit("b")),
             ["aaa", "ab", "c"],
             ["b", "bb", "c"],
         ),

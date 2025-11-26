@@ -11,8 +11,11 @@ from daft.daft import (
     IOConfig,
     LocalPhysicalPlan,
     PyQueryMetadata,
+    PyQueryResult,
+    QueryEndState,
     set_compute_runtime_num_worker_threads,
 )
+from daft.errors import UDFException
 from daft.execution.native_executor import NativeExecutor
 from daft.filesystem import glob_path_with_stats
 from daft.recordbatch import MicroPartition
@@ -115,8 +118,23 @@ class NativeRunner(Runner[MicroPartition]):
             for result in results_gen:
                 ctx._notify_result_out(query_id, result.partition())
                 yield result
-        finally:
-            ctx._notify_query_end(query_id)
+        except KeyboardInterrupt as e:
+            query_result = PyQueryResult(QueryEndState.Canceled, "Query canceled by the user.")
+            ctx._notify_query_end(query_id, query_result)
+            raise e
+        except UDFException as e:
+            err_msg = f"UDF failed with exception: {e.original_exception}"
+            query_result = PyQueryResult(QueryEndState.Failed, err_msg)
+            ctx._notify_query_end(query_id, query_result)
+            raise e
+        except Exception as e:
+            err_msg = f"General Exception raised: {e}"
+            query_result = PyQueryResult(QueryEndState.Failed, err_msg)
+            ctx._notify_query_end(query_id, query_result)
+            raise e
+        else:
+            query_result = PyQueryResult(QueryEndState.Finished, "")
+            ctx._notify_query_end(query_id, query_result)
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None

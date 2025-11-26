@@ -51,7 +51,7 @@ def test_fixed_size_binary_length(
     )
     # Verify input is FixedSizeBinary before getting length
     assert table.schema()["a"].dtype == DataType.fixed_size_binary(size)
-    result = table.eval_expression_list([col("a").binary.length()])
+    result = table.eval_expression_list([col("a").length()])
     assert result.to_pydict() == {"a": expected_result}
     # Result should be UInt64 since length can't be negative
     assert result.schema()["a"].dtype == DataType.uint64()
@@ -77,7 +77,7 @@ def test_fixed_size_binary_length_large() -> None:
     )
     # Verify input is FixedSizeBinary
     assert table.schema()["a"].dtype == DataType.fixed_size_binary(size)
-    result = table.eval_expression_list([col("a").binary.length()])
+    result = table.eval_expression_list([col("a").length()])
     assert result.to_pydict() == {"a": expected_result}
     assert result.schema()["a"].dtype == DataType.uint64()
 
@@ -103,7 +103,7 @@ def test_fixed_size_binary_length_edge_cases() -> None:
         )
         # Verify input is FixedSizeBinary
         assert table.schema()["a"].dtype == DataType.fixed_size_binary(size)
-        result = table.eval_expression_list([col("a").binary.length()])
+        result = table.eval_expression_list([col("a").length()])
         assert result.to_pydict() == {"a": expected_result}
         assert result.schema()["a"].dtype == DataType.uint64()
 
@@ -120,4 +120,4 @@ def test_fixed_size_binary_length_errors() -> None:
     with pytest.raises(
         Exception, match="Expected input to 'length' function to be utf8, binary, or list, but received Int64"
     ):
-        table.eval_expression_list([col("a").binary.length()])
+        table.eval_expression_list([col("a").length()])

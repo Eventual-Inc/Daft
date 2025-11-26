@@ -10,7 +10,7 @@ To run Daft in a Flyte task, use Daft as if you were using Daft in a local machi
 
 To run Daft in a Ray Flyte task and connect to a Ray cluster, use Daft as if `ray.init()` has already been called.
 
-That is to say, run Daft with: `daft.context.set_ray_runner()`.
+That is to say, run Daft with: `daft.set_runner_ray()`.
 
 See: `app.py` for an example.
 

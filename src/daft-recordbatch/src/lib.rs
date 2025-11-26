@@ -348,29 +348,59 @@ impl RecordBatch {
         with_replacement: bool,
         seed: Option<u64>,
     ) -> DaftResult<Self> {
-        if num >= self.len() {
-            Ok(self.clone())
-        } else {
-            use rand::{Rng, SeedableRng, distributions::Uniform, rngs::StdRng};
-            let mut rng = match seed {
-                Some(seed) => StdRng::seed_from_u64(seed),
-                None => StdRng::from_rng(rand::thread_rng()).unwrap(),
-            };
-            let values: Vec<u64> = if with_replacement {
-                let range = Uniform::from(0..self.len() as u64);
-                rng.sample_iter(&range).take(num).collect()
-            } else {
-                // https://docs.rs/rand/latest/rand/seq/index/fn.sample.html
-                // Randomly sample exactly amount distinct indices from 0..length, and return them in random order (fully shuffled).
-                sample(&mut rng, self.len(), num)
-                    .into_iter()
-                    .map(|i| i as u64)
-                    .collect()
-            };
-            let indices: daft_core::array::DataArray<daft_core::datatypes::UInt64Type> =
-                UInt64Array::from(("idx", values));
-            self.take(&indices.into_series())
+        let len = self.len();
+
+        // Handle size == 0: return empty dataframe
+        if num == 0 {
+            return Ok(Self::empty(Some(self.schema.clone())));
         }
+
+        // Handle empty dataframe
+        if len == 0 {
+            if !with_replacement {
+                return Err(DaftError::ValueError(
+                    "Cannot take a sample larger than the population when 'replace=False'"
+                        .to_string(),
+                ));
+            }
+            // For with_replacement=True, we can't sample from empty, so return empty
+            return Ok(Self::empty(Some(self.schema.clone())));
+        }
+
+        // Handle size > total_rows
+        if num > len {
+            if !with_replacement {
+                return Err(DaftError::ValueError(format!(
+                    "Cannot take a sample larger than the population when 'replace=False'. Population size: {}, sample size: {}",
+                    len, num
+                )));
+            }
+            // For with_replacement=True, we can sample more than the population
+            // Continue to sampling logic below
+        } else if num == len && !with_replacement {
+            // size == total_rows and no replacement: return all rows
+            return Ok(self.clone());
+        }
+
+        use rand::{Rng, SeedableRng, distributions::Uniform, rngs::StdRng};
+        let mut rng = match seed {
+            Some(seed) => StdRng::seed_from_u64(seed),
+            None => StdRng::from_rng(rand::thread_rng()).unwrap(),
+        };
+        let values: Vec<u64> = if with_replacement {
+            let range = Uniform::from(0..len as u64);
+            rng.sample_iter(&range).take(num).collect()
+        } else {
+            // https://docs.rs/rand/latest/rand/seq/index/fn.sample.html
+            // Randomly sample exactly amount distinct indices from 0..length, and return them in random order (fully shuffled).
+            sample(&mut rng, len, num)
+                .into_iter()
+                .map(|i| i as u64)
+                .collect()
+        };
+        let indices: daft_core::array::DataArray<daft_core::datatypes::UInt64Type> =
+            UInt64Array::from(("idx", values));
+        self.take(&indices.into_series())
     }
 
     pub fn add_monotonically_increasing_id(
@@ -1463,39 +1493,9 @@ impl RecordBatch {
             num_columns
         );
 
-        let (head_rows, tail_rows) = if self.len() > 10 {
-            (5, 5)
-        } else {
-            (self.len(), 0)
-        };
+        let total_rows = self.len();
 
-        for i in 0..head_rows {
-            // Begin row.
-            res.push_str("<tr>");
-
-            for (col_idx, col) in self.columns.iter().enumerate() {
-                #[allow(clippy::format_push_string)]
-                res.push_str(&format!(
-                    "<td data-row=\"{}\" data-col=\"{}\"><div style=\"{}\">",
-                    i, col_idx, body_style
-                ));
-                res.push_str(&html_value(col, i, true));
-                res.push_str("</div></td>");
-            }
-
-            // End row.
-            res.push_str("</tr>\n");
-        }
-
-        if tail_rows != 0 {
-            res.push_str("<tr>");
-            for _ in 0..self.columns.len() {
-                res.push_str("<td>...</td>");
-            }
-            res.push_str("</tr>\n");
-        }
-
-        for i in (self.len() - tail_rows)..(self.len()) {
+        for i in 0..total_rows {
             // Begin row.
             res.push_str("<tr>");
 

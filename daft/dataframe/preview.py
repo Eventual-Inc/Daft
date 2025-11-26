@@ -97,7 +97,7 @@ class PreviewFormatter:
 
     def _get_user_message(self) -> str:
         if self._preview.partition is None:
-            return "(No data to display: Dataframe not materialized)"
+            return "(No data to display: Dataframe not materialized, use .collect() to materialize)"
         if self._preview.total_rows == 0:
             return "(No data to display: Materialized dataframe has no rows)"
         if self._preview.total_rows is None:

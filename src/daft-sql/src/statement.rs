@@ -5,7 +5,8 @@ use sqlparser::ast;
 use crate::{SQLPlanner, error::SQLPlannerResult, unsupported_sql_err};
 
 /// Top-level planning structure
-#[derive(Debug, Clone)]
+#[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub enum Statement {
     /// select .. from
     Select(Select),
@@ -21,21 +22,24 @@ pub enum Statement {
 pub type Select = LogicalPlanRef;
 
 /// SET <option> [TO] <value>
-#[derive(Debug, Clone)]
+#[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Set {
     pub option: String,
     pub value: String,
 }
 
 /// SHOW TABLES [ {FROM|IN} <catalog> ] [ LIKE <pattern> ]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct ShowTables {
     pub catalog: Option<String>,
     pub pattern: Option<String>,
 }
 
 /// USE <catalog> [. <namespace>]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Use {
     pub catalog: String,
     pub namespace: Option<Identifier>,

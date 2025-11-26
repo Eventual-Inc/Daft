@@ -13,7 +13,7 @@ def test_total_seconds(test_expression):
         timedelta(minutes=1),
     ]
     expected = [1, 0, 0, 86400, 3600, 60]
-    test_expression(data=test_data, expected=expected, name="total_seconds", sql_name="total_seconds", namespace="dt")
+    test_expression(data=test_data, expected=expected, name="total_seconds", sql_name="total_seconds")
 
 
 def test_total_milliseconds(test_expression):
@@ -26,9 +26,7 @@ def test_total_milliseconds(test_expression):
         timedelta(minutes=1),
     ]
     expected = [1000, 1, 0, 86400000, 3600000, 60000]
-    test_expression(
-        data=test_data, expected=expected, name="total_milliseconds", sql_name="total_milliseconds", namespace="dt"
-    )
+    test_expression(data=test_data, expected=expected, name="total_milliseconds", sql_name="total_milliseconds")
 
 
 def test_total_microseconds(test_expression):
@@ -41,9 +39,7 @@ def test_total_microseconds(test_expression):
         timedelta(minutes=1),
     ]
     expected = [1000000, 1000, 1, 86400000000, 3600000000, 60000000]
-    test_expression(
-        data=test_data, expected=expected, name="total_microseconds", sql_name="total_microseconds", namespace="dt"
-    )
+    test_expression(data=test_data, expected=expected, name="total_microseconds", sql_name="total_microseconds")
 
 
 def test_total_nanoseconds(test_expression):
@@ -56,9 +52,7 @@ def test_total_nanoseconds(test_expression):
         timedelta(minutes=1),
     ]
     expected = [1000000000, 1000000, 1000, 86400000000000, 3600000000000, 60000000000]
-    test_expression(
-        data=test_data, expected=expected, name="total_nanoseconds", sql_name="total_nanoseconds", namespace="dt"
-    )
+    test_expression(data=test_data, expected=expected, name="total_nanoseconds", sql_name="total_nanoseconds")
 
 
 def test_total_days(test_expression):
@@ -71,7 +65,7 @@ def test_total_days(test_expression):
         timedelta(minutes=1),
     ]
     expected = [0, 0, 0, 1, 0, 0]
-    test_expression(data=test_data, expected=expected, name="total_days", sql_name="total_days", namespace="dt")
+    test_expression(data=test_data, expected=expected, name="total_days", sql_name="total_days")
 
 
 def test_total_hours(test_expression):
@@ -84,7 +78,7 @@ def test_total_hours(test_expression):
         timedelta(minutes=1),
     ]
     expected = [0, 0, 0, 24, 1, 0]
-    test_expression(data=test_data, expected=expected, name="total_hours", sql_name="total_hours", namespace="dt")
+    test_expression(data=test_data, expected=expected, name="total_hours", sql_name="total_hours")
 
 
 def test_total_minutes(test_expression):
@@ -97,4 +91,4 @@ def test_total_minutes(test_expression):
         timedelta(minutes=1),
     ]
     expected = [0, 0, 0, 1440, 60, 1]
-    test_expression(data=test_data, expected=expected, name="total_minutes", sql_name="total_minutes", namespace="dt")
+    test_expression(data=test_data, expected=expected, name="total_minutes", sql_name="total_minutes")

@@ -10,6 +10,7 @@ else:
     from typing import Unpack
 
 if TYPE_CHECKING:
+    from daft.ai.google.typing import GoogleProviderOptions
     from daft.ai.openai.typing import OpenAIProviderOptions
     from daft.ai.protocols import (
         ImageClassifierDescriptor,
@@ -24,6 +25,15 @@ class ProviderImportError(ImportError):
     def __init__(self, dependencies: list[str]):
         deps = ", ".join(f"'{d}'" for d in dependencies)
         super().__init__(f"Missing required dependencies: {deps}. Please install {deps} to use this provider.")
+
+
+def load_google(name: str | None = None, **options: Unpack[GoogleProviderOptions]) -> Provider:
+    try:
+        from daft.ai.google.provider import GoogleProvider
+
+        return GoogleProvider(name, **options)
+    except ImportError as e:
+        raise ProviderImportError(["google"]) from e
 
 
 def load_lm_studio(name: str | None = None, **options: Any) -> Provider:
@@ -62,8 +72,9 @@ def load_vllm_prefix_caching(name: str | None = None, **options: Any) -> Provide
         raise ProviderImportError(["vllm"]) from e
 
 
-ProviderType = Literal["lm_studio", "openai", "transformers", "vllm-prefix-caching"]
+ProviderType = Literal["google", "lm_studio", "openai", "transformers", "vllm-prefix-caching"]
 PROVIDERS: dict[ProviderType, Callable[..., Provider]] = {
+    "google": load_google,
     "lm_studio": load_lm_studio,
     "openai": load_openai,
     "transformers": load_transformers,

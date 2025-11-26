@@ -189,8 +189,10 @@ impl IOConfig {
         http=None,
         unity=None,
         hf=None,
+        disable_suffix_range=None,
         tos=None,
     ))]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         s3: Option<S3Config>,
         azure: Option<AzureConfig>,
@@ -198,6 +200,7 @@ impl IOConfig {
         http: Option<HTTPConfig>,
         unity: Option<UnityConfig>,
         hf: Option<HuggingFaceConfig>,
+        disable_suffix_range: Option<bool>,
         tos: Option<TosConfig>,
     ) -> Self {
         Self {
@@ -208,6 +211,7 @@ impl IOConfig {
                 http: http.unwrap_or_default().config,
                 unity: unity.unwrap_or_default().config,
                 hf: hf.unwrap_or_default().config,
+                disable_suffix_range: disable_suffix_range.unwrap_or_default(),
                 tos: tos.unwrap_or_default().config,
             },
         }
@@ -222,8 +226,10 @@ impl IOConfig {
         http=None,
         unity=None,
         hf=None,
+        disable_suffix_range=None,
         tos=None,
     ))]
+    #[allow(clippy::too_many_arguments)]
     pub fn replace(
         &self,
         s3: Option<S3Config>,
@@ -232,6 +238,7 @@ impl IOConfig {
         http: Option<HTTPConfig>,
         unity: Option<UnityConfig>,
         hf: Option<HuggingFaceConfig>,
+        disable_suffix_range: Option<bool>,
         tos: Option<TosConfig>,
     ) -> Self {
         Self {
@@ -254,6 +261,8 @@ impl IOConfig {
                 hf: hf
                     .map(|hf| hf.config)
                     .unwrap_or_else(|| self.config.hf.clone()),
+                disable_suffix_range: disable_suffix_range
+                    .unwrap_or(self.config.disable_suffix_range),
                 tos: tos
                     .map(|tos| tos.config)
                     .unwrap_or_else(|| self.config.tos.clone()),

@@ -27,6 +27,7 @@ pub mod minhash;
 pub mod not;
 pub mod null;
 pub mod partitioning;
+pub mod pow;
 pub mod repeat;
 pub mod search_sorted;
 pub mod shift;

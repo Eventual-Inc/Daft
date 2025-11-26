@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 from datasets import load_dataset
 
 import daft
 from daft import DataType as dt
+from daft.exceptions import DaftCoreException
 from tests.conftest import assert_df_equals
 
 
@@ -57,3 +60,32 @@ def test_read_huggingface(path, split, sort_key):
 def test_read_huggingface_http_urls(path, schema):
     df = daft.read_parquet(path)
     assert df.schema() == schema
+
+
+@pytest.mark.integration()
+def test_read_huggingface_fallback_on_400_error():
+    """Test that read_huggingface falls back to datasets library when parquet files return 400 error."""
+    repo = "Eventual-Inc/sample-parquet"
+
+    # Mock read_parquet to raise a DaftCoreException with Status(400
+    # This matches the actual error format from HuggingFace when parquet files aren't ready
+    with patch("daft.io.huggingface.read_parquet") as mock_read_parquet:
+        mock_read_parquet.side_effect = DaftCoreException(
+            f"DaftError::External Unable to open file https://huggingface.co/api/datasets/{repo}/parquet: "
+            f'reqwest::Error {{ kind: Status(400, None), url: "https://huggingface.co/api/datasets/{repo}/parquet" }}'
+        )
+
+        # This should trigger the fallback to datasets library
+        df = daft.read_huggingface(repo)
+
+        # Verify read_parquet was called with the correct HF path
+        mock_read_parquet.assert_called_once_with(f"hf://datasets/{repo}", io_config=None)
+
+        # Load expected data using datasets library
+        ds = load_dataset(repo, split="train")
+        ds = ds.with_format("arrow")
+        expected = ds.to_pandas()
+
+        # Compare the results
+        actual = df.to_pandas()
+        assert_df_equals(actual, expected, "foo")

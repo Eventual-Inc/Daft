@@ -38,12 +38,12 @@ def test_list_distinct():
     ).eval_expression_list([col("a").cast(DataType.list(DataType.int64()))])
     expected = [[1, 2, 3], [], [4, 6, 2], [3], [11, 6], None, [], [1, 3], None, []]
 
-    res = table.eval_expression_list([col("a").list.distinct().alias("distinct")])
+    res = table.eval_expression_list([col("a").list_distinct().alias("distinct")])
     result = res.to_pydict()["distinct"]
     compare_lists(result, expected)
 
     # Test unique alias.
-    res = table.eval_expression_list([col("a").list.unique().alias("unique")])
+    res = table.eval_expression_list([col("a").list_distinct().alias("unique")])
     result = res.to_pydict()["unique"]
     compare_lists(result, expected)
 
@@ -57,12 +57,12 @@ def test_list_distinct_fixed_size():
     ).eval_expression_list([col("a").cast(DataType.fixed_size_list(DataType.int64(), 2))])
     expected = [[1, 2], [2], [3], [11], None, [2], [], [4], None]
 
-    res = table.eval_expression_list([col("a").list.distinct().alias("distinct")])
+    res = table.eval_expression_list([col("a").list_distinct().alias("distinct")])
     result = res.to_pydict()["distinct"]
     compare_lists(result, expected)
 
     # Test unique alias.
-    res = table.eval_expression_list([col("a").list.unique().alias("unique")])
+    res = table.eval_expression_list([col("a").list_distinct().alias("unique")])
     result = res.to_pydict()["unique"]
     compare_lists(result, expected)
 
@@ -76,11 +76,11 @@ def test_list_distinct_list():
     ).eval_expression_list([col("a").cast(DataType.list(DataType.int64()))])
     expected = [[1, 2], [2], [3], [11], None, [2], [4], None]
 
-    res = table.eval_expression_list([col("a").list.distinct().alias("distinct")])
+    res = table.eval_expression_list([col("a").list_distinct().alias("distinct")])
     result = res.to_pydict()["distinct"]
     compare_lists(result, expected)
 
     # Test unique alias.
-    res = table.eval_expression_list([col("a").list.unique().alias("unique")])
+    res = table.eval_expression_list([col("a").list_distinct().alias("unique")])
     result = res.to_pydict()["unique"]
     compare_lists(result, expected)

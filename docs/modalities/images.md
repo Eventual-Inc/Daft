@@ -71,14 +71,12 @@ df_family.show()
 (Showing first 5 of 5 rows)
 ```
 
-You can use the [`url.download()`][daft.expressions.expressions.ExpressionUrlNamespace.download] expression to download the bytes from a URL. Let's store them in a new column using the [`df.with_column()`][daft.DataFrame.with_column] method:
-
-<!-- todo(docs - cc): add relative path to url.download after figure out url namespace-->
+You can use the [`download()`][daft.expressions.expressions.Expression.download] expression to download the bytes from a URL. Let's store them in a new column using the [`df.with_column()`][daft.DataFrame.with_column] method:
 
 === "🐍 Python"
 
     ```python
-    df_family = df_family.with_column("image_bytes", col("urls").url.download(on_error="null"))
+    df_family = df_family.with_column("image_bytes", col("urls").download(on_error="null"))
     df_family.show()
     ```
 
@@ -102,12 +100,12 @@ You can use the [`url.download()`][daft.expressions.expressions.ExpressionUrlNam
 (Showing first 5 of 5 rows)
 ```
 
-Let's turn the bytes into human-readable images using [`image.decode()`][daft.expressions.expressions.ExpressionImageNamespace.decode]:
+Let's turn the bytes into human-readable images using [`decode_image()`][daft.expressions.expressions.Expression.decode_image]:
 
 === "🐍 Python"
 
     ```python
-    df_family = df_family.with_column("image", daft.col("image_bytes").image.decode())
+    df_family = df_family.with_column("image", daft.col("image_bytes").decode_image())
     df_family.show()
     ```
 
@@ -131,7 +129,7 @@ from daft.functions.ai import embed_image
 
 (
     daft.read_huggingface("xai-org/RealworldQA")
-    .with_column("image", daft.col("image")["bytes"].image.decode())
+    .with_column("image", daft.col("image")["bytes"].decode_image())
     .with_column("embedding", embed_image(daft.col("image")))
     .show()
 )
@@ -276,8 +274,8 @@ This is necessary because multimodal data such as images, videos, and audio file
     ```python
     # Each operation uses different batch sizes automatically
     df = daft.read_parquet("metadata.parquet") # Large batches
-          .with_column("image_data", col("urls").url.download())  # Small batches
-          .with_column("resized", col("image_data").image.resize(224, 224))  # Medium batches
+          .with_column("image_data", col("urls").download())  # Small batches
+          .with_column("resized", col("image_data").resize(224, 224))  # Medium batches
     ```
 
 This approach allows processing of datasets larger than available memory, while maintaining optimal performance for each operation type.

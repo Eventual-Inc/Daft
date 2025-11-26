@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{LogicalPlan, partitioning::RepartitionSpec, stats::StatsState};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Repartition {
     pub plan_id: Option<usize>,
     pub node_id: Option<usize>,

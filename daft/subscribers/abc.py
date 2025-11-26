@@ -8,7 +8,7 @@ from daft.daft import StatType
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from daft.daft import PyMicroPartition, PyNodeInfo, PyQueryMetadata
+    from daft.daft import PyMicroPartition, PyNodeInfo, PyQueryMetadata, PyQueryResult
 
 
 class Subscriber(ABC):
@@ -28,7 +28,7 @@ class Subscriber(ABC):
         pass
 
     @abstractmethod
-    def on_query_end(self, query_id: str) -> None:
+    def on_query_end(self, query_id: str, result: PyQueryResult) -> None:
         """Called when a query has completed."""
         # TODO: Handle cancels, failures
         pass

@@ -19,12 +19,12 @@ def test_list_slice_empty_series():
 
     result = table.eval_expression_list(
         [
-            col("col").list.slice(0, 1).alias("col"),
-            col("col").list.slice(0).alias("col-noend"),
-            col("col").list.slice(col("start"), 1).alias("col-start"),
-            col("col").list.slice(col("start")).alias("col-start-noend"),
-            col("col").list.slice(col("start"), col("end")).alias("col-start-end"),
-            col("col").list.slice(0, col("end")).alias("col-end"),
+            col("col").slice(0, 1).alias("col"),
+            col("col").slice(0).alias("col-noend"),
+            col("col").slice(col("start"), 1).alias("col-start"),
+            col("col").slice(col("start")).alias("col-start-noend"),
+            col("col").slice(col("start"), col("end")).alias("col-start-end"),
+            col("col").slice(0, col("end")).alias("col-end"),
         ]
     )
 
@@ -60,30 +60,30 @@ def test_list_slice():
 
     result = table.eval_expression_list(
         [
-            col("col1").list.slice(0, 1).alias("col1"),
-            col("col1").list.slice(0).alias("col1-noend"),
-            col("col1").list.slice(col("start"), 1).alias("col1-start"),
-            col("col1").list.slice(col("start")).alias("col1-start-noend"),
-            col("col1").list.slice(col("start"), col("end")).alias("col1-start-end"),
-            col("col1").list.slice(1, col("end")).alias("col1-end"),
-            col("col1").list.slice(20, 25).alias("col1-invalid-start"),
-            col("col1").list.slice(20, 25).alias("col1-invalid-start-noend"),
-            col("col2").list.slice(0, 1).alias("col2"),
-            col("col2").list.slice(0).alias("col2-noend"),
-            col("col2").list.slice(col("start"), 1).alias("col2-start"),
-            col("col2").list.slice(col("start")).alias("col2-start-noend"),
-            col("col2").list.slice(col("start"), col("end")).alias("col2-start-end"),
-            col("col2").list.slice(0, col("end")).alias("col2-end"),
-            col("col2").list.slice(20, 25).alias("col2-invalid-start"),
-            col("col2").list.slice(20, 25).alias("col2-invalid-start-noend"),
+            col("col1").slice(0, 1).alias("col1"),
+            col("col1").slice(0).alias("col1-noend"),
+            col("col1").slice(col("start"), 1).alias("col1-start"),
+            col("col1").slice(col("start")).alias("col1-start-noend"),
+            col("col1").slice(col("start"), col("end")).alias("col1-start-end"),
+            col("col1").slice(1, col("end")).alias("col1-end"),
+            col("col1").slice(20, 25).alias("col1-invalid-start"),
+            col("col1").slice(20, 25).alias("col1-invalid-start-noend"),
+            col("col2").slice(0, 1).alias("col2"),
+            col("col2").slice(0).alias("col2-noend"),
+            col("col2").slice(col("start"), 1).alias("col2-start"),
+            col("col2").slice(col("start")).alias("col2-start-noend"),
+            col("col2").slice(col("start"), col("end")).alias("col2-start-end"),
+            col("col2").slice(0, col("end")).alias("col2-end"),
+            col("col2").slice(20, 25).alias("col2-invalid-start"),
+            col("col2").slice(20, 25).alias("col2-invalid-start-noend"),
             # Test edge cases.
-            col("col1").list.slice(-10, -20).alias("col1-edge1"),
-            col("col1").list.slice(-20, -10).alias("col1-edge2"),
-            col("col1").list.slice(-20, 10).alias("col1-edge3"),
-            col("col1").list.slice(-20, -1).alias("col1-edge4"),
-            col("col1").list.slice(col("edge_start"), col("edge_end")).alias("col1-edge5"),
-            col("col1").list.slice(10, 1).alias("col1-edge6"),
-            col("col1").list.slice(1, -1).alias("col1-edge7"),
+            col("col1").slice(-10, -20).alias("col1-edge1"),
+            col("col1").slice(-20, -10).alias("col1-edge2"),
+            col("col1").slice(-20, 10).alias("col1-edge3"),
+            col("col1").slice(-20, -1).alias("col1-edge4"),
+            col("col1").slice(col("edge_start"), col("edge_end")).alias("col1-edge5"),
+            col("col1").slice(10, 1).alias("col1-edge6"),
+            col("col1").slice(1, -1).alias("col1-edge7"),
         ]
     )
 
@@ -150,30 +150,30 @@ def test_fixed_size_list_slice():
 
     result = table.eval_expression_list(
         [
-            col("col1").list.slice(0, 1).alias("col1"),
-            col("col1").list.slice(0).alias("col1-noend"),
-            col("col1").list.slice(col("start"), 1).alias("col1-start"),
-            col("col1").list.slice(col("start")).alias("col1-start-noend"),
-            col("col1").list.slice(col("start"), col("end")).alias("col1-start-end"),
-            col("col1").list.slice(1, col("end")).alias("col1-end"),
-            col("col1").list.slice(20, 25).alias("col1-invalid-start"),
-            col("col1").list.slice(20).alias("col1-invalid-start-noend"),
-            col("col2").list.slice(0, 1).alias("col2"),
-            col("col2").list.slice(0).alias("col2-noend"),
-            col("col2").list.slice(col("start"), 2).alias("col2-start"),
-            col("col2").list.slice(col("start")).alias("col2-start-noend"),
-            col("col2").list.slice(col("start"), col("end")).alias("col2-start-end"),
-            col("col2").list.slice(0, col("end")).alias("col2-end"),
-            col("col2").list.slice(20, 25).alias("col2-invalid-start"),
-            col("col2").list.slice(20, 25).alias("col2-invalid-start-noend"),
+            col("col1").slice(0, 1).alias("col1"),
+            col("col1").slice(0).alias("col1-noend"),
+            col("col1").slice(col("start"), 1).alias("col1-start"),
+            col("col1").slice(col("start")).alias("col1-start-noend"),
+            col("col1").slice(col("start"), col("end")).alias("col1-start-end"),
+            col("col1").slice(1, col("end")).alias("col1-end"),
+            col("col1").slice(20, 25).alias("col1-invalid-start"),
+            col("col1").slice(20).alias("col1-invalid-start-noend"),
+            col("col2").slice(0, 1).alias("col2"),
+            col("col2").slice(0).alias("col2-noend"),
+            col("col2").slice(col("start"), 2).alias("col2-start"),
+            col("col2").slice(col("start")).alias("col2-start-noend"),
+            col("col2").slice(col("start"), col("end")).alias("col2-start-end"),
+            col("col2").slice(0, col("end")).alias("col2-end"),
+            col("col2").slice(20, 25).alias("col2-invalid-start"),
+            col("col2").slice(20, 25).alias("col2-invalid-start-noend"),
             # Test edge cases.
-            col("col1").list.slice(-10, -20).alias("col1-edge1"),
-            col("col1").list.slice(-20, -10).alias("col1-edge2"),
-            col("col1").list.slice(-20, 10).alias("col1-edge3"),
-            col("col1").list.slice(-20, -1).alias("col1-edge4"),
-            col("col1").list.slice(col("edge_start"), col("edge_end")).alias("col1-edge5"),
-            col("col1").list.slice(10, 1).alias("col1-edge6"),
-            col("col1").list.slice(0, -1).alias("col1-edge7"),
+            col("col1").slice(-10, -20).alias("col1-edge1"),
+            col("col1").slice(-20, -10).alias("col1-edge2"),
+            col("col1").slice(-20, 10).alias("col1-edge3"),
+            col("col1").slice(-20, -1).alias("col1-edge4"),
+            col("col1").slice(col("edge_start"), col("edge_end")).alias("col1-edge5"),
+            col("col1").slice(10, 1).alias("col1-edge6"),
+            col("col1").slice(0, -1).alias("col1-edge7"),
         ]
     )
 
@@ -213,13 +213,13 @@ def test_list_slice_invalid_parameters():
         }
     )
     with pytest.raises(ValueError, match="`start` argument to `slice` must be an integer, received: Float64"):
-        table.eval_expression_list([col("col").list.slice(1.0, 0)])
+        table.eval_expression_list([col("col").slice(1.0, 0)])
     with pytest.raises(ValueError, match="`end` argument to `slice` must be an integer, received: Float64"):
-        table.eval_expression_list([col("col").list.slice(0, 1.0)])
+        table.eval_expression_list([col("col").slice(0, 1.0)])
     with pytest.raises(TypeError, match="missing 1 required positional argument: 'start'"):
-        table.eval_expression_list([col("col").list.slice()])
+        table.eval_expression_list([col("col").slice()])
     with pytest.raises(TypeError, match="takes from 2 to 3 positional arguments but 4 were given"):
-        table.eval_expression_list([col("col").list.slice(0, 0, 0)])
+        table.eval_expression_list([col("col").slice(0, 0, 0)])
 
 
 def test_list_slice_non_list_type():
@@ -232,8 +232,8 @@ def test_list_slice_non_list_type():
     )
 
     with pytest.raises(ValueError):
-        table.eval_expression_list([col("structcol").list.slice(0, 2)])
+        table.eval_expression_list([col("structcol").slice(0, 2)])
     with pytest.raises(ValueError):
-        table.eval_expression_list([col("stringcol").list.slice(0, 2)])
+        table.eval_expression_list([col("stringcol").slice(0, 2)])
     with pytest.raises(ValueError):
-        table.eval_expression_list([col("intcol").list.slice(0, 2)])
+        table.eval_expression_list([col("intcol").slice(0, 2)])

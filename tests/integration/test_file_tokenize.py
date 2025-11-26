@@ -32,7 +32,7 @@ openai_enc = get_openai_enc()
 def test_file_token_encode():
     test_data = ["hello custom tokenizer!", "hopefully this works", "", "wow!"]
     df = daft.from_pydict({"a": test_data})
-    res = df.select(col("a").str.tokenize_encode(TOKEN_FILE, pattern=P50K_REGEX)).to_pydict()["a"]
+    res = df.select(col("a").tokenize_encode(TOKEN_FILE, pattern=P50K_REGEX)).to_pydict()["a"]
 
     openai_res = openai_enc.encode_batch(test_data)
     assert res == openai_res
@@ -42,7 +42,7 @@ def test_file_token_decode():
     test_data = ["hello custom tokenizer!", "hopefully this works", "", "wow!"]
     token_data = openai_enc.encode_batch(test_data)
     df = daft.from_pydict({"a": token_data})
-    res = df.select(col("a").str.tokenize_decode(TOKEN_FILE, pattern=P50K_REGEX)).to_pydict()["a"]
+    res = df.select(col("a").tokenize_decode(TOKEN_FILE, pattern=P50K_REGEX)).to_pydict()["a"]
     assert res == test_data
 
 
@@ -50,14 +50,14 @@ def test_file_token_decode():
 def test_file_http_download():
     test_data = ["hello custom tokenizer!", "hopefully this works", "", "wow!"]
     df = daft.from_pydict({"a": test_data})
-    res = df.select(col("a").str.tokenize_encode(HTTP_TOKEN_FILE, pattern=P50K_REGEX)).to_pydict()["a"]
+    res = df.select(col("a").tokenize_encode(HTTP_TOKEN_FILE, pattern=P50K_REGEX)).to_pydict()["a"]
 
     http_openai_enc = tiktoken.get_encoding("p50k_base")
     openai_res = http_openai_enc.encode_batch(test_data)
     assert res == openai_res
 
     df = daft.from_pydict({"b": openai_res})
-    res = df.select(col("b").str.tokenize_decode(HTTP_TOKEN_FILE, pattern=P50K_REGEX)).to_pydict()["b"]
+    res = df.select(col("b").tokenize_decode(HTTP_TOKEN_FILE, pattern=P50K_REGEX)).to_pydict()["b"]
     assert res == test_data
 
 
@@ -65,14 +65,14 @@ def test_file_http_download():
 def test_file_aws_download():
     test_data = ["hello custom tokenizer!", "hopefully this works", "", "wow!"]
     df = daft.from_pydict({"a": test_data})
-    res = df.select(col("a").str.tokenize_encode(AWS_TOKEN_FILE, pattern=P50K_REGEX)).to_pydict()["a"]
+    res = df.select(col("a").tokenize_encode(AWS_TOKEN_FILE, pattern=P50K_REGEX)).to_pydict()["a"]
 
     aws_openai_enc = tiktoken.get_encoding("p50k_base")
     openai_res = aws_openai_enc.encode_batch(test_data)
     assert res == openai_res
 
     df = daft.from_pydict({"b": openai_res})
-    res = df.select(col("b").str.tokenize_decode(AWS_TOKEN_FILE, pattern=P50K_REGEX)).to_pydict()["b"]
+    res = df.select(col("b").tokenize_decode(AWS_TOKEN_FILE, pattern=P50K_REGEX)).to_pydict()["b"]
     assert res == test_data
 
 
@@ -86,16 +86,12 @@ def test_file_aws_download_ioconfig():
     )
     test_data = ["hello custom tokenizer!", "hopefully this works", "", "wow!"]
     df = daft.from_pydict({"a": test_data})
-    res = df.select(col("a").str.tokenize_encode(AWS_TOKEN_FILE, io_config=io_config, pattern=P50K_REGEX)).to_pydict()[
-        "a"
-    ]
+    res = df.select(col("a").tokenize_encode(AWS_TOKEN_FILE, io_config=io_config, pattern=P50K_REGEX)).to_pydict()["a"]
 
     aws_openai_enc = tiktoken.get_encoding("p50k_base")
     openai_res = aws_openai_enc.encode_batch(test_data)
     assert res == openai_res
 
     df = daft.from_pydict({"b": openai_res})
-    res = df.select(col("b").str.tokenize_decode(AWS_TOKEN_FILE, io_config=io_config, pattern=P50K_REGEX)).to_pydict()[
-        "b"
-    ]
+    res = df.select(col("b").tokenize_decode(AWS_TOKEN_FILE, io_config=io_config, pattern=P50K_REGEX)).to_pydict()["b"]
     assert res == test_data

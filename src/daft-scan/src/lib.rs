@@ -414,7 +414,8 @@ impl DisplayAs for DataSource {
     }
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize, Hash)]
+#[derive(PartialEq, Serialize, Deserialize, Hash)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct ScanTask {
     pub sources: Vec<DataSource>,
 
@@ -434,6 +435,13 @@ pub struct ScanTask {
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
     pub generated_fields: Option<SchemaRef>,
+}
+
+#[cfg(not(debug_assertions))]
+impl std::fmt::Debug for ScanTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ScanTask")
+    }
 }
 
 #[typetag::serde]

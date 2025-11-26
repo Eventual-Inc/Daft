@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::{BroadcastedStrIter, create_broadcasted_str_iter, parse_inputs};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Substr;
 
 #[derive(FunctionArgs)]

@@ -88,12 +88,12 @@ def test_fizzbuzz_sql():
 @pytest.mark.parametrize(
     "actual,expected",
     [
-        ("lower(text)", daft.col("text").str.lower()),
+        ("lower(text)", daft.functions.lower(daft.col("text"))),
         ("abs(n)", daft.col("n").abs()),
         ("n + 1", daft.col("n") + 1),
         ("ceil(1.1)", daft.lit(1.1).ceil()),
-        ("contains(text, 'hello')", daft.col("text").str.contains("hello")),
-        ("to_date(date_col, 'YYYY-MM-DD')", daft.col("date_col").str.to_date("YYYY-MM-DD")),
+        ("contains(text, 'hello')", daft.functions.contains(daft.col("text"), "hello")),
+        ("to_date(date_col, 'YYYY-MM-DD')", daft.functions.to_date(daft.col("date_col"), "YYYY-MM-DD")),
     ],
 )
 def test_sql_expr(actual, expected):

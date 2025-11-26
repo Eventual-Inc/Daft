@@ -66,7 +66,7 @@ def multi_fragment_lance_dataset(temp_dir):
         ],
     }
     text_dataset = daft.from_pydict(text_data)
-    text_dataset.write_lance(str(path), max_rows_per_file=2)
+    text_dataset.write_lance(uri=path, max_rows_per_file=2)
     return str(path)
 
 
@@ -88,7 +88,7 @@ def generate_multi_fragment_dataset(tmp_path, num_fragments=4, rows_per_fragment
     dataset = daft.from_pandas(df)
 
     path = Path(tmp_path) / "large_multi_fragment.lance"
-    dataset.write_lance(str(path), max_rows_per_file=rows_per_fragment)
+    dataset.write_lance(uri=path, max_rows_per_file=rows_per_fragment)
     return str(path)
 
 
@@ -101,7 +101,7 @@ class TestDistributedIndexing:
 
         # Build distributed index
         create_scalar_index(
-            url=dataset_uri,
+            uri=dataset_uri,
             column="text",
             index_type="INVERTED",
             concurrency=2,
@@ -129,7 +129,7 @@ class TestDistributedIndexing:
 
         # Build distributed index with custom name
         create_scalar_index(
-            url=dataset_uri,
+            uri=dataset_uri,
             column="text",
             index_type="INVERTED",
             name=custom_name,
@@ -148,7 +148,7 @@ class TestDistributedIndexing:
 
         # Build distributed index
         create_scalar_index(
-            url=dataset_uri,
+            uri=dataset_uri,
             column="text",
             index_type="INVERTED",
             concurrency=2,
@@ -176,7 +176,7 @@ class TestDistributedIndexing:
 
         # Build distributed index
         create_scalar_index(
-            url=dataset_uri,
+            uri=dataset_uri,
             column="text",
             index_type="INVERTED",
             concurrency=4,
@@ -202,7 +202,7 @@ class TestDistributedIndexing:
 
         with pytest.raises(ValueError, match="Column 'nonexistent' not found"):
             create_scalar_index(
-                url=dataset_uri,
+                uri=dataset_uri,
                 column="nonexistent",
                 index_type="INVERTED",
                 concurrency=2,
@@ -217,7 +217,7 @@ class TestDistributedIndexing:
             match=r"Distributed indexing currently only supports 'INVERTED' and 'FTS' index types, not 'INVALID'",
         ):
             create_scalar_index(
-                url=dataset_uri,
+                uri=dataset_uri,
                 column="text",
                 index_type="INVALID",
                 concurrency=2,
@@ -229,7 +229,7 @@ class TestDistributedIndexing:
 
         with pytest.raises(ValueError, match="concurrency must be positive"):
             create_scalar_index(
-                url=dataset_uri,
+                uri=dataset_uri,
                 column="text",
                 index_type="INVERTED",
                 concurrency=0,
@@ -241,7 +241,7 @@ class TestDistributedIndexing:
 
         with pytest.raises(ValueError, match="Column name cannot be empty"):
             create_scalar_index(
-                url=dataset_uri,
+                uri=dataset_uri,
                 column="",
                 index_type="INVERTED",
                 concurrency=2,
@@ -259,11 +259,11 @@ class TestDistributedIndexing:
         )
         dataset = daft.from_pandas(data)
         path = Path(temp_dir) / "non_string_test.lance"
-        dataset.write_lance(str(path), max_rows_per_file=2)
+        dataset.write_lance(uri=path, max_rows_per_file=2)
 
         with pytest.raises(TypeError, match="must be string type"):
             create_scalar_index(
-                url=str(path),
+                uri=path,
                 column="numeric_col",
                 index_type="INVERTED",
                 concurrency=2,
@@ -275,7 +275,7 @@ class TestDistributedIndexing:
 
         # Build distributed index with Daft options
         create_scalar_index(
-            url=dataset_uri,
+            uri=dataset_uri,
             column="text",
             index_type="INVERTED",
             concurrency=2,
@@ -292,7 +292,7 @@ class TestDistributedIndexing:
 
         # Build distributed index with storage options
         create_scalar_index(
-            url=dataset_uri,
+            uri=dataset_uri,
             column="text",
             index_type="INVERTED",
             concurrency=2,
@@ -309,7 +309,7 @@ class TestDistributedIndexing:
 
         # Build distributed index with additional kwargs
         create_scalar_index(
-            url=dataset_uri,
+            uri=dataset_uri,
             column="text",
             index_type="INVERTED",
             concurrency=2,
@@ -327,7 +327,7 @@ class TestDistributedIndexing:
 
         # First, create an index
         create_scalar_index(
-            url=dataset_uri,
+            uri=dataset_uri,
             column="text",
             index_type="INVERTED",
             name=index_name,
@@ -342,7 +342,7 @@ class TestDistributedIndexing:
         # The error might be raised as RuntimeError during distributed processing
         with pytest.raises((ValueError, RuntimeError)) as exc_info:
             create_scalar_index(
-                url=dataset_uri,
+                uri=dataset_uri,
                 column="text",
                 index_type="INVERTED",
                 name=index_name,
@@ -361,7 +361,7 @@ class TestDistributedIndexing:
 
         # First, create an index
         create_scalar_index(
-            url=dataset_uri,
+            uri=dataset_uri,
             column="text",
             index_type="INVERTED",
             name=index_name,
@@ -382,7 +382,7 @@ class TestDistributedIndexing:
 
         # Now create another index with the same name but replace=True
         create_scalar_index(
-            url=dataset_uri,
+            uri=dataset_uri,
             column="text",
             index_type="INVERTED",
             name=index_name,
@@ -419,17 +419,17 @@ class TestDistributedIndexing:
         }
         dataset = daft.from_pydict(data)
         path = Path(temp_dir) / "small_dataset.lance"
-        dataset.write_lance(str(path), max_rows_per_file=2)
+        dataset.write_lance(uri=path, max_rows_per_file=2)
 
         # Request more workers than fragments
         create_scalar_index(
-            url=str(path),
+            uri=path,
             column="text",
             index_type="INVERTED",
             concurrency=10,  # More than the 2 fragments
         )
 
         # Should still work and create the index
-        updated_dataset = lance.dataset(str(path))
+        updated_dataset = lance.dataset(path)
         indices = updated_dataset.list_indices()
         assert len(indices) > 0, "No indices found after building"

@@ -75,7 +75,6 @@ pub fn make_comfy_table<S: AsRef<str>>(
     max_col_width: Option<usize>,
 ) -> comfy_table::Table {
     const DOTS: &str = "…";
-    const TOTAL_ROWS: usize = 10;
 
     let mut table = comfy_table::Table::new();
 
@@ -97,12 +96,12 @@ pub fn make_comfy_table<S: AsRef<str>>(
     let max_cols = (terminal_width.div_ceil(expected_col_width) - 1).max(1);
     let num_columns = fields.len();
 
-    let (head_cols, tail_cols, total_cols) = if num_columns > max_cols {
+    let (head_cols, tail_cols) = if num_columns > max_cols {
         let head_cols = max_cols.div_ceil(2);
         let tail_cols = max_cols / 2;
-        (head_cols, tail_cols, head_cols + tail_cols + 1)
+        (head_cols, tail_cols)
     } else {
-        (num_columns, 0, num_columns)
+        (num_columns, 0)
     };
 
     let mut header = fields
@@ -129,48 +128,8 @@ pub fn make_comfy_table<S: AsRef<str>>(
     {
         table.set_header(header);
         let len = num_rows.expect("if columns are set, so should `num_rows`");
-        let (head_rows, tail_rows) = if len > TOTAL_ROWS {
-            (TOTAL_ROWS / 2, TOTAL_ROWS / 2)
-        } else {
-            (len, 0)
-        };
 
-        for i in 0..head_rows {
-            let all_cols = columns
-                .iter()
-                .map(|s| {
-                    let mut str_val = s.str_value(i);
-                    let str_val_len = str_val.char_indices().count();
-                    if let Some(max_col_width) = max_col_width
-                        && str_val_len > max_col_width - DOTS.len()
-                    {
-                        str_val = format!(
-                            "{}{DOTS}",
-                            &str_val
-                                .char_indices()
-                                .take(max_col_width - DOTS.len())
-                                .map(|(_, c)| c)
-                                .collect::<String>()
-                        );
-                    }
-                    str_val
-                })
-                .collect::<Vec<_>>();
-
-            if tail_cols > 0 {
-                let mut final_row = all_cols.iter().take(head_cols).cloned().collect::<Vec<_>>();
-                final_row.push(DOTS.into());
-                final_row.extend(all_cols.iter().skip(num_columns - tail_cols).cloned());
-                table.add_row(final_row);
-            } else {
-                table.add_row(all_cols);
-            }
-        }
-        if tail_rows != 0 {
-            table.add_row((0..total_cols).map(|_| DOTS).collect::<Vec<_>>());
-        }
-
-        for i in (len - tail_rows)..(len) {
+        for i in 0..len {
             let all_cols = columns
                 .iter()
                 .map(|s| {

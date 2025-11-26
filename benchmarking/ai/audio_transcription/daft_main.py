@@ -18,7 +18,7 @@ NEW_SAMPLING_RATE = 16000
 INPUT_PATH = "s3://daft-public-datasets/common_voice_17"
 OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/audio-transcription"
 
-daft.context.set_runner_ray()
+daft.set_runner_ray()
 
 # Wait for Ray cluster to be ready
 @ray.remote
@@ -89,7 +89,7 @@ df = df.with_column(
 df = df.with_column("extracted_features", whisper_preprocess(df["resampled"]))
 df = df.with_column("token_ids", Transcriber()(df["extracted_features"]))
 df = df.with_column("transcription", decoder(df["token_ids"]))
-df = df.with_column("transcription_length", df["transcription"].str.length())
+df = df.with_column("transcription_length", df["transcription"].length())
 df = df.exclude("token_ids", "extracted_features", "resampled")
 df.write_parquet(OUTPUT_PATH)
 

@@ -7,7 +7,7 @@ use daft_dsl::{
 use serde::Serialize;
 use url::Url;
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
 pub struct UrlParse;
 
 #[derive(FunctionArgs)]

@@ -40,7 +40,7 @@ pub struct WarcConvertOptions {
     pub predicate: Option<ExprRef>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum WarcType {
     Warcinfo,
     Response,
@@ -51,6 +51,12 @@ pub enum WarcType {
     Conversion,
     Continuation,
     FutureType(String),
+}
+
+impl std::fmt::Debug for WarcType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
 }
 
 impl WarcType {
