@@ -181,8 +181,12 @@ def parse_markdown_to_cells(content: str) -> list[dict]:
 
 def create_colab_badge_markdown(notebook_path: str, branch: str = "main") -> str:
     """Create markdown for Colab badge to be inserted after the title."""
+    from urllib.parse import quote
+
     # Assume notebooks will be in the repo under docs/notebooks/
-    github_path = f"Eventual-Inc/Daft/blob/{branch}/{notebook_path}"
+    # URL-encode the branch name to handle slashes (e.g., "tools/converter" -> "tools%2Fconverter")
+    encoded_branch = quote(branch, safe="")
+    github_path = f"Eventual-Inc/Daft/blob/{encoded_branch}/{notebook_path}"
     colab_url = f"https://colab.research.google.com/github/{github_path}"
 
     return f"""
