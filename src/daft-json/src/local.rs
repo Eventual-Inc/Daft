@@ -95,12 +95,36 @@ pub fn read_json_local(
                     .or_insert_with(|| field.clone());
             }
         } else {
-            // Fallback: infer once (only if provided schema exists and we still want extra hints)
-            let local_inferred: Schema = infer_schema(bytes, None, None)?.into();
-            for field in local_inferred.fields() {
-                hinted_dtypes
-                    .entry(field.name.clone())
-                    .or_insert_with(|| field.clone());
+            // Only infer if we need hints for missing columns not in the provided schema
+            let existing: HashSet<&str> = decode_schema
+                .fields()
+                .iter()
+                .map(|f| f.name.as_str())
+                .collect();
+            let mut needs_infer = false;
+            if let Some(ref include_cols) = convert_options
+                .as_ref()
+                .and_then(|co| co.include_columns.as_ref())
+            {
+                if include_cols.iter().any(|c| !existing.contains(c.as_str())) {
+                    needs_infer = true;
+                }
+            }
+            if let Some(pred) = &predicate {
+                for rc in get_required_columns(pred) {
+                    if !existing.contains(rc.as_str()) {
+                        needs_infer = true;
+                        break;
+                    }
+                }
+            }
+            if needs_infer {
+                let local_inferred: Schema = infer_schema(bytes, None, None)?.into();
+                for field in local_inferred.fields() {
+                    hinted_dtypes
+                        .entry(field.name.clone())
+                        .or_insert_with(|| field.clone());
+                }
             }
         }
 
@@ -147,9 +171,12 @@ pub fn read_json_local(
         let mut batch = read_json_array_impl(
             bytes,
             decode_schema.clone(),
-            if can_pd { predicate } else { None },
+            if can_pd { predicate.clone() } else { None },
         )?;
-
+        if let Some(pred) = &predicate && !can_pd {
+            let bound = BoundExpr::try_new(pred.clone(), &decode_schema)?;
+            batch = batch.filter(&[bound])?;
+        }
         if let Some(include_columns) = output_columns {
             let projected_schema = batch.schema.clone().project(&include_columns)?;
             let column_indices = include_columns
@@ -322,7 +349,7 @@ impl<'a> JsonReader<'a> {
                 hinted_dtypes.insert(field.name.clone(), field.clone());
             }
         }
-        // Reuse base_schema as hints if it was inferred; else infer once for hints
+        // Reuse base_schema as hints if it was inferred; else infer once for hints only if needed
         if convert_options
             .as_ref()
             .and_then(|options| options.schema.as_ref())
@@ -334,11 +361,35 @@ impl<'a> JsonReader<'a> {
                     .or_insert_with(|| field.clone());
             }
         } else {
-            let local_inferred: Schema = infer_schema(bytes, None, None)?.into();
-            for field in local_inferred.fields() {
-                hinted_dtypes
-                    .entry(field.name.clone())
-                    .or_insert_with(|| field.clone());
+            let existing: HashSet<&str> = base_schema
+                .fields()
+                .iter()
+                .map(|f| f.name.as_str())
+                .collect();
+            let mut needs_infer = false;
+            if let Some(ref include_cols) = convert_options
+                .as_ref()
+                .and_then(|co| co.include_columns.as_ref())
+            {
+                if include_cols.iter().any(|c| !existing.contains(c.as_str())) {
+                    needs_infer = true;
+                }
+            }
+            if let Some(pred) = &predicate {
+                for rc in get_required_columns(pred) {
+                    if !existing.contains(rc.as_str()) {
+                        needs_infer = true;
+                        break;
+                    }
+                }
+            }
+            if needs_infer {
+                let local_inferred: Schema = infer_schema(bytes, None, None)?.into();
+                for field in local_inferred.fields() {
+                    hinted_dtypes
+                        .entry(field.name.clone())
+                        .or_insert_with(|| field.clone());
+                }
             }
         }
 
