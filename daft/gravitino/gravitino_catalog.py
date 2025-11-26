@@ -7,7 +7,7 @@ from typing import Any, Literal
 from urllib.parse import urlparse
 
 from daft.dependencies import requests
-from daft.io import AzureConfig, IOConfig, S3Config
+from daft.io import AzureConfig, GravitinoConfig, IOConfig, S3Config
 
 
 @dataclasses.dataclass(frozen=True)
@@ -363,6 +363,23 @@ class GravitinoClient:
         except Exception as e:
             raise Exception(f"Failed to load fileset {fileset_name}: {e}")
 
+    def to_io_config(self) -> IOConfig:
+        """Convert client configuration to IOConfig.
+
+        Returns an IOConfig with only the Gravitino configuration from this client.
+        S3 and other storage credentials are handled per-fileset by the Gravitino source.
+        """
+        gravitino_config = GravitinoConfig(
+            endpoint=self._endpoint,
+            metalake_name=self._metalake_name,
+            auth_type=self._auth_type,
+            username=self._username,
+            password=self._password,
+            token=self._token,
+        )
+        # Only include Gravitino config - let Gravitino source handle storage credentials
+        return IOConfig(gravitino=gravitino_config)
+
 
 def _io_config_from_storage_location(storage_location: str, properties: dict[str, str]) -> IOConfig | None:
     """Create IOConfig from storage location and properties."""
@@ -374,52 +391,6 @@ def _io_config_from_storage_location(storage_location: str, properties: dict[str
         secret_key = properties.get("s3-secret-access-key")
         endpoint_url = properties.get("s3-endpoint")
         session_token = properties.get("s3-session-token")
-        region_name = properties.get("s3-region")
-
-        # Try to extract region from endpoint URL if not explicitly provided
-        if not region_name and endpoint_url:
-            # Match patterns like "s3.ap-northeast-1.amazonaws.com" or "s3-ap-northeast-1.amazonaws.com"
-            region_match = re.search(r"s3[.-]([a-z0-9-]+)\.amazonaws\.com", endpoint_url)
-            if region_match:
-                region_name = region_match.group(1)
-
-        if access_key and secret_key:
-            s3_config = S3Config(
-                region_name=region_name,
-                key_id=access_key,
-                access_key=secret_key,
-                endpoint_url=endpoint_url,
-                session_token=session_token,
-            )
-
-            return IOConfig(s3=s3_config)
-        return None
-    elif scheme == "gcs" or scheme == "gs":
-        # GCS configuration would go here
-        warnings.warn("GCS credential configuration from Gravitino is not yet fully supported.")
-        return None
-    elif scheme == "az" or scheme == "abfs" or scheme == "abfss":
-        # Extract Azure credentials from properties if available
-        sas_token = properties.get("azure.sas-token")
-        if sas_token:
-            return IOConfig(azure=AzureConfig(sas_token=sas_token))
-        return None
-    else:
-        warnings.warn(f"Credentials for scheme {scheme} are not yet supported.")
-        return None
-    def to_io_config(self) -> IOConfig:
-        """Convert client configuration to IOConfig.
-
-def _io_config_from_storage_location(storage_location: str, properties: dict[str, str]) -> IOConfig | None:
-    """Create IOConfig from storage location and properties."""
-    scheme = urlparse(storage_location).scheme
-
-    if scheme == "s3" or scheme == "s3a":
-        # Extract S3 credentials from properties if available
-        access_key = properties.get("s3-access-key-id")
-        secret_key = properties.get("s3-secret-access-key")
-        endpoint_url = properties.get("s3-endpoint")
-        session_token = properties.get("s3.session-token")
         region_name = properties.get("s3-region")
 
         # Try to extract region from endpoint URL if not explicitly provided
