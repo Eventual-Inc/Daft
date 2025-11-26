@@ -280,6 +280,11 @@ impl PyDaftExecutionConfig {
         if let Some(max_limit_tasks_submittable_in_parallel) =
             max_limit_tasks_submittable_in_parallel
         {
+            if max_limit_tasks_submittable_in_parallel == 0 {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "max_limit_tasks_submittable_in_parallel must be a positive integer",
+                ));
+            }
             config.max_limit_tasks_submittable_in_parallel =
                 max_limit_tasks_submittable_in_parallel;
         }

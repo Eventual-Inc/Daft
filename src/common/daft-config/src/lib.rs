@@ -266,7 +266,16 @@ impl DaftExecutionConfig {
             Self::ENV_DAFT_MAX_LIMIT_TASKS_SUBMITTABLE_IN_PARALLEL,
             cfg.max_limit_tasks_submittable_in_parallel,
         ) {
-            cfg.max_limit_tasks_submittable_in_parallel = val;
+            if val == 0 {
+                eprintln!(
+                    "Invalid {} value: {}, must be > 0, using default {}",
+                    Self::ENV_DAFT_MAX_LIMIT_TASKS_SUBMITTABLE_IN_PARALLEL,
+                    val,
+                    cfg.max_limit_tasks_submittable_in_parallel
+                );
+            } else {
+                cfg.max_limit_tasks_submittable_in_parallel = val;
+            }
         }
 
         cfg
@@ -612,6 +621,15 @@ mod tests {
             }
             let cfg = DaftExecutionConfig::from_env();
             assert_eq!(cfg.max_limit_tasks_submittable_in_parallel, 5);
+
+            unsafe {
+                std::env::set_var(
+                    DaftExecutionConfig::ENV_DAFT_MAX_LIMIT_TASKS_SUBMITTABLE_IN_PARALLEL,
+                    "0",
+                );
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.max_limit_tasks_submittable_in_parallel, 1);
 
             unsafe {
                 std::env::set_var(
