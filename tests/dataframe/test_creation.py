@@ -935,7 +935,7 @@ def test_create_dataframe_json_schema_hints_two_files() -> None:
         assert df.schema()["foo"].dtype == DataType.struct({"bar": DataType.string(), "bar2": DataType.string()})
 
         # When dataframe is materialized, the schema hints should be enforced and bar2 should be included
-        df = df.select(df["foo"]["bar2"]) 
+        df = df.select(df["foo"]["bar2"])
         df = df.where(df["bar2"].not_null()).collect()
 
         assert len(df) == 1
@@ -962,9 +962,7 @@ def test_create_dataframe_json_schema_hints_nested_add_and_override() -> None:
         assert df.schema()["foo"].dtype == DataType.struct({"bar": DataType.string(), "bar2": DataType.string()})
 
         # Materialize nested fields and check values/types
-        df2 = df.select(
-            df["foo"]["bar"].alias("bar"), df["foo"]["bar2"].alias("bar2")
-        ).to_pandas()
+        df2 = df.select(df["foo"]["bar"].alias("bar"), df["foo"]["bar2"].alias("bar2")).to_pandas()
         assert df2["bar"].dtype == "object"
         assert df2["bar"][0] == "1"
         assert df2["bar"].isna()[1]
