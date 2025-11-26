@@ -179,10 +179,10 @@ def parse_markdown_to_cells(content: str) -> list[dict]:
     return cells
 
 
-def create_colab_badge_markdown(notebook_path: str) -> str:
+def create_colab_badge_markdown(notebook_path: str, branch: str = "main") -> str:
     """Create markdown for Colab badge to be inserted after the title."""
     # Assume notebooks will be in the repo under docs/notebooks/
-    github_path = f"Eventual-Inc/Daft/blob/main/{notebook_path}"
+    github_path = f"Eventual-Inc/Daft/blob/{branch}/{notebook_path}"
     colab_url = f"https://colab.research.google.com/github/{github_path}"
 
     return f"""
@@ -196,6 +196,7 @@ def convert_md_to_notebook(
     input_path: Path,
     output_path: Path | None = None,
     add_colab_badge: bool = True,
+    branch: str = "main",
 ) -> Path:
     """Convert a markdown file to a Jupyter notebook.
 
@@ -203,6 +204,7 @@ def convert_md_to_notebook(
         input_path: Path to the input markdown file
         output_path: Path for output notebook (default: same name with .ipynb)
         add_colab_badge: Whether to add a Colab badge at the top
+        branch: Git branch name for the Colab badge link (default: main)
 
     Returns:
         Path to the created notebook
@@ -222,7 +224,7 @@ def convert_md_to_notebook(
         except ValueError:
             rel_path = output_path
 
-        badge_md = create_colab_badge_markdown(str(rel_path))
+        badge_md = create_colab_badge_markdown(str(rel_path), branch=branch)
         # Insert badge after the first # heading line
         content = re.sub(r"(^# .+\n)", r"\1" + badge_md, content, count=1, flags=re.MULTILINE)
 
@@ -272,6 +274,11 @@ Examples:
         action="store_true",
         help="Don't add Colab badge to the notebook",
     )
+    parser.add_argument(
+        "--branch",
+        default="main",
+        help="Git branch for Colab badge link (default: main)",
+    )
 
     args = parser.parse_args()
 
@@ -279,6 +286,7 @@ Examples:
         args.input,
         args.output,
         add_colab_badge=not args.no_colab_badge,
+        branch=args.branch,
     )
 
     print(f"Created notebook: {output_path}")
