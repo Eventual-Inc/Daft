@@ -105,10 +105,15 @@ impl DaftPlanningConfig {
 #[derive(Clone, Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct DaftExecutionConfig {
+    pub enable_scan_task_split_and_merge: bool,
+    pub scan_tasks_min_size_bytes: usize,
+    pub scan_tasks_max_size_bytes: usize,
+    pub max_sources_per_scan_task: usize,
+    pub scantask_splitting_level: i32,
+    pub parquet_split_row_groups_max_files: usize,
     pub broadcast_join_size_bytes_threshold: usize,
     pub hash_join_partition_size_leniency: f64,
     pub sample_size_for_sort: usize,
-    pub parquet_split_row_groups_max_files: usize,
     pub num_preview_rows: usize,
     pub parquet_target_filesize: usize,
     pub parquet_target_row_group_size: usize,
@@ -124,14 +129,15 @@ pub struct DaftExecutionConfig {
     pub default_morsel_size: usize,
     pub shuffle_algorithm: String,
     pub pre_shuffle_merge_threshold: usize,
-    pub flight_shuffle_dirs: Vec<String>,
-    pub scantask_splitting_level: i32,
     pub scantask_max_parallel: usize,
     pub native_parquet_writer: bool,
     pub min_cpu_per_task: f64,
     pub actor_udf_ready_timeout: usize,
     pub maintain_order: bool,
+    pub enable_dynamic_batching: bool,
+    pub dynamic_batching_strategy: String,
 }
+
 #[cfg(not(debug_assertions))]
 impl std::fmt::Debug for DaftExecutionConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -142,10 +148,14 @@ impl std::fmt::Debug for DaftExecutionConfig {
 impl Default for DaftExecutionConfig {
     fn default() -> Self {
         Self {
+            enable_scan_task_split_and_merge: false,
+            scan_tasks_min_size_bytes: 96 * 1024 * 1024, // 96MB
+            scan_tasks_max_size_bytes: 384 * 1024 * 1024, // 384MB
+            max_sources_per_scan_task: 10,
+            parquet_split_row_groups_max_files: 10,
             broadcast_join_size_bytes_threshold: 10 * 1024 * 1024, // 10 MiB
             hash_join_partition_size_leniency: 0.5,
             sample_size_for_sort: 20,
-            parquet_split_row_groups_max_files: 10,
             num_preview_rows: 8,
             parquet_target_filesize: 512 * 1024 * 1024, // 512MB
             parquet_target_row_group_size: 128 * 1024 * 1024, // 128MB
@@ -153,7 +163,7 @@ impl Default for DaftExecutionConfig {
             csv_target_filesize: 512 * 1024 * 1024, // 512MB
             csv_inflation_factor: 0.5,
             json_target_filesize: 512 * 1024 * 1024, // 512MB
-            json_inflation_factor: 0.25, // TODO(desmond): This can be tuned with more real world datasets.
+            json_inflation_factor: 0.25,
             shuffle_aggregation_default_partitions: 200,
             partial_aggregation_threshold: 10000,
             high_cardinality_aggregation_threshold: 0.8,
@@ -161,13 +171,14 @@ impl Default for DaftExecutionConfig {
             default_morsel_size: 128 * 1024,
             shuffle_algorithm: "auto".to_string(),
             pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
-            flight_shuffle_dirs: vec!["/tmp".to_string()],
             scantask_splitting_level: 1,
             scantask_max_parallel: 8,
             native_parquet_writer: true,
             min_cpu_per_task: 0.5,
             actor_udf_ready_timeout: 120,
             maintain_order: true,
+            enable_dynamic_batching: false,
+            dynamic_batching_strategy: "auto".to_string(),
         }
     }
 }

@@ -71,7 +71,7 @@ Turn on distributed execution with a single line; then run the same script on a 
 
 ```python
 import daft
-daft.context.set_runner_ray()  # Enable Daft's distributed runner
+daft.set_runner_ray()  # Enable Daft's distributed runner
 ```
 
 Daft partitions the data, schedules remote execution, and orchestrates your workload across the cluster. No pipeline rewrites.

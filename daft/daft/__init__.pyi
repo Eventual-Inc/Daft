@@ -867,6 +867,7 @@ class IOConfig:
     http: HTTPConfig
     unity: UnityConfig
     hf: HuggingFaceConfig
+    disable_suffix_range: bool
     tos: TosConfig
 
     def __init__(
@@ -877,6 +878,7 @@ class IOConfig:
         http: HTTPConfig | None = None,
         unity: UnityConfig | None = None,
         hf: HuggingFaceConfig | None = None,
+        disable_suffix_range: bool | None = None,
         tos: TosConfig | None = None,
     ): ...
     def replace(
@@ -887,6 +889,7 @@ class IOConfig:
         http: HTTPConfig | None = None,
         unity: UnityConfig | None = None,
         hf: HuggingFaceConfig | None = None,
+        disable_suffix_range: bool | None = None,
         tos: TosConfig | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig."""
@@ -2065,8 +2068,12 @@ class PyDaftExecutionConfig:
     def from_env() -> PyDaftExecutionConfig: ...
     def with_config_values(
         self,
-        broadcast_join_size_bytes_threshold: int | None = None,
+        enable_scan_task_split_and_merge: bool | None = None,
+        scan_tasks_min_size_bytes: int | None = None,
+        scan_tasks_max_size_bytes: int | None = None,
+        max_sources_per_scan_task: int | None = None,
         parquet_split_row_groups_max_files: int | None = None,
+        broadcast_join_size_bytes_threshold: int | None = None,
         hash_join_partition_size_leniency: float | None = None,
         sample_size_for_sort: int | None = None,
         num_preview_rows: int | None = None,
@@ -2083,14 +2090,25 @@ class PyDaftExecutionConfig:
         default_morsel_size: int | None = None,
         shuffle_algorithm: str | None = None,
         pre_shuffle_merge_threshold: int | None = None,
-        flight_shuffle_dirs: list[str] | None = None,
         scantask_splitting_level: int | None = None,
         scantask_max_parallel: int | None = None,
         native_parquet_writer: bool | None = None,
         min_cpu_per_task: float | None = None,
         actor_udf_ready_timeout: int | None = None,
         maintain_order: bool | None = None,
+        enable_dynamic_batching: bool | None = None,
+        dynamic_batching_strategy: str | None = None,
     ) -> PyDaftExecutionConfig: ...
+    @property
+    def enable_scan_task_split_and_merge(self) -> bool: ...
+    @property
+    def scan_tasks_min_size_bytes(self) -> int: ...
+    @property
+    def scan_tasks_max_size_bytes(self) -> int: ...
+    @property
+    def max_sources_per_scan_task(self) -> int: ...
+    @property
+    def parquet_split_row_groups_max_files(self) -> int: ...
     @property
     def broadcast_join_size_bytes_threshold(self) -> int: ...
     @property
@@ -2133,6 +2151,10 @@ class PyDaftExecutionConfig:
     def actor_udf_ready_timeout(self) -> int: ...
     @property
     def scantask_max_parallel(self) -> int: ...
+    @property
+    def enable_dynamic_batching(self) -> bool: ...
+    @property
+    def dynamic_batching_strategy(self) -> str: ...
 
 class PyDaftPlanningConfig:
     @staticmethod

@@ -100,7 +100,7 @@ impl FilterOperator {
 
 impl IntermediateOperator for FilterOperator {
     type State = ();
-
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "FilterOperator::execute")]
     fn execute(
         &self,
@@ -141,6 +141,11 @@ impl IntermediateOperator for FilterOperator {
 
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(())
+    }
+    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
+        Ok(crate::dynamic_batching::StaticBatchingStrategy::new(
+            self.morsel_size_requirement().unwrap_or_default(),
+        ))
     }
 }
 

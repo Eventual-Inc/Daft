@@ -152,7 +152,7 @@ impl InnerHashJoinProbeOperator {
 
 impl IntermediateOperator for InnerHashJoinProbeOperator {
     type State = InnerHashJoinProbeState;
-
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "InnerHashJoinOperator::execute")]
     fn execute(
         &self,
@@ -218,6 +218,11 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(InnerHashJoinProbeState::Building(
             self.probe_state_bridge.clone(),
+        ))
+    }
+    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
+        Ok(crate::dynamic_batching::StaticBatchingStrategy::new(
+            self.morsel_size_requirement().unwrap_or_default(),
         ))
     }
 }

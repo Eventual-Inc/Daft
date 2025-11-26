@@ -1,6 +1,7 @@
 mod buffer;
 mod channel;
 mod dispatcher;
+mod dynamic_batching;
 mod intermediate_ops;
 mod pipeline;
 mod resource_manager;
@@ -115,6 +116,7 @@ impl<T> Future for SpawnedTask<T> {
 }
 
 struct RuntimeHandle(tokio::runtime::Handle);
+
 impl RuntimeHandle {
     fn spawn<F>(&self, future: F) -> SpawnedTask<F::Output>
     where
@@ -188,6 +190,7 @@ impl ExecutionRuntimeContext {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct ExecutionTaskSpawner {
     runtime_ref: RuntimeRef,
     memory_manager: Arc<MemoryManager>,
@@ -319,6 +322,8 @@ pub enum Error {
         source: DaftError,
         node_name: String,
     },
+    #[snafu(display("ValueError: {}", message))]
+    ValueError { message: String },
 }
 
 impl From<Error> for DaftError {
@@ -332,6 +337,7 @@ impl From<Error> for DaftError {
                 log::error!("Error when running pipeline node {}", node_name);
                 source
             }
+            Error::ValueError { message } => Self::ValueError(message),
             _ => Self::External(err.into()),
         }
     }

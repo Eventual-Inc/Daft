@@ -39,6 +39,7 @@ indicatif = {workspace = true}
 itertools = {workspace = true}
 kanal = "0.1"
 log = {workspace = true}
+parking_lot = {workspace = true}
 pin-project = "1"
 pyo3 = {workspace = true, optional = true}
 pyo3-async-runtimes = {workspace = true, optional = true}

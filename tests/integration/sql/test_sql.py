@@ -209,7 +209,7 @@ def test_sql_read_with_non_pushdowned_predicate(test_db, num_partitions, pdf) ->
     )
 
     # If_else is not supported as a pushdown to read_sql, but it should still work
-    df = df.where((df["id"] > 100).if_else(df["float_col"] > 150, df["float_col"] < 50))
+    df = df.where(daft.functions.when(df["id"] > 100, df["float_col"] > 150).otherwise(df["float_col"] < 50))
 
     pdf = pdf[(pdf["id"] > 100) & (pdf["float_col"] > 150) | (pdf["float_col"] < 50)]
 

@@ -256,8 +256,18 @@ pub(crate) async fn read_parquet_metadata(
             .await
     }
 
+    let file_size_opt: Option<usize> = if file_size.is_none() && !io_client.support_suffix_range() {
+        // suffix range unsupported, get object length for future I/O
+        let size = io_client
+            .single_url_get_size(uri.into(), io_stats.clone())
+            .await?;
+        Some(size)
+    } else {
+        file_size
+    };
+
     // Check the minimum value of file size if provided
-    if let Some(size) = file_size
+    if let Some(size) = file_size_opt
         && size < 12
     {
         return Err(Error::FileTooSmall {
@@ -271,7 +281,7 @@ pub(crate) async fn read_parquet_metadata(
     let footer_read_size = default_footer_read_size
         .unwrap_or(DEFAULT_FOOTER_READ_SIZE)
         .max(FOOTER_SIZE);
-    let range = match file_size {
+    let range = match file_size_opt {
         None => GetRange::Suffix(footer_read_size),
         Some(size) => {
             let default_end_len = std::cmp::min(footer_read_size, size);
@@ -285,7 +295,7 @@ pub(crate) async fn read_parquet_metadata(
 
     let metadata_size = metadata_len(buffer, buffer.len());
     let footer_len = FOOTER_SIZE + metadata_size as usize;
-    if let Some(size) = file_size
+    if let Some(size) = file_size_opt
         && size < footer_len
     {
         return Err(Error::InvalidParquetFooterSize {
@@ -300,7 +310,7 @@ pub(crate) async fn read_parquet_metadata(
         buffer.len() - footer_len
     } else {
         // the end of file read by default is not long enough, read more bytes of metadata.
-        data = match file_size {
+        data = match file_size_opt {
             None => fetch_data(io_client, uri, GetRange::Suffix(footer_len), io_stats).await?,
             Some(size) => {
                 let range =

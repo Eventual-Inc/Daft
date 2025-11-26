@@ -3,11 +3,9 @@ from __future__ import annotations
 import contextlib
 import logging
 import threading
-import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from daft import runners
 from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig, PyQueryResult
 from daft.daft import get_context as _get_context
 
@@ -16,7 +14,6 @@ if TYPE_CHECKING:
 
     from daft.daft import PyQueryMetadata
     from daft.runners.partitioning import PartitionT
-    from daft.runners.runner import Runner
     from daft.subscribers import Subscriber
 
 logger = logging.getLogger(__name__)
@@ -39,33 +36,6 @@ class DaftContext:
             self._ctx = ctx
         else:
             self._ctx = PyDaftContext()
-
-    def get_or_infer_runner_type(self) -> str:
-        """DEPRECATED: Use daft.get_or_infer_runner_type instead. This method will be removed in v0.7.0.
-
-        Get or infer the runner type.
-
-        This API will get or infer the currently used runner type according to the following strategies:
-        1. If the `runner` has been set, return its type directly;
-        2. Try to determine whether it's currently running on a ray cluster. If so, consider it to be a ray type;
-        3. Try to determine based on `DAFT_RUNNER` env variable.
-
-        :return: runner type string ("native" or "ray")
-        """
-        warnings.warn(
-            "This method is deprecated and will be removed in v0.7.0. Use daft.get_or_infer_runner_type instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return runners.get_or_infer_runner_type()
-
-    def get_or_create_runner(self) -> Runner[PartitionT]:
-        warnings.warn(
-            "This method is deprecated and will be removed in v0.7.0. Use daft.get_or_create_runner instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return runners.get_or_create_runner()
 
     @property
     def daft_execution_config(self) -> PyDaftExecutionConfig:
@@ -120,67 +90,6 @@ def get_context() -> DaftContext:
     return DaftContext(_get_context())
 
 
-def set_runner_ray(
-    address: str | None = None,
-    noop_if_initialized: bool = False,
-    max_task_backlog: int | None = None,
-    force_client_mode: bool = False,
-) -> DaftContext:
-    """DEPRECATED: Use daft.set_runner_ray instead. This method will be removed in v0.7.0.
-
-    Configure Daft to execute dataframes using the Ray distributed computing framework.
-
-    Args:
-        address: Ray cluster address to connect to. If None, connects to or starts a local Ray instance.
-        noop_if_initialized: If True, skip initialization if Ray is already running.
-        max_task_backlog: Maximum number of tasks that can be queued. None means Daft will automatically determine a good default.
-        force_client_mode: If True, forces Ray to run in client mode.
-
-    Returns:
-        DaftContext: Updated Daft execution context configured for Ray.
-
-    Note:
-        Can also be configured via environment variable: DAFT_RUNNER=ray
-    """
-    warnings.warn(
-        "This method is deprecated and will be removed in v0.7.0. Use daft.set_runner_ray instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-
-    _ = runners.set_runner_ray(
-        address=address,
-        noop_if_initialized=noop_if_initialized,
-        max_task_backlog=max_task_backlog,
-        force_client_mode=force_client_mode,
-    )
-
-    return DaftContext._from_native(_get_context())
-
-
-def set_runner_native(num_threads: int | None = None) -> DaftContext:
-    """DEPRECATED: Use daft.set_runner_native instead. This method will be removed in v0.7.0.
-
-    Configure Daft to execute dataframes using native multi-threaded processing.
-
-    This is the default execution mode for Daft.
-
-    Returns:
-        DaftContext: Updated Daft execution context configured for native execution.
-
-    Note:
-        Can also be configured via environment variable: DAFT_RUNNER=native
-    """
-    warnings.warn(
-        "This method is deprecated and will be removed in v0.7.0. Use daft.set_runner_native instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-
-    _ = runners.set_runner_native(num_threads=num_threads)
-    return DaftContext._from_native(_get_context())
-
-
 @contextlib.contextmanager
 def planning_config_ctx(**kwargs: Any) -> Generator[None, None, None]:
     """Context manager that wraps set_planning_config to reset the config to its original setting afternwards."""
@@ -204,7 +113,7 @@ def set_planning_config(
     Args:
         config: A PyDaftPlanningConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
             that the old (current) config should be used.
-        default_io_config: A default IOConfig to use in the absence of one being explicitly passed into any Expression (e.g. `.url.download()`)
+        default_io_config: A default IOConfig to use in the absence of one being explicitly passed into any Expression (e.g. `.download()`)
             or Dataframe operation (e.g. `daft.read_parquet()`).
     """
     # Replace values in the DaftPlanningConfig with user-specified overrides
@@ -232,6 +141,10 @@ def execution_config_ctx(**kwargs: Any) -> Generator[None, None, None]:
 
 def set_execution_config(
     config: PyDaftExecutionConfig | None = None,
+    enable_scan_task_split_and_merge: bool | None = None,
+    scan_tasks_min_size_bytes: int | None = None,
+    scan_tasks_max_size_bytes: int | None = None,
+    max_sources_per_scan_task: int | None = None,
     broadcast_join_size_bytes_threshold: int | None = None,
     parquet_split_row_groups_max_files: int | None = None,
     hash_join_partition_size_leniency: float | None = None,
@@ -250,13 +163,14 @@ def set_execution_config(
     default_morsel_size: int | None = None,
     shuffle_algorithm: str | None = None,
     pre_shuffle_merge_threshold: int | None = None,
-    flight_shuffle_dirs: list[str] | None = None,
     scantask_splitting_level: int | None = None,
     scantask_max_parallel: int | None = None,
     native_parquet_writer: bool | None = None,
     min_cpu_per_task: float | None = None,
     actor_udf_ready_timeout: int | None = None,
     maintain_order: bool | None = None,
+    enable_dynamic_batching: bool | None = None,
+    dynamic_batching_strategy: str | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -266,9 +180,14 @@ def set_execution_config(
     Args:
         config: A PyDaftExecutionConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
             that the old (current) config should be used.
+        enable_scan_task_split_and_merge: Whether to enable scan task split and merge. Defaults to True.
+        scan_tasks_min_size_bytes: Minimum size of scan tasks in bytes. Defaults to 96MB.
+        scan_tasks_max_size_bytes: Maximum size of scan tasks in bytes. Defaults to 384MB.
+        max_sources_per_scan_task: Maximum number of sources per scan task. Defaults to 10.
+        parquet_split_row_groups_max_files: Maximum number of files to read in which the row group splitting should happen. (Defaults to 10)
+        scantask_splitting_level: How aggressively to split scan tasks. Setting this to `2` will use a more aggressive ScanTask splitting algorithm which might be more expensive to run but results in more even splits of partitions. Defaults to 1.
         broadcast_join_size_bytes_threshold: If one side of a join is smaller than this threshold, a broadcast join will be used.
             Default is 10 MiB.
-        parquet_split_row_groups_max_files: Maximum number of files to read in which the row group splitting should happen. (Defaults to 10)
         hash_join_partition_size_leniency: If the left side of a hash join is already correctly partitioned and the right side isn't,
             and the ratio between the left and right size is at least this value, then the right side is repartitioned to have an equal
             number of partitions as the left. Defaults to 0.5.
@@ -289,13 +208,13 @@ def set_execution_config(
         default_morsel_size: Default size of morsels used for the new local executor. Defaults to 131072 rows.
         shuffle_algorithm: The shuffle algorithm to use. Defaults to "auto", which will let Daft determine the algorithm. Options are "map_reduce" and "pre_shuffle_merge".
         pre_shuffle_merge_threshold: Memory threshold in bytes for pre-shuffle merge. Defaults to 1GB
-        flight_shuffle_dirs: The directories to use for flight shuffle. Defaults to ["/tmp"].
-        scantask_splitting_level: How aggressively to split scan tasks. Setting this to `2` will use a more aggressive ScanTask splitting algorithm which might be more expensive to run but results in more even splits of partitions. Defaults to 1.
         scantask_max_parallel: Set the max parallelism for running scan tasks simultaneously. Currently, this only works for Native Runner. If set to 0, all available CPUs will be used. Defaults to 8.
         native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
         min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 0.5.
         actor_udf_ready_timeout: Timeout for UDF actors to be ready. Defaults to 120 seconds.
         maintain_order: Whether to maintain order during execution. Defaults to True. Some blocking sink operators (e.g. write_parquet) won't respect this flag and will always keep maintain_order as false, and propagate to child operators. It's useful to set this to False for running df.collect() when no ordering is required.
+        enable_dynamic_batching: Whether to enable dynamic batching. Defaults to False.
+        dynamic_batching_strategy: The strategy to use for dynamic batching. Defaults to 'auto'.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -303,8 +222,12 @@ def set_execution_config(
         old_daft_execution_config = ctx._ctx._daft_execution_config if config is None else config
 
         new_daft_execution_config = old_daft_execution_config.with_config_values(
-            broadcast_join_size_bytes_threshold=broadcast_join_size_bytes_threshold,
+            enable_scan_task_split_and_merge=enable_scan_task_split_and_merge,
+            scan_tasks_min_size_bytes=scan_tasks_min_size_bytes,
+            scan_tasks_max_size_bytes=scan_tasks_max_size_bytes,
+            max_sources_per_scan_task=max_sources_per_scan_task,
             parquet_split_row_groups_max_files=parquet_split_row_groups_max_files,
+            broadcast_join_size_bytes_threshold=broadcast_join_size_bytes_threshold,
             hash_join_partition_size_leniency=hash_join_partition_size_leniency,
             sample_size_for_sort=sample_size_for_sort,
             num_preview_rows=num_preview_rows,
@@ -320,7 +243,6 @@ def set_execution_config(
             read_sql_partition_size_bytes=read_sql_partition_size_bytes,
             default_morsel_size=default_morsel_size,
             shuffle_algorithm=shuffle_algorithm,
-            flight_shuffle_dirs=flight_shuffle_dirs,
             pre_shuffle_merge_threshold=pre_shuffle_merge_threshold,
             scantask_splitting_level=scantask_splitting_level,
             scantask_max_parallel=scantask_max_parallel,
@@ -328,6 +250,8 @@ def set_execution_config(
             min_cpu_per_task=min_cpu_per_task,
             actor_udf_ready_timeout=actor_udf_ready_timeout,
             maintain_order=maintain_order,
+            enable_dynamic_batching=enable_dynamic_batching,
+            dynamic_batching_strategy=dynamic_batching_strategy,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config

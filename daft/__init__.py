@@ -78,7 +78,7 @@ from daft.daft import ImageFormat, ImageMode, ImageProperty, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.schema import Schema
 from daft.datatype import DataType, TimeUnit, MediaType
-from daft.expressions import Expression, col, element, list_, lit, interval, struct, coalesce
+from daft.expressions import Expression, col, element, lit, interval
 from daft.series import Series
 from daft.session import (
     Session,
@@ -182,7 +182,6 @@ __all__ = [
     "attach_provider",
     "attach_table",
     "cls",
-    "coalesce",
     "col",
     "context",
     "create_namespace",
@@ -224,7 +223,6 @@ __all__ = [
     "has_table",
     "interval",
     "io",
-    "list_",
     "list_catalogs",
     "list_tables",
     "lit",
@@ -260,7 +258,6 @@ __all__ = [
     "set_session",
     "sql",
     "sql_expr",
-    "struct",
     "udf",
     "write_table",
 ]

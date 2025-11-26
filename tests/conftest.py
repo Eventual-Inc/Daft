@@ -116,9 +116,10 @@ class MakeDF(Protocol):
     ) -> daft.DataFrame: ...
 
 
-@pytest.fixture(scope="function")
-def make_df(data_source, tmp_path) -> Generator[MakeDF, None, None]:
+@pytest.fixture(scope="function", params=[True, False])
+def make_df(data_source, tmp_path, request) -> Generator[MakeDF, None, None]:
     """Makes a dataframe when provided with data."""
+    dynamic_batching = request.param
 
     def _make_df(
         data: pa.Table | dict | list,
@@ -159,7 +160,10 @@ def make_df(data_source, tmp_path) -> Generator[MakeDF, None, None]:
         else:
             raise NotImplementedError(f"make_df not implemented for: {variant}")
 
-    return _make_df
+    with daft.execution_config_ctx(
+        enable_dynamic_batching=dynamic_batching,
+    ):
+        yield _make_df
 
 
 def assert_df_equals(
