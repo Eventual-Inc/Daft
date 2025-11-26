@@ -149,9 +149,11 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 state = result.0;
                 match result.1 {
                     IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
-                        batch_manager
-                            .record_execution_stats(runtime_stats.clone(), mp.len(), elapsed)
-                            .await;
+                        batch_manager.record_execution_stats(
+                            runtime_stats.clone(),
+                            mp.len(),
+                            elapsed,
+                        );
 
                         if sender.send(mp).await.is_err() {
                             return Ok(());
@@ -162,9 +164,11 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                         break;
                     }
                     IntermediateOperatorResult::HasMoreOutput(mp) => {
-                        batch_manager
-                            .record_execution_stats(runtime_stats.clone(), mp.len(), elapsed)
-                            .await;
+                        batch_manager.record_execution_stats(
+                            runtime_stats.clone(),
+                            mp.len(),
+                            elapsed,
+                        );
                         if sender.send(mp).await.is_err() {
                             return Ok(());
                         }
@@ -305,8 +309,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         let strategy = op.batching_strategy().context(PipelineExecutionSnafu {
             node_name: self.name().to_string(),
         })?;
-        let handle = runtime_handle.handle();
-        let batch_manager = Arc::new(BatchManager::new(strategy, &handle));
+        let batch_manager = Arc::new(BatchManager::new(strategy));
         let dispatch_spawner = self
             .intermediate_op
             .dispatch_spawner(batch_manager.clone(), maintain_order);

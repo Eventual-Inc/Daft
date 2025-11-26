@@ -173,13 +173,11 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 state = result.0;
                 match result.1 {
                     StreamingSinkOutput::NeedMoreInput(mp) => {
-                        batch_manager
-                            .record_execution_stats(
-                                runtime_stats.clone(),
-                                mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
-                                elapsed,
-                            )
-                            .await;
+                        batch_manager.record_execution_stats(
+                            runtime_stats.clone(),
+                            mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
+                            elapsed,
+                        );
                         if let Some(mp) = mp
                             && output_sender.send(mp).await.is_err()
                         {
@@ -188,13 +186,11 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                         break;
                     }
                     StreamingSinkOutput::HasMoreOutput(mp) => {
-                        batch_manager
-                            .record_execution_stats(
-                                runtime_stats.clone(),
-                                mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
-                                elapsed,
-                            )
-                            .await;
+                        batch_manager.record_execution_stats(
+                            runtime_stats.clone(),
+                            mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
+                            elapsed,
+                        );
                         if let Some(mp) = mp
                             && output_sender.send(mp).await.is_err()
                         {
@@ -202,13 +198,11 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                         }
                     }
                     StreamingSinkOutput::Finished(mp) => {
-                        batch_manager
-                            .record_execution_stats(
-                                runtime_stats.clone(),
-                                mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
-                                elapsed,
-                            )
-                            .await;
+                        batch_manager.record_execution_stats(
+                            runtime_stats.clone(),
+                            mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
+                            elapsed,
+                        );
                         if let Some(mp) = mp {
                             let _ = output_sender.send(mp).await;
                         }
@@ -347,9 +341,8 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
-        let handle = runtime_handle.handle();
         let strategy = op.batching_strategy();
-        let batch_manager = Arc::new(BatchManager::new(strategy, &handle));
+        let batch_manager = Arc::new(BatchManager::new(strategy));
         let dispatch_spawner = op.dispatch_spawner(batch_manager.clone(), maintain_order);
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             child_result_receivers,

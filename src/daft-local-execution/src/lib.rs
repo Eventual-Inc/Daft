@@ -117,14 +117,6 @@ impl<T> Future for SpawnedTask<T> {
 
 struct RuntimeHandle(tokio::runtime::Handle);
 
-#[cfg(test)]
-impl RuntimeHandle {
-    /// Manually create a new handle for testing purposes only
-    pub fn new() -> Self {
-        Self(tokio::runtime::Handle::current())
-    }
-}
-
 impl RuntimeHandle {
     fn spawn<F>(&self, future: F) -> SpawnedTask<F::Output>
     where
