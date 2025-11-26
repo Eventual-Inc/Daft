@@ -73,6 +73,7 @@ impl ConnectSession {
             mut http,
             unity,
             hf,
+            disable_suffix_range,
             mut tos,
         } = get_context().io_config();
 
@@ -89,6 +90,7 @@ impl ConnectSession {
             http,
             unity,
             hf,
+            disable_suffix_range,
             tos,
         })
     }

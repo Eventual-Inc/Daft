@@ -18,7 +18,7 @@ NEW_SAMPLING_RATE = 16000
 INPUT_PATH = "s3://daft-public-datasets/common_voice_17"
 OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/audio-transcription"
 
-daft.context.set_runner_ray()
+daft.set_runner_ray()
 
 # Wait for Ray cluster to be ready
 @ray.remote

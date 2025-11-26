@@ -150,6 +150,9 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |   Connect timeout ms = 30000
 |   Read timeout ms = 30000
 |   Max retries = 5
+|   UnityConfig
+|       endpoint: None
+|       token: None
 |   ))) as {id_placeholder}, col(0: data)
 |   Batch Size = Range(0, 10]
 |

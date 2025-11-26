@@ -185,7 +185,7 @@ we ran on a ray cluster with 8 [g5.2xlarge](https://aws.amazon.com/ec2/instance-
 
 ```python
 # Configure Daft to use Ray to schedule work on different worker nodes
-daft.context.set_runner_ray()
+daft.set_runner_ray()
 
 # Configure S3 access for reading data
 daft.set_planning_config(
@@ -326,7 +326,7 @@ class EncodingUDF:
 
 def main():
     # Configure Daft to use Ray to schedule work on different worker nodes
-    daft.context.set_runner_ray()
+    daft.set_runner_ray()
 
     # Configure S3 access for reading data
     daft.set_planning_config(

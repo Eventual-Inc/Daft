@@ -32,7 +32,7 @@ def produce_resized_image_dataset(limit: int) -> list[str]:
     #     1. If Ray connection has been set up already by Flyte, it will use the initialized Ray cluster connection
     #     2. Otherwise, it will create a local Ray cluster on the Flyte task
     #
-    daft.context.set_runner_ray()
+    daft.set_runner_ray()
 
     written_df = daft_notebook_code(limit)
 
