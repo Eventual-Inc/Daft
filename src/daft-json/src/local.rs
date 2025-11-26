@@ -101,15 +101,10 @@ pub fn read_json_local(
                 .iter()
                 .map(|f| f.name.as_str())
                 .collect();
-            let mut needs_infer = false;
-            if let Some(ref include_cols) = convert_options
+            let mut needs_infer = convert_options
                 .as_ref()
                 .and_then(|co| co.include_columns.as_ref())
-            {
-                if include_cols.iter().any(|c| !existing.contains(c.as_str())) {
-                    needs_infer = true;
-                }
-            }
+                .is_some_and(|cols| cols.iter().any(|c| !existing.contains(c.as_str())));
             if let Some(pred) = &predicate {
                 for rc in get_required_columns(pred) {
                     if !existing.contains(rc.as_str()) {
@@ -173,7 +168,9 @@ pub fn read_json_local(
             decode_schema.clone(),
             if can_pd { predicate.clone() } else { None },
         )?;
-        if let Some(pred) = &predicate && !can_pd {
+        if let Some(pred) = &predicate
+            && !can_pd
+        {
             let bound = BoundExpr::try_new(pred.clone(), &decode_schema)?;
             batch = batch.filter(&[bound])?;
         }
@@ -366,15 +363,10 @@ impl<'a> JsonReader<'a> {
                 .iter()
                 .map(|f| f.name.as_str())
                 .collect();
-            let mut needs_infer = false;
-            if let Some(ref include_cols) = convert_options
+            let mut needs_infer = convert_options
                 .as_ref()
                 .and_then(|co| co.include_columns.as_ref())
-            {
-                if include_cols.iter().any(|c| !existing.contains(c.as_str())) {
-                    needs_infer = true;
-                }
-            }
+                .is_some_and(|cols| cols.iter().any(|c| !existing.contains(c.as_str())));
             if let Some(pred) = &predicate {
                 for rc in get_required_columns(pred) {
                     if !existing.contains(rc.as_str()) {
