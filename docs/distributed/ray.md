@@ -155,7 +155,7 @@ For more information about Ray jobs, see [Ray docs -> Ray Jobs Overview](https:/
 Daft on Ray can automatically adjust cluster size to match workload pressure.
 
 - Scale-up: When the scheduler detects backlog pressure beyond capacity, Daft asks Ray to provision more workers.
-- Scale-down (simplified): When `DAFT_AUTOSCALING_DOWNSCALE_ENABLED` is true and there are idle RaySwordfishActor, Daft retires eligible idle RaySwordfishActor. Idle candidacy is controlled by `DAFT_AUTOSCALING_DOWNSCALE_IDLE_SECONDS`. Scaling down here refers to reclaiming idle RaySwordfishActors. The release of Ray worker nodes is managed by its built-in autoscaling mechanism. For example, on Kubernetes, worker nodes are released after being idle for 1 minute.
+- Scale-down (simplified): When `DAFT_AUTOSCALING_DOWNSCALE_ENABLED` is true and there are idle RaySwordfishActors, Daft retires eligible idle RaySwordfishActors. Idle candidacy is controlled by `DAFT_AUTOSCALING_DOWNSCALE_IDLE_SECONDS`. Scaling down here refers to reclaiming idle RaySwordfishActors. The release of Ray worker nodes is managed by its built-in autoscaling mechanism. For example, on Kubernetes, worker nodes are released after being idle for 1 minute.
 
 #### Environment Variables
 
