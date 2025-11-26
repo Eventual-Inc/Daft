@@ -35,8 +35,6 @@ use crate::{
 /// - Algorithm 2: "target constrained dynamic batching"
 /// - Figure 3: Shows relationship between batch size, throughput, and decoding time
 /// - Equation (3): target constraint formulation: D(b_t) - D_SLA ≤ ε_D
-///
-/// ```
 #[derive(Clone)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct LatencyConstrainedBatchingStrategy {
@@ -97,6 +95,8 @@ impl LatencyConstrainedBatchingState {
     /// Window size for recent latencies and batch sizes.
     const WINDOW_SIZE: usize = 16;
 
+    /// Get recent average latency (¯𝜏)
+    /// and recent average batch size (¯𝑏)
     fn avg_batch_size_and_latency(&self) -> Option<(usize, Duration)> {
         // latencies and batch_sizes will always be of the same length
         if self.recent_latencies.is_empty() {
@@ -172,10 +172,8 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
         // 𝐷SLA
         let delta_sla = self.target_batch_latency;
 
-        let search_space = state.b_high.saturating_sub(state.b_low);
-
         log::debug!(
-            "[{}] observed_latency={}ms, target={}ms±{}ms, batch_size={}, search=[{}, {}], search_space={}",
+            "[{}] 𝜏={}ms, {}ms±{}ms, batch_size={}, search=[{}, {}]",
             std::thread::current().name().unwrap_or("unknown"),
             t.as_millis(),
             delta_sla.as_millis(),
@@ -183,7 +181,6 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
             b,
             state.b_low,
             state.b_high,
-            search_space,
         );
 
         // Binary search adjustment - conservative expansion
@@ -191,7 +188,7 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
         if t > delta_sla + self.latency_tolerance {
             // Latency too high, reduce search space
             log::debug!(
-                "[{}] LATENCY TOO HIGH ({}ms > {}ms), contracting search space [{}, {}]({})",
+                "[{}] LATENCY TOO HIGH (𝜏={}ms > 𝐷SLA={}ms), contracting search space search=[{}, {}] b_t=({})",
                 std::thread::current().name().unwrap_or("unknown"),
                 t.as_millis(),
                 (delta_sla + self.latency_tolerance).as_millis(),
@@ -220,7 +217,7 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
         } else if t < delta_sla - self.latency_tolerance {
             // Latency good, expand search space
             log::debug!(
-                "[{}] LATENCY GOOD ({}ms < {}ms), expanding search space",
+                "[{}] LATENCY GOOD (𝜏={}ms < 𝐷SLA={}ms), expanding search space",
                 std::thread::current().name().unwrap_or("unknown"),
                 t.as_millis(),
                 (delta_sla - self.latency_tolerance).as_millis(),
@@ -244,7 +241,7 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
         } else {
             // Within range - tighten search around current point
             log::debug!(
-                "[{}] WITHIN RANGE ({}ms in range), tightening search space",
+                "[{}] WITHIN RANGE (𝜏={}ms in range), tightening search space",
                 std::thread::current().name().unwrap_or("unknown"),
                 t.as_millis(),
             );
@@ -383,6 +380,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "python")]
     fn test_latency_empty_batch_handling() {
         let strategy = create_strategy();
         let mut state = strategy.make_state();
