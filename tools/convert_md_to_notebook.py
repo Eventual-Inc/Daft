@@ -64,6 +64,10 @@ def process_markdown_content(content: str) -> str:
     # Match the entire grid card block including its closing </div>
     content = re.sub(r'<div class="grid cards" markdown>\s*([\s\S]*?)\n</div>\s*', r"\1\n", content)
 
+    # Remove MkDocs icon syntax (:material-*:, :octicons-*:, :fontawesome-*:, etc.)
+    # These don't render in notebooks. Also remove trailing space after the icon.
+    content = re.sub(r":(?:material|octicons|fontawesome|simple)-[a-z0-9-]+:\s*", "", content)
+
     # Convert relative links to absolute docs links BEFORE converting admonitions
     # This ensures links inside admonitions get converted properly
     # [text](connectors/iceberg.md) -> [text](https://docs.daft.ai/en/stable/connectors/iceberg/)
