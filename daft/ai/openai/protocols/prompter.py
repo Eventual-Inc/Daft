@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import singledispatchmethod
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, get_type_hints
 
 from openai import AsyncOpenAI
 from openai.types.completion_usage import CompletionUsage
@@ -21,16 +21,73 @@ if TYPE_CHECKING:
     from daft.ai.typing import Options
 
 
+def _extract_pydantic_model_info(model_cls: type[BaseModel]) -> dict[str, Any]:
+    """Extract serializable information from a Pydantic model class.
+
+    This extracts the model name and field type hints, which can be serialized
+    and used to reconstruct an equivalent Pydantic model on a worker.
+    """
+    return {
+        "name": model_cls.__name__,
+        "field_types": get_type_hints(model_cls),
+        "field_defaults": {
+            name: info.default for name, info in model_cls.model_fields.items() if not info.is_required()
+        },
+    }
+
+
+def _reconstruct_pydantic_model(model_info: dict[str, Any]) -> type[BaseModel]:
+    """Reconstruct a Pydantic model class from serialized model info."""
+    from pydantic import create_model
+
+    fields = {}
+    for name, typ in model_info["field_types"].items():
+        if name in model_info["field_defaults"]:
+            fields[name] = (typ, model_info["field_defaults"][name])
+        else:
+            fields[name] = (typ, ...)
+
+    return create_model(model_info["name"], **fields)
+
+
 @dataclass
 class OpenAIPrompterDescriptor(PrompterDescriptor):
+    """Descriptor for OpenAI prompter configuration.
+
+    Note: Instead of storing the Pydantic return_format class directly (which causes
+    serialization issues with cloudpickle in environments like Google Colab), we store
+    serializable model info and reconstruct the class on the worker side.
+    """
+
     provider_name: str
     provider_options: OpenAIProviderOptions
     model_name: str
     model_options: Options
     system_message: str | None = None
-    return_format: BaseModel | None = None
+    return_format: BaseModel | None = field(default=None, repr=False)
+    _return_format_info: dict[str, Any] | None = field(default=None, repr=False)
     udf_options: UDFOptions | None = None
     use_chat_completions: bool = False
+
+    def __post_init__(self) -> None:
+        """Extract serializable model info from return_format if provided."""
+        if self.return_format is not None and self._return_format_info is None:
+            self._return_format_info = _extract_pydantic_model_info(self.return_format)
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Custom pickle state that excludes the Pydantic class.
+
+        This avoids issues with cloudpickle capturing IPython/ZMQ internals when
+        serializing Pydantic classes defined in interactive environments like Google Colab.
+        """
+        state = self.__dict__.copy()
+        # Don't serialize the Pydantic class - we'll reconstruct from _return_format_info
+        state["return_format"] = None
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore state after unpickling."""
+        self.__dict__.update(state)
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -45,12 +102,17 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
         return self.udf_options or UDFOptions(concurrency=None, num_gpus=None)
 
     def instantiate(self) -> Prompter:
+        # Reconstruct return_format from serialized info if needed
+        return_format = self.return_format
+        if return_format is None and self._return_format_info is not None:
+            return_format = _reconstruct_pydantic_model(self._return_format_info)
+
         return OpenAIPrompter(
             provider_name=self.provider_name,
             provider_options=self.provider_options,
             model=self.model_name,
             system_message=self.system_message,
-            return_format=self.return_format,
+            return_format=return_format,
             generation_config=self.model_options,
             use_chat_completions=self.use_chat_completions,
         )
