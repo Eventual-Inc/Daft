@@ -335,9 +335,8 @@ class FlotillaRunner:
 
 
 def clear_autoscaling_requests() -> None:
-    import time as _time
-
-    from ray.autoscaler.sdk import request_resources
+from ray.autoscaler.sdk import request_resources
+import time as _time
 
     for i in range(1, 3):
         try:
