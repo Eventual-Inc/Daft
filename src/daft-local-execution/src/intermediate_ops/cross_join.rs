@@ -62,7 +62,7 @@ fn empty_result(
 
 impl IntermediateOperator for CrossJoinOperator {
     type State = CrossJoinState;
-
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "CrossJoinOperator::execute")]
     fn execute(
         &self,
@@ -143,5 +143,10 @@ impl IntermediateOperator for CrossJoinOperator {
 
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(CrossJoinState::new(self.state_bridge.clone()))
+    }
+    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
+        Ok(crate::dynamic_batching::StaticBatchingStrategy::new(
+            self.morsel_size_requirement().unwrap_or_default(),
+        ))
     }
 }
