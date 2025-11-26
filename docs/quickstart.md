@@ -179,6 +179,12 @@ Let's use AI to analyze product materials at scale. Daft automatically paralleli
 
 Let's suppose you want to create a new column that shows if each product is made of wood or not. This might be useful for, for example, a filtering feature on your website.
 
+If you're running this in Google Colab or Jupyter, run the following cell to set your OpenAI API key:
+
+```python
+%env OPENAI_API_KEY=your-api-key-here  # Set your API key, then omit api_key param below
+```
+
 ```python
 from pydantic import BaseModel, Field
 from daft.functions import prompt

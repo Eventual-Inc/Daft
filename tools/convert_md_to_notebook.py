@@ -135,6 +135,22 @@ def convert_markdown_links_to_html(content: str) -> str:
     return re.sub(r"\[([^\]]+)\]\(([^)]+)\)", replace_link, content)
 
 
+def convert_code_blocks_to_html(content: str) -> str:
+    """Convert markdown code blocks to HTML <pre><code> tags.
+
+    This is needed for code blocks inside admonitions where markdown doesn't render.
+    """
+
+    def replace_code_block(match: re.Match) -> str:
+        code = match.group(2)
+        # Escape HTML entities in the code
+        code = code.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        return f'<pre style="background-color: #f5f5f5; padding: 8px; border-radius: 4px; overflow-x: auto;"><code>{code}</code></pre>'
+
+    # Match ```lang\ncode\n``` or ```\ncode\n```
+    return re.sub(r"```(\w*)\n(.*?)```", replace_code_block, content, flags=re.DOTALL)
+
+
 def convert_admonition_to_html_direct(admonition_type: str, title: str | None, content: str) -> str:
     """Convert admonition directly to HTML."""
     type_styles = {
@@ -148,9 +164,11 @@ def convert_admonition_to_html_direct(admonition_type: str, title: str | None, c
     color, default_title = type_styles.get(admonition_type.lower(), ("#448aff", "Note"))
     display_title = title if title else default_title
 
+    # Convert code blocks to HTML first (before escaping backticks)
+    content_html = convert_code_blocks_to_html(content)
     # Escape angle brackets in inline code (e.g., `<Image>` -> `&lt;Image&gt;`)
     # This must be done before converting markdown links to HTML
-    content_html = escape_angle_brackets_in_backticks(content)
+    content_html = escape_angle_brackets_in_backticks(content_html)
     # Convert markdown links to HTML since markdown doesn't render inside HTML tags
     content_html = convert_markdown_links_to_html(content_html)
 
@@ -169,14 +187,15 @@ def parse_markdown_to_cells(content: str) -> list[dict]:
 
     # Pattern matches ```python or ```{python} code blocks, optionally followed by output blocks
     # Output blocks are ``` {title="Output"}\n...\n```
-    code_block_pattern = r"```(?:\{?)python\}?\n(.*?)```"
+    # Use ^ to only match code blocks at the start of a line (not indented, e.g., inside admonitions)
+    code_block_pattern = r"^```(?:\{?)python\}?\n(.*?)^```"
     output_block_pattern = r'```\s*\{title="Output"\}\n(.*?)```'
 
     parts = []
     last_end = 0
 
-    # Find all code blocks
-    for match in re.finditer(code_block_pattern, content, re.DOTALL):
+    # Find all code blocks (MULTILINE for ^ to match line starts, DOTALL for . to match newlines)
+    for match in re.finditer(code_block_pattern, content, re.DOTALL | re.MULTILINE):
         # Add markdown before this code block
         if match.start() > last_end:
             md_content = content[last_end : match.start()].strip()
