@@ -1,13 +1,15 @@
 mod dyn_strategy;
 mod latency_constrained_strategy;
 mod static_strategy;
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use arc_swap::ArcSwap;
 pub use dyn_strategy::*;
 pub use latency_constrained_strategy::*;
 pub use static_strategy::*;
-use tokio::sync::Mutex;
 
 use crate::{
     RuntimeHandle,
@@ -15,7 +17,6 @@ use crate::{
     pipeline::MorselSizeRequirement,
     runtime_stats::RuntimeStats,
 };
-type BatchReport = Vec<(Arc<dyn RuntimeStats>, usize, Duration)>;
 
 /// Trait for algorithms that dynamically adjust batch sizes based on execution performance.
 ///
@@ -24,29 +25,29 @@ type BatchReport = Vec<(Arc<dyn RuntimeStats>, usize, Duration)>;
 /// Different algorithms use various strategies to find the optimal batch size.
 #[cfg(not(debug_assertions))]
 pub trait BatchingStrategy: Send + Sync {
-    type State: Send + Sync + Unpin;
+    type State: BatchingState + Send + Sync + Unpin;
     fn make_state(&self) -> Self::State;
     /// adjust the batch size based on runtime performance metrics
-    fn calculate_new_requirements(
-        &self,
-        state: &mut Self::State,
-        reports: BatchReport,
-    ) -> MorselSizeRequirement;
+    fn calculate_new_requirements(&self, state: &mut Self::State) -> MorselSizeRequirement;
 
     fn initial_requirements(&self) -> MorselSizeRequirement;
 }
 
 #[cfg(debug_assertions)]
 pub trait BatchingStrategy: Send + Sync + std::fmt::Debug {
-    type State: Send + Sync + Unpin;
+    type State: BatchingState + Send + Sync + Unpin;
     fn make_state(&self) -> Self::State;
-    fn calculate_new_requirements(
-        &self,
-        state: &mut Self::State,
-        reports: BatchReport,
-    ) -> MorselSizeRequirement;
-
+    fn calculate_new_requirements(&self, state: &mut Self::State) -> MorselSizeRequirement;
     fn initial_requirements(&self) -> MorselSizeRequirement;
+}
+
+pub trait BatchingState {
+    fn record_execution_stat(
+        &mut self,
+        stats: Arc<dyn RuntimeStats>,
+        batch_size: usize,
+        duration: Duration,
+    );
 }
 
 /// Manages dynamic batch sizing by collecting execution metrics and adjusting
@@ -63,13 +64,10 @@ pub trait BatchingStrategy: Send + Sync + std::fmt::Debug {
 ///
 /// manager.record_execution_stats(stats, batch_size, duration).await;
 ///
-/// let requirements = manager.calculate_batch_size().await;
+/// let requirements = manager.calculate_batch_size();
 /// ```
 pub struct BatchManager<S: BatchingStrategy> {
     requirements: ArcSwap<MorselSizeRequirement>,
-    // TODO: all we should need is to look at the runtime stats, but currently runtime stats only provides a cumulative value
-    // If we update runtimestats to have a windowed value of recent reports, we can use that alone to calculate the new requirements
-    pending_reports: Arc<Mutex<BatchReport>>,
     state: Arc<Mutex<S::State>>,
     pub(crate) strategy: S,
     tx: Sender<(Arc<dyn RuntimeStats>, usize, Duration)>,
@@ -86,18 +84,17 @@ where
         let requirements = strategy.initial_requirements();
         let requirements = ArcSwap::new(Arc::new(requirements));
         let state = Arc::new(Mutex::new(state));
-        let pending_reports = Arc::new(Mutex::new(Vec::new()));
 
-        let pending_reports_clone = pending_reports.clone();
+        let state_clone = state.clone();
         runtime_handle.spawn(async move {
-            while let Some(report) = rx.recv().await {
-                pending_reports_clone.lock().await.push(report);
+            while let Some((stats, batch_size, duration)) = rx.recv().await {
+                let mut state = state_clone.lock().expect("Failed to acquire lock");
+                state.record_execution_stat(stats, batch_size, duration);
             }
         });
 
         Self {
             requirements,
-            pending_reports,
             state,
             strategy,
             tx,
@@ -108,17 +105,10 @@ where
     /// This method triggers lazy evaluation - it processes all reports collected since
     /// the last call and updates the internal requirements accordingly. If no new reports
     /// are available, returns the current cached requirements.
-    pub async fn calculate_batch_size(&self) -> MorselSizeRequirement {
-        // Drain pending reports and process them all
-        let mut reports = self.pending_reports.lock().await;
-
-        if !reports.is_empty() {
-            let mut state = self.state.lock().await;
-            let new_reqs = self
-                .strategy
-                .calculate_new_requirements(&mut state, std::mem::take(&mut *reports));
-            self.requirements.store(Arc::new(new_reqs));
-        }
+    pub fn calculate_batch_size(&self) -> MorselSizeRequirement {
+        let mut state = self.state.lock().expect("Failed to acquire lock");
+        let new_reqs = self.strategy.calculate_new_requirements(&mut state);
+        self.requirements.store(Arc::new(new_reqs));
 
         *self.requirements.load().as_ref()
     }
@@ -178,6 +168,22 @@ mod tests {
         }
     }
 
+    // Mock state that tracks measurements
+    struct MockBatchingState {
+        measurement_count: usize,
+    }
+
+    impl BatchingState for MockBatchingState {
+        fn record_execution_stat(
+            &mut self,
+            _stats: Arc<dyn RuntimeStats>,
+            _batch_size: usize,
+            _duration: Duration,
+        ) {
+            self.measurement_count += 1;
+        }
+    }
+
     // Mock strategy that tracks calls and returns different requirements
     #[derive(Clone, Debug)]
     struct MockBatchingStrategy {
@@ -199,26 +205,23 @@ mod tests {
     }
 
     impl BatchingStrategy for MockBatchingStrategy {
-        type State = usize;
+        type State = MockBatchingState;
 
         fn make_state(&self) -> Self::State {
-            0
+            MockBatchingState {
+                measurement_count: 0,
+            }
         }
 
         fn initial_requirements(&self) -> MorselSizeRequirement {
             self.initial_req
         }
 
-        fn calculate_new_requirements(
-            &self,
-            state: &mut Self::State,
-            reports: BatchReport,
-        ) -> MorselSizeRequirement {
+        fn calculate_new_requirements(&self, state: &mut Self::State) -> MorselSizeRequirement {
             self.call_counter.fetch_add(1, Ordering::SeqCst);
-            *state += reports.len();
 
-            // Return different requirements based on number of reports processed
-            match *state {
+            // Return different requirements based on number of measurements recorded
+            match state.measurement_count {
                 0 => self.initial_req,
                 1 => MorselSizeRequirement::Flexible(1, 10),
                 2..=5 => MorselSizeRequirement::Flexible(5, 20),
@@ -241,14 +244,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_batch_manager_calculate_no_reports() {
+    async fn test_batch_manager_calculate_no_measurements() {
         let handle = RuntimeHandle::new();
         let strategy = MockBatchingStrategy::new(MorselSizeRequirement::Flexible(2, 64));
         let manager = BatchManager::new(strategy.clone(), &handle);
 
-        let req = manager.calculate_batch_size().await;
+        let req = manager.calculate_batch_size();
         assert_eq!(req, MorselSizeRequirement::Flexible(2, 64)); // Should return initial
-        assert_eq!(strategy.call_count(), 0); // No reports, no calculations
+        assert_eq!(strategy.call_count(), 1); // calculate_new_requirements is always called
     }
 
     #[tokio::test]
@@ -265,13 +268,13 @@ mod tests {
         // Give background task time to process
         tokio::time::sleep(Duration::from_millis(10)).await;
 
-        let req = manager.calculate_batch_size().await;
+        let req = manager.calculate_batch_size();
         assert_eq!(req, MorselSizeRequirement::Flexible(1, 10)); // First state transition
         assert_eq!(strategy.call_count(), 1);
     }
 
     #[tokio::test]
-    async fn test_batch_manager_multiple_reports() {
+    async fn test_batch_manager_multiple_measurements() {
         let runtime = RuntimeHandle::new();
         let strategy = MockBatchingStrategy::new(MorselSizeRequirement::Flexible(1, 8));
         let manager = BatchManager::new(strategy.clone(), &runtime);
@@ -286,13 +289,13 @@ mod tests {
 
         tokio::time::sleep(Duration::from_millis(10)).await;
 
-        let req = manager.calculate_batch_size().await;
-        assert_eq!(req, MorselSizeRequirement::Flexible(5, 20)); // 2 reports processed
+        let req = manager.calculate_batch_size();
+        assert_eq!(req, MorselSizeRequirement::Flexible(5, 20)); // 2 measurements processed
         assert_eq!(strategy.call_count(), 1);
     }
 
     #[tokio::test]
-    async fn test_batch_manager_calculate_drains_reports() {
+    async fn test_batch_manager_multiple_calculations() {
         let runtime = RuntimeHandle::new();
         let strategy = MockBatchingStrategy::new(MorselSizeRequirement::Flexible(1, 4));
         let manager = BatchManager::new(strategy.clone(), &runtime);
@@ -302,30 +305,31 @@ mod tests {
             .await;
         tokio::time::sleep(Duration::from_millis(10)).await;
 
-        let req1 = manager.calculate_batch_size().await;
+        let req1 = manager.calculate_batch_size();
         assert_eq!(req1, MorselSizeRequirement::Flexible(1, 10));
+        assert_eq!(strategy.call_count(), 1);
 
-        // Second call should not trigger calculation since no new reports
-        let req2 = manager.calculate_batch_size().await;
-        assert_eq!(req2, MorselSizeRequirement::Flexible(1, 10)); // Same result
-        assert_eq!(strategy.call_count(), 1); // Only called once
+        // Second call should trigger calculation again
+        let req2 = manager.calculate_batch_size();
+        assert_eq!(req2, MorselSizeRequirement::Flexible(1, 10)); // Same result since no new measurements
+        assert_eq!(strategy.call_count(), 2); // Called again
     }
 
     #[tokio::test]
-    async fn test_batch_manager_accumulates_state() {
+    async fn test_batch_manager_accumulates_measurements() {
         let runtime = RuntimeHandle::new();
         let strategy = MockBatchingStrategy::new(MorselSizeRequirement::Flexible(2, 8));
         let manager = BatchManager::new(strategy.clone(), &runtime);
 
-        // First batch of reports
+        // First measurement
         manager
             .record_execution_stats(Arc::new(MockRuntimeStats), 10, Duration::from_millis(30))
             .await;
         tokio::time::sleep(Duration::from_millis(5)).await;
-        let req1 = manager.calculate_batch_size().await;
+        let req1 = manager.calculate_batch_size();
         assert_eq!(req1, MorselSizeRequirement::Flexible(1, 10));
 
-        // Second batch of reports
+        // More measurements
         manager
             .record_execution_stats(Arc::new(MockRuntimeStats), 15, Duration::from_millis(40))
             .await;
@@ -333,14 +337,14 @@ mod tests {
             .record_execution_stats(Arc::new(MockRuntimeStats), 20, Duration::from_millis(60))
             .await;
         tokio::time::sleep(Duration::from_millis(5)).await;
-        let req2 = manager.calculate_batch_size().await;
-        assert_eq!(req2, MorselSizeRequirement::Flexible(5, 20)); // 1 + 2 = 3 total reports
+        let req2 = manager.calculate_batch_size();
+        assert_eq!(req2, MorselSizeRequirement::Flexible(5, 20)); // 3 total measurements
 
         assert_eq!(strategy.call_count(), 2);
     }
 
     #[tokio::test]
-    async fn test_batch_manager_concurrent_access() {
+    async fn test_batch_manager_concurrent_measurements() {
         let runtime = RuntimeHandle::new();
         let strategy = MockBatchingStrategy::new(MorselSizeRequirement::Flexible(1, 2));
         let manager = Arc::new(BatchManager::new(strategy.clone(), &runtime));
@@ -368,8 +372,8 @@ mod tests {
 
         tokio::time::sleep(Duration::from_millis(20)).await;
 
-        let req = manager.calculate_batch_size().await;
-        assert_eq!(req, MorselSizeRequirement::Flexible(10, 50)); // 10 reports processed
+        let req = manager.calculate_batch_size();
+        assert_eq!(req, MorselSizeRequirement::Flexible(10, 50)); // 10 measurements processed
         assert_eq!(strategy.call_count(), 1);
     }
 
@@ -388,7 +392,7 @@ mod tests {
             .await;
         tokio::time::sleep(Duration::from_millis(10)).await;
 
-        let req = manager.calculate_batch_size().await;
+        let req = manager.calculate_batch_size();
         assert_eq!(req, static_req);
     }
 }

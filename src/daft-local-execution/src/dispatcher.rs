@@ -71,7 +71,7 @@ impl<S: BatchingStrategy + 'static> RoundRobinDispatcher<S> {
                     if send_to_next_worker(batch).await.is_err() {
                         return Ok(());
                     }
-                    let new_requirements = batch_manager.calculate_batch_size().await;
+                    let new_requirements = batch_manager.calculate_batch_size();
                     let (lower, upper) = new_requirements.values();
 
                     buffer.update_bounds(lower, upper);
@@ -223,7 +223,7 @@ impl<S: BatchingStrategy + 'static> DynamicUnorderedDispatcher<S> {
                         return Ok(());
                     }
 
-                    let new_requirements = batch_manager.calculate_batch_size().await;
+                    let new_requirements = batch_manager.calculate_batch_size();
                     let (lower, upper) = new_requirements.values();
 
                     buffer.update_bounds(lower, upper);

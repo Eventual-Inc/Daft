@@ -1,5 +1,5 @@
 use crate::{
-    dynamic_batching::{BatchReport, BatchingStrategy},
+    dynamic_batching::{BatchingState, BatchingStrategy},
     pipeline::MorselSizeRequirement,
 };
 
@@ -16,16 +16,21 @@ impl StaticBatchingStrategy {
         Self { req }
     }
 }
+impl BatchingState for () {
+    fn record_execution_stat(
+        &mut self,
+        _stats: std::sync::Arc<dyn crate::runtime_stats::RuntimeStats>,
+        _batch_size: usize,
+        _duration: std::time::Duration,
+    ) {
+    }
+}
 
 impl BatchingStrategy for StaticBatchingStrategy {
     type State = ();
     fn make_state(&self) -> Self::State {}
 
-    fn calculate_new_requirements(
-        &self,
-        _state: &mut Self::State,
-        _reports: BatchReport,
-    ) -> MorselSizeRequirement {
+    fn calculate_new_requirements(&self, _state: &mut Self::State) -> MorselSizeRequirement {
         self.req
     }
 
@@ -60,13 +65,11 @@ mod tests {
         let mut state = strategy.make_state();
 
         // Empty batch report
-        let empty_reports = vec![];
-        let result = strategy.calculate_new_requirements(&mut state, empty_reports);
+        let result = strategy.calculate_new_requirements(&mut state);
         assert_eq!(result, req);
 
         // Non-empty batch report (would need actual BatchReport data structure)
-        let some_reports = vec![]; // Assuming BatchReport is Vec-like
-        let result2 = strategy.calculate_new_requirements(&mut state, some_reports);
+        let result2 = strategy.calculate_new_requirements(&mut state);
         assert_eq!(result2, req);
     }
 
@@ -77,9 +80,9 @@ mod tests {
         let mut state = strategy.make_state();
 
         // Multiple calls should return same result
-        let result1 = strategy.calculate_new_requirements(&mut state, vec![]);
-        let result2 = strategy.calculate_new_requirements(&mut state, vec![]);
-        let result3 = strategy.calculate_new_requirements(&mut state, vec![]);
+        let result1 = strategy.calculate_new_requirements(&mut state);
+        let result2 = strategy.calculate_new_requirements(&mut state);
+        let result3 = strategy.calculate_new_requirements(&mut state);
 
         assert_eq!(result1, req);
         assert_eq!(result2, req);

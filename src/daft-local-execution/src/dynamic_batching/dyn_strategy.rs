@@ -1,10 +1,28 @@
-use crate::{
-    dynamic_batching::{BatchReport, BatchingStrategy},
-    pipeline::MorselSizeRequirement,
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
 };
 
+use crate::{
+    dynamic_batching::{BatchingState, BatchingStrategy},
+    pipeline::MorselSizeRequirement,
+    runtime_stats::RuntimeStats,
+};
 pub struct DynBatchingState {
-    update_fn: Box<dyn FnMut(BatchReport) -> MorselSizeRequirement + Send + Sync>,
+    #[allow(clippy::type_complexity)]
+    record_fn: Box<dyn FnMut(Arc<dyn RuntimeStats>, usize, Duration) + Send + Sync>,
+    update_fn: Box<dyn FnMut() -> MorselSizeRequirement + Send + Sync>,
+}
+
+impl BatchingState for DynBatchingState {
+    fn record_execution_stat(
+        &mut self,
+        stats: Arc<dyn RuntimeStats>,
+        batch_size: usize,
+        duration: Duration,
+    ) {
+        (self.record_fn)(stats, batch_size, duration);
+    }
 }
 
 /// Type-erased wrapper for any `BatchingStrategy` implementation, allowing
@@ -34,12 +52,24 @@ impl DynBatchingStrategy {
         Self {
             initial_req,
             make_state_fn: Box::new(move || {
-                let mut state = strategy.make_state();
+                let state = strategy.make_state();
                 let strategy_clone = strategy.clone();
 
+                // Use Arc<Mutex<>> to share state between closures
+                let shared_state = Arc::new(Mutex::new(state));
+                let state_for_record = shared_state.clone();
+                let state_for_update = shared_state;
+
                 DynBatchingState {
-                    update_fn: Box::new(move |reports| {
-                        strategy_clone.calculate_new_requirements(&mut state, reports)
+                    record_fn: Box::new(move |stats, batch_size, duration| {
+                        state_for_record
+                            .lock()
+                            .unwrap()
+                            .record_execution_stat(stats, batch_size, duration);
+                    }),
+                    update_fn: Box::new(move || {
+                        let mut state_guard = state_for_update.lock().unwrap();
+                        strategy_clone.calculate_new_requirements(&mut *state_guard)
                     }),
                 }
             }),
@@ -62,12 +92,8 @@ impl BatchingStrategy for DynBatchingStrategy {
         (self.make_state_fn)()
     }
 
-    fn calculate_new_requirements(
-        &self,
-        state: &mut Self::State,
-        reports: BatchReport,
-    ) -> MorselSizeRequirement {
-        (state.update_fn)(reports)
+    fn calculate_new_requirements(&self, state: &mut Self::State) -> MorselSizeRequirement {
+        (state.update_fn)()
     }
 
     fn initial_requirements(&self) -> MorselSizeRequirement {
@@ -99,6 +125,16 @@ mod tests {
             *self.call_counter.lock().unwrap()
         }
     }
+    impl BatchingState for usize {
+        fn record_execution_stat(
+            &mut self,
+            _stats: Arc<dyn crate::runtime_stats::RuntimeStats>,
+            batch_size: usize,
+            _duration: std::time::Duration,
+        ) {
+            *self += batch_size;
+        }
+    }
 
     impl BatchingStrategy for MockStrategy {
         type State = usize;
@@ -111,11 +147,7 @@ mod tests {
             self.initial_req
         }
 
-        fn calculate_new_requirements(
-            &self,
-            state: &mut Self::State,
-            _reports: BatchReport,
-        ) -> MorselSizeRequirement {
+        fn calculate_new_requirements(&self, state: &mut Self::State) -> MorselSizeRequirement {
             *self.call_counter.lock().unwrap() += 1;
             *state += 1;
 
@@ -157,15 +189,15 @@ mod tests {
         let mut state = dyn_strategy.make_state();
 
         // First call
-        let req1 = dyn_strategy.calculate_new_requirements(&mut state, vec![]);
+        let req1 = dyn_strategy.calculate_new_requirements(&mut state);
         assert_eq!(req1, MorselSizeRequirement::Flexible(1, 10));
 
         // Second call
-        let req2 = dyn_strategy.calculate_new_requirements(&mut state, vec![]);
+        let req2 = dyn_strategy.calculate_new_requirements(&mut state);
         assert_eq!(req2, MorselSizeRequirement::Flexible(5, 20));
 
         // Third call
-        let req3 = dyn_strategy.calculate_new_requirements(&mut state, vec![]);
+        let req3 = dyn_strategy.calculate_new_requirements(&mut state);
         assert_eq!(req3, MorselSizeRequirement::Flexible(10, 50));
 
         // Verify the wrapped strategy was called
@@ -181,18 +213,18 @@ mod tests {
         let mut state2 = dyn_strategy.make_state();
 
         // Each state should be independent
-        let req1_1 = dyn_strategy.calculate_new_requirements(&mut state1, vec![]);
-        let req2_1 = dyn_strategy.calculate_new_requirements(&mut state2, vec![]);
+        let req1_1 = dyn_strategy.calculate_new_requirements(&mut state1);
+        let req2_1 = dyn_strategy.calculate_new_requirements(&mut state2);
 
         assert_eq!(req1_1, MorselSizeRequirement::Flexible(1, 10));
         assert_eq!(req2_1, MorselSizeRequirement::Flexible(1, 10));
 
         // Second call on state1 should advance its internal state
-        let req1_2 = dyn_strategy.calculate_new_requirements(&mut state1, vec![]);
+        let req1_2 = dyn_strategy.calculate_new_requirements(&mut state1);
         assert_eq!(req1_2, MorselSizeRequirement::Flexible(5, 20));
 
         // But state2 should still be at first call
-        let req2_2 = dyn_strategy.calculate_new_requirements(&mut state2, vec![]);
+        let req2_2 = dyn_strategy.calculate_new_requirements(&mut state2);
         assert_eq!(req2_2, MorselSizeRequirement::Flexible(5, 20));
     }
 
@@ -216,8 +248,8 @@ mod tests {
         let mut state1 = dyn1.make_state();
         let mut state2 = dyn2.make_state();
 
-        dyn1.calculate_new_requirements(&mut state1, vec![]);
-        dyn2.calculate_new_requirements(&mut state2, vec![]);
+        dyn1.calculate_new_requirements(&mut state1);
+        dyn2.calculate_new_requirements(&mut state2);
 
         // Each should have been called independently
         assert_eq!(mock1.call_count(), 1);
