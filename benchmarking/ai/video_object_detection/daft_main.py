@@ -64,7 +64,7 @@ class ExtractImageFeatures:
         return daft.Series.from_pylist([self.to_features(res) for res in self.model(stack)])
 
 
-daft.context.set_runner_ray()
+daft.set_runner_ray()
 
 daft.set_planning_config(default_io_config=daft.io.IOConfig(s3=daft.io.S3Config.from_env()))
 

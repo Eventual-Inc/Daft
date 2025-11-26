@@ -31,7 +31,7 @@ if USE_RAY:
         runtime_env={"pip": ["daft", "pillow", "s3fs"]},
     )
 
-    daft.context.set_runner_ray(address=RAY_CLUSTER_ADDRESS)
+    daft.set_runner_ray(address=RAY_CLUSTER_ADDRESS)
 ```
 
 ## Constructing our DataFrame

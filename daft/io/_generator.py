@@ -41,7 +41,7 @@ def read_generator(
         >>> from functools import partial
         >>>
         >>> # Set runner to Ray for distributed processing
-        >>> daft.context.set_runner_ray()
+        >>> daft.set_runner_ray()
         >>>
         >>> # Helper function to generate data for each partition
         >>> def generate(num_rows: int):

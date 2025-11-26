@@ -868,6 +868,7 @@ class IOConfig:
     http: HTTPConfig
     unity: UnityConfig
     hf: HuggingFaceConfig
+    disable_suffix_range: bool
     tos: TosConfig
 
     def __init__(
@@ -878,6 +879,7 @@ class IOConfig:
         http: HTTPConfig | None = None,
         unity: UnityConfig | None = None,
         hf: HuggingFaceConfig | None = None,
+        disable_suffix_range: bool | None = None,
         tos: TosConfig | None = None,
     ): ...
     def replace(
@@ -888,6 +890,7 @@ class IOConfig:
         http: HTTPConfig | None = None,
         unity: UnityConfig | None = None,
         hf: HuggingFaceConfig | None = None,
+        disable_suffix_range: bool | None = None,
         tos: TosConfig | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig."""
@@ -2220,6 +2223,13 @@ class StatType(Enum):
     FLOAT = 3
     DURATION = 5
 
+# TODO(void001): Implement Dead state
+class QueryEndState(Enum):
+    Finished = 0
+    Canceled = 1
+    Failed = 2
+    Dead = 3
+
 class PyNodeInfo:
     # Note, these are all read-only getters
     id: int
@@ -2233,6 +2243,12 @@ class PyQueryMetadata:
     unoptimized_plan: str
 
     def __init__(self, output_schema: PySchema, unoptimized_plan: str) -> None: ...
+
+class PyQueryResult:
+    end_state: QueryEndState
+    error_message: str | None
+
+    def __init__(self, end_state: QueryEndState, error_message: str | None) -> None: ...
 
 class PyDaftContext:
     def __init__(self) -> None: ...
@@ -2249,7 +2265,7 @@ class PyDaftContext:
     def attach_subscriber(self, alias: str, subscriber: Subscriber) -> None: ...
     def detach_subscriber(self, alias: str) -> None: ...
     def notify_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None: ...
-    def notify_query_end(self, query_id: str) -> None: ...
+    def notify_query_end(self, query_id: str, query_result: PyQueryResult) -> None: ...
     def notify_result_out(self, query_id: str, result: PartitionT) -> None: ...
     def notify_optimization_start(self, query_id: str) -> None: ...
     def notify_optimization_end(self, query_id: str, optimized_plan: str) -> None: ...

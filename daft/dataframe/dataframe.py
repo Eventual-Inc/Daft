@@ -571,7 +571,7 @@ class DataFrame:
         Examples:
             >>> import daft
             >>>
-            >>> daft.context.set_runner_ray()  # doctest: +SKIP
+            >>> daft.set_runner_ray()  # doctest: +SKIP
             >>>
             >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]}).into_partitions(2)
             >>> for part in df.iter_partitions():
@@ -1828,7 +1828,7 @@ class DataFrame:
 
         Examples:
             >>> import daft
-            >>> daft.context.set_runner_ray()  # doctest: +SKIP
+            >>> daft.set_runner_ray()  # doctest: +SKIP
             >>>
             >>> df = daft.from_pydict({"a": [1, 2, 3, 4]}).into_partitions(2)
             >>> df = df._add_monotonically_increasing_id()
@@ -2072,6 +2072,7 @@ class DataFrame:
                 If `size` exceeds the total number of rows:
                 - When `with_replacement=False`: raises ValueError
                 - When `with_replacement=True`: returns `size` rows (may contain duplicates)
+                Note: Sample by size only works on the native runner right now.
             with_replacement (bool, optional): whether to sample with replacement. Defaults to False.
             seed (Optional[int], optional): random seed. Defaults to None.
 
@@ -2121,6 +2122,12 @@ class DataFrame:
         if size is not None:
             if size < 0:
                 raise ValueError(f"size should be non-negative, but got {size}")
+            if get_or_create_runner().name == "ray":
+                raise ValueError(
+                    "Sample by size only works on the native runner right now. "
+                    "Please use `daft.set_runner_native()` to switch to the native runner, "
+                    "or use `fraction` instead of `size` for sampling."
+                )
 
         builder = self._builder.sample(fraction, size, with_replacement, seed)
         return DataFrame(builder)
@@ -2628,7 +2635,7 @@ class DataFrame:
         """
         if get_or_create_runner().name == "native":
             warnings.warn(
-                "DataFrame.repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.context.set_runner_ray()` instead if you need to repartition."
+                "DataFrame.repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.set_runner_ray()` instead if you need to repartition."
             )
         if len(partition_by) == 0:
             warnings.warn(
@@ -2663,7 +2670,7 @@ class DataFrame:
         """
         if get_or_create_runner().name == "native":
             warnings.warn(
-                "DataFrame.into_partitions not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.context.set_runner_ray()` instead if you need to repartition."
+                "DataFrame.into_partitions not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.set_runner_ray()` instead if you need to repartition."
             )
 
         builder = self._builder.into_partitions(num)
@@ -4451,7 +4458,7 @@ class DataFrame:
 
         Examples:
             >>> import daft
-            >>> daft.context.set_runner_ray()  # doctest: +SKIP
+            >>> daft.set_runner_ray()  # doctest: +SKIP
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
             >>> ray_dataset = df.to_ray_dataset()  # doctest: +SKIP
 
@@ -4559,7 +4566,7 @@ class DataFrame:
 
         Examples:
             >>> import daft
-            >>> daft.context.set_runner_ray()  # doctest: +SKIP
+            >>> daft.set_runner_ray()  # doctest: +SKIP
             >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
             >>> dask_df = df.to_dask_dataframe()  # doctest: +SKIP
 

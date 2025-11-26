@@ -3,12 +3,10 @@ from __future__ import annotations
 import contextlib
 import logging
 import threading
-import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from daft import runners
-from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig
+from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig, PyQueryResult
 from daft.daft import get_context as _get_context
 
 if TYPE_CHECKING:
@@ -16,7 +14,6 @@ if TYPE_CHECKING:
 
     from daft.daft import PyQueryMetadata
     from daft.runners.partitioning import PartitionT
-    from daft.runners.runner import Runner
     from daft.subscribers import Subscriber
 
 logger = logging.getLogger(__name__)
@@ -39,33 +36,6 @@ class DaftContext:
             self._ctx = ctx
         else:
             self._ctx = PyDaftContext()
-
-    def get_or_infer_runner_type(self) -> str:
-        """DEPRECATED: Use daft.get_or_infer_runner_type instead. This method will be removed in v0.7.0.
-
-        Get or infer the runner type.
-
-        This API will get or infer the currently used runner type according to the following strategies:
-        1. If the `runner` has been set, return its type directly;
-        2. Try to determine whether it's currently running on a ray cluster. If so, consider it to be a ray type;
-        3. Try to determine based on `DAFT_RUNNER` env variable.
-
-        :return: runner type string ("native" or "ray")
-        """
-        warnings.warn(
-            "This method is deprecated and will be removed in v0.7.0. Use daft.get_or_infer_runner_type instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return runners.get_or_infer_runner_type()
-
-    def get_or_create_runner(self) -> Runner[PartitionT]:
-        warnings.warn(
-            "This method is deprecated and will be removed in v0.7.0. Use daft.get_or_create_runner instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return runners.get_or_create_runner()
 
     @property
     def daft_execution_config(self) -> PyDaftExecutionConfig:
@@ -98,8 +68,8 @@ class DaftContext:
     def _notify_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None:
         self._ctx.notify_query_start(query_id, metadata)
 
-    def _notify_query_end(self, query_id: str) -> None:
-        self._ctx.notify_query_end(query_id)
+    def _notify_query_end(self, query_id: str, query_result: PyQueryResult) -> None:
+        self._ctx.notify_query_end(query_id, query_result)
 
     def _notify_optimization_start(self, query_id: str) -> None:
         self._ctx.notify_optimization_start(query_id)
@@ -118,67 +88,6 @@ class DaftContext:
 def get_context() -> DaftContext:
     """Returns the global singleton daft context."""
     return DaftContext(_get_context())
-
-
-def set_runner_ray(
-    address: str | None = None,
-    noop_if_initialized: bool = False,
-    max_task_backlog: int | None = None,
-    force_client_mode: bool = False,
-) -> DaftContext:
-    """DEPRECATED: Use daft.set_runner_ray instead. This method will be removed in v0.7.0.
-
-    Configure Daft to execute dataframes using the Ray distributed computing framework.
-
-    Args:
-        address: Ray cluster address to connect to. If None, connects to or starts a local Ray instance.
-        noop_if_initialized: If True, skip initialization if Ray is already running.
-        max_task_backlog: Maximum number of tasks that can be queued. None means Daft will automatically determine a good default.
-        force_client_mode: If True, forces Ray to run in client mode.
-
-    Returns:
-        DaftContext: Updated Daft execution context configured for Ray.
-
-    Note:
-        Can also be configured via environment variable: DAFT_RUNNER=ray
-    """
-    warnings.warn(
-        "This method is deprecated and will be removed in v0.7.0. Use daft.set_runner_ray instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-
-    _ = runners.set_runner_ray(
-        address=address,
-        noop_if_initialized=noop_if_initialized,
-        max_task_backlog=max_task_backlog,
-        force_client_mode=force_client_mode,
-    )
-
-    return DaftContext._from_native(_get_context())
-
-
-def set_runner_native(num_threads: int | None = None) -> DaftContext:
-    """DEPRECATED: Use daft.set_runner_native instead. This method will be removed in v0.7.0.
-
-    Configure Daft to execute dataframes using native multi-threaded processing.
-
-    This is the default execution mode for Daft.
-
-    Returns:
-        DaftContext: Updated Daft execution context configured for native execution.
-
-    Note:
-        Can also be configured via environment variable: DAFT_RUNNER=native
-    """
-    warnings.warn(
-        "This method is deprecated and will be removed in v0.7.0. Use daft.set_runner_native instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-
-    _ = runners.set_runner_native(num_threads=num_threads)
-    return DaftContext._from_native(_get_context())
 
 
 @contextlib.contextmanager

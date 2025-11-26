@@ -30,7 +30,7 @@ class MetricsSubscriber(Subscriber):
     def on_query_start(self, query_id: str, metadata: Any) -> None:
         self.query_ids.append(query_id)
 
-    def on_query_end(self, query_id: str) -> None:
+    def on_query_end(self, query_id: str, result: Any) -> None:
         pass
 
     def on_result_out(self, query_id: str, result: Any) -> None:
