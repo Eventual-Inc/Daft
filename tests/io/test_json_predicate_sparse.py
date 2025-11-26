@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+
 import daft
 
 
@@ -13,7 +14,7 @@ def test_ndjson_sparse_predicate_not_in_inferred_or_provided_schema(tmp_path):
         {"x": 2, "y": "b"},
     ]
     p = tmp_path / "sparse.jsonl"
-    p.write_text("\n".join(json.dumps(l) for l in lines))
+    p.write_text("\n".join(json.dumps(line) for line in lines))
 
     # Provide schema that only includes 'y'; 'x' is missing from provided and likely from inference
     provided_schema = {"y": daft.DataType.string()}
