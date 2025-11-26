@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     import pyarrow.fs as pafs
     import pyarrow.json as pajson
     import pyarrow.parquet as pq
+    import requests
     import soundfile as sf
     import tensorflow as tf
     import torch
@@ -38,6 +39,9 @@ else:
     pil_image = LazyImport("PIL.Image")
     pq = LazyImport("pyarrow.parquet")
     sf = LazyImport("soundfile")
+    flight = LazyImport("pyarrow.flight")
+    requests = LazyImport("requests")
+    torch = LazyImport("torch")
     tf = LazyImport("tensorflow")
     torch = LazyImport("torch")
 
@@ -58,6 +62,7 @@ __all__ = [
     "pd",
     "pil_image",
     "pq",
+    "requests",
     "sf",
     "tf",
     "torch",
