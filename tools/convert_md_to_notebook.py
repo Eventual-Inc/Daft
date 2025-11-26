@@ -298,13 +298,13 @@ def create_colab_badge_markdown(notebook_path: str, branch: str = "main", for_mk
 """
 
 
-def has_colab_badge(content: str) -> bool:
-    """Check if the content already has a Colab badge."""
-    return "colab.research.google.com" in content
-
-
 # Regex pattern to match Colab badge in markdown (both HTML and markdown syntax)
 COLAB_BADGE_PATTERN = r'(\[!\[Open In Colab\].*?\]\(https://colab\.research\.google\.com/github/[^\)]+\)\n*|<a[^>]*href="https://colab\.research\.google\.com/github/[^"]*"[^>]*>[\s\S]*?</a>\n*)'
+
+
+def has_colab_badge(content: str) -> bool:
+    """Check if the content already has a Colab badge."""
+    return re.search(COLAB_BADGE_PATTERN, content) is not None
 
 
 def update_colab_badge_in_markdown(
