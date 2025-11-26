@@ -73,14 +73,13 @@ def test_or_not_skips_index(lance_dataset, idx_type):
     assert scan2._should_use_index_for_point_lookup() is False
 
 
-@pytest.mark.parametrize("idx_type", ["BTREE", "NGRAM", "ZONEMAP", "LABEL_LIST", "INVERTED"])  # composite index types
+@pytest.mark.parametrize("idx_type", ["BTREE", "NGRAM", "ZONEMAP", "LABEL_LIST", "INVERTED"])
 @pytest.mark.skipif(not hasattr(lance.LanceDataset, "create_index"), reason="composite index not supported")
 def test_multi_column_btree_index_prefix_matching(lance_dataset, idx_type):
     ds = lance_dataset
-    try:
+    # Verify that composite indexes are not yet supported
+    with pytest.raises(Exception):
         ds.create_index(["id", "value"], idx_type)
-    except Exception as e:
-        pytest.xfail(f"composite index unsupported: {e}")
 
 
 @pytest.mark.parametrize("idx_type", ["BTREE"])
