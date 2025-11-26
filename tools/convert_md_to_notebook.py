@@ -78,7 +78,12 @@ def process_markdown_content(content: str) -> str:
         if path.startswith(("http://", "https://", "#")):
             return match.group(0)
         # Convert .md to docs URL
+        # index.md -> just the directory (e.g., examples/index.md -> examples/)
+        path = re.sub(r"index\.md$", "", path)
         path = path.replace(".md", "/")
+        # Ensure path ends with / for directory URLs
+        if path and not path.endswith("/"):
+            path += "/"
         return f"[{text}](https://docs.daft.ai/en/stable/{path})"
 
     content = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", convert_link, content)
