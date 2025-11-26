@@ -12,7 +12,7 @@ from daft.expressions import col, lit
 def test_repr_cosine():
     a = col("a")
     b = col("b")
-    y = a.embedding.cosine_distance(b)
+    y = a.cosine_distance(b)
     repr_out = repr(y)
     assert repr_out == "cosine_distance(col(a), col(b))"
 
@@ -46,7 +46,7 @@ def test_cosine_floats(dtype_pair):
     df = df.with_column("source", col("source").cast(dtype1))
     df = df.with_column("query", lit(query).cast(dtype2))
 
-    res = df.select(col("source").embedding.cosine_distance(col("query"))).to_pydict()
+    res = df.select(col("source").cosine_distance(col("query"))).to_pydict()
 
     def cosine_dist_brute_force(x, y):
         import math
@@ -77,7 +77,7 @@ def test_pairwise_cosine_distance(dtype_pair):
     df = daft.from_pydict(data)
     res = df.with_column(
         "distance",
-        df["e1"].cast(dtype1).embedding.cosine_distance(df["e2"].cast(dtype2)),
+        df["e1"].cast(dtype1).cosine_distance(df["e2"].cast(dtype2)),
     ).to_pydict()
 
     assert res["distance"] == [0.0, 2.0]
@@ -105,7 +105,7 @@ def test_cosine_distance_dtype_not_fixed_size(data):
         ValueError,
         match="Expected inputs to 'cosine_distance' to be fixed size list or embedding",
     ):
-        df.with_column("distance", df["source"].embedding.cosine_distance(df["source"]))
+        df.with_column("distance", df["source"].cosine_distance(df["source"]))
 
 
 def test_cosine_distance_dtype_size_mismatch():
@@ -119,7 +119,7 @@ def test_cosine_distance_dtype_size_mismatch():
     df = df.with_column("query", df["query"].cast(DataType.embedding(DataType.float32(), 4)))
 
     with pytest.raises(ValueError, match="Expected inputs to 'cosine_distance' to have the same size"):
-        df.with_column("distance", df["source"].embedding.cosine_distance(df["query"]))
+        df.with_column("distance", df["source"].cosine_distance(df["query"]))
 
 
 def test_cosine_distance_dtype_precision_mismatch():
@@ -136,4 +136,4 @@ def test_cosine_distance_dtype_precision_mismatch():
         ValueError,
         match="Expected inputs to 'cosine_distance' to have the same inner dtype",
     ):
-        df.with_column("distance", df["source"].embedding.cosine_distance(df["query"]))
+        df.with_column("distance", df["source"].cosine_distance(df["query"]))

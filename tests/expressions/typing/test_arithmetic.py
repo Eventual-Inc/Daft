@@ -115,9 +115,7 @@ def test_floor(unary_data_fixture):
     ("fun"),
     [
         "sign",
-        "signum",
         "negate",
-        "negative",
     ],
 )
 def test_sign(unary_data_fixture, fun):
