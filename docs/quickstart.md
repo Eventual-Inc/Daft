@@ -179,10 +179,17 @@ Let's use AI to analyze product materials at scale. Daft automatically paralleli
 
 Let's suppose you want to create a new column that shows if each product is made of wood or not. This might be useful for, for example, a filtering feature on your website.
 
-If you're running this in Google Colab or Jupyter, run the following cell to set your OpenAI API key and omit the `api_key` parameter in the code below:
+If you're running this in Google Colab or Jupyter, run the following cell to set your OpenAI API key. In Colab, first add your key to Secrets (🔑 icon in the left sidebar) with the name `OPENAI_API_KEY`. In Jupyter, you'll be prompted to enter your key and the input will be hidden.
 
 ```python
-%env OPENAI_API_KEY=your-api-key-here
+import os
+try:
+    from google.colab import userdata
+    os.environ["OPENAI_API_KEY"] = userdata.get("OPENAI_API_KEY")
+except ImportError:
+    from getpass import getpass
+    if "OPENAI_API_KEY" not in os.environ:
+        os.environ["OPENAI_API_KEY"] = getpass("Enter your OpenAI API key: ")
 ```
 
 ```python
@@ -194,7 +201,6 @@ class WoodAnalysis(BaseModel):
     is_wooden: bool = Field(description="Whether the product appears to be made of wood")
 
 # Run AI inference on each image - Daft automatically batches and parallelizes this
-# Note: You can pass api_key explicitly here, or set the OPENAI_API_KEY environment variable
 df = df.with_column(
     "wood_analysis",
     prompt(
@@ -202,7 +208,7 @@ df = df.with_column(
         return_format=WoodAnalysis,
         model="gpt-4o-mini",  # Using mini for cost-efficiency
         provider="openai",
-        api_key="your-openai-api-key-here"  # Or omit this to use OPENAI_API_KEY env var
+        # api_key="your-key-here",  # Use OPENAI_API_KEY env var, or uncomment to set manually
     )
 )
 
@@ -285,7 +291,6 @@ df_large = df_large.with_column(
 )
 
 # 4. Run AI analysis on all 100 products
-# Note: You can pass api_key explicitly here, or set the OPENAI_API_KEY environment variable
 df_large = df_large.with_column(
     "wood_analysis",
     prompt(
@@ -293,7 +298,7 @@ df_large = df_large.with_column(
         return_format=WoodAnalysis,
         model="gpt-4o-mini",  # Using mini for cost-efficiency
         provider="openai",
-        api_key="your-openai-api-key-here"  # Or omit this to use OPENAI_API_KEY env var
+        # api_key="your-key-here",  # Use OPENAI_API_KEY env var, or uncomment to set manually
     )
 )
 
