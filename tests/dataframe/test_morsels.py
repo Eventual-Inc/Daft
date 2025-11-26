@@ -60,7 +60,7 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
             ]
         }
     )
-    df = df.select(daft.col("data").url.download().image.decode())
+    df = df.select(daft.functions.decode_image(daft.functions.download(daft.col("data"))))
     df = df.select(make_noop_udf(10, daft.DataType.image())(daft.col("data")))
     string_io = io.StringIO()
     df.explain(True, file=string_io)

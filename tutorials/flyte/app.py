@@ -55,17 +55,14 @@ def daft_notebook_code(limit: int):
     parquet_df = parquet_df.select(parquet_df["URL"], parquet_df["TEXT"], parquet_df["AESTHETIC_SCORE"])
 
     # Filter for only "pretty" images
-    filtered_df = parquet_df.where(parquet_df["TEXT"].str.contains("darkness"))
+    filtered_df = parquet_df.where(parquet_df["TEXT"].contains("darkness"))
 
     # Download and resize images
     filtered_df = filtered_df.with_column(
         "image",
-        filtered_df["URL"].url.download(on_error="null").image.decode(),
+        filtered_df["URL"].download(on_error="null").decode_image(),
     )
-    filtered_df = filtered_df.with_column(
-        "resized_image",
-        filtered_df["image"].image.resize(32, 32),
-    )
+    filtered_df = filtered_df.with_column("resized_image", filtered_df["image"].resize(32, 32))
 
     # Write processed data out to Parquet file
     written_df = (

@@ -14,7 +14,7 @@ def test_url_parse_basic():
 
     df = daft.from_pydict({"urls": urls})
 
-    result = df.select(col("urls").url_parse()).collect()
+    result = df.select(col("urls").parse_url()).collect()
 
     assert len(result) == 4
     schema = result.schema()
@@ -36,7 +36,7 @@ def test_url_parse_component_extraction():
 
     df = daft.from_pydict({"urls": urls})
 
-    result = df.select(col("urls").url_parse().alias("parsed")).select(col("parsed").struct.get("*")).collect()
+    result = df.select(col("urls").parse_url().alias("parsed")).select(col("parsed").get("*")).collect()
 
     data = result.to_pydict()
 
@@ -65,16 +65,16 @@ def test_url_parse_individual_fields():
     df = daft.from_pydict({"urls": urls})
 
     result = (
-        df.select(col("urls").url_parse())
+        df.select(col("urls").parse_url())
         .select(
-            col("urls").struct.get("scheme").alias("scheme"),
-            col("urls").struct.get("host").alias("host"),
-            col("urls").struct.get("port").alias("port"),
-            col("urls").struct.get("path").alias("path"),
-            col("urls").struct.get("query").alias("query"),
-            col("urls").struct.get("fragment").alias("fragment"),
-            col("urls").struct.get("username").alias("username"),
-            col("urls").struct.get("password").alias("password"),
+            col("urls").get("scheme").alias("scheme"),
+            col("urls").get("host").alias("host"),
+            col("urls").get("port").alias("port"),
+            col("urls").get("path").alias("path"),
+            col("urls").get("query").alias("query"),
+            col("urls").get("fragment").alias("fragment"),
+            col("urls").get("username").alias("username"),
+            col("urls").get("password").alias("password"),
         )
         .collect()
     )
@@ -100,7 +100,7 @@ def test_url_parse_null_handling():
 
     df = daft.from_pydict({"urls": urls})
 
-    result = df.select(col("urls").url_parse().alias("parsed")).select(col("parsed").struct.get("*")).collect()
+    result = df.select(col("urls").parse_url().alias("parsed")).select(col("parsed").get("*")).collect()
 
     data = result.to_pydict()
 
@@ -125,7 +125,7 @@ def test_url_parse_invalid_urls():
 
     df = daft.from_pydict({"urls": urls})
 
-    result = df.select(col("urls").url_parse().alias("parsed")).select(col("parsed").struct.get("*")).collect()
+    result = df.select(col("urls").parse_url().alias("parsed")).select(col("parsed").get("*")).collect()
 
     data = result.to_pydict()
 
@@ -154,7 +154,7 @@ def test_url_parse_edge_cases():
 
     df = daft.from_pydict({"urls": urls})
 
-    result = df.select(col("urls").url_parse()).select(col("urls").struct.get("*")).collect()
+    result = df.select(col("urls").parse_url()).select(col("urls").get("*")).collect()
 
     data = result.to_pydict()
 
@@ -194,7 +194,7 @@ def test_url_parse_github_issue_example():
 
     df = daft.from_pydict({"urls": urls})
 
-    result = df.select(col("urls").url_parse()).select(col("urls").struct.get("*")).collect()
+    result = df.select(col("urls").parse_url()).select(col("urls").get("*")).collect()
 
     data = result.to_pydict()
 
@@ -222,7 +222,7 @@ def test_url_parse_with_authentication():
 
     df = daft.from_pydict({"urls": urls})
 
-    result = df.select(col("urls").url_parse().alias("parsed")).select(col("parsed").struct.get("*")).collect()
+    result = df.select(col("urls").parse_url().alias("parsed")).select(col("parsed").get("*")).collect()
 
     data = result.to_pydict()
 
