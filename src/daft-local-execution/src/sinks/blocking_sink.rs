@@ -261,6 +261,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         let num_workers = op.max_concurrency();
 
         let dispatch_spawner = op.dispatch_spawner(Some(self.morsel_size_requirement));
+
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             vec![counting_receiver],
             num_workers,

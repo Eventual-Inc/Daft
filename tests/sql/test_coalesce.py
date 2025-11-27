@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import daft
-from daft import coalesce, col, lit
+from daft import col, lit
+from daft.functions import coalesce
 
 
 def assert_eq(actual, expect):

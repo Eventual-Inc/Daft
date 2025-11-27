@@ -2428,12 +2428,10 @@ dependencies = [
  "daft-micropartition",
  "daft-minhash",
  "daft-parquet",
- "daft-physical-plan",
  "daft-proto",
  "daft-recordbatch",
  "daft-runners",
  "daft-scan",
- "daft-scheduler",
  "daft-session",
  "daft-shuffles",
  "daft-sql",
@@ -2693,7 +2691,6 @@ dependencies = [
  "daft-local-plan",
  "daft-logical-plan",
  "daft-micropartition",
- "daft-physical-plan",
  "daft-recordbatch",
  "daft-schema",
  "futures",
@@ -3053,7 +3050,6 @@ dependencies = [
  "daft-logical-plan",
  "daft-micropartition",
  "daft-parquet",
- "daft-physical-plan",
  "daft-recordbatch",
  "daft-scan",
  "daft-warc",
@@ -3065,6 +3061,7 @@ dependencies = [
  "kanal",
  "log",
  "opentelemetry",
+ "parking_lot 0.12.4",
  "pin-project",
  "pyo3",
  "pyo3-async-runtimes",
@@ -3090,8 +3087,10 @@ dependencies = [
  "common-treenode",
  "daft-core",
  "daft-dsl",
+ "daft-functions",
+ "daft-functions-list",
  "daft-logical-plan",
- "daft-physical-plan",
+ "indexmap 2.11.4",
  "log",
  "pyo3",
  "serde",
@@ -3218,33 +3217,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "daft-physical-plan"
-version = "0.3.0-dev0"
-dependencies = [
- "common-daft-config",
- "common-display",
- "common-error",
- "common-file-formats",
- "common-resource-request",
- "common-scan-info",
- "common-treenode",
- "daft-core",
- "daft-dsl",
- "daft-functions",
- "daft-functions-list",
- "daft-io",
- "daft-logical-plan",
- "daft-schema",
- "indexmap 2.11.4",
- "itertools 0.14.0",
- "log",
- "num-format",
- "rstest",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "daft-proto"
 version = "0.0.0"
 dependencies = [
@@ -3318,6 +3290,7 @@ dependencies = [
  "daft-recordbatch",
  "daft-schema",
  "daft-stats",
+ "either",
  "futures",
  "indexmap 2.11.4",
  "itertools 0.14.0",
@@ -3328,28 +3301,6 @@ dependencies = [
  "tokio",
  "typetag",
  "urlencoding",
-]
-
-[[package]]
-name = "daft-scheduler"
-version = "0.3.0-dev0"
-dependencies = [
- "common-daft-config",
- "common-display",
- "common-error",
- "common-file-formats",
- "common-io-config",
- "common-partitioning",
- "common-py-serde",
- "daft-core",
- "daft-dsl",
- "daft-logical-plan",
- "daft-physical-plan",
- "daft-scan",
- "pyo3",
- "rstest",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -3719,9 +3670,9 @@ checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
 
 [[package]]
 name = "dtor"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e58a0764cddb55ab28955347b45be00ade43d4d6f3ba4bf3dc354e4ec9432934"
+checksum = "404d02eeb088a82cfd873006cb713fe411306c7d182c344905e101fb1167d301"
 dependencies = [
  "dtor-proc-macro",
 ]

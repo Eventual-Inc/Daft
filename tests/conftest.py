@@ -116,9 +116,10 @@ class MakeDF(Protocol):
     ) -> daft.DataFrame: ...
 
 
-@pytest.fixture(scope="function")
-def make_df(data_source, tmp_path) -> Generator[MakeDF, None, None]:
+@pytest.fixture(scope="function", params=[True, False])
+def make_df(data_source, tmp_path, request) -> Generator[MakeDF, None, None]:
     """Makes a dataframe when provided with data."""
+    dynamic_batching = request.param
 
     def _make_df(
         data: pa.Table | dict | list,
@@ -160,9 +161,7 @@ def make_df(data_source, tmp_path) -> Generator[MakeDF, None, None]:
             raise NotImplementedError(f"make_df not implemented for: {variant}")
 
     with daft.execution_config_ctx(
-        # Disables merging of ScanTasks of Parquet when reading small Parquet files
-        scan_tasks_min_size_bytes=0,
-        scan_tasks_max_size_bytes=0,
+        enable_dynamic_batching=dynamic_batching,
     ):
         yield _make_df
 

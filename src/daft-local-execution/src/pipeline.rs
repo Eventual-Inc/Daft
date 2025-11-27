@@ -76,7 +76,7 @@ use crate::{
 
 pub type NodeName = Cow<'static, str>;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum MorselSizeRequirement {
     // Fixed size morsel
     Strict(usize),
@@ -97,7 +97,9 @@ impl Default for MorselSizeRequirement {
     fn default() -> Self {
         Self::Flexible(
             0,
-            common_daft_config::DaftExecutionConfig::default().default_morsel_size,
+            daft_context::get_context()
+                .execution_config()
+                .default_morsel_size,
         )
     }
 }
@@ -137,6 +139,13 @@ impl MorselSizeRequirement {
                     Self::Flexible(lower, upper)
                 }
             }
+        }
+    }
+
+    pub fn values(&self) -> (usize, usize) {
+        match self {
+            Self::Strict(size) => (*size, *size),
+            Self::Flexible(lower, upper) => (*lower, *upper),
         }
     }
 }

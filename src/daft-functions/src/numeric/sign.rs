@@ -59,10 +59,10 @@ pub fn sign(input: ExprRef) -> ExprRef {
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct Negative;
+pub struct Negate;
 
 #[typetag::serde]
-impl ScalarUDF for Negative {
+impl ScalarUDF for Negate {
     fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         let UnaryArg { input } = inputs.try_into()?;
 
@@ -71,32 +71,32 @@ impl ScalarUDF for Negative {
                 .cast(&DataType::Int8)?
                 .i8()
                 .unwrap()
-                .negative()?
+                .negate()?
                 .cast(&DataType::UInt8)?),
             DataType::UInt16 => Ok(input
                 .cast(&DataType::Int16)?
                 .i16()
                 .unwrap()
-                .negative()?
+                .negate()?
                 .cast(&DataType::UInt16)?),
             DataType::UInt32 => Ok(input
                 .cast(&DataType::Int32)?
                 .i32()
                 .unwrap()
-                .negative()?
+                .negate()?
                 .cast(&DataType::UInt32)?),
             DataType::UInt64 => Ok(input
                 .cast(&DataType::Int64)?
                 .i64()
                 .unwrap()
-                .negative()?
+                .negate()?
                 .cast(&DataType::UInt64)?),
-            DataType::Int8 => Ok(input.i8().unwrap().negative()?.into_series()),
-            DataType::Int16 => Ok(input.i16().unwrap().negative()?.into_series()),
-            DataType::Int32 => Ok(input.i32().unwrap().negative()?.into_series()),
-            DataType::Int64 => Ok(input.i64().unwrap().negative()?.into_series()),
-            DataType::Float32 => Ok(input.f32().unwrap().negative()?.into_series()),
-            DataType::Float64 => Ok(input.f64().unwrap().negative()?.into_series()),
+            DataType::Int8 => Ok(input.i8().unwrap().negate()?.into_series()),
+            DataType::Int16 => Ok(input.i16().unwrap().negate()?.into_series()),
+            DataType::Int32 => Ok(input.i32().unwrap().negate()?.into_series()),
+            DataType::Int64 => Ok(input.i64().unwrap().negate()?.into_series()),
+            DataType::Float32 => Ok(input.f32().unwrap().negate()?.into_series()),
+            DataType::Float64 => Ok(input.f64().unwrap().negate()?.into_series()),
             dt => Err(DaftError::TypeError(format!(
                 "negate not implemented for {}",
                 dt
@@ -105,7 +105,7 @@ impl ScalarUDF for Negative {
     }
 
     fn name(&self) -> &'static str {
-        stringify!(negative)
+        stringify!(negate)
     }
 
     fn get_return_field(
@@ -122,6 +122,6 @@ impl ScalarUDF for Negative {
     }
 }
 #[must_use]
-pub fn negative(input: ExprRef) -> ExprRef {
-    ScalarFn::builtin(Negative, vec![input]).into()
+pub fn negate(input: ExprRef) -> ExprRef {
+    ScalarFn::builtin(Negate, vec![input]).into()
 }
