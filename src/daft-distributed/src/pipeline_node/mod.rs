@@ -220,6 +220,9 @@ impl DistributedPipelineNode {
     pub fn name(&self) -> NodeName {
         self.op.name()
     }
+    pub fn num_partitions(&self) -> usize {
+        self.op.config().clustering_spec.num_partitions()
+    }
     pub fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
         self.op.runtime_stats()
     }

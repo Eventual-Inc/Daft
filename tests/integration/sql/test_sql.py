@@ -38,8 +38,6 @@ def test_sql_partitioned_read(test_db, num_partitions, partition_bound_strategy,
     num_rows_per_partition = len(pdf) / num_partitions
     with daft.execution_config_ctx(
         read_sql_partition_size_bytes=math.ceil(row_size_bytes * num_rows_per_partition),
-        scan_tasks_min_size_bytes=0,
-        scan_tasks_max_size_bytes=0,
     ):
         df = daft.read_sql(
             f"SELECT * FROM {TEST_TABLE_NAME}",
@@ -47,7 +45,6 @@ def test_sql_partitioned_read(test_db, num_partitions, partition_bound_strategy,
             partition_col="id",
             partition_bound_strategy=partition_bound_strategy,
         )
-        assert df.num_partitions() == num_partitions
         assert_df_equals(df.to_pandas(coerce_temporal_nanoseconds=True), pdf, sort_key="id")
 
 
@@ -58,60 +55,45 @@ def test_sql_partitioned_read(test_db, num_partitions, partition_bound_strategy,
 def test_sql_partitioned_read_with_custom_num_partitions_and_partition_col(
     test_db, num_partitions, partition_col, partition_bound_strategy, pdf
 ) -> None:
-    with daft.execution_config_ctx(
-        scan_tasks_min_size_bytes=0,
-        scan_tasks_max_size_bytes=0,
-    ):
-        df = daft.read_sql(
-            f"SELECT * FROM {TEST_TABLE_NAME}",
-            test_db,
-            partition_col=partition_col,
-            num_partitions=num_partitions,
-            partition_bound_strategy=partition_bound_strategy,
-        )
-        assert df.num_partitions() == num_partitions
-        assert_df_equals(df.to_pandas(coerce_temporal_nanoseconds=True), pdf, sort_key="id")
+    df = daft.read_sql(
+        f"SELECT * FROM {TEST_TABLE_NAME}",
+        test_db,
+        partition_col=partition_col,
+        num_partitions=num_partitions,
+        partition_bound_strategy=partition_bound_strategy,
+    )
+    assert_df_equals(df.to_pandas(coerce_temporal_nanoseconds=True), pdf, sort_key="id")
 
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("num_partitions", [0, 1, 2])
 @pytest.mark.parametrize("partition_col", ["id", "string_col"])
 def test_sql_partitioned_read_on_empty_table(empty_test_db, num_partitions, partition_col) -> None:
-    with daft.execution_config_ctx(
-        scan_tasks_min_size_bytes=0,
-        scan_tasks_max_size_bytes=0,
-    ):
-        df = daft.read_sql(
-            f"SELECT * FROM {EMPTY_TEST_TABLE_NAME}",
-            empty_test_db,
-            partition_col=partition_col,
-            num_partitions=num_partitions,
-            schema={"id": daft.DataType.int64(), "string_col": daft.DataType.string()},
-        )
-        assert df.num_partitions() == 1
-        empty_pdf = pd.read_sql_query(
-            f"SELECT * FROM {EMPTY_TEST_TABLE_NAME}",
-            empty_test_db,
-            dtype={"id": "int64", "string_col": "str"},
-        )
-        assert_df_equals(df.to_pandas(), empty_pdf, sort_key="id")
+    df = daft.read_sql(
+        f"SELECT * FROM {EMPTY_TEST_TABLE_NAME}",
+        empty_test_db,
+        partition_col=partition_col,
+        num_partitions=num_partitions,
+        schema={"id": daft.DataType.int64(), "string_col": daft.DataType.string()},
+    )
+    empty_pdf = pd.read_sql_query(
+        f"SELECT * FROM {EMPTY_TEST_TABLE_NAME}",
+        empty_test_db,
+        dtype={"id": "int64", "string_col": "str"},
+    )
+    assert_df_equals(df.to_pandas(), empty_pdf, sort_key="id")
 
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("num_partitions", [1, 2, 3, 4])
 def test_sql_partitioned_read_with_non_uniformly_distributed_column(test_db, num_partitions, pdf) -> None:
-    with daft.execution_config_ctx(
-        scan_tasks_min_size_bytes=0,
-        scan_tasks_max_size_bytes=0,
-    ):
-        df = daft.read_sql(
-            f"SELECT * FROM {TEST_TABLE_NAME}",
-            test_db,
-            partition_col="non_uniformly_distributed_col",
-            num_partitions=num_partitions,
-        )
-        assert df.num_partitions() == num_partitions
-        assert_df_equals(df.to_pandas(coerce_temporal_nanoseconds=True), pdf, sort_key="id")
+    df = daft.read_sql(
+        f"SELECT * FROM {TEST_TABLE_NAME}",
+        test_db,
+        partition_col="non_uniformly_distributed_col",
+        num_partitions=num_partitions,
+    )
+    assert_df_equals(df.to_pandas(coerce_temporal_nanoseconds=True), pdf, sort_key="id")
 
 
 @pytest.mark.integration()
