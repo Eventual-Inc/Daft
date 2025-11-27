@@ -41,6 +41,7 @@ else:
     sf = LazyImport("soundfile")
     requests = LazyImport("requests")
     tf = LazyImport("tensorflow")
+    torch = LazyImport("torch")
 
 unity_catalog = LazyImport("daft.unity_catalog")
 
