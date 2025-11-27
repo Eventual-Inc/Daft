@@ -39,11 +39,8 @@ else:
     pil_image = LazyImport("PIL.Image")
     pq = LazyImport("pyarrow.parquet")
     sf = LazyImport("soundfile")
-    flight = LazyImport("pyarrow.flight")
     requests = LazyImport("requests")
-    torch = LazyImport("torch")
     tf = LazyImport("tensorflow")
-    torch = LazyImport("torch")
 
 unity_catalog = LazyImport("daft.unity_catalog")
 
