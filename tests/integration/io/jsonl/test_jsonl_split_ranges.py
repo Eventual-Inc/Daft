@@ -17,7 +17,9 @@ def test_jsonl_split_remote_equals_unsplit(aws_public_s3_config):
     df_unsplit = daft.read_json(ASSET_S3, io_config=aws_public_s3_config)
     assert df_unsplit.num_partitions() == 1
 
-    with daft.context.execution_config_ctx(scan_tasks_min_size_bytes=1, scan_tasks_max_size_bytes=64):
+    with daft.context.execution_config_ctx(
+        enable_scan_task_split_and_merge=True, scan_tasks_min_size_bytes=1, scan_tasks_max_size_bytes=64
+    ):
         df_split = daft.read_json(ASSET_S3, io_config=aws_public_s3_config)
         assert df_split.num_partitions() > 1
 
