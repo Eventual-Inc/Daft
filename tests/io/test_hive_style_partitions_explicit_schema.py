@@ -4,7 +4,6 @@ import os
 from datetime import date
 
 import pyarrow as pa
-import pyarrow.dataset as ds
 import pytest
 
 import daft
@@ -34,20 +33,16 @@ SAMPLE_DATA = pa.table(
 @pytest.mark.parametrize("file_format", ["csv", "parquet", "json"])
 @pytest.mark.parametrize("partition_by", [["str_col"], ["int_col"], ["date_col"], ["str_col", "int_col"]])
 def test_explicit_schema_preserves_hive_partitions(tmpdir, file_format, partition_by):
+    base = daft.from_arrow(SAMPLE_DATA)
     # Write partitioned dataset
-    if file_format == "json":
-        # Use Daft writer for JSON since PyArrow does not support JSON dataset writes
-        base = daft.from_arrow(SAMPLE_DATA)
+    if file_format == "parquet":
+        base.write_parquet(str(tmpdir), partition_cols=partition_by)
+    elif file_format == "csv":
+        base.write_csv(str(tmpdir), partition_cols=partition_by)
+    elif file_format == "json":
         base.write_json(str(tmpdir), partition_cols=partition_by)
     else:
-        ds.write_dataset(
-            SAMPLE_DATA,
-            str(tmpdir),
-            format=file_format,
-            partitioning=ds.partitioning(
-                pa.schema([SAMPLE_DATA.schema.field(col) for col in partition_by]), flavor="hive"
-            ),
-        )
+        pytest.skip("Unsupported format for this test")
 
     glob_path = os.path.join(str(tmpdir), "**")
 
