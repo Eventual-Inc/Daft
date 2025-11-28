@@ -40,7 +40,7 @@ impl WindowBaseState {
             let partitioned = input.partition_by_hash(partition_by, inner_states.len())?;
             for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
                 let state = state.get_or_insert_with(SinglePartitionWindowState::default);
-                for table in p.get_tables()?.iter() {
+                for table in p.tables() {
                     state.partitions.push(table.clone());
                 }
             }

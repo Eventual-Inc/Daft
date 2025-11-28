@@ -55,11 +55,10 @@ impl AsyncFileWriter for IPCWriter {
     async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {
         assert!(!self.is_closed, "Writer is closed");
 
-        let size_bytes = data.size_bytes().unwrap_or(0);
+        let size_bytes = data.size_bytes();
         let rows_written = data.len();
         let writer = self.get_or_create_writer(&data.schema())?;
-        let tables = data.get_tables()?;
-        for table in tables.iter() {
+        for table in data.tables() {
             let chunk = table.to_chunk();
             writer.write(&chunk, None)?;
         }

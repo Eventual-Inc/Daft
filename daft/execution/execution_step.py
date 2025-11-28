@@ -4,7 +4,6 @@ import itertools
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Generic, Protocol
 
-from daft.context import get_context
 from daft.daft import JoinSide, PyRecordBatch, ResourceRequest
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.filesystem import overwrite_files
@@ -25,7 +24,7 @@ if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
-    from daft.daft import FileFormat, IOConfig, JoinType, ScanTask
+    from daft.daft import FileFormat, IOConfig, JoinType
     from daft.io import DataSink
     from daft.logical.map_partition_ops import MapPartitionOp
     from daft.logical.schema import Schema
@@ -352,31 +351,6 @@ class Instruction(Protocol):
 class SingleOutputInstruction(Instruction):
     def num_outputs(self) -> int:
         return 1
-
-
-@dataclass(frozen=True)
-class ScanWithTask(SingleOutputInstruction):
-    scan_task: ScanTask
-
-    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        return self._scan(inputs)
-
-    def _scan(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        assert len(inputs) == 0
-        table = MicroPartition._from_scan_task(self.scan_task)
-        return [table]
-
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
-        assert len(input_metadatas) == 0
-
-        cfg = get_context().daft_execution_config
-
-        return [
-            PartialPartitionMetadata(
-                num_rows=self.scan_task.num_rows(),
-                size_bytes=self.scan_task.estimate_in_memory_size_bytes(cfg),
-            )
-        ]
 
 
 @dataclass(frozen=True)

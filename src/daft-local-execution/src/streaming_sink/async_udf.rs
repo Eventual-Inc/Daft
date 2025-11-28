@@ -204,8 +204,6 @@ impl StreamingSink for AsyncUdfSink {
                         async move {
                             use daft_dsl::functions::python::initialize_udfs;
 
-                            let input_batches = input.get_tables()?;
-
                             if !state.udf_initialized {
                                 state.udf_expr = BoundExpr::new_unchecked(initialize_udfs(
                                     state.udf_expr.inner().clone(),
@@ -214,7 +212,7 @@ impl StreamingSink for AsyncUdfSink {
                             }
 
                             // Spawn tasks for each batch
-                            for batch in input_batches.as_ref() {
+                            for batch in input.tables() {
                                 let params = params.clone();
                                 let expr = state.udf_expr.clone();
                                 let batch = batch.clone();

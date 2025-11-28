@@ -86,7 +86,7 @@ impl IntermediateOperator for CrossJoinOperator {
                         return empty_result(state, output_schema);
                     }
 
-                    let stream_tables = input.get_tables()?;
+                    let stream_tables = input.tables();
 
                     let stream_tbl = &stream_tables[state.stream_idx];
                     let collect_tbl = &collect_tables[state.collect_idx];

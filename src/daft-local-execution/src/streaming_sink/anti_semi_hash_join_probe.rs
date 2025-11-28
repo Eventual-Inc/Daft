@@ -90,7 +90,7 @@ impl AntiSemiProbeSink {
         input: &Arc<MicroPartition>,
         is_semi: bool,
     ) -> DaftResult<Arc<MicroPartition>> {
-        let input_tables = input.get_tables()?;
+        let input_tables = input.tables();
         let mut input_idxs = vec![vec![]; input_tables.len()];
         for (probe_side_table_idx, table) in input_tables.iter().enumerate() {
             let join_keys = table.eval_expression_list(probe_on)?;
@@ -131,9 +131,8 @@ impl AntiSemiProbeSink {
         bitmap_builder: &mut IndexBitmapBuilder,
         input: &Arc<MicroPartition>,
     ) -> DaftResult<()> {
-        let input_tables = input.get_tables()?;
         let _loop = info_span!("AntiSemiOperator::eval_and_probe").entered();
-        for table in input_tables.iter() {
+        for table in input.tables() {
             let join_keys = table.eval_expression_list(probe_on)?;
             let idx_iter = probe_state.probe_indices(&join_keys)?;
 

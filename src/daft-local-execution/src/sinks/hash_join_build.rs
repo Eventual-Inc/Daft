@@ -59,14 +59,14 @@ impl ProbeTableState {
         } = self
         {
             let probe_table_builder = probe_table_builder.as_mut().unwrap();
-            let input_tables = input.get_tables()?;
+            let input_tables = input.tables();
             if input_tables.is_empty() {
                 let empty_table = RecordBatch::empty(Some(input.schema()));
                 let join_keys = empty_table.eval_expression_list(projection)?;
                 probe_table_builder.add_table(&join_keys)?;
                 tables.push(empty_table);
             } else {
-                for table in input_tables.iter() {
+                for table in input_tables {
                     tables.push(table.clone());
                     let join_keys = table.eval_expression_list(projection)?;
 

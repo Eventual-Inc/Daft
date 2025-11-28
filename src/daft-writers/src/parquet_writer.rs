@@ -263,7 +263,7 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
             self.create_writer().await?;
         }
         let num_rows = data.len();
-        let record_batches = data.get_tables()?;
+        let record_batches = data.tables();
 
         let row_group_writer_thread_handle = {
             // Wait for the workers to complete encoding, and append the resulting column chunks to the row group and the file.
@@ -292,7 +292,7 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
                     Ok(file_writer)
                 });
 
-            let mut pending_column_writers = self.build_column_writer_futures(&record_batches)?;
+            let mut pending_column_writers = self.build_column_writer_futures(record_batches)?;
 
             // Spawn up to NUM_CPU workers to handle the column writes.
             let initial_spawn_count =

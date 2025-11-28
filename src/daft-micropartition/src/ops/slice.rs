@@ -1,12 +1,9 @@
 use common_error::{DaftError, DaftResult};
-use daft_io::IOStatsContext;
 
 use crate::micropartition::MicroPartition;
 
 impl MicroPartition {
     pub fn slice(&self, start: usize, end: usize) -> DaftResult<Self> {
-        let io_stats = IOStatsContext::new(format!("MicroPartition::slice {start}-{end}"));
-
         let mut rows_needed = end.min(self.len()) - start.min(self.len());
 
         if start > end {
@@ -17,11 +14,10 @@ impl MicroPartition {
             return Ok(Self::empty(Some(self.schema.clone())));
         }
 
-        let tables = self.tables_or_read(io_stats)?;
         let mut slices_tables = vec![];
         let mut offset_so_far = start;
 
-        for tab in tables.iter() {
+        for tab in self.tables() {
             if rows_needed == 0 {
                 break;
             }
