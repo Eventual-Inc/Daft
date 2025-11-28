@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime, get_io_runtime};
 use daft_core::prelude::*;
-use daft_io::{IOConfig, SourceType, parse_url};
+use daft_io::{IOConfig, SourceType, parse_url, utils::ObjectPath};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use parquet::{
@@ -22,7 +22,7 @@ use parquet::{
 
 use crate::{
     AsyncFileWriter, WriteResult,
-    storage_backend::{FileStorageBackend, S3StorageBackend, StorageBackend},
+    storage_backend::{FileStorageBackend, ObjectStorageBackend, StorageBackend},
     utils::build_filename,
 };
 
@@ -110,11 +110,11 @@ pub(crate) fn create_native_parquet_writer(
             )))
         }
         SourceType::S3 => {
-            let (scheme, _, _) = daft_io::s3_like::parse_s3_url(root_dir.as_ref())?;
+            let ObjectPath { scheme, .. } = daft_io::utils::parse_object_url(root_dir.as_ref())?;
             let io_config = io_config.ok_or_else(|| {
                 DaftError::InternalError("IO config is required for S3 writes".to_string())
             })?;
-            let storage_backend = S3StorageBackend::new(scheme, io_config);
+            let storage_backend = ObjectStorageBackend::new(scheme, io_config);
             Ok(Box::new(ParquetWriter::new(
                 filename,
                 writer_properties,

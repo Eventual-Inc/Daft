@@ -5,6 +5,7 @@ mod google_cloud;
 mod http;
 mod huggingface;
 mod local;
+pub mod multipart;
 mod object_io;
 mod object_store_glob;
 mod retry;
@@ -30,8 +31,9 @@ mod integrations;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod range;
+pub mod utils;
 
-use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, hash::Hash, num::NonZeroUsize, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 pub use common_io_config::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config, TosConfig};
@@ -40,14 +42,14 @@ use object_io::StreamingRetryParams;
 pub use object_io::{FileMetadata, FileType, GetResult, ObjectSource};
 #[cfg(feature = "python")]
 pub use python::register_modules;
-pub use s3_like::{S3LikeSource, S3MultipartWriter, S3PartBuffer, s3_config_from_env};
+pub use s3_like::{S3LikeSource, S3MultipartWriter, s3_config_from_env};
 use snafu::{Snafu, prelude::*};
 pub use stats::{IOStatsContext, IOStatsRef};
 use url::ParseError;
 
 use self::{http::HttpSource, local::LocalSource};
 pub use crate::range::GetRange;
-use crate::{Error::InvalidRangeRequest, range::InvalidGetRange};
+use crate::{Error::InvalidRangeRequest, multipart::MultipartWriter, range::InvalidGetRange};
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -285,6 +287,28 @@ impl IOClient {
         self.get_source_and_path(input)
             .map(|f| f.map(|(source, _)| source))
             .await
+    }
+
+    pub async fn get_multipart_writer(
+        &self,
+        input: &str,
+    ) -> Result<Option<Box<dyn MultipartWriter>>> {
+        let (source_type, _path) = parse_url(input)?;
+        match source_type {
+            SourceType::S3 => {
+                let part_size = NonZeroUsize::new(self.config.s3.multipart_size as usize)
+                    .expect("S3 multipart part size must be non-zero");
+                let max_concurrency =
+                    NonZeroUsize::new(self.config.s3.multipart_max_concurrency as usize)
+                        .expect("S3 multipart concurrent uploads per object must be non-zero");
+                let source = S3LikeSource::get_client(&self.config.s3).await?;
+                let writer =
+                    S3MultipartWriter::create(input, part_size, max_concurrency, source).await?;
+
+                Ok(Some(Box::new(writer)))
+            }
+            _ => Ok(None),
+        }
     }
 
     pub async fn glob(
