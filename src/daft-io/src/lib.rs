@@ -297,10 +297,15 @@ impl IOClient {
         match source_type {
             SourceType::S3 => {
                 let part_size = NonZeroUsize::new(self.config.s3.multipart_size as usize)
-                    .expect("S3 multipart part size must be non-zero");
+                    .ok_or_else(|| Error::InvalidArgument {
+                        msg: "S3 multipart part size must be non-zero".to_string(),
+                    })?;
                 let max_concurrency =
                     NonZeroUsize::new(self.config.s3.multipart_max_concurrency as usize)
-                        .expect("S3 multipart concurrent uploads per object must be non-zero");
+                        .ok_or_else(|| Error::InvalidArgument {
+                            msg: "S3 multipart concurrent uploads per object must be non-zero"
+                                .to_string(),
+                        })?;
                 let source = S3LikeSource::get_client(&self.config.s3).await?;
                 let writer =
                     S3MultipartWriter::create(input, part_size, max_concurrency, source).await?;

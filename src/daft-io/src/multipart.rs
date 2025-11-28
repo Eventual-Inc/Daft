@@ -54,9 +54,9 @@ impl MultipartBuffer {
                 tx.blocking_send(new_part)
                     .map_err(|_| std::io::Error::other("Failed to send final part for multi-part upload. Has the receiver been dropped?"))?;
             } else {
-                panic!(
-                    "It seems that the PartBuffer has been shutdown already, but we still have data to send. This is a bug in the code."
-                );
+                return Err(std::io::Error::other(
+                    "It seems that the MultipartBuffer has been shutdown already, but we still have data to send. This is a bug in the code.",
+                ));
             }
         }
         self.tx.take();

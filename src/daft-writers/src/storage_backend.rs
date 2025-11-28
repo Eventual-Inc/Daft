@@ -52,7 +52,7 @@ impl StorageBackend for FileStorageBackend {
     }
 }
 
-/// A Send and Sync wrapper around S3PartBuffer.
+/// A Send and Sync wrapper around MultipartBuffer.
 pub(crate) struct SharedMultiPartBuffer {
     inner: Arc<Mutex<MultipartBuffer>>,
 }
@@ -141,7 +141,7 @@ impl StorageBackend for ObjectStorageBackend {
 
         io_runtime
             .spawn_blocking(move || -> DaftResult<()> {
-                // Close the WritePartBuffer, this flushes any remaining data to object store as the final part.
+                // Close the MultiPartBuffer, this flushes any remaining data to object store as the final part.
                 write_buffer.lock().shutdown()?;
                 Ok(())
             })
