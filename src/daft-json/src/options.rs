@@ -122,17 +122,21 @@ impl_bincode_py_state_serialization!(JsonConvertOptions);
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
 pub struct JsonParseOptions {
     pub sample_size: Option<usize>,
+    pub skip_empty_files: bool,
 }
 
 impl JsonParseOptions {
-    pub fn new_internal() -> Self {
-        Self { sample_size: None }
+    pub fn new_internal(skip_empty_files: bool) -> Self {
+        Self {
+            sample_size: None,
+            skip_empty_files,
+        }
     }
 }
 
 impl Default for JsonParseOptions {
     fn default() -> Self {
-        Self::new_internal()
+        Self::new_internal(false)
     }
 }
 
@@ -141,8 +145,9 @@ impl Default for JsonParseOptions {
 impl JsonParseOptions {
     /// Create parsing options for the JSON reader.
     #[new]
-    pub fn new() -> PyResult<Self> {
-        Ok(Self::new_internal())
+    #[pyo3(signature = (skip_empty_files = false))]
+    pub fn new(skip_empty_files: bool) -> PyResult<Self> {
+        Ok(Self::new_internal(skip_empty_files))
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp) -> bool {

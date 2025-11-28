@@ -105,7 +105,7 @@ pub async fn read_json_schema_bulk(
 
 pub(crate) async fn read_json_schema_single(
     uri: &str,
-    _: JsonParseOptions,
+    parse_options: JsonParseOptions,
     max_bytes: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
@@ -125,10 +125,27 @@ pub(crate) async fn read_json_schema_single(
         ),
     };
     // If file is compressed, wrap stream in decoding stream.
-    let reader: Box<dyn AsyncBufRead + Unpin + Send> = match CompressionCodec::from_uri(uri) {
+    let mut reader: Box<dyn AsyncBufRead + Unpin + Send> = match CompressionCodec::from_uri(uri) {
         Some(compression) => Box::new(tokio::io::BufReader::new(compression.to_decoder(reader))),
         None => reader,
     };
+
+    if parse_options.skip_empty_files {
+        loop {
+            let buf = reader.fill_buf().await?;
+            if buf.is_empty() {
+                return Ok(Schema::empty());
+            }
+            if let Some(i) = buf.iter().position(|b| !b.is_ascii_whitespace()) {
+                reader.consume(i);
+                break;
+            } else {
+                let len = buf.len();
+                reader.consume(len);
+            }
+        }
+    }
+
     let arrow_schema = infer_schema(reader, None, max_bytes).await?;
     let schema = arrow_schema.into();
     Ok(schema)
@@ -171,7 +188,10 @@ where
 
             // Stream of unparsed JSON string records.
             let line_stream = tokio_stream::wrappers::LinesStream::new(reader.lines());
-            let mut schema_stream = line_stream
+            // Skip whitespace-only lines to tolerate trailing/blank records.
+            let filtered_stream =
+                line_stream.try_filter(|record| futures::future::ready(!record.trim().is_empty()));
+            let mut schema_stream = filtered_stream
                 .try_take_while(|record| {
                     // Terminate scan if we've exceeded our max_bytes threshold with the last-read line.
                     if total_bytes >= max_bytes {
@@ -469,6 +489,155 @@ mod tests {
             ])
         );
 
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod whitespace_skip_tests {
+    use std::{
+        fs,
+        path::PathBuf,
+        sync::Arc,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use common_error::DaftResult;
+    use daft_core::prelude::*;
+    use daft_io::{IOClient, IOConfig};
+
+    use super::{JsonParseOptions, read_json_schema};
+
+    fn tmp_file_path(prefix: &str) -> PathBuf {
+        let mut p = std::env::temp_dir();
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        p.push(format!(
+            "daft-json-{}-{}-{}.jsonl",
+            prefix,
+            std::process::id(),
+            ts
+        ));
+        p
+    }
+
+    #[tokio::test]
+    async fn test_schema_skip_empty_large_whitespace() -> DaftResult<()> {
+        let path = tmp_file_path("whitespace-only");
+        let buf = vec![b' '; 2 * 1024 * 1024]; // 2 MiB
+        fs::write(&path, &buf)?;
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let schema = read_json_schema(
+            path.to_str().unwrap(),
+            Some(JsonParseOptions::new_internal(true)),
+            None,
+            io_client,
+            None,
+        )
+        .await?;
+        assert_eq!(schema, Schema::empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_schema_skip_leading_whitespace_then_object() -> DaftResult<()> {
+        let path = tmp_file_path("leading-ws-object");
+        let mut buf = vec![b' '; 2 * 1024 * 1024];
+        buf.extend_from_slice(b"{\"a\":1}\n");
+        fs::write(&path, &buf)?;
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let schema = read_json_schema(
+            path.to_str().unwrap(),
+            Some(JsonParseOptions::new_internal(true)),
+            None,
+            io_client,
+            None,
+        )
+        .await?;
+        assert_eq!(schema, Schema::new(vec![Field::new("a", DataType::Int64)]));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_schema_skip_leading_whitespace_then_array() -> DaftResult<()> {
+        let path = tmp_file_path("leading-ws-array");
+        let mut buf = vec![b' '; 2 * 1024 * 1024];
+        buf.extend_from_slice(b"[{\"a\":1}]\n");
+        fs::write(&path, &buf)?;
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let schema = read_json_schema(
+            path.to_str().unwrap(),
+            Some(JsonParseOptions::new_internal(true)),
+            None,
+            io_client,
+            None,
+        )
+        .await?;
+        assert_eq!(schema, Schema::new(vec![Field::new("a", DataType::Int64)]));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_schema_leading_and_trailing_whitespace_object() -> DaftResult<()> {
+        let path = tmp_file_path("leading-trailing-ws-object");
+        // 2MiB leading whitespace + object + 2MiB trailing whitespace
+        let mut buf = vec![b' '; 2 * 1024 * 1024];
+        buf.extend_from_slice(b"{\"a\":1}\n");
+        buf.extend_from_slice(&vec![b' '; 2 * 1024 * 1024]);
+        fs::write(&path, &buf)?;
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let schema = read_json_schema(
+            path.to_str().unwrap(),
+            Some(JsonParseOptions::new_internal(true)),
+            None,
+            io_client,
+            None,
+        )
+        .await?;
+        assert_eq!(schema, Schema::new(vec![Field::new("a", DataType::Int64)]));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_schema_leading_and_trailing_whitespace_array() -> DaftResult<()> {
+        let path = tmp_file_path("leading-trailing-ws-array");
+        // 2MiB leading whitespace + array + 2MiB trailing whitespace
+        let mut buf = vec![b' '; 2 * 1024 * 1024];
+        buf.extend_from_slice(b"[{\"a\":1}]\n");
+        buf.extend_from_slice(&vec![b' '; 2 * 1024 * 1024]);
+        fs::write(&path, &buf)?;
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let schema = read_json_schema(
+            path.to_str().unwrap(),
+            Some(JsonParseOptions::new_internal(true)),
+            None,
+            io_client,
+            None,
+        )
+        .await?;
+        assert_eq!(schema, Schema::new(vec![Field::new("a", DataType::Int64)]));
         Ok(())
     }
 }

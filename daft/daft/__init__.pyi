@@ -297,11 +297,13 @@ class JsonSourceConfig:
 
     buffer_size: int | None
     chunk_size: int | None
+    skip_empty_files: bool
 
     def __init__(
         self,
         buffer_size: int | None = None,
         chunk_size: int | None = None,
+        skip_empty_files: bool = False,
     ): ...
 
 class WarcSourceConfig:

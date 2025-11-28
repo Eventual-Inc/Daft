@@ -24,6 +24,7 @@ def read_json(
     io_config: Optional[IOConfig] = None,
     file_path_column: Optional[str] = None,
     hive_partitioning: bool = False,
+    skip_empty_files: bool = False,
     _buffer_size: Optional[int] = None,
     _chunk_size: Optional[int] = None,
 ) -> DataFrame:
@@ -36,6 +37,7 @@ def read_json(
         io_config (IOConfig): Config to be used with the native downloader
         file_path_column: Include the source path(s) as a column with this name. Defaults to None.
         hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
+        skip_empty_files: Whether to skip empty files when reading. Defaults to False.
 
     Returns:
         DataFrame: parsed DataFrame
@@ -57,7 +59,7 @@ def read_json(
 
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
-    json_config = JsonSourceConfig(_buffer_size, _chunk_size)
+    json_config = JsonSourceConfig(buffer_size=_buffer_size, chunk_size=_chunk_size, skip_empty_files=skip_empty_files)
     file_format_config = FileFormatConfig.from_json_config(json_config)
     storage_config = StorageConfig(True, io_config)
 

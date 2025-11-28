@@ -72,6 +72,7 @@ impl TryFrom<SQLFunctionArguments> for JsonScanBuilder {
             hive_partitioning,
             buffer_size,
             chunk_size,
+            skip_empty_files: false,
         })
     }
 }
