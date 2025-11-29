@@ -66,7 +66,7 @@ enum Error {
     ))]
     GlobNoMatch { glob_path: String },
     #[snafu(display(
-        "Glob matched files for \"{}\" but all were empty/whitespace; unable to infer schema. Consider setting skip_empty_files=True or providing a schema explicitly.",
+        "Glob matched files for \"{}\" but all were empty/whitespace; unable to infer schema. Please provide a schema explicitly.",
         glob_path,
     ))]
     GlobAllEmpty { glob_path: String },

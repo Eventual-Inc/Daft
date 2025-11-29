@@ -27,6 +27,7 @@ impl SQLTableFunction for ReadJsonFunction {
                 "hive_partitioning",
                 "buffer_size",
                 "chunk_size",
+                "skip_empty_files",
             ],
             1, // (path)
         )?;
@@ -56,6 +57,7 @@ impl TryFrom<SQLFunctionArguments> for JsonScanBuilder {
         let buffer_size = args.try_get_named("buffer_size")?;
         let file_path_column = args.try_get_named("file_path_column")?;
         let hive_partitioning = args.try_get_named("hive_partitioning")?.unwrap_or(false);
+        let skip_empty_files = args.try_get_named("skip_empty_files")?.unwrap_or(false);
         let schema = args
             .try_get_named("schema")?
             .map(try_parse_schema)
@@ -72,7 +74,7 @@ impl TryFrom<SQLFunctionArguments> for JsonScanBuilder {
             hive_partitioning,
             buffer_size,
             chunk_size,
-            skip_empty_files: false,
+            skip_empty_files,
         })
     }
 }
