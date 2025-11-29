@@ -57,13 +57,13 @@ impl TryFrom<SQLFunctionArguments> for JsonScanBuilder {
         let buffer_size = args.try_get_named("buffer_size")?;
         let file_path_column = args.try_get_named("file_path_column")?;
         let hive_partitioning = args.try_get_named("hive_partitioning")?.unwrap_or(false);
-        let skip_empty_files = args.try_get_named("skip_empty_files")?.unwrap_or(false);
         let schema = args
             .try_get_named("schema")?
             .map(try_parse_schema)
             .transpose()?
             .map(Arc::new);
         let io_config = args.get_named("io_config").map(expr_to_iocfg).transpose()?;
+        let skip_empty_files = args.try_get_named("skip_empty_files")?.unwrap_or(false);
 
         Ok(Self {
             glob_paths,
