@@ -23,6 +23,20 @@ __all__ = [
 ]
 
 
+def _is_colab() -> bool:
+    """Check if running in Google Colab."""
+    try:
+        import google.colab
+
+        return True
+    except ImportError:
+        return False
+
+
+# Cache the Colab check at module load time
+_IS_COLAB = _is_colab()
+
+
 def _clean_pydantic_model(
     model_cls: type[BaseModel], _cleaned_cache: dict[type, type] | None = None
 ) -> type[BaseModel]:
@@ -605,7 +619,8 @@ def prompt(
     # Add return_format to options for the provider
     if return_format is not None:
         # Clean the Pydantic model to avoid Colab serialization issues
-        return_format = _clean_pydantic_model(return_format)
+        if _IS_COLAB:
+            return_format = _clean_pydantic_model(return_format)
         options = {**options, "return_format": return_format}
     if system_message is not None:
         options = {**options, "system_message": system_message}
