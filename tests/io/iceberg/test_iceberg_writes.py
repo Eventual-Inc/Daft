@@ -11,10 +11,6 @@ from tests.conftest import get_tests_daft_runner_name
 
 pyiceberg = pytest.importorskip("pyiceberg")
 
-PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
-pytestmark = pytest.mark.skipif(PYARROW_LOWER_BOUND_SKIP, reason="iceberg not supported on old versions of pyarrow")
-
-
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema

@@ -12,10 +12,7 @@ from daft.logical.schema import Field, Schema
 
 CATALOG_ALIAS = "_test_catalog_iceberg"
 
-# skip if pyarrow < 9
 pyiceberg = pytest.importorskip("pyiceberg")
-PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
-pytestmark = pytest.mark.skipif(PYARROW_LOWER_BOUND_SKIP, reason="iceberg not supported on old versions of pyarrow")
 
 
 @pytest.fixture(scope="session")

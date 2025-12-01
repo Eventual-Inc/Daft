@@ -3,18 +3,12 @@ from __future__ import annotations
 from collections.abc import Generator, Iterator
 from typing import TypeAlias, TypeVar
 
-import pyarrow as pa
 import pytest
 
 import daft
 import daft.catalog
 
 pyiceberg = pytest.importorskip("pyiceberg")
-
-PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
-pytestmark = pytest.mark.skipif(
-    PYARROW_LOWER_BOUND_SKIP, reason="iceberg writes not supported on old versions of pyarrow"
-)
 
 import tenacity
 from pyiceberg.catalog import Catalog, load_catalog

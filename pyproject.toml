@@ -5,7 +5,7 @@ requires = ["maturin>=1.5.0,<2.0.0"]
 [project]
 authors = [{name = "Eventual Inc", email = "daft@eventualcomputing.com"}]
 dependencies = [
-  "pyarrow >= 8.0.0",
+  "pyarrow >= 14.0.0",
   "fsspec",
   "tqdm",
   "typing-extensions >= 4.0.0; python_version < '3.11'",
@@ -37,7 +37,7 @@ clickhouse = ["clickhouse_connect"]
 deltalake = ["deltalake <= 1.2.1"]
 gcp = []
 google = ["google-genai"]
-hudi = ["pyarrow >= 8.0.0"]
+hudi = ["pyarrow >= 14.0.0"]
 huggingface = ["huggingface-hub", "datasets"]
 # TODO: pyiceberg 0.9.1 has a bug https://github.com/apache/iceberg-python/issues/1979. It was not
 # triggered because we specify pyiceberg == 0.7.0 in requrements-dev.txt which hide this problem.
