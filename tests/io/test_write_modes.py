@@ -177,6 +177,7 @@ def test_append_and_overwrite_s3_minio(
         path=f"s3://{bucket}/{uuid.uuid4()!s}",
         write_mode=write_mode,
         format=format,
+        num_partitions=num_partitions,
         partition_cols=partition_cols,
         io_config=minio_io_config,
     )
