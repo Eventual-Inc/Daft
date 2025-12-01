@@ -6,12 +6,13 @@ use axum::{
     http::StatusCode,
     routing::post,
 };
-use common_metrics::{QueryEndState, QueryID, QueryPlan, Stat, ops::NodeInfo};
+use common_metrics::{QueryEndState, QueryID, QueryPlan, Stat};
 use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
 
 use crate::state::{
-    DashboardState, ExecInfo, OperatorInfo, OperatorStatus, PlanInfo, QueryInfo, QueryState,
+    DashboardState, ExecInfo, NodeInfo, OperatorInfo, OperatorInfos, OperatorStatus, PlanInfo,
+    QueryInfo, QueryState,
 };
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -113,7 +114,39 @@ async fn plan_end(
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct ExecStartArgs {
     pub exec_start_sec: u64,
-    pub node_infos: Vec<NodeInfo>,
+    pub physical_plan: QueryPlan,
+}
+
+fn parse_physical_plan(physical_plan: &QueryPlan) -> OperatorInfos {
+    let parsed_plan = serde_json::from_str::<serde_json::Value>(physical_plan)
+        .expect("Failed to parse physical plan");
+    let mut operators = HashMap::new();
+
+    let mut plans = vec![parsed_plan];
+    while let Some(plan) = plans.pop() {
+        let node_id = plan.get("id").unwrap().as_u64().unwrap() as usize;
+        let node_info = NodeInfo {
+            id: node_id,
+            name: plan.get("name").unwrap().as_str().unwrap().into(),
+            node_type: plan.get("node_type").unwrap().as_str().unwrap().into(),
+            node_category: plan.get("node_category").unwrap().as_str().unwrap().into(),
+        };
+
+        operators.insert(
+            node_id,
+            OperatorInfo {
+                status: OperatorStatus::Pending,
+                node_info: node_info.clone(),
+                stats: HashMap::new(),
+            },
+        );
+
+        let children = plan.get("children").unwrap().as_array().unwrap();
+        for child in children {
+            plans.push(child.clone());
+        }
+    }
+    operators
 }
 
 async fn exec_start(
@@ -129,24 +162,13 @@ async fn exec_start(
         return StatusCode::BAD_REQUEST;
     };
 
+    // Parse physical plan JSON to extract node info
     query_info.state = QueryState::Executing {
         plan_info: plan_info.clone(),
         exec_info: ExecInfo {
             exec_start_sec: args.exec_start_sec,
-            operators: args
-                .node_infos
-                .into_iter()
-                .map(|node_info| {
-                    (
-                        node_info.id,
-                        OperatorInfo {
-                            status: OperatorStatus::Pending,
-                            node_info,
-                            stats: HashMap::new(),
-                        },
-                    )
-                })
-                .collect(),
+            physical_plan: args.physical_plan.clone(),
+            operators: parse_physical_plan(&args.physical_plan),
         },
     };
 

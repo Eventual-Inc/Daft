@@ -172,6 +172,10 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
 }
 
 impl<Op: BlockingSink + 'static> TreeDisplay for BlockingSinkNode<Op> {
+    fn id(&self) -> String {
+        self.node_id().to_string()
+    }
+
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -200,10 +204,18 @@ impl<Op: BlockingSink + 'static> TreeDisplay for BlockingSinkNode<Op> {
     }
 
     fn repr_json(&self) -> serde_json::Value {
+        let children: Vec<serde_json::Value> = self
+            .get_children()
+            .iter()
+            .map(|child| child.repr_json())
+            .collect();
+
         serde_json::json!({
-            "id": self.id(),
+            "id": self.node_id(),
+            "category": "BlockingSink",
             "type": self.op.op_type().to_string(),
             "name": self.name(),
+            "children": children,
         })
     }
 

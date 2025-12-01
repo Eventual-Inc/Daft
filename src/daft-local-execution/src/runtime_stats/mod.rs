@@ -14,7 +14,7 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{NodeID, StatSnapshot};
+use common_metrics::{NodeID, QueryID, StatSnapshot};
 use common_runtime::RuntimeTask;
 use daft_context::Subscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
@@ -94,6 +94,7 @@ impl RuntimeStatsManager {
         handle: &Handle,
         pipeline: &Box<dyn PipelineNode>,
         query_subscribers: Vec<Arc<dyn Subscriber>>,
+        query_id: QueryID,
     ) -> DaftResult<Self> {
         // Construct mapping between node id and their node info and runtime stats
         let mut node_stats_map = HashMap::new();
@@ -110,7 +111,10 @@ impl RuntimeStatsManager {
         for subscriber in query_subscribers {
             subscribers.push(Box::new(SubscriberWrapper::try_new(
                 subscriber,
-                &node_info_map,
+                query_id.clone(),
+                serde_json::to_string(&pipeline.repr_json())
+                    .expect("Failed to serialize physical plan")
+                    .into(),
             )?));
         }
 
