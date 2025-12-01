@@ -55,7 +55,8 @@ def _clean_pydantic_model(
 
     See: https://github.com/Eventual-Inc/Daft/issues/5696
     """
-    from typing import get_args, get_origin
+    import types
+    from typing import Union, get_args, get_origin
 
     from pydantic import BaseModel, create_model
 
@@ -98,7 +99,13 @@ def _clean_pydantic_model(
                     new_args.append(_cleaned_cache[arg])
                 else:
                     new_args.append(arg)
-            annotation = origin[tuple(new_args)] if len(new_args) > 1 else origin[new_args[0]]
+            # Handle UnionType (X | Y syntax) specially - it's not subscriptable
+            if origin is types.UnionType or origin is Union:
+                annotation = Union[tuple(new_args)]
+            elif len(new_args) > 1:
+                annotation = origin[tuple(new_args)]
+            else:
+                annotation = origin[new_args[0]]
         elif isinstance(annotation, type) and issubclass(annotation, BaseModel) and annotation in _cleaned_cache:
             annotation = _cleaned_cache[annotation]
 

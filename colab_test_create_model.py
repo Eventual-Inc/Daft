@@ -22,7 +22,8 @@
 # First, patch Daft with the fix
 from __future__ import annotations
 
-from typing import get_args, get_origin
+import types
+from typing import Union, get_args, get_origin
 
 from pydantic import BaseModel, create_model
 
@@ -65,7 +66,13 @@ def clean_pydantic_model(model_cls, cleaned_cache=None):
                     new_args.append(cleaned_cache[arg])
                 else:
                     new_args.append(arg)
-            annotation = origin[tuple(new_args)] if len(new_args) > 1 else origin[new_args[0]]
+            # Handle UnionType (X | Y syntax) specially
+            if origin is types.UnionType or origin is Union:
+                annotation = Union[tuple(new_args)]
+            elif len(new_args) > 1:
+                annotation = origin[tuple(new_args)]
+            else:
+                annotation = origin[new_args[0]]
         elif isinstance(annotation, type) and issubclass(annotation, BaseModel) and annotation in cleaned_cache:
             annotation = cleaned_cache[annotation]
 
@@ -123,15 +130,63 @@ class Result(BaseModel):
     confidence: float
 
 
+# Test 1: Simple model
+print("Test 1: Simple model (Result)")
 df = daft.from_pydict({"text": ["I love this!", "This is terrible"]})
 
-print("Creating DataFrame with prompt()...")
 try:
     df = df.with_column(
-        "analysis", prompt(["Analyze:", df["text"]], model="gpt-4o-mini", provider="openai", return_format=Result)
+        "analysis",
+        prompt(daft.col("text"), model="gpt-4o-mini", provider="openai", return_format=Result),
     )
-    print("SUCCESS - DataFrame created without pickle error!")
-    print()
-    print("Note: Actual API call would require OPENAI_API_KEY")
+    print("✓ SUCCESS - Simple model works")
 except Exception as e:
-    print(f"FAILED: {e}")
+    print(f"✗ FAILED: {e}")
+
+print()
+
+
+# Test 2: Forward reference - Parent references Child defined later
+class Child(BaseModel):
+    name: str
+    age: int
+
+
+class Parent(BaseModel):
+    name: str
+    children: list[Child]
+
+
+print("Test 2: Forward reference (Parent with list[Child])")
+try:
+    df2 = daft.from_pydict({"text": ["Describe a family"]})
+    df2 = df2.with_column(
+        "family",
+        prompt(daft.col("text"), model="gpt-4o-mini", provider="openai", return_format=Parent),
+    )
+    print("✓ SUCCESS - Forward reference works")
+except Exception as e:
+    print(f"✗ FAILED: {e}")
+
+print()
+
+
+# Test 3: Self-referential model
+class TreeNode(BaseModel):
+    value: str
+    children: list[TreeNode] | None = None
+
+
+print("Test 3: Self-referential model (TreeNode)")
+try:
+    df3 = daft.from_pydict({"text": ["Describe a tree structure"]})
+    df3 = df3.with_column(
+        "tree",
+        prompt(daft.col("text"), model="gpt-4o-mini", provider="openai", return_format=TreeNode),
+    )
+    print("✓ SUCCESS - Self-referential model works")
+except Exception as e:
+    print(f"✗ FAILED: {e}")
+
+print()
+print("Note: Actual API calls would require OPENAI_API_KEY")
