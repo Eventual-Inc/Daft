@@ -40,7 +40,7 @@ google = ["google-genai"]
 hudi = ["pyarrow >= 8.0.0"]
 huggingface = ["huggingface-hub", "datasets"]
 # TODO: pyiceberg 0.9.1 has a bug https://github.com/apache/iceberg-python/issues/1979. It was not
-# triggered because we specify pyiceberg == 0.7.0 in requrements-dev.txt which hide this problem.
+# triggered because we specify pyiceberg == 0.10.0 in requrements-dev.txt which hide this problem.
 # See https://github.com/Eventual-Inc/Daft/issues/4868.
 iceberg = ["pyiceberg >= 0.7.0, < 0.9.1"]
 lance = ["pylance"]
@@ -54,7 +54,7 @@ ray = [
   'ray[data, client]>=2.10.0; platform_system == "Windows"'  # ray 2.10 has the pyarrow upper pin removed
 ]
 transformers = ["transformers", "sentence-transformers", "torch", "torchvision"]
-spark = ["googleapis-common-protos >= 1.56.4", "grpcio >= 1.48", "grpcio-status >= 1.48", "numpy >= 1.15", "pandas >= 1.0.5", "py4j >= 0.10.9.7", "pyspark == 3.5.5"]
+spark = ["googleapis-common-protos >= 1.56.4", "grpcio >= 1.48", "grpcio-status >= 1.48", "numpy >= 1.15", "pandas >= 1.0.5", "py4j >= 0.10.9.7", "pyspark == 4.0.1"]
 # connectorx 0.4.4 is needed for pgvector support.
 sql = ["connectorx>=0.4.4", "sqlalchemy", "sqlglot"]
 turbopuffer = ["turbopuffer"]
@@ -70,36 +70,36 @@ dev = [
   "pre-commit",
   "docker",
   # Pinned aiohttp due to Ray connection issue in aiohttp==3.12.6
-  "aiohttp==3.12.4",
+  "aiohttp==3.13.2",
   # Pinned httpx due to unitycatalog-python issue: https://github.com/unitycatalog/unitycatalog-python/issues/9
-  "httpx==0.27.2",
+  "httpx==0.28.1",
   # Tracing
-  "orjson==3.10.12",
+  "orjson==3.11.4",
   "py-spy>=0.3.14",
-  "viztracer==0.15.6",
+  "viztracer==0.17.1",
   # Testing frameworks
   "hypothesis==6.79.2",
-  "pytest==7.4.3",
-  "pytest-benchmark==4.0.0",
-  "pytest-cov==4.1.0",
+  "pytest==9.0.1",
+  "pytest-benchmark==5.2.3",
+  "pytest-cov==7.0.0",
   "pytest-lazy-fixture==0.6.3",
-  "memray==1.17.2; platform_system != \"Windows\"",
-  "pytest-codspeed==2.2.1",
+  "memray==1.19.1; platform_system != \"Windows\"",
+  "pytest-codspeed==4.2.0",
   # Testing dependencies
-  "lxml==5.3.0",
+  "lxml==6.0.2",
   "dask[dataframe]>=2025.10.0",
-  "numpy==2.2.0; python_version >= '3.13'",
+  "numpy==2.2.6; python_version >= '3.13'",
   "numpy==1.26.2; python_version < '3.13'",
   "pandas==2.2.3; python_version >= '3.13'",
   "pandas==2.1.3; python_version < '3.13'",
-  "pandas-stubs==2.2.2.240807",
+  "pandas-stubs==2.3.3.251201",
   "xxhash>=3.0.0",
-  "Pillow==10.4.0",
+  "Pillow==12.0.0",
   "reportlab",
-  "opencv-python==4.10.0.84",
-  "tiktoken==0.9.0",
-  "duckdb==1.1.2",
-  "datasets==4.0.0",
+  "opencv-python==4.12.0.88",
+  "tiktoken==0.12.0",
+  "duckdb==1.4.2",
+  "datasets==4.4.1",
   "torch>=2.5.1",
   "torchvision>=0.20.1",
   "tensorflow>=2.18.1; python_version < '3.13'",
@@ -108,61 +108,61 @@ dev = [
   "jaxtyping>=0.2.36",
   # Pyarrow
   "pyarrow==22.0.0",
-  "pyarrow-stubs==19.4",
+  "pyarrow-stubs==20.0.0.20251107",
   # Ray
-  "ray[data, client]==2.48.0; python_version >= '3.13' or platform_system != \"Linux\" or platform_machine != \"x86_64\"",
+  "ray[data, client]==2.52.1; python_version >= '3.13' or platform_system != \"Linux\" or platform_machine != \"x86_64\"",
   "ray[data, client]==2.34.0; python_version < '3.13' and platform_system == \"Linux\" and platform_machine == \"x86_64\"",
   # Lance
   "pylance>=0.37.0",
   # Iceberg
   "pyiceberg==0.7.0",
   "pydantic==2.11.7",
-  "tenacity==8.2.3",
+  "tenacity==9.1.2",
   # Delta Lake
-  "deltalake==0.5.8; platform_system == \"Windows\"",
+  "deltalake==1.2.1; platform_system == \"Windows\"",
   "deltalake==1.2.1; platform_system != \"Windows\"",
   # Databricks
-  "databricks-sdk==0.12.0",
+  "databricks-sdk==0.73.0",
   "unitycatalog==0.1.1",
   # SQL
-  "sqlalchemy==2.0.36",
+  "sqlalchemy==2.0.44",
   "connectorx>=0.4.4; platform_system == \"Linux\" and platform_machine == \"aarch64\"",
   "connectorx>=0.4.4; platform_system != \"Linux\" or platform_machine != \"aarch64\"",
-  "trino[sqlalchemy]==0.328.0",
-  "PyMySQL==1.1.0",
-  "psycopg2-binary==2.9.10",
-  "sqlglot==23.3.0",
+  "trino[sqlalchemy]==0.336.0",
+  "PyMySQL==1.1.2",
+  "psycopg2-binary==2.9.11",
+  "sqlglot==28.0.0",
   "pyodbc>=5.3.0",
   # AWS
-  "s3fs==2023.12.1",
-  "boto3==1.36.20",
-  "boto3-stubs[essential,glue,s3,s3tables]==1.38.46",
-  "moto[glue,s3,server]==5.1.1",
+  "s3fs==2025.10.0",
+  "boto3==1.42.0",
+  "boto3-stubs[essential,glue,s3,s3tables]==1.41.5",
+  "moto[glue,s3,server]==5.1.18",
   # Azure
-  "adlfs==2024.7.0",
-  "azure-storage-blob==12.24.0",
+  "adlfs==2025.8.0",
+  "azure-storage-blob==12.27.1",
   # GCS
-  "gcsfs==2023.12.1",
+  "gcsfs==2025.10.0",
   # Hugging Face
-  "huggingface-hub==0.34.4",
+  "huggingface-hub==1.1.7",
   # Daft connect testing
   "pyspark==3.5.5",
-  "grpcio==1.68.1",
-  "grpcio-status==1.67.0",
+  "grpcio==1.76.0",
+  "grpcio-status==1.76.0",
   # AI
   "vllm>=0.5.0; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
-  "vllm==0.11.0; platform_system != \"Linux\" or platform_machine != \"x86_64\"",
-  "openai==1.100",
+  "vllm==0.11.2; platform_system != \"Linux\" or platform_machine != \"x86_64\"",
+  "openai==2.8.1",
   "google-genai",
   # AV
-  "av==15.0.0",
+  "av==16.0.1",
   "soundfile>=0.13.0",
   "librosa>=0.11.0",
   # Clickhouse
   "clickhouse-connect",
   # mcap
   "mcap==1.3.0",
-  "mcap-ros2-support==0.5.5",
+  "mcap-ros2-support==0.5.6",
   "mcap-protobuf-support==0.5.3",
   # BigTable
   "google-cloud-bigtable>=2.33.0"
