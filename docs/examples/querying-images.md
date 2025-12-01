@@ -31,7 +31,7 @@ if USE_RAY:
         runtime_env={"pip": ["daft", "pillow", "s3fs"]},
     )
 
-    daft.context.set_runner_ray(address=RAY_CLUSTER_ADDRESS)
+    daft.set_runner_ray(address=RAY_CLUSTER_ADDRESS)
 ```
 
 ## Constructing our DataFrame
@@ -109,16 +109,16 @@ df.show(5)
 Now let's do some data manipulation, starting with some simple ones (URLs) and finally images!
 
 ```python
-df = df.with_column("image", df["path"].url.download(io_config=IO_CONFIG))
+df = df.with_column("image", df["path"].download(io_config=IO_CONFIG))
 
 # Materialize the dataframe, so that we don't have to hit S3 again for subsequent operations
 df.collect()
 ```
 
-To decode the raw bytes we're downloading from the URL into an Image, we can simply use Daft's `.image.decode()` expression:
+To decode the raw bytes we're downloading from the URL into an Image, we can simply use Daft's `.decode_image()` expression:
 
 ```python
-df = df.with_column("image", df["image"].image.decode())
+df = df.with_column("image", df["image"].decode_image())
 df.show(5)
 ```
 

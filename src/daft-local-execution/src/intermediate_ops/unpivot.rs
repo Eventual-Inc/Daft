@@ -42,7 +42,7 @@ impl UnpivotOperator {
 
 impl IntermediateOperator for UnpivotOperator {
     type State = ();
-
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "UnpivotOperator::execute")]
     fn execute(
         &self,
@@ -95,5 +95,10 @@ impl IntermediateOperator for UnpivotOperator {
 
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(())
+    }
+    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
+        Ok(crate::dynamic_batching::StaticBatchingStrategy::new(
+            self.morsel_size_requirement().unwrap_or_default(),
+        ))
     }
 }

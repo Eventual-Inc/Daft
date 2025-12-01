@@ -16,20 +16,17 @@ def test_expression():
         data: list[Any],
         expected: list[Any],
         name: str,
-        namespace: str | None = None,
+        fn_name: str | None = None,
         sql_name: str | None = None,
         args: list[Any] = [],
         kwargs: dict | None = None,
     ):
-        fn_name = name
+        fn_name = fn_name if fn_name else name
         fn_args = args
         fn_kwargs = kwargs if kwargs else {}
-        namespace = namespace
 
         col_expr = col("c0")
-        if namespace:
-            col_expr = getattr(col_expr, namespace)
-        expr = getattr(col_expr, fn_name)(*fn_args, **fn_kwargs)
+        expr = getattr(col_expr, name)(*fn_args, **fn_kwargs)
 
         sql_args = ["c0"]
         for arg in fn_args:
@@ -59,7 +56,7 @@ def test_expression():
 
         kwargs_str = ", ".join(kwargs_parts)
 
-        sql_name = sql_name if sql_name else fn_name
+        sql_name = sql_name if sql_name else name
 
         sql_expr = f"{sql_name}({', '.join(sql_args)}"
         if kwargs_str:
@@ -72,10 +69,7 @@ def test_expression():
         sql_res = sql(f"select {sql_expr} from df").to_pydict()["c0"]
 
         series = Series.from_pylist(data)
-        if namespace:
-            series = getattr(series, namespace)
-
-        series_res = getattr(series, fn_name)(*fn_args, **fn_kwargs)
+        series_res = series._eval_expressions(fn_name, *fn_args, **fn_kwargs)
         series_res = series_res.rename("c0").to_pylist()
         assert df_res == expected
         assert rb_result == expected
