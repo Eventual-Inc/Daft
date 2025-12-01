@@ -1,6 +1,8 @@
 mod batch;
 mod file;
 mod ipc;
+mod batch_file_writer;
+mod csv_writer;
 mod json_writer;
 mod parquet_writer;
 mod partition;

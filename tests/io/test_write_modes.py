@@ -177,7 +177,6 @@ def test_append_and_overwrite_s3_minio(
         path=f"s3://{bucket}/{uuid.uuid4()!s}",
         write_mode=write_mode,
         format=format,
-        num_partitions=num_partitions,
         partition_cols=partition_cols,
         io_config=minio_io_config,
     )
@@ -187,6 +186,7 @@ def _run_write_modes_empty_test(
     path,
     write_mode,
     format,
+    partition_cols,
     io_config,
 ):
     existing_data = {"a": ["a", "a", "b", "b"], "b": ["c", "d", "e", "f"]}
@@ -201,7 +201,7 @@ def _run_write_modes_empty_test(
         path,
         format,
         write_mode,
-        None,
+        partition_cols,
         io_config,
         sort_cols=["a", "b"],
     )
@@ -221,11 +221,13 @@ def _run_write_modes_empty_test(
 
 @pytest.mark.parametrize("write_mode", ["append", "overwrite"])
 @pytest.mark.parametrize("format", ["csv", "parquet"])
-def test_write_modes_local_empty_data(tmp_path, write_mode, format):
+@pytest.mark.parametrize("partition_cols", [None, ["a"]])
+def test_write_modes_local_empty_data(tmp_path, write_mode, format, partition_cols):
     _run_write_modes_empty_test(
         path=str(tmp_path),
         write_mode=write_mode,
         format=format,
+        partition_cols=partition_cols,
         io_config=None,
     )
 
@@ -233,16 +235,19 @@ def test_write_modes_local_empty_data(tmp_path, write_mode, format):
 @pytest.mark.integration()
 @pytest.mark.parametrize("write_mode", ["append", "overwrite"])
 @pytest.mark.parametrize("format", ["csv", "parquet"])
+@pytest.mark.parametrize("partition_cols", [None, ["a"]])
 def test_write_modes_s3_minio_empty_data(
     minio_io_config,
     bucket,
     write_mode,
     format,
+    partition_cols,
 ):
     _run_write_modes_empty_test(
         path=f"s3://{bucket}/{uuid.uuid4()!s}",
         write_mode=write_mode,
         format=format,
+        partition_cols=partition_cols,
         io_config=minio_io_config,
     )
 

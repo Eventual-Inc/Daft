@@ -12,6 +12,7 @@ use crate::{
     AsyncFileWriter, WriterFactory,
     json_writer::{create_native_json_writer, native_json_writer_supported},
     parquet_writer::{create_native_parquet_writer, native_parquet_writer_supported},
+    csv_writer::{create_native_csv_writer, native_csv_writer_supported},
 };
 
 enum WriterType {
@@ -53,6 +54,7 @@ impl PhysicalWriterFactory {
                 Self::select_parquet_writer_type(output_file_info, file_schema, native_enabled)
             }
             FileFormat::Json => Self::select_json_writer_type(file_schema),
+            FileFormat::Csv => Self::select_csv_writer_type(file_schema),
             _ => Ok(WriterType::Pyarrow), // Default to PyArrow for unsupported formats.
         }
     }
@@ -83,6 +85,14 @@ impl PhysicalWriterFactory {
             return Err(DaftError::NotImplemented("JSON writes are not supported with extension, timezone with timestamp, binary, or duration data types".to_string()));
         }
         // There is only a native implementation of the JSON writer. PyArrow does not support JSON writes.
+        Ok(WriterType::Native)
+    }
+
+    fn select_csv_writer_type(file_schema: &SchemaRef) -> DaftResult<WriterType> {
+        let native_supported = native_csv_writer_supported(file_schema)?;
+        if !native_supported {
+            return Err(DaftError::NotImplemented("CSV writes are not supported with nested (struct/list/map), timestamp with timezone, extension, or other complex data types".to_string()));
+        }
         Ok(WriterType::Native)
     }
 }
@@ -160,6 +170,9 @@ fn create_native_writer(
         }
         FileFormat::Json => {
             create_native_json_writer(root_dir, file_idx, partition_values, io_config)
+        }
+        FileFormat::Csv => {
+            create_native_csv_writer(root_dir, file_idx, partition_values, io_config)
         }
         _ => Err(DaftError::ComputeError(
             "Unsupported file format for native write".to_string(),

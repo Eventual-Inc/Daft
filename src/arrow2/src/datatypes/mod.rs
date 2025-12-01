@@ -247,6 +247,36 @@ impl DataType {
             }
         }
     }
+
+    pub fn can_convert_to_csv(&self) -> bool {
+        match self {
+            DataType::Null
+            | DataType::Boolean
+            | DataType::Int8
+            | DataType::Int16
+            | DataType::Int32
+            | DataType::Int64
+            | DataType::UInt8
+            | DataType::UInt16
+            | DataType::UInt32
+            | DataType::UInt64
+            | DataType::Float32
+            | DataType::Float64
+            | DataType::Decimal(_, _)
+            | DataType::Binary
+            | DataType::LargeBinary
+            | DataType::FixedSizeBinary(_)
+            | DataType::Utf8
+            | DataType::LargeUtf8
+            | DataType::Date32
+            | DataType::Date64
+            | DataType::Time32(_)
+            | DataType::Time64(_)
+            | DataType::Duration(_) => true,
+            DataType::Timestamp(_, tz) => tz.is_none(),
+            _ => false,
+        }
+    }
 }
 
 #[cfg(feature = "arrow")]
@@ -503,7 +533,8 @@ impl From<arrow_schema::IntervalUnit> for IntervalUnit {
 #[cfg(feature = "arrow")]
 impl From<Schema> for arrow_schema::Schema {
     fn from(schema: Schema) -> Self {
-        let fields: Vec<arrow_schema::Field> = schema.fields.into_iter().map(|f| f.into()).collect();
+        let fields: Vec<arrow_schema::Field> =
+            schema.fields.into_iter().map(|f| f.into()).collect();
         arrow_schema::Schema::new(fields)
     }
 }
