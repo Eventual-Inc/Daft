@@ -54,19 +54,15 @@ impl ScalarUDF for HashFunction {
         let schema = Schema::new(input.iter().map(|s| s.field().clone()));
         let batch = RecordBatch::new_with_broadcast(schema, input, num_rows)?;
 
-        let mut hashed_series = if hash_function == HashFunctionKind::XxHash3_64 {
-            batch.hash_rows()?.into_series().rename(&first_name)
-        } else {
-            let mut column_iter = batch.columns().iter();
-            let first_column = column_iter
-                .next()
-                .expect("validated batch must contain at least one column");
-            let mut hash_array = first_column.hash_with(None, hash_function)?;
-            for column in column_iter {
-                hash_array = column.hash_with(Some(&hash_array), hash_function)?;
-            }
-            hash_array.into_series().rename(&first_name)
-        };
+        let mut column_iter = batch.columns().iter();
+        let first_column = column_iter
+            .next()
+            .expect("validated batch must contain at least one column");
+        let mut hash_array = first_column.hash_with(None, hash_function)?;
+        for column in column_iter {
+            hash_array = column.hash_with(Some(&hash_array), hash_function)?;
+        }
+        let mut hashed_series = hash_array.into_series().rename(&first_name);
 
         if let Some(seed) = seed {
             hashed_series = hash_with_seed(hashed_series, seed, hash_function, &first_name)?;

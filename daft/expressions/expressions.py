@@ -1331,18 +1331,17 @@ class Expression:
 
     def hash(
         self,
-        *exprs: Expression,
         seed: Any | None = None,
         hash_function: Literal["xxhash", "xxhash32", "xxhash64", "xxhash3_64", "murmurhash3", "sha1"] | None = "xxhash",
     ) -> Expression:
         """Hashes the values in the Expression.
 
         Tip: See Also
-            [`daft.functions.hash`](https://docs.daft.ai/en/stable/api/functions/hash/)
+            [`daft.functions.hash`](https://docs.daft.ai/en/stable/api/functions/hash/): use the function for hashing multiple columns together.
         """
         from daft.functions import hash
 
-        return hash(self, *exprs, seed=seed, hash_function=hash_function)
+        return hash(self, seed=seed, hash_function=hash_function)
 
     def minhash(
         self,
