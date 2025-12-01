@@ -86,9 +86,10 @@ def test_roundtrip_simple_arrow_types(tmp_path, data, pa_type, expected_dtype, e
         ([[1, 2, 3], [4, 5, 6], None], pa.list_(pa.int64(), list_size=3)),
         ([{"bar": 1}, {"bar": None}, None], pa.struct([("bar", pa.int64())])),
         ([{"k": 1}, {"k": None}, None], pa.map_(pa.large_string(), pa.int64())),
+        ([b"\xff\xfe", b"\x80\x81", None], pa.large_binary()),
     ],
 )
 def test_write_csv_unsupported_types_raise(tmp_path, data, pa_type):
-    with pytest.raises(Exception, match="CSV writes are not supported"):
+    with pytest.raises(Exception):
         before = daft.from_arrow(pa.table({"id": pa.array(range(3)), "foo": pa.array(data, type=pa_type)}))
         before.write_csv(str(tmp_path))

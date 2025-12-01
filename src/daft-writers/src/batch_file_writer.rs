@@ -9,8 +9,7 @@ use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
 use crate::{
-    AsyncFileWriter, WriteResult, RETURN_PATHS_COLUMN_NAME,
-    storage_backend::StorageBackend,
+    AsyncFileWriter, RETURN_PATHS_COLUMN_NAME, WriteResult, storage_backend::StorageBackend,
 };
 
 pub struct BatchFileWriter<B: StorageBackend, W> {
@@ -89,7 +88,7 @@ impl<B: StorageBackend + Send + Sync, W: Send + Sync + 'static> AsyncFileWriter
             write_fn(&mut file_writer, &record_batches)?;
             Ok(file_writer)
         });
-        let file_writer = handle.await.map_err(|e| common_error::DaftError::ParquetError(e.to_string()))??;
+        let file_writer = handle.await??;
         self.file_writer.replace(file_writer);
 
         Ok(WriteResult {
@@ -104,8 +103,7 @@ impl<B: StorageBackend + Send + Sync, W: Send + Sync + 'static> AsyncFileWriter
                 let io_runtime = get_io_runtime(true);
                 io_runtime
                     .spawn_blocking(move || -> DaftResult<()> { finish_fn(file_writer) })
-                    .await
-                    .map_err(|e| common_error::DaftError::ParquetError(e.to_string()))??;
+                    .await??;
             }
         }
 
@@ -114,20 +112,18 @@ impl<B: StorageBackend + Send + Sync, W: Send + Sync + 'static> AsyncFileWriter
         let field = Field::new(RETURN_PATHS_COLUMN_NAME, DataType::Utf8);
         let filename_series = Series::from_arrow(
             Arc::new(field.clone()),
-            Box::new(arrow2::array::Utf8Array::<i64>::from_slice([
-                &self.filename.to_string_lossy(),
-            ])),
+            Box::new(arrow2::array::Utf8Array::<i64>::from_slice([&self
+                .filename
+                .to_string_lossy()])),
         )?;
-        let record_batch = RecordBatch::new_with_size(
-            Schema::new(vec![field]),
-            vec![filename_series],
-            1,
-        )?;
-        let record_batch_with_partition_values = if let Some(partition_values) = self.partition_values.take() {
-            record_batch.union(&partition_values)?
-        } else {
-            record_batch
-        };
+        let record_batch =
+            RecordBatch::new_with_size(Schema::new(vec![field]), vec![filename_series], 1)?;
+        let record_batch_with_partition_values =
+            if let Some(partition_values) = self.partition_values.take() {
+                record_batch.union(&partition_values)?
+            } else {
+                record_batch
+            };
         Ok(Some(record_batch_with_partition_values))
     }
 

@@ -1,17 +1,64 @@
 use std::{path::PathBuf, sync::Arc};
 
+use arrow_array::{
+    Array, ArrayRef, BinaryArray, FixedSizeBinaryArray, LargeBinaryArray,
+    RecordBatch as ArrowRecordBatch,
+    builder::{Int64Builder, LargeStringBuilder},
+};
 use arrow_csv::WriterBuilder;
+use arrow_schema::{
+    ArrowError, DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema, TimeUnit,
+};
+
+macro_rules! cast_duration_to_int64 {
+    ($arr:expr, $pt:ty) => {{
+        let a = $arr
+            .as_any()
+            .downcast_ref::<arrow_array::PrimitiveArray<$pt>>()
+            .unwrap();
+        let mut builder = Int64Builder::with_capacity(a.len());
+        for idx in 0..a.len() {
+            if a.is_null(idx) {
+                builder.append_null();
+            } else {
+                builder.append_value(a.value(idx));
+            }
+        }
+        Arc::new(builder.finish()) as ArrayRef
+    }};
+}
+
+macro_rules! try_encode_binary_utf8 {
+    ($arr:expr, $ty:ty) => {{
+        let a = $arr.as_any().downcast_ref::<$ty>().unwrap();
+        let mut builder = LargeStringBuilder::with_capacity(a.len(), 0);
+        for idx in 0..a.len() {
+            if a.is_null(idx) {
+                builder.append_null();
+            } else {
+                let bytes = a.value(idx);
+                if let Ok(s) = std::str::from_utf8(bytes) {
+                    builder.append_value(s);
+                } else {
+                    return Err(ArrowError::ComputeError("Invalid UTF8 payload".to_string()));
+                }
+            }
+        }
+        Arc::new(builder.finish()) as ArrayRef
+    }};
+}
+
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_io::{IOConfig, SourceType, parse_url};
-use daft_recordbatch::RecordBatch;
 use daft_micropartition::MicroPartition;
+use daft_recordbatch::RecordBatch;
 
 use crate::{
+    AsyncFileWriter,
+    batch_file_writer::BatchFileWriter,
     storage_backend::{FileStorageBackend, S3StorageBackend, StorageBackend},
     utils::build_filename,
-    batch_file_writer::BatchFileWriter,
-    AsyncFileWriter,
 };
 
 pub(crate) fn native_csv_writer_supported(file_schema: &SchemaRef) -> DaftResult<bool> {
@@ -69,15 +116,93 @@ fn make_csv_writer<B: StorageBackend + Send + Sync>(
     partition_values: Option<RecordBatch>,
     storage_backend: B,
 ) -> BatchFileWriter<B, arrow_csv::Writer<B::Writer>> {
-    let builder = Arc::new(|backend: B::Writer| {
-        WriterBuilder::new().with_header(true).build(backend)
-    });
-    let write_fn = Arc::new(|writer: &mut arrow_csv::Writer<B::Writer>, batches: &[arrow_array::RecordBatch]| {
-        for rb in batches {
-            writer.write(rb)?;
-        }
-        Ok(())
-    });
+    let builder =
+        Arc::new(|backend: B::Writer| WriterBuilder::new().with_header(true).build(backend));
+    let write_fn = Arc::new(
+        |writer: &mut arrow_csv::Writer<B::Writer>, batches: &[arrow_array::RecordBatch]| {
+            fn transform_batch(batch: ArrowRecordBatch) -> Result<ArrowRecordBatch, ArrowError> {
+                let schema = batch.schema();
+                let mut new_fields: Vec<ArrowField> = Vec::with_capacity(schema.fields().len());
+                let mut new_cols: Vec<ArrayRef> = Vec::with_capacity(batch.num_columns());
+                for (i, field_arc) in schema.fields().iter().enumerate() {
+                    let field = field_arc.as_ref();
+                    match field.data_type() {
+                        ArrowDataType::Duration(_) => {
+                            let arr = batch.column(i);
+                            let col = match arr.data_type() {
+                                ArrowDataType::Duration(TimeUnit::Second) => {
+                                    cast_duration_to_int64!(
+                                        arr,
+                                        arrow_array::types::DurationSecondType
+                                    )
+                                }
+                                ArrowDataType::Duration(TimeUnit::Millisecond) => {
+                                    cast_duration_to_int64!(
+                                        arr,
+                                        arrow_array::types::DurationMillisecondType
+                                    )
+                                }
+                                ArrowDataType::Duration(TimeUnit::Microsecond) => {
+                                    cast_duration_to_int64!(
+                                        arr,
+                                        arrow_array::types::DurationMicrosecondType
+                                    )
+                                }
+                                ArrowDataType::Duration(TimeUnit::Nanosecond) => {
+                                    cast_duration_to_int64!(
+                                        arr,
+                                        arrow_array::types::DurationNanosecondType
+                                    )
+                                }
+                                _ => unreachable!(),
+                            };
+                            new_cols.push(col);
+                            new_fields.push(ArrowField::new(
+                                field.name(),
+                                ArrowDataType::Int64,
+                                field.is_nullable(),
+                            ));
+                        }
+                        ArrowDataType::Binary
+                        | ArrowDataType::LargeBinary
+                        | ArrowDataType::FixedSizeBinary(_) => {
+                            // Encode binary: prefer UTF-8 when valid, else Base64
+                            let arr = batch.column(i);
+                            let col = match arr.data_type() {
+                                ArrowDataType::Binary => try_encode_binary_utf8!(arr, BinaryArray),
+                                ArrowDataType::LargeBinary => {
+                                    try_encode_binary_utf8!(arr, LargeBinaryArray)
+                                }
+                                ArrowDataType::FixedSizeBinary(_) => {
+                                    try_encode_binary_utf8!(arr, FixedSizeBinaryArray)
+                                }
+                                _ => unreachable!(),
+                            };
+                            new_cols.push(col);
+                            new_fields.push(ArrowField::new(
+                                field.name(),
+                                ArrowDataType::LargeUtf8,
+                                field.is_nullable(),
+                            ));
+                        }
+                        _ => {
+                            new_fields.push(field.clone());
+                            new_cols.push(batch.column(i).clone());
+                        }
+                    }
+                }
+                let new_schema = Arc::new(ArrowSchema::new(new_fields));
+                ArrowRecordBatch::try_new(new_schema, new_cols)
+            }
+
+            for rb in batches.iter() {
+                let rb2 = transform_batch(rb.clone())
+                    .map_err(|e| common_error::DaftError::ComputeError(e.to_string()))?;
+                writer.write(&rb2)?;
+            }
+            Ok(())
+        },
+    );
     BatchFileWriter::new(
         filename,
         partition_values,

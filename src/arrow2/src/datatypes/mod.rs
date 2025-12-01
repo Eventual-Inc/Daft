@@ -249,31 +249,20 @@ impl DataType {
     }
 
     pub fn can_convert_to_csv(&self) -> bool {
+        !self.is_nested()
+    }
+
+    /// Returns true if this type is nested (List, FixedSizeList, LargeList, Struct, Union, or Map), or a dictionary of a nested type
+    #[inline]
+    pub fn is_nested(&self) -> bool {
         match self {
-            DataType::Null
-            | DataType::Boolean
-            | DataType::Int8
-            | DataType::Int16
-            | DataType::Int32
-            | DataType::Int64
-            | DataType::UInt8
-            | DataType::UInt16
-            | DataType::UInt32
-            | DataType::UInt64
-            | DataType::Float32
-            | DataType::Float64
-            | DataType::Decimal(_, _)
-            | DataType::Binary
-            | DataType::LargeBinary
-            | DataType::FixedSizeBinary(_)
-            | DataType::Utf8
-            | DataType::LargeUtf8
-            | DataType::Date32
-            | DataType::Date64
-            | DataType::Time32(_)
-            | DataType::Time64(_)
-            | DataType::Duration(_) => true,
-            DataType::Timestamp(_, tz) => tz.is_none(),
+            DataType::Dictionary(_, v, ..) => v.is_nested(),
+            DataType::List(_)
+            | DataType::FixedSizeList(_, _)
+            | DataType::LargeList(_)
+            | DataType::Struct(_)
+            | DataType::Union(_, _, _)
+            | DataType::Map(_, _) => true,
             _ => false,
         }
     }

@@ -6,14 +6,12 @@ use daft_core::prelude::*;
 use daft_io::{IOConfig, SourceType, parse_url, utils::ObjectPath};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
-use daft_micropartition::MicroPartition;
 
 use crate::{
-    AsyncFileWriter, WriteResult,
+    AsyncFileWriter,
+    batch_file_writer::BatchFileWriter,
     storage_backend::{FileStorageBackend, ObjectStorageBackend, StorageBackend},
     utils::build_filename,
-    batch_file_writer::BatchFileWriter,
-    AsyncFileWriter,
 };
 
 /// Helper function that checks if we support native writes given the file format, root directory, and schema.
@@ -75,18 +73,23 @@ fn make_json_writer<B: StorageBackend + Send + Sync>(
     storage_backend: B,
 ) -> BatchFileWriter<B, LineDelimitedWriter<B::Writer>> {
     let builder = Arc::new(|backend: B::Writer| {
-        WriterBuilder::new().with_explicit_nulls(true).build::<_, LineDelimited>(backend)
+        WriterBuilder::new()
+            .with_explicit_nulls(true)
+            .build::<_, LineDelimited>(backend)
     });
-    let write_fn = Arc::new(|writer: &mut LineDelimitedWriter<B::Writer>, batches: &[arrow_array::RecordBatch]| {
-        let refs: Vec<&arrow_array::RecordBatch> = batches.iter().collect();
-        writer.write_batches(&refs)?;
-        Ok(())
-    });
-    let finish_fn: Option<Arc<dyn Fn(LineDelimitedWriter<B::Writer>) -> DaftResult<()> + Send + Sync>> =
-        Some(Arc::new(|mut writer: LineDelimitedWriter<B::Writer>| {
-            writer.finish()?;
+    let write_fn = Arc::new(
+        |writer: &mut LineDelimitedWriter<B::Writer>, batches: &[arrow_array::RecordBatch]| {
+            let refs: Vec<&arrow_array::RecordBatch> = batches.iter().collect();
+            writer.write_batches(&refs)?;
             Ok(())
-        }));
+        },
+    );
+    let finish_fn: Option<
+        Arc<dyn Fn(LineDelimitedWriter<B::Writer>) -> DaftResult<()> + Send + Sync>,
+    > = Some(Arc::new(|mut writer: LineDelimitedWriter<B::Writer>| {
+        writer.finish()?;
+        Ok(())
+    }));
     BatchFileWriter::new(
         filename,
         partition_values,

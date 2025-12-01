@@ -10,9 +10,9 @@ use daft_recordbatch::RecordBatch;
 
 use crate::{
     AsyncFileWriter, WriterFactory,
+    csv_writer::{create_native_csv_writer, native_csv_writer_supported},
     json_writer::{create_native_json_writer, native_json_writer_supported},
     parquet_writer::{create_native_parquet_writer, native_parquet_writer_supported},
-    csv_writer::{create_native_csv_writer, native_csv_writer_supported},
 };
 
 enum WriterType {
