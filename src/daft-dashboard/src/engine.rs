@@ -128,8 +128,8 @@ fn parse_physical_plan(physical_plan: &QueryPlan) -> OperatorInfos {
         let node_info = NodeInfo {
             id: node_id,
             name: plan.get("name").unwrap().as_str().unwrap().into(),
-            node_type: plan.get("node_type").unwrap().as_str().unwrap().into(),
-            node_category: plan.get("node_category").unwrap().as_str().unwrap().into(),
+            node_type: plan.get("type").unwrap().as_str().unwrap().into(),
+            node_category: plan.get("category").unwrap().as_str().unwrap().into(),
         };
 
         operators.insert(
@@ -141,9 +141,11 @@ fn parse_physical_plan(physical_plan: &QueryPlan) -> OperatorInfos {
             },
         );
 
-        let children = plan.get("children").unwrap().as_array().unwrap();
-        for child in children {
-            plans.push(child.clone());
+        if let Some(children) = plan.get("children") {
+            let children = children.as_array().unwrap();
+            for child in children {
+                plans.push(child.clone());
+            }
         }
     }
     operators
