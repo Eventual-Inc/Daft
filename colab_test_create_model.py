@@ -7,15 +7,10 @@
 #
 # HOW TO USE IN COLAB:
 # --------------------
-# Option 1: Install daft and run this script directly
+# Run these commands in a Colab cell:
+#
 #   !pip install daft pydantic
-#   # Then paste this script into a cell
-#
-# Option 2: Install from the fix branch (once pushed)
-#   !pip install git+https://github.com/Eventual-Inc/Daft.git@fix/colab-pydantic-pickle
-#
-# Option 3: Fetch latest version from gist (for iterative testing)
-#   !curl -s "https://gist.githubusercontent.com/ykdojo/5fe97bc6514342988cceb54cd68330ed/raw/colab_test_create_model.py?nocache=$RANDOM" | python
+#   !curl -s "https://gist.githubusercontent.com/ykdojo/5fe97bc6514342988cceb54cd68330ed/raw/colab_test_create_model.py?nocache=$RANDOM" -o test.py && python test.py
 #
 # TO UPDATE THE GIST (run from repo root):
 #   gh gist edit 5fe97bc6514342988cceb54cd68330ed colab_test_create_model.py
@@ -82,9 +77,28 @@ def clean_pydantic_model(model_cls, cleaned_cache=None):
     return cleaned
 
 
-# Monkey-patch daft.functions.ai to use the cleaning function
+# Detect Colab environment
+def _is_colab():
+    try:
+        import google.colab  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
+print("=== Colab Detection Verification ===")
+is_colab = _is_colab()
+print(f"Running in Colab: {is_colab}")
+if is_colab:
+    print("✓ Colab detected - this is where the pickle issue occurs")
+else:
+    print("✗ Not in Colab (expected if running locally)")
+print()
+
 import daft.functions.ai as ai_module
 
+# Monkey-patch daft.functions.ai to use the cleaning function (for testing)
 original_prompt = ai_module.prompt
 
 
