@@ -79,6 +79,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         self._remaining_filters: Union[list[PyExpr], None] = None
         self._fragment_group_size = fragment_group_size
         self._enable_strict_filter_pushdown = get_context().daft_planning_config.enable_strict_filter_pushdown
+        self._schema = Schema.from_pyarrow_schema(self._ds.schema)
 
     def name(self) -> str:
         return "LanceDBScanOperator"
@@ -87,7 +88,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         return f"LanceDBScanOperator({self._ds.uri})"
 
     def schema(self) -> Schema:
-        return Schema.from_pyarrow_schema(self._ds.schema)
+        return self._schema
 
     def partitioning_keys(self) -> list[PyPartitionField]:
         return []
