@@ -199,6 +199,17 @@ jobs:
       id-token: write
       contents: read
     steps:
+    - name: Free Disk Space (Ubuntu)
+      if: ${{ (runner.os == 'Linux') }}
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: false
+        android: true
+        dotnet: false
+        haskell: true
+        large-packages: false
+        docker-images: false
+        swap-storage: true
     - uses: actions/checkout@v5
       with:
         submodules: true
