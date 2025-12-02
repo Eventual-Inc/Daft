@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+mod split_jsonl;
+
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
@@ -112,6 +114,12 @@ impl MergeByFileSize<'_> {
             .accumulator
             .as_ref()
             .expect("accumulator should be populated");
+
+        // Respect max_source_count: do not merge if we would exceed the cap
+        if accumulator.sources.len() >= self.max_source_count {
+            return false;
+        }
+
         let child_matches_accumulator = other.partition_spec() == accumulator.partition_spec()
             && other.file_format_config == accumulator.file_format_config
             && other.schema == accumulator.schema
@@ -119,11 +127,10 @@ impl MergeByFileSize<'_> {
             && other.pushdowns == accumulator.pushdowns;
 
         // Merge only if the resultant accumulator is smaller than the targeted upper bound
-        let sum_smaller_than_max_size_bytes = if let Some(child_bytes) =
-            other.estimate_in_memory_size_bytes(Some(self.cfg))
-            && let Some(accumulator_bytes) =
-                accumulator.estimate_in_memory_size_bytes(Some(self.cfg))
-        {
+        let sum_smaller_than_max_size_bytes = if let (Some(child_bytes), Some(accumulator_bytes)) = (
+            other.estimate_in_memory_size_bytes(Some(self.cfg)),
+            accumulator.estimate_in_memory_size_bytes(Some(self.cfg)),
+        ) {
             child_bytes + accumulator_bytes <= self.target_upper_bound_size_bytes
         } else {
             false
@@ -334,8 +341,11 @@ fn split_and_merge_pass(
                 .downcast::<ScanTask>()
                 .map_err(|e| DaftError::TypeError(format!("Expected Arc<ScanTask>, found {:?}", e)))
         }));
+        // Split JSONL by byte ranges aligned to line boundaries for JSONFileFormat, other formats will be leaked through.
+        // If there are other file formats in the future, a pipeline can be constructed to pass split_tasks.
+        let split_jsonl_tasks = split_jsonl::split_by_jsonl_ranges(iter, cfg);
         let split_tasks = split_by_row_groups(
-            iter,
+            split_jsonl_tasks,
             cfg.parquet_split_row_groups_max_files,
             cfg.scan_tasks_min_size_bytes,
             cfg.scan_tasks_max_size_bytes,

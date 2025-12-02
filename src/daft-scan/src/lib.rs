@@ -113,6 +113,8 @@ impl From<Error> for pyo3::PyErr {
 pub enum ChunkSpec {
     /// Selection of Parquet row groups.
     Parquet(Vec<i64>),
+    /// Selection of a byte range (inclusive-exclusive) within a line-delimited file (e.g., JSONL).
+    Bytes { start: usize, end: usize },
 }
 
 impl ChunkSpec {
@@ -122,6 +124,9 @@ impl ChunkSpec {
         match self {
             Self::Parquet(chunks) => {
                 res.push(format!("Chunks = {chunks:?}"));
+            }
+            Self::Bytes { start, end } => {
+                res.push(format!("Bytes = [{start}, {end})"));
             }
         }
         res
