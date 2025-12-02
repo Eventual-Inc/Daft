@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use arrow2::offset::OffsetsBuffer;
 use common_error::{DaftError, DaftResult};
+use daft_arrow::offset::OffsetsBuffer;
 
 use crate::{
     array::growable::{Growable, GrowableArray},
@@ -15,7 +15,7 @@ pub struct FixedSizeListArray {
     pub field: Arc<Field>,
     /// contains all the elements of the nested lists flattened into a single contiguous array.
     pub flat_child: Series,
-    validity: Option<arrow2::bitmap::Bitmap>,
+    validity: Option<daft_arrow::bitmap::Bitmap>,
 }
 
 impl DaftArrayType for FixedSizeListArray {
@@ -28,7 +28,7 @@ impl FixedSizeListArray {
     pub fn new<F: Into<Arc<Field>>>(
         field: F,
         flat_child: Series,
-        validity: Option<arrow2::bitmap::Bitmap>,
+        validity: Option<daft_arrow::bitmap::Bitmap>,
     ) -> Self {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
@@ -62,7 +62,7 @@ impl FixedSizeListArray {
         }
     }
 
-    pub fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
+    pub fn validity(&self) -> Option<&daft_arrow::bitmap::Bitmap> {
         self.validity.as_ref()
     }
 
@@ -156,9 +156,9 @@ impl FixedSizeListArray {
         ))
     }
 
-    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+    pub fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
         let arrow_dtype = self.data_type().to_arrow().unwrap();
-        Box::new(arrow2::array::FixedSizeListArray::new(
+        Box::new(daft_arrow::array::FixedSizeListArray::new(
             arrow_dtype,
             self.flat_child.to_arrow(),
             self.validity.clone(),
@@ -173,7 +173,7 @@ impl FixedSizeListArray {
         }
     }
 
-    pub fn with_validity(&self, validity: Option<arrow2::bitmap::Bitmap>) -> DaftResult<Self> {
+    pub fn with_validity(&self, validity: Option<daft_arrow::bitmap::Bitmap>) -> DaftResult<Self> {
         if let Some(v) = &validity
             && v.len() != self.len()
         {
@@ -300,7 +300,7 @@ mod tests {
         FixedSizeListArray::new(
             field,
             flat_child.into_series(),
-            Some(arrow2::bitmap::Bitmap::from(validity)),
+            Some(daft_arrow::bitmap::Bitmap::from(validity)),
         )
     }
 

@@ -104,7 +104,8 @@ impl RecordBatch {
             .map(|name| match name_to_pivot_key_idx.get(name) {
                 Some(pivot_key_idx) => {
                     let indices = pivot_key_idx_to_values_indices.get(pivot_key_idx).unwrap();
-                    let indices_as_arrow = arrow2::array::UInt64Array::from_iter(indices.iter());
+                    let indices_as_arrow =
+                        daft_arrow::array::UInt64Array::from_iter(indices.iter());
                     let indices_as_series =
                         UInt64Array::from(("", Box::new(indices_as_arrow))).into_series();
                     let values = value_series.take(&indices_as_series)?;

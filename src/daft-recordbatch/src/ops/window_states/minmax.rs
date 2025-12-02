@@ -10,7 +10,7 @@ pub struct MinMaxWindowState {
     deque: VecDeque<usize>,
     cur_idx: usize,
     result_idxs: Vec<u64>,
-    validity: arrow2::bitmap::MutableBitmap,
+    validity: daft_arrow::bitmap::MutableBitmap,
     is_min: bool,
 }
 
@@ -22,7 +22,7 @@ impl MinMaxWindowState {
             deque: VecDeque::new(),
             cur_idx: 0,
             result_idxs: Vec::with_capacity(total_length),
-            validity: arrow2::bitmap::MutableBitmap::with_capacity(total_length),
+            validity: daft_arrow::bitmap::MutableBitmap::with_capacity(total_length),
             is_min,
         }
     }

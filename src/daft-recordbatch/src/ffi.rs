@@ -21,7 +21,7 @@ pub fn record_batch_from_arrow(
     let names = schema.field_names().collect::<Vec<_>>();
     let num_batches = batches.len();
     // First extract all the arrays at once while holding the GIL
-    let mut extracted_arrow_arrays: Vec<(Vec<Box<dyn arrow2::array::Array>>, usize)> =
+    let mut extracted_arrow_arrays: Vec<(Vec<Box<dyn daft_arrow::array::Array>>, usize)> =
         Vec::with_capacity(num_batches);
 
     for rb in batches {

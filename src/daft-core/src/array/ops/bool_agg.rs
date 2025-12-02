@@ -1,5 +1,5 @@
-use arrow2::array::{Array, BooleanArray};
 use common_error::DaftResult;
+use daft_arrow::array::{Array, BooleanArray};
 
 use crate::{
     array::{

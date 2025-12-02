@@ -15,8 +15,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-use arrow2::bitmap::Bitmap;
-use arrow2::{
+use daft_arrow::bitmap::Bitmap;
+use daft_arrow::{
     array::PrimitiveArray,
     bitmap::{MutableBitmap, utils::SlicesIterator},
     buffer::Buffer,
@@ -162,7 +162,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use arrow2::{
+    use daft_arrow::{
         array::{Array, ord},
         datatypes::DataType,
     };

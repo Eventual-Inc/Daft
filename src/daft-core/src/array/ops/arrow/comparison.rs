@@ -1,9 +1,9 @@
-use arrow2::{
+use common_error::DaftResult;
+use daft_arrow::{
     array::{Array, FixedSizeListArray, ListArray, PrimitiveArray, equal, ord::build_compare},
     datatypes::DataType,
     error::Result,
 };
-use common_error::DaftResult;
 use num_traits::Float;
 
 use crate::{
@@ -11,7 +11,7 @@ use crate::{
     series::Series,
 };
 
-fn build_is_equal_float<F: Float + arrow2::types::NativeType>(
+fn build_is_equal_float<F: Float + daft_arrow::types::NativeType>(
     left: &dyn Array,
     right: &dyn Array,
     nan_equal: bool,
