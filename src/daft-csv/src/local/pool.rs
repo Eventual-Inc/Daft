@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use arrow2::io::csv::read;
+use daft_arrow::io::csv::read;
 use parking_lot::{Mutex, RwLock};
 
 // The default size of a slab used for reading CSV files in chunks. Currently set to 4 MiB. This can be tuned.

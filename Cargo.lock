@@ -1790,7 +1790,7 @@ dependencies = [
 name = "common-arrow-ffi"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
+ "daft-arrow",
  "pyo3",
 ]
 
@@ -1821,7 +1821,7 @@ name = "common-error"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow-schema",
- "arrow2",
+ "daft-arrow",
  "parquet2",
  "pyo3",
  "regex",
@@ -1852,10 +1852,10 @@ dependencies = [
 name = "common-image"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "bincode",
  "common-error",
  "common-ndarray",
+ "daft-arrow",
  "daft-schema",
  "image",
  "ndarray",
@@ -2397,6 +2397,7 @@ dependencies = [
  "common-version",
  "daft-ai",
  "daft-algebra",
+ "daft-arrow",
  "daft-catalog",
  "daft-cli",
  "daft-compression",
@@ -2468,6 +2469,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-arrow"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+]
+
+[[package]]
 name = "daft-catalog"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2508,10 +2516,10 @@ dependencies = [
 name = "daft-connect"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "common-error",
  "common-file-formats",
  "common-runtime",
+ "daft-arrow",
  "daft-catalog",
  "daft-context",
  "daft-core",
@@ -2545,12 +2553,12 @@ dependencies = [
 name = "daft-context"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "async-trait",
  "common-daft-config",
  "common-error",
  "common-metrics",
  "common-runtime",
+ "daft-arrow",
  "daft-core",
  "daft-dashboard",
  "daft-io",
@@ -2568,7 +2576,6 @@ dependencies = [
 name = "daft-core"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "bincode",
  "chrono",
  "chrono-tz",
@@ -2581,6 +2588,7 @@ dependencies = [
  "common-io-config",
  "common-ndarray",
  "common-py-serde",
+ "daft-arrow",
  "daft-hash",
  "daft-minhash",
  "daft-schema",
@@ -2607,13 +2615,13 @@ dependencies = [
 name = "daft-csv"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "async-compat",
  "async-stream",
  "common-error",
  "common-py-serde",
  "common-runtime",
  "csv-async",
+ "daft-arrow",
  "daft-compression",
  "daft-core",
  "daft-decoding",
@@ -2661,10 +2669,10 @@ dependencies = [
 name = "daft-decoding"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "atoi_simd",
  "chrono",
  "csv-async",
+ "daft-arrow",
  "fast-float2",
  "simdutf8",
 ]
@@ -2769,10 +2777,10 @@ dependencies = [
 name = "daft-functions-binary"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "base64 0.22.1",
  "common-error",
  "common-macros",
+ "daft-arrow",
  "daft-core",
  "daft-dsl",
  "flate2",
@@ -2800,8 +2808,8 @@ dependencies = [
 name = "daft-functions-list"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "common-error",
+ "daft-arrow",
  "daft-core",
  "daft-dsl",
  "indexmap 2.11.4",
@@ -2813,8 +2821,8 @@ dependencies = [
 name = "daft-functions-serde"
 version = "0.0.0"
 dependencies = [
- "arrow2",
  "common-error",
+ "daft-arrow",
  "daft-core",
  "daft-dsl",
  "serde",
@@ -2837,10 +2845,10 @@ dependencies = [
 name = "daft-functions-tokenize"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "base64 0.22.1",
  "common-error",
  "common-runtime",
+ "daft-arrow",
  "daft-core",
  "daft-dsl",
  "daft-io",
@@ -2874,10 +2882,10 @@ name = "daft-functions-utf8"
 version = "0.3.0-dev0"
 dependencies = [
  "aho-corasick",
- "arrow2",
  "chrono",
  "chrono-tz",
  "common-error",
+ "daft-arrow",
  "daft-core",
  "daft-dsl",
  "itertools 0.14.0",
@@ -2903,10 +2911,10 @@ dependencies = [
 name = "daft-image"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "base64 0.22.1",
  "common-error",
  "common-image",
+ "daft-arrow",
  "daft-core",
  "daft-dsl",
  "daft-schema",
@@ -2987,11 +2995,11 @@ dependencies = [
 name = "daft-json"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "chrono",
  "common-error",
  "common-py-serde",
  "common-runtime",
+ "daft-arrow",
  "daft-compression",
  "daft-core",
  "daft-decoding",
@@ -3144,13 +3152,13 @@ dependencies = [
 name = "daft-micropartition"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "bincode",
  "common-error",
  "common-file-formats",
  "common-partitioning",
  "common-runtime",
  "common-scan-info",
+ "daft-arrow",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -3188,7 +3196,6 @@ dependencies = [
 name = "daft-parquet"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "async-compat",
  "async-stream",
  "bincode",
@@ -3196,6 +3203,7 @@ dependencies = [
  "common-arrow-ffi",
  "common-error",
  "common-runtime",
+ "daft-arrow",
  "daft-core",
  "daft-dsl",
  "daft-io",
@@ -3230,7 +3238,6 @@ name = "daft-recordbatch"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
- "arrow2",
  "async-recursion",
  "comfy-table 7.1.4",
  "common-arrow-ffi",
@@ -3239,6 +3246,7 @@ dependencies = [
  "common-metrics",
  "common-py-serde",
  "common-runtime",
+ "daft-arrow",
  "daft-core",
  "daft-dsl",
  "daft-functions-list",
@@ -3269,7 +3277,6 @@ dependencies = [
 name = "daft-scan"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -3279,6 +3286,7 @@ dependencies = [
  "common-runtime",
  "common-scan-info",
  "ctor",
+ "daft-arrow",
  "daft-core",
  "daft-csv",
  "daft-decoding",
@@ -3307,12 +3315,12 @@ dependencies = [
 name = "daft-schema"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "common-arrow-ffi",
  "common-display",
  "common-error",
  "common-py-serde",
  "common-version",
+ "daft-arrow",
  "derive_more",
  "educe",
  "html-escape",
@@ -3343,10 +3351,10 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow-flight",
  "arrow-ipc",
- "arrow2",
  "async-channel 2.5.0",
  "common-error",
  "common-runtime",
+ "daft-arrow",
  "daft-core",
  "daft-dsl",
  "daft-io",
@@ -3366,8 +3374,8 @@ dependencies = [
 name = "daft-sketch"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "common-error",
+ "daft-arrow",
  "serde_arrow",
  "sketches-ddsketch",
  "snafu",
@@ -3377,11 +3385,11 @@ dependencies = [
 name = "daft-sql"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "common-daft-config",
  "common-error",
  "common-io-config",
  "common-runtime",
+ "daft-arrow",
  "daft-catalog",
  "daft-context",
  "daft-core",
@@ -3417,10 +3425,10 @@ dependencies = [
 name = "daft-warc"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "chrono",
  "common-error",
  "common-runtime",
+ "daft-arrow",
  "daft-compression",
  "daft-core",
  "daft-dsl",
@@ -3443,12 +3451,12 @@ dependencies = [
  "arrow-array",
  "arrow-json",
  "arrow-schema",
- "arrow2",
  "async-trait",
  "common-daft-config",
  "common-error",
  "common-file-formats",
  "common-runtime",
+ "daft-arrow",
  "daft-core",
  "daft-dsl",
  "daft-io",
