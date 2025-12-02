@@ -30,6 +30,7 @@ def warmup():
 ray.get([warmup.remote() for _ in range(64)])
 
 
+@daft.func(return_dtype=daft.DataType.list(daft.DataType.float32()))
 def resample(audio_bytes):
     waveform, sampling_rate = torchaudio.load(io.BytesIO(audio_bytes), format="flac")
     waveform = T.Resample(sampling_rate, NEW_SAMPLING_RATE)(waveform).squeeze()
@@ -62,9 +63,7 @@ class Transcriber:
         )
         self.model.to(self.device)
 
-    @daft.method.batch(
-        return_dtype=daft.DataType.list(daft.DataType.int32()),
-    )
+    @daft.method.batch(return_dtype=daft.DataType.list(daft.DataType.int32()), batch_size=64)
     def __call__(self, extracted_features):
         spectrograms = np.array(extracted_features)
         spectrograms = torch.tensor(spectrograms).to(self.device, dtype=self.dtype)
@@ -86,10 +85,7 @@ daft.set_execution_config(enable_dynamic_batching=True)
 start_time = time.time()
 
 df = daft.read_parquet(INPUT_PATH)
-df = df.with_column(
-    "resampled",
-    df["audio"]["bytes"].apply(resample, return_dtype=daft.DataType.list(daft.DataType.float32())),
-)
+df = df.with_column("resampled", resample(df["audio"]["bytes"]))
 df = df.with_column("extracted_features", whisper_preprocess(df["resampled"]))
 df = df.with_column("token_ids", Transcriber()(df["extracted_features"]))
 df = df.with_column("transcription", decoder(df["token_ids"]))
