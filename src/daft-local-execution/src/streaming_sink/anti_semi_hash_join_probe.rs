@@ -90,7 +90,7 @@ impl AntiSemiProbeSink {
         input: &Arc<MicroPartition>,
         is_semi: bool,
     ) -> DaftResult<Arc<MicroPartition>> {
-        let input_tables = input.tables();
+        let input_tables = input.record_batches();
         let mut input_idxs = vec![vec![]; input_tables.len()];
         for (probe_side_table_idx, table) in input_tables.iter().enumerate() {
             let join_keys = table.eval_expression_list(probe_on)?;
@@ -132,7 +132,7 @@ impl AntiSemiProbeSink {
         input: &Arc<MicroPartition>,
     ) -> DaftResult<()> {
         let _loop = info_span!("AntiSemiOperator::eval_and_probe").entered();
-        for table in input.tables() {
+        for table in input.record_batches() {
             let join_keys = table.eval_expression_list(probe_on)?;
             let idx_iter = probe_state.probe_indices(&join_keys)?;
 

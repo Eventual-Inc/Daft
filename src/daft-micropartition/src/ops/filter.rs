@@ -28,7 +28,7 @@ impl MicroPartition {
         }
 
         let tables = self
-            .tables()
+            .record_batches()
             .iter()
             .map(|t| t.filter(predicate))
             .collect::<DaftResult<Vec<_>>>()

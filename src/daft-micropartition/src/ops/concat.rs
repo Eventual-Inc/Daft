@@ -37,7 +37,7 @@ impl MicroPartition {
 
         for m in &mps {
             let m = m.deref().borrow();
-            all_tables.extend_from_slice(m.tables());
+            all_tables.extend_from_slice(m.record_batches());
         }
         let mut all_stats = None;
 

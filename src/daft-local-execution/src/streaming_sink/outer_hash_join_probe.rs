@@ -206,7 +206,7 @@ impl OuterHashJoinProbeSink {
         let build_side_table = probe_state.get_record_batch();
 
         let final_tables = input
-            .tables()
+            .record_batches()
             .iter()
             .map(|input_table| {
                 let mut build_side_idxs = Vec::new();
@@ -269,7 +269,7 @@ impl OuterHashJoinProbeSink {
         let build_side_table = probe_state.get_record_batch();
 
         let final_tables = input
-            .tables()
+            .record_batches()
             .iter()
             .map(|input_table| {
                 // We can instantiate with capacity for left/right probes since we will always push even if there's no match.
@@ -342,7 +342,7 @@ impl OuterHashJoinProbeSink {
     ) -> DaftResult<Arc<MicroPartition>> {
         let build_side_table = probe_state.get_record_batch();
         let final_tables = input
-            .tables()
+            .record_batches()
             .iter()
             .map(|input_table| {
                 // We can instantiate with capacity for outer probes since we will always push even if there's no match.

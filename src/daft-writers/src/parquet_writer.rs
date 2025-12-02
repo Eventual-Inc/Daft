@@ -263,7 +263,7 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
             self.create_writer().await?;
         }
         let num_rows = data.len();
-        let record_batches = data.tables();
+        let record_batches = data.record_batches();
 
         let row_group_writer_thread_handle = {
             // Wait for the workers to complete encoding, and append the resulting column chunks to the row group and the file.

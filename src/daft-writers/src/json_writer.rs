@@ -123,7 +123,7 @@ impl<B: StorageBackend> AsyncFileWriter for JsonWriter<B> {
         // us from using a counting writer. We need to fix this upstream.
         let est_bytes_to_write = self.estimate_bytes_to_write(&data)?;
         self.bytes_written += est_bytes_to_write;
-        let record_batches = data.tables();
+        let record_batches = data.record_batches();
         let record_batches: Vec<ArrowRecordBatch> = record_batches
             .iter()
             .map(|rb| rb.clone().try_into())

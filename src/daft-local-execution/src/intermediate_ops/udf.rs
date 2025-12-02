@@ -327,7 +327,7 @@ impl UdfHandle {
         input: Arc<MicroPartition>,
         runtime_stats: Arc<UdfRuntimeStats>,
     ) -> DaftResult<Arc<MicroPartition>> {
-        let input_batches = input.tables();
+        let input_batches = input.record_batches();
         let mut output_batches = Vec::with_capacity(input_batches.len());
 
         for batch in input_batches {

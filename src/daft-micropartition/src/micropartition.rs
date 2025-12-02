@@ -128,19 +128,19 @@ impl MicroPartition {
         self.len() == 0
     }
 
-    pub fn tables(&self) -> &[RecordBatch] {
+    pub fn record_batches(&self) -> &[RecordBatch] {
         self.chunks.as_slice()
     }
 
     pub fn size_bytes(&self) -> usize {
-        self.tables()
+        self.record_batches()
             .iter()
             .map(daft_recordbatch::RecordBatch::size_bytes)
             .sum()
     }
 
     pub fn concat_or_get(&self) -> crate::Result<Option<RecordBatch>> {
-        match self.tables() {
+        match self.record_batches() {
             [] => Ok(None),
             // Avoid the clone here?
             [table] => Ok(Some(table.clone())),
@@ -159,7 +159,7 @@ impl MicroPartition {
         partition_num: u64,
         column_name: &str,
     ) -> DaftResult<Self> {
-        let tables = self.tables();
+        let tables = self.record_batches();
 
         let tables_with_id = tables
             .iter()
@@ -198,7 +198,7 @@ impl MicroPartition {
         let options = arrow2::io::ipc::write::WriteOptions { compression: None };
         let mut writer = arrow2::io::ipc::write::StreamWriter::new(buffer, options);
         writer.start(&schema, None)?;
-        for table in self.tables() {
+        for table in self.record_batches() {
             let chunk = table.to_chunk();
             writer.write(&chunk, None)?;
         }

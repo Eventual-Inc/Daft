@@ -57,7 +57,7 @@ impl BlockingSink for CommitWriteSink {
         mut state: Self::State,
         _spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
-        state.append(input.tables().iter().cloned());
+        state.append(input.record_batches().iter().cloned());
         Ok(BlockingSinkStatus::NeedMoreInput(state)).into()
     }
 

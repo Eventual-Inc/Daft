@@ -87,7 +87,7 @@ impl PyMicroPartition {
     }
 
     pub fn get_record_batches(&self, py: Python) -> Vec<PyRecordBatch> {
-        let record_batches = py.detach(|| self.inner.tables());
+        let record_batches = py.detach(|| self.inner.record_batches());
         record_batches
             .iter()
             .map(|rb| PyRecordBatch {
@@ -894,7 +894,7 @@ impl PyMicroPartition {
             &bincode::serde::encode_to_vec(&self.inner.statistics, config).unwrap(),
         );
 
-        let tables = self.inner.tables();
+        let tables = self.inner.record_batches();
         let _from_pytable = py
             .import(pyo3::intern!(py, "daft.recordbatch"))?
             .getattr(pyo3::intern!(py, "RecordBatch"))?

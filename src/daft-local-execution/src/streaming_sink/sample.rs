@@ -280,7 +280,7 @@ impl StreamingSink for SampleSink {
             (SampleState::Size(mut size_state), SamplingMethod::Size(_)) => spawner
                 .spawn(
                     async move {
-                        for rb in input.tables().iter().cloned() {
+                        for rb in input.record_batches().iter().cloned() {
                             size_state.process_record_batch(rb)?;
                         }
                         Ok((

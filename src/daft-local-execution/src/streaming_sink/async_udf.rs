@@ -212,7 +212,7 @@ impl StreamingSink for AsyncUdfSink {
                             }
 
                             // Spawn tasks for each batch
-                            for batch in input.tables() {
+                            for batch in input.record_batches() {
                                 let params = params.clone();
                                 let expr = state.udf_expr.clone();
                                 let batch = batch.clone();

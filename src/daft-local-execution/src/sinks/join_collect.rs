@@ -52,7 +52,7 @@ impl BlockingSink for JoinCollectSink {
                         .0
                         .as_mut()
                         .expect("Collected tables should not be consumed before sink stage is done")
-                        .extend(input.tables().iter().cloned());
+                        .extend(input.record_batches().iter().cloned());
 
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
                 },

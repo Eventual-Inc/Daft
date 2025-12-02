@@ -17,7 +17,7 @@ impl MicroPartition {
         let mut slices_tables = vec![];
         let mut offset_so_far = start;
 
-        for tab in self.tables() {
+        for tab in self.record_batches() {
             if rows_needed == 0 {
                 break;
             }

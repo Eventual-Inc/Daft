@@ -39,7 +39,7 @@ impl MicroPartition {
         exprs: &[BoundExpr],
         num_partitions: usize,
     ) -> DaftResult<Vec<Self>> {
-        let tables = self.tables();
+        let tables = self.record_batches();
 
         if tables.is_empty() {
             return Ok(
@@ -57,7 +57,7 @@ impl MicroPartition {
     }
 
     pub fn partition_by_random(&self, num_partitions: usize, seed: u64) -> DaftResult<Vec<Self>> {
-        let tables = self.tables();
+        let tables = self.record_batches();
 
         if tables.is_empty() {
             return Ok(
@@ -81,7 +81,7 @@ impl MicroPartition {
         boundaries: &RecordBatch,
         descending: &[bool],
     ) -> DaftResult<Vec<Self>> {
-        let tables = self.tables();
+        let tables = self.record_batches();
 
         if tables.is_empty() {
             let num_partitions = boundaries.len() + 1;

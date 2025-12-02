@@ -192,7 +192,7 @@ impl GroupedAggregateState {
         let groupby = input.eval_expression_list(params.group_by.as_slice())?;
 
         let groupkey_hashes = groupby
-            .tables()
+            .record_batches()
             .iter()
             .map(|t| t.hash_rows())
             .collect::<DaftResult<Vec<_>>>()?;

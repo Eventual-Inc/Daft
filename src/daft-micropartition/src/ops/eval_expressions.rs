@@ -23,7 +23,7 @@ impl MicroPartition {
         let expected_schema = infer_schema(exprs, &self.schema)?;
 
         let evaluated_tables: Vec<_> = self
-            .tables()
+            .record_batches()
             .iter()
             .map(|table| table.eval_expression_list(exprs))
             .try_collect()?;
@@ -44,7 +44,7 @@ impl MicroPartition {
         let expected_schema = infer_schema(exprs.as_ref(), &self.schema)?;
 
         let evaluated_table_futs = self
-            .tables()
+            .record_batches()
             .iter()
             .map(|table| table.eval_expression_list_async(exprs.clone()));
 
@@ -71,7 +71,7 @@ impl MicroPartition {
         let expected_schema = infer_schema(exprs, &self.schema)?;
 
         let evaluated_table_futs = self
-            .tables()
+            .record_batches()
             .iter()
             .map(|table| table.par_eval_expression_list(exprs, num_parallel_tasks));
 
@@ -92,7 +92,7 @@ impl MicroPartition {
 
     pub fn explode(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
         let evaluated_tables = self
-            .tables()
+            .record_batches()
             .iter()
             .map(|t| t.explode(exprs))
             .collect::<DaftResult<Vec<_>>>()?;

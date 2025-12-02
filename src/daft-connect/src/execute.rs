@@ -308,7 +308,7 @@ impl ConnectSession {
                 let mut result_stream = this.run_query(plan).await?;
                 while let Some(result) = result_stream.next().await {
                     let result = result?;
-                    let tables = result.tables();
+                    let tables = result.record_batches();
                     for table in tables {
                         let response = res.arrow_batch_response(table)?;
                         if tx.send(Ok(response)).await.is_err() {
@@ -362,7 +362,7 @@ impl ConnectSession {
             .next()
             .ok_or_else(|| ConnectError::internal("no results"))?;
 
-        let tbls = single_batch.tables();
+        let tbls = single_batch.record_batches();
         let tbl = RecordBatch::concat(tbls)?;
         let output = tbl.to_comfy_table(None).to_string();
 

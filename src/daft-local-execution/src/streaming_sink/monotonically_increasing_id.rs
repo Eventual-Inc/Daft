@@ -65,7 +65,7 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
                 async move {
                     let mut id_offset = state.fetch_and_increment_offset(input.len() as u64);
 
-                    let tables = input.tables();
+                    let tables = input.record_batches();
                     let mut results = Vec::with_capacity(tables.len());
                     for t in tables {
                         let len = t.len() as u64;

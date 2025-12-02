@@ -97,7 +97,7 @@ impl InnerHashJoinProbeOperator {
     ) -> DaftResult<Arc<MicroPartition>> {
         let build_side_table = probe_state.get_record_batch();
 
-        let input_tables = input.tables();
+        let input_tables = input.record_batches();
         let result_tables = input_tables
             .iter()
             .map(|input_table| {

@@ -59,7 +59,7 @@ impl ProbeTableState {
         } = self
         {
             let probe_table_builder = probe_table_builder.as_mut().unwrap();
-            let input_tables = input.tables();
+            let input_tables = input.record_batches();
             if input_tables.is_empty() {
                 let empty_table = RecordBatch::empty(Some(input.schema()));
                 let join_keys = empty_table.eval_expression_list(projection)?;
