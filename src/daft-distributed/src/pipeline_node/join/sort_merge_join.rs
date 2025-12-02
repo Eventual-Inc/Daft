@@ -115,13 +115,13 @@ impl SortMergeJoinNode {
             &left_partition_group,
             self.left.config().schema.clone(),
             self.left.node_id(),
-        )?;
+        );
 
         let right_in_memory_source_plan = make_in_memory_scan_from_materialized_outputs(
             &right_partition_group,
             self.right.config().schema.clone(),
             self.right.node_id(),
-        )?;
+        );
 
         let left_partition_refs = left_partition_group
             .into_iter()
@@ -270,9 +270,9 @@ impl SortMergeJoinNode {
 
         // Transpose outputs to group by partition index
         let left_transposed_outputs =
-            transpose_materialized_outputs_from_vec(left_partitioned_outputs, num_partitions)?;
+            transpose_materialized_outputs_from_vec(left_partitioned_outputs, num_partitions);
         let right_transposed_outputs =
-            transpose_materialized_outputs_from_vec(right_partitioned_outputs, num_partitions)?;
+            transpose_materialized_outputs_from_vec(right_partitioned_outputs, num_partitions);
 
         // Emit sort-merge join tasks for each partition pair
         for (left_partition_group, right_partition_group) in left_transposed_outputs
@@ -301,13 +301,13 @@ impl SortMergeJoinNode {
         // Materialize both inputs
         let left_materialized = left_inputs
             .materialize(scheduler_handle.clone())
-            .try_filter(|output| future::ready(output.num_rows().unwrap_or(0) > 0))
+            .try_filter(|output| future::ready(output.num_rows() > 0))
             .try_collect::<Vec<_>>()
             .await?;
 
         let right_materialized = right_inputs
             .materialize(scheduler_handle.clone())
-            .try_filter(|output| future::ready(output.num_rows().unwrap_or(0) > 0))
+            .try_filter(|output| future::ready(output.num_rows() > 0))
             .try_collect::<Vec<_>>()
             .await?;
 

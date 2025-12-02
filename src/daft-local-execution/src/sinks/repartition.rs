@@ -5,7 +5,6 @@ use common_metrics::ops::NodeType;
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_io::IOStatsContext;
 use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
@@ -121,8 +120,7 @@ impl BlockingSink for RepartitionSink {
                         let schema = schema.clone();
                         let fut = tokio::spawn(async move {
                             let together = MicroPartition::concat(&data)?;
-                            let concated =
-                                together.concat_or_get(IOStatsContext::new("get tables"))?;
+                            let concated = together.concat_or_get()?;
                             let mp = MicroPartition::new_loaded(
                                 schema,
                                 Arc::new(if let Some(t) = concated {

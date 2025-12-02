@@ -82,7 +82,7 @@ impl IntoBatchesNode {
 
         while let Some(mat) = materialized_stream.next().await {
             for mat in mat?.split_into_materialized_outputs() {
-                let rows = mat.num_rows()?;
+                let rows = mat.num_rows();
                 if rows == 0 {
                     continue;
                 }
@@ -111,7 +111,7 @@ impl IntoBatchesNode {
                             )
                         },
                         None,
-                    )?;
+                    );
                     if result_tx.send(task).await.is_err() {
                         break;
                     }
@@ -139,7 +139,7 @@ impl IntoBatchesNode {
                     )
                 },
                 None,
-            )?;
+            );
             let _ = result_tx.send(task).await;
         }
         Ok(())
