@@ -2725,6 +2725,7 @@ dependencies = [
  "common-py-serde",
  "common-resource-request",
  "common-runtime",
+ "common-tracing",
  "common-treenode",
  "daft-core",
  "daft-sketch",
@@ -2732,6 +2733,8 @@ dependencies = [
  "indexmap 2.11.4",
  "itertools 0.14.0",
  "log",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "pyo3",
  "rstest",
  "serde",
@@ -6085,6 +6088,8 @@ dependencies = [
  "percent-encoding",
  "rand 0.9.1",
  "thiserror 2.0.16",
+ "tokio",
+ "tokio-stream",
 ]
 
 [[package]]
