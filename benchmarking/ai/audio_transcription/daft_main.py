@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import io
+import time
 
 import numpy as np
+import ray
 import torch
 import torchaudio
 import torchaudio.transforms as T
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
-import time
-import ray
 
 import daft
 
@@ -20,10 +20,13 @@ OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/audio
 
 daft.set_runner_ray()
 
+
 # Wait for Ray cluster to be ready
 @ray.remote
 def warmup():
     pass
+
+
 ray.get([warmup.remote() for _ in range(64)])
 
 
@@ -61,7 +64,6 @@ class Transcriber:
 
     @daft.method.batch(
         return_dtype=daft.DataType.list(daft.DataType.int32()),
-        batch_size=64,
     )
     def __call__(self, extracted_features):
         spectrograms = np.array(extracted_features)
@@ -77,7 +79,9 @@ def decoder(token_ids):
     transcription = processor.batch_decode(token_ids, skip_special_tokens=True)
     return transcription
 
+
 daft.set_planning_config(default_io_config=daft.io.IOConfig(s3=daft.io.S3Config.from_env()))
+daft.set_execution_config(enable_dynamic_batching=True)
 
 start_time = time.time()
 

@@ -1,29 +1,32 @@
 from __future__ import annotations
 
+import time
+
+import ray
 import torch
 import torchvision
 from PIL import Image
 from ultralytics import YOLO
-import ray
-import time
 
 import daft
 from daft.expressions import col
 
 NUM_GPU_NODES = 8
 YOLO_MODEL = "yolo11n.pt"
-INPUT_PATH = (
-    "s3://daft-public-data/videos/Hollywood2-actions-videos/Hollywood2/AVIClips/"
-)
+INPUT_PATH = "s3://daft-public-data/videos/Hollywood2-actions-videos/Hollywood2/AVIClips/"
 OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/video-object-detection-result"
 IMAGE_HEIGHT = 640
 IMAGE_WIDTH = 640
+
 
 # Wait for Ray cluster to be ready
 @ray.remote
 def warmup():
     pass
+
+
 ray.get([warmup.remote() for _ in range(64)])
+
 
 @daft.cls(
     max_concurrency=NUM_GPU_NODES,
@@ -67,6 +70,7 @@ class ExtractImageFeatures:
 daft.set_runner_ray()
 
 daft.set_planning_config(default_io_config=daft.io.IOConfig(s3=daft.io.S3Config.from_env()))
+daft.set_execution_config(enable_dynamic_batching=True)
 
 start_time = time.time()
 

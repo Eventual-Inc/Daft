@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import time
+
 import numpy as np
+import ray
 import torch
 from torchvision import transforms
 from torchvision.models import ResNet18_Weights, resnet18
-import time
-import ray
 
 import daft
 from daft import col
@@ -13,15 +14,17 @@ from daft import col
 NUM_GPU_NODES = 8
 INPUT_PATH = "s3://daft-public-datasets/imagenet/benchmark"
 OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/image-classification-results"
-BATCH_SIZE = 100
 IMAGE_DIM = (3, 224, 224)
 
 daft.set_runner_ray()
+
 
 # Wait for Ray cluster to be ready
 @ray.remote
 def warmup():
     pass
+
+
 ray.get([warmup.remote() for _ in range(64)])
 
 weights = ResNet18_Weights.DEFAULT
@@ -41,7 +44,6 @@ class ResNetModel:
 
     @daft.method.batch(
         return_dtype=daft.DataType.string(),
-        batch_size=BATCH_SIZE,
     )
     def __call__(self, images):
         if len(images) == 0:
@@ -53,7 +55,9 @@ class ResNetModel:
             predicted_labels = [self.weights.meta["categories"][i] for i in predicted_classes]
             return predicted_labels
 
+
 daft.set_planning_config(default_io_config=daft.io.IOConfig(s3=daft.io.S3Config.from_env()))
+daft.set_execution_config(enable_dynamic_batching=True)
 
 start_time = time.time()
 
