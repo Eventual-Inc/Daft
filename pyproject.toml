@@ -45,7 +45,7 @@ huggingface = ["huggingface-hub", "datasets"]
 iceberg = ["pyiceberg >= 0.7.0, < 0.9.1"]
 lance = ["pylance"]
 numpy = ["numpy"]
-openai = ["openai", "numpy", "pillow"]
+openai = ["openai"]
 pandas = ["pandas"]
 postgres = ["psycopg", "pgvector"]
 ray = [
