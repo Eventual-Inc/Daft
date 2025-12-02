@@ -2,13 +2,17 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
+use common_error::DaftResult;
+use common_file_formats::WriteMode;
 use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
+use daft_io::{IOClient, get_io_client, parse_url};
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_writers::WriterFactory;
+use futures::TryStreamExt;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
@@ -124,53 +128,36 @@ impl BlockingSink for CommitWriteSink {
                         file_info.write_mode,
                         WriteMode::Overwrite | WriteMode::OverwritePartitions
                     ) {
-                        #[cfg(feature = "python")]
-                        {
-                            use pyo3::{prelude::*, types::PyList};
+                        let (_, root_uri) = parse_url(&file_info.root_dir)?;
+                        let scheme = root_uri.split("://").next().unwrap_or("file");
 
-                            Python::attach(|py| {
-                                let fs = py.import(pyo3::intern!(py, "daft.filesystem"))?;
-                                let overwrite_files = fs.getattr("overwrite_files")?;
-                                let file_paths = written_file_path_record_batches
-                                    .iter()
-                                    .flat_map(|res| {
-                                        let path_index = res
-                                            .schema
-                                            .get_index("path")
-                                            .expect("path to be a column");
-
-                                        let s = res.get_column(path_index);
-                                        s.utf8()
-                                            .expect("path to be utf8")
-                                            .into_iter()
-                                            .filter_map(|s| s.map(|s| s.to_string()))
-                                    })
-                                    .collect::<Vec<_>>();
-                                let file_paths = PyList::new(py, file_paths).expect("file_paths");
-                                let root_dir = file_info.root_dir.clone();
-                                let py_io_config = file_info
-                                    .io_config
-                                    .clone()
-                                    .map(|io_conf| daft_io::python::IOConfig { config: io_conf });
-                                let overwrite_partitions =
-                                    matches!(file_info.write_mode, WriteMode::OverwritePartitions);
-                                overwrite_files.call1((
-                                    file_paths,
-                                    root_dir,
-                                    py_io_config,
-                                    overwrite_partitions,
-                                ))?;
-
-                                PyResult::Ok(())
+                        let written_paths: Vec<String> = written_file_path_record_batches
+                            .iter()
+                            .flat_map(|res| {
+                                let path_index =
+                                    res.schema.get_index("path").expect("path to be a column");
+                                let s = res.get_column(path_index);
+                                s.utf8()
+                                    .expect("path to be utf8")
+                                    .into_iter()
+                                    .filter_map(|s| s.map(|s| s.to_string()))
                             })
-                            .map_err(DaftError::PyO3Error)?;
-                        }
-                        #[cfg(not(feature = "python"))]
-                        {
-                            unimplemented!(
-                                "Overwrite mode is not supported without the Python feature."
-                            )
-                        }
+                            .map(|p| {
+                                if p.contains("://") {
+                                    p
+                                } else {
+                                    format!("{}://{}", scheme, p)
+                                }
+                            })
+                            .collect();
+
+                        overwrite_files(
+                            root_uri.to_string(),
+                            written_paths,
+                            get_io_client(true, file_info.io_config.unwrap_or_default().into())?,
+                            matches!(file_info.write_mode, WriteMode::OverwritePartitions),
+                        )
+                        .await?;
                     }
                     let written_file_paths_mp = MicroPartition::new_loaded(
                         file_schema,
@@ -221,4 +208,71 @@ impl BlockingSink for CommitWriteSink {
     fn max_concurrency(&self) -> usize {
         1
     }
+}
+
+async fn glob_files(
+    source: Arc<dyn daft_io::ObjectSource>,
+    glob_path: &str,
+) -> DaftResult<Vec<String>> {
+    let glob_pattern = if glob_path.ends_with('/') {
+        format!("{}**", glob_path)
+    } else {
+        format!("{}/**", glob_path)
+    };
+
+    let mut out: Vec<String> = vec![];
+    let mut stream = source
+        .glob(
+            glob_pattern.as_str(),
+            Some(1024),
+            Some(1000),
+            None,
+            None,
+            None,
+        )
+        .await?;
+    while let Some(meta) = stream.try_next().await? {
+        if matches!(meta.filetype, daft_io::FileType::File) {
+            out.push(meta.filepath);
+        }
+    }
+    Ok(out)
+}
+
+async fn overwrite_files(
+    root_uri: String,
+    new_files: Vec<String>,
+    io_client: Arc<IOClient>,
+    overwrite_partitions: bool,
+) -> DaftResult<()> {
+    let source = io_client.get_source(&root_uri).await?;
+    let mut all_files: Vec<String> = vec![];
+
+    if overwrite_partitions {
+        use std::collections::HashSet;
+        let mut partition_dirs: HashSet<String> = HashSet::new();
+        for f in &new_files {
+            if let Some(idx) = f.rfind('/') {
+                partition_dirs.insert(f[..idx].to_string());
+            }
+        }
+        for dir in partition_dirs {
+            let mut files = glob_files(source.clone(), &dir).await?;
+            all_files.append(&mut files);
+        }
+    } else {
+        let mut files = glob_files(source.clone(), &root_uri).await?;
+        all_files.append(&mut files);
+    }
+
+    // Delete files that are not among written
+    use std::collections::HashSet;
+    let written_set: HashSet<&str> = new_files.iter().map(|s| s.as_str()).collect();
+    for f in all_files {
+        if !written_set.contains(f.as_str()) {
+            source.delete(&f, None).await?;
+        }
+    }
+
+    Ok(())
 }
