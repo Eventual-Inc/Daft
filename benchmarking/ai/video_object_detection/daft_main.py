@@ -74,15 +74,13 @@ daft.set_execution_config(enable_dynamic_batching=True)
 
 start_time = time.time()
 
-df = daft.read_video_frames(
-    INPUT_PATH,
-    image_height=IMAGE_HEIGHT,
-    image_width=IMAGE_WIDTH,
-)
-df = df.with_column("features", ExtractImageFeatures()(col("data")))
-df = df.explode("features")
-df = df.with_column("object", daft.col("data").crop(daft.col("features")["bbox"]).encode_image("png"))
-df = df.exclude("data")
+df = daft.from_glob_path(INPUT_PATH)
+df = df.with_column("video", daft.functions.video_file(df["path"]))
+df = df.with_column("image", daft.functions.video_keyframes(df["video"]).explode())
+df = df.with_column("resized", daft.functions.resize(df["image"], w=IMAGE_WIDTH, h=IMAGE_HEIGHT))
+df = df.with_column("features", ExtractImageFeatures()(col("resized")).explode())
+df = df.with_column("object", daft.col("resized").crop(daft.col("features")["bbox"]).encode_image("png"))
+df = df.select("path", "features", "object")
 df.write_parquet(OUTPUT_PATH)
 
 end_time = time.time()
