@@ -85,9 +85,9 @@ print(f"Catalogs: {catalogs}")
 catalog = client.load_catalog("my_catalog")
 print(f"Catalog: {catalog.name}, Type: {catalog.type}, Provider: {catalog.provider}")
 
-# List schemas in a catalog
-schemas = client.list_schemas("my_catalog")
-print(f"Schemas: {schemas}")
+# List namespaces in a catalog (namespaces correspond to schemas in Gravitino)
+namespaces = client.list_namespaces("my_catalog")
+print(f"Namespaces: {namespaces}")
 
 # List tables in a schema
 tables = client.list_tables("my_catalog.my_schema")
@@ -209,8 +209,8 @@ Main client class for interacting with Gravitino.
 **Methods:**
 - `list_catalogs()` - List all catalogs in the metalake
 - `load_catalog(catalog_name)` - Load catalog details
-- `list_schemas(catalog_name)` - List schemas in a catalog
-- `list_tables(schema_name)` - List tables in a schema
+- `list_namespaces(catalog_name)` - List namespaces in a catalog (namespaces correspond to schemas in Gravitino)
+- `list_tables(namespace_name)` - List tables in a namespace
 - `load_table(table_name)` - Load an existing table
 - `load_fileset(fileset_name)` - Load a fileset
 - `to_io_config()` - Get IOConfig for the client

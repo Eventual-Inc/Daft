@@ -101,8 +101,8 @@ def test_load_nonexistent_catalog(mock_request):
 
 
 @patch("requests.Session.request")
-def test_list_schemas(mock_request):
-    """Test listing schemas."""
+def test_list_namespaces(mock_request):
+    """Test listing namespaces (schemas in Gravitino)."""
     mock_response = Mock()
     mock_response.json.return_value = {
         "code": 0,
@@ -115,9 +115,9 @@ def test_list_schemas(mock_request):
     mock_request.return_value = mock_response
 
     client = GravitinoClient("http://localhost:8090", "test_metalake", username="admin")
-    schemas = client.list_schemas("catalog1")
+    namespaces = client.list_namespaces("catalog1")
 
-    assert schemas == ["catalog1.schema1", "catalog1.schema2"]
+    assert namespaces == ["catalog1.schema1", "catalog1.schema2"]
 
 
 @patch("requests.Session.request")
@@ -148,12 +148,12 @@ def test_invalid_table_name():
         client.load_table("invalid_name")
 
 
-def test_invalid_schema_name():
-    """Test error handling for invalid schema names."""
+def test_invalid_namespace_name():
+    """Test error handling for invalid namespace names."""
     client = GravitinoClient("http://localhost:8090", "test_metalake", username="admin")
 
-    with pytest.raises(ValueError, match="Expected fully-qualified schema name"):
-        client.list_tables("invalid_schema")
+    with pytest.raises(ValueError, match="Expected fully-qualified namespace name"):
+        client.list_tables("invalid_namespace_name")
 
 
 @patch("requests.Session.request")
@@ -281,34 +281,48 @@ class TestGravitinoCatalog:
         with pytest.raises(Exception, match="Connection error"):
             gravitino_catalog._get_table(Identifier.from_str("catalog.schema.table"))
 
-    def test_list_namespaces_not_implemented(self, gravitino_catalog):
-        """Test _list_namespaces raises NotImplementedError."""
-        with pytest.raises(NotImplementedError, match="Gravitino list_namespaces not yet supported"):
-            gravitino_catalog._list_namespaces()
+    def test_list_namespaces_no_pattern(self, gravitino_catalog, mock_inner_catalog):
+        """Test _list_namespaces with no pattern lists all namespaces."""
+        mock_inner_catalog.list_catalogs.return_value = ["catalog1", "catalog2"]
+        mock_inner_catalog.list_namespaces.side_effect = lambda cat: [f"{cat}.schema1", f"{cat}.schema2"]
+
+        result = gravitino_catalog._list_namespaces()
+
+        assert len(result) == 4  # 2 catalogs * 2 namespaces
+        assert all(isinstance(ident, Identifier) for ident in result)
+
+    def test_list_namespaces_with_catalog_pattern(self, gravitino_catalog, mock_inner_catalog):
+        """Test _list_namespaces with catalog pattern."""
+        mock_inner_catalog.list_namespaces.return_value = ["catalog1.schema1", "catalog1.schema2"]
+
+        result = gravitino_catalog._list_namespaces(pattern="catalog1")
+
+        assert len(result) == 2
+        assert all(isinstance(ident, Identifier) for ident in result)
 
     def test_list_tables_no_pattern(self, gravitino_catalog, mock_inner_catalog):
         """Test _list_tables with no pattern lists all tables."""
         mock_inner_catalog.list_catalogs.return_value = ["catalog1", "catalog2"]
-        mock_inner_catalog.list_schemas.side_effect = lambda cat: [f"{cat}.schema1", f"{cat}.schema2"]
-        mock_inner_catalog.list_tables.side_effect = lambda schema: [f"{schema}.table1", f"{schema}.table2"]
+        mock_inner_catalog.list_namespaces.side_effect = lambda cat: [f"{cat}.schema1", f"{cat}.schema2"]
+        mock_inner_catalog.list_tables.side_effect = lambda namespace: [f"{namespace}.table1", f"{namespace}.table2"]
 
         result = gravitino_catalog._list_tables()
 
-        assert len(result) == 8  # 2 catalogs * 2 schemas * 2 tables
+        assert len(result) == 8  # 2 catalogs * 2 namespaces * 2 tables
         assert all(isinstance(ident, Identifier) for ident in result)
 
     def test_list_tables_with_catalog_pattern(self, gravitino_catalog, mock_inner_catalog):
         """Test _list_tables with catalog pattern."""
-        mock_inner_catalog.list_schemas.return_value = ["catalog1.schema1", "catalog1.schema2"]
-        mock_inner_catalog.list_tables.side_effect = lambda schema: [f"{schema}.table1", f"{schema}.table2"]
+        mock_inner_catalog.list_namespaces.return_value = ["catalog1.schema1", "catalog1.schema2"]
+        mock_inner_catalog.list_tables.side_effect = lambda namespace: [f"{namespace}.table1", f"{namespace}.table2"]
 
         result = gravitino_catalog._list_tables(pattern="catalog1")
 
-        assert len(result) == 4  # 2 schemas * 2 tables
+        assert len(result) == 4  # 2 namespaces * 2 tables
         assert all(isinstance(ident, Identifier) for ident in result)
 
-    def test_list_tables_with_schema_pattern(self, gravitino_catalog, mock_inner_catalog):
-        """Test _list_tables with schema pattern."""
+    def test_list_tables_with_namespace_pattern(self, gravitino_catalog, mock_inner_catalog):
+        """Test _list_tables with namespace pattern."""
         mock_inner_catalog.list_tables.return_value = ["catalog1.schema1.table1", "catalog1.schema1.table2"]
 
         result = gravitino_catalog._list_tables(pattern="catalog1.schema1")
@@ -318,23 +332,40 @@ class TestGravitinoCatalog:
 
     def test_list_tables_with_invalid_pattern(self, gravitino_catalog):
         """Test _list_tables with invalid pattern raises ValueError."""
-        with pytest.raises(ValueError, match="Unrecognized catalog name or schema name"):
+        with pytest.raises(ValueError, match="Unrecognized catalog name or namespace name"):
             gravitino_catalog._list_tables(pattern="catalog.schema.table.extra")
 
     def test_list_tables_with_empty_pattern(self, gravitino_catalog, mock_inner_catalog):
         """Test _list_tables with empty string pattern."""
         mock_inner_catalog.list_catalogs.return_value = ["catalog1"]
-        mock_inner_catalog.list_schemas.return_value = ["catalog1.schema1"]
+        mock_inner_catalog.list_namespaces.return_value = ["catalog1.schema1"]
         mock_inner_catalog.list_tables.return_value = ["catalog1.schema1.table1"]
 
         result = gravitino_catalog._list_tables(pattern="")
 
         assert len(result) == 1
 
-    def test_has_namespace_not_implemented(self, gravitino_catalog):
-        """Test _has_namespace raises NotImplementedError."""
-        with pytest.raises(NotImplementedError, match="Gravitino has_namespace not yet supported"):
-            gravitino_catalog._has_namespace(Identifier.from_str("test_namespace"))
+    def test_has_namespace_exists(self, gravitino_catalog, mock_inner_catalog):
+        """Test _has_namespace returns True when namespace exists."""
+        mock_inner_catalog.list_namespaces.return_value = ["catalog1.schema1", "catalog1.schema2"]
+
+        result = gravitino_catalog._has_namespace(Identifier.from_str("catalog1.schema1"))
+
+        assert result is True
+
+    def test_has_namespace_not_exists(self, gravitino_catalog, mock_inner_catalog):
+        """Test _has_namespace returns False when namespace doesn't exist."""
+        mock_inner_catalog.list_namespaces.return_value = ["catalog1.schema1", "catalog1.schema2"]
+
+        result = gravitino_catalog._has_namespace(Identifier.from_str("catalog1.nonexistent"))
+
+        assert result is False
+
+    def test_has_namespace_invalid_format(self, gravitino_catalog):
+        """Test _has_namespace returns False for invalid format."""
+        result = gravitino_catalog._has_namespace(Identifier.from_str("invalid"))
+
+        assert result is False
 
     def test_has_table_exists(self, gravitino_catalog, mock_inner_catalog):
         """Test _has_table returns True when table exists."""
@@ -531,7 +562,7 @@ if __name__ == "__main__":
     test_invalid_table_name()
     print("Invalid table name test passed")
 
-    test_invalid_schema_name()
+    test_invalid_namespace_name()
     print("Invalid schema name test passed")
 
     print("All basic tests passed!")

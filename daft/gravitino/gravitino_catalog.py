@@ -159,8 +159,13 @@ class GravitinoClient:
         except Exception as e:
             raise Exception(f"Failed to load catalog {catalog_name}: {e}")
 
-    def list_schemas(self, catalog_name: str) -> list[str]:
-        """List schemas in a catalog."""
+    def list_namespaces(self, catalog_name: str) -> list[str]:
+        """List namespaces in a catalog.
+
+        Note: In Gravitino, a namespace corresponds to a schema. This method lists
+        schemas from the Gravitino API and returns them as namespaces in the format
+        'catalog_name.schema_name'.
+        """
         try:
             response = self._make_request("GET", f"/metalakes/{self._metalake_name}/catalogs/{catalog_name}/schemas")
 
@@ -177,17 +182,17 @@ class GravitinoClient:
             schemas = response.get("schemas", [])
             return [f"{catalog_name}.{schema.get('name', '')}" for schema in schemas if schema.get("name")]
         except Exception as e:
-            warnings.warn(f"Failed to list schemas for catalog {catalog_name}: {e}")
+            warnings.warn(f"Failed to list namespaces for catalog {catalog_name}: {e}")
             return []
 
-    def list_tables(self, schema_name: str) -> list[str]:
+    def list_tables(self, namespace_name: str) -> list[str]:
         """List tables in a schema."""
-        if schema_name.count(".") != 1:
+        if namespace_name.count(".") != 1:
             raise ValueError(
-                f"Expected fully-qualified schema name with format `catalog_name`.`schema_name`, but received: {schema_name}"
+                f"Expected fully-qualified namespace name with format `catalog_name`.`schema_name`, but received: {namespace_name}"
             )
 
-        catalog_name, schema_name_only = schema_name.split(".")
+        catalog_name, schema_name_only = namespace_name.split(".")
 
         try:
             response = self._make_request(
@@ -209,7 +214,7 @@ class GravitinoClient:
                 f"{catalog_name}.{schema_name_only}.{table.get('name', '')}" for table in tables if table.get("name")
             ]
         except Exception as e:
-            warnings.warn(f"Failed to list tables for schema {schema_name}: {e}")
+            warnings.warn(f"Failed to list tables for namespace {namespace_name}: {e}")
             return []
 
     def load_table(self, table_name: str) -> GravitinoTable:
