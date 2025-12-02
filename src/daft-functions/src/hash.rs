@@ -2,7 +2,6 @@ use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::functions::{prelude::*, scalar::ScalarFn};
 use daft_hash::HashFunctionKind;
-use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -51,24 +50,59 @@ impl ScalarUDF for HashFunction {
 
         let first_name = input[0].name().to_string();
         let num_rows = input[0].len();
-        let schema = Schema::new(input.iter().map(|s| s.field().clone()));
-        let batch = RecordBatch::new_with_broadcast(schema, input, num_rows)?;
 
-        let mut column_iter = batch.columns().iter();
+        let input: DaftResult<Vec<Series>> = input
+            .into_iter()
+            .map(|series| match series.len() {
+                len if len == num_rows => Ok(series),
+                1 => series.broadcast(num_rows),
+                len => Err(DaftError::ValueError(format!(
+                    "hash() requires all inputs to be length 1 or match the first input length. Column {} had length {} vs expected {}",
+                    series.name(),
+                    len,
+                    num_rows
+                ))),
+            })
+            .collect();
+        let input = input?;
+
+        let seed = match seed {
+            Some(seed_series) => {
+                let seed_series = match seed_series.len() {
+                    len if len == num_rows => seed_series,
+                    1 if !seed_series.data_type().is_list() => seed_series.broadcast(num_rows)?,
+                    1 => seed_series,
+                    _ => {
+                        return Err(DaftError::ValueError(
+                            "Seed must be a single value or the same length as the input"
+                                .to_string(),
+                        ));
+                    }
+                };
+                Some(seed_series)
+            }
+            None => None,
+        };
+
+        let mut column_iter = input.into_iter();
         let first_column = column_iter
             .next()
             .expect("validated batch must contain at least one column");
-        let mut hash_array = first_column.hash_with(None, hash_function)?;
+
+        let mut hash_array = match seed {
+            Some(seed_series) => {
+                hash_with_seed(first_column, seed_series, hash_function, &first_name)?
+                    .u64()
+                    .unwrap()
+                    .clone()
+            }
+            None => first_column.hash_with(None, hash_function)?,
+        };
+
         for column in column_iter {
             hash_array = column.hash_with(Some(&hash_array), hash_function)?;
         }
-        let mut hashed_series = hash_array.into_series().rename(&first_name);
-
-        if let Some(seed) = seed {
-            hashed_series = hash_with_seed(hashed_series, seed, hash_function, &first_name)?;
-        }
-
-        Ok(hashed_series)
+        Ok(hash_array.into_series().rename(&first_name))
     }
 
     fn get_return_field(

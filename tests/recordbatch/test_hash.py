@@ -55,11 +55,9 @@ def test_table_expr_struct_hash():
 
 
 def _row_hash_via_kernel(df: daft.DataFrame, columns: list[str], seed_expr: col | None = None) -> list[int | None]:
-    expr = col(columns[0]).hash()
+    expr = col(columns[0]).hash(seed=seed_expr) if seed_expr is not None else col(columns[0]).hash()
     for name in columns[1:]:
         expr = col(name).hash(seed=expr)
-    if seed_expr is not None:
-        expr = expr.hash(seed=seed_expr)
     return df.select(expr.alias("row_hash")).to_pydict()["row_hash"]
 
 
