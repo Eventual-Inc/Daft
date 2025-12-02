@@ -886,7 +886,7 @@ def test_create_dataframe_json_schema_override_types(valid_data: list[dict[str, 
         assert pd_df["sepal_length"][0] == str(valid_data[0]["sepal_length"])
 
 
-def test_create_dataframe_json_schema_hints_ignore_random_hint(valid_data: list[dict[str, float]]) -> None:
+def test_create_dataframe_json_schema_hints_add_missing_and_override(valid_data: list[dict[str, float]]) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             for data in valid_data:
@@ -898,13 +898,16 @@ def test_create_dataframe_json_schema_hints_ignore_random_hint(valid_data: list[
             fname,
             infer_schema=True,
             schema={
-                "foo": DataType.string(),  # Random column name that is not in the table
+                "foo": DataType.string(),  # Column not present in data, should be added via hint
             },
         )
-        assert df.column_names == COL_NAMES
+        # New semantics: hint adds missing column
+        assert "foo" in df.column_names
 
         pd_df = df.to_pandas()
-        assert list(pd_df.columns) == COL_NAMES
+        assert "foo" in pd_df.columns
+        # Since data has no 'foo', the column should be all null
+        assert pd_df["foo"].isna().all()
         assert len(pd_df) == len(valid_data)
 
 
@@ -932,11 +935,38 @@ def test_create_dataframe_json_schema_hints_two_files() -> None:
         assert df.schema()["foo"].dtype == DataType.struct({"bar": DataType.string(), "bar2": DataType.string()})
 
         # When dataframe is materialized, the schema hints should be enforced and bar2 should be included
-        df = df.select(df["foo"].get("bar2"))
+        df = df.select(df["foo"]["bar2"])
         df = df.where(df["bar2"].not_null()).collect()
 
         assert len(df) == 1
         assert df.to_pydict()["bar2"][0] == "baz2"
+
+
+def test_create_dataframe_json_schema_hints_nested_add_and_override() -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            f.write(json.dumps({"foo": {"bar": 1}}))
+            f.write("\n")
+            f.write(json.dumps({"foo": {}}))
+            f.write("\n")
+            f.flush()
+
+        # Hint adds missing nested field 'bar2' and overrides 'bar' to string
+        df = daft.read_json(
+            fname,
+            infer_schema=True,
+            schema={
+                "foo": DataType.struct({"bar": DataType.string(), "bar2": DataType.string()}),
+            },
+        )
+        assert df.schema()["foo"].dtype == DataType.struct({"bar": DataType.string(), "bar2": DataType.string()})
+
+        # Materialize nested fields and check values/types
+        df2 = df.select(df["foo"]["bar"].alias("bar"), df["foo"]["bar2"].alias("bar2")).to_pandas()
+        assert df2["bar"].dtype == "object"
+        assert df2["bar"][0] == "1"
+        assert df2["bar"].isna()[1]
+        assert df2["bar2"].isna().all()
 
 
 @pytest.mark.parametrize(

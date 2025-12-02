@@ -3010,6 +3010,7 @@ dependencies = [
  "serde_json",
  "simd-json",
  "snafu",
+ "tempfile",
  "tokio",
  "tokio-stream",
  "tokio-util",

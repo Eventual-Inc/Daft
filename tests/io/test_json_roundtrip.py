@@ -266,3 +266,35 @@ def test_roundtrip_ndjson_with_mismatched_schema_between_files(tmp_path, compres
         "city": ["New York", "San Francisco", None, None],  # second file is missing city
         "state": ["New York", "California", "California", "New York"],
     }
+
+
+def test_jsonl_single_file_sparse_column_is_null(tmp_path):
+    p = tmp_path / "sparse.jsonl"
+    with p.open("w") as f:
+        f.write(json.dumps({"a": 1}) + "\n")
+        f.write(json.dumps({"b": 2}) + "\n")
+    df = daft.read_json(str(p), infer_schema=True, schema={"a": DataType.int64(), "b": DataType.int64()})
+    out = df.where("b is null").collect()
+    assert out.to_pydict()["a"][0] == 1
+
+
+def test_jsonl_multi_file_sparse_column_is_null(tmp_path):
+    f1 = tmp_path / "f1.jsonl"
+    f2 = tmp_path / "f2.jsonl"
+
+    with f1.open("w") as f:
+        f.write(json.dumps({"a": "v", "x": 1}) + "\n")
+        f.write(json.dumps({"x": 2}) + "\n")
+
+    with f2.open("w") as f:
+        f.write(json.dumps({"x": 3}) + "\n")
+        f.write(json.dumps({"x": 4}) + "\n")
+
+    df = daft.read_json([str(f1), str(f2)])
+    assert "a" in df.column_names
+
+    res = df.where(daft.col("a").is_null()).to_pandas()
+    assert len(res) == 3
+
+    res2 = df.where(daft.col("a").not_null()).to_pandas()
+    assert len(res2) == 1

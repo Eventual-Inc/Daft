@@ -54,6 +54,40 @@ Daft uses [jaq](https://github.com/01mf02/jaq/tree/main) as the underlying execu
 
 <!-- ### Deserializing JSON and extracting multiple fields -->
 
+## Reading JSON files with schema hints
+
+When using `daft.read_json(..., infer_schema=True, schema=...)`, the `schema` parameter is treated as a set of schema hints that are merged with the inferred schema using add-missing + override semantics:
+
+- Fields present in both inference and hints: the hint's datatype overrides the inferred one.
+- Fields present only in hints: they are added to the final schema and will materialize with nulls for rows/files where absent.
+- This applies recursively to nested Structs.
+
+This behavior makes it easy to work with sparsely-present columns or late-appearing fields across large datasets.
+
+Example (Python):
+
+```python
+import json, daft
+from daft import DataType, col
+
+# Suppose a JSONL file where `foo.bar` appears on the first line only
+with open("sample.jsonl", "w") as f:
+    f.write(json.dumps({"foo": {"bar": 1}}) + "\n")
+    f.write(json.dumps({"foo": {}}) + "\n")
+
+# Provide hints to add `bar2` and override `bar` to Utf8
+schema_hint = {"foo": DataType.struct({"bar": DataType.string(), "bar2": DataType.string()})}
+
+df = daft.read_json("sample.jsonl", infer_schema=True, schema=schema_hint)
+# `foo` schema becomes Struct[bar: Utf8, bar2: Utf8]
+# Missing values materialize as nulls
+out = df.select(col("foo").struct.get("bar").alias("bar"), col("foo").struct.get("bar2").alias("bar2")).collect()
+```
+
+Notes:
+- Partition/hive-style generated fields are not affected by data column hints.
+- If `infer_schema=False`, the provided `schema` is used as the definitive schema.
+
 ## Extracting and Flattening Nested Data
 
 When working with nested data---like log files, metadata, deserialized JSON---we often need to extract specific fields or flatten the entire structure into individual columns. Daft provides two main approaches for this:

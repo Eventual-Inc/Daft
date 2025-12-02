@@ -41,6 +41,58 @@ impl<T> TableChunkStream for T where T: Stream<Item = TableChunkResult> {}
 trait LineChunkStream: Stream<Item = LineChunkResult> {}
 impl<T> LineChunkStream for T where T: Stream<Item = LineChunkResult> {}
 
+fn normalize_json_options(
+    mut convert_options: JsonConvertOptions,
+    mut inferred_arrow_schema: arrow2::datatypes::Schema,
+) -> DaftResult<(JsonConvertOptions, arrow2::datatypes::Schema)> {
+    // 1) Ensure include_columns contains columns referenced by predicate
+    if let Some(pred) = convert_options.predicate.clone()
+        && let Some(ref mut include_columns) = convert_options.include_columns
+    {
+        for rc in get_required_columns(&pred) {
+            if include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
+                include_columns.push(rc);
+            }
+        }
+    }
+    // 2) Apply projection: for columns not present in inferred schema (e.g., hinted-only), synthesize placeholder fields.
+    if let Some(ref projection) = convert_options.include_columns {
+        let mut field_map = inferred_arrow_schema
+            .fields
+            .iter()
+            .map(|f| (f.name.clone(), f.clone()))
+            .collect::<HashMap<_, _>>();
+        // Collect hint dtypes if provided (arrow schema) so we can honor planner-provided types.
+        let mut hinted_fields = HashMap::new();
+        if let Some(schema_hint) = convert_options.schema.as_ref() {
+            let arrow_hint = schema_hint.to_arrow()?;
+            for field in arrow_hint.fields {
+                hinted_fields.insert(field.name.clone(), field);
+            }
+        }
+        let mut projected_fields = Vec::with_capacity(projection.len());
+        for col in projection {
+            match field_map.remove(col.as_str()) {
+                Some(f) => projected_fields.push(f),
+                None => {
+                    if let Some(hinted) = hinted_fields.remove(col) {
+                        projected_fields.push(hinted);
+                    } else {
+                        projected_fields.push(arrow2::datatypes::Field::new(
+                            col.clone(),
+                            arrow2::datatypes::DataType::Null,
+                            true,
+                        ));
+                    }
+                }
+            }
+        }
+        inferred_arrow_schema = arrow2::datatypes::Schema::from(projected_fields)
+            .with_metadata(inferred_arrow_schema.metadata);
+    }
+    Ok((convert_options, inferred_arrow_schema))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn read_json(
     uri: &str,
@@ -174,7 +226,7 @@ pub(crate) fn tables_concat(mut tables: Vec<RecordBatch>) -> DaftResult<RecordBa
 
 async fn read_json_single_into_table(
     uri: &str,
-    convert_options: Option<JsonConvertOptions>,
+    mut convert_options: Option<JsonConvertOptions>,
     parse_options: Option<JsonParseOptions>,
     read_options: Option<JsonReadOptions>,
     io_client: Arc<IOClient>,
@@ -183,7 +235,23 @@ async fn read_json_single_into_table(
 ) -> DaftResult<RecordBatch> {
     let (source_type, fixed_uri) = parse_url(uri)?;
     let is_compressed = CompressionCodec::from_uri(uri).is_some();
+
+    // Ensure include_columns contains predicate-required columns even for local fast-path
+    let predicate = convert_options.as_ref().and_then(|p| p.predicate.clone());
+    if let (Some(co), Some(pred)) = (convert_options.as_mut(), predicate.as_ref())
+        && let Some(ref mut include_columns) = co.include_columns
+    {
+        let required_columns_for_predicate = get_required_columns(pred);
+        for rc in required_columns_for_predicate {
+            if include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
+                include_columns.push(rc);
+            }
+        }
+    }
+
     if matches!(source_type, SourceType::File) && !is_compressed {
+        // For local files, prefer using any provided schema and include_columns (from plan) to ensure decoding
+        // allocates columns accordingly and missing fields are null-filled row-wise.
         return read_json_local(
             fixed_uri.as_ref(),
             convert_options,
@@ -193,7 +261,7 @@ async fn read_json_single_into_table(
         );
     }
 
-    let predicate = convert_options.as_ref().and_then(|p| p.predicate.clone());
+    let predicate = predicate;
 
     let limit = convert_options.as_ref().and_then(|opts| opts.limit);
 
@@ -427,7 +495,7 @@ async fn read_json_single_into_stream(
     BoxStream<'static, TableChunkResult>,
     arrow2::datatypes::Schema,
 )> {
-    let schema = match convert_options.schema {
+    let schema = match convert_options.schema.clone() {
         Some(schema) => schema.to_arrow()?,
         None => read_json_schema_single(
             &uri,
@@ -440,6 +508,9 @@ async fn read_json_single_into_stream(
         .await?
         .to_arrow()?,
     };
+
+    // Normalize options & schema (predicate columns + projection + placeholder fields)
+    let (convert_options, schema) = normalize_json_options(convert_options, schema)?;
 
     let (reader, buffer_size, chunk_size): (Box<dyn AsyncBufRead + Unpin + Send>, usize, usize) =
         match io_client
@@ -533,7 +604,22 @@ async fn read_json_single_into_stream(
                         .into_iter()
                         .map(|f| (f.name.clone(), f))
                         .collect::<HashMap<_, _>>();
-                    let projected_fields = projection.into_iter().map(|col| field_map.remove(col.as_str()).ok_or(DaftError::ValueError(format!("Column {} in the projection doesn't exist in the JSON file; existing columns = {:?}", col, field_map.keys())))).collect::<DaftResult<Vec<_>>>()?;
+                    // For hinted-but-not-inferred columns, synthesize Field from plan schema if present.
+                    let mut projected_fields = Vec::with_capacity(projection.len());
+                    for col in projection {
+                        match field_map.remove(col.as_str()) {
+                            Some(f) => projected_fields.push(f),
+                            None => {
+                                // If column not found in inferred schema but present via convert_options.schema, append a Null-typed placeholder field.
+                                // Downstream cast_to_schema_with_fill will upcast types and fill nulls.
+                                projected_fields.push(arrow2::datatypes::Field::new(
+                                    col.clone(),
+                                    arrow2::datatypes::DataType::Null,
+                                    true,
+                                ));
+                            }
+                        }
+                    }
                     arrow2::datatypes::Schema::from(projected_fields).with_metadata(schema.metadata)
                 }
                 None => schema,
@@ -627,19 +713,27 @@ fn parse_into_column_array_chunk_stream(
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashSet, io::BufRead, sync::Arc};
+    use std::{
+        collections::{HashMap, HashSet},
+        io::BufRead,
+        sync::Arc,
+    };
 
+    use arrow2::datatypes::{
+        DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema,
+    };
     use common_error::DaftResult;
     use daft_core::{
         prelude::*,
         utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
     };
+    use daft_dsl::{lit, unresolved_col};
     use daft_io::{IOClient, IOConfig};
     use daft_recordbatch::RecordBatch;
     use indexmap::IndexMap;
     use rstest::rstest;
 
-    use super::read_json;
+    use super::{normalize_json_options, read_json};
     use crate::{
         JsonConvertOptions, JsonReadOptions,
         decoding::deserialize_records,
@@ -707,6 +801,55 @@ mod tests {
             .map(|i| out.get_column(i).to_arrow())
             .collect::<Vec<_>>();
         assert_eq!(out_columns, columns);
+    }
+
+    #[test]
+    fn test_normalize_json_options_adds_predicate_column_and_hint_placeholder() {
+        let arrow_schema = ArrowSchema::from(vec![
+            ArrowField::new("y", ArrowDataType::Utf8, true),
+            ArrowField::new("z", ArrowDataType::Boolean, true),
+        ]);
+        let convert_options = JsonConvertOptions::default()
+            .with_include_columns(Some(vec!["y".to_string()]))
+            .with_predicate(Some(unresolved_col("x").gt(lit(0))))
+            .with_schema(Some(Arc::new(Schema::new(vec![
+                Field::new("x", DataType::Int64),
+                Field::new("y", DataType::Utf8),
+            ]))));
+
+        let (normalized, projected_schema) =
+            normalize_json_options(convert_options, arrow_schema).unwrap();
+
+        assert_eq!(
+            normalized.include_columns,
+            Some(vec!["y".to_string(), "x".to_string()])
+        );
+        let names: Vec<&str> = projected_schema
+            .fields
+            .iter()
+            .map(|f| f.name.as_ref())
+            .collect();
+        assert_eq!(names, vec!["y", "x"]);
+        assert_eq!(projected_schema.fields[1].data_type, ArrowDataType::Int64);
+    }
+
+    #[test]
+    fn test_normalize_json_options_synthesizes_null_placeholder_when_no_hint() {
+        let arrow_schema =
+            ArrowSchema::from(vec![ArrowField::new("existing", ArrowDataType::Utf8, true)]);
+        let convert_options =
+            JsonConvertOptions::default().with_include_columns(Some(vec!["missing".to_string()]));
+
+        let (normalized, projected_schema) =
+            normalize_json_options(convert_options, arrow_schema).unwrap();
+
+        assert_eq!(
+            normalized.include_columns,
+            Some(vec!["missing".to_string()])
+        );
+        assert_eq!(projected_schema.fields.len(), 1);
+        assert_eq!(projected_schema.fields[0].name, "missing");
+        assert_eq!(projected_schema.fields[0].data_type, ArrowDataType::Null);
     }
 
     #[rstest]

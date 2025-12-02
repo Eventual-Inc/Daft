@@ -7,8 +7,16 @@ use crate::{Column, Expr, ExprRef, expr::ResolvedColumn};
 pub fn get_required_columns(e: &ExprRef) -> Vec<String> {
     let mut cols = vec![];
     e.apply(&mut |expr: &ExprRef| {
-        if let Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) = &**expr {
-            cols.push(name.to_string());
+        if let Expr::Column(column) = &**expr {
+            match column {
+                Column::Resolved(ResolvedColumn::Basic(name)) => {
+                    cols.push(name.to_string());
+                }
+                Column::Unresolved(unresolved) => {
+                    cols.push(unresolved.name.to_string());
+                }
+                _ => {}
+            }
         }
         Ok(TreeNodeRecursion::Continue)
     })
