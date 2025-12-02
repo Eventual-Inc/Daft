@@ -2097,6 +2097,7 @@ class PyDaftExecutionConfig:
         maintain_order: bool | None = None,
         enable_dynamic_batching: bool | None = None,
         dynamic_batching_strategy: str | None = None,
+        max_limit_tasks_submittable_in_parallel: int | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def enable_scan_task_split_and_merge(self) -> bool: ...
