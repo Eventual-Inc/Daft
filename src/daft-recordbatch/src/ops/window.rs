@@ -1,7 +1,7 @@
-use arrow2::bitmap::{Bitmap, MutableBitmap};
 use common_error::{DaftError, DaftResult};
+use daft_arrow::bitmap::{Bitmap, MutableBitmap};
 use daft_core::{
-    array::ops::{IntoGroups, arrow2::comparison::build_multi_array_is_equal},
+    array::ops::{IntoGroups, arrow::comparison::build_multi_array_is_equal},
     prelude::*,
 };
 use daft_dsl::{
@@ -426,7 +426,7 @@ impl RecordBatch {
         let mut validity = Bitmap::from(validity);
         let agg_state = agg_state.build()?.rename(name);
         if let Some(agg_validity) = agg_state.validity() {
-            validity = arrow2::bitmap::and(&validity, agg_validity);
+            validity = daft_arrow::bitmap::and(&validity, agg_validity);
         }
 
         // Build the final result series
@@ -551,7 +551,7 @@ impl RecordBatch {
         let mut validity = Bitmap::from(validity);
         let agg_state = agg_state.build()?.rename(name);
         if let Some(agg_validity) = agg_state.validity() {
-            validity = arrow2::bitmap::and(&validity, agg_validity);
+            validity = daft_arrow::bitmap::and(&validity, agg_validity);
         }
 
         // Build the final result series

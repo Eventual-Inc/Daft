@@ -2,7 +2,7 @@ use common_error::DaftResult;
 use daft_core::{
     array::ops::{
         GroupIndicesPair, IntoGroups, IntoUniqueIdxs, VecIndices,
-        arrow2::comparison::build_multi_array_is_equal, as_arrow::AsArrow,
+        arrow::comparison::build_multi_array_is_equal, as_arrow::AsArrow,
     },
     datatypes::UInt64Array,
     series::Series,

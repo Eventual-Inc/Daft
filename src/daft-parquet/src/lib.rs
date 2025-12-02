@@ -1,7 +1,7 @@
 use std::{cmp::max, num::NonZeroUsize};
 
-use arrow2::io::parquet::read::schema::{SchemaInferenceOptions, infer_schema_with_options};
 use common_error::DaftError;
+use daft_arrow::io::parquet::read::schema::{SchemaInferenceOptions, infer_schema_with_options};
 use daft_core::{prelude::SchemaRef, utils::arrow::coerce_to_daft_compatible_schema};
 use snafu::Snafu;
 
@@ -37,7 +37,7 @@ fn determine_parquet_parallelism(daft_schema: &SchemaRef) -> usize {
 pub fn infer_arrow_schema_from_metadata(
     metadata: &parquet2::metadata::FileMetaData,
     options: Option<SchemaInferenceOptions>,
-) -> arrow2::error::Result<arrow2::datatypes::Schema> {
+) -> daft_arrow::error::Result<daft_arrow::datatypes::Schema> {
     let arrow_schema = infer_schema_with_options(metadata, options)?;
     let coerced_arrow_schema = coerce_to_daft_compatible_schema(arrow_schema);
     Ok(coerced_arrow_schema)
@@ -46,7 +46,7 @@ pub fn infer_arrow_schema_from_metadata(
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("{source}"))]
-    Arrow2Error { source: arrow2::error::Error },
+    Arrow2Error { source: daft_arrow::error::Error },
 
     #[snafu(display("{source}"))]
     DaftIOError { source: daft_io::Error },
@@ -69,7 +69,7 @@ pub enum Error {
     #[snafu(display("Unable to parse parquet metadata for file {}: {}", path, source))]
     UnableToParseMetadataFromLocalFile {
         path: String,
-        source: arrow2::error::Error,
+        source: daft_arrow::error::Error,
     },
 
     #[snafu(display(
@@ -79,13 +79,13 @@ pub enum Error {
     ))]
     UnableToConvertParquetPagesToArrow {
         path: String,
-        source: arrow2::error::Error,
+        source: daft_arrow::error::Error,
     },
 
     #[snafu(display("Unable to read parquet row group for file {}: {}", path, source))]
     UnableToReadParquetRowGroup {
         path: String,
-        source: arrow2::error::Error,
+        source: daft_arrow::error::Error,
     },
 
     #[snafu(display("Unable to create page stream for parquet file {}: {}", path, source))]
@@ -100,7 +100,7 @@ pub enum Error {
     ))]
     UnableToCreateChunkFromStreamingFileReader {
         path: String,
-        source: arrow2::error::Error,
+        source: daft_arrow::error::Error,
     },
     #[snafu(display(
         "Unable to parse parquet metadata to arrow schema for file {}: {}",
@@ -109,7 +109,7 @@ pub enum Error {
     ))]
     UnableToParseSchemaFromMetadata {
         path: String,
-        source: arrow2::error::Error,
+        source: daft_arrow::error::Error,
     },
     #[snafu(display(
         "Unable to create table from arrow chunk for file {}: {}",
