@@ -2,12 +2,9 @@
 arrow-array = {version = "54.2.1"}
 arrow-json = {version = "54.2.1"}
 arrow-schema = {version = "54.2.1"}
-arrow2 = {workspace = true, features = [
-  "arrow",
-  "io_ipc_compression"
-]}
 async-trait = {workspace = true}
 common-daft-config = {path = "../common/daft-config", default-features = false}
+daft-arrow = {path = "../daft-arrow"}
 common-error = {path = "../common/error", default-features = false}
 common-file-formats = {path = "../common/file-formats", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
@@ -16,7 +13,7 @@ daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
-daft-recordbatch = {path = "../daft-recordbatch", default-features = false, features = ["arrow"]}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 hashbrown = {workspace = true}
 parking_lot = {workspace = true}
 parquet = {version = "54.2.1"}
