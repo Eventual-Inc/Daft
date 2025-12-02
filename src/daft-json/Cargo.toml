@@ -12,8 +12,8 @@ daft-io = {path = "../daft-io", default-features = false}
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 futures = {workspace = true}
 indexmap = {workspace = true}
-memchr = "2.7.2"
-memmap2 = "0.9.8"
+memchr = "2.7.6"
+memmap2 = "0.9.9"
 num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 rayon = {workspace = true}
