@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use arrow2::array::{MutablePrimitiveArray, PrimitiveArray};
 use common_error::DaftResult;
+use daft_arrow::array::{MutablePrimitiveArray, PrimitiveArray};
 
 use super::from_arrow::FromArrow;
 use crate::{

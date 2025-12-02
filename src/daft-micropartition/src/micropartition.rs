@@ -98,7 +98,7 @@ impl MicroPartition {
 
     pub fn from_arrow<S: Into<SchemaRef>>(
         schema: S,
-        arrays: Vec<Box<dyn arrow2::array::Array>>,
+        arrays: Vec<Box<dyn daft_arrow::array::Array>>,
     ) -> DaftResult<Self> {
         let schema = schema.into();
         let batch = RecordBatch::from_arrow(schema.clone(), arrays)?;
@@ -195,8 +195,8 @@ impl MicroPartition {
     pub fn write_to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
         let buffer = Vec::with_capacity(self.size_bytes());
         let schema = self.schema.to_arrow()?;
-        let options = arrow2::io::ipc::write::WriteOptions { compression: None };
-        let mut writer = arrow2::io::ipc::write::StreamWriter::new(buffer, options);
+        let options = daft_arrow::io::ipc::write::WriteOptions { compression: None };
+        let mut writer = daft_arrow::io::ipc::write::StreamWriter::new(buffer, options);
         writer.start(&schema, None)?;
         for table in self.record_batches() {
             let chunk = table.to_chunk();
@@ -210,15 +210,15 @@ impl MicroPartition {
 
     pub fn read_from_ipc_stream(buffer: &[u8]) -> DaftResult<Self> {
         let mut cursor = Cursor::new(buffer);
-        let stream_metadata = arrow2::io::ipc::read::read_stream_metadata(&mut cursor).unwrap();
+        let stream_metadata = daft_arrow::io::ipc::read::read_stream_metadata(&mut cursor).unwrap();
         let schema = Arc::new(Schema::from(stream_metadata.schema.clone()));
-        let reader = arrow2::io::ipc::read::StreamReader::new(cursor, stream_metadata, None);
+        let reader = daft_arrow::io::ipc::read::StreamReader::new(cursor, stream_metadata, None);
         let tables = reader
             .into_iter()
             .map(|state| {
                 let state = state?;
                 let arrow_chunk = match state {
-                    arrow2::io::ipc::read::StreamState::Some(chunk) => chunk,
+                    daft_arrow::io::ipc::read::StreamState::Some(chunk) => chunk,
                     _ => panic!("State should not be waiting when reading from IPC buffer"),
                 };
                 let record_batch =

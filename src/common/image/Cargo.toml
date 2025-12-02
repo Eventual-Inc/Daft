@@ -1,5 +1,5 @@
 [dependencies]
-arrow2 = {workspace = true}
+daft-arrow = {path = "../../daft-arrow"}
 common-error = {path = "../error", default-features = false}
 common-ndarray = {workspace = true}
 daft-schema = {path = "../../daft-schema", default-features = false}

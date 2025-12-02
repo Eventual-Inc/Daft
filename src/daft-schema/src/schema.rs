@@ -238,11 +238,11 @@ impl Schema {
         })
     }
 
-    pub fn to_arrow(&self) -> DaftResult<arrow2::datatypes::Schema> {
-        let arrow_fields: DaftResult<Vec<arrow2::datatypes::Field>> =
+    pub fn to_arrow(&self) -> DaftResult<daft_arrow::datatypes::Schema> {
+        let arrow_fields: DaftResult<Vec<daft_arrow::datatypes::Field>> =
             self.fields.iter().map(Field::to_arrow).collect();
         let arrow_fields = arrow_fields?;
-        Ok(arrow2::datatypes::Schema {
+        Ok(daft_arrow::datatypes::Schema {
             fields: arrow_fields,
             metadata: Default::default(),
         })
@@ -426,14 +426,14 @@ impl DisplayAs for Schema {
     }
 }
 
-impl From<arrow2::datatypes::Schema> for Schema {
-    fn from(arrow_schema: arrow2::datatypes::Schema) -> Self {
+impl From<daft_arrow::datatypes::Schema> for Schema {
+    fn from(arrow_schema: daft_arrow::datatypes::Schema) -> Self {
         (&arrow_schema).into()
     }
 }
 
-impl From<&arrow2::datatypes::Schema> for Schema {
-    fn from(arrow_schema: &arrow2::datatypes::Schema) -> Self {
+impl From<&daft_arrow::datatypes::Schema> for Schema {
+    fn from(arrow_schema: &daft_arrow::datatypes::Schema) -> Self {
         let daft_fields: Vec<Field> = arrow_schema.fields.iter().map(|f| f.into()).collect();
         Self::new(daft_fields)
     }

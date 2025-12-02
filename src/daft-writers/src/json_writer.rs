@@ -169,7 +169,7 @@ impl<B: StorageBackend> AsyncFileWriter for JsonWriter<B> {
         let field = Field::new(Self::PATH_FIELD_NAME, DataType::Utf8);
         let filename_series = Series::from_arrow(
             Arc::new(field.clone()),
-            Box::new(arrow2::array::Utf8Array::<i64>::from_slice([&self
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice([&self
                 .filename
                 .to_string_lossy()])),
         )?;
