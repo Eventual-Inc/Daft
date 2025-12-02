@@ -74,7 +74,8 @@ jobs:
     needs: skipcheck
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # macOS + Ray tests can take 50-60min; with cache misses they exceed 60min
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
