@@ -31,6 +31,11 @@ def warmup():
 ray.get([warmup.remote() for _ in range(64)])
 
 
+@daft.func(
+    return_dtype=daft.DataType.list(
+        daft.DataType.struct({"text": daft.DataType.string(), "page_number": daft.DataType.int64()})
+    )
+)
 def extract_text_from_parsed_pdf(pdf_bytes):
     try:
         doc = pymupdf.Document(stream=pdf_bytes, filetype="pdf")
@@ -44,18 +49,15 @@ def extract_text_from_parsed_pdf(pdf_bytes):
         return None
 
 
+@daft.func(return_dtype=daft.DataType.struct({"text": daft.DataType.string(), "chunk_id": daft.DataType.int64()}))
 def chunk(text):
     splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
     chunk_iter = splitter.split_text(text)
-    chunks = []
     for chunk_index, text in enumerate(chunk_iter):
-        chunks.append(
-            {
-                "text": text,
-                "chunk_id": chunk_index,
-            }
-        )
-    return chunks
+        yield {
+            "text": text,
+            "chunk_id": chunk_index,
+        }
 
 
 @daft.cls(max_concurrency=NUM_GPU_NODES, gpus=1)
@@ -86,28 +88,11 @@ start_time = time.time()
 df = daft.read_parquet(INPUT_PATH)
 df = df.where(daft.col("file_name").endswith(".pdf"))
 df = df.with_column("pdf_bytes", df["uploaded_pdf_path"].download())
-df = df.with_column(
-    "pages",
-    df["pdf_bytes"].apply(
-        extract_text_from_parsed_pdf,
-        return_dtype=daft.DataType.list(
-            daft.DataType.struct({"text": daft.DataType.string(), "page_number": daft.DataType.int64()})
-        ),
-    ),
-)
+df = df.with_column("pages", extract_text_from_parsed_pdf(df["pdf_bytes"]))
 df = df.explode("pages")
 df = df.with_columns({"page_text": col("pages")["text"], "page_number": col("pages")["page_number"]})
 df = df.where(daft.col("page_text").not_null())
-df = df.with_column(
-    "chunks",
-    df["page_text"].apply(
-        chunk,
-        return_dtype=daft.DataType.list(
-            daft.DataType.struct({"text": daft.DataType.string(), "chunk_id": daft.DataType.int64()})
-        ),
-    ),
-)
-df = df.explode("chunks")
+df = df.with_column("chunks", chunk(df["page_text"]))
 df = df.with_columns({"chunk": col("chunks")["text"], "chunk_id": col("chunks")["chunk_id"]})
 df = df.where(daft.col("chunk").not_null())
 df = df.with_column("embedding", Embedder()(df["chunk"]))
