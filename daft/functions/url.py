@@ -104,7 +104,7 @@ def upload(
     """Uploads a column of binary data to the provided location(s) (also supports S3, local etc).
 
     Files will be written into the location (folder(s)) with a generated UUID filename, and the result
-    will be returned as a column of string paths that is compatible with the ``.url.download()`` Expression.
+    will be returned as a column of string paths that is compatible with the ``download()`` Expression.
 
     Args:
         expr: The expression to upload.

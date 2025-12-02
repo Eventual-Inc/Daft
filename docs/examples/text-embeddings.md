@@ -210,7 +210,7 @@ Now we'll execute the complete data processing pipeline:
     .with_column("embedding", EncodingUDF(col("text")))
     .with_column(
         "id",
-        col("url").str.right(50) + "-" + col("chunk_id").cast(daft.DataType.string())
+        col("url").right(50) + "-" + col("chunk_id").cast(daft.DataType.string())
     )
     .select("id", "url", "language", "source", "text", "embedding")
     .write_turbopuffer(
@@ -345,7 +345,7 @@ def main():
         .with_column("embedding", EncodingUDF(col("text")))
         .with_column(
             "id",
-            col("url").str.right(50) + "-" + col("chunk_id").cast(daft.DataType.string())
+            col("url").right(50) + "-" + col("chunk_id").cast(daft.DataType.string())
         )
         .select("id", "url", "language", "source", "text", "embedding")
         .write_turbopuffer(

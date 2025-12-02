@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Callable, Concatenate, Literal, Optional,
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, WriteMode
+from daft.daft import DistributedPhysicalPlan, FileFormat, IOConfig, JoinStrategy, JoinType, WriteMode
 from daft.dataframe.display import MermaidOptions
 from daft.dataframe.preview import Preview, PreviewAlign, PreviewColumn, PreviewFormat, PreviewFormatter
 from daft.datatype import DataType
@@ -280,19 +280,15 @@ class DataFrame:
             print_to_file(builder.pretty_print(simple))
             print_to_file("\n== Physical Plan ==\n")
             if get_or_create_runner().name != "native":
-                if execution_config.use_legacy_ray_runner:
-                    physical_plan_scheduler = builder.to_physical_plan_scheduler(execution_config)
-                    print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
-                else:
-                    from daft.daft import DistributedPhysicalPlan
+                from daft.daft import DistributedPhysicalPlan
 
-                    distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
-                        builder._builder, "<tmp>", execution_config
-                    )
-                    if format == "ascii":
-                        print_to_file(distributed_plan.repr_ascii(simple))
-                    elif format == "mermaid":
-                        print_to_file(distributed_plan.repr_mermaid(MermaidOptions(simple)))
+                distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
+                    builder._builder, "<tmp>", execution_config
+                )
+                if format == "ascii":
+                    print_to_file(distributed_plan.repr_ascii(simple))
+                elif format == "mermaid":
+                    print_to_file(distributed_plan.repr_mermaid(MermaidOptions(simple)))
             else:
                 native_executor = NativeExecutor()
                 print_to_file(
@@ -304,7 +300,7 @@ class DataFrame:
             )
         return None
 
-    def num_partitions(self) -> int:
+    def num_partitions(self) -> int | None:
         """Returns the number of partitions that will be used to execute this DataFrame.
 
         The query optimizer may change the partitioning strategy. This method runs the optimizer
@@ -317,21 +313,31 @@ class DataFrame:
         Examples:
             >>> import daft
             >>>
+            >>> daft.set_runner_ray()  # doctest: +SKIP
+            >>>
             >>> # Create a DataFrame with 1000 rows
             >>> df = daft.from_pydict({"x": list(range(1000))})
             >>>
             >>> # Partition count may depend on default config or optimizer decisions
-            >>> df.num_partitions()
+            >>> df.num_partitions()  # doctest: +SKIP
             1
             >>>
             >>> # You can repartition manually (if supported), and then inspect again:
-            >>> df2 = df.repartition(10)
-            >>> df2.num_partitions()
+            >>> df2 = df.repartition(10)  # doctest: +SKIP
+            >>> df2.num_partitions()  # doctest: +SKIP
             10
         """
-        # We need to run the optimizer since that could change the number of partitions
-        execution_config = get_context().daft_execution_config
-        return self.__builder.optimize(execution_config).to_physical_plan_scheduler(execution_config).num_partitions()
+        runner_name = get_or_create_runner().name
+        # Native runner does not support num_partitions
+        if runner_name == "native":
+            return None
+        else:
+            execution_config = get_context().daft_execution_config
+            optimized = self._builder.optimize(execution_config)
+            distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
+                optimized._builder, "<tmp>", execution_config
+            )
+            return distributed_plan.num_partitions()
 
     @DataframePublicAPI
     def schema(self) -> Schema:
@@ -2629,8 +2635,6 @@ class DataFrame:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> repartitioned_df = df.repartition(3)
-            >>> repartitioned_df.num_partitions()
-            3
 
         """
         if get_or_create_runner().name == "native":
@@ -2660,13 +2664,6 @@ class DataFrame:
 
         Returns:
             DataFrame: Dataframe with `num` partitions.
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
-            >>> df_with_5_partitions = df.into_partitions(5)
-            >>> df_with_5_partitions.num_partitions()
-            5
         """
         if get_or_create_runner().name == "native":
             warnings.warn(
@@ -2911,10 +2908,12 @@ class DataFrame:
         if not float_columns:
             return self
 
+        from daft.functions import is_nan, when
+
         return self.where(
             ~reduce(
-                lambda x, y: x.is_null().if_else(lit(False), x) | y.is_null().if_else(lit(False), y),
-                (x.float.is_nan() for x in float_columns),
+                lambda x, y: when(x.is_null(), lit(False)).otherwise(x) | when(y.is_null(), lit(False)).otherwise(y),
+                (is_nan(x) for x in float_columns),
             )
         )
 
@@ -3240,11 +3239,11 @@ class DataFrame:
         elif op == "any_value":
             return expr.any_value()
         elif op == "list":
-            return expr.agg_list()
+            return expr.list_agg()
         elif op == "set":
-            return expr.agg_set()
+            return expr.list_agg_distinct()
         elif op == "concat":
-            return expr.agg_concat()
+            return expr.string_agg()
         elif op == "skew":
             return expr.skew()
 
@@ -3525,7 +3524,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        return self._apply_agg_fn(Expression.agg_list, cols)
+        return self._apply_agg_fn(Expression.list_agg, cols)
 
     @DataframePublicAPI
     def agg_set(self, *cols: ColumnInputType) -> "DataFrame":
@@ -3553,7 +3552,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        return self._apply_agg_fn(Expression.agg_set, cols)
+        return self._apply_agg_fn(Expression.list_agg_distinct, cols)
 
     @DataframePublicAPI
     def agg_concat(self, *cols: ColumnInputType) -> "DataFrame":
@@ -3580,7 +3579,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        return self._apply_agg_fn(Expression.agg_concat, cols)
+        return self._apply_agg_fn(Expression.string_agg, cols)
 
     @DataframePublicAPI
     def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> "DataFrame":

@@ -62,8 +62,8 @@ def test_agg_global(make_df, repartition_nparts, with_morsel_size):
             col("values").min().alias("min"),
             col("values").max().alias("max"),
             col("values").count().alias("count"),
-            col("values").agg_list().alias("list"),
-            col("values").agg_set().alias("set"),
+            col("values").list_agg().alias("list"),
+            col("values").list_agg_distinct().alias("set"),
         ]
     )
     expected = {
@@ -117,8 +117,8 @@ def test_agg_global_all_null(make_df, repartition_nparts, with_morsel_size):
             col("values").min().alias("min"),
             col("values").max().alias("max"),
             col("values").count().alias("count"),
-            col("values").agg_list().alias("list"),
-            col("values").agg_set().alias("set"),
+            col("values").list_agg().alias("list"),
+            col("values").list_agg_distinct().alias("set"),
         ]
     )
     expected = {
@@ -169,8 +169,8 @@ def test_agg_global_empty(make_df):
             col("values").min().alias("min"),
             col("values").max().alias("max"),
             col("values").count().alias("count"),
-            col("values").agg_list().alias("list"),
-            col("values").agg_set().alias("set"),
+            col("values").list_agg().alias("list"),
+            col("values").list_agg_distinct().alias("set"),
         ]
     )
     expected = {
@@ -222,8 +222,8 @@ def test_agg_groupby(make_df, repartition_nparts, with_morsel_size):
             col("values").min().alias("min"),
             col("values").max().alias("max"),
             col("values").count().alias("count"),
-            col("values").agg_list().alias("list"),
-            col("values").agg_set().alias("set"),
+            col("values").list_agg().alias("list"),
+            col("values").list_agg_distinct().alias("set"),
         ]
     )
     expected = {
@@ -287,8 +287,8 @@ def test_agg_groupby_all_null(make_df, repartition_nparts, with_morsel_size):
             col("values").min().alias("min"),
             col("values").max().alias("max"),
             col("values").count().alias("count"),
-            col("values").agg_list().alias("list"),
-            col("values").agg_set().alias("set"),
+            col("values").list_agg().alias("list"),
+            col("values").list_agg_distinct().alias("set"),
         ]
     )
 
@@ -384,9 +384,9 @@ def test_all_null_groupby_keys(make_df, repartition_nparts, with_morsel_size):
         daft_df.with_column("group", daft_df["group"].cast(DataType.int64()))
         .groupby(col("group"))
         .agg(
-            col("values").agg_list().alias("list"),
+            col("values").list_agg().alias("list"),
             col("values").mean().alias("mean"),
-            col("values").agg_set().alias("set"),
+            col("values").list_agg_distinct().alias("set"),
         )
     )
 
@@ -438,8 +438,8 @@ def test_agg_groupby_empty(make_df):
             col("values").min().alias("min"),
             col("values").max().alias("max"),
             col("values").count().alias("count"),
-            col("values").agg_list().alias("list"),
-            col("values").agg_set().alias("set"),
+            col("values").list_agg().alias("list"),
+            col("values").list_agg_distinct().alias("set"),
         ]
     )
 
@@ -482,8 +482,8 @@ def test_agg_groupby_with_alias(make_df, repartition_nparts, with_morsel_size):
             col("values").min().alias("min"),
             col("values").max().alias("max"),
             col("values").count().alias("count"),
-            col("values").agg_list().alias("list"),
-            col("values").agg_set().alias("set"),
+            col("values").list_agg().alias("list"),
+            col("values").list_agg_distinct().alias("set"),
         ]
     )
     expected = {
@@ -544,7 +544,7 @@ def test_agg_pyobjects_list():
     df = df.agg(
         [
             col("objs").count().alias("count"),
-            col("objs").agg_list().alias("list"),
+            col("objs").list_agg().alias("list"),
         ]
     )
     df.collect()
@@ -569,7 +569,7 @@ def test_groupby_agg_pyobjects_list():
         .agg(
             [
                 col("objects").count().alias("count"),
-                col("objects").agg_list().alias("list"),
+                col("objects").list_agg().alias("list"),
             ]
         )
         .sort(col("groups"))
@@ -610,7 +610,8 @@ def test_groupby_result_partitions_smaller_than_input(shuffle_aggregation_defaul
 
             df = df.collect()
 
-            assert df.num_partitions() == min(min_partitions, partition_size)
+            if get_tests_daft_runner_name() != "native":
+                assert df._result.num_partitions() == min(min_partitions, partition_size)
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -828,7 +829,7 @@ def test_agg_set_duplicates_across_partitions(make_df, repartition_nparts, with_
 
     # Test both global and groupby aggregations
     # Global aggregation
-    global_result = daft_df.agg([col("values").agg_set().alias("set")])
+    global_result = daft_df.agg([col("values").list_agg_distinct().alias("set")])
     global_result.collect()
     global_set = global_result.to_pydict()["set"][0]
 
@@ -841,7 +842,7 @@ def test_agg_set_duplicates_across_partitions(make_df, repartition_nparts, with_
     }, f"Expected set {{1, 2}}, got set {set(global_set)}"
 
     # Groupby aggregation
-    group_result = daft_df.groupby("group").agg([col("values").agg_set().alias("set")])
+    group_result = daft_df.groupby("group").agg([col("values").list_agg_distinct().alias("set")])
     group_result.collect()
     group_set = group_result.to_pydict()["set"][0]
 

@@ -9,7 +9,7 @@ import daft
 def test_url_download_http(mock_http_image_urls, image_data):
     data = {"urls": mock_http_image_urls}
     df = daft.from_pydict(data)
-    df = df.with_column("data", df["urls"].url.download())
+    df = df.with_column("data", df["urls"].download())
     assert df.to_pydict() == {**data, "data": [image_data for _ in range(len(mock_http_image_urls))]}
 
 
@@ -19,7 +19,7 @@ def test_url_download_http_error_codes(nginx_config, status_code):
     server_url, _ = nginx_config
     data = {"urls": [f"{server_url}/{status_code}.html"]}
     df = daft.from_pydict(data)
-    df = df.with_column("data", df["urls"].url.download(on_error="raise"))
+    df = df.with_column("data", df["urls"].download(on_error="raise"))
 
     # 404 should always be corner-cased to return FileNotFoundError
     if status_code == 404:

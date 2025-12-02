@@ -8,7 +8,7 @@ use daft_core::{
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::{ProbeState, get_columns_by_name};
+use daft_recordbatch::{GrowableRecordBatch, ProbeState, get_columns_by_name};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use tracing::{Span, instrument};
@@ -51,6 +51,8 @@ pub struct InnerHashJoinProbeOperator {
 }
 
 impl InnerHashJoinProbeOperator {
+    const DEFAULT_GROWABLE_SIZE: usize = 20;
+
     pub fn new(
         probe_on: Vec<BoundExpr>,
         left_schema: &SchemaRef,
@@ -95,30 +97,35 @@ impl InnerHashJoinProbeOperator {
         build_on_left: bool,
         output_schema: &SchemaRef,
     ) -> DaftResult<Arc<MicroPartition>> {
-        let build_side_table = probe_state.get_record_batch();
+        let build_side_tables = probe_state.get_record_batches().iter().collect::<Vec<_>>();
 
         let input_tables = input.get_tables()?;
         let result_tables = input_tables
             .iter()
             .map(|input_table| {
-                let mut build_side_idxs = Vec::new();
+                let mut build_side_growable = GrowableRecordBatch::new(
+                    &build_side_tables,
+                    false,
+                    Self::DEFAULT_GROWABLE_SIZE,
+                )?;
                 let mut probe_side_idxs = Vec::new();
 
                 let join_keys = input_table.eval_expression_list(probe_on)?;
                 let idx_iter = probe_state.probe_indices(&join_keys)?;
                 for (probe_row_idx, inner_iter) in idx_iter.enumerate() {
                     if let Some(inner_iter) = inner_iter {
-                        for build_row_idx in inner_iter {
-                            build_side_idxs.push(build_row_idx);
+                        for (build_rb_idx, build_row_idx) in inner_iter {
+                            build_side_growable.extend(
+                                build_rb_idx as usize,
+                                build_row_idx as usize,
+                                1,
+                            );
                             probe_side_idxs.push(probe_row_idx as u64);
                         }
                     }
                 }
 
-                let build_side_table = {
-                    let indices_as_series = UInt64Array::from(("", build_side_idxs)).into_series();
-                    build_side_table.take(&indices_as_series)?
-                };
+                let build_side_table = build_side_growable.build()?;
                 let probe_side_table = {
                     let indices_as_series = UInt64Array::from(("", probe_side_idxs)).into_series();
                     input_table.take(&indices_as_series)?
@@ -152,7 +159,7 @@ impl InnerHashJoinProbeOperator {
 
 impl IntermediateOperator for InnerHashJoinProbeOperator {
     type State = InnerHashJoinProbeState;
-
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "InnerHashJoinOperator::execute")]
     fn execute(
         &self,
@@ -218,6 +225,11 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(InnerHashJoinProbeState::Building(
             self.probe_state_bridge.clone(),
+        ))
+    }
+    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
+        Ok(crate::dynamic_batching::StaticBatchingStrategy::new(
+            self.morsel_size_requirement().unwrap_or_default(),
         ))
     }
 }
