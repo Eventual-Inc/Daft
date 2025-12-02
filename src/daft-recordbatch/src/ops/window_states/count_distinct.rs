@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use common_error::DaftResult;
 use daft_core::{
-    array::ops::arrow2::comparison::build_is_equal,
+    array::ops::arrow::comparison::build_is_equal,
     prelude::*,
     utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
 };

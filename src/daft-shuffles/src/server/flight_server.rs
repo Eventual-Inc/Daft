@@ -5,9 +5,9 @@ use arrow_flight::{
     HandshakeRequest, HandshakeResponse, PollInfo, PutResult, SchemaResult, Ticket,
     flight_service_server::{FlightService, FlightServiceServer},
 };
-use arrow2::io::{flight::default_ipc_fields, ipc::write::schema_to_bytes};
 use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
+use daft_arrow::io::{flight::default_ipc_fields, ipc::write::schema_to_bytes};
 use futures::{Stream, StreamExt, TryStreamExt};
 use tonic::{Request, Response, Status, transport::Server};
 

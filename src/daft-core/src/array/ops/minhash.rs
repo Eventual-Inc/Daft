@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, hash::BuildHasher, iter::repeat_with};
 
-use arrow2::array::{MutableArray, MutablePrimitiveArray, PrimitiveArray};
 use common_error::{DaftError, DaftResult};
+use daft_arrow::array::{MutableArray, MutablePrimitiveArray, PrimitiveArray};
 use daft_minhash::load_simd;
 
 use super::{DaftMinHash, as_arrow::AsArrow};

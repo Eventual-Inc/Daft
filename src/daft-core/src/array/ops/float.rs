@@ -16,7 +16,7 @@ where
 
     fn is_nan(&self) -> Self::Output {
         let arrow_array = self.as_arrow();
-        let result_arrow_array = arrow2::array::BooleanArray::from_trusted_len_values_iter(
+        let result_arrow_array = daft_arrow::array::BooleanArray::from_trusted_len_values_iter(
             arrow_array.values_iter().map(|v| v.is_nan()),
         )
         .with_validity(arrow_array.validity().cloned());
@@ -31,8 +31,9 @@ impl DaftIsNan for DataArray<NullType> {
         // Entire array is null; since we don't consider nulls to be NaNs, return an all null (invalid) boolean array.
         Ok(BooleanArray::from((
             self.name(),
-            arrow2::array::BooleanArray::from_slice(vec![false; self.len()])
-                .with_validity(Some(arrow2::bitmap::Bitmap::from(vec![false; self.len()]))),
+            daft_arrow::array::BooleanArray::from_slice(vec![false; self.len()]).with_validity(
+                Some(daft_arrow::bitmap::Bitmap::from(vec![false; self.len()])),
+            ),
         )))
     }
 }
@@ -46,7 +47,7 @@ where
 
     fn is_inf(&self) -> Self::Output {
         let arrow_array = self.as_arrow();
-        let result_arrow_array = arrow2::array::BooleanArray::from_trusted_len_values_iter(
+        let result_arrow_array = daft_arrow::array::BooleanArray::from_trusted_len_values_iter(
             arrow_array.values_iter().map(|v| v.is_infinite()),
         )
         .with_validity(arrow_array.validity().cloned());
@@ -60,8 +61,9 @@ impl DaftIsInf for DataArray<NullType> {
     fn is_inf(&self) -> Self::Output {
         Ok(BooleanArray::from((
             self.name(),
-            arrow2::array::BooleanArray::from_slice(vec![false; self.len()])
-                .with_validity(Some(arrow2::bitmap::Bitmap::from(vec![false; self.len()]))),
+            daft_arrow::array::BooleanArray::from_slice(vec![false; self.len()]).with_validity(
+                Some(daft_arrow::bitmap::Bitmap::from(vec![false; self.len()])),
+            ),
         )))
     }
 }
@@ -75,7 +77,7 @@ where
 
     fn not_nan(&self) -> Self::Output {
         let arrow_array = self.as_arrow();
-        let result_arrow_array = arrow2::array::BooleanArray::from_trusted_len_values_iter(
+        let result_arrow_array = daft_arrow::array::BooleanArray::from_trusted_len_values_iter(
             arrow_array.values_iter().map(|v| !v.is_nan()),
         )
         .with_validity(arrow_array.validity().cloned());
@@ -90,8 +92,9 @@ impl DaftNotNan for DataArray<NullType> {
         // Entire array is null; since we don't consider nulls to be NaNs, return an all null (invalid) boolean array.
         Ok(BooleanArray::from((
             self.name(),
-            arrow2::array::BooleanArray::from_slice(vec![false; self.len()])
-                .with_validity(Some(arrow2::bitmap::Bitmap::from(vec![false; self.len()]))),
+            daft_arrow::array::BooleanArray::from_slice(vec![false; self.len()]).with_validity(
+                Some(daft_arrow::bitmap::Bitmap::from(vec![false; self.len()])),
+            ),
         )))
     }
 }

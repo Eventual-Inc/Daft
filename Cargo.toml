@@ -14,6 +14,7 @@ common-tracing = {path = "src/common/tracing", default-features = false}
 common-version = {path = "src/common/version", default-features = false}
 daft-ai = {path = "src/daft-ai", default-features = false}
 daft-algebra = {path = "src/daft-algebra", default-features = false}
+daft-arrow = {path = "src/daft-arrow", default-features = false}
 daft-catalog = {path = "src/daft-catalog", default-features = false}
 daft-cli = {path = "src/daft-cli", default-features = false}
 daft-compression = {path = "src/daft-compression", default-features = false}
@@ -189,6 +190,7 @@ members = [
   "src/common/metrics",
   "src/daft-ai",
   "src/daft-algebra",
+  "src/daft-arrow",
   "src/daft-catalog",
   "src/daft-connect",
   "src/daft-context",
@@ -257,6 +259,7 @@ common-ndarray = {path = "src/common/ndarray"}
 common-runtime = {path = "src/common/runtime", default-features = false}
 daft-ai = {path = "src/daft-ai"}
 daft-algebra = {path = "src/daft-algebra"}
+daft-arrow = {path = "src/daft-arrow"}
 daft-context = {path = "src/daft-context"}
 daft-core = {path = "src/daft-core"}
 daft-dsl = {path = "src/daft-dsl"}

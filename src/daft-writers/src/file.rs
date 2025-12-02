@@ -113,9 +113,7 @@ impl AsyncFileWriter for TargetFileSizeWriter {
             });
         }
 
-        let input_size_bytes = input.size_bytes().expect(
-            "Micropartitions should be loaded before writing, so they should have a size in bytes",
-        );
+        let input_size_bytes = input.size_bytes();
         let avg_row_size_bytes = max(input_size_bytes / input.len(), 1);
         // Write the input, rotating the writer when the current file reaches the target size
         let mut local_offset = 0;

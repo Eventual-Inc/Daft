@@ -1,7 +1,7 @@
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
-use arrow2::{array::PrimitiveArray, compute::arithmetics::basic};
 use common_error::{DaftError, DaftResult};
+use daft_arrow::{array::PrimitiveArray, compute::arithmetics::basic};
 
 use super::{as_arrow::AsArrow, full::FullNull};
 use crate::{
@@ -91,7 +91,7 @@ impl Add for &Decimal128Array {
         arithmetic_helper(
             self,
             rhs,
-            arrow2::compute::arithmetics::decimal::add,
+            daft_arrow::compute::arithmetics::decimal::add,
             |l, r| l + r,
         )
     }
@@ -104,7 +104,7 @@ impl Sub for &Decimal128Array {
         arithmetic_helper(
             self,
             rhs,
-            arrow2::compute::arithmetics::decimal::sub,
+            daft_arrow::compute::arithmetics::decimal::sub,
             |l, r| l - r,
         )
     }
@@ -122,7 +122,7 @@ impl Mul for &Decimal128Array {
         arithmetic_helper(
             self,
             rhs,
-            arrow2::compute::arithmetics::decimal::mul,
+            daft_arrow::compute::arithmetics::decimal::mul,
             |l, r| (l * r) / scale,
         )
     }
@@ -182,7 +182,7 @@ pub fn binary_with_nulls<T, F>(
     op: F,
 ) -> PrimitiveArray<T>
 where
-    T: arrow2::types::NativeType,
+    T: daft_arrow::types::NativeType,
     F: Fn(T, T) -> T,
 {
     assert!(lhs.len() == rhs.len(), "expected same length");
@@ -196,7 +196,7 @@ where
 
 fn rem_with_nulls<T>(lhs: &PrimitiveArray<T>, rhs: &PrimitiveArray<T>) -> PrimitiveArray<T>
 where
-    T: arrow2::types::NativeType + std::ops::Rem<Output = T>,
+    T: daft_arrow::types::NativeType + std::ops::Rem<Output = T>,
 {
     binary_with_nulls(lhs, rhs, |a, b| a % b)
 }
@@ -251,7 +251,7 @@ where
 
 fn div_with_nulls<T>(lhs: &PrimitiveArray<T>, rhs: &PrimitiveArray<T>) -> PrimitiveArray<T>
 where
-    T: arrow2::types::NativeType + Div<Output = T>,
+    T: daft_arrow::types::NativeType + Div<Output = T>,
 {
     binary_with_nulls(lhs, rhs, |a, b| a / b)
 }
@@ -317,7 +317,7 @@ impl Div for &Decimal128Array {
             arithmetic_helper(
                 self,
                 rhs,
-                arrow2::compute::arithmetics::decimal::div,
+                daft_arrow::compute::arithmetics::decimal::div,
                 |l, r| (l * scale) / r,
             )
         } else {
@@ -389,7 +389,7 @@ where
             let validity = if rhs.is_valid(0) {
                 lhs.validity().cloned()
             } else {
-                Some(arrow2::bitmap::Bitmap::new_zeroed(l))
+                Some(daft_arrow::bitmap::Bitmap::new_zeroed(l))
             };
             Ok((kernel(lhs_child, &rhs_child.repeat(lhs_len)?)?, validity))
         }
@@ -397,7 +397,7 @@ where
             let validity = if lhs.is_valid(0) {
                 rhs.validity().cloned()
             } else {
-                Some(arrow2::bitmap::Bitmap::new_zeroed(r))
+                Some(daft_arrow::bitmap::Bitmap::new_zeroed(r))
             };
             Ok((kernel(&lhs_child.repeat(lhs_len)?, rhs_child)?, validity))
         }

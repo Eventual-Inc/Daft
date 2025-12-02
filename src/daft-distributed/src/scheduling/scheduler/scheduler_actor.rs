@@ -479,8 +479,8 @@ mod tests {
         for submitted_task in submitted_tasks {
             let result = submitted_task.await?;
             let partition = result.unwrap().partitions()[0].clone();
-            assert_eq!(partition.num_rows().unwrap(), 100 + counter);
-            assert_eq!(partition.size_bytes().unwrap(), Some(1024 + 1));
+            assert_eq!(partition.num_rows(), 100 + counter);
+            assert_eq!(partition.size_bytes(), 1024 + 1);
             counter += 1;
         }
         assert_eq!(counter, num_tasks);
@@ -534,8 +534,8 @@ mod tests {
         while let Some((submitted_task, num_rows, num_bytes)) = submitted_task_rx.recv().await {
             let result = submitted_task.await?;
             let partition = result.unwrap().partitions()[0].clone();
-            assert_eq!(partition.num_rows().unwrap(), num_rows);
-            assert_eq!(partition.size_bytes().unwrap(), Some(num_bytes));
+            assert_eq!(partition.num_rows(), num_rows);
+            assert_eq!(partition.size_bytes(), num_bytes);
         }
 
         test_context.cleanup().await?;
@@ -630,8 +630,8 @@ mod tests {
             } else {
                 let result = submitted_task.await?;
                 let partition = result.unwrap().partitions()[0].clone();
-                assert_eq!(partition.num_rows().unwrap(), num_rows);
-                assert_eq!(partition.size_bytes().unwrap(), Some(num_bytes));
+                assert_eq!(partition.num_rows(), num_rows);
+                assert_eq!(partition.size_bytes(), num_bytes);
             }
         }
 

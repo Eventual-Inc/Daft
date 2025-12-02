@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use arrow2::offset::OffsetsBuffer;
 use common_error::{DaftError, DaftResult};
+use daft_arrow::offset::OffsetsBuffer;
 use daft_core::{
     array::{ListArray, growable::make_growable, ops::GroupIndices},
     prelude::{CountMode, DataType, Field, Int64Array, UInt64Array, Utf8Array},
@@ -101,7 +101,7 @@ impl SeriesListExtension for Series {
                 let data_array = struct_array.struct_()?.children[0].list().unwrap();
                 let offsets = data_array.offsets();
                 let array = Box::new(
-                    arrow2::array::PrimitiveArray::from_vec(
+                    daft_arrow::array::PrimitiveArray::from_vec(
                         offsets.lengths().map(|l| l as u64).collect(),
                     )
                     .with_validity(data_array.validity().cloned()),
@@ -356,7 +356,7 @@ impl SeriesListExtension for Series {
         }
 
         let child_arr = growable.build()?;
-        let new_offsets = arrow2::offset::Offsets::try_from_lengths(new_lengths.into_iter())?;
+        let new_offsets = daft_arrow::offset::Offsets::try_from_lengths(new_lengths.into_iter())?;
         let list_array = ListArray::new(
             input.field.clone(),
             child_arr,
