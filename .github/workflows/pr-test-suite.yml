@@ -94,9 +94,10 @@ jobs:
           os: macos-latest
         - python-version: '3.13'
           pyarrow-version: 8.0.0
+        # TEMPORARILY ENABLED FOR TESTING - revert before merge
         # don't run mac unit tests in PRs
-        - os: macos-latest
-          on-main: false
+        # - os: macos-latest
+        #   on-main: false
 
     steps:
     - name: Free Disk Space (Ubuntu) # only run on ubuntu
