@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import time
-
 import pymupdf
-import ray
 import torch
+import ray
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+import time
+import ray
 
 import daft
 from daft import col
@@ -21,13 +21,10 @@ CHUNK_OVERLAP = 200
 
 daft.set_runner_ray()
 
-
 # Wait for Ray cluster to be ready
 @ray.remote
 def warmup():
     pass
-
-
 ray.get([warmup.remote() for _ in range(64)])
 
 
@@ -78,9 +75,9 @@ class Embedder:
         )
         return embeddings
 
-
 daft.set_planning_config(default_io_config=daft.io.IOConfig(s3=daft.io.S3Config.from_env()))
 daft.set_execution_config(enable_dynamic_batching=True)
+
 
 start_time = time.time()
 df = daft.read_parquet(INPUT_PATH)
@@ -90,9 +87,7 @@ df = df.with_column(
     "pages",
     df["pdf_bytes"].apply(
         extract_text_from_parsed_pdf,
-        return_dtype=daft.DataType.list(
-            daft.DataType.struct({"text": daft.DataType.string(), "page_number": daft.DataType.int64()})
-        ),
+        return_dtype=daft.DataType.list(daft.DataType.struct({"text": daft.DataType.string(), "page_number": daft.DataType.int64()})),
     ),
 )
 df = df.explode("pages")
@@ -100,11 +95,7 @@ df = df.with_columns({"page_text": col("pages")["text"], "page_number": col("pag
 df = df.where(daft.col("page_text").not_null())
 df = df.with_column(
     "chunks",
-    df["page_text"].apply(
-        chunk,
-        return_dtype=daft.DataType.list(
-            daft.DataType.struct({"text": daft.DataType.string(), "chunk_id": daft.DataType.int64()})
-        ),
+    df["page_text"].apply(chunk, return_dtype=daft.DataType.list(daft.DataType.struct({"text": daft.DataType.string(), "chunk_id": daft.DataType.int64()})),
     ),
 )
 df = df.explode("chunks")
