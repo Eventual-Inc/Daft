@@ -166,7 +166,7 @@ fn make_csv_writer<B: StorageBackend + Send + Sync>(
                         ArrowDataType::Binary
                         | ArrowDataType::LargeBinary
                         | ArrowDataType::FixedSizeBinary(_) => {
-                            // Encode binary: prefer UTF-8 when valid, else Base64
+                            // Encode binary to UTF-8.
                             let arr = batch.column(i);
                             let col = match arr.data_type() {
                                 ArrowDataType::Binary => try_encode_binary_utf8!(arr, BinaryArray),
@@ -195,9 +195,9 @@ fn make_csv_writer<B: StorageBackend + Send + Sync>(
                 ArrowRecordBatch::try_new(new_schema, new_cols)
             }
 
-            for rb in batches.iter() {
+            for rb in batches {
                 let rb2 = transform_batch(rb.clone())
-                    .map_err(|e| common_error::DaftError::ComputeError(e.to_string()))?;
+                    .map_err(|e| DaftError::ComputeError(e.to_string()))?;
                 writer.write(&rb2)?;
             }
             Ok(())

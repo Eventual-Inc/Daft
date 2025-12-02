@@ -14,6 +14,9 @@ use crate::{
     utils::build_filename,
 };
 
+type JsonFinishFn<B> =
+    Arc<dyn Fn(LineDelimitedWriter<<B as StorageBackend>::Writer>) -> DaftResult<()> + Send + Sync>;
+
 /// Helper function that checks if we support native writes given the file format, root directory, and schema.
 pub(crate) fn native_json_writer_supported(file_schema: &SchemaRef) -> DaftResult<bool> {
     // TODO(desmond): Currently we do not support extension and timestamp types.
@@ -84,12 +87,11 @@ fn make_json_writer<B: StorageBackend + Send + Sync>(
             Ok(())
         },
     );
-    let finish_fn: Option<
-        Arc<dyn Fn(LineDelimitedWriter<B::Writer>) -> DaftResult<()> + Send + Sync>,
-    > = Some(Arc::new(|mut writer: LineDelimitedWriter<B::Writer>| {
-        writer.finish()?;
-        Ok(())
-    }));
+    let finish_fn: Option<JsonFinishFn<B>> =
+        Some(Arc::new(|mut writer: LineDelimitedWriter<B::Writer>| {
+            writer.finish()?;
+            Ok(())
+        }));
     BatchFileWriter::new(
         filename,
         partition_values,

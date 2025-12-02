@@ -12,6 +12,9 @@ use crate::{
     AsyncFileWriter, RETURN_PATHS_COLUMN_NAME, WriteResult, storage_backend::StorageBackend,
 };
 
+type WriteFn<W> = Arc<dyn Fn(&mut W, &[ArrowRecordBatch]) -> DaftResult<()> + Send + Sync>;
+type CloseFn<W> = Arc<dyn Fn(W) -> DaftResult<()> + Send + Sync>;
+
 pub struct BatchFileWriter<B: StorageBackend, W> {
     filename: PathBuf,
     partition_values: Option<RecordBatch>,
@@ -20,8 +23,8 @@ pub struct BatchFileWriter<B: StorageBackend, W> {
     bytes_written: usize,
     inflation_factor: f64,
     builder_fn: Arc<dyn Fn(B::Writer) -> W + Send + Sync>,
-    write_fn: Arc<dyn Fn(&mut W, &[ArrowRecordBatch]) -> DaftResult<()> + Send + Sync>,
-    close_fn: Option<Arc<dyn Fn(W) -> DaftResult<()> + Send + Sync>>,
+    write_fn: WriteFn<W>,
+    close_fn: Option<CloseFn<W>>,
 }
 
 impl<B: StorageBackend, W> BatchFileWriter<B, W> {
@@ -31,8 +34,8 @@ impl<B: StorageBackend, W> BatchFileWriter<B, W> {
         storage_backend: B,
         inflation_factor: f64,
         builder_fn: Arc<dyn Fn(B::Writer) -> W + Send + Sync>,
-        write_fn: Arc<dyn Fn(&mut W, &[ArrowRecordBatch]) -> DaftResult<()> + Send + Sync>,
-        close_fn: Option<Arc<dyn Fn(W) -> DaftResult<()> + Send + Sync>>,
+        write_fn: WriteFn<W>,
+        close_fn: Option<CloseFn<W>>,
     ) -> Self {
         Self {
             filename,
@@ -98,13 +101,13 @@ impl<B: StorageBackend + Send + Sync, W: Send + Sync + 'static> AsyncFileWriter
     }
 
     async fn close(&mut self) -> DaftResult<Self::Result> {
-        if let Some(file_writer) = self.file_writer.take() {
-            if let Some(finish_fn) = self.close_fn.clone() {
-                let io_runtime = get_io_runtime(true);
-                io_runtime
-                    .spawn_blocking(move || -> DaftResult<()> { finish_fn(file_writer) })
-                    .await??;
-            }
+        if let Some(file_writer) = self.file_writer.take()
+            && let Some(finish_fn) = self.close_fn.clone()
+        {
+            let io_runtime = get_io_runtime(true);
+            io_runtime
+                .spawn_blocking(move || -> DaftResult<()> { finish_fn(file_writer) })
+                .await??;
         }
 
         self.storage_backend.finalize().await?;
