@@ -206,6 +206,7 @@ impl AntiSemiProbeSink {
 
 impl StreamingSink for AntiSemiProbeSink {
     type State = AntiSemiProbeState;
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "AntiSemiProbeSink::execute")]
     fn execute(
         &self,
@@ -307,5 +308,10 @@ impl StreamingSink for AntiSemiProbeSink {
 
     fn max_concurrency(&self) -> usize {
         common_runtime::get_compute_pool_num_threads()
+    }
+    fn batching_strategy(&self) -> Self::BatchingStrategy {
+        crate::dynamic_batching::StaticBatchingStrategy::new(
+            self.morsel_size_requirement().unwrap_or_default(),
+        )
     }
 }

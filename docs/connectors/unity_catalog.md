@@ -62,7 +62,7 @@ See also [Delta Lake](../connectors/delta_lake.md) for more information about ho
 
 ## Downloading files in Unity Catalog volumes
 
-Daft supports downloading from Unity Catalog volumes using [`Expression.url.download()`][daft.expressions.expressions.ExpressionUrlNamespace.download]. File paths that start with `vol+dbfs:/` or `dbfs:/` will be downloaded using the configurations in [`IOConfig.unity`][daft.daft.IOConfig.unity]. These configurations can be created using `UnityCatalog.to_io_config`, or automatically derived from the global session.
+Daft supports downloading from Unity Catalog volumes using [`Expression.download()`][daft.expressions.expressions.download]. File paths that start with `vol+dbfs:/` or `dbfs:/` will be downloaded using the configurations in [`IOConfig.unity`][daft.daft.IOConfig.unity]. These configurations can be created using `UnityCatalog.to_io_config`, or automatically derived from the global session.
 
 === "🐍 Python"
 
@@ -76,7 +76,7 @@ Daft supports downloading from Unity Catalog volumes using [`Expression.url.down
 
     # explicitly specify the unity catalog
     io_config = unity.to_io_config()
-    data_df = df.select("vol+dbfs:" + df["files"].url.download(io_config=io_config))
+    data_df = df.select("vol+dbfs:" + df["files"].download(io_config=io_config))
     data_df.show()
 
     # use the global session
@@ -86,7 +86,7 @@ Daft supports downloading from Unity Catalog volumes using [`Expression.url.down
     catalog = Catalog.from_unity(unity)
     daft.session.attach(catalog)
 
-    data_df = df.select(df["files"].url.download())
+    data_df = df.select(df["files"].download())
     data_df.show()
     ```
 

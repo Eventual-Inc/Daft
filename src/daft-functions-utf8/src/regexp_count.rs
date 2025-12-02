@@ -14,7 +14,7 @@ struct Args<T> {
     patterns: T,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RegexpCount;
 
 #[typetag::serde]

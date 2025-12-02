@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use simdutf8::basic::from_utf8;
 
 /// Supported codecs for the decode and encode functions.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Codec {
     Base64,
     Deflate,
@@ -17,8 +17,7 @@ pub enum Codec {
     Utf8,
     Zlib,
 }
-
-impl Display for Codec {
+impl std::fmt::Debug for Codec {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Self::Base64 => "base64",
@@ -27,6 +26,12 @@ impl Display for Codec {
             Self::Utf8 => "utf8",
             Self::Zlib => "zlib",
         })
+    }
+}
+
+impl Display for Codec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", &self)
     }
 }
 
@@ -50,7 +55,7 @@ impl FromLiteral for Codec {
 }
 
 /// Determines if the decoded output should be a binary or text.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CodecKind {
     Binary,
     Text,

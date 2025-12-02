@@ -7,16 +7,9 @@ import pytest
 
 import daft
 from tests.conftest import get_tests_daft_runner_name
+from tests.utils import clean_explain_output
 
 pytestmark = pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="requires Native Runner to be in use")
-
-_pattern = re.compile("|".join(map(re.escape, ["\n", "|", " ", "*", "\\"])))
-_rep = {"\n": "", "|": "", " ": "", "*": "", "\\": ""}
-
-
-def clean_explain_output(output: str) -> str:
-    output = _pattern.sub(lambda m: _rep[m.group(0)], output)
-    return output.strip()
 
 
 def make_noop_udf(batch_size: int, dtype: daft.DataType = daft.DataType.int64()):
@@ -30,29 +23,33 @@ def make_noop_udf(batch_size: int, dtype: daft.DataType = daft.DataType.int64())
 # TODO: Add snapshot tests in Rust for the explain output of the following tests.
 
 
-def test_batch_size_from_udf_propagated_to_scan():
-    df = daft.from_pydict({"a": [1, 2, 3, 4, 5]})
-    df = df.select(make_noop_udf(10)(daft.col("a")))
-    string_io = io.StringIO()
-    df.explain(True, file=string_io)
-    expected = """
+@pytest.mark.parametrize("dynamic_batching", [True, False])
+def test_batch_size_from_udf_propagated_to_scan(dynamic_batching):
+    with daft.execution_config_ctx(enable_dynamic_batching=dynamic_batching):
+        df = daft.from_pydict({"a": [1, 2, 3, 4, 5]})
+        df = df.select(make_noop_udf(10)(daft.col("a")))
+        string_io = io.StringIO()
+        df.explain(True, file=string_io)
+        expected = """
 
-* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
-|   Expr = py_udf(col(0: a)) as a
-|   Passthrough Columns = []
-|   Properties = { batch_size = 10, concurrency = 1, async = false, scalar = false }
-|   Resource request = None
-|   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
-|   Batch Size = 10
-|
-* InMemorySource:
-|   Schema = a#Int64
-|   Size bytes = 40
-|   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
-|   Batch Size = 10
+    * UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
+    |   Expr = py_udf(col(0: a)) as a
+    |   Passthrough Columns = []
+    |   Properties = { batch_size = 10, concurrency = 1, async = false, scalar = false }
+    |   Resource request = None
+    |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
+    |   Batch Size = 10
+    |
+    * InMemorySource:
+    |   Schema = a#Int64
+    |   Size bytes = 40
+    |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
+    |   Batch Size = 10
 
-"""
-    assert clean_explain_output(string_io.getvalue().split("== Physical Plan ==")[-1]) == clean_explain_output(expected)
+    """
+        assert clean_explain_output(string_io.getvalue().split("== Physical Plan ==")[-1]) == clean_explain_output(
+            expected
+        )
 
 
 def test_batch_size_from_udf_propagated_through_ops_to_scan():
@@ -67,7 +64,7 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
             ]
         }
     )
-    df = df.select(daft.col("data").url.download().image.decode())
+    df = df.select(daft.functions.decode_image(daft.functions.download(daft.col("data"))))
     df = df.select(make_noop_udf(10, daft.DataType.image())(daft.col("data")))
     string_io = io.StringIO()
     df.explain(True, file=string_io)
@@ -153,6 +150,9 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |   Connect timeout ms = 30000
 |   Read timeout ms = 30000
 |   Max retries = 5
+|   UnityConfig
+|       endpoint: None
+|       token: None
 |   ))) as {id_placeholder}, col(0: data)
 |   Batch Size = Range(0, 10]
 |

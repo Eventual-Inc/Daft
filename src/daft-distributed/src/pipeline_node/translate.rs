@@ -3,17 +3,19 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use common_scan_info::ScanState;
+use common_scan_info::{SPLIT_AND_MERGE_PASS, ScanState};
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
-    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundVLLMExpr, BoundWindowExpr},
+    expr::{
+        agg::extract_agg_expr,
+        bound_expr::{BoundAggExpr, BoundExpr, BoundVLLMExpr, BoundWindowExpr},
+    },
     is_partition_compatible, resolved_col,
 };
 use daft_logical_plan::{
     LogicalPlan, LogicalPlanRef, SourceInfo,
     partitioning::{ClusteringSpec, HashRepartitionConfig, RepartitionSpec},
 };
-use daft_physical_plan::extract_agg_expr;
 use daft_schema::schema::Schema;
 
 use crate::{
@@ -117,6 +119,18 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                                 "ScanOperator should not be present in the optimized logical plan for pipeline node translation"
                             ),
                             ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
+                        };
+                        // Perform scan task splitting and merging.
+                        let scan_tasks = if self.plan_config.config.enable_scan_task_split_and_merge
+                            && let Some(split_and_merge_pass) = SPLIT_AND_MERGE_PASS.get()
+                        {
+                            split_and_merge_pass(
+                                scan_tasks,
+                                &info.pushdowns,
+                                &self.plan_config.config,
+                            )?
+                        } else {
+                            scan_tasks
                         };
                         ScanSourceNode::new(
                             self.get_next_pipeline_node_id(),
@@ -253,6 +267,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 self.get_next_pipeline_node_id(),
                 &self.plan_config,
                 sample.fraction,
+                sample.size,
                 sample.with_replacement,
                 sample.seed,
                 node.schema(),

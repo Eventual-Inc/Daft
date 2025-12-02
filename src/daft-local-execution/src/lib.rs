@@ -1,6 +1,7 @@
 mod buffer;
 mod channel;
 mod dispatcher;
+mod dynamic_batching;
 mod intermediate_ops;
 mod pipeline;
 mod resource_manager;
@@ -99,8 +100,8 @@ impl<T: Send + 'static> TaskSet<T> {
         self.inner.len()
     }
 
-    async fn shutdown(&mut self) {
-        self.inner.shutdown().await;
+    fn abort_all(&mut self) {
+        self.inner.abort_all();
     }
 }
 
@@ -115,6 +116,7 @@ impl<T> Future for SpawnedTask<T> {
 }
 
 struct RuntimeHandle(tokio::runtime::Handle);
+
 impl RuntimeHandle {
     fn spawn<F>(&self, future: F) -> SpawnedTask<F::Output>
     where
@@ -159,8 +161,18 @@ impl ExecutionRuntimeContext {
         self.worker_set.join_next().await
     }
 
-    pub async fn shutdown(&mut self) {
-        self.worker_set.shutdown().await;
+    pub async fn shutdown(&mut self) -> DaftResult<()> {
+        self.worker_set.abort_all();
+        while let Some(result) = self.join_next().await {
+            match result {
+                Ok(Err(e)) | Err(e) if !matches!(&e, Error::JoinError { source } if source.is_cancelled()) =>
+                {
+                    return Err(e.into());
+                }
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn handle(&self) -> RuntimeHandle {
@@ -178,6 +190,7 @@ impl ExecutionRuntimeContext {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct ExecutionTaskSpawner {
     runtime_ref: RuntimeRef,
     memory_manager: Arc<MemoryManager>,
@@ -309,6 +322,8 @@ pub enum Error {
         source: DaftError,
         node_name: String,
     },
+    #[snafu(display("ValueError: {}", message))]
+    ValueError { message: String },
 }
 
 impl From<Error> for DaftError {
@@ -322,6 +337,7 @@ impl From<Error> for DaftError {
                 log::error!("Error when running pipeline node {}", node_name);
                 source
             }
+            Error::ValueError { message } => Self::ValueError(message),
             _ => Self::External(err.into()),
         }
     }

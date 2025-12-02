@@ -57,7 +57,8 @@ use crate::{
 ///
 /// This builder holds the current root (sink) of the logical plan, and the building methods return
 /// a brand new builder holding a new plan; i.e., this is an immutable builder.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct LogicalPlanBuilder {
     // The current root of the logical plan in this builder.
     pub plan: Arc<LogicalPlan>,
@@ -514,12 +515,13 @@ impl LogicalPlanBuilder {
 
     pub fn sample(
         &self,
-        fraction: f64,
+        fraction: Option<f64>,
+        size: Option<usize>,
         with_replacement: bool,
         seed: Option<u64>,
     ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            ops::Sample::new(self.plan.clone(), fraction, with_replacement, seed).into();
+            ops::Sample::new(self.plan.clone(), fraction, size, with_replacement, seed).into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -868,6 +870,7 @@ impl LogicalPlanBuilder {
                 unoptimized_plan,
                 |new_plan, rule_batch, pass, transformed, seen| {
                     if transformed {
+
                         log::debug!(
                             "Rule batch {:?} transformed plan on pass {}, and produced {} plan:\n{}",
                             rule_batch,
@@ -1035,7 +1038,8 @@ impl LogicalPlanBuilder {
 /// as possible, converting pyo3 wrapper type arguments into their underlying Rust-native types
 /// (e.g. PySchema -> Schema).
 #[cfg_attr(feature = "python", pyclass(name = "LogicalPlanBuilder"))]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PyLogicalPlanBuilder {
     // Internal logical plan builder.
     pub builder: LogicalPlanBuilder,
@@ -1213,16 +1217,17 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.distinct(columns)?.into())
     }
 
-    #[pyo3(signature = (fraction, with_replacement, seed=None))]
+    #[pyo3(signature = (fraction=None, size=None, with_replacement=false, seed=None))]
     pub fn sample(
         &self,
-        fraction: f64,
+        fraction: Option<f64>,
+        size: Option<usize>,
         with_replacement: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
         Ok(self
             .builder
-            .sample(fraction, with_replacement, seed)?
+            .sample(fraction, size, with_replacement, seed)?
             .into())
     }
 

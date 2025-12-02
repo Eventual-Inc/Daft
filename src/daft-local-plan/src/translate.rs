@@ -5,12 +5,14 @@ use common_file_formats::WriteMode;
 use common_scan_info::ScanState;
 use daft_core::join::JoinStrategy;
 use daft_dsl::{
-    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundVLLMExpr, BoundWindowExpr},
+    expr::{
+        agg::extract_agg_expr,
+        bound_expr::{BoundAggExpr, BoundExpr, BoundVLLMExpr, BoundWindowExpr},
+    },
     join::normalize_join_keys,
     resolved_col, window_to_agg_exprs,
 };
 use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo, stats::StatsState};
-use daft_physical_plan::extract_agg_expr;
 
 use super::plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
 
@@ -126,9 +128,18 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
         }
         LogicalPlan::Sample(sample) => {
             let input = translate(&sample.input)?;
+            let sampling_method = if let Some(fraction) = sample.fraction {
+                SamplingMethod::Fraction(fraction)
+            } else if let Some(size) = sample.size {
+                SamplingMethod::Size(size)
+            } else {
+                return Err(DaftError::ValueError(
+                    "Either fraction or size must be specified for sample".to_string(),
+                ));
+            };
             Ok(LocalPhysicalPlan::sample(
                 input,
-                SamplingMethod::Fraction(sample.fraction),
+                sampling_method,
                 sample.with_replacement,
                 sample.seed,
                 sample.stats_state.clone(),
