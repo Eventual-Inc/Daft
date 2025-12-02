@@ -29,7 +29,7 @@ impl SizeBasedBuffer {
     }
 
     fn push(&mut self, mp: Arc<MicroPartition>) -> DaftResult<()> {
-        for table in mp.get_tables()?.iter() {
+        for table in mp.record_batches() {
             let size_bytes = table.size_bytes();
             self.size_bytes += size_bytes;
             self.buffer.push_back((table.clone(), size_bytes));

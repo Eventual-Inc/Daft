@@ -94,7 +94,7 @@ impl<B: StorageBackend> JsonWriter<B> {
     /// Estimates the number of bytes that will be written for the given data.
     /// This is a temporary workaround since arrow-json doesn't provide bytes written or access to the underlying writer.
     fn estimate_bytes_to_write(&self, data: &MicroPartition) -> DaftResult<usize> {
-        let base_size = data.size_bytes().unwrap_or(0);
+        let base_size = data.size_bytes();
         let estimated_size = (base_size as f64 * Self::INFLATION_FACTOR) as usize;
         Ok(estimated_size)
     }
@@ -123,7 +123,7 @@ impl<B: StorageBackend> AsyncFileWriter for JsonWriter<B> {
         // us from using a counting writer. We need to fix this upstream.
         let est_bytes_to_write = self.estimate_bytes_to_write(&data)?;
         self.bytes_written += est_bytes_to_write;
-        let record_batches = data.get_tables()?;
+        let record_batches = data.record_batches();
         let record_batches: Vec<ArrowRecordBatch> = record_batches
             .iter()
             .map(|rb| rb.clone().try_into())

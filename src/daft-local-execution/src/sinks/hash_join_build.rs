@@ -49,14 +49,14 @@ impl ProbeTableState {
     }
 
     fn add_tables(&mut self, input: &Arc<MicroPartition>) -> DaftResult<()> {
-        let input_tables = input.get_tables()?;
+        let input_tables = input.record_batches();
         if input_tables.is_empty() {
             let empty_table = RecordBatch::empty(Some(input.schema()));
             let join_keys = empty_table.eval_expression_list(&self.projection)?;
             self.probe_table_builder.add_table(&join_keys)?;
             self.tables.push(empty_table);
         } else {
-            for table in input_tables.iter() {
+            for table in input_tables {
                 self.tables.push(table.clone());
                 let join_keys = table.eval_expression_list(&self.projection)?;
 
