@@ -41,7 +41,7 @@ use s3::{
     config::{Credentials, Region},
     error::{DisplayErrorContext, SdkError},
     operation::{
-        get_object::GetObjectError, head_object::HeadObjectError,
+        delete_object::DeleteObjectError, get_object::GetObjectError, head_object::HeadObjectError,
         list_objects_v2::ListObjectsV2Error,
     },
 };
@@ -131,6 +131,15 @@ enum Error {
         bucket: String,
         key: String,
         source: SdkError<CompleteMultipartUploadError, Response>,
+    },
+    #[snafu(display(
+        "Unable to delete {}: {}",
+        path,
+        s3::error::DisplayErrorContext(source)
+    ))]
+    UnableToDeleteFile {
+        path: String,
+        source: SdkError<DeleteObjectError, Response>,
     },
 
     #[snafu(display(
@@ -1493,6 +1502,44 @@ impl ObjectSource for S3LikeSource {
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
         self
     }
+
+    async fn delete(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<()> {
+        let permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        let (_scheme, bucket, key) = parse_s3_url(uri)?;
+        if key.is_empty() {
+            return Err(Error::NotAFile { path: uri.into() }.into());
+        }
+
+        let request = self
+            .get_s3_client(&self.default_region)
+            .await?
+            .delete_object()
+            .bucket(bucket)
+            .key(key);
+
+        let request = if self.s3_config.requester_pays {
+            request.request_payer(s3::types::RequestPayer::Requester)
+        } else {
+            request
+        };
+
+        match request.send().await {
+            Ok(_) => {
+                drop(permit);
+                if let Some(is) = io_stats.as_ref() {
+                    is.mark_bytes_read(1);
+                }
+                Ok(())
+            }
+            Err(err) => Err(UnableToDeleteFileSnafu { path: uri }.into_error(err).into()),
+        }
+    }
 }
 
 /// S3MultipartWriter is responsible for managing multipart uploads to S3.
@@ -1788,6 +1835,20 @@ mod tests {
 
         client.ls(file_path, true, None, None, None).await?;
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_delete_not_a_file_returns_error() -> Result<()> {
+        let config = S3Config {
+            anonymous: true,
+            ..Default::default()
+        };
+        let client = S3LikeSource::get_client(&config).await?;
+
+        let uri = "s3://daft-public-data";
+        let res = client.delete(uri, None).await;
+        assert!(matches!(res, Err(crate::Error::NotAFile { .. })));
         Ok(())
     }
 }
