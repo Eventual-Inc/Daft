@@ -8,10 +8,10 @@ use std::{
     sync::Arc,
 };
 
-use arrow2::{array::Array, chunk::Chunk};
 use common_display::table_display::{StrValue, make_comfy_table};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_compute_runtime;
+use daft_arrow::{array::Array, chunk::Chunk};
 use daft_core::{
     array::ops::{
         DaftApproxCountDistinctAggable, DaftHllSketchAggable, GroupIndices, full::FullNull,
@@ -149,7 +149,7 @@ impl RecordBatch {
 
     pub fn get_inner_arrow_arrays(
         &self,
-    ) -> impl Iterator<Item = Box<dyn arrow2::array::Array>> + '_ {
+    ) -> impl Iterator<Item = Box<dyn daft_arrow::array::Array>> + '_ {
         self.columns.iter().map(|s| s.to_arrow())
     }
 
@@ -256,7 +256,7 @@ impl RecordBatch {
 
     pub fn from_arrow<S: Into<SchemaRef>>(
         schema: S,
-        arrays: Vec<Box<dyn arrow2::array::Array>>,
+        arrays: Vec<Box<dyn daft_arrow::array::Array>>,
     ) -> DaftResult<Self> {
         // validate we have at least one array
         if arrays.is_empty() {
@@ -348,29 +348,59 @@ impl RecordBatch {
         with_replacement: bool,
         seed: Option<u64>,
     ) -> DaftResult<Self> {
-        if num >= self.len() {
-            Ok(self.clone())
-        } else {
-            use rand::{Rng, SeedableRng, distributions::Uniform, rngs::StdRng};
-            let mut rng = match seed {
-                Some(seed) => StdRng::seed_from_u64(seed),
-                None => StdRng::from_rng(rand::thread_rng()).unwrap(),
-            };
-            let values: Vec<u64> = if with_replacement {
-                let range = Uniform::from(0..self.len() as u64);
-                rng.sample_iter(&range).take(num).collect()
-            } else {
-                // https://docs.rs/rand/latest/rand/seq/index/fn.sample.html
-                // Randomly sample exactly amount distinct indices from 0..length, and return them in random order (fully shuffled).
-                sample(&mut rng, self.len(), num)
-                    .into_iter()
-                    .map(|i| i as u64)
-                    .collect()
-            };
-            let indices: daft_core::array::DataArray<daft_core::datatypes::UInt64Type> =
-                UInt64Array::from(("idx", values));
-            self.take(&indices.into_series())
+        let len = self.len();
+
+        // Handle size == 0: return empty dataframe
+        if num == 0 {
+            return Ok(Self::empty(Some(self.schema.clone())));
         }
+
+        // Handle empty dataframe
+        if len == 0 {
+            if !with_replacement {
+                return Err(DaftError::ValueError(
+                    "Cannot take a sample larger than the population when 'replace=False'"
+                        .to_string(),
+                ));
+            }
+            // For with_replacement=True, we can't sample from empty, so return empty
+            return Ok(Self::empty(Some(self.schema.clone())));
+        }
+
+        // Handle size > total_rows
+        if num > len {
+            if !with_replacement {
+                return Err(DaftError::ValueError(format!(
+                    "Cannot take a sample larger than the population when 'replace=False'. Population size: {}, sample size: {}",
+                    len, num
+                )));
+            }
+            // For with_replacement=True, we can sample more than the population
+            // Continue to sampling logic below
+        } else if num == len && !with_replacement {
+            // size == total_rows and no replacement: return all rows
+            return Ok(self.clone());
+        }
+
+        use rand::{Rng, SeedableRng, distributions::Uniform, rngs::StdRng};
+        let mut rng = match seed {
+            Some(seed) => StdRng::seed_from_u64(seed),
+            None => StdRng::from_rng(rand::thread_rng()).unwrap(),
+        };
+        let values: Vec<u64> = if with_replacement {
+            let range = Uniform::from(0..len as u64);
+            rng.sample_iter(&range).take(num).collect()
+        } else {
+            // https://docs.rs/rand/latest/rand/seq/index/fn.sample.html
+            // Randomly sample exactly amount distinct indices from 0..length, and return them in random order (fully shuffled).
+            sample(&mut rng, len, num)
+                .into_iter()
+                .map(|i| i as u64)
+                .collect()
+        };
+        let indices: daft_core::array::DataArray<daft_core::datatypes::UInt64Type> =
+            UInt64Array::from(("idx", values));
+        self.take(&indices.into_series())
     }
 
     pub fn add_monotonically_increasing_id(
@@ -461,7 +491,7 @@ impl RecordBatch {
             // num_filtered is the number of 'false' or null values in the mask
             let num_filtered = mask
                 .validity()
-                .map(|validity| arrow2::bitmap::and(validity, mask.as_bitmap()).unset_bits())
+                .map(|validity| daft_arrow::bitmap::and(validity, mask.as_bitmap()).unset_bits())
                 .unwrap_or_else(|| mask.as_bitmap().unset_bits());
             mask.len() - num_filtered
         };
@@ -1463,39 +1493,9 @@ impl RecordBatch {
             num_columns
         );
 
-        let (head_rows, tail_rows) = if self.len() > 10 {
-            (5, 5)
-        } else {
-            (self.len(), 0)
-        };
+        let total_rows = self.len();
 
-        for i in 0..head_rows {
-            // Begin row.
-            res.push_str("<tr>");
-
-            for (col_idx, col) in self.columns.iter().enumerate() {
-                #[allow(clippy::format_push_string)]
-                res.push_str(&format!(
-                    "<td data-row=\"{}\" data-col=\"{}\"><div style=\"{}\">",
-                    i, col_idx, body_style
-                ));
-                res.push_str(&html_value(col, i, true));
-                res.push_str("</div></td>");
-            }
-
-            // End row.
-            res.push_str("</tr>\n");
-        }
-
-        if tail_rows != 0 {
-            res.push_str("<tr>");
-            for _ in 0..self.columns.len() {
-                res.push_str("<td>...</td>");
-            }
-            res.push_str("</tr>\n");
-        }
-
-        for i in (self.len() - tail_rows)..(self.len()) {
+        for i in 0..total_rows {
             // Begin row.
             res.push_str("<tr>");
 
@@ -1545,8 +1545,8 @@ impl RecordBatch {
     pub fn to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
         let buffer = Vec::with_capacity(self.size_bytes());
         let schema = self.schema.to_arrow()?;
-        let options = arrow2::io::ipc::write::WriteOptions { compression: None };
-        let mut writer = arrow2::io::ipc::write::StreamWriter::new(buffer, options);
+        let options = daft_arrow::io::ipc::write::WriteOptions { compression: None };
+        let mut writer = daft_arrow::io::ipc::write::StreamWriter::new(buffer, options);
         writer.start(&schema, None)?;
 
         let chunk = self.to_chunk();
@@ -1560,16 +1560,16 @@ impl RecordBatch {
 
     pub fn from_ipc_stream(buffer: &[u8]) -> DaftResult<Self> {
         let mut cursor = Cursor::new(buffer);
-        let stream_metadata = arrow2::io::ipc::read::read_stream_metadata(&mut cursor)?;
+        let stream_metadata = daft_arrow::io::ipc::read::read_stream_metadata(&mut cursor)?;
         let schema = Arc::new(Schema::from(stream_metadata.schema.clone()));
-        let reader = arrow2::io::ipc::read::StreamReader::new(cursor, stream_metadata, None);
+        let reader = daft_arrow::io::ipc::read::StreamReader::new(cursor, stream_metadata, None);
 
         let mut tables = reader
             .into_iter()
             .map(|state| {
                 let state = state?;
                 let arrow_chunk = match state {
-                    arrow2::io::ipc::read::StreamState::Some(chunk) => chunk,
+                    daft_arrow::io::ipc::read::StreamState::Some(chunk) => chunk,
                     _ => panic!("State should not be waiting when reading from IPC buffer"),
                 };
                 Self::from_arrow(schema.clone(), arrow_chunk.into_arrays())
@@ -1581,7 +1581,6 @@ impl RecordBatch {
     }
 }
 
-#[cfg(feature = "arrow")]
 impl TryFrom<RecordBatch> for arrow_array::RecordBatch {
     type Error = DaftError;
 
@@ -1615,7 +1614,7 @@ impl TryFrom<RecordBatch> for FileInfos {
             .utf8()?
             .data()
             .as_any()
-            .downcast_ref::<arrow2::array::Utf8Array<i64>>()
+            .downcast_ref::<daft_arrow::array::Utf8Array<i64>>()
             .unwrap()
             .iter()
             .map(|s| s.unwrap().to_string())
@@ -1624,7 +1623,7 @@ impl TryFrom<RecordBatch> for FileInfos {
             .i64()?
             .data()
             .as_any()
-            .downcast_ref::<arrow2::array::Int64Array>()
+            .downcast_ref::<daft_arrow::array::Int64Array>()
             .unwrap()
             .iter()
             .map(|n| n.copied())
@@ -1633,7 +1632,7 @@ impl TryFrom<RecordBatch> for FileInfos {
             .i64()?
             .data()
             .as_any()
-            .downcast_ref::<arrow2::array::Int64Array>()
+            .downcast_ref::<daft_arrow::array::Int64Array>()
             .unwrap()
             .iter()
             .map(|n| n.copied())
@@ -1649,16 +1648,16 @@ impl TryFrom<&FileInfos> for RecordBatch {
         let columns = vec![
             Series::try_from((
                 "path",
-                arrow2::array::Utf8Array::<i64>::from_iter_values(file_info.file_paths.iter())
+                daft_arrow::array::Utf8Array::<i64>::from_iter_values(file_info.file_paths.iter())
                     .to_boxed(),
             ))?,
             Series::try_from((
                 "size",
-                arrow2::array::PrimitiveArray::<i64>::from(&file_info.file_sizes).to_boxed(),
+                daft_arrow::array::PrimitiveArray::<i64>::from(&file_info.file_sizes).to_boxed(),
             ))?,
             Series::try_from((
                 "num_rows",
-                arrow2::array::PrimitiveArray::<i64>::from(&file_info.num_rows).to_boxed(),
+                daft_arrow::array::PrimitiveArray::<i64>::from(&file_info.num_rows).to_boxed(),
             ))?,
         ];
         Self::from_nonempty_columns(columns)

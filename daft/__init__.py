@@ -78,7 +78,7 @@ from daft.daft import ImageFormat, ImageMode, ImageProperty, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.schema import Schema
 from daft.datatype import DataType, TimeUnit, MediaType
-from daft.expressions import Expression, col, element, list_, lit, interval, struct, coalesce
+from daft.expressions import Expression, col, element, lit, interval
 from daft.series import Series
 from daft.session import (
     Session,
@@ -127,6 +127,7 @@ from daft.io import (
     DataCatalogType,
     IOConfig,
     from_glob_path,
+    read_lance,
     _range as range,
     read_csv,
     read_deltalake,
@@ -135,7 +136,6 @@ from daft.io import (
     read_json,
     read_parquet,
     read_sql,
-    read_lance,
     read_video_frames,
     read_warc,
     read_huggingface,
@@ -145,7 +145,7 @@ from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_run
 from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
-from daft.file import File, VideoFile
+from daft.file import File, VideoFile, AudioFile
 
 import daft.context as context
 import daft.io as io
@@ -154,6 +154,7 @@ import daft.datasets as datasets
 import daft.functions as functions
 
 __all__ = [
+    "AudioFile",
     "Catalog",
     "DataCatalogTable",
     "DataCatalogType",
@@ -181,7 +182,6 @@ __all__ = [
     "attach_provider",
     "attach_table",
     "cls",
-    "coalesce",
     "col",
     "context",
     "create_namespace",
@@ -223,7 +223,6 @@ __all__ = [
     "has_table",
     "interval",
     "io",
-    "list_",
     "list_catalogs",
     "list_tables",
     "lit",
@@ -259,7 +258,6 @@ __all__ = [
     "set_session",
     "sql",
     "sql_expr",
-    "struct",
     "udf",
     "write_table",
 ]

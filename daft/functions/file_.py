@@ -24,7 +24,7 @@ def file(url: Expression, io_config: IOConfig | None = None) -> Expression:
 
 
 def video_file(url: Expression, verify: bool = False, io_config: IOConfig | None = None) -> Expression:
-    """Converts either a string containing a file reference, or a binary column to a `daft.VideoFile` reference.
+    """Converts a string containing a file reference to a `daft.VideoFile` reference.
 
     Args:
         url (String Expression): the url of the file
@@ -39,6 +39,24 @@ def video_file(url: Expression, verify: bool = False, io_config: IOConfig | None
 
     """
     return url._eval_expressions("video_file", verify=verify, io_config=io_config)
+
+
+def audio_file(url: Expression, verify: bool = False, io_config: IOConfig | None = None) -> Expression:
+    """Converts a string containing a file reference to a `daft.AudioFile` reference.
+
+    Args:
+        url (String Expression): the url of the file
+        verify:
+            If True, verify that the file exists and is a audio file.
+            If **ANY** files are not audios, this will produce an error.
+
+        io_config (IOConfig, default=None): The IO configuration to use.
+
+    Returns:
+        Expression (File[Audio] Expression): An expression containing the file reference.
+
+    """
+    return url._eval_expressions("audio_file", verify=verify, io_config=io_config)
 
 
 def file_size(file: Expression) -> Expression:

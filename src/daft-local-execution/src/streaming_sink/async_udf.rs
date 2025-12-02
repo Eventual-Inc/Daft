@@ -1,11 +1,15 @@
 use std::{
+    borrow::Cow,
     collections::HashMap,
     sync::{Arc, Mutex, atomic::Ordering},
     time::Duration,
 };
 
 use common_error::DaftResult;
-use common_metrics::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, ops::NodeType};
+use common_metrics::{
+    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, operator_metrics::OperatorCounter,
+    ops::NodeType,
+};
 use daft_core::{prelude::SchemaRef, series::Series};
 use daft_dsl::{
     expr::bound_expr::BoundExpr, functions::python::UDFProperties,
@@ -91,9 +95,9 @@ impl AsyncUdfRuntimeStats {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY.into()),
-            rows_in: Counter::new(&meter, ROWS_IN_KEY.into()),
-            rows_out: Counter::new(&meter, ROWS_OUT_KEY.into()),
+            cpu_us: Counter::new(&meter, CPU_US_KEY.into(), None),
+            rows_in: Counter::new(&meter, ROWS_IN_KEY.into(), None),
+            rows_out: Counter::new(&meter, ROWS_OUT_KEY.into(), None),
             custom_counters: Mutex::new(HashMap::new()),
             node_kv,
             meter,
@@ -102,14 +106,27 @@ impl AsyncUdfRuntimeStats {
 
     fn update_metrics(&self, metrics: OperatorMetrics) {
         let mut counters = self.custom_counters.lock().unwrap();
-        for (name, value) in metrics {
+        for (name, counter_data) in metrics {
+            let OperatorCounter {
+                value,
+                description,
+                attributes,
+            } = counter_data;
+
+            let mut key_values = self.node_kv.clone();
+            key_values.extend(attributes.into_iter().map(|(k, v)| KeyValue::new(k, v)));
+
             match counters.get_mut(name.as_str()) {
-                Some(counter) => {
-                    counter.add(value, self.node_kv.as_slice());
+                Some(existing) => {
+                    existing.add(value, key_values.as_slice());
                 }
                 None => {
-                    let counter = Counter::new(&self.meter, name.clone().into());
-                    counter.add(value, self.node_kv.as_slice());
+                    let counter = Counter::new(
+                        &self.meter,
+                        name.clone().into(),
+                        description.map(Cow::Owned),
+                    );
+                    counter.add(value, key_values.as_slice());
                     counters.insert(name.into(), counter);
                 }
             }
@@ -164,7 +181,7 @@ pub struct AsyncUdfState {
 
 impl StreamingSink for AsyncUdfSink {
     type State = AsyncUdfState;
-
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "AsyncUdfSink::execute")]
     fn execute(
         &self,
@@ -187,8 +204,6 @@ impl StreamingSink for AsyncUdfSink {
                         async move {
                             use daft_dsl::functions::python::initialize_udfs;
 
-                            let input_batches = input.get_tables()?;
-
                             if !state.udf_initialized {
                                 state.udf_expr = BoundExpr::new_unchecked(initialize_udfs(
                                     state.udf_expr.inner().clone(),
@@ -197,7 +212,7 @@ impl StreamingSink for AsyncUdfSink {
                             }
 
                             // Spawn tasks for each batch
-                            for batch in input_batches.as_ref() {
+                            for batch in input.record_batches() {
                                 let params = params.clone();
                                 let expr = state.udf_expr.clone();
                                 let batch = batch.clone();
@@ -362,5 +377,10 @@ impl StreamingSink for AsyncUdfSink {
                     None
                 }
             })
+    }
+    fn batching_strategy(&self) -> Self::BatchingStrategy {
+        crate::dynamic_batching::StaticBatchingStrategy::new(
+            self.morsel_size_requirement().unwrap_or_default(),
+        )
     }
 }

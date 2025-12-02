@@ -13,6 +13,7 @@ use common_file_formats::FileFormatConfig;
 use common_scan_info::{Pushdowns, ScanTaskLike, ScanTaskLikeRef};
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
+use either::Either;
 use itertools::Itertools;
 use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
@@ -414,7 +415,8 @@ impl DisplayAs for DataSource {
     }
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize, Hash)]
+#[derive(PartialEq, Serialize, Deserialize, Hash)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct ScanTask {
     pub sources: Vec<DataSource>,
 
@@ -434,6 +436,13 @@ pub struct ScanTask {
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
     pub generated_fields: Option<SchemaRef>,
+}
+
+#[cfg(not(debug_assertions))]
+impl std::fmt::Debug for ScanTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ScanTask")
+    }
 }
 
 #[typetag::serde]
@@ -642,6 +651,25 @@ impl ScanTask {
             sc1.pushdowns.clone(),
             sc1.generated_fields.clone(),
         ))
+    }
+
+    /// Split the ScanTask into multiple ScanTasks, one for each source.
+    pub fn split(self: Arc<Self>) -> impl Iterator<Item = ScanTaskRef> {
+        if self.sources.len() == 1 {
+            Either::Left(std::iter::once(self))
+        } else {
+            // Multiple sources: need to clone the vector
+            Either::Right(self.sources.clone().into_iter().map(move |source| {
+                Arc::new(Self::new(
+                    vec![source],
+                    self.file_format_config.clone(),
+                    self.schema.clone(),
+                    self.storage_config.clone(),
+                    self.pushdowns.clone(),
+                    self.generated_fields.clone(),
+                ))
+            }))
+        }
     }
 
     #[must_use]

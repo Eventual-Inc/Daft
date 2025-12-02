@@ -82,6 +82,7 @@ pub(crate) fn to_json_value(node: &LogicalPlan) -> serde_json::Value {
         LogicalPlan::Sink(_) => json!({}),
         LogicalPlan::Sample(sample) => json!({
             "fraction": sample.fraction,
+            "size": sample.size,
             "with_replacement": sample.with_replacement,
             "seed": sample.seed,
         }),

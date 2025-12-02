@@ -7,11 +7,13 @@ use std::{ops::Index, sync::Arc, time::Duration};
 
 use bincode::{Decode, Encode};
 use indicatif::{HumanBytes, HumanCount, HumanDuration, HumanFloatCount};
-pub use operator_metrics::{MetricsCollector, NoopMetricsCollector, OperatorMetrics};
+pub use operator_metrics::{
+    MetricsCollector, NoopMetricsCollector, OperatorCounter, OperatorMetrics,
+};
 #[cfg(feature = "python")]
 use pyo3::types::PyModule;
 #[cfg(feature = "python")]
-use pyo3::{Bound, PyResult};
+use pyo3::{Bound, PyResult, pyclass};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 pub use smallvec::smallvec;
@@ -24,6 +26,15 @@ pub type QueryID = Arc<str>;
 pub type QueryPlan = Arc<str>;
 /// Unique identifier for a node in the execution plan.
 pub type NodeID = usize;
+
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum QueryEndState {
+    Finished,
+    Canceled,
+    Failed,
+    Dead,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
 #[serde(tag = "type", content = "value")]
@@ -94,7 +105,7 @@ impl IntoIterator for StatSnapshot {
 #[macro_export(local_inner_macros)]
 macro_rules! snapshot {
     ($($name:expr; $value:expr),* $(,)?) => {
-        StatSnapshot(smallvec![
+        common_metrics::StatSnapshot(smallvec![
             $( ($name.into(), $value) ),*
         ])
     };
@@ -114,5 +125,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<StatType>()?;
     parent.add_class::<PyNodeInfo>()?;
     parent.add_class::<PyOperatorMetrics>()?;
+    parent.add_class::<QueryEndState>()?;
     Ok(())
 }

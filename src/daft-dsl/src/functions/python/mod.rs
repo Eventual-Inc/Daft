@@ -175,7 +175,7 @@ pub fn udf(
 
 /// Generates a ResourceRequest by inspecting an iterator of expressions.
 /// Looks for ResourceRequests on UDFs in each expression presented, and merges ResourceRequests across all expressions.
-// TODO: Remove with the old Ray Runner
+// TODO: Double-check if this is still needed with projects in Flotilla
 pub fn get_resource_request<'a, E: Into<&'a ExprRef>>(
     exprs: impl IntoIterator<Item = E>,
 ) -> Option<ResourceRequest> {
@@ -214,31 +214,6 @@ pub fn get_resource_request<'a, E: Into<&'a ExprRef>>(
             merged_resource_requests.as_slice(),
         ))
     }
-}
-
-/// Get the names of all UDFs in expression
-// TODO: Remove with the old Ray Runner
-pub fn try_get_udf_name(expr: &ExprRef) -> Option<String> {
-    let mut udf_name = None;
-
-    expr.apply(|e| {
-        if let Expr::Function {
-            func: FunctionExpr::Python(LegacyPythonUDF { name, .. }),
-            ..
-        } = e.as_ref()
-        {
-            udf_name = Some(name.as_ref().clone());
-            return Ok(TreeNodeRecursion::Stop);
-        } else if let Expr::ScalarFn(ScalarFn::Python(py)) = e.as_ref() {
-            udf_name = Some(py.name().to_string());
-            return Ok(TreeNodeRecursion::Stop);
-        }
-
-        Ok(TreeNodeRecursion::Continue)
-    })
-    .unwrap();
-
-    udf_name
 }
 
 #[cfg(feature = "python")]
@@ -407,5 +382,39 @@ impl UDFProperties {
 
     pub fn is_actor_pool_udf(&self) -> bool {
         self.concurrency.is_some()
+    }
+
+    #[must_use]
+    pub fn multiline_display(&self, include_resource_properties: bool) -> Vec<String> {
+        let mut properties = vec![];
+
+        if include_resource_properties && let Some(resource_request) = &self.resource_request {
+            properties.extend(resource_request.multiline_display());
+        }
+
+        if let Some(batch_size) = &self.batch_size {
+            properties.push(format!("batch_size = {}", batch_size));
+        }
+
+        if let Some(concurrency) = &self.concurrency {
+            properties.push(format!("concurrency = {}", concurrency));
+        }
+
+        if let Some(use_process) = &self.use_process {
+            properties.push(format!("use_process = {}", use_process));
+        }
+
+        if let Some(max_retries) = &self.max_retries {
+            properties.push(format!("max_retries = {}", max_retries));
+        }
+
+        if let Some(on_error) = &self.on_error {
+            properties.push(format!("on_error = {}", on_error));
+        }
+
+        properties.push(format!("async = {}", &self.is_async));
+        properties.push(format!("scalar = {}", &self.is_scalar));
+
+        properties
     }
 }

@@ -12,7 +12,7 @@ use num_traits::NumCast;
 
 use crate::utils::create_broadcasted_str_iter;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub enum PadPlacement {
     Left,
     Right,
@@ -124,7 +124,7 @@ where
                     }
                     _ => Ok(None),
                 })
-                .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+                .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>()?;
 
             Utf8Array::from((arr.name(), Box::new(arrow_result)))
         }
@@ -144,7 +144,7 @@ where
                     }
                     _ => Ok(None),
                 })
-                .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+                .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>()?;
 
             Utf8Array::from((arr.name(), Box::new(arrow_result)))
         }

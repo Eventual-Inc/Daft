@@ -1,9 +1,11 @@
 use std::{num::NonZeroUsize, sync::Arc};
 
-use arrow2::array::{MutableArray, MutableBinaryArray, MutablePrimitiveArray, MutableUtf8Array};
 use chrono::{DateTime, Utc};
 use common_error::{DaftError, DaftResult};
 use common_runtime::{get_compute_runtime, get_io_runtime};
+use daft_arrow::array::{
+    MutableArray, MutableBinaryArray, MutablePrimitiveArray, MutableUtf8Array,
+};
 use daft_compression::CompressionCodec;
 use daft_core::{prelude::SchemaRef, series::Series};
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
@@ -40,7 +42,7 @@ pub struct WarcConvertOptions {
     pub predicate: Option<ExprRef>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum WarcType {
     Warcinfo,
     Response,
@@ -51,6 +53,12 @@ pub enum WarcType {
     Conversion,
     Continuation,
     FutureType(String),
+}
+
+impl std::fmt::Debug for WarcType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
 }
 
 impl WarcType {
@@ -415,7 +423,7 @@ impl WarcRecordBatchIterator {
 
 fn create_record_batch(
     schema: SchemaRef,
-    arrays: Vec<Box<dyn arrow2::array::Array>>,
+    arrays: Vec<Box<dyn daft_arrow::array::Array>>,
     num_records: usize,
 ) -> DaftResult<RecordBatch> {
     let mut series_vec = Vec::with_capacity(schema.len());

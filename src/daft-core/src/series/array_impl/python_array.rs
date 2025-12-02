@@ -13,7 +13,7 @@ impl SeriesLike for ArrayWrapper<PythonArray> {
     fn into_series(&self) -> Series {
         self.0.clone().into_series()
     }
-    fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+    fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
         self.0.to_arrow().unwrap()
     }
 
@@ -21,11 +21,11 @@ impl SeriesLike for ArrayWrapper<PythonArray> {
         self
     }
 
-    fn with_validity(&self, validity: Option<arrow2::bitmap::Bitmap>) -> DaftResult<Series> {
+    fn with_validity(&self, validity: Option<daft_arrow::bitmap::Bitmap>) -> DaftResult<Series> {
         Ok(self.0.with_validity(validity)?.into_series())
     }
 
-    fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
+    fn validity(&self) -> Option<&daft_arrow::bitmap::Bitmap> {
         self.0.validity()
     }
 

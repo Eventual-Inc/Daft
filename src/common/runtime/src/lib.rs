@@ -45,7 +45,7 @@ static COMPUTE_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
 
 pub type RuntimeRef = Arc<Runtime>;
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub enum PoolType {
     Compute,
     IO,
@@ -90,7 +90,7 @@ impl<T> std::fmt::Debug for RuntimeTask<T> {
     }
 }
 
-#[derive(Debug)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Runtime {
     pub runtime: Arc<tokio::runtime::Runtime>,
     pool_type: PoolType,

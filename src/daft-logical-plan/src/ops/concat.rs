@@ -10,7 +10,8 @@ use crate::{
     stats::{PlanStats, StatsState},
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Concat {
     pub plan_id: Option<usize>,
     pub node_id: Option<usize>,

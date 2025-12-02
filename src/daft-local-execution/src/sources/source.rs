@@ -43,8 +43,8 @@ impl SourceStats {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, "cpu_us".into()),
-            rows_out: Counter::new(&meter, "rows_out".into()),
+            cpu_us: Counter::new(&meter, "cpu_us".into(), None),
+            rows_out: Counter::new(&meter, "rows_out".into(), None),
             io_stats: IOStatsRef::default(),
 
             node_kv,
@@ -219,9 +219,10 @@ impl PipelineNode for SourceNode {
                 let mut source_stream = source
                     .get_data(maintain_order, io_stats, chunk_size)
                     .await?;
+                stats_manager.activate_node(node_id);
+
                 while let Some(part) = source_stream.next().await {
                     has_data = true;
-                    stats_manager.activate_node(node_id);
                     if counting_sender.send(part?).await.is_err() {
                         stats_manager.finalize_node(node_id);
                         return Ok(());

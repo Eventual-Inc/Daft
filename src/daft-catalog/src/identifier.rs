@@ -3,7 +3,8 @@ use std::fmt::Display;
 use crate::error::{CatalogError, CatalogResult};
 
 /// A reference to a catalog object.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Identifier(Vec<String>);
 
 /// Constructors should maintain the 'at least on part' invariant

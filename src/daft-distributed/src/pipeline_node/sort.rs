@@ -39,7 +39,6 @@ pub(crate) async fn get_partition_boundaries_from_samples(
     nulls_first: Vec<bool>,
     num_partitions: usize,
 ) -> DaftResult<RecordBatch> {
-    use daft_io::IOStatsContext;
     use pyo3::prelude::*;
 
     // Extract partition refs from samples
@@ -86,16 +85,11 @@ pub(crate) async fn get_partition_boundaries_from_samples(
     })
     .await?;
 
-    let boundaries = boundaries
-        .inner
-        .concat_or_get(IOStatsContext::new(
-            "daft-distributed::sort::get_boundaries".to_string(),
-        ))?
-        .ok_or_else(|| {
-            common_error::DaftError::InternalError(
-                "No boundaries found for daft-distributed::sort::get_boundaries".to_string(),
-            )
-        })?;
+    let boundaries = boundaries.inner.concat_or_get()?.ok_or_else(|| {
+        common_error::DaftError::InternalError(
+            "No boundaries found for daft-distributed::sort::get_boundaries".to_string(),
+        )
+    })?;
     Ok(boundaries)
 }
 
@@ -144,7 +138,7 @@ pub(crate) fn create_sample_tasks(
                     let sample = LocalPhysicalPlan::sample(
                         input,
                         SamplingMethod::Size(sample_size),
-                        false,
+                        true,
                         None,
                         StatsState::NotMaterialized,
                         LocalNodeContext {
@@ -164,7 +158,7 @@ pub(crate) fn create_sample_tasks(
                     )
                 },
                 None,
-            )?;
+            );
             let submitted_task = task.submit(scheduler_handle)?;
             Ok(submitted_task)
         })
@@ -218,7 +212,7 @@ pub(crate) fn create_range_repartition_tasks(
                     )
                 },
                 None,
-            )?;
+            );
             let submitted_task = task.submit(scheduler_handle)?;
             Ok(submitted_task)
         })
@@ -283,7 +277,7 @@ impl SortNode {
     ) -> DaftResult<()> {
         let materialized_outputs = input_node
             .materialize(scheduler_handle.clone())
-            .try_filter(|mo| future::ready(mo.num_rows().unwrap_or(0) > 0))
+            .try_filter(|mo| future::ready(mo.num_rows() > 0))
             .try_collect::<Vec<_>>()
             .await?;
 
@@ -314,7 +308,7 @@ impl SortNode {
                     )
                 },
                 None,
-            )?;
+            );
             let _ = result_tx.send(task).await;
             return Ok(());
         }
@@ -366,7 +360,7 @@ impl SortNode {
             .collect::<Vec<_>>();
 
         let transposed_outputs =
-            transpose_materialized_outputs_from_vec(partitioned_outputs, num_partitions)?;
+            transpose_materialized_outputs_from_vec(partitioned_outputs, num_partitions);
 
         for partition_group in transposed_outputs {
             let self_clone = self.clone();
@@ -390,7 +384,7 @@ impl SortNode {
                     )
                 },
                 None,
-            )?;
+            );
             let _ = result_tx.send(task).await;
         }
         Ok(())

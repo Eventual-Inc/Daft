@@ -137,7 +137,6 @@ pub mod pylib {
         daft_micropartition::register_modules(m)?;
         daft_recordbatch::register_modules(m)?;
         daft_scan::register_modules(m)?;
-        daft_scheduler::register_modules(m)?;
         daft_session::register_modules(m)?;
         daft_sql::register_modules(m)?;
         daft_shuffles::python::register_modules(m)?;
@@ -178,6 +177,7 @@ pub mod pylib {
         functions_registry.add_fn(daft_file::File);
         functions_registry.add_fn(daft_file::Size);
         functions_registry.add_fn(daft_file::VideoFile);
+        functions_registry.add_fn(daft_file::AudioFile);
         functions_registry
             .add_fn(daft_functions::monotonically_increasing_id::MonotonicallyIncreasingId);
         functions_registry.register::<daft_functions::distance::DistanceFunctions>();

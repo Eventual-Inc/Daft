@@ -35,9 +35,7 @@ impl AsyncFileWriter for LanceWriter {
     async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {
         assert!(!self.is_closed, "Cannot write to a closed LanceWriter");
         let num_rows = data.len();
-        self.bytes_written += data
-            .size_bytes()
-            .expect("MicroPartition should have size_bytes for LanceWriter");
+        self.bytes_written += data.size_bytes();
         Python::attach(|py| {
             let py_micropartition = py
                 .import(pyo3::intern!(py, "daft.recordbatch"))?

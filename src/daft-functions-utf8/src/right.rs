@@ -18,7 +18,7 @@ use crate::utils::{
     binary_utf8_evaluate, binary_utf8_to_field, create_broadcasted_str_iter, parse_inputs,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Right;
 
 #[typetag::serde]
@@ -107,7 +107,7 @@ where
             })?;
             let arrow_result = arr_iter
                 .map(|val| Some(right_most_chars(val?, n)))
-                .collect::<arrow2::array::Utf8Array<i64>>();
+                .collect::<daft_arrow::array::Utf8Array<i64>>();
             Utf8Array::from((arr.name(), Box::new(arrow_result)))
         }
         _ => {
@@ -124,7 +124,7 @@ where
                     }
                     _ => Ok(None),
                 })
-                .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+                .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>()?;
 
             Utf8Array::from((arr.name(), Box::new(arrow_result)))
         }

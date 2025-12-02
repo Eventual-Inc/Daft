@@ -3,7 +3,10 @@
 
 import logging
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
+
+if TYPE_CHECKING:
+    import lance
 
 from daft.context import get_context
 from daft.daft import CountMode, PyExpr, PyPartitionField, PyPushdowns, PyRecordBatch, ScanTask
@@ -15,20 +18,27 @@ from daft.recordbatch import RecordBatch
 
 from ..pushdowns import SupportsPushdownFilters
 
-if TYPE_CHECKING:
-    import lance
-
 logger = logging.getLogger(__name__)
 
 
 # TODO support fts and fast_search
 def _lancedb_table_factory_function(
-    ds: "lance.LanceDataset",
+    ds_uri: str,
+    open_kwargs: Optional[dict[Any, Any]] = None,
     fragment_ids: Optional[list[int]] = None,
     required_columns: Optional[list[str]] = None,
     filter: Optional["pa.compute.Expression"] = None,
     limit: Optional[int] = None,
 ) -> Iterator[PyRecordBatch]:
+    try:
+        import lance
+    except ImportError as e:
+        raise ImportError(
+            "Unable to import the `lance` package, please ensure that Daft is installed with the lance extra dependency: `pip install daft[lance]`"
+        ) from e
+
+    # Attempt to import lance and reconstruct with best-effort kwargs
+    ds = lance.dataset(ds_uri, **(open_kwargs or {}))
     fragments = [ds.get_fragment(id) for id in (fragment_ids or [])]
     if not fragments:
         raise RuntimeError(f"Unable to find lance fragments {fragment_ids}")
@@ -37,11 +47,21 @@ def _lancedb_table_factory_function(
 
 
 def _lancedb_count_result_function(
-    ds: "lance.LanceDataset",
+    ds_uri: str,
+    open_kwargs: Optional[dict[Any, Any]],
     required_column: str,
     filter: Optional["pa.compute.Expression"] = None,
 ) -> Iterator[PyRecordBatch]:
     """Use LanceDB's API to count rows and return a record batch with the count result."""
+    try:
+        import lance
+    except ImportError as e:
+        raise ImportError(
+            "Unable to import the `lance` package, please ensure that Daft is installed with the lance extra dependency: `pip install daft[lance]`"
+        ) from e
+
+    # Attempt to reconstruct with best-effort kwargs
+    ds = lance.dataset(ds_uri, **(open_kwargs or {}))
     logger.debug("Using metadata for counting all rows")
     count = ds.count_rows(filter=filter)
 
@@ -59,6 +79,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         self._remaining_filters: Union[list[PyExpr], None] = None
         self._fragment_group_size = fragment_group_size
         self._enable_strict_filter_pushdown = get_context().daft_planning_config.enable_strict_filter_pushdown
+        self._schema = Schema.from_pyarrow_schema(self._ds.schema)
 
     def name(self) -> str:
         return "LanceDBScanOperator"
@@ -67,7 +88,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         return f"LanceDBScanOperator({self._ds.uri})"
 
     def schema(self) -> Schema:
-        return Schema.from_pyarrow_schema(self._ds.schema)
+        return self._schema
 
     def partitioning_keys(self) -> list[PyPartitionField]:
         return []
@@ -152,10 +173,11 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             filters = self._combine_filters_to_arrow()
 
             new_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(fields[0], pa.uint64())]))
+            open_kwargs = getattr(self._ds, "_lance_open_kwargs", None)
             yield ScanTask.python_factory_func_scan_task(
                 module=_lancedb_count_result_function.__module__,
                 func_name=_lancedb_count_result_function.__name__,
-                func_args=(self._ds, fields[0], filters),
+                func_args=(self._ds.uri, open_kwargs, fields[0], filters),
                 schema=new_schema._schema,
                 num_rows=1,
                 size_bytes=None,
@@ -176,6 +198,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         assert self._pushed_filters is None, "Expected no filters when creating scan tasks with limit and no filters"
         assert pushdowns.limit is not None, "Expected a limit when creating scan tasks with limit and no filters"
 
+        open_kwargs = getattr(self._ds, "_lance_open_kwargs", None)
         fragments = self._ds.get_fragments()
         remaining_limit = pushdowns.limit
 
@@ -197,10 +220,10 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 yield ScanTask.python_factory_func_scan_task(
                     module=_lancedb_table_factory_function.__module__,
                     func_name=_lancedb_table_factory_function.__name__,
-                    func_args=(self._ds, [fragment.fragment_id], required_columns, None, rows_to_scan),
+                    func_args=(self._ds.uri, open_kwargs, [fragment.fragment_id], required_columns, None, rows_to_scan),
                     schema=self.schema()._schema,
                     num_rows=rows_to_scan,
-                    size_bytes=None,
+                    size_bytes=sum(file.file_size_bytes for file in fragment.metadata.files),
                     pushdowns=pushdowns,
                     stats=None,
                     source_type=self.name(),
@@ -210,23 +233,23 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         self, pushdowns: PyPushdowns, required_columns: Optional[list[str]]
     ) -> Iterator[ScanTask]:
         """Create regular scan tasks without count pushdown."""
+        open_kwargs = getattr(self._ds, "_lance_open_kwargs", None)
         fragments = self._ds.get_fragments()
         pushed_expr = self._combine_filters_to_arrow()
 
         if self._fragment_group_size is None or self._fragment_group_size <= 1:
             # Default behavior: one fragment per task
             for fragment in fragments:
-                size_bytes = None
-                stats = None
-                num_rows = None
-                if fragment.count_rows(pushed_expr) == 0:
+                num_rows = fragment.count_rows(pushed_expr)
+                if num_rows == 0:
                     continue
 
                 yield ScanTask.python_factory_func_scan_task(
                     module=_lancedb_table_factory_function.__module__,
                     func_name=_lancedb_table_factory_function.__name__,
                     func_args=(
-                        self._ds,
+                        self._ds.uri,
+                        open_kwargs,
                         [fragment.fragment_id],
                         required_columns,
                         pushed_expr,
@@ -234,9 +257,9 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     ),
                     schema=self.schema()._schema,
                     num_rows=num_rows,
-                    size_bytes=size_bytes,
+                    size_bytes=sum(file.file_size_bytes for file in fragment.metadata.files),
                     pushdowns=pushdowns,
-                    stats=stats,
+                    stats=None,
                     source_type=self.name(),
                 )
         else:
@@ -244,30 +267,36 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             fragment_groups = []
             current_group = []
 
+            group_num_rows = 0
+            group_size_bytes = 0
             for fragment in fragments:
-                if fragment.count_rows(pushed_expr) == 0:
+                num_rows = fragment.count_rows(pushed_expr)
+                if num_rows == 0:
                     continue
+
                 current_group.append(fragment)
+                group_num_rows += num_rows
+                group_size_bytes += sum(file.file_size_bytes for file in fragment.metadata.files)
                 if len(current_group) >= self._fragment_group_size:
-                    fragment_groups.append(current_group)
+                    fragment_groups.append((current_group, group_num_rows, group_size_bytes))
                     current_group = []
+                    group_num_rows = 0
+                    group_size_bytes = 0
 
             # Add the last group if it has any fragments
             if current_group:
-                fragment_groups.append(current_group)
+                fragment_groups.append((current_group, group_num_rows, group_size_bytes))
 
             # Create scan tasks for each fragment group
-            for fragment_group in fragment_groups:
+            for fragment_group, num_rows, size_bytes in fragment_groups:
                 fragment_ids = [fragment.fragment_id for fragment in fragment_group]
-                size_bytes = None
-                stats = None
-                num_rows = None
 
                 yield ScanTask.python_factory_func_scan_task(
                     module=_lancedb_table_factory_function.__module__,
                     func_name=_lancedb_table_factory_function.__name__,
                     func_args=(
-                        self._ds,
+                        self._ds.uri,
+                        open_kwargs,
                         fragment_ids,
                         required_columns,
                         pushed_expr,
@@ -277,7 +306,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     num_rows=num_rows,
                     size_bytes=size_bytes,
                     pushdowns=pushdowns,
-                    stats=stats,
+                    stats=None,
                     source_type=self.name(),
                 )
 

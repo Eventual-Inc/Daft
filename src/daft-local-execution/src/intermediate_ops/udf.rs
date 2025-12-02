@@ -1,5 +1,7 @@
 use std::{
+    borrow::Cow,
     collections::HashMap,
+    num::NonZeroUsize,
     sync::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
@@ -9,7 +11,10 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use common_metrics::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, ops::NodeType};
+use common_metrics::{
+    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, operator_metrics::OperatorCounter,
+    ops::NodeType,
+};
 use common_resource_request::ResourceRequest;
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
@@ -39,6 +44,9 @@ use super::intermediate_op::{
 };
 use crate::{
     ExecutionTaskSpawner,
+    dynamic_batching::{
+        DynBatchingStrategy, LatencyConstrainedBatchingStrategy, StaticBatchingStrategy,
+    },
     pipeline::{MorselSizeRequirement, NodeName},
     runtime_stats::{Counter, RuntimeStats},
 };
@@ -140,9 +148,9 @@ impl UdfRuntimeStats {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY.into()),
-            rows_in: Counter::new(&meter, ROWS_IN_KEY.into()),
-            rows_out: Counter::new(&meter, ROWS_OUT_KEY.into()),
+            cpu_us: Counter::new(&meter, CPU_US_KEY.into(), None),
+            rows_in: Counter::new(&meter, ROWS_IN_KEY.into(), None),
+            rows_out: Counter::new(&meter, ROWS_OUT_KEY.into(), None),
             custom_counters: Mutex::new(HashMap::new()),
             node_kv,
             meter,
@@ -151,14 +159,27 @@ impl UdfRuntimeStats {
 
     fn update_metrics(&self, metrics: OperatorMetrics) {
         let mut counters = self.custom_counters.lock().unwrap();
-        for (name, value) in metrics {
+        for (name, counter_data) in metrics {
+            let OperatorCounter {
+                value,
+                description,
+                attributes,
+            } = counter_data;
+
+            let mut key_values = self.node_kv.clone();
+            key_values.extend(attributes.into_iter().map(|(k, v)| KeyValue::new(k, v)));
+
             match counters.get_mut(name.as_str()) {
-                Some(counter) => {
-                    counter.add(value, self.node_kv.as_slice());
+                Some(existing) => {
+                    existing.add(value, key_values.as_slice());
                 }
                 None => {
-                    let counter = Counter::new(&self.meter, name.clone().into());
-                    counter.add(value, self.node_kv.as_slice());
+                    let counter = Counter::new(
+                        &self.meter,
+                        name.clone().into(),
+                        description.map(Cow::Owned),
+                    );
+                    counter.add(value, key_values.as_slice());
                     counters.insert(name.into(), counter);
                 }
             }
@@ -306,10 +327,10 @@ impl UdfHandle {
         input: Arc<MicroPartition>,
         runtime_stats: Arc<UdfRuntimeStats>,
     ) -> DaftResult<Arc<MicroPartition>> {
-        let input_batches = input.get_tables()?;
+        let input_batches = input.record_batches();
         let mut output_batches = Vec::with_capacity(input_batches.len());
 
-        for batch in input_batches.as_ref() {
+        for batch in input_batches {
             // Prepare inputs
             let func_input = batch.get_columns(self.params.required_cols.as_slice());
 
@@ -457,6 +478,7 @@ impl UdfOperator {
 
 impl IntermediateOperator for UdfOperator {
     type State = UdfState;
+    type BatchingStrategy = DynBatchingStrategy;
 
     #[instrument(skip_all, name = "UdfOperator::execute")]
     fn execute(
@@ -511,8 +533,20 @@ impl IntermediateOperator for UdfOperator {
                 "Passthrough Columns = [{}]",
                 self.params.passthrough_columns.iter().join(", ")
             ),
-            format!("Concurrency = {}", self.concurrency),
+            format!(
+                "Properties = {{ {} }}",
+                UDFProperties {
+                    concurrency: Some(
+                        NonZeroUsize::new(self.concurrency)
+                            .expect("UDF concurrency is always >= 1")
+                    ),
+                    ..self.params.udf_properties.clone()
+                }
+                .multiline_display(false)
+                .join(", ")
+            ),
         ];
+
         if let Some(resource_request) = &self.params.udf_properties.resource_request {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
@@ -522,6 +556,7 @@ impl IntermediateOperator for UdfOperator {
         } else {
             res.push("Resource request = None".to_string());
         }
+
         res
     }
 
@@ -574,5 +609,37 @@ impl IntermediateOperator for UdfOperator {
             .udf_properties
             .batch_size
             .map(MorselSizeRequirement::Strict)
+    }
+
+    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
+        let cfg = daft_context::get_context().execution_config();
+
+        Ok(if cfg.enable_dynamic_batching {
+            match cfg.dynamic_batching_strategy.as_str() {
+                "latency_constrained" | "auto" => {
+                    // TODO: allow udf to accept a min/max batch size instead of just a strict batch size.
+                    let reqs = self.morsel_size_requirement().unwrap_or_default();
+                    let MorselSizeRequirement::Flexible(min_batch_size, max_batch_size) = reqs
+                    else {
+                        return Err(DaftError::ValueError(
+                            "cannot use strict batch size requirement with dynamic batching"
+                                .to_string(),
+                        ));
+                    };
+                    LatencyConstrainedBatchingStrategy {
+                        target_batch_latency: Duration::from_millis(5000),
+                        latency_tolerance: Duration::from_millis(1000), // udf's have high variance so we have a high tolerance
+                        step_size_alpha: 16, // step size is small as udfs are expensive
+                        correction_delta: 4, // similarly the correction delta is small because the step size is small
+                        b_min: min_batch_size,
+                        b_max: max_batch_size,
+                    }
+                    .into()
+                }
+                _ => unreachable!("should already be checked in the ctx"),
+            }
+        } else {
+            StaticBatchingStrategy::new(self.morsel_size_requirement().unwrap_or_default()).into()
+        })
     }
 }

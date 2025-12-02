@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use arrow2::array::Array;
 use common_error::{DaftError, DaftResult};
+use daft_arrow::array::Array;
 
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
@@ -9,7 +9,7 @@ use crate::{array::DataArray, datatypes::DaftPhysicalType};
 
 macro_rules! impl_variable_length_concat {
     ($fn_name:ident, $arrow_type:ty, $create_fn: ident) => {
-        fn $fn_name(arrays: &[&dyn arrow2::array::Array]) -> DaftResult<Box<$arrow_type>> {
+        fn $fn_name(arrays: &[&dyn daft_arrow::array::Array]) -> DaftResult<Box<$arrow_type>> {
             let mut num_rows: usize = 0;
             let mut num_bytes: usize = 0;
             let mut need_validity = false;
@@ -20,10 +20,10 @@ macro_rules! impl_variable_length_concat {
                 num_bytes += arr.values().len();
                 need_validity |= arr.validity().map(|v| v.unset_bits() > 0).unwrap_or(false);
             }
-            let mut offsets = arrow2::offset::Offsets::<i64>::with_capacity(num_rows);
+            let mut offsets = daft_arrow::offset::Offsets::<i64>::with_capacity(num_rows);
 
             let mut validity = if need_validity {
-                Some(arrow2::bitmap::MutableBitmap::with_capacity(num_rows))
+                Some(daft_arrow::bitmap::MutableBitmap::with_capacity(num_rows))
             } else {
                 None
             };
@@ -58,10 +58,10 @@ macro_rules! impl_variable_length_concat {
 }
 impl_variable_length_concat!(
     utf8_concat,
-    arrow2::array::Utf8Array<i64>,
+    daft_arrow::array::Utf8Array<i64>,
     try_new_unchecked
 );
-impl_variable_length_concat!(binary_concat, arrow2::array::BinaryArray<i64>, try_new);
+impl_variable_length_concat!(binary_concat, daft_arrow::array::BinaryArray<i64>, try_new);
 
 impl<T> DataArray<T>
 where
@@ -92,7 +92,7 @@ where
             }
             _ => {
                 let cat_array: Box<dyn Array> =
-                    arrow2::compute::concatenate::concatenate(arrow_arrays.as_slice())?;
+                    daft_arrow::compute::concatenate::concatenate(arrow_arrays.as_slice())?;
                 Self::try_from((field.clone(), cat_array))
             }
         }
@@ -102,7 +102,7 @@ where
 #[cfg(feature = "python")]
 impl PythonArray {
     pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {
-        use arrow2::{bitmap::MutableBitmap, buffer::Buffer};
+        use daft_arrow::{bitmap::MutableBitmap, buffer::Buffer};
         if arrays.is_empty() {
             return Err(DaftError::ValueError(
                 "Need at least 1 array to perform concat".to_string(),

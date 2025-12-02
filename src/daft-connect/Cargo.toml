@@ -1,6 +1,6 @@
 [dependencies]
-arrow2 = {workspace = true}
 common-error = {workspace = true, optional = true, features = ["python"]}
+daft-arrow = {path = "../daft-arrow"}
 common-file-formats = {workspace = true, optional = true, features = [
   "python"
 ]}

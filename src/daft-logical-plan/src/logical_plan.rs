@@ -22,7 +22,8 @@ pub use crate::ops::*;
 use crate::stats::{PlanStats, StatsState};
 
 /// Logical plan for a Daft query.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub enum LogicalPlan {
     Source(Source),
     Shard(Shard),
@@ -52,9 +53,20 @@ pub enum LogicalPlan {
     VLLMProject(VLLMProject),
 }
 
+#[cfg(not(debug_assertions))]
+impl std::fmt::Debug for LogicalPlan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LogicalPlan")
+            .field("plan_id", &self.plan_id())
+            .field("node_id", &self.node_id())
+            .finish()
+    }
+}
+
 pub type LogicalPlanRef = Arc<LogicalPlan>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct SubqueryAlias {
     pub plan_id: Option<usize>,
     pub node_id: Option<usize>,
@@ -616,12 +628,14 @@ impl LogicalPlan {
 
                 Self::Sample(Sample {
                     fraction,
+                    size,
                     with_replacement,
                     seed,
                     ..
                 }) => Self::Sample(Sample::new(
                     input.clone(),
                     *fraction,
+                    *size,
                     *with_replacement,
                     *seed,
                 )),

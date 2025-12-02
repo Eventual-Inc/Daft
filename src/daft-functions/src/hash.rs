@@ -4,7 +4,7 @@ use daft_dsl::functions::{prelude::*, scalar::ScalarFn};
 use daft_hash::HashFunctionKind;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub(super) struct HashFunction;
 
 #[derive(FunctionArgs)]

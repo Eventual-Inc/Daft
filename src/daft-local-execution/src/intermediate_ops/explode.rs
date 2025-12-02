@@ -33,9 +33,9 @@ impl ExplodeStats {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY.into()),
-            rows_in: Counter::new(&meter, ROWS_IN_KEY.into()),
-            rows_out: Counter::new(&meter, ROWS_OUT_KEY.into()),
+            cpu_us: Counter::new(&meter, CPU_US_KEY.into(), None),
+            rows_in: Counter::new(&meter, ROWS_IN_KEY.into(), None),
+            rows_out: Counter::new(&meter, ROWS_OUT_KEY.into(), None),
             node_kv,
         }
     }
@@ -96,7 +96,7 @@ impl ExplodeOperator {
 
 impl IntermediateOperator for ExplodeOperator {
     type State = ();
-
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "ExplodeOperator::execute")]
     fn execute(
         &self,
@@ -140,5 +140,10 @@ impl IntermediateOperator for ExplodeOperator {
 
     fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
         Arc::new(ExplodeStats::new(id))
+    }
+    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
+        Ok(crate::dynamic_batching::StaticBatchingStrategy::new(
+            self.morsel_size_requirement().unwrap_or_default(),
+        ))
     }
 }

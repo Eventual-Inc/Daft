@@ -1,5 +1,5 @@
-use arrow2::array::Array;
 use common_error::DaftResult;
+use daft_arrow::array::Array;
 
 use super::{DaftSumAggable, as_arrow::AsArrow};
 use crate::{array::ops::GroupIndices, datatypes::*};
@@ -10,7 +10,7 @@ macro_rules! impl_daft_numeric_agg {
 
             fn sum(&self) -> Self::Output {
                 let primitive_arr = self.as_arrow();
-                let sum_value = arrow2::compute::aggregate::sum_primitive(primitive_arr);
+                let sum_value = daft_arrow::compute::aggregate::sum_primitive(primitive_arr);
                 Ok(DataArray::<$T>::from_iter(
                     self.field.clone(),
                     std::iter::once(sum_value),

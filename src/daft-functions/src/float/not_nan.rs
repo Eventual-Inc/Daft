@@ -10,7 +10,7 @@ use daft_dsl::{
     functions::{FunctionArgs, ScalarUDF, UnaryArg, scalar::ScalarFn},
 };
 use serde::{Deserialize, Serialize};
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct NotNan;
 
 #[typetag::serde]

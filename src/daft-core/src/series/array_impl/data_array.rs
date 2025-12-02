@@ -32,7 +32,7 @@ macro_rules! impl_series_like_for_data_array {
             fn into_series(&self) -> Series {
                 self.0.clone().into_series()
             }
-            fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+            fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
                 self.0.data().to_boxed()
             }
 
@@ -42,12 +42,12 @@ macro_rules! impl_series_like_for_data_array {
 
             fn with_validity(
                 &self,
-                validity: Option<arrow2::bitmap::Bitmap>,
+                validity: Option<daft_arrow::bitmap::Bitmap>,
             ) -> DaftResult<Series> {
                 Ok(self.0.with_validity(validity)?.into_series())
             }
 
-            fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
+            fn validity(&self) -> Option<&daft_arrow::bitmap::Bitmap> {
                 self.0.validity()
             }
 

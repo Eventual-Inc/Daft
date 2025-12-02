@@ -14,6 +14,8 @@ pub struct IOConfig {
     pub http: HTTPConfig,
     pub unity: UnityConfig,
     pub hf: HuggingFaceConfig,
+    /// disable suffix range requests, please use range with offset
+    pub disable_suffix_range: bool,
     pub tos: TosConfig,
 }
 
@@ -46,6 +48,10 @@ impl IOConfig {
             self.hf.multiline_display().join(", ")
         ));
         res.push(format!(
+            "Disable suffix range = {}",
+            self.disable_suffix_range
+        ));
+        res.push(format!(
             "TOS config = {{ {} }}",
             self.tos.multiline_display().join(", ")
         ));
@@ -63,8 +69,9 @@ impl Display for IOConfig {
 {}
 {}
 {}
+{}
 ",
-            self.s3, self.azure, self.gcs, self.http, self.tos
+            self.s3, self.azure, self.gcs, self.tos, self.http, self.unity
         )
     }
 }

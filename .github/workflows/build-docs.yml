@@ -1,5 +1,5 @@
-# This workflow will build the Daft docs and optionally publishes them to Netlify
-# for easy previews.
+# This workflow will build the Daft docs.
+# Documentation previews are handled by Read the Docs integration.
 
 name: Build docs
 
@@ -20,7 +20,17 @@ jobs:
     env:
       python-version: '3.10'
     steps:
-    - uses: actions/checkout@v4
+    - name: Free Disk Space
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: false
+        android: true
+        dotnet: false
+        haskell: true
+        large-packages: false
+        docker-images: false
+        swap-storage: true
+    - uses: actions/checkout@v6
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -29,7 +39,7 @@ jobs:
         key: ${{ runner.os }}-build
         cache-all-crates: 'true'
     - name: Setup Python and uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ env.python-version }}
         enable-cache: true
@@ -54,45 +64,7 @@ jobs:
         maturin develop --uv
         mkdocs build
     - name: Upload built docs
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: html-docs
         path: site
-  docpublish:
-    runs-on: ubuntu-latest
-    needs: docgen
-    # Only publish to netlify on:
-    # 1. If the previous doc building step didn't fail
-    # 2. If this is a PR from the current repo (since it needs access to secrets)
-    # 3. If it has the `documentation` label
-    if: |
-      success() &&
-      (github.event.pull_request != null) &&
-      (github.event.pull_request.head.repo.full_name == github.repository) &&
-      contains(github.event.pull_request.labels.*.name, 'docs')
-    steps:
-    - name: Download built HTML docs
-      uses: actions/download-artifact@v4
-      with:
-        name: html-docs
-        path: ./built_html
-    - name: Add a robots.txt to disable indexing of docs
-      run: |
-        echo "User-agent: *" > ./built_html/robots.txt
-        echo "Disallow: /" >> ./built_html/robots.txt
-    - name: Deploy to Netlify
-      uses: nwtgck/actions-netlify@v3.0
-      with:
-        publish-dir: ./built_html
-        production-branch: main
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        enable-pull-request-comment: true
-        enable-commit-comment: false
-        overwrites-pull-request-comment: true
-        enable-github-deployment: false
-        alias: deploy-preview-${{ github.event.number }}
-        deploy-message: 'Deploy preview for PR #${{ github.event.number }} (current built commit: ${{ github.sha }})'
-    env:
-      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-    timeout-minutes: 1

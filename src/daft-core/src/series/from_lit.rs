@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use arrow2::{
+use common_error::{DaftError, DaftResult};
+use common_image::CowImage;
+use daft_arrow::{
     array::{
         MutableArray, MutableBinaryArray, MutableBooleanArray, MutablePrimitiveArray,
         MutableUtf8Array,
@@ -8,15 +10,13 @@ use arrow2::{
     trusted_len::TrustedLen,
     types::{NativeType, months_days_ns},
 };
-use common_error::{DaftError, DaftResult};
-use common_image::CowImage;
 use indexmap::IndexMap;
 use itertools::Itertools;
 
 use crate::{
     array::ops::image::image_array_from_img_buffers,
     datatypes::FileArray,
-    file::{MediaTypeUnknown, MediaTypeVideo},
+    file::{MediaTypeAudio, MediaTypeUnknown, MediaTypeVideo},
     prelude::*,
 };
 
@@ -332,7 +332,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .collect::<DaftResult<_>>()?;
 
-            let validity = arrow2::bitmap::Bitmap::from_trusted_len_iter(
+            let validity = daft_arrow::bitmap::Bitmap::from_trusted_len_iter(
                 values
                     .iter()
                     .map(|(_, v)| v.as_ref().is_ok_and(|v| v != &Literal::Null)),
@@ -358,6 +358,10 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 }
                 daft_schema::media_type::MediaType::Video => {
                     FileArray::<MediaTypeVideo>::new_from_file_references("literal", iter)?
+                        .into_series()
+                }
+                daft_schema::media_type::MediaType::Audio => {
+                    FileArray::<MediaTypeAudio>::new_from_file_references("literal", iter)?
                         .into_series()
                 }
             }
@@ -413,7 +417,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .unzip();
 
-            let validity = arrow2::bitmap::Bitmap::from(validity);
+            let validity = daft_arrow::bitmap::Bitmap::from(validity);
 
             let flat_child = Series::concat(&data.iter().collect::<Vec<_>>())?;
 
