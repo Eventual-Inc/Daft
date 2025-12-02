@@ -28,7 +28,12 @@ def warmup():
 ray.get([warmup.remote() for _ in range(64)])
 
 weights = ResNet18_Weights.DEFAULT
-transform = transforms.Compose([transforms.ToTensor(), weights.transforms()])
+transformer = transforms.Compose([transforms.ToTensor(), weights.transforms()])
+
+
+@daft.func(return_dtype=daft.DataType.tensor(dtype=daft.DataType.float32(), shape=IMAGE_DIM))
+def transform(input):
+    return transformer(input)
 
 
 @daft.cls(
@@ -66,13 +71,7 @@ df = df.with_column(
     "decoded_image",
     df["image_url"].download().decode_image(mode=daft.ImageMode.RGB),
 )
-df = df.with_column(
-    "norm_image",
-    df["decoded_image"].apply(
-        func=lambda image: transform(image),
-        return_dtype=daft.DataType.tensor(dtype=daft.DataType.float32(), shape=IMAGE_DIM),
-    ),
-)
+df = df.with_column("norm_image", transform(df["decoded_image"]))
 df = df.with_column("label", ResNetModel()(col("norm_image")))
 df = df.select("image_url", "label")
 df.write_parquet(OUTPUT_PATH)
