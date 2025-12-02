@@ -372,7 +372,7 @@ class RecordBatch:
         how: JoinType = JoinType.Inner,
         is_sorted: bool = False,
     ) -> RecordBatch:
-        if how != JoinType.Inner:
+        if how not in (JoinType.Inner, JoinType.Semi, JoinType.Anti):
             raise NotImplementedError("TODO: [RUST] Implement Other Join types")
         if len(left_on) != len(right_on):
             raise ValueError(
@@ -390,6 +390,7 @@ class RecordBatch:
                 right._recordbatch,
                 left_on=left_exprs,
                 right_on=right_exprs,
+                how=how,
                 is_sorted=is_sorted,
             )
         )

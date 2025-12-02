@@ -243,3 +243,243 @@ pub fn merge_inner_join(left: &RecordBatch, right: &RecordBatch) -> DaftResult<(
     let right_series = UInt64Array::from(("right_indices", right_indices));
     Ok((left_series.into_series(), right_series.into_series()))
 }
+
+pub fn merge_semi_join(left: &RecordBatch, right: &RecordBatch) -> DaftResult<Series> {
+    if left.num_columns() != right.num_columns() {
+        return Err(DaftError::ValueError(format!(
+            "Mismatch of join on clauses: left: {:?} vs right: {:?}",
+            left.num_columns(),
+            right.num_columns()
+        )));
+    }
+    if left.num_columns() == 0 {
+        return Err(DaftError::ValueError(
+            "No columns were passed in to join on".to_string(),
+        ));
+    }
+
+    // If any join key column is the null dtype, there can be no equality matches.
+    let has_null_type = left.columns.iter().any(|s| s.data_type().is_null())
+        || right.columns.iter().any(|s| s.data_type().is_null());
+    if has_null_type {
+        return Ok(UInt64Array::empty("left_indices", &DataType::UInt64).into_series());
+    }
+    let types_not_match = left
+        .columns
+        .iter()
+        .zip(right.columns.iter())
+        .any(|(l, r)| l.data_type() != r.data_type());
+    if types_not_match {
+        return Err(DaftError::SchemaMismatch(
+            "Types between left and right do not match".to_string(),
+        ));
+    }
+
+    // Build comparator over all join keys.
+    let mut cmp_list = Vec::with_capacity(left.num_columns());
+    for (left_series, right_series) in left.columns.iter().zip(right.columns.iter()) {
+        cmp_list.push(build_partial_compare_with_nulls(
+            left_series.to_arrow().as_ref(),
+            right_series.to_arrow().as_ref(),
+            false,
+        )?);
+    }
+    let combined_comparator = |a_idx: usize, b_idx: usize| -> Option<Ordering> {
+        for comparator in &cmp_list {
+            match comparator(a_idx, b_idx) {
+                Some(Ordering::Equal) => {}
+                other => return other,
+            }
+        }
+        Some(Ordering::Equal)
+    };
+
+    // Short-circuit emptiness or disjoint ranges.
+    if left.is_empty() || right.is_empty() {
+        return Ok(UInt64Array::empty("left_indices", &DataType::UInt64).into_series());
+    }
+    if matches!(combined_comparator(left.len() - 1, 0), Some(Ordering::Less))
+        || matches!(
+            combined_comparator(0, right.len() - 1),
+            Some(Ordering::Greater)
+        )
+    {
+        return Ok(UInt64Array::empty("left_indices", &DataType::UInt64).into_series());
+    }
+
+    let mut out: Vec<u64> = Vec::new();
+    let mut li = 0usize;
+    let mut ri = 0usize;
+    while li < left.len() && ri < right.len() {
+        match combined_comparator(li, ri) {
+            Some(Ordering::Less) => {
+                // Left key < current right key => no match for this left row.
+                li += 1;
+            }
+            Some(Ordering::Greater) => {
+                // Advance right to catch up to left.
+                ri += 1;
+            }
+            Some(Ordering::Equal) => {
+                // Found a match. Include all left duplicates equal to right[ri].
+                let mut lrun = li;
+                while lrun < left.len() {
+                    match combined_comparator(lrun, ri) {
+                        Some(Ordering::Equal) => {
+                            out.push(lrun as u64);
+                            lrun += 1;
+                        }
+                        _ => break,
+                    }
+                }
+                li = lrun;
+            }
+            None => {
+                // Incomparable (both null on some key) => not a match under SQL equality semantics.
+                li += 1;
+            }
+        }
+    }
+
+    Ok(UInt64Array::from(("left_indices", out)).into_series())
+}
+
+pub fn merge_anti_join(left: &RecordBatch, right: &RecordBatch) -> DaftResult<Series> {
+    if left.num_columns() != right.num_columns() {
+        return Err(DaftError::ValueError(format!(
+            "Mismatch of join on clauses: left: {:?} vs right: {:?}",
+            left.num_columns(),
+            right.num_columns()
+        )));
+    }
+    if left.num_columns() == 0 {
+        return Err(DaftError::ValueError(
+            "No columns were passed in to join on".to_string(),
+        ));
+    }
+
+    let has_null_type = left.columns.iter().any(|s| s.data_type().is_null())
+        || right.columns.iter().any(|s| s.data_type().is_null());
+    if has_null_type {
+        // No equality matches possible => all left rows are anti-joined.
+        let idx: Vec<u64> = (0..left.len() as u64).collect();
+        return Ok(UInt64Array::from(("left_indices", idx)).into_series());
+    }
+    let types_not_match = left
+        .columns
+        .iter()
+        .zip(right.columns.iter())
+        .any(|(l, r)| l.data_type() != r.data_type());
+    if types_not_match {
+        return Err(DaftError::SchemaMismatch(
+            "Types between left and right do not match".to_string(),
+        ));
+    }
+
+    // Build comparator over all join keys.
+    let mut cmp_list = Vec::with_capacity(left.num_columns());
+    for (left_series, right_series) in left.columns.iter().zip(right.columns.iter()) {
+        cmp_list.push(build_partial_compare_with_nulls(
+            left_series.to_arrow().as_ref(),
+            right_series.to_arrow().as_ref(),
+            false,
+        )?);
+    }
+    let combined_comparator = |a_idx: usize, b_idx: usize| -> Option<Ordering> {
+        for comparator in &cmp_list {
+            match comparator(a_idx, b_idx) {
+                Some(Ordering::Equal) => {}
+                other => return other,
+            }
+        }
+        Some(Ordering::Equal)
+    };
+
+    // Short-circuit emptiness or disjoint ranges.
+    if left.is_empty() {
+        return Ok(UInt64Array::empty("left_indices", &DataType::UInt64).into_series());
+    }
+
+    // Check if any join key columns have nulls - if so, disable optimization
+    // as null comparisons don't respect linear ordering
+    let mut has_nulls_in_left = false;
+    let mut has_nulls_in_right = false;
+    for (left_series, right_series) in left.columns.iter().zip(right.columns.iter()) {
+        let left_arrow = left_series.to_arrow();
+        let left_validity = left_arrow.validity();
+        if left_validity.map(|v| v.unset_bits() > 0).unwrap_or(false) {
+            has_nulls_in_left = true;
+        }
+
+        let right_arrow = right_series.to_arrow();
+        let right_validity = right_arrow.validity();
+        if right_validity.map(|v| v.unset_bits() > 0).unwrap_or(false) {
+            has_nulls_in_right = true;
+        }
+
+        // Early exit if we found nulls in either side
+        if has_nulls_in_left && has_nulls_in_right {
+            break;
+        }
+    }
+
+    // Only apply short-circuit optimization if neither side has nulls
+    // When there are nulls, the combined_comparator will return None for null comparisons,
+    // and we cannot safely short-circuit as null should be included in anti-join results
+    // This check ensures we only short-circuit when we have complete numerical ordering
+    // that is not disturbed by null values
+    if !right.is_empty() && !has_nulls_in_left && !has_nulls_in_right {
+        let left_min_gt_right_max = matches!(
+            combined_comparator(0, right.len() - 1),
+            Some(Ordering::Greater)
+        );
+        let left_max_lt_right_min =
+            matches!(combined_comparator(left.len() - 1, 0), Some(Ordering::Less));
+
+        if left_min_gt_right_max || left_max_lt_right_min {
+            // No overlap in join key ranges, so all left rows are anti-joined
+            let idx: Vec<u64> = (0..left.len() as u64).collect();
+            return Ok(UInt64Array::from(("left_indices", idx)).into_series());
+        }
+    }
+
+    let mut out: Vec<u64> = Vec::new();
+    let mut li = 0usize;
+    let mut ri = 0usize;
+    while li < left.len() && ri < right.len() {
+        match combined_comparator(li, ri) {
+            Some(Ordering::Less) => {
+                // Left key < current right key => no right match for this left.
+                out.push(li as u64);
+                li += 1;
+            }
+            Some(Ordering::Greater) => {
+                // Advance right to catch up to left.
+                ri += 1;
+            }
+            Some(Ordering::Equal) => {
+                // Skip all left duplicates equal to right[ri] (they are not anti-joined).
+                let mut lrun = li;
+                while lrun < left.len() {
+                    match combined_comparator(lrun, ri) {
+                        Some(Ordering::Equal) => lrun += 1,
+                        _ => break,
+                    }
+                }
+                li = lrun;
+            }
+            None => {
+                // Incomparable (both null on some key): treated as no match => include left row.
+                out.push(li as u64);
+                li += 1;
+            }
+        }
+    }
+    // Any remaining left rows after right is exhausted are anti-joined.
+    while li < left.len() {
+        out.push(li as u64);
+        li += 1;
+    }
+
+    Ok(UInt64Array::from(("left_indices", out)).into_series())
+}

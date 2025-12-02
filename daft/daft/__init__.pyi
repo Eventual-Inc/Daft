@@ -1660,6 +1660,7 @@ class PyRecordBatch:
         right: PyRecordBatch,
         left_on: list[PyExpr],
         right_on: list[PyExpr],
+        how: JoinType,
         is_sorted: bool,
     ) -> PyRecordBatch: ...
     def explode(self, to_explode: list[PyExpr]) -> PyRecordBatch: ...
@@ -1754,6 +1755,7 @@ class PyMicroPartition:
         right: PyMicroPartition,
         left_on: list[PyExpr],
         right_on: list[PyExpr],
+        how: JoinType,
         is_sorted: bool,
     ) -> PyMicroPartition: ...
     def cross_join(
