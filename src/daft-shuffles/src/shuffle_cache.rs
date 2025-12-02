@@ -325,7 +325,7 @@ async fn writer_task(
             schema = Some(partition.schema().clone());
         }
         total_rows_written += partition.len();
-        total_bytes_written += partition.size_bytes().expect("size_bytes should be Some");
+        total_bytes_written += partition.size_bytes();
         writer = compute_runtime
             .spawn(async move {
                 writer.write(partition).await?;

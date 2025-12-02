@@ -16,11 +16,11 @@ impl Partition for MicroPartition {
     fn as_any(&self) -> &dyn Any {
         self
     }
-    fn size_bytes(&self) -> DaftResult<Option<usize>> {
-        Ok(self.size_bytes())
+    fn size_bytes(&self) -> usize {
+        self.size_bytes()
     }
-    fn num_rows(&self) -> DaftResult<usize> {
-        Ok(self.len())
+    fn num_rows(&self) -> usize {
+        self.len()
     }
 }
 
@@ -127,7 +127,7 @@ impl PartitionSet<MicroPartitionRef> for MicroPartitionSet {
         let guard = self.partitions.read().unwrap();
         let mut parts = guard.values().cloned();
 
-        parts.try_fold(0, |acc, mp| Ok(acc + mp.size_bytes()?.unwrap_or(0)))
+        parts.try_fold(0, |acc, mp| Ok(acc + mp.size_bytes()))
     }
 
     fn has_partition(&self, partition_id: &PartitionId) -> bool {
