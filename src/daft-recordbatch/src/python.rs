@@ -188,6 +188,7 @@ impl PyRecordBatch {
         right: &Self,
         left_on: Vec<PyExpr>,
         right_on: Vec<PyExpr>,
+        how: JoinType,
         is_sorted: bool,
     ) -> PyResult<Self> {
         let left_exprs = BoundExpr::bind_all(&left_on, &self.record_batch.schema)?;
@@ -199,6 +200,7 @@ impl PyRecordBatch {
                     &right.record_batch,
                     left_exprs.as_slice(),
                     right_exprs.as_slice(),
+                    how,
                     is_sorted,
                 )?
                 .into())
