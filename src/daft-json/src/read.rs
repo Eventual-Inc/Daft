@@ -18,7 +18,7 @@ use snafu::{
 };
 use tokio::{
     fs::File,
-    io::{AsyncBufRead, AsyncBufReadExt, BufReader},
+    io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader},
     task::JoinHandle,
 };
 use tokio_util::io::StreamReader;
@@ -498,7 +498,22 @@ async fn read_json_single_into_stream(
         None => reader,
     };
 
-    use tokio::io::AsyncReadExt;
+    if parse_options.skip_empty_files {
+        loop {
+            let buf = reader.fill_buf().await?;
+            if buf.is_empty() {
+                return Ok((Box::pin(futures::stream::iter(vec![])), schema.clone()));
+            }
+            if let Some(i) = buf.iter().position(|b| !b.is_ascii_whitespace()) {
+                reader.consume(i);
+                break;
+            } else {
+                let len = buf.len();
+                reader.consume(len);
+            }
+        }
+    }
+
     let buf = reader.fill_buf().await?;
 
     if buf.is_empty() {

@@ -27,6 +27,7 @@ impl SQLTableFunction for ReadJsonFunction {
                 "hive_partitioning",
                 "buffer_size",
                 "chunk_size",
+                "skip_empty_files",
             ],
             1, // (path)
         )?;
@@ -62,6 +63,7 @@ impl TryFrom<SQLFunctionArguments> for JsonScanBuilder {
             .transpose()?
             .map(Arc::new);
         let io_config = args.get_named("io_config").map(expr_to_iocfg).transpose()?;
+        let skip_empty_files = args.try_get_named("skip_empty_files")?.unwrap_or(false);
 
         Ok(Self {
             glob_paths,
@@ -72,6 +74,7 @@ impl TryFrom<SQLFunctionArguments> for JsonScanBuilder {
             hive_partitioning,
             buffer_size,
             chunk_size,
+            skip_empty_files,
         })
     }
 }
