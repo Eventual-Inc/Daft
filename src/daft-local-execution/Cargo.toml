@@ -29,7 +29,6 @@ daft-local-plan = {path = "../daft-local-plan", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
 daft-parquet = {path = "../daft-parquet", default-features = false}
-daft-physical-plan = {path = "../daft-physical-plan", default-features = false}
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
 daft-warc = {path = "../daft-warc", default-features = false}
@@ -40,6 +39,7 @@ indicatif = {workspace = true}
 itertools = {workspace = true}
 kanal = "0.1"
 log = {workspace = true}
+parking_lot = {workspace = true}
 pin-project = "1"
 pyo3 = {workspace = true, optional = true}
 pyo3-async-runtimes = {workspace = true, optional = true}
@@ -73,7 +73,6 @@ python = [
   "daft-local-plan/python",
   "daft-logical-plan/python",
   "daft-micropartition/python",
-  "daft-physical-plan/python",
   "daft-scan/python",
   "daft-writers/python"
 ]

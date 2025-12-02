@@ -105,7 +105,7 @@
         * [USE](sql/statements/use.md)
     * [Data Types](sql/datatypes.md)
     * [Window Functions](sql/window_functions.md)
-* [Try Daft Cloud](https://www.eventual.ai/early-access)
+* [Daft Cloud](https://www.daft.ai/cloud)
 
 <!--
 TODO

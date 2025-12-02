@@ -47,13 +47,13 @@ Let's use Daft's builtin functionality to download the images and open them as P
 
 ```python
 # Filter for images with longer descriptions
-parquet_df_with_long_strings = parquet_df.where(parquet_df["TEXT"].str.length() > 50)
+parquet_df_with_long_strings = parquet_df.where(parquet_df["TEXT"].length() > 50)
 
 # Download images
 images_df = (
     parquet_df_with_long_strings.with_column(
         "image",
-        parquet_df_with_long_strings["URL"].url.download(on_error="null").image.decode(on_error="null"),
+        parquet_df_with_long_strings["URL"].download(on_error="null").decode_image(on_error="null"),
     )
     .limit(5)
     .where(daft.col("image").not_null())

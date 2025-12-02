@@ -10,7 +10,11 @@ from tests.conftest import assert_df_equals
 def test_sorted_by_expr(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
     """Sort by a column that undergoes an expression."""
     daft_df = daft_df.repartition(repartition_nparts)
-    daft_sorted_df = daft_df.sort(((col("Unique Key") % 2) == 0).if_else(col("Unique Key"), col("Unique Key") * -1))
+    from daft.functions import when
+
+    daft_sorted_df = daft_df.sort(
+        when((col("Unique Key") % 2) == 0, col("Unique Key")).otherwise(col("Unique Key") * -1)
+    )
     daft_sorted_pd_df = daft_sorted_df.to_pandas()
 
     service_requests_csv_pd_df["tmp"] = service_requests_csv_pd_df["Unique Key"]

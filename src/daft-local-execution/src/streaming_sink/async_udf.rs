@@ -181,7 +181,7 @@ pub struct AsyncUdfState {
 
 impl StreamingSink for AsyncUdfSink {
     type State = AsyncUdfState;
-
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "AsyncUdfSink::execute")]
     fn execute(
         &self,
@@ -379,5 +379,10 @@ impl StreamingSink for AsyncUdfSink {
                     None
                 }
             })
+    }
+    fn batching_strategy(&self) -> Self::BatchingStrategy {
+        crate::dynamic_batching::StaticBatchingStrategy::new(
+            self.morsel_size_requirement().unwrap_or_default(),
+        )
     }
 }

@@ -30,7 +30,7 @@ def local_image_data_fixture(tmpdir, image_data) -> YieldFixture[list[str]]:
 def test_url_download_local(local_image_data_fixture, image_data):
     data = {"urls": local_image_data_fixture}
     df = daft.from_pydict(data)
-    df = df.with_column("data", df["urls"].url.download())
+    df = df.with_column("data", df["urls"].download())
     assert df.to_pydict() == {**data, "data": [image_data for _ in range(len(local_image_data_fixture))]}
 
 
@@ -38,7 +38,7 @@ def test_url_download_local(local_image_data_fixture, image_data):
 def test_url_download_local_missing(local_image_data_fixture):
     data = {"urls": local_image_data_fixture + ["/missing/path/x.jpeg"]}
     df = daft.from_pydict(data)
-    df = df.with_column("data", df["urls"].url.download(on_error="raise"))
+    df = df.with_column("data", df["urls"].download(on_error="raise"))
 
     with pytest.raises(FileNotFoundError):
         df.collect()
@@ -52,7 +52,7 @@ def test_url_download_local_no_read_permissions(local_image_data_fixture, tmpdir
 
     data = {"urls": local_image_data_fixture + [str(bad_permission_filepath)]}
     df = daft.from_pydict(data)
-    df = df.with_column("data", df["urls"].url.download(on_error="raise"))
+    df = df.with_column("data", df["urls"].download(on_error="raise"))
 
     with pytest.raises(ValueError, match="Permission denied"):
         df.collect()

@@ -222,7 +222,7 @@ def test_is_in_edge_cases():
 def test_interval_comparison(date_values, ts_values, expected_intervals):
     # Create DataFrame with date and timestamp columns
     df = daft.from_pydict({"date": date_values, "ts": ts_values}).select(
-        col("date").cast(daft.DataType.date()), col("ts").str.to_datetime("%Y-%m-%d %H:%M:%S")
+        col("date").cast(daft.DataType.date()), col("ts").to_datetime("%Y-%m-%d %H:%M:%S")
     )
     bindings = {"test": df}
 
@@ -279,7 +279,7 @@ def test_coalesce():
         }
     )
 
-    expected = df.select(daft.coalesce(col("a"), col("b"), col("c")).alias("result")).to_pydict()
+    expected = df.select(col("a").coalesce(col("b"), col("c")).alias("result")).to_pydict()
 
     bindings = {"df": df}
     actual = daft.sql(
