@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_core::{array::ops::as_arrow::AsArrow, utils::identity_hash_set::IndexHash};
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use hashbrown::{HashMap, hash_map::RawEntryMut};
@@ -45,9 +44,7 @@ impl PartitionedWriter {
         partition_cols: &[BoundExpr],
         data: Arc<MicroPartition>,
     ) -> DaftResult<(Vec<RecordBatch>, RecordBatch)> {
-        let data = data.concat_or_get(IOStatsContext::new("MicroPartition::partition_by_value"))?;
-        let table = data.unwrap();
-
+        let table = data.concat_or_get()?.unwrap();
         let (split_tables, partition_values) = table.partition_by_value(partition_cols)?;
         Ok((split_tables, partition_values))
     }

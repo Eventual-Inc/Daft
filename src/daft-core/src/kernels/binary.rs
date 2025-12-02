@@ -1,9 +1,9 @@
-use arrow2::{
+use common_error::{DaftError, DaftResult};
+use daft_arrow::{
     array::{BinaryArray, FixedSizeBinaryArray},
     bitmap::MutableBitmap,
     datatypes::DataType,
 };
-use common_error::{DaftError, DaftResult};
 
 pub fn add_binary_arrays(
     lhs: &BinaryArray<i64>,
@@ -71,7 +71,7 @@ pub fn add_fixed_size_binary_arrays(
     }
 
     let mut values = Vec::new();
-    let mut validity = arrow2::bitmap::MutableBitmap::new();
+    let mut validity = daft_arrow::bitmap::MutableBitmap::new();
 
     if lhs.len() == 1 {
         let lval = lhs.get(0);

@@ -16,7 +16,6 @@ from daft.daft import (
 )
 from daft.daft import PyMicroPartition as _PyMicroPartition
 from daft.daft import PyRecordBatch as _PyRecordBatch
-from daft.daft import ScanTask as _ScanTask
 from daft.datatype import DataType, TimeUnit
 from daft.dependencies import pa
 from daft.expressions import Expression, ExpressionsProjection
@@ -76,11 +75,6 @@ class MicroPartition:
     def empty(schema: Schema | None = None) -> MicroPartition:
         pyt = _PyMicroPartition.empty(None) if schema is None else _PyMicroPartition.empty(schema._schema)
         return MicroPartition._from_pymicropartition(pyt)
-
-    @staticmethod
-    def _from_scan_task(scan_task: _ScanTask) -> MicroPartition:
-        assert isinstance(scan_task, _ScanTask)
-        return MicroPartition._from_pymicropartition(_PyMicroPartition.from_scan_task(scan_task))
 
     @staticmethod
     def _from_pyrecordbatch(pyt: _PyRecordBatch) -> MicroPartition:
@@ -484,35 +478,6 @@ class MicroPartition:
                 row_groups,
                 predicate._expr if predicate is not None else None,
                 io_config,
-                multithreaded_io,
-                coerce_int96_timestamp_unit._timeunit,
-            )
-        )
-
-    @classmethod
-    def read_parquet_bulk(
-        cls,
-        paths: list[str],
-        columns: list[str] | None = None,
-        start_offset: int | None = None,
-        num_rows: int | None = None,
-        row_groups_per_path: list[list[int] | None] | None = None,
-        predicate: Expression | None = None,
-        io_config: IOConfig | None = None,
-        num_parallel_tasks: int | None = 128,
-        multithreaded_io: bool | None = None,
-        coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
-    ) -> MicroPartition:
-        return MicroPartition._from_pymicropartition(
-            _PyMicroPartition.read_parquet_bulk(
-                paths,
-                columns,
-                start_offset,
-                num_rows,
-                row_groups_per_path,
-                predicate._expr if predicate is not None else None,
-                io_config,
-                num_parallel_tasks,
                 multithreaded_io,
                 coerce_int96_timestamp_unit._timeunit,
             )

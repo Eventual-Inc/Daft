@@ -21,11 +21,11 @@ where
             // If the bitmap is None, the arrow array doesn't have null values
             // (unless it's a NullArray - so check the null count)
             None => match arrow_array.null_count() {
-                0 => arrow2::array::BooleanArray::from_slice(vec![!is_null; arrow_array.len()]), // false for is_null and true for not_null
-                _ => arrow2::array::BooleanArray::from_slice(vec![is_null; arrow_array.len()]), // true for is_null and false for not_null
+                0 => daft_arrow::array::BooleanArray::from_slice(vec![!is_null; arrow_array.len()]), // false for is_null and true for not_null
+                _ => daft_arrow::array::BooleanArray::from_slice(vec![is_null; arrow_array.len()]), // true for is_null and false for not_null
             },
-            Some(bitmap) => arrow2::array::BooleanArray::new(
-                arrow2::datatypes::DataType::Boolean,
+            Some(bitmap) => daft_arrow::array::BooleanArray::new(
+                daft_arrow::datatypes::DataType::Boolean,
                 if is_null { !bitmap } else { bitmap.clone() }, // flip the bitmap for is_null
                 None,
             ),
@@ -66,13 +66,13 @@ impl PythonArray {
         let bitmap = if let Some(validity) = self.validity() {
             if is_null { !validity } else { validity.clone() }
         } else {
-            arrow2::bitmap::Bitmap::new_constant(!is_null, self.len())
+            daft_arrow::bitmap::Bitmap::new_constant(!is_null, self.len())
         };
 
         BooleanArray::new(
             Arc::new(Field::new(self.name(), DataType::Boolean)),
-            Box::new(arrow2::array::BooleanArray::new(
-                arrow2::datatypes::DataType::Boolean,
+            Box::new(daft_arrow::array::BooleanArray::new(
+                daft_arrow::datatypes::DataType::Boolean,
                 bitmap,
                 None,
             )),
@@ -110,8 +110,8 @@ macro_rules! check_nullity_nested_array {
             ))),
             Some(validity) => Ok(BooleanArray::from((
                 $arr.name(),
-                arrow2::array::BooleanArray::new(
-                    arrow2::datatypes::DataType::Boolean,
+                daft_arrow::array::BooleanArray::new(
+                    daft_arrow::datatypes::DataType::Boolean,
                     if $is_null {
                         !validity
                     } else {

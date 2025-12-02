@@ -1,4 +1,4 @@
-use arrow2::{
+use daft_arrow::{
     array::{PrimitiveArray, ord::DynComparator},
     bitmap::Bitmap,
     types::Index,

@@ -8,7 +8,7 @@ mod list_array;
 pub mod ops;
 mod serdes;
 mod struct_array;
-use arrow2::{bitmap::Bitmap, compute::cast::utf8_to_large_utf8};
+use daft_arrow::{bitmap::Bitmap, compute::cast::utf8_to_large_utf8};
 pub use fixed_size_list_array::FixedSizeListArray;
 pub use list_array::ListArray;
 pub use struct_array::StructArray;
@@ -25,7 +25,7 @@ use crate::datatypes::{DaftArrayType, DaftPhysicalType, DataType, Field};
 #[derive(Debug)]
 pub struct DataArray<T> {
     pub field: Arc<Field>,
-    pub data: Box<dyn arrow2::array::Array>,
+    pub data: Box<dyn daft_arrow::array::Array>,
     marker_: PhantomData<T>,
 }
 
@@ -44,7 +44,7 @@ impl<T: DaftPhysicalType> DaftArrayType for DataArray<T> {
 impl<T> DataArray<T> {
     pub fn new(
         physical_field: Arc<DaftField>,
-        arrow_array: Box<dyn arrow2::array::Array>,
+        arrow_array: Box<dyn daft_arrow::array::Array>,
     ) -> DaftResult<Self> {
         assert!(
             physical_field.dtype.is_physical(),
@@ -55,12 +55,12 @@ impl<T> DataArray<T> {
         if let Ok(expected_arrow_physical_type) = physical_field.dtype.to_arrow() {
             // since daft's Utf8 always maps to Arrow's LargeUtf8, we need to handle this special case
             // If the expected physical type is LargeUtf8, but the actual Arrow type is Utf8, we need to convert it
-            if expected_arrow_physical_type == arrow2::datatypes::DataType::LargeUtf8
-                && arrow_array.data_type() == &arrow2::datatypes::DataType::Utf8
+            if expected_arrow_physical_type == daft_arrow::datatypes::DataType::LargeUtf8
+                && arrow_array.data_type() == &daft_arrow::datatypes::DataType::Utf8
             {
                 let utf8_arr = arrow_array
                     .as_any()
-                    .downcast_ref::<arrow2::array::Utf8Array<i32>>()
+                    .downcast_ref::<daft_arrow::array::Utf8Array<i32>>()
                     .unwrap();
 
                 let arr = Box::new(utf8_to_large_utf8(utf8_arr));
@@ -160,7 +160,7 @@ impl<T> DataArray<T> {
         self.slice(0, num)
     }
 
-    pub fn data(&self) -> &dyn arrow2::array::Array {
+    pub fn data(&self) -> &dyn daft_arrow::array::Array {
         self.data.as_ref()
     }
 
@@ -197,7 +197,7 @@ mod tests {
     #[test]
     fn from_small_utf8_arrow() {
         let data = vec![Some("hello"), Some("world")];
-        let data = Box::new(arrow2::array::Utf8Array::<i32>::from(data.as_slice()));
+        let data = Box::new(daft_arrow::array::Utf8Array::<i32>::from(data.as_slice()));
         let daft_fld = Arc::new(Field::new("test", DataType::Utf8));
 
         let s = Series::from_arrow(daft_fld, data);
