@@ -2401,7 +2401,6 @@ dependencies = [
  "daft-catalog",
  "daft-cli",
  "daft-compression",
- "daft-connect",
  "daft-context",
  "daft-core",
  "daft-csv",
@@ -2421,7 +2420,6 @@ dependencies = [
  "daft-hash",
  "daft-image",
  "daft-io",
- "daft-ir",
  "daft-json",
  "daft-local-execution",
  "daft-local-plan",
@@ -2429,7 +2427,6 @@ dependencies = [
  "daft-micropartition",
  "daft-minhash",
  "daft-parquet",
- "daft-proto",
  "daft-recordbatch",
  "daft-runners",
  "daft-scan",
@@ -2510,43 +2507,6 @@ dependencies = [
  "async-compression",
  "tokio",
  "url",
-]
-
-[[package]]
-name = "daft-connect"
-version = "0.3.0-dev0"
-dependencies = [
- "common-error",
- "common-file-formats",
- "common-runtime",
- "daft-arrow",
- "daft-catalog",
- "daft-context",
- "daft-core",
- "daft-dsl",
- "daft-functions",
- "daft-functions-temporal",
- "daft-functions-utf8",
- "daft-io",
- "daft-logical-plan",
- "daft-micropartition",
- "daft-recordbatch",
- "daft-runners",
- "daft-scan",
- "daft-schema",
- "daft-session",
- "daft-sql",
- "dashmap",
- "futures",
- "itertools 0.14.0",
- "pyo3",
- "snafu",
- "spark-connect",
- "textwrap",
- "tokio",
- "tonic 0.12.3",
- "tracing",
- "uuid 1.18.1",
 ]
 
 [[package]]
@@ -2974,25 +2934,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "daft-ir"
-version = "0.3.0-dev0"
-dependencies = [
- "bincode",
- "common-error",
- "common-io-config",
- "common-resource-request",
- "common-scan-info",
- "daft-core",
- "daft-dsl",
- "daft-logical-plan",
- "daft-proto",
- "daft-schema",
- "prost 0.13.5",
- "pyo3",
- "thiserror 2.0.16",
-]
-
-[[package]]
 name = "daft-json"
 version = "0.3.0-dev0"
 dependencies = [
@@ -3221,15 +3162,6 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
-]
-
-[[package]]
-name = "daft-proto"
-version = "0.0.0"
-dependencies = [
- "prost 0.13.5",
- "tonic-build",
- "walkdir",
 ]
 
 [[package]]
@@ -3965,12 +3897,6 @@ dependencies = [
  "rand_core 0.6.4",
  "subtle",
 ]
-
-[[package]]
-name = "fixedbitset"
-version = "0.5.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 
 [[package]]
 name = "flatbuffers"
@@ -5725,12 +5651,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "multimap"
-version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
-
-[[package]]
 name = "multiversion"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6288,16 +6208,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
 
 [[package]]
-name = "petgraph"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3672b37090dbd86368a4145bc067582552b29c27377cad4e0a306c97f9bd7772"
-dependencies = [
- "fixedbitset",
- "indexmap 2.11.4",
-]
-
-[[package]]
 name = "phf"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6614,26 +6524,6 @@ checksum = "7231bd9b3d3d33c86b58adbac74b5ec0ad9f496b19d22801d773636feaa95f3d"
 dependencies = [
  "bytes",
  "prost-derive 0.14.1",
-]
-
-[[package]]
-name = "prost-build"
-version = "0.13.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
-dependencies = [
- "heck 0.5.0",
- "itertools 0.14.0",
- "log",
- "multimap",
- "once_cell",
- "petgraph",
- "prettyplease",
- "prost 0.13.5",
- "prost-types",
- "regex",
- "syn 2.0.106",
- "tempfile",
 ]
 
 [[package]]
@@ -7954,15 +7844,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "spark-connect"
-version = "0.3.0-dev0"
-dependencies = [
- "prost 0.13.5",
- "prost-types",
- "tonic 0.12.3",
-]
-
-[[package]]
 name = "spki"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8639,20 +8520,6 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
-]
-
-[[package]]
-name = "tonic-build"
-version = "0.12.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9557ce109ea773b399c9b9e5dca39294110b74f1f342cb347a80d1fce8c26a11"
-dependencies = [
- "prettyplease",
- "proc-macro2",
- "prost-build",
- "prost-types",
- "quote",
- "syn 2.0.106",
 ]
 
 [[package]]

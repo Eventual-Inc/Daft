@@ -18,7 +18,6 @@ daft-arrow = {path = "src/daft-arrow", default-features = false}
 daft-catalog = {path = "src/daft-catalog", default-features = false}
 daft-cli = {path = "src/daft-cli", default-features = false}
 daft-compression = {path = "src/daft-compression", default-features = false}
-daft-connect = {path = "src/daft-connect", optional = true}
 daft-context = {path = "src/daft-context", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
@@ -38,7 +37,6 @@ daft-functions-utf8 = {path = "src/daft-functions-utf8", default-features = fals
 daft-hash = {path = "src/daft-hash", default-features = false}
 daft-image = {path = "src/daft-image", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
-daft-ir = {path = "src/daft-ir", default-features = false}
 daft-json = {path = "src/daft-json", default-features = false}
 daft-local-execution = {path = "src/daft-local-execution", default-features = false}
 daft-local-plan = {path = "src/daft-local-plan", default-features = false}
@@ -46,7 +44,6 @@ daft-logical-plan = {path = "src/daft-logical-plan", default-features = false}
 daft-micropartition = {path = "src/daft-micropartition", default-features = false}
 daft-minhash = {path = "src/daft-minhash", default-features = false}
 daft-parquet = {path = "src/daft-parquet", default-features = false}
-daft-proto = {path = "src/daft-proto", default-features = false}
 daft-runners = {path = "src/daft-runners", default-features = false}
 daft-recordbatch = {path = "src/daft-recordbatch", default-features = false}
 daft-scan = {path = "src/daft-scan", default-features = false}
@@ -78,7 +75,6 @@ python = [
   "daft-ai/python",
   "daft-catalog/python",
   "daft-cli/python",
-  "daft-connect/python",
   "daft-context/python",
   "daft-core/python",
   "daft-csv/python",
@@ -93,7 +89,6 @@ python = [
   "daft-functions/python",
   "daft-image/python",
   "daft-io/python",
-  "daft-ir/python",
   "daft-json/python",
   "daft-local-execution/python",
   "daft-local-plan/python",
@@ -192,7 +187,6 @@ members = [
   "src/daft-algebra",
   "src/daft-arrow",
   "src/daft-catalog",
-  "src/daft-connect",
   "src/daft-context",
   "src/daft-core",
   "src/daft-csv",
@@ -210,14 +204,12 @@ members = [
   "src/daft-hash",
   "src/daft-image",
   "src/daft-io",
-  "src/daft-ir",
   "src/daft-json",
   "src/daft-local-execution",
   "src/daft-local-plan",
   "src/daft-logical-plan",
   "src/daft-micropartition",
   "src/daft-parquet",
-  "src/daft-proto",
   "src/daft-runners",
   "src/daft-scan",
   "src/daft-session",
@@ -230,7 +222,6 @@ members = [
   "src/hyperloglog",
   "src/parquet2",
   "src/parquet-format-safe",
-  "src/generated/spark-connect",
   "src/daft-cli"
 ]
 
@@ -274,11 +265,9 @@ daft-functions-uri = {path = "src/daft-functions-uri"}
 daft-functions-utf8 = {path = "src/daft-functions-utf8"}
 daft-hash = {path = "src/daft-hash"}
 daft-io = {path = "src/daft-io"}
-daft-ir = {path = "src/daft-ir"}
 daft-local-execution = {path = "src/daft-local-execution"}
 daft-logical-plan = {path = "src/daft-logical-plan"}
 daft-micropartition = {path = "src/daft-micropartition"}
-daft-proto = {path = "src/daft-proto"}
 daft-runners = {path = "src/daft-runners"}
 daft-recordbatch = {path = "src/daft-recordbatch"}
 daft-scan = {path = "src/daft-scan"}
@@ -324,7 +313,6 @@ simdutf8 = "0.1.5"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 smallvec = {version = "1.15.1", features = ["serde", "impl_bincode"]}
 snafu = {version = "0.7.4", features = ["futures"]}
-spark-connect = {path = "src/generated/spark-connect", default-features = false}
 sqlparser = "0.51.0"
 sysinfo = "0.35.2"
 tango-bench = "0.6.0"

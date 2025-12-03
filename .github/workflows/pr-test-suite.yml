@@ -74,7 +74,7 @@ jobs:
     needs: skipcheck
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
@@ -1158,7 +1158,7 @@ jobs:
       with:
         tool-cache: false
     - name: Generate code coverage
-      run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --exclude spark-connect --lcov --output-path ./report-output/lcov.info
+      run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --lcov --output-path ./report-output/lcov.info
     - name: Upload coverage report
       uses: actions/upload-artifact@v5
       with:
