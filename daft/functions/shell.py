@@ -14,8 +14,6 @@ from daft.datatype import DataType
 if TYPE_CHECKING:
     from daft.expressions import Expression
 
-from daft.expressions import Expression
-
 ArgStyle = Literal["separate", "equals"]
 OnError = Literal["raise", "ignore", "log"]
 
