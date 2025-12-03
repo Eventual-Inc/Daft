@@ -13,7 +13,7 @@ pytestmark = pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason
 
 
 def make_noop_udf(batch_size: int, dtype: daft.DataType = daft.DataType.int64()):
-    @daft.udf(return_dtype=dtype, batch_size=batch_size, concurrency=1)
+    @daft.func.batch(return_dtype=dtype, batch_size=batch_size, concurrency=1)
     def noop(x: dtype) -> dtype:
         return x
 

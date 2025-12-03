@@ -197,7 +197,7 @@ import daft
 
 print(daft.runners.get_or_infer_runner_type())
 
-@daft.udf(return_dtype=daft.DataType.string())
+@daft.func.batch(return_dtype=daft.DataType.string())
 def my_udf(foo):
     runner_type = daft.runners.get_or_infer_runner_type()
     return [f"{runner_type}_{f}" for f in foo]
@@ -226,7 +226,7 @@ daft.set_runner_native()
 print(daft.runners.get_or_infer_runner_type())
 
 
-@daft.udf(return_dtype=daft.DataType.string())
+@daft.func.batch(return_dtype=daft.DataType.string())
 def my_udf(foo):
     runner_type = daft.runners.get_or_infer_runner_type()
     return [f"{runner_type}_{f}" for f in foo]
@@ -251,7 +251,7 @@ daft.set_runner_ray()
 print(daft.runners.get_or_infer_runner_type())
 
 
-@daft.udf(return_dtype=daft.DataType.string())
+@daft.func.batch(return_dtype=daft.DataType.string())
 def my_udf(foo):
     runner_type = daft.runners.get_or_infer_runner_type()
     return [f"{runner_type}_{f}" for f in foo]

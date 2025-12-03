@@ -10,6 +10,9 @@ ray.init()
 daft.set_runner_ray()
 
 
+@daft.func(
+    return_dtype=daft.DataType.struct({"extracted_text": daft.DataType.string(), "text_length": daft.DataType.int32()}),
+)
 def process_html(html_bytes: bytes | None):
     """Process a single HTML content and extract text."""
     if html_bytes is None:
@@ -46,22 +49,9 @@ def process_html(html_bytes: bytes | None):
         return {"extracted_text": None, "text_length": 0}
 
 
-@daft.udf(
-    return_dtype=daft.DataType.struct({"extracted_text": daft.DataType.string(), "text_length": daft.DataType.int32()}),
-    batch_size=128,
-)
-def daft_extract_text(content: daft.Series):
-    """Daft UDF to extract text from HTML content using OWM.
-
-    Returns a struct with extracted_text and text_length.
-    """
-    # Get the config once for all rows
-    return [process_html(html_bytes) for html_bytes in content]
-
-
 # Read 640 CC warc.gz files
 daft.read_warc(
     "s3://commoncrawl/crawl-data/CC-MAIN-2018-17/segments/1524125937193.1/warc/CC-MAIN-20180420081400-20180420101400-00*"
-).with_column("extracted_text", daft_extract_text(daft.col("warc_content"))).exclude("warc_content").write_parquet(
+).with_column("extracted_text", process_html(daft.col("warc_content"))).exclude("warc_content").write_parquet(
     "extracted_text"
 )
