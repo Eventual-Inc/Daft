@@ -25,6 +25,21 @@ class OpenAIProvider(Provider):
         self._name = name if name else "openai"
         self._options = options
 
+        try:
+            import openai  # noqa: F401
+        except ImportError:
+            raise ImportError("OpenAI is not installed. Please install it using `pip install daft[openai]`")
+
+        from daft.dependencies import np, pil_image
+
+        if not np.module_available():
+            raise ImportError("Numpy is not installed. Please install it using `pip install daft[openai]`")
+
+        if not pil_image.module_available():
+            raise ImportError("Pillow is not installed. Please install it using `pip install daft[openai]`")
+
+    
+
     @property
     def name(self) -> str:
         return self._name
