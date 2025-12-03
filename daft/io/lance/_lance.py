@@ -371,6 +371,7 @@ def compact_files(
     metadata_cache_size_bytes: Optional[int] = None,
     compaction_options: Optional[dict[str, Any]] = None,
     partition_num: Optional[int] = None,
+    concurrency: Optional[int] = None,
 ) -> Any:
     """Compact Lance dataset files using Daft UDF-style distributed execution.
 
@@ -397,6 +398,7 @@ def compact_files(
             materialize_deletions_threadhold: The fraction of original rows that are soft deleted in a fragment
                 before the fragment is a candidate for compaction.(default: 0.1 = 10%).
         partition_num: Number of partitions to use for compaction. Defaults to None.
+        concurrency: Number of concurrent compaction tasks to run. Defaults to None.
 
     Returns:
         CompactionMetrics: Compaction statistics; None if no compaction needed. The `CompactionMetrics` object contains the following fields:
@@ -437,4 +439,5 @@ def compact_files(
         lance_ds=lance_ds,
         compaction_options=compaction_options,
         partition_num=partition_num,
+        concurrency=concurrency,
     )

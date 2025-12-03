@@ -12,7 +12,6 @@ import daft
 logger = logging.getLogger(__name__)
 
 
-@daft.cls
 class CompactionTaskUDF:
     """UDF to execute a batch of Lance CompactionTasks on remote workers and return execution result dictionaries."""
 
@@ -32,6 +31,7 @@ def compact_files_internal(
     *,
     compaction_options: dict[str, Any] | None = None,
     partition_num: int | None = None,
+    concurrency: int | None = None,
 ) -> CompactionMetrics | None:
     """Execute Lance file compaction in distributed environment using Daft UDF style."""
     logger.info("Starting UDF-style distributed compaction")
@@ -55,7 +55,12 @@ def compact_files_internal(
         df = daft.from_pydict({"task": plan.tasks})
     else:
         df = daft.from_pydict({"task": plan.tasks}).repartition(effective_partition_num)
-    df = df.select(CompactionTaskUDF(lance_ds)(df["task"]).alias("rewrite"))
+
+    WrappedRunner = daft.cls(
+        CompactionTaskUDF,
+        max_concurrency=concurrency,
+    )
+    df = df.select(WrappedRunner(lance_ds)(df["task"]).alias("rewrite"))
     results = df.to_pandas()
 
     metrics = Compaction.commit(lance_ds, results["rewrite"].to_list())

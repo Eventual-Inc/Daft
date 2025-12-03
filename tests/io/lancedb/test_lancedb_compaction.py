@@ -132,6 +132,7 @@ def test_compaction_with_partition_num(tmp_path: Path):
             "num_threads": 1,
         },
         partition_num=2,
+        concurrency=2,
     )
     assert metrics is not None, "Compaction should produce metrics"
     dataset = lance.dataset(str(dataset_path))
