@@ -1,5 +1,5 @@
 [build-dependencies]
-tonic-build = {workspace = true}
+tonic-prost-build = {workspace = true}
 walkdir = "2.5.0"
 
 [dependencies]

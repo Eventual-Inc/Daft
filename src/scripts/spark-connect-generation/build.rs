@@ -1,5 +1,5 @@
 fn main() -> std::io::Result<()> {
-    let mut config = tonic_build::Config::new();
+    let mut config = tonic_prost_build::Config::new();
 
     // todo: having issues with prost_wkt_types on Windows
     // config
@@ -8,9 +8,9 @@ fn main() -> std::io::Result<()> {
     //     .extern_path(".google.protobuf.Timestamp", "::prost_wkt_types::Timestamp")
     //     .extern_path(".google.protobuf.Value", "::prost_wkt_types::Value");
 
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .build_server(true)
-        .compile_protos_with_config(
+        .compile_with_config(
             config,
             &[
                 "proto/spark/connect/base.proto",

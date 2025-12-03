@@ -2,6 +2,7 @@
 prost = {workspace = true}
 prost-types = {workspace = true}
 tonic = {workspace = true}
+tonic-prost = {workspace = true}
 
 [lints]
 workspace = true

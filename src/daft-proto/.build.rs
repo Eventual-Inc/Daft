@@ -53,7 +53,7 @@ fn main() -> Result<()> {
     // 2. collect .proto files
     let proto_defs = get_proto_defs(&proto_dir)?;
     // 3. generate code with tonic (and prost)
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .build_client(false)
         .build_server(false)
         .compile_protos(proto_defs.as_slice(), &[proto_dir])?;
