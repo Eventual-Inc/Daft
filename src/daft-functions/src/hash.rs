@@ -65,15 +65,11 @@ impl ScalarUDF for HashFunction {
             .split_first()
             .expect("validated batch must contain at least one column");
 
-        let mut hash_array = hash_with_seed(first_column, seed, hash_function)?
-            .u64()
-            .unwrap()
-            .clone();
-
+        let mut hash_array = hash_with_seed(first_column, seed, hash_function)?;
         for column in rest {
-            hash_array = column.hash_with(Some(&hash_array), hash_function)?;
+            hash_array = hash_with_seed(column, Some(hash_array), hash_function)?;
         }
-        Ok(hash_array.into_series().rename(&first_name))
+        Ok(hash_array.rename(&first_name))
     }
 
     fn get_return_field(
