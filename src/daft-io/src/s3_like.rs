@@ -1533,7 +1533,7 @@ impl ObjectSource for S3LikeSource {
             Ok(_) => {
                 drop(permit);
                 if let Some(is) = io_stats.as_ref() {
-                    is.mark_bytes_read(1);
+                    is.mark_delete_requests(1);
                 }
                 Ok(())
             }

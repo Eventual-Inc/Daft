@@ -7,7 +7,7 @@ use common_file_formats::WriteMode;
 use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_io::{IOClient, get_io_client, parse_url};
+use daft_io::{Error, IOClient, get_io_client, parse_url};
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -129,7 +129,7 @@ impl BlockingSink for CommitWriteSink {
                         WriteMode::Overwrite | WriteMode::OverwritePartitions
                     ) {
                         let (_, root_uri) = parse_url(&file_info.root_dir)?;
-                        let scheme = root_uri.split("://").next().unwrap_or("file");
+                        let root_uri = root_uri.trim_end_matches("/");
 
                         let written_paths: Vec<String> = written_file_path_record_batches
                             .iter()
@@ -146,7 +146,7 @@ impl BlockingSink for CommitWriteSink {
                                 if p.contains("://") {
                                     p
                                 } else {
-                                    format!("{}://{}", scheme, p)
+                                    format!("{}://{}", root_uri, p)
                                 }
                             })
                             .collect();
@@ -214,12 +214,7 @@ async fn glob_files(
     source: Arc<dyn daft_io::ObjectSource>,
     glob_path: &str,
 ) -> DaftResult<Vec<String>> {
-    let glob_pattern = if glob_path.ends_with('/') {
-        format!("{}**", glob_path)
-    } else {
-        format!("{}/**", glob_path)
-    };
-
+    let glob_pattern = format!("{}/**", glob_path.trim_end_matches("/"));
     let mut out: Vec<String> = vec![];
     let mut stream = source
         .glob(
@@ -231,10 +226,25 @@ async fn glob_files(
             None,
         )
         .await?;
-    while let Some(meta) = stream.try_next().await? {
-        if matches!(meta.filetype, daft_io::FileType::File) {
-            out.push(meta.filepath);
+    match stream.try_next().await {
+        Ok(Some(first)) => {
+            if matches!(first.filetype, daft_io::FileType::File) {
+                out.push(first.filepath);
+            }
+
+            while let Some(meta) = stream.try_next().await? {
+                if matches!(meta.filetype, daft_io::FileType::File) {
+                    out.push(meta.filepath);
+                }
+            }
         }
+        Ok(None) => {
+            log::debug!("No files found for glob pattern: {:?}", glob_pattern);
+        }
+        Err(err) if matches!(err, Error::NotFound { .. }) => {
+            log::debug!("No files found for glob pattern: {:?}", glob_pattern);
+        }
+        Err(err) => return Err(err.into()),
     }
     Ok(out)
 }
