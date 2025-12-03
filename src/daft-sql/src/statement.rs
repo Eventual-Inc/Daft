@@ -34,6 +34,7 @@ pub struct Set {
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct ShowTables {
     pub catalog: Option<String>,
+    pub namespace: Option<Identifier>,
     pub pattern: Option<String>,
 }
 
@@ -60,6 +61,9 @@ impl SQLPlanner<'_> {
                 verbose,
                 statement,
                 format,
+                query_plan: _,
+                estimate: _,
+                options: _,
             } => self.plan_describe(describe_alias, *analyze, *verbose, statement, *format),
             ast::Statement::ExplainTable {
                 describe_alias,
@@ -72,15 +76,17 @@ impl SQLPlanner<'_> {
                 *has_table_keyword,
                 table_name,
             ),
-            ast::Statement::SetVariable { .. } => {
+            ast::Statement::Set(_) => {
                 todo!("set_variable")
             }
             ast::Statement::ShowTables {
                 extended,
                 full,
-                db_name,
-                filter,
-            } => self.plan_show_tables(*extended, *full, db_name.as_ref(), filter.as_ref()),
+                show_options,
+                terse: _,
+                history: _,
+                external: _,
+            } => self.plan_show_tables(*extended, *full, show_options),
             ast::Statement::Use(use_) => self.plan_use(use_),
             other => unsupported_sql_err!("unsupported statement, {}", other),
         }
@@ -98,7 +104,7 @@ impl SQLPlanner<'_> {
         analyze: bool,
         verbose: bool,
         statement: &ast::Statement,
-        format: Option<ast::AnalyzeFormat>,
+        format: Option<ast::AnalyzeFormatKind>,
     ) -> SQLPlannerResult<Statement> {
         // err on `DESC | EXPLAIN`
         if *describe_alias != ast::DescribeAlias::Describe {
@@ -159,8 +165,7 @@ impl SQLPlanner<'_> {
         &self,
         extended: bool,
         full: bool,
-        catalog: Option<&ast::Ident>,
-        pattern: Option<&ast::ShowStatementFilter>,
+        show_options: &ast::ShowStatementOptions,
     ) -> SQLPlannerResult<Statement> {
         if extended {
             unsupported_sql_err!("SHOW EXTENDED is not supported.")
@@ -168,40 +173,80 @@ impl SQLPlanner<'_> {
         if full {
             unsupported_sql_err!("SHOW FULL is not supported.")
         }
-        let catalog = match catalog {
-            Some(ident) => {
-                if matches!(ident.quote_style, Some('\'')) {
-                    unsupported_sql_err!(
-                        "Expected catalog identifier, but received a string: {}",
-                        ident
-                    )
+        let (catalog, namespace) = match show_options
+            .show_in
+            .as_ref()
+            .and_then(|show_in| show_in.parent_name.as_ref())
+        {
+            Some(object_name) if !object_name.0.is_empty() => {
+                let parts = &object_name.0;
+                let catalog = match &parts[0] {
+                    ast::ObjectNamePart::Identifier(ident) => {
+                        if matches!(ident.quote_style, Some('\'')) {
+                            unsupported_sql_err!(
+                                "Expected catalog identifier, but received a string: {ident}"
+                            );
+                        }
+                        ident.value.clone()
+                    }
+                    ast::ObjectNamePart::Function(func) => func.name.value.clone(),
+                };
+                let namespace = if parts.len() > 1 {
+                    let namespace_parts = parts[1..].iter().map(|part| match part {
+                        ast::ObjectNamePart::Identifier(ident) => &ident.value,
+                        ast::ObjectNamePart::Function(func) => &func.name.value,
+                    });
+                    Some(Identifier::try_new(namespace_parts)?)
+                } else {
+                    None
+                };
+                (Some(catalog), namespace)
+            }
+            _ => (None, None),
+        };
+
+        let pattern = if let Some(position) = &show_options.filter_position {
+            let filter = match position {
+                ast::ShowStatementFilterPosition::Infix(f)
+                | ast::ShowStatementFilterPosition::Suffix(f) => f,
+            };
+            match filter {
+                ast::ShowStatementFilter::Like(pattern) => Some(pattern.clone()),
+                ast::ShowStatementFilter::Where(_) => {
+                    unsupported_sql_err!("SHOW TABLES WHERE is not supported.");
                 }
-                Some(ident.value.clone())
+                ast::ShowStatementFilter::ILike(_) => {
+                    unsupported_sql_err!("SHOW TABLES ILIKE is not supported.");
+                }
+                ast::ShowStatementFilter::NoKeyword(_) => {
+                    unsupported_sql_err!("SHOW TABLES NO KEYWORD is not supported.");
+                }
             }
-            None => None,
+        } else {
+            None
         };
-        let pattern = match pattern {
-            Some(ast::ShowStatementFilter::Like(pattern)) => Some(pattern.clone()),
-            Some(ast::ShowStatementFilter::Where(_)) => {
-                unsupported_sql_err!("SHOW TABLES WHERE is not supported.")
-            }
-            Some(ast::ShowStatementFilter::ILike(_)) => {
-                unsupported_sql_err!("SHOW TABLES ILIKE is not supported.")
-            }
-            None => None,
-        };
-        Ok(Statement::ShowTables(ShowTables { catalog, pattern }))
+        Ok(Statement::ShowTables(ShowTables {
+            catalog,
+            namespace,
+            pattern,
+        }))
     }
 
     fn plan_use(&self, use_: &ast::Use) -> SQLPlannerResult<Statement> {
         if let ast::Use::Object(name) = use_ {
             let idents = &name.0;
-            let catalog = idents[0].value.clone();
-            let namespace = match idents.len() {
-                1 => None,
-                _ => Some(Identifier::try_new(
-                    idents[1..].iter().map(|ident| &ident.value),
-                )?),
+            let catalog = match &idents[0] {
+                ast::ObjectNamePart::Identifier(ident) => ident.value.clone(),
+                ast::ObjectNamePart::Function(func) => func.name.value.clone(),
+            };
+            let namespace = if idents.len() > 1 {
+                let namespace_parts = idents[1..].iter().map(|part| match part {
+                    ast::ObjectNamePart::Identifier(ident) => &ident.value,
+                    ast::ObjectNamePart::Function(func) => &func.name.value,
+                });
+                Some(Identifier::try_new(namespace_parts)?)
+            } else {
+                None
             };
             return Ok(Statement::Use(Use { catalog, namespace }));
         }
