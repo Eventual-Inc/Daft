@@ -1458,7 +1458,6 @@ all = [
     { name = "boto3" },
     { name = "clickhouse-connect" },
     { name = "connectorx" },
-    { name = "datasets" },
     { name = "deltalake", version = "0.5.8", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
     { name = "deltalake", version = "1.2.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
     { name = "google-genai" },
@@ -1515,7 +1514,6 @@ hudi = [
     { name = "pyarrow" },
 ]
 huggingface = [
-    { name = "datasets" },
     { name = "huggingface-hub" },
 ]
 iceberg = [
@@ -1695,7 +1693,6 @@ requires-dist = [
     { name = "clickhouse-connect", marker = "extra == 'clickhouse'" },
     { name = "connectorx", marker = "extra == 'sql'", specifier = ">=0.4.4" },
     { name = "daft", extras = ["aws", "azure", "clickhouse", "deltalake", "gcp", "google", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "postgres", "ray", "sentence-transformers", "spark", "sql", "transformers", "turbopuffer", "unity", "video"], marker = "extra == 'all'" },
-    { name = "datasets", marker = "extra == 'huggingface'" },
     { name = "deltalake", marker = "extra == 'deltalake'", specifier = "<=1.2.1" },
     { name = "fsspec" },
     { name = "google-genai", marker = "extra == 'google'" },
