@@ -18,7 +18,6 @@ daft-arrow = {path = "src/daft-arrow", default-features = false}
 daft-catalog = {path = "src/daft-catalog", default-features = false}
 daft-cli = {path = "src/daft-cli", default-features = false}
 daft-compression = {path = "src/daft-compression", default-features = false}
-daft-connect = {path = "src/daft-connect", optional = true}
 daft-context = {path = "src/daft-context", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
@@ -78,7 +77,6 @@ python = [
   "daft-ai/python",
   "daft-catalog/python",
   "daft-cli/python",
-  "daft-connect/python",
   "daft-context/python",
   "daft-core/python",
   "daft-csv/python",
@@ -192,7 +190,6 @@ members = [
   "src/daft-algebra",
   "src/daft-arrow",
   "src/daft-catalog",
-  "src/daft-connect",
   "src/daft-context",
   "src/daft-core",
   "src/daft-csv",
@@ -230,7 +227,6 @@ members = [
   "src/hyperloglog",
   "src/parquet2",
   "src/parquet-format-safe",
-  "src/generated/spark-connect",
   "src/daft-cli"
 ]
 
@@ -324,7 +320,6 @@ simdutf8 = "0.1.5"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 smallvec = {version = "1.15.1", features = ["serde", "impl_bincode"]}
 snafu = {version = "0.7.4", features = ["futures"]}
-spark-connect = {path = "src/generated/spark-connect", default-features = false}
 sqlparser = "0.51.0"
 sysinfo = "0.35.2"
 tango-bench = "0.6.0"

@@ -2401,7 +2401,6 @@ dependencies = [
  "daft-catalog",
  "daft-cli",
  "daft-compression",
- "daft-connect",
  "daft-context",
  "daft-core",
  "daft-csv",
@@ -2510,43 +2509,6 @@ dependencies = [
  "async-compression",
  "tokio",
  "url",
-]
-
-[[package]]
-name = "daft-connect"
-version = "0.3.0-dev0"
-dependencies = [
- "common-error",
- "common-file-formats",
- "common-runtime",
- "daft-arrow",
- "daft-catalog",
- "daft-context",
- "daft-core",
- "daft-dsl",
- "daft-functions",
- "daft-functions-temporal",
- "daft-functions-utf8",
- "daft-io",
- "daft-logical-plan",
- "daft-micropartition",
- "daft-recordbatch",
- "daft-runners",
- "daft-scan",
- "daft-schema",
- "daft-session",
- "daft-sql",
- "dashmap",
- "futures",
- "itertools 0.14.0",
- "pyo3",
- "snafu",
- "spark-connect",
- "textwrap",
- "tokio",
- "tonic 0.12.3",
- "tracing",
- "uuid 1.18.1",
 ]
 
 [[package]]
@@ -7951,15 +7913,6 @@ checksum = "233504af464074f9d066d7b5416c5f9b894a5862a6506e306f7b816cdd6f1807"
 dependencies = [
  "libc",
  "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "spark-connect"
-version = "0.3.0-dev0"
-dependencies = [
- "prost 0.13.5",
- "prost-types",
- "tonic 0.12.3",
 ]
 
 [[package]]

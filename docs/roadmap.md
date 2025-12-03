@@ -38,9 +38,6 @@ Please note that items on this roadmap are subject to change any time. If there 
 
 ## Out-of-the-box Experience
 
-- Continue expanding feature set and compatibility of [Daft’s PySpark connector](api/spark_connect.md#show) so that running Spark workloads on Daft is a simple plug-and-play ([issue #3581](https://github.com/Eventual-Inc/Daft/issues/3581))
-    - Ordinal column references ([issue #4270](https://github.com/Eventual-Inc/Daft/issues/4270))
-    - Window function support ([issue #2108](https://github.com/Eventual-Inc/Daft/issues/2108))
 - Improve catalog and table integrations
     - Support for Iceberg deletion vectors and upserts (see [roadmap for Iceberg](https://github.com/Eventual-Inc/Daft/issues/2458))
     - Better Unity Catalog support ([issue #2482](https://github.com/Eventual-Inc/Daft/issues/2482))
@@ -56,7 +53,7 @@ The following features would be valuable additions to Daft, but are not currentl
     - Support for reading tables with deletion vectors ([issue #1954](https://github.com/Eventual-Inc/Daft/issues/1954))
     - Support for reading tables with column mappings ([issue #1955](https://github.com/Eventual-Inc/Daft/issues/1955))
 - Improved Apache Hudi support (see [roadmap for Apache Hudi](https://github.com/Eventual-Inc/Daft/issues/4389))
-- Expressions parity with PySpark: Temporal ([issue #3798](https://github.com/Eventual-Inc/Daft/issues/3798)), Math ([issue #3793](https://github.com/Eventual-Inc/Daft/issues/3793)), String ([issue #3792](https://github.com/Eventual-Inc/Daft/issues/3792))
+
 
 If you are interested in working on any of these features, feel free to open an issue or start a discussion on [GitHub](https://github.com/Eventual-Inc/Daft) or join our [Daft Slack Community](https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg). Our team can provide technical direction and help scope the work appropriately. Thank you in advance 💜
 
