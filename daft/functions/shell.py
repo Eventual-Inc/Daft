@@ -189,97 +189,92 @@ def shell_op(
 ) -> Expression:
     """Execute a shell command per row and return a Daft Expression.
 
-    Parameters
-    ----------
-    cmd : str
-        Base command string, e.g., "python script.py".
-    params : list[Expression | Any] or dict[str, Expression | Any] or Expression
-        Per-row arguments passed to the command. Lists are appended as positional
-        arguments. Dict keys are flags (for example "--start"), values are the
-        corresponding argument values. A single Expression is treated as one
-        positional argument.
-    options : ShellOpOptions, optional
-        Controls return format, subprocess behavior and UDF execution. The following
-        fields are supported:
+    Args:
+        cmd (str):
+            Base command string, e.g., "python script.py".
+        params (list[Expression | Any] or dict[str, Expression | Any] or Expression):
+            Per-row arguments passed to the command. Lists are appended as positional
+            arguments. Dict keys are flags (for example "--start"), values are the
+            corresponding argument values. A single Expression is treated as one
+            positional argument.
+        options (ShellOpOptions, optional):
+            Controls return format, subprocess behavior and UDF execution. The following
+            fields are supported:
 
-
-        return_struct : bool, default False
-            When False, returns a string column containing stdout. When True,
-            returns a struct column; see Returns for field names.
-        capture_stderr : bool, default False
-            Capture stderr into the struct field "stderr" when ``return_struct=True``.
-        include_exit_code : bool, default False
-            Include process exit code in the struct field "exit_code" when
-            ``return_struct=True``. On a timeout, the exit code is ``-1``.
-        include_duration_ms : bool, default False
-            Include execution duration in milliseconds in the struct field
-            "duration_ms" when ``return_struct=True``.
-        timeout_seconds : float, optional
-            Subprocess timeout in seconds. On timeout, behavior is controlled by
-            ``on_error``; see Notes.
-        cwd : str, optional
-            Working directory for subprocess execution.
-        env : dict[str, str], optional
-            Extra environment variables for the subprocess (merged with the worker
-            environment).
-        use_shell : bool, default False
-            When True, execute through the system shell (for example ``/bin/sh`` or
-            ``bash``). This enables pipes and redirection but increases security risk.
-            When False, execute the command as a token list.
-        use_process : bool, optional
-            UDF execution mode: True for a separate process, False for a thread,
-            None to use Daft defaults.
-        max_concurrency : int, optional
-            Max number of concurrent executions per worker for this UDF call.
-        on_error : {"raise", "ignore", "log"}, optional, default "log"
-            Error handling for non-zero exit codes or timeouts. "raise" raises,
-            "ignore" returns ``None`` for stdout while keeping structured fields if
-            enabled, "log" behaves like "ignore" and logs a message on the worker.
-        arg_style : {"separate", "equals"}, default "separate"
-            Formatting for named arguments. "separate" yields ``--key value``;
-            "equals" yields ``--key=value``.
+            return_struct : bool, default False
+                When False, returns a string column containing stdout. When True,
+                returns a struct column; see Returns for field names.
+            capture_stderr : bool, default False
+                Capture stderr into the struct field "stderr" when ``return_struct=True``.
+            include_exit_code : bool, default False
+                Include process exit code in the struct field "exit_code" when
+                ``return_struct=True``. On a timeout, the exit code is ``-1``.
+            include_duration_ms : bool, default False
+                Include execution duration in milliseconds in the struct field
+                "duration_ms" when ``return_struct=True``.
+            timeout_seconds : float, optional
+                Subprocess timeout in seconds. On timeout, behavior is controlled by
+                ``on_error``; see Notes.
+            cwd : str, optional
+                Working directory for subprocess execution.
+            env : dict[str, str], optional
+                Extra environment variables for the subprocess (merged with the worker
+                environment).
+            use_shell : bool, default False
+                When True, execute through the system shell (for example ``/bin/sh`` or
+                ``bash``). This enables pipes and redirection but increases security risk.
+                When False, execute the command as a token list.
+            use_process : bool, optional
+                UDF execution mode: True for a separate process, False for a thread,
+                None to use Daft defaults.
+            max_concurrency : int, optional
+                Max number of concurrent executions per worker for this UDF call.
+            on_error : {"raise", "ignore", "log"}, optional, default "log"
+                Error handling for non-zero exit codes or timeouts. "raise" raises,
+                "ignore" returns ``None`` for stdout while keeping structured fields if
+                enabled, "log" behaves like "ignore" and logs a message on the worker.
+            arg_style : {"separate", "equals"}, default "separate"
+                Formatting for named arguments. "separate" yields ``--key value``;
+                "equals" yields ``--key=value``.
 
     Returns:
-    -------
-    Expression
-        Returns a String expression containing stdout when ``options.return_struct`` is
-        False. When ``options.return_struct`` is True, returns a Struct expression with
-        fields: ``stdout`` (string), ``stderr`` (string), ``exit_code`` (int32), ``duration_ms``
-        (int64). Disabled fields are returned as ``None``.
+        Expression
+            Returns a String expression containing stdout when ``options.return_struct`` is
+            False. When ``options.return_struct`` is True, returns a Struct expression with
+            fields: ``stdout`` (string), ``stderr`` (string), ``exit_code`` (int32), ``duration_ms``
+            (int64). Disabled fields are returned as ``None``.
 
-    Notes:
-    -----
-    - Security: Prefer ``use_shell=False``. Only enable ``use_shell=True`` when shell
-      features (pipes, redirection) are required and the command is trusted.
-    - Boolean flags: For a named key passed with a boolean value, True appends the
-      key without a value; False or None omit the key.
-    - Timeout semantics: When ``timeout_seconds`` is reached, ``on_error`` controls the
-      outcome. With ``include_exit_code=True`` the exit code is ``-1``; ``stderr`` contains
-      a "TimeoutExpired" description when ``capture_stderr=True``.
+    Note:
+        - Security: Prefer ``use_shell=False``. Only enable ``use_shell=True`` when shell
+          features (pipes, redirection) are required and the command is trusted.
+        - Boolean flags: For a named key passed with a boolean value, True appends the
+          key without a value; False or None omit the key.
+        - Timeout semantics: When ``timeout_seconds`` is reached, ``on_error`` controls the
+          outcome. With ``include_exit_code=True`` the exit code is ``-1``; ``stderr`` contains
+          a "TimeoutExpired" description when ``capture_stderr=True``.
 
     Examples:
-    --------
-    Use positional arguments:
+        Use positional arguments:
 
-    >>> df = daft.from_pydict({"a": [1, 2], "b": [2, 4]})
-    >>> expr = daft.functions.shell_op(
-    ...     cmd="echo",
-    ...     params=[df["a"], df["b"]],
-    ... )
-    >>> df = df.select(expr.alias("out"))
+        >>> df = daft.from_pydict({"a": [1, 2], "b": [2, 4]})
+        >>> expr = daft.functions.shell_op(
+        ...     cmd="echo",
+        ...     params=[df["a"], df["b"]],
+        ... )
+        >>> df = df.select(expr.alias("out"))
 
-    Structured return with stderr and exit code:
+        Structured return with stderr and exit code:
 
-    >>> df = daft.from_pydict({"path": ["/a", "/b"]})
-    >>> opts = daft.functions.shell.ShellOpOptions(
-    ...     return_struct=True, capture_stderr=True, include_exit_code=True, include_duration_ms=True
-    ... )
-    >>> expr = daft.functions.shell_op(
-    ...     cmd="ls",
-    ...     params=["-la", df["path"]],
-    ...     options=opts,
-    ... )
-    >>> df = df.select(expr)  # columns: stdout, stderr, exit_code, duration_ms
+        >>> df = daft.from_pydict({"path": ["/a", "/b"]})
+        >>> opts = daft.functions.shell.ShellOpOptions(
+        ...     return_struct=True, capture_stderr=True, include_exit_code=True, include_duration_ms=True
+        ... )
+        >>> expr = daft.functions.shell_op(
+        ...     cmd="ls",
+        ...     params=["-la", df["path"]],
+        ...     options=opts,
+        ... )
+        >>> df = df.select(expr)  # columns: stdout, stderr, exit_code, duration_ms
 
     """
     options = options or ShellOpOptions()
