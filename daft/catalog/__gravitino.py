@@ -114,14 +114,13 @@ class GravitinoCatalog(Catalog):
     # has_.*
     ###
     def _has_namespace(self, ident: Identifier) -> bool:
-        ident_str = str(ident)
         # Namespace should be in format "catalog.schema"
-        if ident_str.count(".") != 1:
+        if len(ident) != 2:
             return False
-        catalog_name = ident_str.split(".")[0]
+        catalog_name = ident[0]
         # List namespaces for the catalog and check if our identifier is in the list
         namespaces = self._inner.list_namespaces(catalog_name)
-        return ident_str in namespaces
+        return str(ident) in namespaces
 
     def _has_table(self, ident: Identifier) -> bool:
         try:
