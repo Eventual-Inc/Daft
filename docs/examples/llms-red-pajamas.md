@@ -60,7 +60,7 @@ class EncodingUDF:
         self.model = SentenceTransformer(MODEL_NAME, device=device)
 
     @daft.method(return_dtype=daft.DataType.python())
-    def encode(text):
+    def encode(self, text):
         return self.model.encode(text, convert_to_tensor=True)
 ```
 
