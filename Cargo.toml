@@ -343,8 +343,8 @@ tokio = {version = "1.47.1", features = [
 ]}
 tokio-stream = {version = "0.1.14", features = ["fs", "io-util", "time"]}
 tokio-util = "0.7.16"
-tonic = "0.12.3"
-tonic-build = "0.12.3"
+tonic = "0.14.2"
+tonic-build = "0.14.2"
 tracing = {version = "0.1", features = ["log"]}
 tracing-subscriber = {version = "0.3.20", default-features = false, features = ["std", "fmt", "ansi", "env-filter"]}
 typed-builder = "0.20.0"
