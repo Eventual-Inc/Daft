@@ -1,6 +1,6 @@
 [dependencies]
-arrow2 = {workspace = true, features = ["io_parquet", "io_parquet_compression"]}
 async-compat = {workspace = true}
+daft-arrow = {path = "../daft-arrow"}
 async-stream = {workspace = true}
 bytes = {workspace = true}
 common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false}

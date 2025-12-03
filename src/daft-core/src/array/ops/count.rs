@@ -11,11 +11,11 @@ use crate::{
     datatypes::*,
 };
 
-/// Helper to perform a grouped count on a validity map of type arrow2::bitmap::Bitmap
+/// Helper to perform a grouped count on a validity map of type daft_arrow::bitmap::Bitmap
 fn grouped_count_arrow_bitmap(
     groups: &GroupIndices,
     mode: &CountMode,
-    arrow_bitmap: Option<&arrow2::bitmap::Bitmap>,
+    arrow_bitmap: Option<&daft_arrow::bitmap::Bitmap>,
 ) -> Vec<u64> {
     match mode {
         CountMode::All => groups.iter().map(|g| g.len() as u64).collect(),
@@ -40,10 +40,10 @@ fn grouped_count_arrow_bitmap(
     }
 }
 
-/// Helper to perform a count on a validity map of type arrow2::bitmap::Bitmap
+/// Helper to perform a count on a validity map of type daft_arrow::bitmap::Bitmap
 fn count_arrow_bitmap(
     mode: &CountMode,
-    arrow_bitmap: Option<&arrow2::bitmap::Bitmap>,
+    arrow_bitmap: Option<&daft_arrow::bitmap::Bitmap>,
     arr_len: usize,
 ) -> u64 {
     match mode {
@@ -75,7 +75,7 @@ where
         } else {
             count_arrow_bitmap(&mode, self.data().validity(), self.len())
         };
-        let result_arrow_array = Box::new(arrow2::array::PrimitiveArray::from([Some(count)]));
+        let result_arrow_array = Box::new(daft_arrow::array::PrimitiveArray::from([Some(count)]));
         DataArray::<UInt64Type>::new(
             Arc::new(Field::new(self.field.name.clone(), DataType::UInt64)),
             result_arrow_array,
@@ -106,7 +106,7 @@ macro_rules! impl_daft_count_aggable {
             fn count(&self, mode: CountMode) -> Self::Output {
                 let count = count_arrow_bitmap(&mode, self.validity(), self.len());
                 let result_arrow_array =
-                    Box::new(arrow2::array::PrimitiveArray::from([Some(count)]));
+                    Box::new(daft_arrow::array::PrimitiveArray::from([Some(count)]));
                 DataArray::<UInt64Type>::new(
                     Arc::new(Field::new(self.field().name.clone(), DataType::UInt64)),
                     result_arrow_array,

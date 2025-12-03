@@ -1,7 +1,7 @@
 use std::fmt::{Display, Write};
 
-use arrow2::datatypes::DataType as ArrowType;
 use common_error::{DaftError, DaftResult};
+use daft_arrow::datatypes::DataType as ArrowType;
 use serde::{Deserialize, Serialize};
 
 use crate::{field::Field, image_mode::ImageMode, media_type::MediaType, time_unit::TimeUnit};
@@ -269,14 +269,14 @@ impl DataType {
             Self::Time(unit) => Ok(ArrowType::Time64(unit.to_arrow())),
             Self::Duration(unit) => Ok(ArrowType::Duration(unit.to_arrow())),
             Self::Interval => Ok(ArrowType::Interval(
-                arrow2::datatypes::IntervalUnit::MonthDayNano,
+                daft_arrow::datatypes::IntervalUnit::MonthDayNano,
             )),
 
             Self::Binary => Ok(ArrowType::LargeBinary),
             Self::FixedSizeBinary(size) => Ok(ArrowType::FixedSizeBinary(*size)),
             Self::Utf8 => Ok(ArrowType::LargeUtf8),
             Self::FixedSizeList(child_dtype, size) => Ok(ArrowType::FixedSizeList(
-                Box::new(arrow2::datatypes::Field::new(
+                Box::new(daft_arrow::datatypes::Field::new(
                     "item",
                     child_dtype.to_arrow()?,
                     true,
@@ -284,16 +284,16 @@ impl DataType {
                 *size,
             )),
             Self::List(field) => Ok(ArrowType::LargeList(Box::new(
-                arrow2::datatypes::Field::new("item", field.to_arrow()?, true),
+                daft_arrow::datatypes::Field::new("item", field.to_arrow()?, true),
             ))),
             Self::Map { key, value } => {
                 // To comply with the Arrow spec, Neither the "entries" field nor the "key" field may be nullable.
                 // See https://github.com/apache/arrow/blob/apache-arrow-20.0.0/format/Schema.fbs#L138
                 let struct_type = ArrowType::Struct(vec![
-                    arrow2::datatypes::Field::new("key", key.to_arrow()?, false),
-                    arrow2::datatypes::Field::new("value", value.to_arrow()?, true),
+                    daft_arrow::datatypes::Field::new("key", key.to_arrow()?, false),
+                    daft_arrow::datatypes::Field::new("value", value.to_arrow()?, true),
                 ]);
-                let struct_field = arrow2::datatypes::Field::new("entries", struct_type, false);
+                let struct_field = daft_arrow::datatypes::Field::new("entries", struct_type, false);
 
                 Ok(ArrowType::map(struct_field, false))
             }
@@ -301,7 +301,7 @@ impl DataType {
                 let fields = fields
                     .iter()
                     .map(|f| f.to_arrow())
-                    .collect::<DaftResult<Vec<arrow2::datatypes::Field>>>()?;
+                    .collect::<DaftResult<Vec<daft_arrow::datatypes::Field>>>()?;
                 ArrowType::Struct(fields)
             }),
             Self::Extension(name, dtype, metadata) => Ok(ArrowType::Extension(

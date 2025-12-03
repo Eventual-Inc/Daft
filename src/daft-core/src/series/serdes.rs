@@ -1,6 +1,6 @@
 use std::{borrow::Cow, sync::Arc};
 
-use arrow2::{offset::OffsetsBuffer, types::months_days_ns};
+use daft_arrow::{offset::OffsetsBuffer, types::months_days_ns};
 use serde::{Deserializer, de::Visitor};
 
 use crate::{

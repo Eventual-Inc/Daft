@@ -68,7 +68,7 @@ fn execute_show_tables(
     ]);
 
     // build the result set
-    use arrow2::array::{MutableArray, MutableUtf8Array};
+    use daft_arrow::array::{MutableArray, MutableUtf8Array};
     let mut cat_array = MutableUtf8Array::<i64>::with_capacity(tables.len());
     let mut nsp_array = MutableUtf8Array::<i64>::with_capacity(tables.len());
     let mut tbl_array = MutableUtf8Array::<i64>::with_capacity(tables.len());
