@@ -78,12 +78,16 @@ impl LogicalPlanToPipelineNodeTranslator {
 
         let is_left_hash_partitioned = matches!(left_spec, ClusteringSpec::Hash(..))
             && is_partition_compatible(
-                &left_spec.partition_by(),
+                BoundExpr::bind_all(&left_spec.partition_by(), &left.config().schema)?
+                    .iter()
+                    .map(|e| e.inner()),
                 left_on.iter().map(|e| e.inner()),
             );
         let is_right_hash_partitioned = matches!(right_spec, ClusteringSpec::Hash(..))
             && is_partition_compatible(
-                &right_spec.partition_by(),
+                BoundExpr::bind_all(&right_spec.partition_by(), &right.config().schema)?
+                    .iter()
+                    .map(|e| e.inner()),
                 right_on.iter().map(|e| e.inner()),
             );
         let num_left_partitions = left_spec.num_partitions();
