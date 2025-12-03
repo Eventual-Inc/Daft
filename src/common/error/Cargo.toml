@@ -1,5 +1,5 @@
 [dependencies]
-arrow-schema = {version = "54.2.1"}
+arrow-schema = {version = "57.1.0"}
 daft-arrow = {path = "../../daft-arrow"}
 pyo3 = {workspace = true, optional = true}
 regex = {workspace = true}

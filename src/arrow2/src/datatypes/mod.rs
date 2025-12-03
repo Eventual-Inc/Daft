@@ -371,6 +371,8 @@ impl From<arrow_schema::DataType> for DataType {
             DataType::Utf8View => panic!("Utf8View not supported by arrow2"),
             DataType::ListView(_) => panic!("ListView not supported by arrow2"),
             DataType::LargeListView(_) => panic!("LargeListView not supported by arrow2"),
+            DataType::Decimal32(_, _) => panic!("Decimal32 not supported by arrow2"),
+            DataType::Decimal64(_, _) => panic!("Decimal64 not supported by arrow2"),
         }
     }
 }
@@ -503,7 +505,8 @@ impl From<arrow_schema::IntervalUnit> for IntervalUnit {
 #[cfg(feature = "arrow")]
 impl From<Schema> for arrow_schema::Schema {
     fn from(schema: Schema) -> Self {
-        let fields: Vec<arrow_schema::Field> = schema.fields.into_iter().map(|f| f.into()).collect();
+        let fields: Vec<arrow_schema::Field> =
+            schema.fields.into_iter().map(|f| f.into()).collect();
         arrow_schema::Schema::new(fields)
     }
 }

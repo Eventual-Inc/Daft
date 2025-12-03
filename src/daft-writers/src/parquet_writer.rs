@@ -7,6 +7,7 @@ use daft_core::prelude::*;
 use daft_io::{IOConfig, SourceType, parse_url};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
+#[allow(deprecated)]
 use parquet::{
     arrow::{
         ArrowSchemaConverter,
@@ -217,6 +218,7 @@ impl<B: StorageBackend> ParquetWriter<B> {
         record_batches: &[RecordBatch],
     ) -> DaftResult<VecDeque<Pin<Box<ColumnWriterFuture>>>> {
         // Get leaf column writers. For example, a struct<int, int> column produces two leaf column writers.
+        #[allow(deprecated)]
         let column_writers = get_column_writers(
             &self.parquet_schema,
             &self.writer_properties,

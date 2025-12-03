@@ -509,6 +509,7 @@ impl TimestampArray {
     }
 
     pub fn unix_date(&self) -> DaftResult<UInt64Array> {
+        #[allow(deprecated)]
         const UNIX_EPOCH_DATE: NaiveDate = NaiveDateTime::UNIX_EPOCH.date();
         let (tu, tz) = match self.data_type() {
             DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow(), tz.clone()),

@@ -1,7 +1,7 @@
 [dependencies]
-arrow-array = {version = "54.2.1"}
-arrow-json = {version = "54.2.1"}
-arrow-schema = {version = "54.2.1"}
+arrow-array = {version = "57.1.0"}
+arrow-json = {version = "57.1.0"}
+arrow-schema = {version = "57.1.0"}
 async-trait = {workspace = true}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 daft-arrow = {path = "../daft-arrow"}
@@ -16,7 +16,7 @@ daft-micropartition = {path = "../daft-micropartition", default-features = false
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 hashbrown = {workspace = true}
 parking_lot = {workspace = true}
-parquet = {version = "54.2.1"}
+parquet = {version = "57.1.0"}
 pyo3 = {workspace = true, optional = true}
 tokio = {workspace = true}
 urlencoding = "2.1.3"
