@@ -9,7 +9,7 @@ arrow-array = {version = "=57.1.0", optional = true}
 arrow-buffer = {version = "=57.1.0", optional = true}
 arrow-data = {version = "=57.1.0", optional = true}
 arrow-format = {version = "0.8", optional = true, features = ["ipc"]}
-arrow-schema = {version = "=57.1.0", optional = true}
+arrow-schema = {workspace = true, optional = true}
 # to read IPC as a stream
 async-stream = {version = "0.3.6", optional = true}
 # avro support

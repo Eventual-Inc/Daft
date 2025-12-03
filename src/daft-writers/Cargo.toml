@@ -1,7 +1,7 @@
 [dependencies]
 arrow-array = {version = "57.1.0"}
 arrow-json = {version = "57.1.0"}
-arrow-schema = {version = "57.1.0"}
+arrow-schema = {workspace = true}
 async-trait = {workspace = true}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 daft-arrow = {path = "../daft-arrow"}

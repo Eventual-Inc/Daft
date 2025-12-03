@@ -232,6 +232,7 @@ members = [
 [workspace.dependencies]
 approx = "0.5.1"
 arc-swap = "1.7.1"
+arrow-schema = {version = "=57.1.0"}
 async-compat = "0.2.5"
 async-compression = {version = "0.4.12", features = [
   "tokio",
