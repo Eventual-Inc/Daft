@@ -6,11 +6,10 @@
 
 # Dev Workflow
 
-1) [Once] Set up Python environment and install dependencies: `make .venv`
-2) [Optional] Activate .venv: `source .venv/bin/activate`. Not necessary with Makefile commands.
-3) If Rust code is modified, rebuild: `make build`
-4) If `.proto` files are modified, rebuild protocol buffers code: `make daft-proto`
-5) Run tests. See [Testing Details](#testing-details).
+1. [Once] Set up Python environment and install dependencies: `make .venv`
+2. [Optional] Activate .venv: `source .venv/bin/activate`. Not necessary with Makefile commands.
+3. If Rust code is modified, rebuild: `make build`
+4. Run tests. See [Testing Details](#testing-details).
 
 # Testing Details
 
@@ -20,7 +19,7 @@
   - `make test EXTRA_ARGS="..."` passes additional arguments to `pytest`.
     - `make test EXTRA_ARGS="-v tests/dataframe/test_select.py"` runs the test in the given file.
     - `make test EXTRA_ARGS="-v tests/dataframe/test_select.py::test_select_dataframe"` runs the given test method.
-  -  Default `integration`, `benchmark`, and `hypothesis` tests are disabled. Best to run on CI.
+  - Default `integration`, `benchmark`, and `hypothesis` tests are disabled. Best to run on CI.
 - `make doctests` runs doctests in `daft/` directory. Tests docstrings in Daft APIs.
 
 # PR Conventions
