@@ -4,6 +4,7 @@ mod dispatcher;
 mod dynamic_batching;
 mod intermediate_ops;
 mod pipeline;
+mod process_pool;
 mod resource_manager;
 mod run;
 mod runtime_stats;
@@ -347,8 +348,18 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+    use process_pool::get_or_init_process_pool;
     use run::PyNativeExecutor;
 
     parent.add_class::<PyNativeExecutor>()?;
+
+    // Expose process pool stats for testing
+    #[pyo3::pyfunction]
+    fn _get_process_pool_stats() -> (usize, usize, usize) {
+        let pool = get_or_init_process_pool();
+        pool.get_stats()
+    }
+    parent.add_function(pyo3::wrap_pyfunction!(_get_process_pool_stats, parent)?)?;
+
     Ok(())
 }
