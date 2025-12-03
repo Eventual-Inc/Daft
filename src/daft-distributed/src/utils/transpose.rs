@@ -13,13 +13,16 @@ pub(crate) async fn transpose_materialized_outputs_from_stream(
         .try_collect::<Vec<_>>()
         .await?;
 
-    transpose_materialized_outputs(materialized_partitions, num_partitions)
+    Ok(transpose_materialized_outputs(
+        materialized_partitions,
+        num_partitions,
+    ))
 }
 
 pub(crate) fn transpose_materialized_outputs_from_vec(
     materialized_partitions: Vec<MaterializedOutput>,
     num_partitions: usize,
-) -> DaftResult<Vec<Vec<MaterializedOutput>>> {
+) -> Vec<Vec<MaterializedOutput>> {
     let materialized_partitions = materialized_partitions
         .into_iter()
         .map(|mat| mat.split_into_materialized_outputs())
@@ -41,7 +44,7 @@ pub(crate) fn transpose_materialized_outputs_from_vec(
 fn transpose_materialized_outputs(
     materialized_partitions: Vec<Vec<MaterializedOutput>>,
     num_partitions: usize,
-) -> DaftResult<Vec<Vec<MaterializedOutput>>> {
+) -> Vec<Vec<MaterializedOutput>> {
     debug_assert!(
         materialized_partitions
             .iter()
@@ -59,7 +62,7 @@ fn transpose_materialized_outputs(
         let mut partition_group = vec![];
         for materialized_partition in &materialized_partitions {
             let part = &materialized_partition[idx];
-            if part.num_rows()? > 0 {
+            if part.num_rows() > 0 {
                 partition_group.push(part.clone());
             }
         }
@@ -67,5 +70,5 @@ fn transpose_materialized_outputs(
     }
 
     assert_eq!(transposed_outputs.len(), num_partitions);
-    Ok(transposed_outputs)
+    transposed_outputs
 }

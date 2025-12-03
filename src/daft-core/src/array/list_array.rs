@@ -14,8 +14,8 @@ pub struct ListArray {
     pub flat_child: Series,
 
     /// Where each row starts and ends. Null rows usually have the same start/end index, but this is not guaranteed.
-    offsets: arrow2::offset::OffsetsBuffer<i64>,
-    validity: Option<arrow2::bitmap::Bitmap>,
+    offsets: daft_arrow::offset::OffsetsBuffer<i64>,
+    validity: Option<daft_arrow::bitmap::Bitmap>,
 }
 
 impl DaftArrayType for ListArray {
@@ -28,8 +28,8 @@ impl ListArray {
     pub fn new<F: Into<Arc<Field>>>(
         field: F,
         flat_child: Series,
-        offsets: arrow2::offset::OffsetsBuffer<i64>,
-        validity: Option<arrow2::bitmap::Bitmap>,
+        offsets: daft_arrow::offset::OffsetsBuffer<i64>,
+        validity: Option<daft_arrow::bitmap::Bitmap>,
     ) -> Self {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
@@ -67,11 +67,11 @@ impl ListArray {
         }
     }
 
-    pub fn offsets(&self) -> &arrow2::offset::OffsetsBuffer<i64> {
+    pub fn offsets(&self) -> &daft_arrow::offset::OffsetsBuffer<i64> {
         &self.offsets
     }
 
-    pub fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
+    pub fn validity(&self) -> Option<&daft_arrow::bitmap::Bitmap> {
         self.validity.as_ref()
     }
 
@@ -168,9 +168,9 @@ impl ListArray {
         ))
     }
 
-    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+    pub fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
         let arrow_dtype = self.data_type().to_arrow().unwrap();
-        Box::new(arrow2::array::ListArray::new(
+        Box::new(daft_arrow::array::ListArray::new(
             arrow_dtype,
             self.offsets().clone(),
             self.flat_child.to_arrow(),
@@ -178,7 +178,7 @@ impl ListArray {
         ))
     }
 
-    pub fn with_validity(&self, validity: Option<arrow2::bitmap::Bitmap>) -> DaftResult<Self> {
+    pub fn with_validity(&self, validity: Option<daft_arrow::bitmap::Bitmap>) -> DaftResult<Self> {
         if let Some(v) = &validity
             && v.len() != self.len()
         {

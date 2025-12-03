@@ -90,7 +90,8 @@ pub mod pylib {
                 1..=10 => LevelFilter::Debug,
                 11..=20 => LevelFilter::Info,
                 21..=30 => LevelFilter::Warn,
-                _ => LevelFilter::Error,
+                31..=40 => LevelFilter::Error,
+                _ => LevelFilter::Error, // CRITICAL or anything above also becomes Error
             }
         };
 

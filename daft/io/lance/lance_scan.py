@@ -223,7 +223,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     func_args=(self._ds.uri, open_kwargs, [fragment.fragment_id], required_columns, None, rows_to_scan),
                     schema=self.schema()._schema,
                     num_rows=rows_to_scan,
-                    size_bytes=None,
+                    size_bytes=sum(file.file_size_bytes for file in fragment.metadata.files),
                     pushdowns=pushdowns,
                     stats=None,
                     source_type=self.name(),
@@ -240,10 +240,8 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         if self._fragment_group_size is None or self._fragment_group_size <= 1:
             # Default behavior: one fragment per task
             for fragment in fragments:
-                size_bytes = None
-                stats = None
-                num_rows = None
-                if fragment.count_rows(pushed_expr) == 0:
+                num_rows = fragment.count_rows(pushed_expr)
+                if num_rows == 0:
                     continue
 
                 yield ScanTask.python_factory_func_scan_task(
@@ -259,9 +257,9 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     ),
                     schema=self.schema()._schema,
                     num_rows=num_rows,
-                    size_bytes=size_bytes,
+                    size_bytes=sum(file.file_size_bytes for file in fragment.metadata.files),
                     pushdowns=pushdowns,
-                    stats=stats,
+                    stats=None,
                     source_type=self.name(),
                 )
         else:
@@ -269,24 +267,29 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             fragment_groups = []
             current_group = []
 
+            group_num_rows = 0
+            group_size_bytes = 0
             for fragment in fragments:
-                if fragment.count_rows(pushed_expr) == 0:
+                num_rows = fragment.count_rows(pushed_expr)
+                if num_rows == 0:
                     continue
+
                 current_group.append(fragment)
+                group_num_rows += num_rows
+                group_size_bytes += sum(file.file_size_bytes for file in fragment.metadata.files)
                 if len(current_group) >= self._fragment_group_size:
-                    fragment_groups.append(current_group)
+                    fragment_groups.append((current_group, group_num_rows, group_size_bytes))
                     current_group = []
+                    group_num_rows = 0
+                    group_size_bytes = 0
 
             # Add the last group if it has any fragments
             if current_group:
-                fragment_groups.append(current_group)
+                fragment_groups.append((current_group, group_num_rows, group_size_bytes))
 
             # Create scan tasks for each fragment group
-            for fragment_group in fragment_groups:
+            for fragment_group, num_rows, size_bytes in fragment_groups:
                 fragment_ids = [fragment.fragment_id for fragment in fragment_group]
-                size_bytes = None
-                stats = None
-                num_rows = None
 
                 yield ScanTask.python_factory_func_scan_task(
                     module=_lancedb_table_factory_function.__module__,
@@ -303,7 +306,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     num_rows=num_rows,
                     size_bytes=size_bytes,
                     pushdowns=pushdowns,
-                    stats=stats,
+                    stats=None,
                     source_type=self.name(),
                 )
 

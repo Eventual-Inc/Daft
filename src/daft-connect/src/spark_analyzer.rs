@@ -5,7 +5,7 @@ pub(crate) mod expr_analyzer;
 
 use std::{collections::HashMap, io::Cursor, rc::Rc, sync::Arc};
 
-use arrow2::io::ipc::read::{StreamReader, StreamState, read_stream_metadata};
+use daft_arrow::io::ipc::read::{StreamReader, StreamState, read_stream_metadata};
 use daft_core::series::Series;
 use daft_dsl::unresolved_col;
 use daft_logical_plan::{

@@ -1,4 +1,4 @@
-use arrow2::{
+use daft_arrow::{
     array::PrimitiveArray,
     types::{Index, NativeType},
 };

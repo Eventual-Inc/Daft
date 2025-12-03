@@ -219,8 +219,8 @@ impl OuterHashJoinProbeSink {
     ) -> DaftResult<Arc<MicroPartition>> {
         let build_side_tables = probe_state.get_record_batches().iter().collect::<Vec<_>>();
 
-        let input_tables = input.get_tables()?;
-        let final_tables = input_tables
+        let final_tables = input
+            .record_batches()
             .iter()
             .map(|input_table| {
                 let mut build_side_growable = GrowableRecordBatch::new(
@@ -288,8 +288,8 @@ impl OuterHashJoinProbeSink {
     ) -> DaftResult<Arc<MicroPartition>> {
         let build_side_tables = probe_state.get_record_batches().iter().collect::<Vec<_>>();
 
-        let input_tables = input.get_tables()?;
-        let final_tables = input_tables
+        let final_tables = input
+            .record_batches()
             .iter()
             .map(|input_table| {
                 // We can instantiate with capacity for left/right probes since we will always push even if there's no match.
@@ -362,8 +362,8 @@ impl OuterHashJoinProbeSink {
         output_schema: &SchemaRef,
     ) -> DaftResult<Arc<MicroPartition>> {
         let build_side_tables = probe_state.get_record_batches().iter().collect::<Vec<_>>();
-        let input_tables = input.get_tables()?;
-        let final_tables = input_tables
+        let final_tables = input
+            .record_batches()
             .iter()
             .map(|input_table| {
                 // We can instantiate with capacity for outer probes since we will always push even if there's no match.
