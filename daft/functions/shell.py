@@ -6,13 +6,11 @@ import shlex
 import subprocess
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 import daft
 from daft.datatype import DataType
-
-if TYPE_CHECKING:
-    from daft.expressions import Expression
+from daft.expressions import Expression
 
 ArgStyle = Literal["separate", "equals"]
 OnError = Literal["raise", "ignore", "log"]
@@ -263,33 +261,25 @@ def shell_op(
     --------
     Use positional arguments:
 
-    >>> df = daft.from_pydict({"a": [1, 3], "b": [2, 4]})
+    >>> df = daft.from_pydict({"a": [1, 2], "b": [2, 4]})
     >>> expr = daft.functions.shell_op(
-    ...     cmd=f"{sys.executable} script.py",
+    ...     cmd="echo",
     ...     params=[df["a"], df["b"]],
     ... )
-    >>> df.select(expr.alias("out"))
-
-    Use named arguments and equals style:
-
-    >>> opts = daft.functions.shell.ShellOpOptions(arg_style="equals")
-    >>> expr = daft.functions.shell_op(
-    ...     cmd=f"{sys.executable} script.py",
-    ...     params={"--start": df["a"], "--end": df["b"]},
-    ...     options=opts,
-    ... )
+    >>> df = df.select(expr.alias("out"))
 
     Structured return with stderr and exit code:
 
+    >>> df = daft.from_pydict({"path": ["/a", "/b"]})
     >>> opts = daft.functions.shell.ShellOpOptions(
     ...     return_struct=True, capture_stderr=True, include_exit_code=True, include_duration_ms=True
     ... )
     >>> expr = daft.functions.shell_op(
-    ...     cmd=f"{sys.executable} script.py",
-    ...     params={"--start": df["a"], "--end": df["b"]},
+    ...     cmd="ls",
+    ...     params=["-la", df["path"]],
     ...     options=opts,
     ... )
-    >>> df.select(expr)  # columns: stdout, stderr, exit_code, duration_ms
+    >>> df = df.select(expr)  # columns: stdout, stderr, exit_code, duration_ms
 
     """
     options = options or ShellOpOptions()
