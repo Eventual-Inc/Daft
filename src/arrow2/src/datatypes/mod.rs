@@ -247,25 +247,6 @@ impl DataType {
             }
         }
     }
-
-    pub fn can_convert_to_csv(&self) -> bool {
-        !self.is_nested()
-    }
-
-    /// Returns true if this type is nested (List, FixedSizeList, LargeList, Struct, Union, or Map), or a dictionary of a nested type
-    #[inline]
-    pub fn is_nested(&self) -> bool {
-        match self {
-            DataType::Dictionary(_, v, ..) => v.is_nested(),
-            DataType::List(_)
-            | DataType::FixedSizeList(_, _)
-            | DataType::LargeList(_)
-            | DataType::Struct(_)
-            | DataType::Union(_, _, _)
-            | DataType::Map(_, _) => true,
-            _ => false,
-        }
-    }
 }
 
 #[cfg(feature = "arrow")]

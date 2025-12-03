@@ -51,7 +51,7 @@ impl<B: StorageBackend, W> BatchFileWriter<B, W> {
     }
 
     fn estimate_bytes_to_write(&self, data: &MicroPartition) -> DaftResult<usize> {
-        let base_size = data.size_bytes().unwrap_or(0);
+        let base_size = data.size_bytes();
         Ok((base_size as f64 * self.inflation_factor) as usize)
     }
 
@@ -78,7 +78,7 @@ impl<B: StorageBackend + Send + Sync, W: Send + Sync + 'static> AsyncFileWriter
         let est_bytes_to_write = self.estimate_bytes_to_write(&data)?;
         self.bytes_written += est_bytes_to_write;
 
-        let record_batches = data.get_tables()?;
+        let record_batches = data.record_batches();
         let record_batches: Vec<ArrowRecordBatch> = record_batches
             .iter()
             .map(|rb| rb.clone().try_into())
@@ -115,7 +115,7 @@ impl<B: StorageBackend + Send + Sync, W: Send + Sync + 'static> AsyncFileWriter
         let field = Field::new(RETURN_PATHS_COLUMN_NAME, DataType::Utf8);
         let filename_series = Series::from_arrow(
             Arc::new(field.clone()),
-            Box::new(arrow2::array::Utf8Array::<i64>::from_slice([&self
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice([&self
                 .filename
                 .to_string_lossy()])),
         )?;
