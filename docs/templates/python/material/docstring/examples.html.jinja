@@ -16,7 +16,7 @@ Context:
 {% endblock logs %}
 
 {# YORE: Bump 2: Replace `"|get_template` with `.html.jinja"` within line. #}
-{% import "language"|get_template as lang with context %}
+{% import "language.html.jinja" as lang with context %}
 {#- Language module providing the `t` translation method. -#}
 
 <p><span class="doc-section-title">{{ section.title or lang.t("Examples:") }}</span></p>
