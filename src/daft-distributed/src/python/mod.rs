@@ -86,6 +86,22 @@ impl PyDistributedPhysicalPlan {
         self.plan.idx().to_string()
     }
 
+    fn num_partitions(&self) -> PyResult<usize> {
+        // Create pipeline nodes from the logical plan
+        let plan_config = PlanConfig::new(
+            self.plan.idx(),
+            self.plan.query_id(),
+            self.plan.execution_config().clone(),
+        );
+        let pipeline_node = logical_plan_to_pipeline_node(
+            plan_config,
+            self.plan.logical_plan().clone(),
+            Default::default(),
+        )?;
+
+        Ok(pipeline_node.num_partitions())
+    }
+
     /// Visualize the distributed pipeline as ASCII text
     fn repr_ascii(&self, simple: bool) -> PyResult<String> {
         // Create pipeline nodes from the logical plan

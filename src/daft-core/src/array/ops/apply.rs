@@ -1,7 +1,7 @@
 use std::iter::zip;
 
-use arrow2::array::PrimitiveArray;
 use common_error::{DaftError, DaftResult};
+use daft_arrow::array::PrimitiveArray;
 
 use super::full::FullNull;
 use crate::{

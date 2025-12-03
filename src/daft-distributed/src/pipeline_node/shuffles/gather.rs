@@ -77,7 +77,7 @@ impl GatherNode {
             self_clone.config.schema.clone(),
             &(self_clone as Arc<dyn PipelineNodeImpl>),
             None,
-        )?;
+        );
 
         let _ = result_tx.send(task).await;
         Ok(())

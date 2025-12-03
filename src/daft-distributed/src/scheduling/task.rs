@@ -343,7 +343,7 @@ impl<H: TaskResultHandle> TaskResultAwaiter<H> {
 pub(super) mod tests {
     use std::{any::Any, sync::Mutex, time::Duration};
 
-    use common_error::{DaftError, DaftResult};
+    use common_error::DaftError;
     use common_partitioning::Partition;
 
     use super::*;
@@ -369,12 +369,12 @@ pub(super) mod tests {
             self
         }
 
-        fn size_bytes(&self) -> DaftResult<Option<usize>> {
-            Ok(Some(self.size_bytes))
+        fn size_bytes(&self) -> usize {
+            self.size_bytes
         }
 
-        fn num_rows(&self) -> DaftResult<usize> {
-            Ok(self.num_rows)
+        fn num_rows(&self) -> usize {
+            self.num_rows
         }
     }
 

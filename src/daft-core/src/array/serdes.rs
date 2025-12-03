@@ -191,8 +191,8 @@ impl serde::Serialize for ListArray {
 
         values.push(Some(&self.flat_child));
 
-        let arrow2_offsets = arrow2::array::Int64Array::new(
-            arrow2::datatypes::DataType::Int64,
+        let arrow2_offsets = daft_arrow::array::Int64Array::new(
+            daft_arrow::datatypes::DataType::Int64,
             self.offsets().buffer().clone(),
             None,
         );

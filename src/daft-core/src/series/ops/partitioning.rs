@@ -100,7 +100,7 @@ impl Series {
             .as_arrow()
             .into_iter()
             .map(|v| v.map(|v| (v & i32::MAX) % n));
-        let array = Box::new(arrow2::array::Int32Array::from_iter(buckets));
+        let array = Box::new(daft_arrow::array::Int32Array::from_iter(buckets));
         Ok(Int32Array::from((format!("{}_bucket", self.name()).as_str(), array)).into_series())
     }
 

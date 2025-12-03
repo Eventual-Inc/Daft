@@ -4,9 +4,9 @@ use std::{
     sync::Arc,
 };
 
-use arrow2::io::parquet::read::column_iter_to_arrays;
 use common_error::DaftResult;
 use common_runtime::{combine_stream, get_io_runtime};
+use daft_arrow::io::parquet::read::column_iter_to_arrays;
 use daft_core::prelude::*;
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use daft_io::{IOClient, IOStatsRef};
@@ -311,7 +311,7 @@ pub struct RowGroupRange {
 pub struct ParquetFileReader {
     uri: String,
     metadata: Arc<parquet2::metadata::FileMetaData>,
-    arrow_schema: arrow2::datatypes::SchemaRef,
+    arrow_schema: daft_arrow::datatypes::SchemaRef,
     row_ranges: Arc<Vec<RowGroupRange>>,
     chunk_size: Option<usize>,
 }
@@ -325,7 +325,7 @@ impl ParquetFileReader {
     fn new(
         uri: String,
         metadata: parquet2::metadata::FileMetaData,
-        arrow_schema: arrow2::datatypes::Schema,
+        arrow_schema: daft_arrow::datatypes::Schema,
         row_ranges: Vec<RowGroupRange>,
         chunk_size: Option<usize>,
     ) -> super::Result<Self> {
@@ -338,7 +338,7 @@ impl ParquetFileReader {
         })
     }
 
-    pub fn arrow_schema(&self) -> &Arc<arrow2::datatypes::Schema> {
+    pub fn arrow_schema(&self) -> &Arc<daft_arrow::datatypes::Schema> {
         &self.arrow_schema
     }
 
@@ -732,7 +732,7 @@ impl ParquetFileReader {
     pub async fn read_from_ranges_into_arrow_arrays(
         self,
         ranges: Arc<RangesContainer>,
-    ) -> DaftResult<(Vec<Vec<Box<dyn arrow2::array::Array>>>, usize)> {
+    ) -> DaftResult<(Vec<Vec<Box<dyn daft_arrow::array::Array>>>, usize)> {
         let metadata = self.metadata;
         let all_handles = self
             .arrow_schema

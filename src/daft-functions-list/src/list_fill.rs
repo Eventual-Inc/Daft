@@ -62,7 +62,7 @@ pub fn list_fill(elem: ExprRef, n: ExprRef) -> ExprRef {
 #[cfg(test)]
 #[allow(deprecated)]
 mod tests {
-    use arrow2::offset::OffsetsBuffer;
+    use daft_arrow::offset::OffsetsBuffer;
     use daft_core::{
         array::ListArray,
         datatypes::{Int8Array, Utf8Array},

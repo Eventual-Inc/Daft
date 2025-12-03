@@ -45,6 +45,12 @@ impl ScanTaskSource {
         schema: SchemaRef,
         cfg: &DaftExecutionConfig,
     ) -> Self {
+        // Split all scan tasks for parallelism
+        let scan_tasks = scan_tasks
+            .into_iter()
+            .flat_map(|scan_task| scan_task.split())
+            .collect::<Vec<_>>();
+
         // Determine the number of parallel tasks to run based on available CPU cores and row limits
         let num_cpus = get_compute_pool_num_threads();
         let mut num_parallel_tasks = match pushdowns.limit {

@@ -1,5 +1,5 @@
-use arrow2::types::Index;
 use common_error::DaftResult;
+use daft_arrow::types::Index;
 
 use super::{Growable, bitmap_growable::ArrowBitmapGrowable};
 use crate::{
@@ -12,9 +12,9 @@ pub struct ListGrowable<'a> {
     name: String,
     dtype: DataType,
     child_growable: Box<dyn Growable + 'a>,
-    child_arrays_offsets: Vec<&'a arrow2::offset::OffsetsBuffer<i64>>,
+    child_arrays_offsets: Vec<&'a daft_arrow::offset::OffsetsBuffer<i64>>,
     growable_validity: Option<ArrowBitmapGrowable<'a>>,
-    growable_offsets: arrow2::offset::Offsets<i64>,
+    growable_offsets: daft_arrow::offset::Offsets<i64>,
 }
 
 impl<'a> ListGrowable<'a> {
@@ -52,7 +52,7 @@ impl<'a> ListGrowable<'a> {
                     child_growable,
                     child_arrays_offsets,
                     growable_validity,
-                    growable_offsets: arrow2::offset::Offsets::<i64>::default(),
+                    growable_offsets: daft_arrow::offset::Offsets::<i64>::default(),
                 }
             }
             _ => panic!("Cannot create ListGrowable from dtype: {}", dtype),

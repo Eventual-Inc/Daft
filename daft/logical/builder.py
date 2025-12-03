@@ -25,10 +25,6 @@ if TYPE_CHECKING:
     from pyiceberg.table import Table as IcebergTable
 
     from daft.io import DataSink
-    from daft.plan_scheduler.physical_plan_scheduler import (
-        AdaptivePhysicalPlanScheduler,
-        PhysicalPlanScheduler,
-    )
     from daft.runners.partitioning import PartitionCacheEntry
 
 
@@ -58,35 +54,6 @@ class LogicalPlanBuilder:
 
     def __init__(self, builder: _LogicalPlanBuilder) -> None:
         self._builder = builder
-
-    def to_physical_plan_scheduler(self, daft_execution_config: PyDaftExecutionConfig) -> PhysicalPlanScheduler:
-        """Convert the underlying logical plan to a physical plan scheduler.
-
-        physical plan scheduler is used to generate executable tasks for the physical plan.
-
-        This should be called after triggering optimization with self.optimize().
-
-        **Warning**: This function is not part of the stable API and may change
-        without notice. It is intended for internal or experimental use only.
-        """
-        from daft.plan_scheduler.physical_plan_scheduler import PhysicalPlanScheduler
-
-        return PhysicalPlanScheduler.from_logical_plan_builder(
-            self,
-            daft_execution_config,
-        )
-
-    def to_adaptive_physical_plan_scheduler(
-        self, daft_execution_config: PyDaftExecutionConfig
-    ) -> AdaptivePhysicalPlanScheduler:
-        from daft.plan_scheduler.physical_plan_scheduler import (
-            AdaptivePhysicalPlanScheduler,
-        )
-
-        return AdaptivePhysicalPlanScheduler.from_logical_plan_builder(
-            self,
-            daft_execution_config,
-        )
 
     def schema(self) -> Schema:
         """The schema of the current logical plan."""

@@ -164,17 +164,12 @@ impl ProbeTable {
 }
 
 impl Probeable for ProbeTable {
-    fn probe_indices<'a>(
-        &'a self,
-        table: &'a RecordBatch,
-        prefix_sums: &'a [usize],
-    ) -> DaftResult<IndicesMapper<'a>> {
+    fn probe_indices<'a>(&'a self, table: &'a RecordBatch) -> DaftResult<IndicesMapper<'a>> {
         let iter = self.probe(table)?;
         Ok(IndicesMapper::new(
             Box::new(iter),
             Self::TABLE_IDX_SHIFT,
             Self::LOWER_MASK,
-            prefix_sums,
         ))
     }
 

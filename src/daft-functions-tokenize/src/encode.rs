@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use arrow2::{
+use common_error::DaftResult;
+use daft_arrow::{
     array::{MutableArray, MutablePrimitiveArray, PrimitiveArray},
     offset::OffsetsBuffer,
 };
-use common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::functions::prelude::*;
 use daft_io::IOConfig;

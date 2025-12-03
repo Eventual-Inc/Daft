@@ -1,5 +1,5 @@
 [dependencies]
-arrow2 = {workspace = true}
+daft-arrow = {path = "../daft-arrow"}
 common-daft-config = {path = "../common/daft-config"}
 common-error = {path = "../common/error"}
 common-io-config = {path = "../common/io-config", default-features = false}

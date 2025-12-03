@@ -1,7 +1,6 @@
 use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
-use common_error::DaftResult;
 use common_metrics::StatSnapshot;
 use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::PyLocalPhysicalPlan;
@@ -160,11 +159,11 @@ impl Partition for RayPartitionRef {
     fn as_any(&self) -> &dyn Any {
         self
     }
-    fn size_bytes(&self) -> DaftResult<Option<usize>> {
-        Ok(Some(self.size_bytes))
+    fn size_bytes(&self) -> usize {
+        self.size_bytes
     }
-    fn num_rows(&self) -> DaftResult<usize> {
-        Ok(self.num_rows)
+    fn num_rows(&self) -> usize {
+        self.num_rows
     }
 }
 

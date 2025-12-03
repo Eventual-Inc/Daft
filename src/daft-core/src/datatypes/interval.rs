@@ -1,7 +1,7 @@
 use std::{fmt::Display, ops::Neg};
 
-use arrow2::types::months_days_ns;
 use common_error::DaftResult;
+use daft_arrow::types::months_days_ns;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};

@@ -11,7 +11,6 @@ from pgvector.psycopg import register_vector
 
 from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
 from daft.datatype import DataType
-from daft.expressions import col
 from daft.io._sql import read_sql
 from daft.logical.schema import Field
 
@@ -60,29 +59,6 @@ def postgres_connection(connection_string: str, extensions: list[str] | None) ->
 if TYPE_CHECKING:
     from daft.dataframe import DataFrame
     from daft.io.partitioning import PartitionField
-
-
-def _convert_embeddings_to_lists(df: DataFrame) -> DataFrame:
-    """Convert any embedding columns to list format for PostgreSQL compatibility."""
-    schema = df.schema()
-    columns_to_convert = []
-
-    for field in schema:
-        if field.dtype.is_embedding():
-            columns_to_convert.append(field.name)
-
-    if not columns_to_convert:
-        return df
-
-    # Convert embedding columns to lists
-    result_df = df
-    for col_name in columns_to_convert:
-        # Get the embedding's inner dtype and convert to list
-        embedding_dtype = schema[col_name].dtype
-        inner_dtype = embedding_dtype.dtype  # The element type (e.g., float32)
-        result_df = result_df.with_column(col_name, df[col_name].cast(DataType.list(inner_dtype)))
-
-    return result_df
 
 
 def _daft_dtype_to_postgres_type(dtype: DataType, set_dimensions: bool = True) -> str:
@@ -704,89 +680,19 @@ class PostgresTable(Table):
         """Overwrite the table with the DataFrame."""
         connection_string, identifier = self._inner
 
-        if len(identifier) == 1:
-            # When no schema is specified, PostgreSQL uses the schema search path to select the schema to use.
-            # Since this is user-configurable, we simply pass along the single identifier to PostgreSQL.
-            # See: https://www.postgresql.org/docs/current/ddl-schemas.html#DDL-SCHEMAS-PATH
-            schema_name = None
-            table_name = identifier[0]
-            quoted_full_table = psycopg.sql.Identifier(table_name)
-        elif len(identifier) == 2:
-            schema_name = identifier[0]
-            table_name = identifier[1]
-            quoted_schema = psycopg.sql.Identifier(schema_name)
-            quoted_table = psycopg.sql.Identifier(table_name)
-            quoted_full_table = psycopg.sql.SQL(".").join([quoted_schema, quoted_table])
-        else:
-            raise ValueError(f"Invalid table identifier: {identifier}")
+        temp_catalog = PostgresCatalog.__new__(PostgresCatalog)
+        temp_catalog._inner = connection_string
+        temp_catalog._extensions = self._extensions
 
-        # Cast embedding columns to proper vector type before writing
-        select_exprs = []
-        for field in df.schema():
-            if field.dtype.is_embedding():
-                # Cast embedding columns to list type so they materialize as Python lists
-                # This allows pgvector to properly adapt them in binary COPY
-                inner_dtype = field.dtype.dtype
-                select_exprs.append(col(field.name).cast(DataType.list(inner_dtype)))
-            else:
-                select_exprs.append(col(field.name))
+        table_exists = temp_catalog._has_table(identifier)
 
-        if select_exprs:
-            df = df.select(*select_exprs)
+        if table_exists:
+            temp_catalog._drop_table(identifier)
 
-        # Build column definitions from Daft schema.
-        column_defs = []
-        for field in df.schema():
-            field_name = field.name
-            field_type = _daft_dtype_to_postgres_type(field.dtype)
-            quoted_name = psycopg.sql.Identifier(field_name)
-            column_defs.append(psycopg.sql.SQL("{} {}").format(quoted_name, psycopg.sql.SQL(field_type)))
-
-        # Build column list for COPY statement.
-        columns_str = psycopg.sql.SQL(", ").join(psycopg.sql.Identifier(field.name) for field in df.schema())
-
-        # Build types to pass into the COPY statement.
-        types_to_set = [_daft_dtype_to_postgres_type(field.dtype, set_dimensions=False) for field in df.schema()]
-
-        copy_sql = psycopg.sql.SQL("COPY {} ({}) FROM STDIN WITH (FORMAT BINARY)").format(
-            quoted_full_table, columns_str
-        )
-
-        # TODO(desmond): This writes results sequentially on a single node. We should replace
-        # this with DataFrame.write_sql() once we merge pull request #5471.
-        # Additionally, although ADBC currently has limited type support, it might be worth
-        # exploring for bulk loading.
-        with postgres_connection(connection_string, self._extensions) as conn:
-            with conn.cursor() as cur:
-                # Drop and recreate the table to overwrite.
-                drop_sql = psycopg.sql.SQL("DROP TABLE IF EXISTS {}").format(quoted_full_table)
-                cur.execute(drop_sql)
-
-                if schema_name:
-                    cur.execute(
-                        psycopg.sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(psycopg.sql.Identifier(schema_name))
-                    )
-
-                create_sql = psycopg.sql.SQL("CREATE TABLE {} ({})").format(
-                    quoted_full_table, psycopg.sql.SQL(", ").join(column_defs)
-                )
-                cur.execute(create_sql)
-
-                with cur.copy(copy_sql) as copy:
-                    copy.set_types(types_to_set)
-
-                    for batch in df.to_arrow_iter():
-                        for row in batch.to_pylist():
-                            values = list(row.values())
-                            # Serialize complex types that are mapped to 'text' to JSON strings for binary COPY
-                            serialized_values = []
-                            for value, postgres_type in zip(values, types_to_set):
-                                if postgres_type in ("text", "jsonb") and not isinstance(
-                                    value, (str, int, float, bool, type(None))
-                                ):
-                                    # Complex types (lists, dicts, etc.) need to be JSON serialized.
-                                    serialized_values.append(json.dumps(value))
-                                else:
-                                    serialized_values.append(value)
-                            copy.write_row(serialized_values)
-            conn.commit()
+        # Extract enable_rls from options if provided, defaulting to True.
+        enable_rls = options.get("enable_rls", True) if options else True
+        properties = {"enable_rls": enable_rls}
+        temp_catalog._create_table(identifier, df.schema(), properties=properties)
+        # Now append the data (since table is empty, this effectively overwrites).
+        self.append(df, **options)
+        return

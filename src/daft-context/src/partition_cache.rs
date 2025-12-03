@@ -17,7 +17,7 @@ use daft_micropartition::{
 /// Create an in-memory scan from arrow arrays, like `DataFrame._from_arrow`
 pub fn logical_plan_from_arrow<S: Into<SchemaRef>>(
     schema: S,
-    arrays: Vec<Box<dyn arrow2::array::Array>>,
+    arrays: Vec<Box<dyn daft_arrow::array::Array>>,
 ) -> DaftResult<LogicalPlanBuilder> {
     let schema = schema.into();
     let part = MicroPartition::from_arrow(schema, arrays)?;
@@ -104,7 +104,7 @@ pub fn put_partition_set_into_cache(
 mod test {
     use std::sync::Arc;
 
-    use arrow2::array::Int64Array;
+    use daft_arrow::array::Int64Array;
     use daft_core::prelude::{DataType, Field, Schema};
 
     use super::*;
@@ -115,7 +115,7 @@ mod test {
         let schema = Schema::new(vec![Field::new("col1", DataType::Int64)]);
         let schema = Arc::new(schema);
         let array = Int64Array::from_vec(vec![1, 2, 3, 4]);
-        let arrays = vec![Box::new(array) as Box<dyn arrow2::array::Array>];
+        let arrays = vec![Box::new(array) as Box<dyn daft_arrow::array::Array>];
         // verify from_arrow does not fail
         let result = logical_plan_from_arrow(schema, arrays);
         let builder = result.expect("from_arrow should have been ok");

@@ -3,8 +3,8 @@ use std::{
     hash::{BuildHasherDefault, Hash},
 };
 
-use arrow2::array::Array;
 use common_error::DaftResult;
+use daft_arrow::array::Array;
 use fnv::FnvHashMap;
 
 use super::{IntoGroups, as_arrow::AsArrow};
@@ -101,7 +101,8 @@ where
     <T as DaftNumericType>::Native: std::cmp::Eq,
 {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        let array: &arrow2::array::PrimitiveArray<<T as DaftNumericType>::Native> = self.as_arrow();
+        let array: &daft_arrow::array::PrimitiveArray<<T as DaftNumericType>::Native> =
+            self.as_arrow();
         if array.null_count() > 0 {
             make_groups(array.iter())
         } else {
@@ -118,7 +119,8 @@ where
     <T as DaftNumericType>::Native: std::cmp::Eq,
 {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
-        let array: &arrow2::array::PrimitiveArray<<T as DaftNumericType>::Native> = self.as_arrow();
+        let array: &daft_arrow::array::PrimitiveArray<<T as DaftNumericType>::Native> =
+            self.as_arrow();
         if array.null_count() > 0 {
             make_unique_idxs(array.iter())
         } else {

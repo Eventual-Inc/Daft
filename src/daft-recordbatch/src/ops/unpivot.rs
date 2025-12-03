@@ -41,7 +41,9 @@ impl RecordBatch {
             .schema
             .field_names()
             .flat_map(|n| std::iter::repeat_n(n, self.len()));
-        let variable_arr = Box::new(arrow2::array::Utf8Array::from_iter_values(variable_column));
+        let variable_arr = Box::new(daft_arrow::array::Utf8Array::from_iter_values(
+            variable_column,
+        ));
         let variable_series = Utf8Array::from((variable_name, variable_arr)).into_series();
 
         let values_cols: Vec<&Series> = values_table.columns.iter().collect();

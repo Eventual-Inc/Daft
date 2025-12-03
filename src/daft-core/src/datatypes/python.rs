@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use arrow2::{
+use common_error::{DaftError, DaftResult};
+use common_py_serde::pickle_dumps;
+use daft_arrow::{
     array::Array,
     bitmap::{Bitmap, utils::ZipValidity},
     buffer::Buffer,
 };
-use common_error::{DaftError, DaftResult};
-use common_py_serde::pickle_dumps;
 use daft_schema::{dtype::DataType, field::Field};
 use pyo3::{Py, PyAny, PyResult, Python};
 
@@ -70,17 +70,17 @@ impl PythonArray {
         }
     }
 
-    pub fn to_pickled_arrow(&self) -> DaftResult<arrow2::array::BinaryArray<i64>> {
+    pub fn to_pickled_arrow(&self) -> DaftResult<daft_arrow::array::BinaryArray<i64>> {
         let pickled = Python::attach(|py| {
             self.iter()
                 .map(|v| v.map(|obj| pickle_dumps(py, obj)).transpose())
                 .collect::<PyResult<Vec<_>>>()
         })?;
 
-        Ok(arrow2::array::BinaryArray::from(pickled))
+        Ok(daft_arrow::array::BinaryArray::from(pickled))
     }
 
-    pub fn to_arrow(&self) -> DaftResult<Box<dyn arrow2::array::Array>> {
+    pub fn to_arrow(&self) -> DaftResult<Box<dyn daft_arrow::array::Array>> {
         let arrow_logical_type = self.data_type().to_arrow().unwrap();
         let physical_arrow_array = self.to_pickled_arrow()?;
         let logical_arrow_array = physical_arrow_array.convert_logical_type(arrow_logical_type);

@@ -162,7 +162,7 @@ fn to_datetime_impl(
                 }
                 _ => Ok(None),
             })
-            .collect::<DaftResult<arrow2::array::Int64Array>>()?;
+            .collect::<DaftResult<daft_arrow::array::Int64Array>>()?;
 
     let result = Int64Array::from((arr.name(), Box::new(arrow_result)));
     let result = TimestampArray::new(

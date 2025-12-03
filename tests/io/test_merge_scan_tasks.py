@@ -3,6 +3,11 @@ from __future__ import annotations
 import pytest
 
 import daft
+from tests.conftest import get_tests_daft_runner_name
+
+pytestmark = pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray", reason="Merge scan tasks are only supported on the Ray runner"
+)
 
 
 @pytest.fixture(scope="function")
@@ -17,6 +22,7 @@ def csv_files(tmpdir):
 
 def test_merge_scan_task_exceed_max(csv_files):
     with daft.execution_config_ctx(
+        enable_scan_task_split_and_merge=True,
         scan_tasks_min_size_bytes=0,
         scan_tasks_max_size_bytes=0,
     ):
@@ -28,6 +34,7 @@ def test_merge_scan_task_exceed_max(csv_files):
 
 def test_merge_scan_task_below_max(csv_files):
     with daft.execution_config_ctx(
+        enable_scan_task_split_and_merge=True,
         scan_tasks_min_size_bytes=11,
         scan_tasks_max_size_bytes=12,
     ):
@@ -39,6 +46,7 @@ def test_merge_scan_task_below_max(csv_files):
 
 def test_merge_scan_task_above_min(csv_files):
     with daft.execution_config_ctx(
+        enable_scan_task_split_and_merge=True,
         scan_tasks_min_size_bytes=9,
         scan_tasks_max_size_bytes=20,
     ):
@@ -50,6 +58,7 @@ def test_merge_scan_task_above_min(csv_files):
 
 def test_merge_scan_task_below_min(csv_files):
     with daft.execution_config_ctx(
+        enable_scan_task_split_and_merge=True,
         scan_tasks_min_size_bytes=17,
         scan_tasks_max_size_bytes=20,
     ):
@@ -64,6 +73,7 @@ def test_merge_scan_task_limit_override(csv_files):
     #
     # With a very small CSV inflation factor, the merger will think that these CSVs provide very few rows of data and will be more aggressive
     with daft.execution_config_ctx(
+        enable_scan_task_split_and_merge=True,
         scan_tasks_min_size_bytes=17,
         scan_tasks_max_size_bytes=20,
         csv_inflation_factor=0.1,
@@ -75,6 +85,7 @@ def test_merge_scan_task_limit_override(csv_files):
 
     # With a very large CSV inflation factor, the merger will think that these CSVs provide more rows of data and will be more conservative
     with daft.execution_config_ctx(
+        enable_scan_task_split_and_merge=True,
         scan_tasks_min_size_bytes=17,
         scan_tasks_max_size_bytes=20,
         csv_inflation_factor=2.0,
@@ -85,6 +96,7 @@ def test_merge_scan_task_limit_override(csv_files):
 
 def test_merge_scan_task_up_to_max_sources(csv_files):
     with daft.execution_config_ctx(
+        enable_scan_task_split_and_merge=True,
         scan_tasks_min_size_bytes=30,
         scan_tasks_max_size_bytes=30,
         max_sources_per_scan_task=2,
@@ -106,6 +118,7 @@ def test_merge_scan_task_up_to_max_sources(csv_files):
 )
 def test_merge_scan_tasks_does_not_merge_warc(min_size_bytes, max_size_bytes):
     with daft.execution_config_ctx(
+        enable_scan_task_split_and_merge=True,
         scan_tasks_min_size_bytes=min_size_bytes,
         scan_tasks_max_size_bytes=max_size_bytes,
     ):

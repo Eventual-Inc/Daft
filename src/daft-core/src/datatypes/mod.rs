@@ -10,7 +10,7 @@ pub use agg_ops::{
     try_mean_aggregation_supertype, try_product_supertype, try_skew_aggregation_supertype,
     try_stddev_aggregation_supertype, try_sum_supertype,
 };
-use arrow2::{
+use daft_arrow::{
     compute::comparison::Simd8,
     types::{NativeType, simd::Simd},
 };
@@ -454,7 +454,7 @@ impl<T: DaftNumericType> DataArray<T> {
 impl<P: AsRef<str>> FromIterator<Option<P>> for Utf8Array {
     #[inline]
     fn from_iter<I: IntoIterator<Item = Option<P>>>(iter: I) -> Self {
-        let arrow_arr = arrow2::array::Utf8Array::<i64>::from_iter(iter);
+        let arrow_arr = daft_arrow::array::Utf8Array::<i64>::from_iter(iter);
         Self::from(("", Box::new(arrow_arr)))
     }
 }

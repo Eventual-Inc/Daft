@@ -3,8 +3,8 @@
 // src/array/ops/utf8.rs instead
 // ****************************************************************************************
 
-use arrow2::array::Utf8Array;
 use common_error::{DaftError, DaftResult};
+use daft_arrow::array::Utf8Array;
 
 fn concat_strings(l: &str, r: &str) -> String {
     // fastest way to concat strings according to https://github.com/hoodie/concatenation_benchmarks-rs
@@ -40,7 +40,7 @@ pub fn add_utf8_arrays(lhs: &Utf8Array<i64>, rhs: &Utf8Array<i64>) -> DaftResult
         return match is_valid {
             true => add_utf8_scalar(lhs, rhs.value(0)),
             false => Ok(Utf8Array::new_null(
-                arrow2::datatypes::DataType::LargeUtf8,
+                daft_arrow::datatypes::DataType::LargeUtf8,
                 lhs.len(),
             )),
         };
@@ -54,7 +54,7 @@ pub fn add_utf8_arrays(lhs: &Utf8Array<i64>, rhs: &Utf8Array<i64>) -> DaftResult
         return match is_valid {
             true => add_scalar_utf8(lhs.value(0), rhs),
             false => Ok(Utf8Array::new_null(
-                arrow2::datatypes::DataType::LargeUtf8,
+                daft_arrow::datatypes::DataType::LargeUtf8,
                 rhs.len(),
             )),
         };

@@ -1,4 +1,4 @@
-use arrow2::{array, types::months_days_ns};
+use daft_arrow::{array, types::months_days_ns};
 
 use crate::{
     array::DataArray,

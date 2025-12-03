@@ -10,7 +10,7 @@ use probe_table::{ProbeTable, ProbeTableBuilder};
 
 use crate::RecordBatch;
 
-struct ArrowTableEntry(Vec<Box<dyn arrow2::array::Array>>);
+struct ArrowTableEntry(Vec<Box<dyn daft_arrow::array::Array>>);
 
 pub fn make_probeable_builder(
     schema: SchemaRef,
@@ -39,7 +39,6 @@ pub struct IndicesMapper<'a> {
     table_idx_shift: usize,
     lower_mask: u64,
     idx_iter: Box<dyn Iterator<Item = Option<&'a [u64]>> + 'a>,
-    prefix_sums: &'a [usize],
 }
 
 impl<'a> IndicesMapper<'a> {
@@ -47,17 +46,15 @@ impl<'a> IndicesMapper<'a> {
         idx_iter: Box<dyn Iterator<Item = Option<&'a [u64]>> + 'a>,
         table_idx_shift: usize,
         lower_mask: u64,
-        prefix_sums: &'a [usize],
     ) -> Self {
         Self {
             table_idx_shift,
             lower_mask,
             idx_iter,
-            prefix_sums,
         }
     }
 
-    pub fn make_iter(self) -> impl Iterator<Item = Option<impl Iterator<Item = u64> + 'a>> {
+    pub fn make_iter(self) -> impl Iterator<Item = Option<impl Iterator<Item = (u32, u64)> + 'a>> {
         let table_idx_shift = self.table_idx_shift;
         let lower_mask = self.lower_mask;
         self.idx_iter.map(move |indices| match indices {
@@ -65,8 +62,7 @@ impl<'a> IndicesMapper<'a> {
                 let inner_iter = indices.iter().map(move |idx| {
                     let table_idx = (idx >> table_idx_shift) as u32;
                     let row_idx = idx & lower_mask;
-                    let idx = self.prefix_sums[table_idx as usize] + row_idx as usize;
-                    idx as u64
+                    (table_idx, row_idx)
                 });
                 Some(inner_iter)
             }
@@ -80,11 +76,7 @@ pub trait Probeable: Send + Sync {
     /// The inner iterator, if present, iterates over the rows of the left table that match the right row.
     /// Otherwise, if the inner iterator is None, indicates that the right row has no matches.
     /// NOTE: This function only works if track_indices is true.
-    fn probe_indices<'a>(
-        &'a self,
-        table: &'a RecordBatch,
-        prefix_sums: &'a [usize],
-    ) -> DaftResult<IndicesMapper<'a>>;
+    fn probe_indices<'a>(&'a self, table: &'a RecordBatch) -> DaftResult<IndicesMapper<'a>>;
 
     /// Probe_exists returns an iterator of booleans. The iterator iterates over the rows of the right table.
     fn probe_exists<'a>(
@@ -96,26 +88,14 @@ pub trait Probeable: Send + Sync {
 #[derive(Clone)]
 pub struct ProbeState {
     probeable: Arc<dyn Probeable>,
-    record_batch: RecordBatch,
-    prefix_sums: Vec<usize>,
+    record_batches: Vec<RecordBatch>,
 }
 
 impl ProbeState {
-    pub fn new(probeable: Arc<dyn Probeable>, tables: Arc<Vec<RecordBatch>>) -> Self {
-        let prefix_sums = tables
-            .iter()
-            .scan(0, |acc, table| {
-                let len = table.len();
-                let old = *acc;
-                *acc += len;
-                Some(old)
-            })
-            .collect();
-        let record_batch = RecordBatch::concat(&tables).unwrap();
+    pub fn new(probeable: Arc<dyn Probeable>, record_batches: Vec<RecordBatch>) -> Self {
         Self {
             probeable,
-            record_batch,
-            prefix_sums,
+            record_batches,
         }
     }
 
@@ -123,9 +103,9 @@ impl ProbeState {
     /// True if the right row has a match in the left table, false otherwise.
     pub fn probe_exists<'a>(
         &'a self,
-        table: &'a RecordBatch,
+        record_batch: &'a RecordBatch,
     ) -> DaftResult<impl Iterator<Item = bool> + 'a> {
-        self.probeable.probe_exists(table)
+        self.probeable.probe_exists(record_batch)
     }
 
     /// Returns an iterator of optional iterators.
@@ -133,14 +113,14 @@ impl ProbeState {
     /// The inner iterator, if present, iterates over the rows of the build table that match the input row.
     pub fn probe_indices<'a>(
         &'a self,
-        table: &'a RecordBatch,
-    ) -> DaftResult<impl Iterator<Item = Option<impl Iterator<Item = u64> + 'a>>> {
+        record_batch: &'a RecordBatch,
+    ) -> DaftResult<impl Iterator<Item = Option<impl Iterator<Item = (u32, u64)> + 'a>>> {
         self.probeable
-            .probe_indices(table, &self.prefix_sums)
+            .probe_indices(record_batch)
             .map(|indices_mapper| indices_mapper.make_iter())
     }
 
-    pub fn get_record_batch(&self) -> &RecordBatch {
-        &self.record_batch
+    pub fn get_record_batches(&self) -> &[RecordBatch] {
+        &self.record_batches
     }
 }

@@ -1,6 +1,7 @@
 use std::{borrow::Borrow, fmt::Write};
 
-use arrow2::{
+use chrono::{Datelike, Timelike};
+use daft_arrow::{
     array::{
         Array, MutableArray, MutableBooleanArray, MutableFixedSizeListArray, MutableListArray,
         MutableNullArray, MutablePrimitiveArray, MutableStructArray, MutableUtf8Array,
@@ -12,7 +13,6 @@ use arrow2::{
     temporal_conversions,
     types::{NativeType, Offset, f16},
 };
-use chrono::{Datelike, Timelike};
 use daft_decoding::deserialize::{
     deserialize_datetime, deserialize_naive_date, deserialize_naive_datetime,
     get_factor_from_timeunit,

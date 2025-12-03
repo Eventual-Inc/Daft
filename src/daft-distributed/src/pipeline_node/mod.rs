@@ -104,17 +104,17 @@ impl MaterializedOutput {
             .collect()
     }
 
-    pub fn num_rows(&self) -> DaftResult<usize> {
+    pub fn num_rows(&self) -> usize {
         self.partition
             .iter()
             .map(|partition| partition.num_rows())
             .sum()
     }
 
-    pub fn size_bytes(&self) -> DaftResult<usize> {
+    pub fn size_bytes(&self) -> usize {
         self.partition
             .iter()
-            .map(|partition| partition.size_bytes().map(|size| size.unwrap_or(0)))
+            .map(|partition| partition.size_bytes())
             .sum()
     }
 }
@@ -219,6 +219,9 @@ impl DistributedPipelineNode {
     }
     pub fn name(&self) -> NodeName {
         self.op.name()
+    }
+    pub fn num_partitions(&self) -> usize {
+        self.op.config().clustering_spec.num_partitions()
     }
     pub fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
         self.op.runtime_stats()
@@ -351,14 +354,14 @@ pub(crate) fn make_in_memory_scan_from_materialized_outputs(
     materialized_outputs: &[MaterializedOutput],
     schema: SchemaRef,
     node_id: NodeID,
-) -> DaftResult<LocalPhysicalPlanRef> {
+) -> LocalPhysicalPlanRef {
     let num_partitions = materialized_outputs.len();
     let mut total_size_bytes = 0;
     let mut total_num_rows = 0;
 
     for materialized_output in materialized_outputs {
-        total_size_bytes += materialized_output.size_bytes()?;
-        total_num_rows += materialized_output.num_rows()?;
+        total_size_bytes += materialized_output.size_bytes();
+        total_num_rows += materialized_output.num_rows();
     }
 
     let info = InMemoryInfo::new(
@@ -371,15 +374,14 @@ pub(crate) fn make_in_memory_scan_from_materialized_outputs(
         None,
         None,
     );
-    let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
+    LocalPhysicalPlan::in_memory_scan(
         info,
         StatsState::NotMaterialized,
         LocalNodeContext {
             origin_node_id: Some(node_id as usize),
             additional: None,
         },
-    );
-    Ok(in_memory_source_plan)
+    )
 }
 
 fn make_new_task_from_materialized_outputs<F>(
@@ -389,7 +391,7 @@ fn make_new_task_from_materialized_outputs<F>(
     node: &Arc<dyn PipelineNodeImpl>,
     plan_builder: F,
     scheduling_strategy: Option<SchedulingStrategy>,
-) -> DaftResult<SubmittableTask<SwordfishTask>>
+) -> SubmittableTask<SwordfishTask>
 where
     F: FnOnce(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef + Send + Sync + 'static,
 {
@@ -397,7 +399,7 @@ where
         &materialized_outputs,
         input_schema,
         node.node_id(),
-    )?;
+    );
     let partition_refs = materialized_outputs
         .into_iter()
         .flat_map(|output| output.into_inner().0)
@@ -413,7 +415,7 @@ where
         scheduling_strategy.unwrap_or(SchedulingStrategy::Spread),
         node.context().to_hashmap(),
     );
-    Ok(SubmittableTask::new(task))
+    SubmittableTask::new(task)
 }
 
 fn make_in_memory_task_from_materialized_outputs(
@@ -422,7 +424,7 @@ fn make_in_memory_task_from_materialized_outputs(
     input_schema: SchemaRef,
     node: &Arc<dyn PipelineNodeImpl>,
     scheduling_strategy: Option<SchedulingStrategy>,
-) -> DaftResult<SubmittableTask<SwordfishTask>> {
+) -> SubmittableTask<SwordfishTask> {
     make_new_task_from_materialized_outputs(
         task_context,
         materialized_outputs,

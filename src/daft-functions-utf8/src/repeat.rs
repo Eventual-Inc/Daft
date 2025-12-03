@@ -104,7 +104,7 @@ where
             })?;
             let arrow_result = self_iter
                 .map(|val| Some(val?.repeat(n)))
-                .collect::<arrow2::array::Utf8Array<i64>>();
+                .collect::<daft_arrow::array::Utf8Array<i64>>();
             Utf8Array::from((arr.name(), Box::new(arrow_result)))
         }
         _ => {
@@ -121,7 +121,7 @@ where
                     }
                     _ => Ok(None),
                 })
-                .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+                .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>()?;
 
             Utf8Array::from((arr.name(), Box::new(arrow_result)))
         }

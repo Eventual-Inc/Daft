@@ -1,9 +1,9 @@
 use std::{cmp, iter::repeat_n, ops::Not, sync::Arc};
 
-use arrow2::{bitmap::MutableBitmap, types::IndexRange};
 use common_error::DaftResult;
+use daft_arrow::{bitmap::MutableBitmap, types::IndexRange};
 use daft_core::{
-    array::ops::{arrow2::comparison::build_multi_array_is_equal, as_arrow::AsArrow},
+    array::ops::{arrow::comparison::build_multi_array_is_equal, as_arrow::AsArrow},
     prelude::*,
 };
 use daft_dsl::{
@@ -48,7 +48,7 @@ pub(super) fn hash_inner_join(
         let probe_table = lkeys.to_probe_hash_table()?;
 
         let r_hashes = rkeys.hash_rows()?;
-        use daft_core::array::ops::arrow2::comparison::build_multi_array_is_equal;
+        use daft_core::array::ops::arrow::comparison::build_multi_array_is_equal;
         let is_equal = build_multi_array_is_equal(
             lkeys.columns.as_slice(),
             rkeys.columns.as_slice(),
@@ -292,12 +292,10 @@ pub(super) fn hash_outer_join(
         let r_iter =
             repeat_n(None, lkeys.len()).chain(IndexRange::new(0, rkeys.len() as u64).map(Some));
 
-        let l_arrow = Box::new(arrow2::array::PrimitiveArray::<u64>::from_trusted_len_iter(
-            l_iter,
-        ));
-        let r_arrow = Box::new(arrow2::array::PrimitiveArray::<u64>::from_trusted_len_iter(
-            r_iter,
-        ));
+        let l_arrow =
+            Box::new(daft_arrow::array::PrimitiveArray::<u64>::from_trusted_len_iter(l_iter));
+        let r_arrow =
+            Box::new(daft_arrow::array::PrimitiveArray::<u64>::from_trusted_len_iter(r_iter));
 
         (
             UInt64Array::from(("left_indices", l_arrow)).into_series(),

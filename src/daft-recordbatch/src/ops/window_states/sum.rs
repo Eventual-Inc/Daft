@@ -1,7 +1,7 @@
 use std::ops::{AddAssign, SubAssign};
 
-use arrow2::bitmap::MutableBitmap;
 use common_error::{DaftError, DaftResult};
+use daft_arrow::bitmap::MutableBitmap;
 use daft_core::{
     array::ops::DaftIsNan,
     datatypes::{DaftPrimitiveType, try_sum_supertype},
@@ -119,7 +119,7 @@ where
 
     fn build(&self) -> DaftResult<Series> {
         let field = self.source.field().clone();
-        let arrow_array = Box::new(arrow2::array::PrimitiveArray::from_vec(
+        let arrow_array = Box::new(daft_arrow::array::PrimitiveArray::from_vec(
             self.sum_vec.clone(),
         ));
         DataArray::<T>::new(field.into(), arrow_array)?

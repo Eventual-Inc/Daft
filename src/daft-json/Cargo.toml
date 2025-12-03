@@ -1,6 +1,6 @@
 [dependencies]
-arrow2 = {workspace = true}
 chrono = {workspace = true}
+daft-arrow = {path = "../daft-arrow"}
 common-error = {path = "../common/error", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}

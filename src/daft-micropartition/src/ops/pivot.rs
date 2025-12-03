@@ -1,6 +1,5 @@
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_io::IOStatsContext;
 use daft_recordbatch::RecordBatch;
 
 use crate::micropartition::MicroPartition;
@@ -13,11 +12,7 @@ impl MicroPartition {
         values_col: BoundExpr,
         names: Vec<String>,
     ) -> DaftResult<Self> {
-        let io_stats = IOStatsContext::new("MicroPartition::pivot");
-
-        let tables = self.concat_or_get(io_stats)?;
-
-        match tables {
+        match self.concat_or_get()? {
             None => {
                 let empty_table = RecordBatch::empty(Some(self.schema.clone()));
                 let pivoted = empty_table.pivot(group_by, pivot_col, values_col, names)?;

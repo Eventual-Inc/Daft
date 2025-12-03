@@ -1,6 +1,6 @@
 [dependencies]
-arrow2 = {workspace = true, features = ["io_csv", "io_csv_async"]}
 atoi_simd = "0.16.1"
+daft-arrow = {path = "../daft-arrow"}
 chrono = {workspace = true}
 csv-async = "1.2.6"
 fast-float2 = "0.2.3"

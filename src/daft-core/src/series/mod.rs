@@ -8,9 +8,9 @@ mod utils;
 use std::{hash::Hash, ops::Sub, sync::Arc};
 
 pub use array_impl::{ArrayWrapper, IntoSeries};
-use arrow2::trusted_len::TrustedLen;
 use common_display::table_display::{StrValue, make_comfy_table};
 use common_error::DaftResult;
+use daft_arrow::trusted_len::TrustedLen;
 use derive_more::Display;
 use indexmap::{IndexMap, map::RawEntryApiV1};
 pub use ops::cast_series_to_supertype;
@@ -20,7 +20,7 @@ use crate::{
     array::{
         DataArray,
         ops::{
-            DaftCompare, arrow2::comparison::build_is_equal, from_arrow::FromArrow, full::FullNull,
+            DaftCompare, arrow::comparison::build_is_equal, from_arrow::FromArrow, full::FullNull,
         },
     },
     datatypes::{DaftDataType, DaftNumericType, DataType, Field, FieldRef, NumericNative},
@@ -115,19 +115,19 @@ impl Series {
     /// However if we want to export our Timestamp array to another arrow system like arrow2 kernels or python, duckdb or more.
     /// We should convert it back to the canonical arrow dtype of Timestamp rather than Int64.
     /// To get the internal physical type without conversion, see `as_arrow()`.
-    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+    pub fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
         self.inner.to_arrow()
     }
 
-    /// Creates a Series given an Arrow [`arrow2::array::Array`]
+    /// Creates a Series given an Arrow [`daft_arrow::array::Array`]
     ///
     /// TODO chore: consider accepting Into<FieldRef>
     ///
     /// This function will check the provided [`Field`] (and all its associated potentially nested fields/dtypes) against
-    /// the provided [`arrow2::array::Array`] for compatibility, and returns an error if they do not match.
+    /// the provided [`daft_arrow::array::Array`] for compatibility, and returns an error if they do not match.
     pub fn from_arrow(
         field: FieldRef,
-        arrow_arr: Box<dyn arrow2::array::Array>,
+        arrow_arr: Box<dyn daft_arrow::array::Array>,
     ) -> DaftResult<Self> {
         with_match_daft_types!(field.dtype, |$T| {
             Ok(<<$T as DaftDataType>::ArrayType as FromArrow>::from_arrow(field, arrow_arr)?.into_series())
@@ -189,11 +189,11 @@ impl Series {
         )
     }
 
-    pub fn with_validity(&self, validity: Option<arrow2::bitmap::Bitmap>) -> DaftResult<Self> {
+    pub fn with_validity(&self, validity: Option<daft_arrow::bitmap::Bitmap>) -> DaftResult<Self> {
         self.inner.with_validity(validity)
     }
 
-    pub fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
+    pub fn validity(&self) -> Option<&daft_arrow::bitmap::Bitmap> {
         self.inner.validity()
     }
 

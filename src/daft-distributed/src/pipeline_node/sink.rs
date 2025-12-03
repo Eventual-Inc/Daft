@@ -153,7 +153,7 @@ impl SinkNode {
                 )
             },
             None,
-        )?;
+        );
         let _ = sender.send(task).await;
         Ok(())
     }

@@ -1,13 +1,13 @@
 pub struct ArrowBitmapGrowable<'a> {
-    bitmap_refs: Vec<Option<&'a arrow2::bitmap::Bitmap>>,
-    mutable_bitmap: arrow2::bitmap::MutableBitmap,
+    bitmap_refs: Vec<Option<&'a daft_arrow::bitmap::Bitmap>>,
+    mutable_bitmap: daft_arrow::bitmap::MutableBitmap,
 }
 
 impl<'a> ArrowBitmapGrowable<'a> {
-    pub fn new(bitmap_refs: Vec<Option<&'a arrow2::bitmap::Bitmap>>, capacity: usize) -> Self {
+    pub fn new(bitmap_refs: Vec<Option<&'a daft_arrow::bitmap::Bitmap>>, capacity: usize) -> Self {
         Self {
             bitmap_refs,
-            mutable_bitmap: arrow2::bitmap::MutableBitmap::with_capacity(capacity),
+            mutable_bitmap: daft_arrow::bitmap::MutableBitmap::with_capacity(capacity),
         }
     }
 
@@ -27,7 +27,7 @@ impl<'a> ArrowBitmapGrowable<'a> {
         self.mutable_bitmap.extend_constant(additional, false);
     }
 
-    pub fn build(self) -> arrow2::bitmap::Bitmap {
+    pub fn build(self) -> daft_arrow::bitmap::Bitmap {
         self.mutable_bitmap.into()
     }
 }

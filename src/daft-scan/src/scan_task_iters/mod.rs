@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-mod split_parquet;
-
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
@@ -336,34 +334,17 @@ fn split_and_merge_pass(
                 .downcast::<ScanTask>()
                 .map_err(|e| DaftError::TypeError(format!("Expected Arc<ScanTask>, found {:?}", e)))
         }));
-        if cfg.scantask_splitting_level == 1 {
-            let split_tasks = split_by_row_groups(
-                iter,
-                cfg.parquet_split_row_groups_max_files,
-                cfg.scan_tasks_min_size_bytes,
-                cfg.scan_tasks_max_size_bytes,
-            );
-            let merged_tasks = merge_by_sizes(split_tasks, pushdowns, cfg);
-            let scan_tasks: Vec<Arc<dyn ScanTaskLike>> = merged_tasks
-                .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
-                .collect::<DaftResult<Vec<_>>>()?;
-            Ok(Arc::new(scan_tasks))
-        } else if cfg.scantask_splitting_level == 2 {
-            let split_tasks = {
-                let splitter = split_parquet::SplitParquetScanTasksIterator::new(iter, cfg);
-                Box::new(splitter.into_iter()) as BoxScanTaskIter
-            };
-            let merged_tasks = merge_by_sizes(split_tasks, pushdowns, cfg);
-            let scan_tasks: Vec<Arc<dyn ScanTaskLike>> = merged_tasks
-                .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
-                .collect::<DaftResult<Vec<_>>>()?;
-            Ok(Arc::new(scan_tasks))
-        } else {
-            panic!(
-                "DAFT_SCANTASK_SPLITTING_LEVEL must be either 1 or 2, received: {}",
-                cfg.scantask_splitting_level
-            );
-        }
+        let split_tasks = split_by_row_groups(
+            iter,
+            cfg.parquet_split_row_groups_max_files,
+            cfg.scan_tasks_min_size_bytes,
+            cfg.scan_tasks_max_size_bytes,
+        );
+        let merged_tasks = merge_by_sizes(split_tasks, pushdowns, cfg);
+        let scan_tasks: Vec<Arc<dyn ScanTaskLike>> = merged_tasks
+            .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
+            .collect::<DaftResult<Vec<_>>>()?;
+        Ok(Arc::new(scan_tasks))
     } else {
         Ok(scan_tasks)
     }

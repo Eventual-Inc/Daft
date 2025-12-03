@@ -1,4 +1,6 @@
-use arrow2::{
+use chrono::{Datelike, Timelike};
+use csv_async;
+use daft_arrow::{
     array::{
         Array, BinaryArray, BooleanArray, MutableBinaryArray, MutableUtf8Array, NullArray,
         PrimitiveArray, Utf8Array,
@@ -11,8 +13,6 @@ use arrow2::{
     trusted_len::TrustedLen,
     types::NativeType,
 };
-use chrono::{Datelike, Timelike};
-use csv_async;
 
 pub(crate) const ISO8601: &str = "%+";
 pub(crate) const ISO8601_NO_TIME_ZONE: &str = "%Y-%m-%dT%H:%M:%S%.f";

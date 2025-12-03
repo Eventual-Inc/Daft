@@ -1,7 +1,7 @@
 use std::cmp::{max, min};
 
-use arrow2::offset::Offsets;
 use common_error::{DaftError, DaftResult};
+use daft_arrow::offset::Offsets;
 use daft_schema::{dtype::DataType, field::Field};
 
 use crate::{

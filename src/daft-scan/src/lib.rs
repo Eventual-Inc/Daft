@@ -13,6 +13,7 @@ use common_file_formats::FileFormatConfig;
 use common_scan_info::{Pushdowns, ScanTaskLike, ScanTaskLikeRef};
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
+use either::Either;
 use itertools::Itertools;
 use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
@@ -650,6 +651,25 @@ impl ScanTask {
             sc1.pushdowns.clone(),
             sc1.generated_fields.clone(),
         ))
+    }
+
+    /// Split the ScanTask into multiple ScanTasks, one for each source.
+    pub fn split(self: Arc<Self>) -> impl Iterator<Item = ScanTaskRef> {
+        if self.sources.len() == 1 {
+            Either::Left(std::iter::once(self))
+        } else {
+            // Multiple sources: need to clone the vector
+            Either::Right(self.sources.clone().into_iter().map(move |source| {
+                Arc::new(Self::new(
+                    vec![source],
+                    self.file_format_config.clone(),
+                    self.schema.clone(),
+                    self.storage_config.clone(),
+                    self.pushdowns.clone(),
+                    self.generated_fields.clone(),
+                ))
+            }))
+        }
     }
 
     #[must_use]

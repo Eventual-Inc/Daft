@@ -141,7 +141,7 @@ impl IntoPartitionsNode {
                     )
                 },
                 None,
-            )?;
+            );
             if result_tx.send(task).await.is_err() {
                 break;
             }
@@ -217,7 +217,7 @@ impl IntoPartitionsNode {
                         self_arc.config.schema.clone(),
                         &(self_arc as Arc<dyn PipelineNodeImpl>),
                         None,
-                    )?;
+                    );
                     if result_tx.send(task).await.is_err() {
                         break;
                     }

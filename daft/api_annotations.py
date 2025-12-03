@@ -97,14 +97,14 @@ def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
         if origin_T is None:
             return isinstance(value, T)
 
-        # T is a generic type, like `typing.List` or builtin container like `list`
-        if isinstance(origin_T, type):
-            return isinstance(value, origin_T)
-
         # T is a `typing.Union`
         if origin_T is Union:
             union_types = get_args(T)
             return any(isinstance_helper(value, union_type) for union_type in union_types)
+
+        # T is a generic type, like `typing.List` or builtin container like `list`
+        if isinstance(origin_T, type):
+            return isinstance(value, origin_T)
 
         # T is a `typing.Literal`
         if origin_T is Literal:

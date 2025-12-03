@@ -1,5 +1,5 @@
 [dependencies]
-arrow2 = {workspace = true}
+daft-arrow = {path = "../../daft-arrow"}
 pyo3 = {workspace = true, optional = true}
 
 [features]

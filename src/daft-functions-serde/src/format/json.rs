@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use arrow2::{
+use common_error::{DaftError, DaftResult};
+use daft_arrow::{
     array::Utf8Array as ArrowUtf8Array,
     datatypes::DataType as ArrowDataType,
     io::json::{
@@ -9,7 +10,6 @@ use arrow2::{
     },
     offset::Offsets,
 };
-use common_error::{DaftError, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, Utf8Array},
     series::Series,

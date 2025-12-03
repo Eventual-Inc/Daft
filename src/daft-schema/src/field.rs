@@ -1,7 +1,7 @@
 use std::{hash::Hash, sync::Arc};
 
-use arrow2::datatypes::Field as ArrowField;
 use common_error::{DaftError, DaftResult};
+use daft_arrow::datatypes::Field as ArrowField;
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 

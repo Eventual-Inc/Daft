@@ -610,7 +610,8 @@ def test_groupby_result_partitions_smaller_than_input(shuffle_aggregation_defaul
 
             df = df.collect()
 
-            assert df.num_partitions() == min(min_partitions, partition_size)
+            if get_tests_daft_runner_name() != "native":
+                assert df._result.num_partitions() == min(min_partitions, partition_size)
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])

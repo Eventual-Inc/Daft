@@ -28,7 +28,7 @@ macro_rules! impl_series_like_for_logical_array {
             fn into_series(&self) -> Series {
                 self.0.clone().into_series()
             }
-            fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+            fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
                 self.0.to_arrow()
             }
 
@@ -38,13 +38,13 @@ macro_rules! impl_series_like_for_logical_array {
 
             fn with_validity(
                 &self,
-                validity: Option<arrow2::bitmap::Bitmap>,
+                validity: Option<daft_arrow::bitmap::Bitmap>,
             ) -> DaftResult<Series> {
                 let new_array = self.0.physical.with_validity(validity)?;
                 Ok($da::new(self.0.field.clone(), new_array).into_series())
             }
 
-            fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
+            fn validity(&self) -> Option<&daft_arrow::bitmap::Bitmap> {
                 self.0.physical.validity()
             }
 
@@ -212,17 +212,17 @@ where
     fn into_series(&self) -> Series {
         self.0.clone().into_series()
     }
-    fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+    fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
         self.0.to_arrow()
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    fn with_validity(&self, validity: Option<arrow2::bitmap::Bitmap>) -> DaftResult<Series> {
+    fn with_validity(&self, validity: Option<daft_arrow::bitmap::Bitmap>) -> DaftResult<Series> {
         let new_array = self.0.physical.with_validity(validity)?;
         Ok(FileArray::<T>::new(self.0.field.clone(), new_array).into_series())
     }
-    fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
+    fn validity(&self) -> Option<&daft_arrow::bitmap::Bitmap> {
         self.0.physical.validity()
     }
     fn broadcast(&self, num: usize) -> DaftResult<Series> {

@@ -1,6 +1,6 @@
 use std::{borrow::Borrow, collections::HashSet};
 
-use arrow2::{
+use daft_arrow::{
     datatypes::{DataType, Field, Metadata, Schema, TimeUnit},
     error::{Error, Result},
 };
@@ -115,14 +115,14 @@ fn infer_array(values: &[BorrowedValue]) -> Result<DataType> {
 /// Convert each column's set of inferred dtypes to a field with a consolidated dtype, following the coercion rules
 /// defined in coerce_data_type.
 pub fn column_types_map_to_fields(
-    column_types: IndexMap<String, HashSet<arrow2::datatypes::DataType>>,
-) -> Vec<arrow2::datatypes::Field> {
+    column_types: IndexMap<String, HashSet<daft_arrow::datatypes::DataType>>,
+) -> Vec<daft_arrow::datatypes::Field> {
     column_types
         .into_iter()
         .map(|(name, dtype_set)| {
             // Get consolidated dtype for column.
             let dtype = coerce_data_type(dtype_set);
-            arrow2::datatypes::Field::new(name, dtype, true)
+            daft_arrow::datatypes::Field::new(name, dtype, true)
         })
         .collect::<Vec<_>>()
 }

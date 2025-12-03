@@ -1,7 +1,7 @@
-use arrow2::{
+use common_error::DaftResult;
+use daft_arrow::{
     array::BinaryArray as ArrowBinaryArray, datatypes::DataType as ArrowType, offset::Offsets,
 };
-use common_error::DaftResult;
 
 use crate::prelude::{AsArrow, BinaryArray, Utf8Array};
 

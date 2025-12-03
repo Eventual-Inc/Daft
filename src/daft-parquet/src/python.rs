@@ -75,7 +75,7 @@ pub mod pylib {
     );
     fn convert_pyarrow_parquet_read_result_into_py(
         py: Python,
-        schema: arrow2::datatypes::SchemaRef,
+        schema: daft_arrow::datatypes::SchemaRef,
         all_arrays: Vec<ArrowChunk>,
         num_rows: usize,
         pyarrow: &Bound<PyModule>,

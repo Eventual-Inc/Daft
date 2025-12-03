@@ -165,11 +165,7 @@ impl Probeable for ProbeSet {
         Ok(Box::new(self.probe(table)?))
     }
 
-    fn probe_indices<'a>(
-        &'a self,
-        _table: &'a RecordBatch,
-        _prefix_sums: &[usize],
-    ) -> DaftResult<IndicesMapper<'a>> {
+    fn probe_indices<'a>(&'a self, _table: &'a RecordBatch) -> DaftResult<IndicesMapper<'a>> {
         panic!("Probe indices is not supported for ProbeSet")
     }
 }

@@ -1,6 +1,5 @@
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_io::IOStatsContext;
 use daft_stats::TruthValue;
 use snafu::ResultExt;
 
@@ -8,7 +7,6 @@ use crate::{DaftCoreComputeSnafu, micropartition::MicroPartition};
 
 impl MicroPartition {
     pub fn filter(&self, predicate: &[BoundExpr]) -> DaftResult<Self> {
-        let io_stats = IOStatsContext::new("MicroPartition::filter");
         if predicate.is_empty() {
             return Ok(Self::empty(Some(self.schema.clone())));
         }
@@ -29,9 +27,8 @@ impl MicroPartition {
             }
         }
 
-        // TODO figure out deferred IOStats
         let tables = self
-            .tables_or_read(io_stats)?
+            .record_batches()
             .iter()
             .map(|t| t.filter(predicate))
             .collect::<DaftResult<Vec<_>>>()

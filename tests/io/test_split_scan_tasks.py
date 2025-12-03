@@ -5,6 +5,11 @@ import pyarrow.parquet as papq
 import pytest
 
 import daft
+from tests.conftest import get_tests_daft_runner_name
+
+pytestmark = pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray", reason="Merge scan tasks are only supported on the Ray runner"
+)
 
 
 @pytest.fixture(scope="function")
@@ -19,6 +24,7 @@ def parquet_files(tmpdir):
 
 def test_split_parquet_read(parquet_files):
     with daft.execution_config_ctx(
+        enable_scan_task_split_and_merge=True,
         scan_tasks_min_size_bytes=1,
         scan_tasks_max_size_bytes=10,
     ):
@@ -29,7 +35,7 @@ def test_split_parquet_read(parquet_files):
 
 @pytest.mark.skip(reason="Not implemented yet")
 def test_split_parquet_read_some_splits(tmpdir):
-    with daft.execution_config_ctx(scantask_splitting_level=2):
+    with daft.execution_config_ctx(enable_scan_task_split_and_merge=True):
         # Write a mix of 20 large and 20 small files
         # Small ones should not be split, large ones should be split into 10 rowgroups each
         # This gives us a total of 200 + 20 scantasks
@@ -52,6 +58,7 @@ def test_split_parquet_read_some_splits(tmpdir):
 
         # Test [large_paths, ..., small_paths, ...]
         with daft.execution_config_ctx(
+            enable_scan_task_split_and_merge=True,
             scan_tasks_min_size_bytes=20,
             scan_tasks_max_size_bytes=100,
         ):
@@ -63,6 +70,7 @@ def test_split_parquet_read_some_splits(tmpdir):
 
         # Test interleaved [large_path, small_path, large_path, small_path, ...]
         with daft.execution_config_ctx(
+            enable_scan_task_split_and_merge=True,
             scan_tasks_min_size_bytes=20,
             scan_tasks_max_size_bytes=100,
         ):
@@ -75,6 +83,7 @@ def test_split_parquet_read_some_splits(tmpdir):
 
         # Test [small_paths, ..., large_paths]
         with daft.execution_config_ctx(
+            enable_scan_task_split_and_merge=True,
             scan_tasks_min_size_bytes=20,
             scan_tasks_max_size_bytes=100,
         ):

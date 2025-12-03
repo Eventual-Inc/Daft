@@ -1,6 +1,6 @@
-use arrow2::types::IndexRange;
 use common_display::table_display::StrValue;
 use common_error::DaftResult;
+use daft_arrow::types::IndexRange;
 
 use crate::{
     datatypes::Utf8Array,

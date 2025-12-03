@@ -60,7 +60,11 @@ impl AggregateSink {
         };
 
         let (sink_agg_exprs, finalize_agg_exprs, final_projections) =
-            daft_physical_plan::populate_aggregation_stages_bound(aggregations, input_schema, &[])?;
+            daft_local_plan::agg::populate_aggregation_stages_bound(
+                aggregations,
+                input_schema,
+                &[],
+            )?;
 
         Ok(Self {
             aggregate_name,

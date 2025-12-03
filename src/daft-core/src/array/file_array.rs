@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use arrow2::array::{MutableArray, MutableBinaryArray, MutableUtf8Array};
 use common_error::DaftResult;
 use common_io_config::IOConfig;
+use daft_arrow::array::{MutableArray, MutableBinaryArray, MutableUtf8Array};
 use daft_schema::{dtype::DataType, field::Field, media_type::MediaType};
 
 use crate::{

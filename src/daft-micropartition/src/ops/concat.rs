@@ -1,11 +1,10 @@
-use std::{borrow::Borrow, ops::Deref, sync::Mutex};
+use std::{borrow::Borrow, ops::Deref, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::SchemaRef;
-use daft_io::IOStatsContext;
 use daft_stats::TableMetadata;
 
-use crate::micropartition::{MicroPartition, TableState};
+use crate::micropartition::MicroPartition;
 
 impl MicroPartition {
     pub fn concat<I, T>(mps: I) -> DaftResult<Self>
@@ -34,14 +33,11 @@ impl MicroPartition {
             }
         }
 
-        let io_stats = IOStatsContext::new("MicroPartition::concat");
-
         let mut all_tables = vec![];
 
         for m in &mps {
             let m = m.deref().borrow();
-            let tables = m.tables_or_read(io_stats.clone())?;
-            all_tables.extend_from_slice(tables.as_slice());
+            all_tables.extend_from_slice(m.record_batches());
         }
         let mut all_stats = None;
 
@@ -61,7 +57,7 @@ impl MicroPartition {
 
         Ok(Self {
             schema: first_schema.clone(),
-            state: Mutex::new(TableState::Loaded(all_tables.into())),
+            chunks: Arc::new(all_tables),
             metadata: TableMetadata { length: new_len },
             statistics: all_stats,
         })

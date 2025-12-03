@@ -50,7 +50,7 @@ fn length_bytes_impl(arr: &Utf8Array) -> DaftResult<UInt64Array> {
             let v = val?;
             Some(v.len() as u64)
         })
-        .collect::<arrow2::array::UInt64Array>()
+        .collect::<daft_arrow::array::UInt64Array>()
         .with_validity(self_arrow.validity().cloned());
     Ok(UInt64Array::from((arr.name(), Box::new(arrow_result))))
 }

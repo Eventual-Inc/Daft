@@ -475,8 +475,8 @@ impl_arithmetic_ref_for_series!(Rem, rem);
 
 #[cfg(test)]
 mod tests {
-    use arrow2::types::months_days_ns;
     use common_error::DaftResult;
+    use daft_arrow::types::months_days_ns;
 
     use crate::{
         array::ops::full::FullNull,

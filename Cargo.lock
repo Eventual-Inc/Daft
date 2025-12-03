@@ -1790,7 +1790,7 @@ dependencies = [
 name = "common-arrow-ffi"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
+ "daft-arrow",
  "pyo3",
 ]
 
@@ -1821,7 +1821,7 @@ name = "common-error"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow-schema",
- "arrow2",
+ "daft-arrow",
  "parquet2",
  "pyo3",
  "regex",
@@ -1852,10 +1852,10 @@ dependencies = [
 name = "common-image"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "bincode",
  "common-error",
  "common-ndarray",
+ "daft-arrow",
  "daft-schema",
  "image",
  "ndarray",
@@ -2364,9 +2364,9 @@ dependencies = [
 
 [[package]]
 name = "ctor"
-version = "0.5.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67773048316103656a637612c4a62477603b777d91d9c62ff2290f9cde178fdb"
+checksum = "3ffc71fcdcdb40d6f087edddf7f8f1f8f79e6cf922f555a9ee8779752d4819bd"
 dependencies = [
  "ctor-proc-macro",
  "dtor",
@@ -2374,9 +2374,9 @@ dependencies = [
 
 [[package]]
 name = "ctor-proc-macro"
-version = "0.0.6"
+version = "0.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2931af7e13dc045d8e9d26afccc6fa115d64e115c9c84b1166288b46f6782c2"
+checksum = "52560adf09603e58c9a7ee1fe1dcb95a16927b17c127f0ac02d6e768a0e25bc1"
 
 [[package]]
 name = "daft"
@@ -2397,6 +2397,7 @@ dependencies = [
  "common-version",
  "daft-ai",
  "daft-algebra",
+ "daft-arrow",
  "daft-catalog",
  "daft-cli",
  "daft-compression",
@@ -2428,12 +2429,10 @@ dependencies = [
  "daft-micropartition",
  "daft-minhash",
  "daft-parquet",
- "daft-physical-plan",
  "daft-proto",
  "daft-recordbatch",
  "daft-runners",
  "daft-scan",
- "daft-scheduler",
  "daft-session",
  "daft-shuffles",
  "daft-sql",
@@ -2467,6 +2466,13 @@ dependencies = [
  "daft-schema",
  "indexmap 2.11.4",
  "rstest",
+]
+
+[[package]]
+name = "daft-arrow"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
 ]
 
 [[package]]
@@ -2510,10 +2516,10 @@ dependencies = [
 name = "daft-connect"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "common-error",
  "common-file-formats",
  "common-runtime",
+ "daft-arrow",
  "daft-catalog",
  "daft-context",
  "daft-core",
@@ -2547,15 +2553,14 @@ dependencies = [
 name = "daft-context"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "async-trait",
  "common-daft-config",
  "common-error",
  "common-metrics",
  "common-runtime",
+ "daft-arrow",
  "daft-core",
  "daft-dashboard",
- "daft-io",
  "daft-logical-plan",
  "daft-micropartition",
  "daft-recordbatch",
@@ -2570,7 +2575,6 @@ dependencies = [
 name = "daft-core"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "bincode",
  "chrono",
  "chrono-tz",
@@ -2583,6 +2587,7 @@ dependencies = [
  "common-io-config",
  "common-ndarray",
  "common-py-serde",
+ "daft-arrow",
  "daft-hash",
  "daft-minhash",
  "daft-schema",
@@ -2609,13 +2614,13 @@ dependencies = [
 name = "daft-csv"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "async-compat",
  "async-stream",
  "common-error",
  "common-py-serde",
  "common-runtime",
  "csv-async",
+ "daft-arrow",
  "daft-compression",
  "daft-core",
  "daft-decoding",
@@ -2663,10 +2668,10 @@ dependencies = [
 name = "daft-decoding"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "atoi_simd",
  "chrono",
  "csv-async",
+ "daft-arrow",
  "fast-float2",
  "simdutf8",
 ]
@@ -2689,11 +2694,9 @@ dependencies = [
  "common-scan-info",
  "common-treenode",
  "daft-dsl",
- "daft-io",
  "daft-local-plan",
  "daft-logical-plan",
  "daft-micropartition",
- "daft-physical-plan",
  "daft-recordbatch",
  "daft-schema",
  "futures",
@@ -2722,6 +2725,7 @@ dependencies = [
  "common-py-serde",
  "common-resource-request",
  "common-runtime",
+ "common-tracing",
  "common-treenode",
  "daft-core",
  "daft-sketch",
@@ -2729,6 +2733,8 @@ dependencies = [
  "indexmap 2.11.4",
  "itertools 0.14.0",
  "log",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "pyo3",
  "rstest",
  "serde",
@@ -2772,10 +2778,10 @@ dependencies = [
 name = "daft-functions-binary"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "base64 0.22.1",
  "common-error",
  "common-macros",
+ "daft-arrow",
  "daft-core",
  "daft-dsl",
  "flate2",
@@ -2803,8 +2809,8 @@ dependencies = [
 name = "daft-functions-list"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "common-error",
+ "daft-arrow",
  "daft-core",
  "daft-dsl",
  "indexmap 2.11.4",
@@ -2816,8 +2822,8 @@ dependencies = [
 name = "daft-functions-serde"
 version = "0.0.0"
 dependencies = [
- "arrow2",
  "common-error",
+ "daft-arrow",
  "daft-core",
  "daft-dsl",
  "serde",
@@ -2840,10 +2846,10 @@ dependencies = [
 name = "daft-functions-tokenize"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "base64 0.22.1",
  "common-error",
  "common-runtime",
+ "daft-arrow",
  "daft-core",
  "daft-dsl",
  "daft-io",
@@ -2877,10 +2883,10 @@ name = "daft-functions-utf8"
 version = "0.3.0-dev0"
 dependencies = [
  "aho-corasick",
- "arrow2",
  "chrono",
  "chrono-tz",
  "common-error",
+ "daft-arrow",
  "daft-core",
  "daft-dsl",
  "itertools 0.14.0",
@@ -2906,10 +2912,10 @@ dependencies = [
 name = "daft-image"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "base64 0.22.1",
  "common-error",
  "common-image",
+ "daft-arrow",
  "daft-core",
  "daft-dsl",
  "daft-schema",
@@ -2990,11 +2996,11 @@ dependencies = [
 name = "daft-json"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "chrono",
  "common-error",
  "common-py-serde",
  "common-runtime",
+ "daft-arrow",
  "daft-compression",
  "daft-core",
  "daft-decoding",
@@ -3053,7 +3059,6 @@ dependencies = [
  "daft-logical-plan",
  "daft-micropartition",
  "daft-parquet",
- "daft-physical-plan",
  "daft-recordbatch",
  "daft-scan",
  "daft-warc",
@@ -3091,8 +3096,10 @@ dependencies = [
  "common-treenode",
  "daft-core",
  "daft-dsl",
+ "daft-functions",
+ "daft-functions-list",
  "daft-logical-plan",
- "daft-physical-plan",
+ "indexmap 2.11.4",
  "log",
  "pyo3",
  "serde",
@@ -3146,13 +3153,11 @@ dependencies = [
 name = "daft-micropartition"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "bincode",
  "common-error",
- "common-file-formats",
  "common-partitioning",
  "common-runtime",
- "common-scan-info",
+ "daft-arrow",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -3190,7 +3195,6 @@ dependencies = [
 name = "daft-parquet"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "async-compat",
  "async-stream",
  "bincode",
@@ -3198,6 +3202,7 @@ dependencies = [
  "common-arrow-ffi",
  "common-error",
  "common-runtime",
+ "daft-arrow",
  "daft-core",
  "daft-dsl",
  "daft-io",
@@ -3219,33 +3224,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "daft-physical-plan"
-version = "0.3.0-dev0"
-dependencies = [
- "common-daft-config",
- "common-display",
- "common-error",
- "common-file-formats",
- "common-resource-request",
- "common-scan-info",
- "common-treenode",
- "daft-core",
- "daft-dsl",
- "daft-functions",
- "daft-functions-list",
- "daft-io",
- "daft-logical-plan",
- "daft-schema",
- "indexmap 2.11.4",
- "itertools 0.14.0",
- "log",
- "num-format",
- "rstest",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "daft-proto"
 version = "0.0.0"
 dependencies = [
@@ -3259,7 +3237,6 @@ name = "daft-recordbatch"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
- "arrow2",
  "async-recursion",
  "comfy-table 7.1.4",
  "common-arrow-ffi",
@@ -3268,6 +3245,7 @@ dependencies = [
  "common-metrics",
  "common-py-serde",
  "common-runtime",
+ "daft-arrow",
  "daft-core",
  "daft-dsl",
  "daft-functions-list",
@@ -3298,7 +3276,6 @@ dependencies = [
 name = "daft-scan"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -3308,6 +3285,7 @@ dependencies = [
  "common-runtime",
  "common-scan-info",
  "ctor",
+ "daft-arrow",
  "daft-core",
  "daft-csv",
  "daft-decoding",
@@ -3319,6 +3297,7 @@ dependencies = [
  "daft-recordbatch",
  "daft-schema",
  "daft-stats",
+ "either",
  "futures",
  "indexmap 2.11.4",
  "itertools 0.14.0",
@@ -3332,37 +3311,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "daft-scheduler"
-version = "0.3.0-dev0"
-dependencies = [
- "common-daft-config",
- "common-display",
- "common-error",
- "common-file-formats",
- "common-io-config",
- "common-partitioning",
- "common-py-serde",
- "daft-core",
- "daft-dsl",
- "daft-logical-plan",
- "daft-physical-plan",
- "daft-scan",
- "pyo3",
- "rstest",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "daft-schema"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "common-arrow-ffi",
  "common-display",
  "common-error",
  "common-py-serde",
  "common-version",
+ "daft-arrow",
  "derive_more",
  "educe",
  "html-escape",
@@ -3393,10 +3350,10 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow-flight",
  "arrow-ipc",
- "arrow2",
  "async-channel 2.5.0",
  "common-error",
  "common-runtime",
+ "daft-arrow",
  "daft-core",
  "daft-dsl",
  "daft-io",
@@ -3416,8 +3373,8 @@ dependencies = [
 name = "daft-sketch"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "common-error",
+ "daft-arrow",
  "serde_arrow",
  "sketches-ddsketch",
  "snafu",
@@ -3427,11 +3384,11 @@ dependencies = [
 name = "daft-sql"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "common-daft-config",
  "common-error",
  "common-io-config",
  "common-runtime",
+ "daft-arrow",
  "daft-catalog",
  "daft-context",
  "daft-core",
@@ -3467,10 +3424,10 @@ dependencies = [
 name = "daft-warc"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "chrono",
  "common-error",
  "common-runtime",
+ "daft-arrow",
  "daft-compression",
  "daft-core",
  "daft-dsl",
@@ -3493,12 +3450,12 @@ dependencies = [
  "arrow-array",
  "arrow-json",
  "arrow-schema",
- "arrow2",
  "async-trait",
  "common-daft-config",
  "common-error",
  "common-file-formats",
  "common-runtime",
+ "daft-arrow",
  "daft-core",
  "daft-dsl",
  "daft-io",
@@ -3720,9 +3677,9 @@ checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
 
 [[package]]
 name = "dtor"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e58a0764cddb55ab28955347b45be00ade43d4d6f3ba4bf3dc354e4ec9432934"
+checksum = "404d02eeb088a82cfd873006cb713fe411306c7d182c344905e101fb1167d301"
 dependencies = [
  "dtor-proc-macro",
 ]
@@ -6131,6 +6088,8 @@ dependencies = [
  "percent-encoding",
  "rand 0.9.1",
  "thiserror 2.0.16",
+ "tokio",
+ "tokio-stream",
 ]
 
 [[package]]

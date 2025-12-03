@@ -1,10 +1,10 @@
 use std::cmp::Ordering;
 
-use arrow2::array::{
+use common_error::{DaftError, DaftResult};
+use daft_arrow::array::{
     Array,
     dyn_ord::{DynArrayComparator, build_dyn_array_compare},
 };
-use common_error::{DaftError, DaftResult};
 use daft_schema::schema::Schema;
 
 use crate::datatypes::DataType;

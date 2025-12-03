@@ -1,10 +1,10 @@
-use arrow2::{
+use common_error::DaftResult;
+use daft_arrow::{
     array::{BinaryArray as ArrowBinaryArray, Utf8Array as ArrowUtf8Array},
     bitmap::MutableBitmap,
     datatypes::DataType as ArrowType,
     offset::Offsets,
 };
-use common_error::DaftResult;
 use daft_core::{
     array::ops::as_arrow::AsArrow,
     datatypes::{BinaryArray, FixedSizeBinaryArray},

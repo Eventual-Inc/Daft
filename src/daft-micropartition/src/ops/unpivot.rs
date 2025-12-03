@@ -3,7 +3,6 @@ use std::sync::Arc;
 use common_error::{DaftError, DaftResult};
 use daft_core::{prelude::*, utils::supertype::try_get_supertype};
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_io::IOStatsContext;
 
 use crate::micropartition::MicroPartition;
 
@@ -15,11 +14,7 @@ impl MicroPartition {
         variable_name: &str,
         value_name: &str,
     ) -> DaftResult<Self> {
-        let io_stats = IOStatsContext::new("MicroPartition::unpivot");
-
-        let tables = self.concat_or_get(io_stats)?;
-
-        match tables {
+        match self.concat_or_get()? {
             None => {
                 if values.is_empty() {
                     return Err(DaftError::ValueError(

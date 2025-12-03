@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use arrow2::array::PrimitiveArray;
 use common_error::DaftResult;
+use daft_arrow::array::PrimitiveArray;
 
 use super::{DaftCountAggable, DaftSumAggable};
 use crate::{

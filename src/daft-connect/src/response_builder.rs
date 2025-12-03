@@ -1,4 +1,4 @@
-use arrow2::io::ipc::write::StreamWriter;
+use daft_arrow::io::ipc::write::StreamWriter;
 use daft_recordbatch::RecordBatch;
 use spark_connect::{
     AnalyzePlanResponse, DataType, ExecutePlanResponse, analyze_plan_response,
@@ -69,7 +69,7 @@ impl ResponseBuilder<ExecutePlanResponse> {
 
         let mut writer = StreamWriter::new(
             &mut data,
-            arrow2::io::ipc::write::WriteOptions { compression: None },
+            daft_arrow::io::ipc::write::WriteOptions { compression: None },
         );
 
         let row_count = table.num_rows();
@@ -81,7 +81,7 @@ impl ResponseBuilder<ExecutePlanResponse> {
             .wrap_err("Failed to start Arrow stream writer")?;
 
         let arrays = table.get_inner_arrow_arrays().collect();
-        let chunk = arrow2::chunk::Chunk::new(arrays);
+        let chunk = daft_arrow::chunk::Chunk::new(arrays);
 
         writer
             .write(&chunk, None)

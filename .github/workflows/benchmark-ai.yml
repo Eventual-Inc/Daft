@@ -82,7 +82,7 @@ jobs:
         echo "🚫 CANCELLED: ${{ matrix.benchmark }} benchmark (selected: ${{ inputs.benchmark_type }})"
         echo "This job was cancelled because it doesn't match the selected benchmark type"
         exit 0
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       with:
         submodules: true
     - name: Assume GitHub Actions AWS Credentials

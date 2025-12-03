@@ -1,10 +1,10 @@
-use arrow2::{
+use common_error::DaftResult;
+use daft_arrow::{
     array::{Array, Utf8Array},
     bitmap::utils::SlicesIterator,
     offset::OffsetsBuffer,
     types::Index,
 };
-use common_error::DaftResult;
 
 use super::{DaftConcatAggable, as_arrow::AsArrow};
 use crate::{
@@ -32,7 +32,7 @@ impl DaftConcatAggable for ListArray {
         // The concat will successfully return a single non-null element.
         let new_validity = match self.validity() {
             Some(validity) if validity.unset_bits() == self.len() => {
-                Some(arrow2::bitmap::Bitmap::from(vec![false]))
+                Some(daft_arrow::bitmap::Bitmap::from(vec![false]))
             }
             _ => None,
         };
@@ -89,11 +89,12 @@ impl DaftConcatAggable for ListArray {
             group_valids.push(group_valid);
             group_lens.push(if group_valid { group_len } else { 0 });
         }
-        let new_offsets = arrow2::offset::Offsets::try_from_lengths(group_lens.iter().copied())?;
+        let new_offsets =
+            daft_arrow::offset::Offsets::try_from_lengths(group_lens.iter().copied())?;
         let new_validities = if all_valid {
             None
         } else {
-            Some(arrow2::bitmap::Bitmap::from(group_valids))
+            Some(daft_arrow::bitmap::Bitmap::from(group_valids))
         };
 
         Ok(Self::new(
@@ -111,7 +112,7 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
     fn concat(&self) -> Self::Output {
         let new_validity = match self.validity() {
             Some(validity) if validity.unset_bits() == self.len() => {
-                Some(arrow2::bitmap::Bitmap::from(vec![false]))
+                Some(daft_arrow::bitmap::Bitmap::from(vec![false]))
             }
             _ => None,
         };
@@ -182,13 +183,14 @@ mod test {
             Field::new("foo", DataType::List(Box::new(DataType::Int64))),
             Int64Array::from((
                 "item",
-                Box::new(arrow2::array::Int64Array::from_iter(iter::empty::<
+                Box::new(daft_arrow::array::Int64Array::from_iter(iter::empty::<
                     &Option<i64>,
-                >())),
+                >(
+                ))),
             ))
             .into_series(),
-            arrow2::offset::OffsetsBuffer::<i64>::try_from(vec![0, 0, 0, 0])?,
-            Some(arrow2::bitmap::Bitmap::from_iter(repeat_n(false, 3))),
+            daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 0, 0, 0])?,
+            Some(daft_arrow::bitmap::Bitmap::from_iter(repeat_n(false, 3))),
         );
 
         // Expected: [None]
@@ -196,7 +198,7 @@ mod test {
         assert_eq!(concatted.len(), 1);
         assert_eq!(
             concatted.validity(),
-            Some(&arrow2::bitmap::Bitmap::from_iter(repeat_n(false, 1)))
+            Some(&daft_arrow::bitmap::Bitmap::from_iter(repeat_n(false, 1)))
         );
         Ok(())
     }
@@ -208,13 +210,13 @@ mod test {
             Field::new("foo", DataType::List(Box::new(DataType::Int64))),
             Int64Array::from((
                 "item",
-                Box::new(arrow2::array::Int64Array::from_iter(
+                Box::new(daft_arrow::array::Int64Array::from_iter(
                     [Some(0), Some(1), Some(1), Some(2), None, None, Some(10000)].iter(),
                 )),
             ))
             .into_series(),
-            arrow2::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 3, 5, 6, 6, 6, 7])?,
-            Some(arrow2::bitmap::Bitmap::from(vec![
+            daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 3, 5, 6, 6, 6, 7])?,
+            Some(daft_arrow::bitmap::Bitmap::from(vec![
                 true, true, true, true, true, false, false,
             ])),
         );
@@ -243,7 +245,7 @@ mod test {
             Field::new("foo", DataType::List(Box::new(DataType::Int64))),
             Int64Array::from((
                 "item",
-                Box::new(arrow2::array::Int64Array::from_iter(
+                Box::new(daft_arrow::array::Int64Array::from_iter(
                     [
                         Some(0),
                         Some(0),
@@ -259,8 +261,8 @@ mod test {
                 )),
             ))
             .into_series(),
-            arrow2::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 3, 5, 6, 8, 8, 8, 9])?,
-            Some(arrow2::bitmap::Bitmap::from(vec![
+            daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 3, 5, 6, 8, 8, 8, 9])?,
+            Some(daft_arrow::bitmap::Bitmap::from(vec![
                 true, true, true, true, true, false, false, false,
             ])),
         );
@@ -272,7 +274,9 @@ mod test {
         assert_eq!(concatted.len(), 4);
         assert_eq!(
             concatted.validity(),
-            Some(&arrow2::bitmap::Bitmap::from(vec![true, true, true, false]))
+            Some(&daft_arrow::bitmap::Bitmap::from(vec![
+                true, true, true, false
+            ]))
         );
 
         let element_0 = concatted.get(0).unwrap();

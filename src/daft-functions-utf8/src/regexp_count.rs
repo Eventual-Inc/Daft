@@ -89,7 +89,7 @@ fn regexp_count_impl(arr: &Utf8Array, patterns: &Utf8Array) -> DaftResult<UInt64
 
                 Ok(Some(regex.find_iter(val).count() as u64))
             })
-            .collect::<DaftResult<arrow2::array::UInt64Array>>()?;
+            .collect::<DaftResult<daft_arrow::array::UInt64Array>>()?;
 
         Ok(UInt64Array::from((arr.name(), Box::new(res))))
     }

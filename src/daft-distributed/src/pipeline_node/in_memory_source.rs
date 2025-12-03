@@ -69,7 +69,7 @@ impl InMemorySourceNode {
             let task = self.make_task_for_partition_refs(
                 vec![partition_ref],
                 TaskContext::from((&self.context, task_id_counter.next())),
-            )?;
+            );
             if result_tx.send(SubmittableTask::new(task)).await.is_err() {
                 break;
             }
@@ -81,12 +81,12 @@ impl InMemorySourceNode {
         &self,
         partition_refs: Vec<PartitionRef>,
         task_context: TaskContext,
-    ) -> DaftResult<SwordfishTask> {
+    ) -> SwordfishTask {
         let mut total_size_bytes = 0;
         let mut total_num_rows = 0;
         for partition_ref in &partition_refs {
-            total_size_bytes += partition_ref.size_bytes()?.unwrap_or(0);
-            total_num_rows += partition_ref.num_rows().unwrap_or(0);
+            total_size_bytes += partition_ref.size_bytes();
+            total_num_rows += partition_ref.num_rows();
         }
         let info = InMemoryInfo::new(
             self.info.source_schema.clone(),
@@ -107,7 +107,7 @@ impl InMemorySourceNode {
             },
         );
         let psets = HashMap::from([(self.info.cache_key.clone(), partition_refs.clone())]);
-        let task = SwordfishTask::new(
+        SwordfishTask::new(
             task_context,
             in_memory_source_plan,
             self.config.execution_config.clone(),
@@ -116,8 +116,7 @@ impl InMemorySourceNode {
             // Need to get that from `ray.experimental.get_object_locations(object_refs)`
             SchedulingStrategy::Spread,
             self.context.to_hashmap(),
-        );
-        Ok(task)
+        )
     }
 }
 

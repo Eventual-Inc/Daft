@@ -14,8 +14,8 @@ use {
 /// Acts as a forward declaration for concrete partition implementations. _(Specifically the `MicroPartition` type defined in `daft-micropartition`)_
 pub trait Partition: std::fmt::Debug + Send + Sync {
     fn as_any(&self) -> &dyn Any;
-    fn size_bytes(&self) -> DaftResult<Option<usize>>;
-    fn num_rows(&self) -> DaftResult<usize>;
+    fn size_bytes(&self) -> usize;
+    fn num_rows(&self) -> usize;
 }
 
 impl<T> Partition for Arc<T>
@@ -25,11 +25,11 @@ where
     fn as_any(&self) -> &dyn Any {
         (**self).as_any()
     }
-    fn size_bytes(&self) -> DaftResult<Option<usize>> {
+    fn size_bytes(&self) -> usize {
         (**self).size_bytes()
     }
 
-    fn num_rows(&self) -> DaftResult<usize> {
+    fn num_rows(&self) -> usize {
         (**self).num_rows()
     }
 }

@@ -3,14 +3,19 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 
+
+
 interface LogoProps {
   onComplete?: () => void;
   textColor?: string;
 }
 
+
+
 const Logo = ({ onComplete, textColor = "text-white" }: LogoProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [animationKey, setAnimationKey] = useState(0);
+  const isAnimatingRef = useRef(false);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -18,6 +23,9 @@ const Logo = ({ onComplete, textColor = "text-white" }: LogoProps) => {
 
     const handleAnimationEnd = () => {
       onComplete?.();
+      setTimeout(() => {
+        isAnimatingRef.current = false;
+      }, 100);
     };
 
     container.addEventListener("animationend", handleAnimationEnd);
@@ -26,6 +34,8 @@ const Logo = ({ onComplete, textColor = "text-white" }: LogoProps) => {
   }, [onComplete]);
 
   const handleMouseEnter = () => {
+    if (isAnimatingRef.current) return;
+    isAnimatingRef.current = true;
     setAnimationKey(prev => prev + 1);
   };
 
@@ -33,7 +43,7 @@ const Logo = ({ onComplete, textColor = "text-white" }: LogoProps) => {
     <div
       ref={containerRef}
       onMouseEnter={handleMouseEnter}
-      className="flex cursor-pointer select-none items-center font-mono text-xl"
+      className="flex cursor-pointer select-none items-center font-mono text-xl  min-w-[6.5ch]"
     >
       <span
         key={animationKey}
@@ -51,39 +61,6 @@ const Logo = ({ onComplete, textColor = "text-white" }: LogoProps) => {
         className="inline-block h-[18px] w-[12px]"
         style={{ marginLeft: "4px", backgroundColor: "#ff00ff" }}
       />
-      <style jsx global>{`
-        @keyframes terminal-text {
-          0% {
-            --text: "{";
-          }
-          16.6% {
-            --text: ">#";
-          }
-          33.2% {
-            --text: "d[:";
-          }
-          49.8% {
-            --text: "da=/";
-          }
-          66.4% {
-            --text: 'daf"';
-          }
-          83% {
-            --text: "daft";
-          }
-          100% {
-            --text: "daft";
-          }
-        }
-
-        .terminal-text {
-          animation: terminal-text 0.3s steps(1) forwards;
-        }
-
-        .terminal-text::before {
-          content: var(--text, "{");
-        }
-      `}</style>
     </div>
   );
 };
