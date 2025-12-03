@@ -25,6 +25,20 @@ class GoogleProvider(Provider):
         self._name = name if name else "google"
         self._options = options
 
+        try:
+            from google import genai  # noqa: F401
+        except ImportError:
+            raise ImportError(
+                "google is required for the GoogleProvider. Please install it using `pip install 'daft[google]'`"
+            )
+
+        from daft.dependencies import np
+
+        if not np.module_available():  # type: ignore[attr-defined]
+            raise ImportError(
+                "numpy is required for the GoogleProvider. Please install it using `pip install 'daft[google]'`"
+            )
+
     @property
     def name(self) -> str:
         return self._name

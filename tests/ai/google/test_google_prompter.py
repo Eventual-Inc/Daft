@@ -495,6 +495,21 @@ def test_google_prompter_with_image_numpy():
             # Second part image bytes (not text)
             assert parts[1].text is None
 
+
+def test_google_prompter_raises_without_pillow_on_image():
+    """Test that prompting with image fails without Pillow."""
+    from daft.dependencies import np
+
+    async def _test():
+        # Mock Pillow as not available
+        with patch("daft.dependencies.pil_image.module_available", return_value=False):
+            prompter = create_prompter()
+            image = np.zeros((100, 100, 3), dtype=np.uint8)
+
+            with pytest.raises(ImportError, match="Pillow is required"):
+                # We use run_async here because prompt is async
+                await prompter.prompt(("Image", image))
+
     run_async(_test())
 
 

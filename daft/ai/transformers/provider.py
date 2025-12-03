@@ -27,11 +27,29 @@ class TransformersProvider(Provider):
         self._name = name if name else "transformers"
         self._options = options
 
+        from daft.dependencies import torch
+
+        if not torch.module_available():
+            raise ImportError(
+                "torch is required for the TransformersProvider. Please install it using `pip install 'daft[transformers]'`"
+            )
+
     @property
     def name(self) -> str:
         return self._name
 
     def get_image_embedder(self, model: str | None = None, **options: Any) -> ImageEmbedderDescriptor:
+        from daft.dependencies import pil_image, torchvision
+
+        if not torchvision.module_available():
+            raise ImportError(
+                "torchvision is required to embed_image with the TransformersProvider. Please install it using `pip install 'daft[transformers]'`"
+            )
+        if not pil_image.module_available():
+            raise ImportError(
+                "Pillow is required to embed_image with TransformersProvider. Please install it using `pip install 'daft[transformers]'`"
+            )
+
         from daft.ai.transformers.protocols.image_embedder import TransformersImageEmbedderDescriptor
 
         return TransformersImageEmbedderDescriptor(model or self.DEFAULT_IMAGE_EMBEDDER, options)
@@ -63,6 +81,17 @@ class TransformersProvider(Provider):
         return TransformersTextEmbedderDescriptor(model or self.DEFAULT_TEXT_EMBEDDER, options)
 
     def get_image_classifier(self, model: str | None = None, **options: Any) -> ImageClassifierDescriptor:
+        from daft.dependencies import pil_image, torchvision
+
+        if not torchvision.module_available():
+            raise ImportError(
+                "torchvision is required to classify_image with TransformersProvider. Please install it using `pip install 'daft[transformers]'`"
+            )
+        if not pil_image.module_available():
+            raise ImportError(
+                "Pillow is required to classify_image with the TransformersProvider. Please install it using `pip install 'daft[transformers]'`"
+            )
+
         from daft.ai.transformers.protocols.image_classifier import (
             TransformersImageClassifierDescriptor,
             TransformersImageClassifierOptions,

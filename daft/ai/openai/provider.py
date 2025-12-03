@@ -28,17 +28,16 @@ class OpenAIProvider(Provider):
         try:
             import openai  # noqa: F401
         except ImportError:
-            raise ImportError("OpenAI is not installed. Please install it using `pip install daft[openai]`")
+            raise ImportError(
+                "openai is required for the OpenAIProvider. Please install it using `pip install 'daft[openai]'`"
+            )
 
-        from daft.dependencies import np, pil_image
+        from daft.dependencies import np
 
-        if not np.module_available():
-            raise ImportError("Numpy is not installed. Please install it using `pip install daft[openai]`")
-
-        if not pil_image.module_available():
-            raise ImportError("Pillow is not installed. Please install it using `pip install daft[openai]`")
-
-    
+        if not np.module_available():  # type: ignore[attr-defined]
+            raise ImportError(
+                "numpy is required for the OpenAIProvider. Please install it using `pip install 'daft[openai]'`"
+            )
 
     @property
     def name(self) -> str:

@@ -131,6 +131,11 @@ class OpenAIPrompter(Prompter):
 
             from daft.dependencies import pil_image
 
+            if not pil_image.module_available():
+                raise ImportError(
+                    "Pillow is required to process images with OpenAI Prompter. Please install it using `pip install 'daft[openai]'`"
+                )
+
             pil_image = pil_image.fromarray(msg)
             bio = io.BytesIO()
             pil_image.save(bio, "PNG")

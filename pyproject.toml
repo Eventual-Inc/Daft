@@ -36,7 +36,7 @@ azure = []
 clickhouse = ["clickhouse_connect"]
 deltalake = ["deltalake <= 1.2.1"]
 gcp = []
-google = ["google-genai"]
+google = ["google-genai", "numpy", "Pillow"]
 hudi = ["pyarrow >= 8.0.0"]
 huggingface = ["huggingface-hub", "datasets"]
 # TODO: pyiceberg 0.9.1 has a bug https://github.com/apache/iceberg-python/issues/1979. It was not
@@ -53,7 +53,7 @@ ray = [
   'ray[data, client]>=2.0.0; platform_system != "Windows"',
   'ray[data, client]>=2.10.0; platform_system == "Windows"'  # ray 2.10 has the pyarrow upper pin removed
 ]
-transformers = ["transformers", "sentence-transformers", "torch", "torchvision"]
+transformers = ["transformers", "sentence-transformers", "torch", "torchvision", "Pillow"]
 spark = ["googleapis-common-protos >= 1.56.4", "grpcio >= 1.48", "grpcio-status >= 1.48", "numpy >= 1.15", "pandas >= 1.0.5", "py4j >= 0.10.9.7", "pyspark == 3.5.5"]
 # connectorx 0.4.4 is needed for pgvector support.
 sql = ["connectorx>=0.4.4", "sqlalchemy", "sqlglot"]
@@ -62,6 +62,7 @@ unity = ["httpx <= 0.27.2", "unitycatalog"]
 video = ["av >= 15.0.0"]
 audio = ["soundfile >= 0.13.0", "librosa >= 0.11.0"]
 viz = []
+vllm = ["vllm>=0.5.0; platform_system == \"Linux\" and platform_machine == \"x86_64\"", "vllm==0.11.0; platform_system != \"Linux\" or platform_machine != \"x86_64\""]
 
 [dependency-groups]
 dev = [

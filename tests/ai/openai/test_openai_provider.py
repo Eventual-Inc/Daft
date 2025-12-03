@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 pytest.importorskip("openai")
@@ -105,3 +107,9 @@ def test_openai_text_embedder_descriptor_overridden_dimensions():
     )
 
     assert descriptor.get_dimensions().size == 256
+
+
+def test_openai_provider_raises_import_error_without_numpy():
+    with patch("daft.dependencies.np.module_available", return_value=False):
+        with pytest.raises(ImportError, match="numpy is required for the OpenAIProvider"):
+            OpenAIProvider(api_key="test-key")
