@@ -49,7 +49,7 @@ use url::ParseError;
 
 use self::{http::HttpSource, local::LocalSource};
 pub use crate::range::GetRange;
-use crate::{Error::InvalidRangeRequest, multipart::MultipartWriter, range::InvalidGetRange};
+use crate::{Error::InvalidRangeRequest, range::InvalidGetRange};
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -287,33 +287,6 @@ impl IOClient {
         self.get_source_and_path(input)
             .map(|f| f.map(|(source, _)| source))
             .await
-    }
-
-    pub async fn get_multipart_writer(
-        &self,
-        input: &str,
-    ) -> Result<Option<Box<dyn MultipartWriter>>> {
-        let (source_type, _path) = parse_url(input)?;
-        match source_type {
-            SourceType::S3 => {
-                let part_size = NonZeroUsize::new(self.config.s3.multipart_size as usize)
-                    .ok_or_else(|| Error::InvalidArgument {
-                        msg: "S3 multipart part size must be non-zero".to_string(),
-                    })?;
-                let max_concurrency =
-                    NonZeroUsize::new(self.config.s3.multipart_max_concurrency as usize)
-                        .ok_or_else(|| Error::InvalidArgument {
-                            msg: "S3 multipart concurrent uploads per object must be non-zero"
-                                .to_string(),
-                        })?;
-                let source = S3LikeSource::get_client(&self.config.s3).await?;
-                let writer =
-                    S3MultipartWriter::create(input, part_size, max_concurrency, source).await?;
-
-                Ok(Some(Box::new(writer)))
-            }
-            _ => Ok(None),
-        }
     }
 
     pub async fn glob(

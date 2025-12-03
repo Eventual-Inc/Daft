@@ -96,7 +96,12 @@ impl StorageBackend for ObjectStorageBackend {
         let io_client = get_io_client(true, io_config)?;
 
         let uri = format!("{}://{}", self.scheme, filename);
-        let mut writer = match io_client.get_multipart_writer(&uri).await? {
+        let mut writer = match io_client
+            .get_source(&uri)
+            .await?
+            .create_multipart_writer(&uri)
+            .await?
+        {
             Some(writer) => writer,
             None => {
                 return Err(DaftError::InternalError(format!(

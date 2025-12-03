@@ -1267,6 +1267,24 @@ impl ObjectSource for S3LikeSource {
         Ok(true)
     }
 
+    async fn create_multipart_writer(
+        self: Arc<Self>,
+        uri: &str,
+    ) -> super::Result<Option<Box<dyn MultipartWriter>>> {
+        let part_size =
+            NonZeroUsize::new(self.s3_config.multipart_size as usize).ok_or_else(|| {
+                InvalidArgument {
+                    msg: "S3 multipart part size must be non-zero".to_string(),
+                }
+            })?;
+        let max_concurrency = NonZeroUsize::new(self.s3_config.multipart_max_concurrency as usize)
+            .ok_or_else(|| InvalidArgument {
+                msg: "S3 multipart concurrent uploads per object must be non-zero".to_string(),
+            })?;
+        let writer = S3MultipartWriter::create(uri, part_size, max_concurrency, self).await?;
+        Ok(Some(Box::new(writer)))
+    }
+
     async fn get(
         &self,
         uri: &str,
