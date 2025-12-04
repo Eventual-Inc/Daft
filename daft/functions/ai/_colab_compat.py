@@ -53,7 +53,7 @@ def clean_pydantic_model(model_cls: type[BaseModel], _cleaned_cache: dict[type, 
     if model_cls in _cleaned_cache:
         return _cleaned_cache[model_cls]
 
-    # First pass: collect all referenced Pydantic models
+    # First pass: collect all referenced Pydantic models (excluding self-references)
     referenced_models = []
     for field_info in model_cls.model_fields.values():
         annotation = field_info.annotation
@@ -61,10 +61,10 @@ def clean_pydantic_model(model_cls: type[BaseModel], _cleaned_cache: dict[type, 
         if origin is not None:
             for arg in get_args(annotation):
                 if isinstance(arg, type) and issubclass(arg, BaseModel):
-                    if arg not in _cleaned_cache and arg not in referenced_models:
+                    if arg is not model_cls and arg not in _cleaned_cache and arg not in referenced_models:
                         referenced_models.append(arg)
         elif isinstance(annotation, type) and issubclass(annotation, BaseModel):
-            if annotation not in _cleaned_cache and annotation not in referenced_models:
+            if annotation is not model_cls and annotation not in _cleaned_cache and annotation not in referenced_models:
                 referenced_models.append(annotation)
 
     # Recursively clean referenced models first

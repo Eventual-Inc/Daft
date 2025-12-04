@@ -219,3 +219,16 @@ def test_cleaned_self_referential_model_is_picklable():
     )
     assert instance.value == "root"
     assert instance.children[0].value == "child"
+
+
+def test_cleaned_direct_self_referential_model_is_picklable():
+    """Test that cleaned direct self-referential models can be pickled."""
+    SingleChildTree.model_rebuild()
+    cleaned = clean_pydantic_model(SingleChildTree)
+
+    pickled = cloudpickle.dumps(cleaned)
+    unpickled = cloudpickle.loads(pickled)
+
+    instance = unpickled(value="root", child={"value": "leaf", "child": None})
+    assert instance.value == "root"
+    assert instance.child.value == "leaf"
