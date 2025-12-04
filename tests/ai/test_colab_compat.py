@@ -39,6 +39,13 @@ class TreeNode(BaseModel):
     children: list[TreeNode] | None = None
 
 
+class SingleChildTree(BaseModel):
+    """Direct self-reference (non-container) to trigger recursion edge case."""
+
+    value: str
+    child: SingleChildTree | None = None
+
+
 class ModelWithDefaults(BaseModel):
     """Model with required and optional fields."""
 
@@ -103,7 +110,7 @@ def test_clean_nested_model():
     assert instance.children[0].name == "child1"
 
 
-def test_clean_self_referential_model():
+def test_clean_self_referential_model_with_children_list():
     """Test cleaning a self-referential model (tree structure)."""
     cleaned = clean_pydantic_model(TreeNode)
 
@@ -121,6 +128,17 @@ def test_clean_self_referential_model():
     assert instance.value == "root"
     assert len(instance.children) == 2
     assert instance.children[1].children[0].value == "grandchild"
+
+
+def test_clean_self_referential_model():
+    """Self references outside containers should not recurse forever."""
+    SingleChildTree.model_rebuild()
+    cleaned = clean_pydantic_model(SingleChildTree)
+
+    assert cleaned.__name__ == "SingleChildTree"
+    instance = cleaned(value="root", child={"value": "leaf", "child": None})
+    assert instance.value == "root"
+    assert instance.child.value == "leaf"
 
 
 def test_clean_model_preserves_defaults():
