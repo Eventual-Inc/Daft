@@ -232,3 +232,78 @@ def test_cleaned_direct_self_referential_model_is_picklable():
     instance = unpickled(value="root", child={"value": "leaf", "child": None})
     assert instance.value == "root"
     assert instance.child.value == "leaf"
+
+
+# Tests for colab_safe_dumps - the custom pickler that cleans nested models
+
+
+def test_colab_safe_dumps_cleans_nested_model():
+    """Test that colab_safe_dumps cleans Pydantic models nested in other structures."""
+    from daft.pickle._colab_compat import colab_safe_dumps
+
+    # Model nested inside a dict
+    nested = {"config": {"model": SimpleModel, "value": 123}}
+
+    pickled = colab_safe_dumps(nested)
+    unpickled = cloudpickle.loads(pickled)
+
+    # Verify structure is preserved
+    assert unpickled["config"]["value"] == 123
+
+    # Verify the model works
+    model_cls = unpickled["config"]["model"]
+    instance = model_cls(name="test", value=10, score=0.5)
+    assert instance.name == "test"
+
+
+def test_colab_safe_dumps_cleans_deeply_nested_model():
+    """Test that colab_safe_dumps cleans models at any depth."""
+    from daft.pickle._colab_compat import colab_safe_dumps
+
+    # Model nested several levels deep
+    deeply_nested = {
+        "level1": {
+            "level2": {
+                "level3": [Parent, SimpleModel],
+            }
+        }
+    }
+
+    pickled = colab_safe_dumps(deeply_nested)
+    unpickled = cloudpickle.loads(pickled)
+
+    # Verify both models work
+    parent_cls = unpickled["level1"]["level2"]["level3"][0]
+    simple_cls = unpickled["level1"]["level2"]["level3"][1]
+
+    parent = parent_cls(name="p", children=[{"name": "c", "age": 5}])
+    assert parent.name == "p"
+
+    simple = simple_cls(name="s", value=1, score=0.1)
+    assert simple.name == "s"
+
+
+def test_colab_safe_dumps_preserves_non_pydantic_objects():
+    """Test that colab_safe_dumps doesn't affect non-Pydantic objects."""
+    from daft.pickle._colab_compat import colab_safe_dumps
+
+    # Mix of Pydantic and non-Pydantic objects
+    mixed = {
+        "model": SimpleModel,
+        "string": "hello",
+        "number": 42,
+        "list": [1, 2, 3],
+        "tuple": (1, "a", None),
+    }
+
+    pickled = colab_safe_dumps(mixed)
+    unpickled = cloudpickle.loads(pickled)
+
+    assert unpickled["string"] == "hello"
+    assert unpickled["number"] == 42
+    assert unpickled["list"] == [1, 2, 3]
+    assert unpickled["tuple"] == (1, "a", None)
+
+    # Model still works
+    instance = unpickled["model"](name="test", value=1, score=0.1)
+    assert instance.name == "test"
