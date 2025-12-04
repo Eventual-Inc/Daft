@@ -30,6 +30,20 @@ class NameSpace(Generic[NS]):
 _registered_namespaces = {}
 
 
+def _create_module(name: str, obj: Any) -> ModuleType:
+    module_name = f"daft.extensions.{name}"
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+
+    instance = obj() if isinstance(obj, type) else obj
+    mod = ModuleType(module_name)
+    for attr in dir(instance):
+        if not attr.startswith("_"):
+            setattr(mod, attr, getattr(instance, attr))
+    sys.modules[module_name] = mod
+    return mod
+
+
 def register_extension(name: str) -> Any:
     """Register a module namespace under daft.extensions.*.
 
@@ -65,16 +79,7 @@ def register_extension(name: str) -> Any:
 
     def decorator(obj: Any) -> Any:
         _registered_namespaces[name] = obj
-
-        module_name = f"daft.extensions.{name}"
-        if module_name not in sys.modules:
-            instance = obj() if isinstance(obj, type) else obj
-            mod = ModuleType(module_name)
-            for attr in dir(instance):
-                if not attr.startswith("_"):
-                    setattr(mod, attr, getattr(instance, attr))
-            sys.modules[module_name] = mod
-
+        _create_module(name, obj)
         return obj
 
     return decorator
@@ -82,18 +87,7 @@ def register_extension(name: str) -> Any:
 
 def __getattr__(name: str) -> ModuleType:
     if name in _registered_namespaces:
-        namespace = _registered_namespaces[name]
-        obj = namespace() if isinstance(namespace, type) else namespace
-
-        module_name = f"daft.extensions.{name}"
-        if module_name not in sys.modules:
-            mod = ModuleType(module_name)
-            for attr in dir(obj):
-                if not attr.startswith("_"):
-                    setattr(mod, attr, getattr(obj, attr))
-            sys.modules[module_name] = mod
-
-        return sys.modules[module_name]
+        return _create_module(name, _registered_namespaces[name])
     raise AttributeError(f"module 'daft.extensions' has no attribute '{name}'")
 
 
