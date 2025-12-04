@@ -33,7 +33,7 @@ pub mod python;
 pub mod range;
 pub mod utils;
 
-use std::{borrow::Cow, collections::HashMap, hash::Hash, num::NonZeroUsize, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 pub use common_io_config::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config, TosConfig};
