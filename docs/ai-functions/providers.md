@@ -213,7 +213,7 @@ daft.set_provider(
     api_key=os.getenv("OPENROUTER_API_KEY")
 )
 
-# For HuggingFace Inference Providers
+# For Hugging Face Inference Providers
 # See: https://huggingface.co/inference/get-started
 daft.set_provider(
     "openai",
