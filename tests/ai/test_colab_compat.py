@@ -7,7 +7,7 @@ pytest.importorskip("pydantic")
 
 from pydantic import BaseModel
 
-from daft.functions.ai._colab_compat import IS_COLAB, clean_pydantic_model
+from daft.pickle._colab_compat import IS_COLAB, clean_pydantic_model
 
 
 class SimpleModel(BaseModel):
@@ -72,7 +72,7 @@ def test_cleaned_model_has_clean_namespace():
     cleaned = clean_pydantic_model(SimpleModel)
 
     # Cleaned model should be in the _colab_compat module's namespace
-    assert cleaned.__module__ == "daft.functions.ai._colab_compat"
+    assert cleaned.__module__ == "daft.pickle._colab_compat"
     assert cleaned.__module__ != original_module
 
     # They should be different classes
