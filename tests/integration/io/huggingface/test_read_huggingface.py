@@ -89,3 +89,42 @@ def test_read_huggingface_fallback_on_400_error():
         # Compare the results
         actual = df.to_pandas()
         assert_df_equals(actual, expected, "foo")
+
+
+@pytest.mark.integration()
+def test_read_huggingface_multi_split_dataset():
+    """Test that read_huggingface works with datasets that have multiple splits.
+
+    This tests both the main path (read_parquet) and fallback path (datasets library)
+    to ensure they return the same data for a multi-split dataset.
+    """
+    repo = "stanfordnlp/imdb"
+
+    # Main path: read_huggingface uses read_parquet internally
+    df_main = daft.read_huggingface(repo)
+    main_result = df_main.to_pandas()
+
+    # Fallback path: mock read_parquet to force fallback to datasets library
+    with patch("daft.io.huggingface.read_parquet") as mock_read_parquet:
+        mock_read_parquet.side_effect = DaftCoreException(
+            f"DaftError::External Unable to open file https://huggingface.co/api/datasets/{repo}/parquet: "
+            f'reqwest::Error {{ kind: Status(400, None), url: "https://huggingface.co/api/datasets/{repo}/parquet" }}'
+        )
+
+        df_fallback = daft.read_huggingface(repo)
+        fallback_result = df_fallback.to_pandas()
+
+    # Both paths should return the same data
+    assert len(main_result) == len(fallback_result), (
+        f"Row count mismatch: main path returned {len(main_result)} rows, "
+        f"fallback path returned {len(fallback_result)} rows"
+    )
+
+    # Compare schemas
+    assert list(main_result.columns) == list(fallback_result.columns), "Schema mismatch between main and fallback paths"
+
+    # Compare data content by checking that the set of (text, label) pairs is identical
+    # We use sets because row order may differ between paths, and there are duplicate texts
+    main_set = set(zip(main_result["text"], main_result["label"]))
+    fallback_set = set(zip(fallback_result["text"], fallback_result["label"]))
+    assert main_set == fallback_set, "Data content mismatch between main and fallback paths"
