@@ -115,16 +115,4 @@ def test_read_huggingface_multi_split_dataset():
         fallback_result = df_fallback.to_pandas()
 
     # Both paths should return the same data
-    assert len(main_result) == len(fallback_result), (
-        f"Row count mismatch: main path returned {len(main_result)} rows, "
-        f"fallback path returned {len(fallback_result)} rows"
-    )
-
-    # Compare schemas
-    assert list(main_result.columns) == list(fallback_result.columns), "Schema mismatch between main and fallback paths"
-
-    # Compare data content by checking that the set of (text, label) pairs is identical
-    # We use sets because row order may differ between paths, and there are duplicate texts
-    main_set = set(zip(main_result["text"], main_result["label"]))
-    fallback_set = set(zip(fallback_result["text"], fallback_result["label"]))
-    assert main_set == fallback_set, "Data content mismatch between main and fallback paths"
+    assert_df_equals(main_result, fallback_result, sort_key=["text", "label"])
