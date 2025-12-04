@@ -1,0 +1,8 @@
+!pip install daft pydantic
+
+from pydantic import BaseModel
+
+class Result(BaseModel):
+    answer: bool
+
+print("Model defined in Colab cell")

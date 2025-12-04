@@ -1,0 +1,27 @@
+# Test WITHOUT fix - should FAIL
+import daft
+from daft.pickle import dumps
+
+print("Testing WITHOUT fix...")
+
+# Test 1: Direct pickle
+print("Test 1: dumps(Result)")
+try:
+    data = dumps(Result)
+    print("  ✓ SUCCESS")
+except Exception as e:
+    print(f"  ✗ FAILED: {e}")
+
+# Test 2: @daft.func with Pydantic return type
+print("Test 2: @daft.func with Pydantic return type")
+try:
+    @daft.func
+    def analyze(text: str) -> Result:
+        return Result(answer=text == "hello")
+
+    df = daft.from_pydict({"text": ["hello", "world"]})
+    df = df.with_column("analysis", analyze(df["text"]))
+    df.show(2)
+    print("  ✓ SUCCESS")
+except Exception as e:
+    print(f"  ✗ FAILED: {e}")
