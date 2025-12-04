@@ -45,7 +45,7 @@ class LazyImport:
             try:
                 self._module = importlib.import_module(self._module_name)
             except ImportError as e:
-                raise ImportError(f"Failed to import lazily-loaded module '{self._module_name}'. ") from e
+                raise ImportError(f"Failed to import lazily-loaded module '{self._module_name}'.") from e
         return self._module
 
     def __getattr__(self, name: str) -> Any:
