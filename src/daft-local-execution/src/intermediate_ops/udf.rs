@@ -196,47 +196,40 @@ struct UdfParams {
     required_cols: Vec<usize>,
 }
 
-pub(crate) struct UdfHandle {
-    params: Arc<UdfParams>,
-    udf_expr: BoundExpr,
-    worker_idx: usize,
-    // Optional PyObject handle to external UDF worker.
-    // Required for ActorPoolUDFs
-    // Optional for stateless UDFs
-    //   - Starts as None indicating that the UDF is run in-line with the thread
-    //   - If excessive GIL contention is detected, the UDF will be moved to an external worker
-    // Second bool indicates if the UDF was initialized
-    #[cfg(feature = "python")]
-    handle: Option<Py<PyAny>>,
+pub(crate) enum UdfHandle {
+    Thread,
+    Process(Option<Py<PyAny>>),
 }
 
 impl UdfHandle {
-    fn no_handle(params: Arc<UdfParams>, udf_expr: BoundExpr, worker_idx: usize) -> Self {
-        Self {
-            params,
-            udf_expr,
-            worker_idx,
-            #[cfg(feature = "python")]
-            handle: None,
-        }
-    }
-
-    fn create_handle(&mut self) -> DaftResult<()> {
+    fn create_process(&mut self) -> DaftResult<()> {
         #[cfg(feature = "python")]
         {
-            let py_expr = PyExpr::from(self.udf_expr.inner().clone());
+            match self {
+                Self::Process(None) => {
+                    let py_expr = PyExpr::from(self.udf_expr.inner().clone());
 
-            let handle = Python::attach(|py| {
-                // create python object
-                Ok::<pyo3::Py<pyo3::PyAny>, PyErr>(
-                    py.import(pyo3::intern!(py, "daft.execution.udf"))?
-                        .getattr(pyo3::intern!(py, "UdfHandle"))?
-                        .call1((py_expr,))?
-                        .unbind(),
-                )
-            })?;
+                    let handle = Python::attach(|py| {
+                        // create python object
+                        Ok::<pyo3::Py<pyo3::PyAny>, PyErr>(
+                            py.import(pyo3::intern!(py, "daft.execution.udf"))?
+                                .getattr(pyo3::intern!(py, "UdfHandle"))?
+                                .call1((py_expr,))?
+                                .unbind(),
+                        )
+                    })?;
 
-            self.handle = Some(handle);
+                    *self = Self::Process(Some(handle));
+                }
+                Self::Process(Some(_)) => {
+                    // Handle already created, nothing to do
+                }
+                Self::Thread => {
+                    return Err(DaftError::ValueError(
+                        "Cannot create process handle for Thread variant".to_string(),
+                    ));
+                }
+            }
         }
 
         #[cfg(not(feature = "python"))]
@@ -247,21 +240,39 @@ impl UdfHandle {
         Ok(())
     }
 
+    fn teardown(&self) -> DaftResult<()> {
+        #[cfg(feature = "python")]
+        {
+            match self {
+                Self::Process(Some(handle)) => Python::attach(|py| {
+                    handle
+                        .bind(py)
+                        .call_method0(pyo3::intern!(py, "teardown"))?;
+                    Ok(())
+                }),
+                Self::Process(None) | Self::Thread => Ok(()),
+            }
+        }
+
+        #[cfg(not(feature = "python"))]
+        {
+            Ok(())
+        }
+    }
+
     #[cfg(feature = "python")]
     fn eval_input_with_handle(
         &self,
+        handle: &Py<PyAny>,
         input: RecordBatch,
+        params: &Arc<UdfParams>,
+        worker_idx: usize,
         runtime_stats: &UdfRuntimeStats,
     ) -> DaftResult<Series> {
         use common_metrics::python::PyOperatorMetrics;
         use daft_recordbatch::python::PyRecordBatch;
 
         use crate::STDOUT;
-
-        let handle = self
-            .handle
-            .as_ref()
-            .expect("eval_input_with_handle called without an actor handle");
 
         let (result, stdout_lines, metrics) = Python::attach(|py| {
             let (py_result, py_stdout_lines, py_metrics) = handle
@@ -278,10 +289,7 @@ impl UdfHandle {
             ))
         })?;
 
-        let label = format!(
-            "[`{}` Worker #{}]",
-            self.params.udf_properties.name, self.worker_idx
-        );
+        let label = format!("[`{}` Worker #{}]", params.udf_properties.name, worker_idx);
         for line in stdout_lines {
             STDOUT.print(&label, &line);
         }
@@ -311,9 +319,30 @@ impl UdfHandle {
         runtime_stats.update_metrics(collected_metrics);
         Ok(result)
     }
+}
 
+impl Drop for UdfHandle {
+    fn drop(&mut self) {
+        let result = self.teardown();
+
+        if let Err(e) = result {
+            log::error!("Error tearing down UDF actor: {}", e);
+        }
+    }
+}
+
+/// Each UdfState holds a handle to a single Python process.
+/// The concurrency of the Python process pool is thus tied to the concurrency of the operator
+/// and the local executor handles task scheduling.
+pub(crate) struct UdfState {
+    params: Arc<UdfParams>,
+    worker_idx: usize,
+    udf_handle: UdfHandle,
+}
+
+impl UdfState {
     #[cfg(not(feature = "python"))]
-    fn eval_input(
+    pub(crate) fn eval_input(
         &mut self,
         input: Arc<MicroPartition>,
         runtime_stats: Arc<UdfRuntimeStats>,
@@ -322,11 +351,16 @@ impl UdfHandle {
     }
 
     #[cfg(feature = "python")]
-    fn eval_input(
+    pub(crate) fn eval_input(
         &mut self,
         input: Arc<MicroPartition>,
         runtime_stats: Arc<UdfRuntimeStats>,
     ) -> DaftResult<Arc<MicroPartition>> {
+        // Create handle lazily on first execution if needed
+        if let Self::Process(None) = &mut self.udf_handle {
+            self.udf_handle.create_process()?;
+        }
+
         let input_batches = input.record_batches();
         let mut output_batches = Vec::with_capacity(input_batches.len());
 
@@ -335,10 +369,20 @@ impl UdfHandle {
             let func_input = batch.get_columns(self.params.required_cols.as_slice());
 
             // Call the UDF
-            let mut result_series = if self.handle.is_some() {
-                self.eval_input_with_handle(func_input, &runtime_stats)?
-            } else {
-                self.eval_input_inline(func_input, &runtime_stats)?
+            let mut result_series = match &mut self.udf_handle {
+                Self::Thread => self
+                    .udf_handle
+                    .eval_input_inline(func_input, &runtime_stats)?,
+                Self::Process(Some(handle)) => self.udf_handle.eval_input_with_handle(
+                    handle,
+                    func_input,
+                    &self.params,
+                    self.worker_idx,
+                    &runtime_stats,
+                )?,
+                Self::Process(None) => {
+                    unreachable!("handle should be Some after create_process")
+                }
             };
 
             // If result.len() == 1 (because it was a 0-column UDF), broadcast to right size
@@ -360,44 +404,6 @@ impl UdfHandle {
             None,
         )))
     }
-
-    fn teardown(&self) -> DaftResult<()> {
-        #[cfg(feature = "python")]
-        {
-            let Some(handle) = &self.handle else {
-                return Ok(());
-            };
-
-            Python::attach(|py| {
-                handle
-                    .bind(py)
-                    .call_method0(pyo3::intern!(py, "teardown"))?;
-                Ok(())
-            })
-        }
-
-        #[cfg(not(feature = "python"))]
-        {
-            Ok(())
-        }
-    }
-}
-
-impl Drop for UdfHandle {
-    fn drop(&mut self) {
-        let result = self.teardown();
-
-        if let Err(e) = result {
-            log::error!("Error tearing down UDF actor: {}", e);
-        }
-    }
-}
-
-/// Each UdfState holds a handle to a single Python process.
-/// The concurrency of the Python process pool is thus tied to the concurrency of the operator
-/// and the local executor handles task scheduling.
-pub(crate) struct UdfState {
-    udf_handle: UdfHandle,
 }
 
 pub(crate) struct UdfOperator {
@@ -497,7 +503,7 @@ impl IntermediateOperator for UdfOperator {
         let fut = task_spawner.spawn_with_memory_request(
             memory_request,
             async move {
-                let result = state.udf_handle.eval_input(input, runtime_stats)?;
+                let result = state.eval_input(input, runtime_stats)?;
                 let res = IntermediateOperatorResult::NeedMoreInput(Some(result));
                 Ok((state, res))
             },
@@ -579,25 +585,39 @@ impl IntermediateOperator for UdfOperator {
                 .dtype
                 .is_arrow();
 
-        let create_handle = self.params.udf_properties.is_actor_pool_udf()
+        let use_process = self.params.udf_properties.is_actor_pool_udf()
             || self.params.udf_properties.use_process.unwrap_or(false);
 
-        let mut udf_handle =
-            UdfHandle::no_handle(self.params.clone(), self.params.expr.clone(), worker_count);
-
-        if create_handle {
+        let mode = if use_process {
             if is_arrow_dtype {
-                udf_handle.create_handle()?;
+                // Can use process when all types are arrow-serializable
+                #[cfg(feature = "python")]
+                {
+                    UdfExecutionMode::Process(None)
+                }
+                #[cfg(not(feature = "python"))]
+                {
+                    UdfExecutionMode::Thread
+                }
             } else {
-                // Should only warn when concurrency or use_process is set
+                // Cannot use process with non-arrow types, fall back to thread
                 log::warn!(
                     "UDF `{}` requires a non-arrow-serializable input column. The UDF will run on the same thread as the daft process.",
                     self.params.udf_properties.name
                 );
+                UdfExecutionMode::Thread
             }
-        }
+        } else {
+            UdfExecutionMode::Thread
+        };
 
-        Ok(UdfState { udf_handle })
+        let udf_handle = UdfHandle::new(self.params.expr.clone(), mode);
+
+        Ok(UdfState {
+            params: self.params.clone(),
+            worker_idx: worker_count,
+            udf_handle,
+        })
     }
 
     fn max_concurrency(&self) -> DaftResult<usize> {
