@@ -503,8 +503,7 @@ impl From<arrow_schema::IntervalUnit> for IntervalUnit {
 #[cfg(feature = "arrow")]
 impl From<Schema> for arrow_schema::Schema {
     fn from(schema: Schema) -> Self {
-        let fields: Vec<arrow_schema::Field> =
-            schema.fields.into_iter().map(|f| f.into()).collect();
+        let fields: Vec<arrow_schema::Field> = schema.fields.into_iter().map(|f| f.into()).collect();
         arrow_schema::Schema::new(fields)
     }
 }
