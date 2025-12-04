@@ -1,0 +1,17 @@
+[package]
+name = "daft-lance"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+common-error = {path = "../common/error", default-features = false}
+daft-arrow = {path = "../daft-arrow"}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
+daft-schema = {path = "../daft-schema", default-features = false}
+futures = {workspace = true}
+# FIXME by zhenchao
+lance = {version = "0.28.0"}
+arrow-schema = {version = "54.2.1"}
+
+[lints]
+workspace = true
