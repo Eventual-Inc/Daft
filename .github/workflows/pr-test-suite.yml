@@ -440,11 +440,12 @@ jobs:
         webhook-type: incoming-webhook
 
   # Same as integration-test-io but runs the tests that require credentials, only on `main`
+  # TODO: revert this change before merging - temporarily enabling for PR testing
   integration-test-io-credentialed:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [skipcheck, integration-test-build]
-    if: ${{ needs.skipcheck.outputs.skip == 'false' && github.ref == 'refs/heads/main' }}
+    if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
       package-name: daft
     strategy:
