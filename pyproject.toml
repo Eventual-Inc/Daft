@@ -102,7 +102,7 @@ dev = [
   "datasets==4.4.1",
   "torch==2.8.0",
   "torchvision==0.23.0",
-  "tensorflow==2.20.0; python_version < '3.13'",
+  "tensorflow==2.19.1; python_version < '3.13'",
   "tf-keras==2.20.1; python_version < '3.13'",
   "jax==0.6.2",
   "jaxtyping==0.3.3",
