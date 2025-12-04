@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 
 class ProviderImportError(ImportError):
-    def __init__(self, tag: str, dependencies: list[str]):
+    def __init__(self, dependencies: list[str], tag: str):
         deps = ", ".join(f"'{d}'" for d in dependencies)
         super().__init__(
             f"Missing required dependencies: {deps}. Please `pip install 'daft[{tag}]'` to use this provider."
@@ -32,48 +32,48 @@ class ProviderImportError(ImportError):
 def load_google(name: str | None = None, **options: Unpack[GoogleProviderOptions]) -> Provider:
     try:
         from daft.ai.google.provider import GoogleProvider
-    except ImportError as e:
-        raise ProviderImportError("google", ["google-genai", "numpy", "Pillow"]) from e
 
-    return GoogleProvider(name, **options)
+        return GoogleProvider(name, **options)
+    except ImportError as e:
+        raise ProviderImportError(["google-genai", "numpy", "Pillow"], "google") from e
 
 
 def load_lm_studio(name: str | None = None, **options: Any) -> Provider:
     try:
         from daft.ai.lm_studio.provider import LMStudioProvider
-    except ImportError as e:
-        raise ProviderImportError("openai", ["openai", "numpy", "Pillow"]) from e
 
-    return LMStudioProvider(name, **options)
+        return LMStudioProvider(name, **options)
+    except ImportError as e:
+        raise ProviderImportError(["openai", "numpy", "Pillow"], "openai") from e
 
 
 def load_openai(name: str | None = None, **options: Unpack[OpenAIProviderOptions]) -> Provider:
     try:
         from daft.ai.openai.provider import OpenAIProvider
-    except ImportError as e:
-        raise ProviderImportError("openai", ["openai", "numpy", "Pillow"]) from e
 
-    return OpenAIProvider(name, **options)
+        return OpenAIProvider(name, **options)
+    except ImportError as e:
+        raise ProviderImportError(["openai", "numpy", "Pillow"], "openai") from e
 
 
 def load_transformers(name: str | None = None, **options: Any) -> Provider:
     try:
         from daft.ai.transformers.provider import TransformersProvider
+
+        return TransformersProvider(name, **options)
     except ImportError as e:
         raise ProviderImportError(
-            "transformers", ["torch", "torchvision", "transformers", "sentence-transformers", "Pillow"]
+            ["torch", "torchvision", "transformers", "sentence-transformers", "Pillow"], "transformers"
         ) from e
-
-    return TransformersProvider(name, **options)
 
 
 def load_vllm_prefix_caching(name: str | None = None, **options: Any) -> Provider:
     try:
         from daft.ai.vllm.provider import VLLMPrefixCachingProvider
-    except ImportError as e:
-        raise ProviderImportError("vllm", ["vllm"]) from e
 
-    return VLLMPrefixCachingProvider(name, **options)
+        return VLLMPrefixCachingProvider(name, **options)
+    except ImportError as e:
+        raise ProviderImportError(["vllm"], "vllm") from e
 
 
 ProviderType = Literal["google", "lm_studio", "openai", "transformers", "vllm-prefix-caching"]

@@ -27,11 +27,16 @@ class TransformersProvider(Provider):
         self._name = name if name else "transformers"
         self._options = options
 
-        from daft.dependencies import torch
+        from daft.dependencies import np, torch
 
         if not torch.module_available():
             raise ImportError(
                 "torch is required for the TransformersProvider. Please install it using `pip install 'daft[transformers]'`"
+            )
+
+        if not np.module_available():  # type: ignore[attr-defined]
+            raise ImportError(
+                "numpy is required for the TransformersProvider. Please install it using `pip install 'daft[transformers]'`"
             )
 
     @property
@@ -47,7 +52,7 @@ class TransformersProvider(Provider):
             )
         if not pil_image.module_available():
             raise ImportError(
-                "Pillow is required to embed_image with TransformersProvider. Please install it using `pip install 'daft[transformers]'`"
+                "Pillow is required to embed_image with the TransformersProvider. Please install it using `pip install 'daft[transformers]'`"
             )
 
         from daft.ai.transformers.protocols.image_embedder import TransformersImageEmbedderDescriptor

@@ -45,3 +45,9 @@ def test_google_provider_raises_import_error_without_numpy():
     with patch("daft.dependencies.np.module_available", return_value=False):
         with pytest.raises(ImportError, match="numpy is required for the GoogleProvider"):
             GoogleProvider(api_key="test-key")
+
+
+def test_google_provider_raises_import_error_without_google_genai():
+    with patch("daft.dependencies.google_genai.module_available", return_value=False):
+        with pytest.raises(ImportError, match="google-genai is required for the GoogleProvider"):
+            GoogleProvider(api_key="test-key")

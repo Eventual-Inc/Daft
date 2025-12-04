@@ -29,7 +29,7 @@ class GoogleProvider(Provider):
             from google import genai  # noqa: F401
         except ImportError:
             raise ImportError(
-                "google is required for the GoogleProvider. Please install it using `pip install 'daft[google]'`"
+                "google-genai is required for the GoogleProvider. Please install it using `pip install 'daft[google]'`"
             )
 
         from daft.dependencies import np
