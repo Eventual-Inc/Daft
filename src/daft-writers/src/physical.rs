@@ -93,9 +93,9 @@ impl PhysicalWriterFactory {
         if native_supported {
             Ok(WriterType::Native)
         } else {
-            /// Currently, Both Pyarrow and native CSV writes don't support nested (struct/list/map) datatype, and since daft doesn't support convert
-            /// timestamp with timezone from arrow2 to arrow-rs, so native csv writer also doesn't support timestamp with timezone.
-            /// Once daft support it, we can return error directly instead of fallback to pyarrow writer.
+            // Currently, Both Pyarrow and native CSV writes don't support nested (struct/list/map) datatype, and since daft doesn't support convert
+            // timestamp with timezone from arrow2 to arrow-rs, so native csv writer also doesn't support timestamp with timezone.
+            // Once daft support it, we can return error directly instead of fallback to pyarrow writer.
             Ok(WriterType::Pyarrow)
         }
     }
