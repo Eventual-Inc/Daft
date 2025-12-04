@@ -218,7 +218,7 @@ daft.set_provider(
 daft.set_provider(
     "openai",
     base_url="https://router.huggingface.co/v1",
-    api_key=os.getenv["HF_TOKEN"]
+    api_key=os.getenv("HF_TOKEN")
 )
 
 # For Databricks
@@ -227,14 +227,16 @@ daft.set_provider(
 daft.set_provider(
     "openai",
     base_url="https://<workspace-id>.cloud.databricks.com/serving-endpoints",
-    api_key=os.getenv["DATABRICKS_TOKEN"],
+    api_key=os.getenv("DATABRICKS_TOKEN"),
 )
 
 ```
 
 ## Prompting with vLLM Online Serving
 
-For vLLM Online Serving, you can set the provider like this. Make sure to set `use_chat_completions=True` in `prompt()` to use the Chat Completions API instead of the new Responses API.
+For vLLM Online Serving, you can set the provider as demonstrated in the example below.
+
+**Note:** vLLM's OpenAI-compatible endpoint expects requests in the Chat Completions API format. Daft's `prompt()` function defaults to using the newer Responses API format, which is not supported by vLLM. To ensure compatibility, set `use_chat_completions=True` in `prompt()` so that your requests use the Chat Completions API format required by vLLM.
 
 ```python
 import os
@@ -258,6 +260,8 @@ df = df.with_column(
 
 df.show()
 ```
+
+
 
 The following sample cli launch command is optimized for Google Colab's A100 High-RAM instance and Google's gemma-3-4b-it model.
 
