@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import sys
 from types import ModuleType
-from typing import Callable, Generic, TypeVar, Any
+from typing import Callable, Generic, TypeVar, Any, TYPE_CHECKING
 from warnings import warn
 
-from daft import DataFrame
-
+if TYPE_CHECKING:
+    from daft import DataFrame
 
 NS = TypeVar("NS")
 
@@ -156,6 +156,8 @@ def register_dataframe_extension(name: str) -> Callable[[type[NS]], type[NS]]:
         <BLANKLINE>
         (Showing first 3 of 3 rows)
     """
+    from daft import DataFrame
+
     return _create_extension(name, DataFrame)
 
 
