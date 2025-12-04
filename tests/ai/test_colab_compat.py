@@ -54,6 +54,12 @@ class ModelWithDefaults(BaseModel):
     optional_int: int = 42
 
 
+# Function defined at module level for pickling tests
+def _analyze_func(text: str) -> SimpleModel:
+    """Sample function with Pydantic return type annotation."""
+    return SimpleModel(name=text, value=len(text), score=0.5)
+
+
 def test_is_colab_returns_false_outside_colab():
     """Verify IS_COLAB is False when not running in Google Colab."""
     assert IS_COLAB is False
@@ -307,3 +313,23 @@ def test_colab_safe_dumps_preserves_non_pydantic_objects():
     # Model still works
     instance = unpickled["model"](name="test", value=1, score=0.1)
     assert instance.name == "test"
+
+
+def test_colab_safe_dumps_cleans_function_with_pydantic_return_type():
+    """Test that colab_safe_dumps cleans Pydantic models in function type annotations.
+
+    This covers the UDF use case where a function has a Pydantic return type:
+        @daft.func
+        def analyze(text: str) -> Result:
+            return Result(answer=True)
+    """
+    from daft.pickle._colab_compat import colab_safe_dumps
+
+    pickled = colab_safe_dumps(_analyze_func)
+    unpickled = cloudpickle.loads(pickled)
+
+    # Verify the function works
+    result = unpickled("hello")
+    assert result.name == "hello"
+    assert result.value == 5
+    assert result.score == 0.5
