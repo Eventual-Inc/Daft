@@ -52,6 +52,26 @@ def test_is_colab_returns_false_outside_colab():
     assert IS_COLAB is False
 
 
+def test_cleaned_model_has_clean_namespace():
+    """Verify cleaned model is created in a clean module namespace.
+
+    This is the core of the fix: models defined in Colab have __module__ = '__main__'
+    which captures Colab's polluted globals. The cleaned model gets created in
+    _colab_compat's namespace via create_model(), avoiding the pollution.
+    """
+    # Original model is defined in this test file's module
+    original_module = SimpleModel.__module__
+
+    cleaned = clean_pydantic_model(SimpleModel)
+
+    # Cleaned model should be in the _colab_compat module's namespace
+    assert cleaned.__module__ == "daft.functions.ai._colab_compat"
+    assert cleaned.__module__ != original_module
+
+    # They should be different classes
+    assert cleaned is not SimpleModel
+
+
 def test_clean_simple_model():
     """Test cleaning a simple model with primitive fields."""
     cleaned = clean_pydantic_model(SimpleModel)
