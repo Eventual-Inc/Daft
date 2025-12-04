@@ -1,4 +1,4 @@
-use std::{iter::repeat, sync::Arc};
+use std::{iter::repeat, ops::Not, sync::Arc};
 
 use common_error::DaftResult;
 
@@ -64,16 +64,22 @@ impl PythonArray {
     // Common functionality for nullity checks
     fn check_nullity(&self, is_null: bool) -> DaftResult<DataArray<BooleanType>> {
         let bitmap = if let Some(validity) = self.validity() {
-            if is_null { !validity } else { validity.clone() }
+            if is_null {
+                validity.inner().not().into()
+            } else {
+                validity.clone()
+            }
+        } else if is_null {
+            daft_arrow::buffer::NullBuffer::new_null(self.len())
         } else {
-            daft_arrow::bitmap::Bitmap::new_constant(!is_null, self.len())
+            daft_arrow::buffer::NullBuffer::new_valid(self.len())
         };
 
         BooleanArray::new(
             Arc::new(Field::new(self.name(), DataType::Boolean)),
             Box::new(daft_arrow::array::BooleanArray::new(
                 daft_arrow::datatypes::DataType::Boolean,
-                bitmap,
+                daft_arrow::buffer::from_null_buffer(bitmap),
                 None,
             )),
         )
@@ -112,11 +118,11 @@ macro_rules! check_nullity_nested_array {
                 $arr.name(),
                 daft_arrow::array::BooleanArray::new(
                     daft_arrow::datatypes::DataType::Boolean,
-                    if $is_null {
-                        !validity
+                    daft_arrow::buffer::from_null_buffer(if $is_null {
+                        validity.inner().not().into()
                     } else {
                         validity.clone()
-                    },
+                    }),
                     None,
                 ),
             ))),
@@ -171,7 +177,7 @@ impl FixedSizeListArray {
     pub fn is_valid(&self, idx: usize) -> bool {
         match self.validity() {
             None => true,
-            Some(validity) => validity.get(idx).unwrap(),
+            Some(validity) => validity.is_valid(idx),
         }
     }
 }
@@ -181,7 +187,7 @@ impl ListArray {
     pub fn is_valid(&self, idx: usize) -> bool {
         match self.validity() {
             None => true,
-            Some(validity) => validity.get(idx).unwrap(),
+            Some(validity) => validity.is_valid(idx),
         }
     }
 }
@@ -191,7 +197,7 @@ impl StructArray {
     pub fn is_valid(&self, idx: usize) -> bool {
         match self.validity() {
             None => true,
-            Some(validity) => validity.get(idx).unwrap(),
+            Some(validity) => validity.is_valid(idx),
         }
     }
 }

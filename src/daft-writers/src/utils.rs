@@ -70,7 +70,7 @@ fn record_batch_to_partition_path(
         .iter()
         .map(|col| {
             let key = urlencoding::encode(col.name());
-            if col.inner.validity().is_none_or(|v| v.get_bit(0)) {
+            if col.inner.validity().is_none_or(|v| v.is_valid(0)) {
                 let value = col.inner.str_value(0)?;
                 Ok(format!("{}={}", key, urlencoding::encode(&value)))
             } else {

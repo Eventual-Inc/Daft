@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use daft_arrow::{
     array::{BinaryArray as ArrowBinaryArray, Utf8Array as ArrowUtf8Array},
-    bitmap::MutableBitmap,
+    buffer::NullBufferBuilder,
     datatypes::DataType as ArrowType,
     offset::Offsets,
 };
@@ -64,23 +64,30 @@ impl BinaryArrayExtension for BinaryArray {
         let input = self.as_arrow();
         let buffer = input.values();
         let mut validity = match input.validity() {
-            Some(bitmap) => bitmap.clone().make_mut(),
-            None => MutableBitmap::from_len_set(input.len()),
+            Some(bitmap) => {
+                let mut builder = NullBufferBuilder::new(input.len());
+                for b in bitmap {
+                    builder.append(b);
+                }
+                builder
+            }
+            None => NullBufferBuilder::new_with_len(input.len()),
         };
         //
         let mut values = Vec::<u8>::new();
         let mut offsets = Offsets::<i64>::new();
-        for (i, span) in input.offsets().windows(2).enumerate() {
+        for span in input.offsets().windows(2) {
             let s = span[0] as usize;
             let e = span[1] as usize;
             match transform(&buffer[s..e]) {
                 Ok(bytes) => {
                     offsets.try_push(bytes.len() as i64)?;
                     values.extend(bytes);
+                    validity.append_non_null();
                 }
                 Err(_) => {
                     offsets.try_push(0)?;
-                    validity.set(i, false);
+                    validity.append_null();
                 }
             }
         }
@@ -89,7 +96,7 @@ impl BinaryArrayExtension for BinaryArray {
             ArrowType::LargeBinary,
             offsets.into(),
             values.into(),
-            Some(validity.into()),
+            daft_arrow::buffer::wrap_null_buffer(validity.finish()),
         );
         let array = Box::new(array);
         Ok(Self::from((self.name(), array)))
@@ -133,23 +140,30 @@ impl BinaryArrayExtension for BinaryArray {
         let input = self.as_arrow();
         let buffer = input.values();
         let mut validity = match input.validity() {
-            Some(bitmap) => bitmap.clone().make_mut(),
-            None => MutableBitmap::from_len_set(input.len()),
+            Some(bitmap) => {
+                let mut builder = NullBufferBuilder::new(input.len());
+                for b in bitmap {
+                    builder.append(b);
+                }
+                builder
+            }
+            None => NullBufferBuilder::new_with_len(input.len()),
         };
         //
         let mut values = Vec::<u8>::new();
         let mut offsets = Offsets::<i64>::new();
-        for (i, span) in input.offsets().windows(2).enumerate() {
+        for span in input.offsets().windows(2) {
             let s = span[0] as usize;
             let e = span[1] as usize;
             match decoder(&buffer[s..e]) {
                 Ok(bytes) => {
                     offsets.try_push(bytes.len() as i64)?;
                     values.extend(bytes);
+                    validity.append_non_null();
                 }
                 Err(_) => {
                     offsets.try_push(0)?;
-                    validity.set(i, false);
+                    validity.append_null();
                 }
             }
         }
@@ -158,7 +172,7 @@ impl BinaryArrayExtension for BinaryArray {
             ArrowType::LargeUtf8,
             offsets.into(),
             values.into(),
-            Some(validity.into()),
+            daft_arrow::buffer::wrap_null_buffer(validity.finish()),
         );
         let array = Box::new(array);
         Ok(Utf8Array::from((self.name(), array)))
@@ -208,8 +222,14 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
         let buffer = input.values();
         let chunks = buffer.len() / size;
         let mut validity = match input.validity() {
-            Some(bitmap) => bitmap.clone().make_mut(),
-            None => MutableBitmap::from_len_set(input.len()),
+            Some(bitmap) => {
+                let mut builder = NullBufferBuilder::new(input.len());
+                for b in bitmap {
+                    builder.append(b);
+                }
+                builder
+            }
+            None => NullBufferBuilder::new_with_len(input.len()),
         };
         //
         let mut values = Vec::<u8>::new();
@@ -221,10 +241,11 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
                 Ok(bytes) => {
                     offsets.try_push(bytes.len() as i64)?;
                     values.extend(bytes);
+                    validity.append_non_null();
                 }
                 Err(_) => {
                     offsets.try_push(0)?;
-                    validity.set(i, false);
+                    validity.append_null();
                 }
             }
         }
@@ -233,7 +254,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
             ArrowType::LargeBinary,
             offsets.into(),
             values.into(),
-            Some(validity.into()),
+            daft_arrow::buffer::wrap_null_buffer(validity.finish()),
         );
         let array = Box::new(array);
         Ok(BinaryArray::from((self.name(), array)))
@@ -281,8 +302,14 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
         let buffer = input.values();
         let chunks = buffer.len() / size;
         let mut validity = match input.validity() {
-            Some(bitmap) => bitmap.clone().make_mut(),
-            None => MutableBitmap::from_len_set(input.len()),
+            Some(bitmap) => {
+                let mut builder = NullBufferBuilder::new(input.len());
+                for b in bitmap {
+                    builder.append(b);
+                }
+                builder
+            }
+            None => NullBufferBuilder::new_with_len(input.len()),
         };
 
         let mut values = Vec::<u8>::new();
@@ -294,10 +321,11 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
                 Ok(bytes) => {
                     offsets.try_push(bytes.len() as i64)?;
                     values.extend(bytes);
+                    validity.append_non_null();
                 }
                 Err(_) => {
                     offsets.try_push(0)?;
-                    validity.set(i, false);
+                    validity.append_null();
                 }
             }
         }
@@ -306,7 +334,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
             ArrowType::LargeUtf8,
             offsets.into(),
             values.into(),
-            Some(validity.into()),
+            daft_arrow::buffer::wrap_null_buffer(validity.finish()),
         );
         let array = Box::new(array);
         Ok(Utf8Array::from((self.name(), array)))

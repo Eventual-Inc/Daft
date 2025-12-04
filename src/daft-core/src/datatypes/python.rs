@@ -4,8 +4,8 @@ use common_error::{DaftError, DaftResult};
 use common_py_serde::pickle_dumps;
 use daft_arrow::{
     array::Array,
-    bitmap::{Bitmap, utils::ZipValidity},
-    buffer::Buffer,
+    bitmap::utils::ZipValidity,
+    buffer::{Buffer, NullBuffer},
 };
 use daft_schema::{dtype::DataType, field::Field};
 use pyo3::{Py, PyAny, PyResult, Python};
@@ -19,7 +19,7 @@ use crate::{
 pub struct PythonArray {
     field: Arc<Field>,
     values: Buffer<Arc<Py<PyAny>>>,
-    validity: Option<Bitmap>,
+    validity: Option<NullBuffer>,
 }
 
 impl IntoSeries for PythonArray {
@@ -37,7 +37,7 @@ impl PythonArray {
     pub fn new(
         field: Arc<Field>,
         values: Buffer<Arc<Py<PyAny>>>,
-        validity: Option<Bitmap>,
+        validity: Option<NullBuffer>,
     ) -> Self {
         assert_eq!(
             field.dtype,
@@ -58,7 +58,7 @@ impl PythonArray {
         debug_assert!(
             values.iter().enumerate().all(|(i, v)| {
                 !(Python::attach(|py| v.is_none(py))
-                    && validity.as_ref().is_none_or(|val| val.get_bit(i)))
+                    && validity.as_ref().is_none_or(|val| val.is_valid(i)))
             }),
             "None values must have validity set to false"
         );
@@ -91,11 +91,11 @@ impl PythonArray {
         self.values.len()
     }
 
-    pub fn with_validity(&self, validity: Option<Bitmap>) -> DaftResult<Self> {
+    pub fn with_validity(&self, validity: Option<NullBuffer>) -> DaftResult<Self> {
         self.clone().set_validity(validity)
     }
 
-    fn set_validity(mut self, validity: Option<Bitmap>) -> DaftResult<Self> {
+    fn set_validity(mut self, validity: Option<NullBuffer>) -> DaftResult<Self> {
         if let Some(v) = &validity
             && v.len() != self.len()
         {
@@ -109,7 +109,7 @@ impl PythonArray {
         Ok(self)
     }
 
-    pub fn validity(&self) -> Option<&Bitmap> {
+    pub fn validity(&self) -> Option<&NullBuffer> {
         self.validity.as_ref()
     }
 
@@ -122,7 +122,7 @@ impl PythonArray {
 
         let length = end - start;
         let new_values = self.values.clone().sliced(start, length);
-        let new_validity = self.validity.clone().map(|v| v.sliced(start, length));
+        let new_validity = self.validity.clone().map(|v| v.slice(start, length));
         Ok(Self::new(self.field.clone(), new_values, new_validity))
     }
 
@@ -143,11 +143,11 @@ impl PythonArray {
     }
 
     pub fn null_count(&self) -> usize {
-        self.validity().map_or(0, |v| v.unset_bits())
+        self.validity().map_or(0, |v| v.null_count())
     }
 
     pub fn is_valid(&self, idx: usize) -> bool {
-        self.validity().is_none_or(|v| v.get_bit(idx))
+        self.validity().is_none_or(|v| v.is_valid(idx))
     }
 
     pub fn rename(&self, name: &str) -> Self {
@@ -167,7 +167,7 @@ impl PythonArray {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = Option<&Arc<Py<PyAny>>>> {
-        ZipValidity::new_with_validity(self.values.iter(), self.validity())
+        ZipValidity::new(self.values.iter(), self.validity().map(|v| v.iter()))
     }
 }
 
