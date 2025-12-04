@@ -133,7 +133,7 @@ df.show(format="fancy", max_width=120)
 (Showing first 2 of 2 rows)
 ```
 
-For more details on how to use OpenAI-compatible providers with the `prompt` function like OpenRouter, HuggingFace Inference Providers, Databricks, and more, check out the [Prompting OpenAI-Compatible Providers](providers.md#prompting-with-openai-compatible-providers) section. Additionally, check out the [Prompting with vLLM Online Serving](providers.md#prompting-with-vllm-online-serving) section for more details on how to use vLLM Online Serving.
+For more details on how to use OpenAI-compatible providers with the `prompt` function like OpenRouter, Hugging Face Inference Providers, Databricks, and more, check out the [Prompting OpenAI-Compatible Providers](providers.md#prompting-with-openai-compatible-providers) section. Additionally, check out the [Prompting with vLLM Online Serving](providers.md#prompting-with-vllm-online-serving) section for more details on how to use vLLM Online Serving.
 
 ### Building Prompt Templates with the `format` function
 
