@@ -102,8 +102,8 @@ dev = [
   "datasets==4.4.1",
   "torch==2.8.0",
   "torchvision==0.23.0",
-  "tensorflow==2.19.1; python_version < '3.13'",
-  "tf-keras==2.20.1; python_version < '3.13'",
+  "tensorflow==2.18.1; python_version < '3.13'",
+  "tf-keras==2.18.0; python_version < '3.13'",
   "jax==0.6.2",
   "jaxtyping==0.3.3",
   # Pyarrow
@@ -146,8 +146,8 @@ dev = [
   "huggingface-hub==0.36.0",
   # Daft connect testing
   "pyspark==3.5.5",
-  "grpcio==1.76.0",
-  "grpcio-status==1.76.0",
+  "grpcio==1.68.1",
+  "grpcio-status==1.67.0",
   # AI
   "vllm==0.11.0",
   "openai==2.8.1",
