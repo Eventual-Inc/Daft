@@ -13,13 +13,13 @@ from daft.errors import UDFException
 from daft.execution.udf import (
     _ERROR,
     _EVAL,
+    _INIT,
     _OUTPUT_DIVIDER,
     _READY,
     _SENTINEL,
     _SUCCESS,
     _TEARDOWN_UDF,
     _UDF_ERROR,
-    _WORKER_EXIT,
     SharedMemoryTransport,
 )
 from daft.expressions.expressions import ExpressionsProjection
@@ -58,18 +58,28 @@ def pool_worker_event_loop(
 
             msg_type = msg[0]
 
-            if msg_type == _EVAL:
-                # EVAL message: (msg_type, udf_name, expr_bytes_or_none, shm_name, shm_size)
-                _, udf_name, expr_bytes, shm_name, shm_size = msg
+            if msg_type == _INIT:
+                # INIT message: (msg_type, udf_name, expr_bytes)
+                _, udf_name, expr_bytes = msg
 
-                # Initialize UDF if not in cache
+                # Initialize UDF if not already in cache
                 if udf_name not in udf_cache:
-                    if expr_bytes is None:
-                        conn.send((_ERROR, f"UDF '{udf_name}' not in cache and no expression bytes provided"))
-                        continue
-
                     uninitialized_projection: ExpressionsProjection = daft.pickle.loads(expr_bytes)
-                    udf_cache[udf_name] = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
+                    udf_cache[udf_name] = ExpressionsProjection(
+                        [e._initialize_udfs() for e in uninitialized_projection]
+                    )
+                    conn.send(_SUCCESS)
+                else:
+                    conn.send(_SUCCESS)
+
+            elif msg_type == _EVAL:
+                # EVAL message: (msg_type, udf_name, shm_name, shm_size)
+                _, udf_name, shm_name, shm_size = msg
+
+                # UDF must already be in cache (initialized via INIT)
+                if udf_name not in udf_cache:
+                    conn.send((_ERROR, f"UDF '{udf_name}' not in cache. Call INIT first."))
+                    continue
 
                 # Read input from shared memory
                 input_bytes = transport.read_and_release(shm_name, shm_size)
@@ -98,13 +108,7 @@ def pool_worker_event_loop(
                 if udf_name in udf_cache:
                     del udf_cache[udf_name]
 
-                # If cache is empty, signal exit and terminate
-                if len(udf_cache) == 0:
-                    conn.send(_WORKER_EXIT)
-                    break
-                else:
-                    conn.send(_SUCCESS)
-
+                conn.send(_SUCCESS)
             else:
                 conn.send((_ERROR, f"Unknown message type: {msg_type}"))
 

@@ -15,8 +15,6 @@ use common_metrics::{
 use common_resource_request::ResourceRequest;
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
-#[cfg(feature = "python")]
-use daft_core::series::Series;
 use daft_dsl::{
     Column, Expr, ExprRef,
     common_treenode::{Transformed, TreeNode},
@@ -25,8 +23,6 @@ use daft_dsl::{
     operator_metrics::OperatorMetrics,
 };
 use daft_micropartition::MicroPartition;
-#[cfg(feature = "python")]
-use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
 use opentelemetry::{KeyValue, global, metrics::Meter};
 use smallvec::SmallVec;
@@ -41,7 +37,7 @@ use crate::{
         DynBatchingStrategy, LatencyConstrainedBatchingStrategy, StaticBatchingStrategy,
     },
     pipeline::{MorselSizeRequirement, NodeName},
-    process_pool::{UdfTask, get_or_init_process_pool},
+    process_pool::UdfTask,
     runtime_stats::{Counter, RuntimeStats},
 };
 
@@ -190,11 +186,9 @@ struct UdfParams {
     required_cols: Vec<usize>,
     /// Unique name for this UDF (used as pool cache key)
     udf_name: Arc<str>,
-    /// Serialized expression bytes for pool workers
-    #[cfg(feature = "python")]
-    expr_bytes: Arc<[u8]>,
     /// Execution mode for this UDF
     execution_mode: UdfExecutionMode,
+    concurrency: usize,
 }
 
 /// Execution mode for UDF evaluation
@@ -242,10 +236,11 @@ impl UdfState {
                     let func_input = batch.get_columns(params.required_cols.as_slice());
 
                     // Initialize UDFs and evaluate
-                    let udf_expr = BoundExpr::new_unchecked(initialize_udfs(params.expr.inner().clone())?);
+                    let udf_expr =
+                        BoundExpr::new_unchecked(initialize_udfs(params.expr.inner().clone())?);
                     let mut collected_metrics = OperatorMetrics::default();
-                    let mut result_series =
-                        func_input.eval_expression_with_metrics(&udf_expr, &mut collected_metrics)?;
+                    let mut result_series = func_input
+                        .eval_expression_with_metrics(&udf_expr, &mut collected_metrics)?;
                     runtime_stats.update_metrics(collected_metrics);
 
                     // If result.len() == 1 (because it was a 0-column UDF), broadcast to right size
@@ -268,45 +263,52 @@ impl UdfState {
                 )))
             }
             UdfExecutionMode::Pool => {
-                let pool = get_or_init_process_pool();
-                let input_batches = input.record_batches();
-                let mut output_batches = Vec::with_capacity(input_batches.len());
+                #[cfg(feature = "python")]
+                {
+                    let pool = crate::process_pool::get_or_init_process_pool();
+                    let input_batches = input.record_batches();
+                    let mut output_batches = Vec::with_capacity(input_batches.len());
 
-                // Create task on demand
-                let task = UdfTask {
-                    udf_name: params.udf_name.clone(),
-                    expr_bytes: params.expr_bytes.clone(),
-                    expr: params.expr.inner().clone(),
-                };
+                    // Create task on demand (expr_bytes will be created in Python)
+                    let task = UdfTask {
+                        udf_name: params.udf_name.clone(),
+                        expr: params.expr.inner().clone(),
+                        max_concurrency: params.concurrency,
+                    };
 
-                for batch in input_batches {
-                    // Prepare inputs
-                    let func_input = batch.get_columns(params.required_cols.as_slice());
+                    for batch in input_batches {
+                        // Prepare inputs
+                        let func_input = batch.get_columns(params.required_cols.as_slice());
 
-                    // Submit to pool (async)
-                    let (result_series, metrics) = pool.submit_task(&task, func_input).await?;
+                        // Submit to pool (synchronous)
+                        let (result_series, metrics) = pool.submit_task(&task, func_input)?;
 
-                    runtime_stats.update_metrics(metrics);
+                        runtime_stats.update_metrics(metrics);
 
-                    // If result.len() == 1 (because it was a 0-column UDF), broadcast to right size
-                    let mut result_series = result_series;
-                    if result_series.len() == 1 {
-                        result_series = result_series.broadcast(batch.num_rows())?;
+                        // If result.len() == 1 (because it was a 0-column UDF), broadcast to right size
+                        let mut result_series = result_series;
+                        if result_series.len() == 1 {
+                            result_series = result_series.broadcast(batch.num_rows())?;
+                        }
+
+                        // Append result to passthrough
+                        let passthrough_input =
+                            batch.eval_expression_list(params.passthrough_columns.as_slice())?;
+                        let output_batch = passthrough_input
+                            .append_column(params.output_schema.clone(), result_series)?;
+                        output_batches.push(output_batch);
                     }
 
-                    // Append result to passthrough
-                    let passthrough_input =
-                        batch.eval_expression_list(params.passthrough_columns.as_slice())?;
-                    let output_batch = passthrough_input
-                        .append_column(params.output_schema.clone(), result_series)?;
-                    output_batches.push(output_batch);
+                    Ok(Arc::new(MicroPartition::new_loaded(
+                        params.output_schema.clone(),
+                        Arc::new(output_batches),
+                        None,
+                    )))
                 }
-
-                Ok(Arc::new(MicroPartition::new_loaded(
-                    params.output_schema.clone(),
-                    Arc::new(output_batches),
-                    None,
-                )))
+                #[cfg(not(feature = "python"))]
+                {
+                    unreachable!("Pool execution mode requires python feature")
+                }
             }
         }
     }
@@ -314,11 +316,7 @@ impl UdfState {
 
 pub(crate) struct UdfOperator {
     params: Arc<UdfParams>,
-    concurrency: usize,
     memory_request: u64,
-    input_schema: SchemaRef,
-    /// Execution mode for this UDF
-    execution_mode: UdfExecutionMode,
 }
 
 impl UdfOperator {
@@ -362,8 +360,6 @@ impl UdfOperator {
                 .is_arrow();
 
         let execution_mode = if use_pool && is_arrow_dtype {
-            // Request pool capacity for this UDF's concurrency
-            get_or_init_process_pool().request_capacity(concurrency);
             UdfExecutionMode::Pool
         } else {
             if use_pool && !is_arrow_dtype {
@@ -379,36 +375,6 @@ impl UdfOperator {
         // Create unique name for pool cache key
         let udf_name: Arc<str> = udf_properties.name.clone().into();
 
-        // Serialize expression for pool workers as ExpressionsProjection
-        #[cfg(feature = "python")]
-        let expr_bytes: Arc<[u8]> = {
-            use daft_dsl::python::PyExpr;
-            use pyo3::{Python, types::PyAnyMethods};
-
-            Python::attach(|py| -> DaftResult<Arc<[u8]>> {
-                let py_expr = PyExpr::from(expr.inner().clone());
-                // Create an ExpressionsProjection from the single expression
-                let expression_module =
-                    py.import(pyo3::intern!(py, "daft.expressions.expressions"))?;
-                let expression_class =
-                    expression_module.getattr(pyo3::intern!(py, "Expression"))?;
-                let expr_projection_class =
-                    expression_module.getattr(pyo3::intern!(py, "ExpressionsProjection"))?;
-                // Convert PyExpr to Expression
-                let expression =
-                    expression_class.call_method1(pyo3::intern!(py, "_from_pyexpr"), (py_expr,))?;
-                // Create ExpressionsProjection([expression])
-                let expr_list = pyo3::types::PyList::new(py, vec![expression])?;
-                let expr_projection = expr_projection_class.call1((expr_list,))?;
-                // Serialize the projection
-                let pickle = py.import(pyo3::intern!(py, "daft.pickle"))?;
-                let bytes = pickle
-                    .call_method1(pyo3::intern!(py, "dumps"), (expr_projection,))?
-                    .extract::<Vec<u8>>()?;
-                Ok(bytes.into())
-            })?
-        };
-
         Ok(Self {
             params: Arc::new(UdfParams {
                 expr,
@@ -417,14 +383,10 @@ impl UdfOperator {
                 output_schema: output_schema.clone(),
                 required_cols,
                 udf_name,
-                #[cfg(feature = "python")]
-                expr_bytes,
                 execution_mode,
+                concurrency,
             }),
-            concurrency,
             memory_request,
-            input_schema: input_schema.clone(),
-            execution_mode,
         })
     }
 
@@ -517,7 +479,7 @@ impl IntermediateOperator for UdfOperator {
                 "Properties = {{ {} }}",
                 UDFProperties {
                     concurrency: Some(
-                        NonZeroUsize::new(self.concurrency)
+                        NonZeroUsize::new(self.params.concurrency)
                             .expect("UDF concurrency is always >= 1")
                     ),
                     ..self.params.udf_properties.clone()
@@ -545,7 +507,7 @@ impl IntermediateOperator for UdfOperator {
     }
 
     fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(self.concurrency)
+        Ok(self.params.concurrency)
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
@@ -591,8 +553,9 @@ impl IntermediateOperator for UdfOperator {
 impl Drop for UdfOperator {
     fn drop(&mut self) {
         // Only teardown from pool if we were using pool execution mode
+        #[cfg(feature = "python")]
         if self.params.execution_mode == UdfExecutionMode::Pool {
-            get_or_init_process_pool().teardown_udf(&self.params.udf_name);
+            crate::process_pool::get_or_init_process_pool().teardown_udf(&self.params.udf_name);
         }
     }
 }
