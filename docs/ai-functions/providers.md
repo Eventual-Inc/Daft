@@ -7,7 +7,8 @@ This guide covers:
 - [Quick provider setup](#quick-provider-setup)
 - [Setting named providers within sessions](#setting-a-named-openai-provider-within-a-session)
 - [Working with multiple providers](#end-to-end-usage-with-multiple-providers)
-
+- [Prompting with OpenAI-Compatible Providers](#prompting-with-openai-compatible-providers)
+- [Prompting with vLLM Online Serving](#prompting-with-vllm-online-serving)
 
 ## Quick provider setup
 
@@ -195,6 +196,85 @@ This example demonstrates:
     - **Ensure redundancy**: Fall back to alternative providers if one fails
     - **Compare model outputs**: Run the same prompt through different models for quality assessment
     - **Manage rate limits**: Distribute load across multiple API keys or providers
+
+## Prompting with OpenAI-Compatible Providers
+
+You can use OpenAI-compatible providers with the `prompt` function like OpenRouter, HuggingFace Inference Providers, Databricks, and more.
+
+```python
+import os
+import daft
+
+# For OpenRouter
+# See: https://openrouter.ai/docs/quickstart#using-the-openai-sdk
+daft.set_provider(
+    "openai",
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.getenv["OPENROUTER_API_KEY"]
+)
+
+# For HuggingFace Inference Providers
+# See: https://huggingface.co/inference/get-started
+daft.set_provider(
+    "openai",
+    base_url="https://router.huggingface.co/v1",
+    api_key=os.getenv["HF_TOKEN"]
+)
+
+# For Databricks
+# How to get your Databricks token: https://docs.databricks.com/en/dev-tools/auth/pat.html
+# More info on model serving: https://docs.databricks.com/aws/en/machine-learning/model-serving/score-foundation-models
+daft.set_provider(
+    "openai",
+    base_url="https://<workspace-id>.cloud.databricks.com/serving-endpoints",
+    api_key=os.getenv["DATABRICKS_TOKEN"],
+)
+
+```
+
+## Prompting with vLLM Online Serving
+
+For vLLM Online Serving, you can set the provider like this. Make sure to set `use_chat_completions=True` in `prompt()` to use the Chat Completions API instead of the new Responses API.
+
+```python
+import os
+import daft
+
+# For vLLM Online Serving
+daft.set_provider(
+    "openai",
+    api_key="none",
+    base_url="http://localhost:8000/v1",
+) # Make sure to set use_chat_completions=True in prompt()
+
+df = df.with_column(
+    "response",
+    prompt(
+        daft.col("input"),
+        use_chat_completions=True,
+        model="google/gemma-3-4b-it",
+    )
+)
+
+df.show()
+```
+
+The following sample cli launch command is optimized for Google Colab's A100 High-RAM instance and Google's gemma-3-4b-it model.
+
+```bash
+python -m vllm.entrypoints.openai.api_server \
+--model google/gemma-3-4b-it \
+--enable-chunked-prefill \
+--guided-decoding-backend guidance \
+--dtype bfloat16 \
+--gpu-memory-utilization 0.85 \
+--host 0.0.0.0 --port 8000
+```
+
+* Server readiness may take ~7–8 minutes
+* For vLLM online serving, set `api_key = "none"` and `base_url = "http://0.0.0.0:8000/v1"`
+* `guided-decoding-backend guidance` is required for structured outputs.
+
 
 ## More Resources
 
