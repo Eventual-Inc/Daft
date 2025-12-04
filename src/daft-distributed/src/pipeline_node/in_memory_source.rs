@@ -1,14 +1,13 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, InMemoryInfo, stats::StatsState};
 
-use super::{DistributedPipelineNode, PipelineNodeContext, SubmittableTaskStream};
+use super::{PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream};
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig},
+    pipeline_node::{DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig},
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SubmittableTask,
@@ -32,15 +31,12 @@ impl InMemorySourceNode {
         plan_config: &PlanConfig,
         info: InMemoryInfo,
         input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
-        logical_node_id: Option<NodeID>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![],
-            vec![],
-            logical_node_id,
         );
 
         let num_partitions = input_psets.values().map(|pset| pset.len()).sum::<usize>();
@@ -58,8 +54,8 @@ impl InMemorySourceNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn execution_loop(
@@ -73,7 +69,7 @@ impl InMemorySourceNode {
             let task = self.make_task_for_partition_refs(
                 vec![partition_ref],
                 TaskContext::from((&self.context, task_id_counter.next())),
-            )?;
+            );
             if result_tx.send(SubmittableTask::new(task)).await.is_err() {
                 break;
             }
@@ -85,12 +81,12 @@ impl InMemorySourceNode {
         &self,
         partition_refs: Vec<PartitionRef>,
         task_context: TaskContext,
-    ) -> DaftResult<SwordfishTask> {
+    ) -> SwordfishTask {
         let mut total_size_bytes = 0;
         let mut total_num_rows = 0;
         for partition_ref in &partition_refs {
-            total_size_bytes += partition_ref.size_bytes()?.unwrap_or(0);
-            total_num_rows += partition_ref.num_rows().unwrap_or(0);
+            total_size_bytes += partition_ref.size_bytes();
+            total_num_rows += partition_ref.num_rows();
         }
         let info = InMemoryInfo::new(
             self.info.source_schema.clone(),
@@ -102,10 +98,16 @@ impl InMemorySourceNode {
             None,
             None,
         );
-        let in_memory_source_plan =
-            LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
+        let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
+            info,
+            StatsState::NotMaterialized,
+            LocalNodeContext {
+                origin_node_id: Some(self.node_id() as usize),
+                additional: None,
+            },
+        );
         let psets = HashMap::from([(self.info.cache_key.clone(), partition_refs.clone())]);
-        let task = SwordfishTask::new(
+        SwordfishTask::new(
             task_context,
             in_memory_source_plan,
             self.config.execution_config.clone(),
@@ -114,23 +116,11 @@ impl InMemorySourceNode {
             // Need to get that from `ray.experimental.get_object_locations(object_refs)`
             SchedulingStrategy::Spread,
             self.context.to_hashmap(),
-        );
-        Ok(task)
-    }
-
-    fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec![];
-        res.push("InMemorySource:".to_string());
-        res.push(format!(
-            "Schema = {}",
-            self.info.source_schema.short_string()
-        ));
-        res.push(format!("Size bytes = {}", self.info.size_bytes));
-        res
+        )
     }
 }
 
-impl DistributedPipelineNode for InMemorySourceNode {
+impl PipelineNodeImpl for InMemorySourceNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -139,8 +129,19 @@ impl DistributedPipelineNode for InMemorySourceNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        let mut res = vec![];
+        res.push("InMemorySource:".to_string());
+        res.push(format!(
+            "Schema = {}",
+            self.info.source_schema.short_string()
+        ));
+        res.push(format!("Size bytes = {}", self.info.size_bytes));
+        res
     }
 
     fn produce_tasks(
@@ -152,34 +153,5 @@ impl DistributedPipelineNode for InMemorySourceNode {
         plan_context.spawn(execution_loop);
 
         SubmittableTaskStream::from(result_rx)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
-    }
-}
-
-impl TreeDisplay for InMemorySourceNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.context.node_name).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![]
-    }
-
-    fn get_name(&self) -> String {
-        self.context.node_name.to_string()
     }
 }

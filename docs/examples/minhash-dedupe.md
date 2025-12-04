@@ -60,7 +60,7 @@ LSH_THRESHOLD = 0.7 # Jaccard Similarity Threshold for LSH
 
 ## Loading HTML Documents from Common Crawl
 
-We will be accessing Common Crawl through [WARC files](https://commoncrawl.org/blog/navigating-the-warc-file-format) since [Daft supports the format natively](../api/io/#daft.read_warc).
+We will be accessing Common Crawl through [WARC files](https://commoncrawl.org/blog/navigating-the-warc-file-format) since [Daft supports the format natively][daft.read_warc].
 
 ### (Optional) AWS Authentication
 
@@ -77,6 +77,7 @@ from IPython.display import clear_output
 ```
 
 ```python
+IN_AWS = False
 if os.environ.get("AWS_ACCESS_KEY_ID"):
     # Make sure to define your AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in your environment variables or in a .env file
     s3_config = S3Config(
@@ -86,21 +87,17 @@ if os.environ.get("AWS_ACCESS_KEY_ID"):
         access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
         anonymous=False,
     )
-
+    IN_AWS = True
     IO_CONFIG = IOConfig(s3=s3_config)
     daft.set_planning_config(default_io_config=IO_CONFIG)
-
-    # Multifile access over S3
-    uri = f"s3://commoncrawl/crawl-data/CC-MAIN-2025-33/segments/*/warc/*.warc.gz"
-else:
-    # For un-authenticated access over http
-    uri = "https://data.commoncrawl.org/crawl-data/CC-MAIN-2025-33/segments/1754151279521.11/warc/CC-MAIN-20250802220907-20250803010907-00000.warc.gz"
-
 ```
 
 ```python
 # Read the WARC files from the Common Crawl S3 bucket or HTTP endpoint
-df_warc = daft.read_warc(uri).limit(NUM_ROWS).collect() # Materialize to avoid re-reading from source
+df_warc = daft.datasets.common_crawl(
+    "CC-MAIN-2025-33",
+    in_aws=IN_AWS
+).limit(NUM_ROWS).collect()
 df_warc.show(3)
 ```
 
@@ -111,11 +108,10 @@ df_warc.select("WARC-Identified-Payload-Type").distinct().show()
 
 ## Preprocessing
 
-Since we are primarily concerned with text, we will focus on `text/html` payloads, extracting text content from html body and normalizing the text itself.
+Since we are primarily concerned with text, we will focus on `text/html` payloads, extracting text content from html body and normalizing the text itself. Common Crawl also comes with text only .wet files that come preprocessed, but here we choose to handle each html block explicitly to ensure consistent comparisons across pages.
 
 ```python
 from daft import col
-
 
 # Define a UDF to remove http headers from the payload
 @daft.func()
@@ -194,12 +190,12 @@ So far we have extracted the text out of each html document into blocks. Now we 
 
 *Note: It is recommended to run your preprocessing pipeline separately from your MinHash deduplication workload.*
 
-See docs: [normalize](../api/expressions/#daft.expressions.expressions.ExpressionStringNamespace.normalize)
+See docs: [normalize][daft.Expression.normalize]
 
 ```python
 # Normalize text
 df_norm = df_ready.with_column("content_normalized",
-    col(content_col).str.normalize(
+    col(content_col).normalize(
         remove_punct=True,
         lowercase=True,
         nfd_unicode=True,
@@ -213,7 +209,7 @@ df_norm.select(index_col, content_col, "content_normalized").show(3)
 
 Normally when you perform a MinHash on text data, you have to define the shingling strategy, hash functions, and permutation parameters manually.
 
-Luckily, Daft has a built-in [MinHash expression](../api/expressions/#daft.expressions.Expression.minhash).
+Luckily, Daft has a built-in [MinHash expression][daft.Expression.minhash].
 
 ```python
 # Calculate the MinHash vectors
@@ -416,6 +412,7 @@ First we need a few utilities
 
 ```python
 from daft import struct, Expression, DataFrame
+from daft.functions import when
 
 def ee(u: Expression, v: Expression):
     """Create a struct Expression with fields 'u' and 'v' for representing edges."""
@@ -425,8 +422,8 @@ def canonicalize(edges: DataFrame) -> DataFrame:
     """Order edges so u < v and deduplicate for canonical representation."""
     return (
         edges
-        .with_column("u_can", (col("u") < col("v")).if_else(col("u"), col("v")))
-        .with_column("v_can", (col("u") < col("v")).if_else(col("v"), col("u")))
+        .with_column("u_can", when(col("u") < col("v"), col("u")).otherwise(col("v")))
+        .with_column("v_can", when(col("u") < col("v"), col("v")).otherwise(col("u")))
         .select(col("u_can").alias("u"), col("v_can").alias("v"))
         .distinct()
     )
@@ -484,9 +481,8 @@ def large_star(edges: DataFrame) -> DataFrame:
     neigh = neigh.with_column("m", col("nbrs").list.min())
     neigh = neigh.with_column(
         "m",
-        col("m").is_null().if_else(
-            col("u"),
-            (col("u") < col("m")).if_else(col("u"), col("m"))
+        when(col("m").is_null(), col("u")).otherwise(
+            when(col("u") < col("m"), col("u")).otherwise(col("m"))
         )
     )
 
@@ -516,10 +512,7 @@ def small_star(edges: DataFrame) -> DataFrame:
     # Step 1: For each edge, emit to the larger node as key, smaller as value
     directed =  (
         edges.select(
-            (col("u") < col("v")).if_else(
-                ee(col("u"), col("v")),
-                ee(col("v"), col("u"))
-            ).alias("e"))
+            when(col("u") < col("v"), ee(col("u"), col("v"))).otherwise(ee(col("v"), col("u"))).alias("e"))
         .select(col("e")["*"])
         .where(col("u") != col("v"))
         .distinct()
@@ -536,9 +529,8 @@ def small_star(edges: DataFrame) -> DataFrame:
     neigh = neigh.with_column("m", col("nbrs").list.min())
     neigh = neigh.with_column(
         "m",
-        col("m").is_null().if_else(
-            col("u"),
-            (col("u") < col("m")).if_else(col("u"), col("m"))
+        when(col("m").is_null(), col("u")).otherwise(
+            when(col("u") < col("m"), col("u")).otherwise(col("m"))
         )
     )
 
@@ -628,8 +620,7 @@ assignments = (
     .join(rep_map, on="u", how="left")     # left join to keep all nodes
     .with_column(
         "rep",
-        col("rep").is_null()               # if no neighbor was found
-        .if_else(col("u"), col("rep"))     # use the node itself as rep
+        when(col("rep").is_null(), col("u")).otherwise(col("rep"))  # if no neighbor was found, use the node itself as rep
     )
     .select("u", "rep")                    # keep only node and its rep
     .distinct()                            # deduplicate any duplicates
@@ -790,9 +781,8 @@ while lp_iters < lp_max_iters:
         .join(nbr_min, left_on="u", right_on="node", how="left")
         .with_column(
             "label",
-            col("nbr_min").is_null().if_else(
-                col("label"),
-                (col("label") <= col("nbr_min")).if_else(col("label"), col("nbr_min")),
+            when(col("nbr_min").is_null(), col("label")).otherwise(
+                when(col("label") <= col("nbr_min"), col("label")).otherwise(col("nbr_min"))
             ),
         )
         .select(col("u"), col("label"))
@@ -859,11 +849,15 @@ assignments_unique_str = a2.select(
     col("__u_str").alias(index_col),
     col("__rep_str").alias("component")
 )
+assignments_unique_str.show()
 ```
 
 ```python
+# Filter to columns of interest
+df_content = df_text.select("WARC-Record-ID", index_col, "block")
+
 # Join back to original df and filter to keep only rows where the row is its own representative or isolated
-df_joined = df_text.join(assignments_unique_str, on=index_col, how="left")
+df_joined = df_content.join(assignments_unique_str, on=index_col, how="left").collect()
 ```
 
 ```python

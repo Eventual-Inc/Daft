@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use arrow2::{array::Array, datatypes::Field, ffi};
+use daft_arrow::{array::Array, datatypes::Field, ffi};
 #[cfg(feature = "python")]
 use pyo3::ffi::Py_uintptr_t;
 #[cfg(feature = "python")]
@@ -45,7 +45,7 @@ pub fn to_py_array<'py>(
 
     // fix_child_array_slice_offsets serializes and deserializes into ipc, and is a parallelizable operation.
     // We allow threads here to avoid blocking the GIL.
-    let arrow_arr = py.allow_threads(|| {
+    let arrow_arr = py.detach(|| {
         let fixed_array = fix_child_array_slice_offsets(array);
         Box::new(ffi::export_array_to_c(fixed_array))
     });
@@ -68,9 +68,9 @@ pub fn to_py_array<'py>(
 #[cfg(feature = "python")]
 pub fn field_to_py(
     py: Python,
-    field: &arrow2::datatypes::Field,
+    field: &daft_arrow::datatypes::Field,
     pyarrow: &Bound<PyModule>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let schema = Box::new(ffi::export_field_to_c(field));
     let schema_ptr: *const ffi::ArrowSchema = &raw const *schema;
 
@@ -85,7 +85,7 @@ pub fn field_to_py(
 #[cfg(feature = "python")]
 pub fn dtype_to_py<'py>(
     py: Python<'py>,
-    dtype: &arrow2::datatypes::DataType,
+    dtype: &daft_arrow::datatypes::DataType,
     pyarrow: Bound<'py, PyModule>,
 ) -> PyResult<Bound<'py, PyAny>> {
     let schema = Box::new(ffi::export_field_to_c(&Field::new("", dtype.clone(), true)));
@@ -126,8 +126,8 @@ fn fix_child_array_slice_offsets(array: ArrayRef) -> ArrayRef {
     // TODO(Clark): Fix struct array and fixed-size list array slice FFI upstream in arrow2/pyarrow.
     // TODO(Clark): Only apply this workaround if a slice offset exists for this array.
     if ![
-        arrow2::datatypes::PhysicalType::Struct,
-        arrow2::datatypes::PhysicalType::FixedSizeList,
+        daft_arrow::datatypes::PhysicalType::Struct,
+        daft_arrow::datatypes::PhysicalType::FixedSizeList,
     ]
     .contains(&array.data_type().to_physical_type())
     {
@@ -136,10 +136,10 @@ fn fix_child_array_slice_offsets(array: ArrayRef) -> ArrayRef {
     // Write the IPC representation to an in-memory buffer.
     // TODO(Clark): Preallocate the vector with the requisite capacity, based on the array size?
     let mut cursor = Cursor::new(Vec::new());
-    let options = arrow2::io::ipc::write::WriteOptions { compression: None };
-    let mut writer = arrow2::io::ipc::write::StreamWriter::new(&mut cursor, options);
+    let options = daft_arrow::io::ipc::write::WriteOptions { compression: None };
+    let mut writer = daft_arrow::io::ipc::write::StreamWriter::new(&mut cursor, options);
     // Construct a single-column schema.
-    let schema = arrow2::datatypes::Schema::from(vec![arrow2::datatypes::Field::new(
+    let schema = daft_arrow::datatypes::Schema::from(vec![daft_arrow::datatypes::Field::new(
         "struct",
         array.data_type().clone(),
         false,
@@ -147,21 +147,21 @@ fn fix_child_array_slice_offsets(array: ArrayRef) -> ArrayRef {
     // Write the schema to the stream.
     writer.start(&schema, None).unwrap();
     // Write the array to the stream.
-    let record = arrow2::chunk::Chunk::new(vec![array]);
+    let record = daft_arrow::chunk::Chunk::new(vec![array]);
     writer.write(&record, None).unwrap();
     writer.finish().unwrap();
     // Reset the cursor to the beginning of the stream.
     cursor.set_position(0);
     // Read back the array from the IPC stream.
-    let stream_metadata = arrow2::io::ipc::read::read_stream_metadata(&mut cursor).unwrap();
-    let mut reader = arrow2::io::ipc::read::StreamReader::new(cursor, stream_metadata, None);
+    let stream_metadata = daft_arrow::io::ipc::read::read_stream_metadata(&mut cursor).unwrap();
+    let mut reader = daft_arrow::io::ipc::read::StreamReader::new(cursor, stream_metadata, None);
     // There should only be a single chunk in the stream.
     let state = reader.next().unwrap();
     assert!(reader.next().is_none());
     // Stream should be finished from the reader's perspective.
     assert!(reader.is_finished());
     match state {
-        Ok(arrow2::io::ipc::read::StreamState::Some(chunk)) => chunk.arrays()[0].clone(),
+        Ok(daft_arrow::io::ipc::read::StreamState::Some(chunk)) => chunk.arrays()[0].clone(),
         _ => panic!("shouldn't be reached"),
     }
 }

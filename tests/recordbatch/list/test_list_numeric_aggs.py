@@ -8,36 +8,72 @@ from daft.datatype import DataType
 from daft.expressions import col
 from daft.recordbatch import MicroPartition
 
-table = MicroPartition.from_pydict({"a": [[1, 2], [3, 4], [5, None], [None, None], None]})
-fixed_dtype = DataType.fixed_size_list(DataType.int64(), 2)
-fixed_table = table.eval_expression_list([col("a").cast(fixed_dtype)])
+# Numeric datatypes to test
+NUMERIC_DTYPES = [
+    DataType.int8(),
+    DataType.int16(),
+    DataType.int32(),
+    DataType.int64(),
+    DataType.uint8(),
+    DataType.uint16(),
+    DataType.uint32(),
+    DataType.uint64(),
+    DataType.float32(),
+    DataType.float64(),
+]
 
 
-@pytest.mark.parametrize("table", [table, fixed_table])
-def test_list_sum(table):
-    result = table.eval_expression_list([col("a").list.sum()])
-    assert result.to_pydict() == {"a": [3, 7, 5, None, None]}
+@pytest.fixture(params=NUMERIC_DTYPES)
+def numeric_dtype(request):
+    return request.param
 
 
-@pytest.mark.parametrize("table", [table, fixed_table])
-def test_list_mean(table):
-    result = table.eval_expression_list([col("a").list.mean()])
-    assert result.to_pydict() == {"a": [1.5, 3.5, 5, None, None]}
+@pytest.fixture
+def table(numeric_dtype):
+    table = MicroPartition.from_pydict({"a": [[1, 2], [3, 4], [5, None], [None, None], None]})
+    return table.eval_expression_list([col("a").cast(DataType.list(numeric_dtype))])
 
 
-@pytest.mark.parametrize("table", [table, fixed_table])
-def test_list_min(table):
-    result = table.eval_expression_list([col("a").list.min()])
-    assert result.to_pydict() == {"a": [1, 3, 5, None, None]}
+@pytest.fixture
+def fixed_table(numeric_dtype):
+    table = MicroPartition.from_pydict({"a": [[1, 2], [3, 4], [5, None], [None, None], None]})
+    fixed_dtype = DataType.fixed_size_list(numeric_dtype, 2)
+    return table.eval_expression_list([col("a").cast(fixed_dtype)])
 
 
-@pytest.mark.parametrize("table", [table, fixed_table])
-def test_list_max(table):
-    result = table.eval_expression_list([col("a").list.max()])
-    assert result.to_pydict() == {"a": [2, 4, 5, None, None]}
+def test_list_sum(table, fixed_table):
+    for t in [table, fixed_table]:
+        result = t.eval_expression_list([col("a").list_sum()])
+        assert result.to_pydict() == {"a": [3, 7, 5, None, None]}
 
 
-def test_list_numeric_aggs_empty_table():
+def test_list_mean(table, fixed_table):
+    expected = {"a": [1.5, 3.5, 5.0, None, None]}
+    for t in [table, fixed_table]:
+        result = t.eval_expression_list([col("a").list_mean()])
+        result_dict = result.to_pydict()
+        # Compare with tolerance for floating point values
+        assert len(result_dict["a"]) == len(expected["a"])
+        for r, e in zip(result_dict["a"], expected["a"]):
+            if e is None:
+                assert r is None
+            else:
+                assert abs(r - e) < 1e-6
+
+
+def test_list_min(table, fixed_table):
+    for t in [table, fixed_table]:
+        result = t.eval_expression_list([col("a").list_min()])
+        assert result.to_pydict() == {"a": [1, 3, 5, None, None]}
+
+
+def test_list_max(table, fixed_table):
+    for t in [table, fixed_table]:
+        result = t.eval_expression_list([col("a").list_max()])
+        assert result.to_pydict() == {"a": [2, 4, 5, None, None]}
+
+
+def test_list_numeric_aggs_empty_table(numeric_dtype):
     empty_table = MicroPartition.from_pydict(
         {
             "col": pa.array([], type=pa.list_(pa.int64())),
@@ -47,14 +83,14 @@ def test_list_numeric_aggs_empty_table():
 
     result = empty_table.eval_expression_list(
         [
-            col("col").cast(DataType.list(DataType.int64())).list.sum().alias("col_sum"),
-            col("col").list.mean().alias("col_mean"),
-            col("col").list.min().alias("col_min"),
-            col("col").list.max().alias("col_max"),
-            col("fixed_col").list.sum().alias("fixed_col_sum"),
-            col("fixed_col").list.mean().alias("fixed_col_mean"),
-            col("fixed_col").list.min().alias("fixed_col_min"),
-            col("fixed_col").list.max().alias("fixed_col_max"),
+            col("col").cast(DataType.list(numeric_dtype)).list_sum().alias("col_sum"),
+            col("col").cast(DataType.list(numeric_dtype)).list_mean().alias("col_mean"),
+            col("col").cast(DataType.list(numeric_dtype)).list_min().alias("col_min"),
+            col("col").cast(DataType.list(numeric_dtype)).list_max().alias("col_max"),
+            col("fixed_col").cast(DataType.fixed_size_list(numeric_dtype, 2)).list_sum().alias("fixed_col_sum"),
+            col("fixed_col").cast(DataType.fixed_size_list(numeric_dtype, 2)).list_mean().alias("fixed_col_mean"),
+            col("fixed_col").cast(DataType.fixed_size_list(numeric_dtype, 2)).list_min().alias("fixed_col_min"),
+            col("fixed_col").cast(DataType.fixed_size_list(numeric_dtype, 2)).list_max().alias("fixed_col_max"),
         ]
     )
     assert result.to_pydict() == {
@@ -78,13 +114,13 @@ def test_list_numeric_aggs_with_groupby():
     )
 
     # Group by and test aggregates.
-    grouped_df = df.groupby("group_col").agg(daft.col("id_col").agg_list().alias("ids_col"))
+    grouped_df = df.groupby("group_col").agg(daft.col("id_col").list_agg().alias("ids_col"))
     result = grouped_df.select(
         col("group_col"),
-        col("ids_col").list.sum().alias("ids_col_sum"),
-        col("ids_col").list.mean().alias("ids_col_mean"),
-        col("ids_col").list.min().alias("ids_col_min"),
-        col("ids_col").list.max().alias("ids_col_max"),
+        col("ids_col").list_sum().alias("ids_col_sum"),
+        col("ids_col").list_mean().alias("ids_col_mean"),
+        col("ids_col").list_min().alias("ids_col_min"),
+        col("ids_col").list_max().alias("ids_col_max"),
     ).sort("group_col", desc=False)
     result_dict = result.to_pydict()
     expected = {
@@ -100,10 +136,10 @@ def test_list_numeric_aggs_with_groupby():
     grouped_df = grouped_df.with_column("ids_col", col("ids_col").cast(DataType.fixed_size_list(DataType.int64(), 4)))
     result = grouped_df.select(
         col("group_col"),
-        col("ids_col").list.sum().alias("ids_col_sum"),
-        col("ids_col").list.mean().alias("ids_col_mean"),
-        col("ids_col").list.min().alias("ids_col_min"),
-        col("ids_col").list.max().alias("ids_col_max"),
+        col("ids_col").list_sum().alias("ids_col_sum"),
+        col("ids_col").list_mean().alias("ids_col_mean"),
+        col("ids_col").list_min().alias("ids_col_min"),
+        col("ids_col").list_max().alias("ids_col_max"),
     ).sort("group_col", desc=False)
     result_dict = result.to_pydict()
     assert result_dict == expected

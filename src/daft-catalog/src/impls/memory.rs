@@ -19,7 +19,8 @@ type NamespaceTableMap = IndexMap<Option<String>, IndexMap<String, Arc<MemoryTab
 /// A catalog entirely stored in-memory.
 ///
 /// Supports tables without namespaces or with a single level namespace.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct MemoryCatalog {
     name: String,
     /// map of optional namespace -> table name -> table
@@ -58,7 +59,8 @@ impl MemoryCatalog {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct MemoryTable {
     name: String,
     info: Arc<RwLock<InMemoryInfo>>,
@@ -250,7 +252,7 @@ impl Catalog for MemoryCatalog {
     }
 
     #[cfg(feature = "python")]
-    fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
+    fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
         use pyo3::{intern, types::PyAnyMethods};
 
         use crate::python::PyCatalog;
@@ -310,7 +312,7 @@ impl Table for MemoryTable {
 
         let pset = MicroPartitionSet::empty();
         let runner = daft_runners::get_or_create_runner()?;
-        pyo3::Python::with_gil(|py| {
+        pyo3::Python::attach(|py| {
             for (i, res) in runner.run_iter_tables(py, plan, None)?.enumerate() {
                 let mp = res?;
                 pset.set_partition(i, &mp)?;
@@ -354,7 +356,7 @@ impl Table for MemoryTable {
     }
 
     #[cfg(feature = "python")]
-    fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
+    fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
         use pyo3::{intern, types::PyAnyMethods};
 
         use crate::python::PyTable;

@@ -211,7 +211,10 @@ impl Preview {
 
     /// Push the body rows to the table.
     fn push_body(&self, table: &mut ComfyTable) {
-        for o in 0..self.batch.len() {
+        let total_rows = self.batch.len();
+
+        // Add target rows
+        for o in 0..total_rows {
             let row: Vec<Cell> = self
                 .batch
                 .columns

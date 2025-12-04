@@ -15,7 +15,7 @@ repos:
       )$
 
 - repo: https://github.com/pre-commit/pre-commit-hooks
-  rev: v4.6.0
+  rev: v6.0.0
   hooks:
   - id: detect-private-key
   - id: trailing-whitespace
@@ -55,7 +55,7 @@ repos:
     exclude: k8s/charts/.*/templates/.*\.ya?ml$
 
 - repo: https://github.com/codespell-project/codespell
-  rev: v2.3.0
+  rev: v2.4.1
   hooks:
   - id: codespell
     additional_dependencies:
@@ -77,6 +77,14 @@ repos:
 
 - repo: local
   hooks:
+  - id: check-invalid-deps
+    name: Check Invalid Dependencies
+    description: Check for invalid Rust dependencies
+    entry: ./tools/check_invalid_deps.sh
+    language: system
+    types: [rust]
+    pass_filenames: false
+
   - id: fmt
     name: Rust Code Formatting
     description: Format files with cargo fmt.
@@ -112,13 +120,6 @@ repos:
     types: [rust]
     pass_filenames: false
 
-  - id: check-for-openssl
-    name: check-for-openssl
-    description: Lint rust sources
-    entry: ./tools/check_for_openssl.sh
-    language: system
-    types: [rust]
-    pass_filenames: false
 
 - repo: https://github.com/abravalheri/validate-pyproject
   rev: v0.24.1

@@ -1,18 +1,26 @@
-use std::str::FromStr;
+use std::{fmt::Display, str::FromStr};
 
-use arrow2::datatypes::TimeUnit as ArrowTimeUnit;
 use common_error::DaftError;
-use derive_more::Display;
+use daft_arrow::datatypes::TimeUnit as ArrowTimeUnit;
 use serde::{Deserialize, Serialize};
 
-#[derive(
-    Copy, Clone, Debug, Display, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize,
-)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 pub enum TimeUnit {
     Nanoseconds,
     Microseconds,
     Milliseconds,
     Seconds,
+}
+
+impl Display for TimeUnit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Nanoseconds => write!(f, "ns"),
+            Self::Microseconds => write!(f, "us"),
+            Self::Milliseconds => write!(f, "ms"),
+            Self::Seconds => write!(f, "s"),
+        }
+    }
 }
 
 impl TimeUnit {

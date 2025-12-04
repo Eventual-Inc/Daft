@@ -1,17 +1,22 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypedDict
 
 import transformers
 from transformers import pipeline
-from typing_extensions import Unpack
+
+if sys.version_info < (3, 11):
+    from typing_extensions import Unpack
+else:
+    from typing import Unpack
 
 from daft.ai.protocols import TextClassifier, TextClassifierDescriptor
-from daft.ai.utils import get_torch_device
+from daft.ai.utils import get_gpu_udf_options, get_torch_device
 
 if TYPE_CHECKING:
-    from daft.ai.typing import Label, Options
+    from daft.ai.typing import Label, Options, UDFOptions
 
 
 class TransformersTextClassiferResult(TypedDict):
@@ -38,6 +43,9 @@ class TransformersTextClassifierDescriptor(TextClassifierDescriptor):
 
     def get_options(self) -> Options:
         return self.model_options  # type: ignore
+
+    def get_udf_options(self) -> UDFOptions:
+        return get_gpu_udf_options()
 
     def instantiate(self) -> TextClassifier:
         return TransformersTextClassifier(self.model_name, **self.model_options)

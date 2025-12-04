@@ -13,7 +13,7 @@ use crate::utils::{
     binary_utf8_evaluate, binary_utf8_to_field, create_broadcasted_str_iter, parse_inputs,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Like;
 
 #[typetag::serde]
@@ -79,7 +79,7 @@ fn like_impl(arr: &Utf8Array, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
             let re = re?;
             self_iter
                 .map(|val| Some(re.is_match(val?)))
-                .collect::<arrow2::array::BooleanArray>()
+                .collect::<daft_arrow::array::BooleanArray>()
         }
         _ => {
             let pattern_iter = create_broadcasted_str_iter(pattern, expected_size);
@@ -93,7 +93,7 @@ fn like_impl(arr: &Utf8Array, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
                     }
                     _ => Ok(None),
                 })
-                .collect::<DaftResult<arrow2::array::BooleanArray>>()?
+                .collect::<DaftResult<daft_arrow::array::BooleanArray>>()?
         }
     };
     let result = BooleanArray::from((arr.name(), Box::new(arrow_result)));

@@ -39,16 +39,16 @@ from daft.functions.ai import embed_text
 First install the optional Sentence Transformers dependency for Daft.
 
 ```bash
-pip install -U "daft[sentence-transformers]"
+pip install -U "daft[transformers]"
 ```
 
-Then use the `sentence_transformers` provider with any desired open model hosted on [Hugging Face](https://huggingface.co/) such as [`BAAI/bge-base-en-v1.5`](https://huggingface.co/BAAI/bge-base-en-v1.5).
+Then use the `transformers` provider with any desired open model hosted on [Hugging Face](https://huggingface.co/) such as [`BAAI/bge-base-en-v1.5`](https://huggingface.co/BAAI/bge-base-en-v1.5).
 
 ```python
 import daft
 from daft.functions.ai import embed_text
 
-provider = "sentence_transformers"
+provider = "transformers"
 model = "BAAI/bge-base-en-v1.5"
 
 (

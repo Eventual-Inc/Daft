@@ -66,7 +66,8 @@ def transcribe(file: daft.File) -> str:
     """
     Transcribes an audio file using openai whisper.
     """
-    audio, _ = sf.read(file, dtype = 'float32')
+    with file.open() as f:
+        audio, _ = sf.read(f, dtype = 'float32')
     result = model.transcribe(audio, verbose=True)
 
 
@@ -145,7 +146,8 @@ model = whisper.load_model("tiny")
 @daft.func
 def transcribe(file: daft.File) -> str:
     """Transcribes an audio file using OpenAI Whisper"""
-    audio, _ = sf.read(file, dtype='float32')
+    with file.open() as f:
+        audio, _ = sf.read(f, dtype='float32')
     result = model.transcribe(audio)
     return result['text']
 

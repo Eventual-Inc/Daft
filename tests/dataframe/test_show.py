@@ -64,19 +64,29 @@ def test_show_not_from_cached_repr(make_df, valid_data, data_source):
     df = df.collect(2)
     df.__repr__()
     collected_preview = df._preview
-    df_preview = df._construct_show_preview(8)
-
+    
     variant = data_source
     if variant == "parquet":
-        # Cached preview from df.__repr__() is NOT USED because data was not materialized from parquet.
+        # For parquet, when requesting more rows than collected, we need to read from file.
+        # Cached preview is NOT USED because data was not fully materialized from parquet.
+        df_preview = df._construct_show_preview(8)
         assert df_preview != collected_preview
+        # Check lengths are valid - we should get all 3 rows
+        assert len(df_preview.partition) == len(valid_data)
+        assert df_preview.total_rows == 3
     elif variant == "arrow":
-        # Cached preview from df.__repr__() is USED because data was materialized from arrow.
-        assert df_preview == collected_preview
-
-    # Check lengths are valid
-    assert len(df_preview.partition) == len(valid_data)
-    assert df_preview.total_rows == 3
+        # For arrow, data is fully materialized in memory.
+        # When requesting the same number of rows as collected, cached preview should be reused.
+        df_preview_same = df._construct_show_preview(2)
+        assert df_preview_same is collected_preview
+        
+        # When requesting more rows than collected, we need to fetch more from materialized data.
+        # Cached preview is NOT USED because it doesn't have enough rows.
+        df_preview_more = df._construct_show_preview(8)
+        assert df_preview_more != collected_preview
+        # Check lengths are valid - we should get all 3 rows
+        assert len(df_preview_more.partition) == len(valid_data)
+        assert df_preview_more.total_rows == 3
 
 
 ###
@@ -126,23 +136,23 @@ def test_show_with_options():
     assert (
         show(df, format="markdown", verbose=True)
         == """
-| A (Int64) | B (Float64) | C (Boolean) | D (Null) |
-|-----------|-------------|-------------|----------|
-| 1         | 1.5         | true        | None     |
-| 2         | 2.5         | true        | None     |
-| 3         | 3.5         | false       | None     |
-| 4         | 4.5         | false       | None     |"""[1:]
+| A (Int64) | B (Float64) | C (Bool) | D (Null) |
+|-----------|-------------|----------|----------|
+| 1         | 1.5         | true     | None     |
+| 2         | 2.5         | true     | None     |
+| 3         | 3.5         | false    | None     |
+| 4         | 4.5         | false    | None     |"""[1:]
     )
 
     assert (
         show(df, format="markdown", verbose=True, columns=columns)
         == """
-| A (units) | B (kg) | C (Boolean) | D (Null) |
-|-----------|--------|-------------|----------|
-|         1 |    1.5 | true        | None     |
-|         2 |    2.5 | true        | None     |
-|         3 |    3.5 | false       | None     |
-|         4 |    4.5 | false       | None     |"""[1:]
+| A (units) | B (kg) | C (Bool) | D (Null) |
+|-----------|--------|----------|----------|
+|         1 |    1.5 | true     | None     |
+|         2 |    2.5 | true     | None     |
+|         3 |    3.5 | false    | None     |
+|         4 |    4.5 | false    | None     |"""[1:]
     )
 
 
@@ -210,3 +220,11 @@ def test_show_with_many_columns():
  A   B   C   D   E   F   G   H   I   J    K    L    M    N    O    P    Q    R    S    T    U    V    W    X    Y    Z  
 ---+---+---+---+---+---+---+---+---+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----
  1   2   3   4   5   6   7   8   9   10   11   12   13   14   15   16   17   18   19   20   21   22   23   24   25   26 """[1:]
+
+
+def test_show_empty_dataframe_no_error_thrown():
+    # Construct an empty DataFrame and ensure preview construction does not error
+    df = daft.from_pydict({"A": []})
+    preview = df._construct_show_preview(8)
+    assert len(preview.partition) == 0
+    assert preview.total_rows == 0

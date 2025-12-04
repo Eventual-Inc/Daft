@@ -45,7 +45,7 @@ impl AsImageObj for ImageArray {
             .unwrap()
             .data()
             .as_any()
-            .downcast_ref::<arrow2::array::UInt8Array>()
+            .downcast_ref::<daft_arrow::array::UInt8Array>()
             .unwrap();
         let slice_data = Cow::Borrowed(&values.values().as_slice()[start..end] as &'a [u8]);
 
@@ -104,43 +104,53 @@ impl AsImageObj for FixedShapeImageArray {
     }
 }
 
-pub fn image_array_from_img_buffers(
+pub fn image_array_from_img_buffers<'a, I>(
     name: &str,
-    inputs: &[Option<CowImage<'_>>],
+    inputs: I,
     image_mode: Option<ImageMode>,
-) -> DaftResult<ImageArray> {
+) -> DaftResult<ImageArray>
+where
+    I: ExactSizeIterator<Item = Option<CowImage<'a>>>,
+{
     use CowImage::{L, LA, RGB, RGBA};
-    let is_all_u8 = inputs
-        .iter()
-        .filter_map(|b| b.as_ref())
-        .all(|b| matches!(b, L(..) | LA(..) | RGB(..) | RGBA(..)));
-    assert!(is_all_u8);
 
-    let mut data_ref = Vec::with_capacity(inputs.len());
+    let mut data = Vec::with_capacity(inputs.len());
     let mut heights = Vec::with_capacity(inputs.len());
     let mut channels = Vec::with_capacity(inputs.len());
     let mut modes = Vec::with_capacity(inputs.len());
     let mut widths = Vec::with_capacity(inputs.len());
     let mut offsets = Vec::with_capacity(inputs.len() + 1);
     offsets.push(0i64);
-    let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(inputs.len());
+    let mut validity = daft_arrow::bitmap::MutableBitmap::with_capacity(inputs.len());
 
     for ib in inputs {
         validity.push(ib.is_some());
-        let (height, width, mode, buffer) = match ib {
-            Some(ib) => (ib.height(), ib.width(), ib.mode(), ib.as_u8_slice()),
-            None => (0u32, 0u32, ImageMode::L, &[] as &[u8]),
-        };
-        heights.push(height);
-        widths.push(width);
-        modes.push(mode as u8);
-        channels.push(mode.num_channels());
-        data_ref.push(buffer);
-        offsets.push(offsets.last().unwrap() + buffer.len() as i64);
+        match ib {
+            Some(ib) => {
+                assert!(matches!(&ib, L(..) | LA(..) | RGB(..) | RGBA(..)));
+                let height = ib.height();
+                let width = ib.width();
+                let mode = ib.mode();
+                let buffer = ib.as_u8_slice();
+                heights.push(height);
+                widths.push(width);
+                modes.push(mode as u8);
+                channels.push(mode.num_channels());
+                data.extend_from_slice(buffer);
+                offsets.push(offsets.last().unwrap() + buffer.len() as i64);
+            }
+            None => {
+                heights.push(0u32);
+                widths.push(0u32);
+                modes.push(ImageMode::L as u8);
+                channels.push(ImageMode::L.num_channels());
+                data.extend_from_slice(&[] as &[u8]);
+                offsets.push(*offsets.last().unwrap());
+            }
+        }
     }
 
-    let data = data_ref.concat();
-    let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
+    let validity: Option<daft_arrow::bitmap::Bitmap> = match validity.unset_bits() {
         0 => None,
         _ => Some(validity.into()),
     };
@@ -175,7 +185,7 @@ pub fn fixed_image_array_from_img_buffers(
 
     let num_channels = image_mode.num_channels();
     let mut data_ref = Vec::with_capacity(inputs.len());
-    let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(inputs.len());
+    let mut validity = daft_arrow::bitmap::MutableBitmap::with_capacity(inputs.len());
     let list_size = (height * width * u32::from(num_channels)) as usize;
     let null_list = vec![0u8; list_size];
     for ib in inputs {
@@ -187,22 +197,22 @@ pub fn fixed_image_array_from_img_buffers(
         data_ref.push(buffer);
     }
     let data = data_ref.concat();
-    let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
+    let validity: Option<daft_arrow::bitmap::Bitmap> = match validity.unset_bits() {
         0 => None,
         _ => Some(validity.into()),
     };
 
-    let arrow_dtype = arrow2::datatypes::DataType::FixedSizeList(
-        Box::new(arrow2::datatypes::Field::new(
+    let arrow_dtype = daft_arrow::datatypes::DataType::FixedSizeList(
+        Box::new(daft_arrow::datatypes::Field::new(
             "data",
-            arrow2::datatypes::DataType::UInt8,
+            daft_arrow::datatypes::DataType::UInt8,
             true,
         )),
         list_size,
     );
-    let arrow_array = Box::new(arrow2::array::FixedSizeListArray::new(
+    let arrow_array = Box::new(daft_arrow::array::FixedSizeListArray::new(
         arrow_dtype.clone(),
-        Box::new(arrow2::array::PrimitiveArray::from_vec(data)),
+        Box::new(daft_arrow::array::PrimitiveArray::from_vec(data)),
         validity,
     ));
     let physical_array = FixedSizeListArray::from_arrow(

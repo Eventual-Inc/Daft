@@ -93,6 +93,26 @@ impl PushDownLimit {
                         match source_info.as_ref() {
                             // Limit pushdown is not supported for in-memory sources.
                             SourceInfo::InMemory(_) => Ok(Transformed::no(plan)),
+                            SourceInfo::GlobScan(glob_info)
+                                if let Some(existing_limit) = glob_info.pushdowns.limit
+                                    && existing_limit <= pushdown_limit =>
+                            {
+                                Ok(Transformed::no(plan))
+                            }
+                            SourceInfo::GlobScan(glob_info) => {
+                                // Create a new GlobScanSource node with the new limit
+                                let new_pushdowns =
+                                    glob_info.pushdowns.with_limit(Some(pushdown_limit));
+                                let new_glob_info = glob_info.with_pushdowns(new_pushdowns);
+                                let new_source = LogicalPlan::Source(LogicalSource::new(
+                                    output_schema.clone(),
+                                    SourceInfo::GlobScan(new_glob_info).into(),
+                                ))
+                                .into();
+                                // Set the GlobScanSource node as the child of the Limit node
+                                let limit_plan = plan.with_new_children(&[new_source]).into();
+                                Ok(Transformed::yes(limit_plan))
+                            }
                             // Do not pushdown if Source node is already more limited than `limit`
                             SourceInfo::Physical(external_info)
                                 if let Some(existing_limit) = external_info.pushdowns.limit
@@ -110,16 +130,14 @@ impl PushDownLimit {
                                     SourceInfo::Physical(new_external_info).into(),
                                 ))
                                 .into();
-                                let out_plan = if external_info
-                                    .scan_state
-                                    .get_scan_op()
-                                    .0
-                                    .can_absorb_limit()
-                                {
-                                    new_source
-                                } else {
-                                    plan.with_new_children(&[new_source]).into()
-                                };
+                                let out_plan =
+                                    if external_info.scan_state.get_scan_op().0.can_absorb_limit()
+                                        && offset.is_none()
+                                    {
+                                        new_source
+                                    } else {
+                                        plan.with_new_children(&[new_source]).into()
+                                    };
                                 Ok(Transformed::yes(out_plan))
                             }
                             SourceInfo::PlaceHolder(..) => {
@@ -199,7 +217,8 @@ impl PushDownLimit {
                     | LogicalPlan::MonotonicallyIncreasingId(..)
                     | LogicalPlan::SubqueryAlias(..)
                     | LogicalPlan::Window(..)
-                    | LogicalPlan::Concat(_) => Ok(Transformed::no(plan)),
+                    | LogicalPlan::Concat(_)
+                    | LogicalPlan::VLLMProject(..) => Ok(Transformed::no(plan)),
                 }
             }
             _ => Ok(Transformed::no(plan)),
@@ -360,7 +379,7 @@ mod tests {
     #[test]
     #[cfg(feature = "python")]
     fn limit_does_not_push_into_in_memory_source() -> DaftResult<()> {
-        let py_obj = Python::with_gil(|py| py.None());
+        let py_obj = Python::attach(|py| py.None());
         let schema: Arc<Schema> = Schema::new(vec![Field::new("a", DataType::Int64)]).into();
         let plan = LogicalPlanBuilder::in_memory_scan(
             "foo",

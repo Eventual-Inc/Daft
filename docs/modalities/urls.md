@@ -16,9 +16,7 @@ Daft supports working with:
 
 ### 1. URL Functions
 
-URL functions are ideal when your data will fit into memory or when you need the entire file content at once. Daft provides the [`.url.*`](../api/expressions.md#daft.expressions.expressions.ExpressionUrlNamespace) method namespace with functionality for working with URL strings. For example, to download data from URLs:
-
-<!-- todo(docs - cc): add relative path to url.download after figure out url namespace-->
+URL functions are ideal when your data will fit into memory or when you need the entire file content at once. Daft provides methods for working with URL strings. For example, to download data from URLs:
 
 === "🐍 Python"
     ``` python
@@ -28,7 +26,7 @@ URL functions are ideal when your data will fit into memory or when you need the
             "s3://daft-public-data/open-images/validation-images/0001eeaf4aed83f9.jpg",
         ],
     })
-    df = df.with_column("data", df["urls"].url.download())
+    df = df.with_column("data", df["urls"].download())
     df.collect()
     ```
 
@@ -91,7 +89,8 @@ The `File` datatype is preferable when dealing with large files that don't fit i
     @daft.func
     def detect_file_type(file: daft.File) -> str:
         # Read just the first 12 bytes to identify file type
-        header = file.read(12)
+        with file.open() as f:
+            header = f.read(12)
 
         # Common file signatures (magic numbers)
         if header.startswith(b"\xff\xd8\xff"):

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::{Utf8ArrayUtils, binary_utf8_evaluate, binary_utf8_to_field};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct EndsWith;
 
 #[typetag::serde]
@@ -71,7 +71,7 @@ mod tests {
     fn check_endswith_utf_arrays_broadcast() -> DaftResult<()> {
         let data = Utf8Array::from((
             "data",
-            Box::new(arrow2::array::Utf8Array::<i64>::from(vec![
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from(vec![
                 "x_foo".into(),
                 "y_foo".into(),
                 "z_bar".into(),
@@ -80,7 +80,9 @@ mod tests {
         .into_series();
         let pattern = Utf8Array::from((
             "pattern",
-            Box::new(arrow2::array::Utf8Array::<i64>::from(vec!["foo".into()])),
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from(vec![
+                "foo".into(),
+            ])),
         ))
         .into_series();
         let result = super::endswith_impl(&data, &pattern)?;
@@ -97,7 +99,7 @@ mod tests {
     fn check_endswith_utf_arrays() -> DaftResult<()> {
         let data = Utf8Array::from((
             "data",
-            Box::new(arrow2::array::Utf8Array::<i64>::from(vec![
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from(vec![
                 "x_foo".into(),
                 "y_foo".into(),
                 "z_bar".into(),
@@ -106,7 +108,7 @@ mod tests {
         .into_series();
         let pattern = Utf8Array::from((
             "pattern",
-            Box::new(arrow2::array::Utf8Array::<i64>::from(vec![
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from(vec![
                 "foo".into(),
                 "wrong".into(),
                 "bar".into(),

@@ -97,7 +97,7 @@ class PreviewFormatter:
 
     def _get_user_message(self) -> str:
         if self._preview.partition is None:
-            return "(No data to display: Dataframe not materialized)"
+            return "(No data to display: Dataframe not materialized, use .collect() to materialize)"
         if self._preview.total_rows == 0:
             return "(No data to display: Materialized dataframe has no rows)"
         if self._preview.total_rows is None:
@@ -147,7 +147,7 @@ class PreviewFormatter:
     def _generate_interactive_html(self) -> str:
         """Generate interactive HTML for the current PreviewFormatter's RecordBatch using the dashboard server."""
         from daft.daft import dashboard as dashboard_native
-        from daft.dashboard import launch
+        from daft.subscribers import launch
 
         # Ensure the server is running (no-op if already running)
         launch(noop_if_initialized=True)

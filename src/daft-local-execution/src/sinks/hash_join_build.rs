@@ -1,18 +1,16 @@
 use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::{Arc, atomic::Ordering},
     time::Duration,
 };
 
 use common_error::DaftResult;
-use common_metrics::{Stat, StatSnapshotSend, snapshot};
+use common_metrics::{CPU_US_KEY, Stat, StatSnapshot, ops::NodeType, snapshot};
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::{ProbeState, ProbeableBuilder, RecordBatch, make_probeable_builder};
 use itertools::Itertools;
+use opentelemetry::{KeyValue, global};
 use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
@@ -21,19 +19,15 @@ use super::blocking_sink::{
 };
 use crate::{
     ExecutionTaskSpawner,
-    ops::NodeType,
     pipeline::NodeName,
-    runtime_stats::{CPU_US_KEY, RuntimeStats},
+    runtime_stats::{Counter, RuntimeStats},
     state_bridge::BroadcastStateBridgeRef,
 };
 
-pub(crate) enum ProbeTableState {
-    Building {
-        probe_table_builder: Option<Box<dyn ProbeableBuilder>>,
-        projection: Vec<BoundExpr>,
-        tables: Vec<RecordBatch>,
-    },
-    Done,
+pub(crate) struct ProbeTableState {
+    probe_table_builder: Box<dyn ProbeableBuilder>,
+    projection: Vec<BoundExpr>,
+    tables: Vec<RecordBatch>,
 }
 
 impl ProbeTableState {
@@ -43,67 +37,56 @@ impl ProbeTableState {
         nulls_equal_aware: Option<&Vec<bool>>,
         track_indices: bool,
     ) -> DaftResult<Self> {
-        Ok(Self::Building {
-            probe_table_builder: Some(make_probeable_builder(
+        Ok(Self {
+            probe_table_builder: make_probeable_builder(
                 key_schema.clone(),
                 nulls_equal_aware,
                 track_indices,
-            )?),
+            )?,
             projection,
             tables: Vec::new(),
         })
     }
 
     fn add_tables(&mut self, input: &Arc<MicroPartition>) -> DaftResult<()> {
-        if let Self::Building {
-            probe_table_builder,
-            projection,
-            tables,
-        } = self
-        {
-            let probe_table_builder = probe_table_builder.as_mut().unwrap();
-            let input_tables = input.get_tables()?;
-            if input_tables.is_empty() {
-                let empty_table = RecordBatch::empty(Some(input.schema()));
-                let join_keys = empty_table.eval_expression_list(projection)?;
-                probe_table_builder.add_table(&join_keys)?;
-                tables.push(empty_table);
-            } else {
-                for table in input_tables.iter() {
-                    tables.push(table.clone());
-                    let join_keys = table.eval_expression_list(projection)?;
+        let input_tables = input.record_batches();
+        if input_tables.is_empty() {
+            let empty_table = RecordBatch::empty(Some(input.schema()));
+            let join_keys = empty_table.eval_expression_list(&self.projection)?;
+            self.probe_table_builder.add_table(&join_keys)?;
+            self.tables.push(empty_table);
+        } else {
+            for table in input_tables {
+                self.tables.push(table.clone());
+                let join_keys = table.eval_expression_list(&self.projection)?;
 
-                    probe_table_builder.add_table(&join_keys)?;
-                }
+                self.probe_table_builder.add_table(&join_keys)?;
             }
-            Ok(())
-        } else {
-            panic!("add_tables can only be used during the Building Phase")
         }
+        Ok(())
     }
-    fn finalize(&mut self) -> ProbeState {
-        if let Self::Building {
-            probe_table_builder,
-            tables,
-            ..
-        } = self
-        {
-            let ptb = std::mem::take(probe_table_builder).expect("should be set in building mode");
-            let pt = ptb.build();
-
-            let ps = ProbeState::new(pt, tables.clone().into());
-            *self = Self::Done;
-            ps
-        } else {
-            panic!("finalize can only be used during the Building Phase")
-        }
+    fn finalize(self) -> ProbeState {
+        let pt = self.probe_table_builder.build();
+        ProbeState::new(pt, self.tables)
     }
 }
 
-#[derive(Default)]
 struct HashJoinBuildRuntimeStats {
-    cpu_us: AtomicU64,
-    rows_in: AtomicU64,
+    cpu_us: Counter,
+    rows_in: Counter,
+
+    node_kv: Vec<KeyValue>,
+}
+impl HashJoinBuildRuntimeStats {
+    pub fn new(id: usize) -> Self {
+        let meter = global::meter("daft.local.node_stats");
+        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+        Self {
+            cpu_us: Counter::new(&meter, "cpu_us".into(), None),
+            rows_in: Counter::new(&meter, "rows_in".into(), None),
+            node_kv,
+        }
+    }
 }
 
 impl RuntimeStats for HashJoinBuildRuntimeStats {
@@ -111,7 +94,7 @@ impl RuntimeStats for HashJoinBuildRuntimeStats {
         self
     }
 
-    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshotSend {
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         snapshot![
             CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
             "rows inserted"; Stat::Count(self.rows_in.load(ordering)),
@@ -119,7 +102,7 @@ impl RuntimeStats for HashJoinBuildRuntimeStats {
     }
 
     fn add_rows_in(&self, rows: u64) {
-        self.rows_in.fetch_add(rows, Ordering::Relaxed);
+        self.rows_in.add(rows, self.node_kv.as_slice());
     }
 
     fn add_rows_out(&self, _: u64) {
@@ -127,7 +110,7 @@ impl RuntimeStats for HashJoinBuildRuntimeStats {
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.fetch_add(cpu_us, Ordering::Relaxed);
+        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
@@ -206,7 +189,7 @@ impl BlockingSink for HashJoinBuildSink {
         _spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult<Self> {
         assert_eq!(states.len(), 1);
-        let mut state = states.into_iter().next().unwrap();
+        let state = states.into_iter().next().unwrap();
         let finalized_probe_state = state.finalize();
         self.probe_state_bridge
             .set_state(finalized_probe_state.into());
@@ -226,8 +209,8 @@ impl BlockingSink for HashJoinBuildSink {
         )
     }
 
-    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        Arc::new(HashJoinBuildRuntimeStats::default())
+    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(HashJoinBuildRuntimeStats::new(id))
     }
 
     fn morsel_size_requirement(&self) -> Option<crate::pipeline::MorselSizeRequirement> {

@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
 use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties};
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{partitioning::translate_clustering_spec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
 
-use super::DistributedPipelineNode;
+use super::PipelineNodeImpl;
 use crate::{
     pipeline_node::{
-        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, SubmittableTaskStream,
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        SubmittableTaskStream,
     },
     plan::{PlanConfig, PlanExecutionContext},
 };
@@ -18,10 +18,10 @@ use crate::{
 pub(crate) struct UDFNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    project: BoundExpr,
-    passthrough_columns: Vec<BoundExpr>,
+    expr: BoundExpr,
     udf_properties: UDFProperties,
-    child: Arc<dyn DistributedPipelineNode>,
+    passthrough_columns: Vec<BoundExpr>,
+    child: DistributedPipelineNode,
 }
 
 impl UDFNode {
@@ -30,21 +30,18 @@ impl UDFNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
-        project: BoundExpr,
-        passthrough_columns: Vec<BoundExpr>,
+        expr: BoundExpr,
         udf_properties: UDFProperties,
+        passthrough_columns: Vec<BoundExpr>,
         schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -60,28 +57,45 @@ impl UDFNode {
         Self {
             config,
             context,
-            project,
-            passthrough_columns,
+            expr,
             udf_properties,
+            passthrough_columns,
             child,
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
+    }
+}
+
+impl PipelineNodeImpl for UDFNode {
+    fn context(&self) -> &PipelineNodeContext {
+        &self.context
     }
 
-    fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec![];
-        res.push("UDF Executor:".to_string());
-        res.push(format!(
-            "UDF {} = {}",
-            self.udf_properties.name, self.project
-        ));
-        res.push(format!(
-            "Passthrough Columns = [{}]",
-            self.passthrough_columns.iter().join(", ")
-        ));
+    fn config(&self) -> &PipelineNodeConfig {
+        &self.config
+    }
+
+    fn children(&self) -> Vec<DistributedPipelineNode> {
+        vec![self.child.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        let mut res = vec![
+            format!("UDF: {}", self.udf_properties.name),
+            format!("Expr = {}", self.expr),
+            format!(
+                "Passthrough Columns = [{}]",
+                self.passthrough_columns.iter().join(", ")
+            ),
+            format!(
+                "Properties = {{ {} }}",
+                self.udf_properties.multiline_display(false).join(", ")
+            ),
+        ];
+
         if let Some(resource_request) = &self.udf_properties.resource_request {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
@@ -91,38 +105,8 @@ impl UDFNode {
         } else {
             res.push("Resource request = None".to_string());
         }
+
         res
-    }
-}
-
-impl TreeDisplay for UDFNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        match level {
-            DisplayLevel::Compact => self.name().to_string(),
-            _ => self.multiline_display().join("\n"),
-        }
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.name().to_string()
-    }
-}
-
-impl DistributedPipelineNode for UDFNode {
-    fn context(&self) -> &PipelineNodeContext {
-        &self.context
-    }
-
-    fn config(&self) -> &PipelineNodeConfig {
-        &self.config
-    }
-
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
-        vec![self.child.clone()]
     }
 
     fn produce_tasks(
@@ -131,23 +115,26 @@ impl DistributedPipelineNode for UDFNode {
     ) -> SubmittableTaskStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
 
-        let project = self.project.clone();
+        let expr = self.expr.clone();
+        let udf_properties = self.udf_properties.clone();
         let passthrough_columns = self.passthrough_columns.clone();
         let schema = self.config.schema.clone();
+        let node_id = self.context.node_id;
         let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
             LocalPhysicalPlan::udf_project(
                 input,
-                project.clone(),
+                expr.clone(),
+                udf_properties.clone(),
                 passthrough_columns.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
+                },
             )
         };
 
         input_node.pipeline_instruction(self, plan_builder)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
     }
 }

@@ -1,6 +1,6 @@
 # Introduction
 
-Daft is a high-performance data engine providing simple and reliable data processing for any modality and scale.
+Daft is a high-performance data engine designed for AI and multimodal workloads, providing simple, reliable data processing for images, audio, video, and structured data at any scale.
 
 <style>
   .daft-pipeline-component {
@@ -486,23 +486,23 @@ Start local, scale global—without changing a line of code. Daft's Rust-powered
 
 ## Key Features
 
-* **Native Multimodal Processing**: Process any data type—from structured tables to unstructured text and rich media—with native support for images, embeddings, and tensors in a single, unified framework.
+* **Native multimodal processing**: Process any data type—from structured tables to unstructured text and rich media—with native support for images, audio, video, and embeddings in a single, unified framework.
 
-* **Rust-Powered Performance**: Experience breakthrough speed with our Rust foundation delivering vectorized execution and non-blocking I/O that processes the same queries with 5x less memory while consistently outperforming industry standards by an order of magnitude.
+* **Built-in AI operations**: Transform data with AI natively: run LLM prompts with structured outputs, generate embeddings, and classify images or text using models from OpenAI, Transformers, or your own custom providers, all optimized for batch processing.
 
-* **Seamless ML Ecosystem Integration**: Slot directly into your existing ML workflows with zero friction—whether you're using [PyTorch](https://pytorch.org/), [NumPy](https://numpy.org/), [Pandas](https://pandas.pydata.org/), or [HuggingFace models](https://huggingface.co/models), Daft works where you work.
+* **Rust-powered performance**: Experience breakthrough speed with our Rust foundation delivering vectorized execution and non-blocking I/O that processes the same queries with 5x less memory while consistently outperforming industry standards by an order of magnitude.
 
-* **Universal Data Connectivity**: Access data anywhere it lives—cloud storage ([S3](https://aws.amazon.com/s3/), [Azure](https://azure.microsoft.com/en-us/), [GCS](https://cloud.google.com/storage)), modern table formats ([Apache Iceberg](https://iceberg.apache.org/), [Delta Lake](https://delta.io/), [Apache Hudi](https://hudi.apache.org/)), or enterprise catalogs ([Unity](https://www.unitycatalog.io/), [AWS Glue](https://aws.amazon.com/glue/))—all with zero configuration.
+* **Universal data connectivity**: Access data anywhere it lives—cloud storage ([S3](connectors/aws.md), [Azure](connectors/azure.md), [GCS](api/config.md#daft.io.GCSConfig), [Hugging Face](connectors/huggingface.md)), modern table formats ([Apache Iceberg](connectors/iceberg.md), [Delta Lake](connectors/delta_lake.md), [Apache Hudi](connectors/hudi.md)), or enterprise catalogs ([Unity Catalog](connectors/unity_catalog.md), [AWS Glue](connectors/glue.md))—all with zero configuration.
 
 * **Push your code to your data**: Bring your Python functions directly to your data with zero-copy UDFs powered by [Apache Arrow](https://arrow.apache.org/), eliminating data movement overhead and accelerating processing speeds.
 
-* **Out of the Box reliability**: Deploy with confidence—intelligent memory management prevents OOM errors while sensible defaults eliminate configuration headaches, letting you focus on results, not infrastructure.
+* **Out of the box reliability**: Deploy with confidence—intelligent memory management prevents OOM errors while sensible defaults eliminate configuration headaches, letting you focus on results, not infrastructure.
 
 !!! tip "Looking to get started with Daft ASAP?"
 
-    The Daft Guide is a useful resource to take deeper dives into specific Daft concepts, but if you are ready to jump into code you may wish to take a look at these resources:
+    If you are ready to jump into code, take a look at these resources:
 
-    1. [Quickstart](quickstart.md): Itching to run some Daft code? Hit the ground running with our 10 minute quickstart notebook.
+    1. [Quickstart](quickstart.md): Itching to run some Daft code? Hit the ground running with our 10 minute quickstart.
 
     2. [Examples](examples/index.md): See Daft in action with use cases across text, images, audio, and more.
 

@@ -11,7 +11,7 @@ use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
 use crate::{
-    AsyncFileWriter,
+    AsyncFileWriter, WriteResult,
     storage_backend::{FileStorageBackend, S3StorageBackend, StorageBackend},
     utils::build_filename,
 };
@@ -94,7 +94,7 @@ impl<B: StorageBackend> JsonWriter<B> {
     /// Estimates the number of bytes that will be written for the given data.
     /// This is a temporary workaround since arrow-json doesn't provide bytes written or access to the underlying writer.
     fn estimate_bytes_to_write(&self, data: &MicroPartition) -> DaftResult<usize> {
-        let base_size = data.size_bytes().unwrap_or(0);
+        let base_size = data.size_bytes();
         let estimated_size = (base_size as f64 * Self::INFLATION_FACTOR) as usize;
         Ok(estimated_size)
     }
@@ -113,16 +113,17 @@ impl<B: StorageBackend> AsyncFileWriter for JsonWriter<B> {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
-    async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {
         if self.file_writer.is_none() {
             self.create_writer().await?;
         }
+        let num_rows = data.len();
         // TODO(desmond): This is a hack to estimate the size in bytes. Arrow-json currently doesn't support getting the
         // bytes written, nor does it allow us to access the LineDelimitedWriter's inner writer which prevents
         // us from using a counting writer. We need to fix this upstream.
         let est_bytes_to_write = self.estimate_bytes_to_write(&data)?;
         self.bytes_written += est_bytes_to_write;
-        let record_batches = data.get_tables()?;
+        let record_batches = data.record_batches();
         let record_batches: Vec<ArrowRecordBatch> = record_batches
             .iter()
             .map(|rb| rb.clone().try_into())
@@ -144,7 +145,10 @@ impl<B: StorageBackend> AsyncFileWriter for JsonWriter<B> {
             .map_err(|e| DaftError::ParquetError(e.to_string()))??;
         self.file_writer.replace(file_writer);
 
-        Ok(est_bytes_to_write)
+        Ok(WriteResult {
+            bytes_written: est_bytes_to_write,
+            rows_written: num_rows,
+        })
     }
 
     async fn close(&mut self) -> DaftResult<Self::Result> {
@@ -165,7 +169,7 @@ impl<B: StorageBackend> AsyncFileWriter for JsonWriter<B> {
         let field = Field::new(Self::PATH_FIELD_NAME, DataType::Utf8);
         let filename_series = Series::from_arrow(
             Arc::new(field.clone()),
-            Box::new(arrow2::array::Utf8Array::<i64>::from_slice([&self
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice([&self
                 .filename
                 .to_string_lossy()])),
         )?;

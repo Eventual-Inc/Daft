@@ -2,13 +2,14 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
 use daft_micropartition::{MicroPartitionRef, partitioning::PartitionSetRef};
 use tracing::instrument;
 
 use super::source::Source;
-use crate::{ops::NodeType, pipeline::NodeName, sources::source::SourceStream};
+use crate::{pipeline::NodeName, sources::source::SourceStream};
 
 pub struct InMemorySource {
     data: Option<PartitionSetRef<MicroPartitionRef>>,
@@ -40,7 +41,7 @@ impl Source for InMemorySource {
         &self,
         _maintain_order: bool,
         _io_stats: IOStatsRef,
-        _chunk_size: Option<usize>,
+        _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         Ok(self
             .data

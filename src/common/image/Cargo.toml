@@ -1,6 +1,5 @@
 [dependencies]
-arrow2 = {workspace = true}
-bincode = {workspace = true}
+daft-arrow = {path = "../../daft-arrow"}
 common-error = {path = "../error", default-features = false}
 common-ndarray = {workspace = true}
 daft-schema = {path = "../../daft-schema", default-features = false}
@@ -17,6 +16,9 @@ image = {workspace = true, features = [
 ndarray = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
+
+[dev-dependencies]
+bincode = {workspace = true, features = ["serde"]}
 
 [features]
 python = ["dep:pyo3"]

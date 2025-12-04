@@ -10,7 +10,8 @@ use crate::{
 };
 
 /// Configuration for parsing a particular file format.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 #[serde(transparent)]
 #[cfg_attr(
     feature = "python",
@@ -52,7 +53,7 @@ impl PyFileFormatConfig {
 
     /// Get the underlying data source config.
     #[getter]
-    fn get_config(&self, py: Python) -> PyResult<PyObject> {
+    fn get_config(&self, py: Python) -> PyResult<Py<PyAny>> {
         match self.0.as_ref() {
             FileFormatConfig::Parquet(config) => config
                 .clone()
@@ -74,7 +75,11 @@ impl PyFileFormatConfig {
                 .clone()
                 .into_pyobject(py)
                 .map(|c| c.unbind().into_any()),
-            FileFormatConfig::PythonFunction => Ok(py.None()),
+            FileFormatConfig::PythonFunction {
+                source_type: _,
+                module_name: _,
+                function_name: _,
+            } => Ok(py.None()),
         }
     }
 

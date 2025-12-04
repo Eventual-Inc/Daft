@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use common_partitioning::{Partition, PartitionId, PartitionSet};
@@ -17,16 +17,13 @@ use daft_io::{IOStatsContext, python::IOConfig};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
-use daft_scan::{
-    DataSource, ScanTask, ScanTaskRef, python::pylib::PyScanTask, storage_config::StorageConfig,
-};
+use daft_scan::{DataSource, ScanTaskRef, storage_config::StorageConfig};
 use daft_stats::{TableMetadata, TableStatistics};
 use pyo3::{PyTypeInfo, exceptions::PyValueError, prelude::*, types::PyBytes};
 use snafu::ResultExt;
 
 use crate::{
-    DaftCoreComputeSnafu, PyIOSnafu,
-    micropartition::{MicroPartition, TableState},
+    DaftCoreComputeSnafu, PyIOSnafu, micropartition::MicroPartition,
     partitioning::MicroPartitionSet,
 };
 
@@ -52,11 +49,7 @@ impl PyMicroPartition {
     pub fn get_column_by_name(&self, name: &str, py: Python) -> PyResult<PySeries> {
         let index = self.inner.schema().get_index(name)?;
 
-        let tables = py.allow_threads(|| {
-            let io_stats =
-                IOStatsContext::new(format!("PyMicroPartition::get_column_by_name: {name}"));
-            self.inner.concat_or_get_update(io_stats)
-        })?;
+        let tables = py.detach(|| self.inner.concat_or_get())?;
         match tables {
             None => Ok(Series::empty(name, &self.inner.schema.get_field(name)?.dtype).into()),
             Some(t) => Ok(t.get_column(index).clone().into()),
@@ -64,10 +57,7 @@ impl PyMicroPartition {
     }
 
     pub fn get_column(&self, idx: usize, py: Python) -> PyResult<PySeries> {
-        let tables = py.allow_threads(|| {
-            let io_stats = IOStatsContext::new(format!("PyMicroPartition::get_column: {idx}"));
-            self.inner.concat_or_get_update(io_stats)
-        })?;
+        let tables = py.detach(|| self.inner.concat_or_get())?;
 
         match tables {
             None => {
@@ -79,10 +69,7 @@ impl PyMicroPartition {
     }
 
     pub fn columns(&self, py: Python) -> PyResult<Vec<PySeries>> {
-        let tables = py.allow_threads(|| {
-            let io_stats = IOStatsContext::new("PyMicroPartition::columns");
-            self.inner.concat_or_get_update(io_stats)
-        })?;
+        let tables = py.detach(|| self.inner.concat_or_get())?;
 
         match tables {
             None => {
@@ -99,18 +86,18 @@ impl PyMicroPartition {
         }
     }
 
-    pub fn get_record_batches(&self, py: Python) -> PyResult<Vec<PyRecordBatch>> {
-        let record_batches = py.allow_threads(|| self.inner.get_tables())?;
-        Ok(record_batches
+    pub fn get_record_batches(&self, py: Python) -> Vec<PyRecordBatch> {
+        let record_batches = py.detach(|| self.inner.record_batches());
+        record_batches
             .iter()
             .map(|rb| PyRecordBatch {
                 record_batch: rb.clone(),
             })
-            .collect())
+            .collect()
     }
 
-    pub fn size_bytes(&self) -> PyResult<Option<usize>> {
-        Ok(self.inner.size_bytes()?)
+    pub fn size_bytes(&self) -> usize {
+        self.inner.size_bytes()
     }
 
     pub fn __len__(&self) -> PyResult<usize> {
@@ -123,20 +110,6 @@ impl PyMicroPartition {
 
     pub fn __repr_html__(&self) -> PyResult<String> {
         todo!("[MICROPARTITION_INT] __repr_html__")
-    }
-
-    // Creation Methods
-    #[staticmethod]
-    pub fn from_scan_task(scan_task: PyScanTask, py: Python) -> PyResult<Self> {
-        Ok(py
-            .allow_threads(|| {
-                let io_stats = IOStatsContext::new(format!(
-                    "MicroPartition::from_scan_task for {:?}",
-                    scan_task.0.sources
-                ));
-                MicroPartition::from_scan_task(scan_task.into(), io_stats)
-            })?
-            .into())
     }
 
     #[staticmethod]
@@ -190,10 +163,7 @@ impl PyMicroPartition {
 
     // Export Methods
     pub fn to_record_batch(&self, py: Python) -> PyResult<PyRecordBatch> {
-        let concatted = py.allow_threads(|| {
-            let io_stats = IOStatsContext::new("PyMicroPartition::to_record_batch");
-            self.inner.concat_or_get_update(io_stats)
-        })?;
+        let concatted = py.detach(|| self.inner.concat_or_get())?;
         match concatted {
             None => Ok(PyRecordBatch::empty(Some(self.schema()?))),
             Some(record_batch) => Ok(PyRecordBatch { record_batch }),
@@ -205,27 +175,27 @@ impl PyMicroPartition {
     #[staticmethod]
     pub fn concat(py: Python, to_concat: Vec<Self>) -> PyResult<Self> {
         let mps_iter = to_concat.iter().map(|t| t.inner.as_ref());
-        py.allow_threads(|| Ok(MicroPartition::concat(mps_iter)?.into()))
+        py.detach(|| Ok(MicroPartition::concat(mps_iter)?.into()))
     }
 
     #[staticmethod]
     pub fn concat_or_empty(py: Python, to_concat: Vec<Self>, schema: PySchema) -> PyResult<Self> {
         let mps_iter = to_concat.iter().map(|t| t.inner.as_ref());
-        py.allow_threads(|| Ok(MicroPartition::concat_or_empty(mps_iter, schema.schema)?.into()))
+        py.detach(|| Ok(MicroPartition::concat_or_empty(mps_iter, schema.schema)?.into()))
     }
 
     pub fn slice(&self, py: Python, start: i64, end: i64) -> PyResult<Self> {
-        py.allow_threads(|| Ok(self.inner.slice(start as usize, end as usize)?.into()))
+        py.detach(|| Ok(self.inner.slice(start as usize, end as usize)?.into()))
     }
 
     pub fn cast_to_schema(&self, py: Python, schema: PySchema) -> PyResult<Self> {
         #[allow(deprecated)]
-        py.allow_threads(|| Ok(self.inner.cast_to_schema(schema.schema)?.into()))
+        py.detach(|| Ok(self.inner.cast_to_schema(schema.schema)?.into()))
     }
 
     pub fn eval_expression_list(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
         let converted_exprs = BoundExpr::bind_all(&exprs, &self.inner.schema)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .inner
                 .eval_expression_list(converted_exprs.as_slice())?
@@ -234,7 +204,7 @@ impl PyMicroPartition {
     }
 
     pub fn take(&self, py: Python, idx: &PySeries) -> PyResult<Self> {
-        py.allow_threads(|| {
+        py.detach(|| {
             let taken = self.inner.take(&idx.series)?;
             let mp = MicroPartition::new_loaded(
                 taken.schema.clone(),
@@ -247,7 +217,7 @@ impl PyMicroPartition {
 
     pub fn filter(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
         let converted_exprs = BoundExpr::bind_all(&exprs, &self.inner.schema)?;
-        py.allow_threads(|| Ok(self.inner.filter(converted_exprs.as_slice())?.into()))
+        py.detach(|| Ok(self.inner.filter(converted_exprs.as_slice())?.into()))
     }
 
     pub fn sort(
@@ -258,7 +228,7 @@ impl PyMicroPartition {
         nulls_first: Vec<bool>,
     ) -> PyResult<Self> {
         let converted_exprs = BoundExpr::bind_all(&sort_keys, &self.inner.schema)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .inner
                 .sort(
@@ -278,7 +248,7 @@ impl PyMicroPartition {
         nulls_first: Vec<bool>,
     ) -> PyResult<PySeries> {
         let converted_exprs = BoundExpr::bind_all(&sort_keys, &self.inner.schema)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .inner
                 .argsort(
@@ -304,7 +274,7 @@ impl PyMicroPartition {
             })
             .collect::<DaftResult<Vec<_>>>()?;
         let converted_group_by: Vec<_> = BoundExpr::bind_all(&group_by, &self.inner.schema)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .inner
                 .agg(converted_to_agg.as_slice(), converted_group_by.as_slice())?
@@ -314,7 +284,7 @@ impl PyMicroPartition {
 
     pub fn dedup(&self, py: Python, columns: Vec<PyExpr>) -> PyResult<Self> {
         let converted_columns = BoundExpr::bind_all(&columns, &self.inner.schema)?;
-        py.allow_threads(|| Ok(self.inner.dedup(converted_columns.as_slice())?.into()))
+        py.detach(|| Ok(self.inner.dedup(converted_columns.as_slice())?.into()))
     }
 
     pub fn pivot(
@@ -328,7 +298,7 @@ impl PyMicroPartition {
         let converted_group_by = BoundExpr::bind_all(&group_by, &self.inner.schema)?;
         let converted_pivot_col = BoundExpr::try_new(pivot_col, &self.inner.schema)?;
         let converted_values_col = BoundExpr::try_new(values_col, &self.inner.schema)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .inner
                 .pivot(
@@ -359,7 +329,7 @@ impl PyMicroPartition {
     ) -> PyResult<Self> {
         let left_exprs = BoundExpr::bind_all(&left_on, &self.inner.schema)?;
         let right_exprs = BoundExpr::bind_all(&right_on, &right.inner.schema)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .inner
                 .hash_join(
@@ -383,13 +353,14 @@ impl PyMicroPartition {
     ) -> PyResult<Self> {
         let left_exprs = BoundExpr::bind_all(&left_on, &self.inner.schema)?;
         let right_exprs = BoundExpr::bind_all(&right_on, &right.inner.schema)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .inner
                 .sort_merge_join(
                     &right.inner,
                     left_exprs.as_slice(),
                     right_exprs.as_slice(),
+                    JoinType::Inner, // TODO: Expose other join types
                     is_sorted,
                 )?
                 .into())
@@ -402,13 +373,13 @@ impl PyMicroPartition {
         right: &Self,
         outer_loop_side: JoinSide,
     ) -> PyResult<Self> {
-        py.allow_threads(|| Ok(self.inner.cross_join(&right.inner, outer_loop_side)?.into()))
+        py.detach(|| Ok(self.inner.cross_join(&right.inner, outer_loop_side)?.into()))
     }
 
     pub fn explode(&self, py: Python, to_explode: Vec<PyExpr>) -> PyResult<Self> {
         let converted_to_explode = BoundExpr::bind_all(&to_explode, &self.inner.schema)?;
 
-        py.allow_threads(|| Ok(self.inner.explode(converted_to_explode.as_slice())?.into()))
+        py.detach(|| Ok(self.inner.explode(converted_to_explode.as_slice())?.into()))
     }
 
     pub fn unpivot(
@@ -421,7 +392,7 @@ impl PyMicroPartition {
     ) -> PyResult<Self> {
         let converted_ids = BoundExpr::bind_all(&ids, &self.inner.schema)?;
         let converted_values = BoundExpr::bind_all(&values, &self.inner.schema)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .inner
                 .unpivot(
@@ -435,7 +406,7 @@ impl PyMicroPartition {
     }
 
     pub fn head(&self, py: Python, num: i64) -> PyResult<Self> {
-        py.allow_threads(|| {
+        py.detach(|| {
             if num < 0 {
                 return Err(PyValueError::new_err(format!(
                     "Can not head MicroPartition with negative number: {num}"
@@ -453,7 +424,7 @@ impl PyMicroPartition {
         with_replacement: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
-        py.allow_threads(|| {
+        py.detach(|| {
             if fraction < 0.0 {
                 return Err(PyValueError::new_err(format!(
                     "Can not sample table with negative fraction: {fraction}"
@@ -479,7 +450,7 @@ impl PyMicroPartition {
         with_replacement: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
-        py.allow_threads(|| {
+        py.detach(|| {
             if size < 0 {
                 return Err(PyValueError::new_err(format!(
                     "Can not sample table with negative size: {size}"
@@ -493,7 +464,7 @@ impl PyMicroPartition {
     }
 
     pub fn quantiles(&self, py: Python, num: i64) -> PyResult<Self> {
-        py.allow_threads(|| {
+        py.detach(|| {
             if num < 0 {
                 return Err(PyValueError::new_err(format!(
                     "Can not fetch quantile from table with negative number: {num}"
@@ -515,7 +486,7 @@ impl PyMicroPartition {
             )));
         }
         let exprs = BoundExpr::bind_all(&exprs, &self.inner.schema)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .inner
                 .partition_by_hash(exprs.as_slice(), num_partitions as usize)?
@@ -542,7 +513,7 @@ impl PyMicroPartition {
                 "Can not have seed has negative number: {seed}"
             )));
         }
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .inner
                 .partition_by_random(num_partitions as usize, seed as u64)?
@@ -560,7 +531,7 @@ impl PyMicroPartition {
         descending: Vec<bool>,
     ) -> PyResult<Vec<Self>> {
         let exprs = BoundExpr::bind_all(&partition_keys, &self.inner.schema)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .inner
                 .partition_by_range(
@@ -580,7 +551,7 @@ impl PyMicroPartition {
         partition_keys: Vec<PyExpr>,
     ) -> PyResult<(Vec<Self>, Self)> {
         let exprs = BoundExpr::bind_all(&partition_keys, &self.inner.schema)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             let (mps, values) = self.inner.partition_by_value(exprs.as_slice())?;
             let mps = mps
                 .into_iter()
@@ -597,7 +568,7 @@ impl PyMicroPartition {
         partition_num: u64,
         column_name: &str,
     ) -> PyResult<Self> {
-        py.allow_threads(|| {
+        py.detach(|| {
             Ok(self
                 .inner
                 .add_monotonically_increasing_id(partition_num, column_name)?
@@ -655,7 +626,7 @@ impl PyMicroPartition {
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
     ) -> PyResult<Self> {
-        let mp = py.allow_threads(|| {
+        let mp = py.detach(|| {
             let io_stats = IOStatsContext::new(format!("read_json: for uri {uri}"));
             let io_config = io_config.unwrap_or_default().config.into();
 
@@ -690,7 +661,7 @@ impl PyMicroPartition {
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
     ) -> PyResult<Self> {
-        let mp = py.allow_threads(|| {
+        let mp = py.detach(|| {
             let io_stats = IOStatsContext::new(format!("read_csv: for uri {uri}"));
             let io_config = io_config.unwrap_or_default().config.into();
             crate::micropartition::read_csv_into_micropartition(
@@ -731,7 +702,7 @@ impl PyMicroPartition {
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<Self> {
-        let mp = py.allow_threads(|| {
+        let mp = py.detach(|| {
             let io_stats = IOStatsContext::new(format!("read_parquet: for uri {uri}"));
 
             let io_config = io_config.unwrap_or_default().config.into();
@@ -753,7 +724,6 @@ impl PyMicroPartition {
                 1,
                 multithreaded_io.unwrap_or(true),
                 &schema_infer_options,
-                None,
                 None,
                 None,
                 None,
@@ -793,7 +763,7 @@ impl PyMicroPartition {
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
         chunk_size: Option<usize>,
     ) -> PyResult<Self> {
-        let mp = py.allow_threads(|| {
+        let mp = py.detach(|| {
             let io_stats = IOStatsContext::new(format!("read_parquet: for uri {uris:?}"));
 
             let io_config = io_config.unwrap_or_default().config.into();
@@ -819,7 +789,6 @@ impl PyMicroPartition {
                 None,
                 None,
                 chunk_size,
-                None,
                 None,
             )
         })?;
@@ -856,7 +825,7 @@ impl PyMicroPartition {
             Field::new("warc_content", daft_core::prelude::DataType::Binary),
             Field::new("warc_headers", daft_core::prelude::DataType::Utf8),
         ]));
-        let mp = py.allow_threads(|| {
+        let mp = py.detach(|| {
             crate::micropartition::read_warc_into_micropartition(
                 &[uri],
                 schema.into(),
@@ -869,37 +838,24 @@ impl PyMicroPartition {
     }
 
     #[staticmethod]
-    pub fn _from_unloaded_table_state(
-        schema_bytes: &[u8],
-        loading_scan_task_bytes: &[u8],
-        metadata_bytes: &[u8],
-        statistics_bytes: &[u8],
-    ) -> PyResult<Self> {
-        let schema = bincode::deserialize::<Schema>(schema_bytes).unwrap();
-        let scan_task = bincode::deserialize::<ScanTask>(loading_scan_task_bytes).unwrap();
-        let metadata = bincode::deserialize::<TableMetadata>(metadata_bytes).unwrap();
-        let statistics = bincode::deserialize::<Option<TableStatistics>>(statistics_bytes).unwrap();
-
-        Ok(MicroPartition {
-            schema: Arc::new(schema),
-            state: Mutex::new(TableState::Unloaded(Arc::new(scan_task))),
-            metadata,
-            statistics,
-        }
-        .into())
-    }
-
-    #[staticmethod]
     pub fn _from_loaded_table_state(
         py: Python,
         schema_bytes: &[u8],
-        table_objs: Vec<PyObject>,
+        table_objs: Vec<pyo3::Py<pyo3::PyAny>>,
         metadata_bytes: &[u8],
         statistics_bytes: &[u8],
     ) -> PyResult<Self> {
-        let schema = bincode::deserialize::<Schema>(schema_bytes).unwrap();
-        let metadata = bincode::deserialize::<TableMetadata>(metadata_bytes).unwrap();
-        let statistics = bincode::deserialize::<Option<TableStatistics>>(statistics_bytes).unwrap();
+        let config = bincode::config::legacy();
+        let schema: Schema = bincode::serde::decode_from_slice(schema_bytes, config)
+            .unwrap()
+            .0;
+        let metadata: TableMetadata = bincode::serde::decode_from_slice(metadata_bytes, config)
+            .unwrap()
+            .0;
+        let statistics: Option<TableStatistics> =
+            bincode::serde::decode_from_slice(statistics_bytes, config)
+                .unwrap()
+                .0;
 
         let tables = table_objs
             .into_iter()
@@ -912,63 +868,56 @@ impl PyMicroPartition {
 
         Ok(MicroPartition {
             schema: Arc::new(schema),
-            state: Mutex::new(TableState::Loaded(Arc::new(tables))),
+            chunks: Arc::new(tables),
             metadata,
             statistics,
         }
         .into())
     }
 
-    pub fn __reduce__(&self, py: Python) -> PyResult<(PyObject, PyObject)> {
-        let schema_bytes = PyBytes::new(py, &bincode::serialize(&self.inner.schema).unwrap());
+    pub fn __reduce__(
+        &self,
+        py: Python,
+    ) -> PyResult<(pyo3::Py<pyo3::PyAny>, pyo3::Py<pyo3::PyAny>)> {
+        let config = bincode::config::legacy();
+        let schema_bytes = PyBytes::new(
+            py,
+            &bincode::serde::encode_to_vec(&self.inner.schema, config).unwrap(),
+        );
 
-        let py_metadata_bytes =
-            PyBytes::new(py, &bincode::serialize(&self.inner.metadata).unwrap());
-        let py_stats_bytes = PyBytes::new(py, &bincode::serialize(&self.inner.statistics).unwrap());
+        let py_metadata_bytes = PyBytes::new(
+            py,
+            &bincode::serde::encode_to_vec(&self.inner.metadata, config).unwrap(),
+        );
+        let py_stats_bytes = PyBytes::new(
+            py,
+            &bincode::serde::encode_to_vec(&self.inner.statistics, config).unwrap(),
+        );
 
-        let guard = self.inner.state.lock().unwrap();
-        if let TableState::Loaded(tables) = &*guard {
-            let _from_pytable = py
-                .import(pyo3::intern!(py, "daft.recordbatch"))?
-                .getattr(pyo3::intern!(py, "RecordBatch"))?
-                .getattr(pyo3::intern!(py, "_from_pyrecordbatch"))?;
+        let tables = self.inner.record_batches();
+        let _from_pytable = py
+            .import(pyo3::intern!(py, "daft.recordbatch"))?
+            .getattr(pyo3::intern!(py, "RecordBatch"))?
+            .getattr(pyo3::intern!(py, "_from_pyrecordbatch"))?;
 
-            let pytables = tables.iter().map(|t| PyRecordBatch {
-                record_batch: t.clone(),
-            });
-            let pyobjs = pytables
-                .map(|pt| _from_pytable.call1((pt,)))
-                .collect::<PyResult<Vec<_>>>()?;
-            Ok((
-                Self::type_object(py)
-                    .getattr(pyo3::intern!(py, "_from_loaded_table_state"))?
-                    .into(),
-                (schema_bytes, pyobjs, py_metadata_bytes, py_stats_bytes)
-                    .into_pyobject(py)?
-                    .into(),
-            ))
-        } else if let TableState::Unloaded(params) = &*guard {
-            let py_params_bytes = PyBytes::new(py, &bincode::serialize(params).unwrap());
-            Ok((
-                Self::type_object(py)
-                    .getattr(pyo3::intern!(py, "_from_unloaded_table_state"))?
-                    .into(),
-                (
-                    schema_bytes,
-                    py_params_bytes,
-                    py_metadata_bytes,
-                    py_stats_bytes,
-                )
-                    .into_pyobject(py)?
-                    .into(),
-            ))
-        } else {
-            unreachable!()
-        }
+        let pytables = tables.iter().map(|t| PyRecordBatch {
+            record_batch: t.clone(),
+        });
+        let pyobjs = pytables
+            .map(|pt| _from_pytable.call1((pt,)))
+            .collect::<PyResult<Vec<_>>>()?;
+        Ok((
+            Self::type_object(py)
+                .getattr(pyo3::intern!(py, "_from_loaded_table_state"))?
+                .into(),
+            (schema_bytes, pyobjs, py_metadata_bytes, py_stats_bytes)
+                .into_pyobject(py)?
+                .into(),
+        ))
     }
 
     pub fn write_to_ipc_stream<'a>(&'a self, py: Python<'a>) -> PyResult<Bound<'a, PyBytes>> {
-        let buffer = py.allow_threads(|| self.inner.write_to_ipc_stream())?;
+        let buffer = py.detach(|| self.inner.write_to_ipc_stream())?;
         let bytes = PyBytes::new(py, &buffer);
         Ok(bytes)
     }
@@ -976,7 +925,7 @@ impl PyMicroPartition {
     #[staticmethod]
     pub fn read_from_ipc_stream(bytes: Bound<'_, PyBytes>, py: Python) -> PyResult<Self> {
         let buffer = bytes.as_bytes();
-        let mp = py.allow_threads(|| MicroPartition::read_from_ipc_stream(buffer))?;
+        let mp = py.detach(|| MicroPartition::read_from_ipc_stream(buffer))?;
         Ok(mp.into())
     }
 }
@@ -998,13 +947,14 @@ pub fn read_json_into_py_table(
         .getattr(pyo3::intern!(py, "Schema"))?
         .getattr(pyo3::intern!(py, "_from_pyschema"))?
         .call1((schema,))?;
-    py.import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
+    Ok(py
+        .import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
         .getattr(pyo3::intern!(py, "read_json"))?
         .call1((uri, py_schema, storage_config, read_options))?
         .getattr(pyo3::intern!(py, "to_record_batch"))?
         .call0()?
         .getattr(pyo3::intern!(py, "_recordbatch"))?
-        .extract()
+        .extract()?)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1033,13 +983,14 @@ pub fn read_csv_into_py_table(
         .import(pyo3::intern!(py, "daft.runners.partitioning"))?
         .getattr(pyo3::intern!(py, "TableParseCSVOptions"))?
         .call1((delimiter, header_idx, double_quote))?;
-    py.import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
+    Ok(py
+        .import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
         .getattr(pyo3::intern!(py, "read_csv"))?
         .call1((uri, py_schema, storage_config, parse_options, read_options))?
         .getattr(pyo3::intern!(py, "to_record_batch"))?
         .call0()?
         .getattr(pyo3::intern!(py, "_recordbatch"))?
-        .extract()
+        .extract()?)
 }
 
 pub fn read_parquet_into_py_table(
@@ -1069,19 +1020,20 @@ pub fn read_parquet_into_py_table(
         .import(pyo3::intern!(py, "daft.runners.partitioning"))?
         .getattr(pyo3::intern!(py, "TableParseParquetOptions"))?
         .call1((py_coerce_int96_timestamp_unit,))?;
-    py.import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
+    Ok(py
+        .import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
         .getattr(pyo3::intern!(py, "read_parquet"))?
         .call1((uri, py_schema, storage_config, read_options, parse_options))?
         .getattr(pyo3::intern!(py, "to_record_batch"))?
         .call0()?
         .getattr(pyo3::intern!(py, "_recordbatch"))?
-        .extract()
+        .extract()?)
 }
 
 pub fn read_sql_into_py_table(
     py: Python,
     sql: &str,
-    conn: &PyObject,
+    conn: &pyo3::Py<pyo3::PyAny>,
     predicate: Option<PyExpr>,
     schema: PySchema,
     include_columns: Option<Vec<String>>,
@@ -1105,13 +1057,14 @@ pub fn read_sql_into_py_table(
         .import(pyo3::intern!(py, "daft.runners.partitioning"))?
         .getattr(pyo3::intern!(py, "TableReadOptions"))?
         .call1((num_rows, include_columns))?;
-    py.import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
+    Ok(py
+        .import(pyo3::intern!(py, "daft.recordbatch.recordbatch_io"))?
         .getattr(pyo3::intern!(py, "read_sql"))?
         .call1((sql, conn, py_schema, read_options, py_predicate))?
         .getattr(pyo3::intern!(py, "to_record_batch"))?
         .call0()?
         .getattr(pyo3::intern!(py, "_recordbatch"))?
-        .extract()
+        .extract()?)
 }
 
 pub fn read_pyfunc_into_table_iter(
@@ -1126,14 +1079,14 @@ pub fn read_pyfunc_into_table_iter(
                 func_args,
                 ..
             } => {
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     let func = py.import(module.as_str())
                         .unwrap_or_else(|_| panic!("Cannot import factory function from module {module}"))
                         .getattr(func_name.as_str())
                         .unwrap_or_else(|_| panic!("Cannot find function {func_name} in module {module}"));
                     func.call(func_args.to_pytuple(py).with_context(|_| PyIOSnafu)?, None)
                         .with_context(|_| PyIOSnafu)
-                        .map(Into::<PyObject>::into)
+                        .map(Into::<pyo3::Py<pyo3::PyAny>>::into)
                 })
             },
             _ => unreachable!("PythonFunction file format must be paired with PythonFactoryFunction data file sources"),
@@ -1155,8 +1108,8 @@ pub fn read_pyfunc_into_table_iter(
         .into_iter()
         .flat_map(move |iter| {
             std::iter::from_fn(move || {
-                Python::with_gil(|py| {
-                    iter.downcast_bound::<pyo3::types::PyIterator>(py)
+                Python::attach(|py| {
+                    iter.cast_bound::<pyo3::types::PyIterator>(py)
                         .expect("Function must return an iterator of tables")
                         .clone()
                         .next()
@@ -1240,22 +1193,26 @@ impl From<PyMicroPartition> for Arc<MicroPartition> {
     }
 }
 
-/// TODO chore: cutover LocalPartitionSet to use this pyclass.
-#[pyclass(module = "daft.daft")]
+#[pyclass(frozen, module = "daft.daft")]
 #[derive(Clone, Debug)]
 pub struct PyMicroPartitionSet(Arc<MicroPartitionSet>);
 
 #[pymethods]
 impl PyMicroPartitionSet {
+    #[new]
+    fn new() -> Self {
+        Self(Arc::new(MicroPartitionSet::empty()))
+    }
+
     fn get_partition(&self, idx: PartitionId) -> PyResult<PyMicroPartition> {
         Ok(self.0.get_partition(&idx)?.into())
     }
 
-    fn set_partition(&mut self, idx: PartitionId, part: PyMicroPartition) -> PyResult<()> {
+    fn set_partition(&self, idx: PartitionId, part: PyMicroPartition) -> PyResult<()> {
         Ok(self.0.set_partition(idx, &part.inner)?)
     }
 
-    fn delete_partition(&mut self, idx: PartitionId) -> PyResult<()> {
+    fn delete_partition(&self, idx: PartitionId) -> PyResult<()> {
         Ok(self.0.delete_partition(&idx)?)
     }
 
@@ -1277,6 +1234,28 @@ impl PyMicroPartitionSet {
 
     fn wait(&self) -> PyResult<()> {
         Ok(())
+    }
+
+    fn get_merged_micropartition(&self) -> PyResult<PyMicroPartition> {
+        Ok(self.0.get_merged_partitions()?.into())
+    }
+
+    fn get_preview_micropartitions(&self, num_rows: usize) -> PyResult<Vec<PyMicroPartition>> {
+        Ok(self
+            .0
+            .get_preview_partitions(num_rows)?
+            .into_iter()
+            .map(|p| p.into())
+            .collect())
+    }
+
+    fn items(&self) -> PyResult<Vec<(PartitionId, PyMicroPartition)>> {
+        Ok(self
+            .0
+            .items()
+            .into_iter()
+            .map(|(k, v)| (k, v.into()))
+            .collect())
     }
 }
 

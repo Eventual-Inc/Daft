@@ -1,6 +1,7 @@
 use std::{
     any::Any,
-    sync::{Arc, Weak},
+    collections::BTreeMap,
+    sync::{Arc, RwLock, Weak},
 };
 
 use common_error::{DaftError, DaftResult};
@@ -15,18 +16,20 @@ impl Partition for MicroPartition {
     fn as_any(&self) -> &dyn Any {
         self
     }
-    fn size_bytes(&self) -> DaftResult<Option<usize>> {
-        Ok(self.size_bytes())
+    fn size_bytes(&self) -> usize {
+        self.size_bytes()
     }
-    fn num_rows(&self) -> DaftResult<usize> {
-        Ok(self.len())
+    fn num_rows(&self) -> usize {
+        self.len()
     }
 }
 
 // An in memory partition set
 #[derive(Debug, Default, Clone)]
 pub struct MicroPartitionSet {
-    pub partitions: DashMap<PartitionId, MicroPartitionRef>,
+    // We need ordering of partitions for the output
+    // TODO: Look into using ConcurrentMap if performance is an issue
+    pub partitions: Arc<RwLock<BTreeMap<PartitionId, MicroPartitionRef>>>,
 }
 
 impl From<Vec<MicroPartitionRef>> for MicroPartitionSet {
@@ -36,14 +39,16 @@ impl From<Vec<MicroPartitionRef>> for MicroPartitionSet {
             .enumerate()
             .map(|(i, v)| (i as PartitionId, v))
             .collect();
-        Self { partitions }
+        Self {
+            partitions: Arc::new(RwLock::new(partitions)),
+        }
     }
 }
 
 impl MicroPartitionSet {
     pub fn new<T: IntoIterator<Item = (PartitionId, MicroPartitionRef)>>(psets: T) -> Self {
         Self {
-            partitions: psets.into_iter().collect(),
+            partitions: Arc::new(RwLock::new(psets.into_iter().collect())),
         }
     }
 
@@ -62,18 +67,30 @@ impl MicroPartitionSet {
         let mp = MicroPartition::new_loaded(schema.clone(), Arc::new(record_batches), None);
         Ok(Self::new(vec![(id, Arc::new(mp))]))
     }
+
+    pub fn items(&self) -> Vec<(PartitionId, MicroPartitionRef)> {
+        self.partitions
+            .read()
+            .unwrap()
+            .iter()
+            .map(|(key, value)| (*key, value.clone()))
+            .collect()
+    }
 }
 
 impl PartitionSet<MicroPartitionRef> for MicroPartitionSet {
-    fn get_merged_partitions(&self) -> DaftResult<PartitionRef> {
-        let parts = self.partitions.iter().map(|v| v.value().clone());
-        MicroPartition::concat(parts).map(|mp| Arc::new(mp) as _)
+    fn get_merged_partitions(&self) -> DaftResult<MicroPartitionRef> {
+        // Sort the partitions by partition id before concatenating
+        let guard = self.partitions.read().unwrap();
+        let parts = guard.values().cloned();
+        MicroPartition::concat(parts).map(Arc::new)
     }
 
     fn get_preview_partitions(&self, mut num_rows: usize) -> DaftResult<Vec<MicroPartitionRef>> {
         let mut preview_parts = vec![];
 
-        for part in self.partitions.iter().map(|v| v.value().clone()) {
+        let guard = self.partitions.read().unwrap();
+        for part in guard.values() {
             let part_len = part.len();
             if part_len >= num_rows {
                 let mp = part.slice(0, num_rows)?;
@@ -90,40 +107,49 @@ impl PartitionSet<MicroPartitionRef> for MicroPartitionSet {
     }
 
     fn num_partitions(&self) -> usize {
-        self.partitions.len()
+        self.partitions.read().unwrap().len()
     }
 
     fn len(&self) -> usize {
-        self.partitions.len()
+        self.partitions
+            .read()
+            .unwrap()
+            .values()
+            .map(|v| v.len())
+            .sum()
     }
 
     fn is_empty(&self) -> bool {
-        self.partitions.is_empty()
+        self.partitions.read().unwrap().is_empty()
     }
 
     fn size_bytes(&self) -> DaftResult<usize> {
-        let mut parts = self.partitions.iter().map(|v| v.value().clone());
+        let guard = self.partitions.read().unwrap();
+        let mut parts = guard.values().cloned();
 
-        parts.try_fold(0, |acc, mp| Ok(acc + mp.size_bytes()?.unwrap_or(0)))
+        parts.try_fold(0, |acc, mp| Ok(acc + mp.size_bytes()))
     }
 
     fn has_partition(&self, partition_id: &PartitionId) -> bool {
-        self.partitions.contains_key(partition_id)
+        self.partitions.read().unwrap().contains_key(partition_id)
     }
 
     fn delete_partition(&self, partition_id: &PartitionId) -> DaftResult<()> {
-        self.partitions.remove(partition_id);
+        self.partitions.write().unwrap().remove(partition_id);
         Ok(())
     }
 
     fn set_partition(&self, partition_id: PartitionId, part: &MicroPartitionRef) -> DaftResult<()> {
-        self.partitions.insert(partition_id, part.clone());
+        self.partitions
+            .write()
+            .unwrap()
+            .insert(partition_id, part.clone());
         Ok(())
     }
 
     fn get_partition(&self, idx: &PartitionId) -> DaftResult<MicroPartitionRef> {
-        let part = self
-            .partitions
+        let guard = self.partitions.read().unwrap();
+        let part = guard
             .get(idx)
             .ok_or(DaftError::ValueError("Partition not found".to_string()))?;
 
@@ -131,14 +157,14 @@ impl PartitionSet<MicroPartitionRef> for MicroPartitionSet {
     }
 
     fn to_partition_stream(&self) -> BoxStream<'static, DaftResult<MicroPartitionRef>> {
-        let partitions = self.partitions.clone().into_iter().map(|(_, v)| v).map(Ok);
-
+        let guard = self.partitions.read().unwrap();
+        let partitions = guard.clone().into_iter().map(|x| x.1).map(Ok);
         Box::pin(futures::stream::iter(partitions))
     }
 
     fn metadata(&self) -> PartitionMetadata {
         let size_bytes = self.size_bytes().unwrap_or(0);
-        let num_rows = self.partitions.iter().map(|v| v.value().len()).sum();
+        let num_rows = self.len();
         PartitionMetadata {
             num_rows,
             size_bytes,

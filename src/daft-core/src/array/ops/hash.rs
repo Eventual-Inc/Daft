@@ -3,11 +3,15 @@ use std::{
     sync::Arc,
 };
 
-use arrow2::types::Index;
 use common_error::{DaftError, DaftResult};
+use daft_arrow::types::Index;
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
 use daft_schema::{dtype::DataType, field::Field};
-use xxhash_rust::xxh3::{xxh3_64, xxh3_64_with_seed};
+use xxhash_rust::{
+    xxh3::{xxh3_64, xxh3_64_with_seed},
+    xxh32::xxh32,
+    xxh64::xxh64,
+};
 
 use super::as_arrow::AsArrow;
 use crate::{
@@ -28,7 +32,7 @@ where
     T: DaftPrimitiveType,
 {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
-        self.hash_with(seed, HashFunctionKind::XxHash)
+        self.hash_with(seed, HashFunctionKind::XxHash3_64)
     }
     pub fn hash_with(
         &self,
@@ -44,7 +48,7 @@ where
 
 impl Utf8Array {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
-        self.hash_with(seed, HashFunctionKind::XxHash)
+        self.hash_with(seed, HashFunctionKind::XxHash3_64)
     }
     pub fn hash_with(
         &self,
@@ -60,7 +64,7 @@ impl Utf8Array {
 
 impl BinaryArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
-        self.hash_with(seed, HashFunctionKind::XxHash)
+        self.hash_with(seed, HashFunctionKind::XxHash3_64)
     }
     pub fn hash_with(
         &self,
@@ -76,7 +80,7 @@ impl BinaryArray {
 
 impl FixedSizeBinaryArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
-        self.hash_with(seed, HashFunctionKind::XxHash)
+        self.hash_with(seed, HashFunctionKind::XxHash3_64)
     }
     pub fn hash_with(
         &self,
@@ -92,7 +96,7 @@ impl FixedSizeBinaryArray {
 
 impl BooleanArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
-        self.hash_with(seed, HashFunctionKind::XxHash)
+        self.hash_with(seed, HashFunctionKind::XxHash3_64)
     }
     pub fn hash_with(
         &self,
@@ -108,7 +112,7 @@ impl BooleanArray {
 
 impl NullArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
-        self.hash_with(seed, HashFunctionKind::XxHash)
+        self.hash_with(seed, HashFunctionKind::XxHash3_64)
     }
     pub fn hash_with(
         &self,
@@ -126,7 +130,7 @@ fn hash_list(
     name: &str,
     offsets: &[i64],
     flat_child: &Series,
-    validity: Option<&arrow2::bitmap::Bitmap>,
+    validity: Option<&daft_arrow::bitmap::Bitmap>,
     seed: Option<&UInt64Array>,
     hash_function: HashFunctionKind,
 ) -> DaftResult<UInt64Array> {
@@ -159,7 +163,15 @@ fn hash_list(
                     .collect();
 
                 match hash_function {
-                    HashFunctionKind::XxHash => {
+                    HashFunctionKind::XxHash32 => {
+                        let seed = cur_seed_opt.unwrap_or(0) as u32;
+                        Some(xxh32(&child_bytes, seed) as u64)
+                    }
+                    HashFunctionKind::XxHash64 => {
+                        let seed = cur_seed_opt.unwrap_or(0);
+                        Some(xxh64(&child_bytes, seed))
+                    }
+                    HashFunctionKind::XxHash3_64 => {
                         if let Some(cur_seed) = cur_seed_opt {
                             Some(xxh3_64_with_seed(&child_bytes, cur_seed))
                         } else {
@@ -199,7 +211,9 @@ fn hash_list(
                 let end = (offsets[i as usize + 1] as usize) * OFFSET;
 
                 match hash_function {
-                    HashFunctionKind::XxHash => Some(xxh3_64(&child_bytes[start..end])),
+                    HashFunctionKind::XxHash32 => Some(xxh32(&child_bytes[start..end], 0) as u64),
+                    HashFunctionKind::XxHash64 => Some(xxh64(&child_bytes[start..end], 0)),
+                    HashFunctionKind::XxHash3_64 => Some(xxh3_64(&child_bytes[start..end])),
                     HashFunctionKind::MurmurHash3 => {
                         // Use 42 as default seed,
                         // refer to: https://github.com/Eventual-Inc/Daft/blob/7be4b1ff9ed3fdc3a45947beefab7e7291cd3be7/src/daft-hash/src/lib.rs#L18
@@ -222,7 +236,7 @@ fn hash_list(
 
 impl ListArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
-        self.hash_with(seed, HashFunctionKind::XxHash)
+        self.hash_with(seed, HashFunctionKind::XxHash3_64)
     }
     pub fn hash_with(
         &self,
@@ -242,7 +256,7 @@ impl ListArray {
 
 impl FixedSizeListArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
-        self.hash_with(seed, HashFunctionKind::XxHash)
+        self.hash_with(seed, HashFunctionKind::XxHash3_64)
     }
     pub fn hash_with(
         &self,
@@ -265,7 +279,7 @@ impl FixedSizeListArray {
 
 impl StructArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
-        self.hash_with(seed, HashFunctionKind::XxHash)
+        self.hash_with(seed, HashFunctionKind::XxHash3_64)
     }
 
     pub fn hash_with(
@@ -409,7 +423,7 @@ impl Decimal128Array {
         let arr = self
             .data()
             .as_any()
-            .downcast_ref::<arrow2::array::PrimitiveArray<i128>>()
+            .downcast_ref::<daft_arrow::array::PrimitiveArray<i128>>()
             .expect("this should be a decimal array");
         let hashes = arr.into_iter().map(|d| {
             d.map(|d| {
@@ -422,7 +436,7 @@ impl Decimal128Array {
                 i32::from_ne_bytes(unsigned.to_ne_bytes())
             })
         });
-        let array = Box::new(arrow2::array::Int32Array::from_iter(hashes));
+        let array = Box::new(daft_arrow::array::Int32Array::from_iter(hashes));
         Ok(Int32Array::from((self.name(), array)))
     }
 }
@@ -437,7 +451,7 @@ fn murmur3_32_hash_from_iter_with_nulls<B: AsRef<[u8]>>(
             i32::from_ne_bytes(unsigned.to_ne_bytes())
         })
     });
-    let array = Box::new(arrow2::array::Int32Array::from_iter(hashes));
+    let array = Box::new(daft_arrow::array::Int32Array::from_iter(hashes));
     Ok(Int32Array::from((name, array)))
 }
 

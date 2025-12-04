@@ -5,7 +5,7 @@ use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
-use crate::{AsyncFileWriter, TargetInMemorySizeBytesCalculator, WriterFactory};
+use crate::{AsyncFileWriter, TargetInMemorySizeBytesCalculator, WriteResult, WriterFactory};
 
 // TargetFileSizeWriter is a writer that writes files of a target size.
 // It rotates the writer when the current file reaches the target size.
@@ -59,14 +59,14 @@ impl TargetFileSizeWriter {
         &mut self,
         input: Arc<MicroPartition>,
         size_bytes: usize,
-    ) -> DaftResult<usize> {
+    ) -> DaftResult<WriteResult> {
         self.current_in_memory_bytes_written += size_bytes;
-        let written_bytes = self.current_writer.write(input).await?;
-        self.total_physical_bytes_written += written_bytes;
+        let write_result = self.current_writer.write(input).await?;
+        self.total_physical_bytes_written += write_result.bytes_written;
         if self.current_in_memory_bytes_written >= self.current_in_memory_size_estimate {
             self.rotate_writer_and_update_estimates().await?;
         }
-        Ok(written_bytes)
+        Ok(write_result)
     }
 
     async fn rotate_writer_and_update_estimates(&mut self) -> DaftResult<()> {
@@ -100,23 +100,25 @@ impl AsyncFileWriter for TargetFileSizeWriter {
     type Input = Arc<MicroPartition>;
     type Result = Vec<RecordBatch>;
 
-    async fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<usize> {
+    async fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<WriteResult> {
         assert!(
             !self.is_closed,
             "Cannot write to a closed TargetFileSizeWriter"
         );
         use std::cmp::Ordering;
         if input.is_empty() {
-            return Ok(0);
+            return Ok(WriteResult {
+                bytes_written: 0,
+                rows_written: 0,
+            });
         }
 
-        let input_size_bytes = input.size_bytes().expect(
-            "Micropartitions should be loaded before writing, so they should have a size in bytes",
-        );
+        let input_size_bytes = input.size_bytes();
         let avg_row_size_bytes = max(input_size_bytes / input.len(), 1);
         // Write the input, rotating the writer when the current file reaches the target size
         let mut local_offset = 0;
         let mut bytes_written = 0;
+        let mut rows_written = 0;
         loop {
             let rows_until_target = max(
                 self.remaining_bytes_for_current_file() / avg_row_size_bytes,
@@ -128,22 +130,30 @@ impl AsyncFileWriter for TargetFileSizeWriter {
                 Ordering::Equal | Ordering::Less => {
                     let to_write =
                         input.slice(local_offset, local_offset + remaining_input_rows)?;
-                    bytes_written += self
+                    let write_result = self
                         .write_and_update_bytes(
                             to_write.into(),
                             remaining_input_rows * avg_row_size_bytes,
                         )
                         .await?;
-                    return Ok(bytes_written);
+                    bytes_written += write_result.bytes_written;
+                    rows_written += write_result.rows_written;
+                    return Ok(WriteResult {
+                        bytes_written,
+                        rows_written,
+                    });
                 }
                 // We have more rows to write, write the target amount, rotate the writer and continue
                 Ordering::Greater => {
                     let to_write = input.slice(local_offset, local_offset + rows_until_target)?;
-                    self.write_and_update_bytes(
-                        to_write.into(),
-                        rows_until_target * avg_row_size_bytes,
-                    )
-                    .await?;
+                    let write_result = self
+                        .write_and_update_bytes(
+                            to_write.into(),
+                            rows_until_target * avg_row_size_bytes,
+                        )
+                        .await?;
+                    bytes_written += write_result.bytes_written;
+                    rows_written += write_result.rows_written;
                     local_offset += rows_until_target;
                 }
             }

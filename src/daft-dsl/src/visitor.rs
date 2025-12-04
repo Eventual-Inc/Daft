@@ -9,7 +9,7 @@ use crate::{
     AggExpr, Column, Expr, ExprRef, Operator, Subquery, WindowExpr, WindowSpec,
     functions::{BuiltinScalarFn, FunctionExpr, scalar::ScalarFn},
     python::PyExpr,
-    python_udf::{PyScalarFn, RowWisePyFn},
+    python_udf::{BatchPyFn, PyScalarFn, RowWisePyFn},
 };
 
 /// The generic `R` of the py visitor implementation.
@@ -49,6 +49,7 @@ pub fn accept<'py>(expr: &PyExpr, visitor: Bound<'py, PyAny>) -> PyVisitorResult
         Expr::Subquery(subquery) => visitor.visit_subquery(subquery),
         Expr::InSubquery(expr, subquery) => visitor.visit_in_subquery(expr, subquery),
         Expr::Exists(subquery) => visitor.visit_exists(subquery),
+        Expr::VLLM(..) => todo!(),
     }
 }
 
@@ -170,6 +171,11 @@ impl<'py> PyVisitor<'py> {
     fn visit_python_scalar_func(&self, udf: &PyScalarFn) -> PyVisitorResult<'py> {
         match udf {
             PyScalarFn::RowWise(RowWisePyFn {
+                function_name: name,
+                args: children,
+                ..
+            })
+            | PyScalarFn::Batch(BatchPyFn {
                 function_name: name,
                 args: children,
                 ..

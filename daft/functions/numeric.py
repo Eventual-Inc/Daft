@@ -44,7 +44,7 @@ def sign(expr: Expression) -> Expression:
 
 def negate(expr: Expression) -> Expression:
     """The negative of a numeric expression."""
-    return Expression._call_builtin_scalar_fn("negative", expr)
+    return Expression._call_builtin_scalar_fn("negate", expr)
 
 
 def round(expr: Expression, decimals: Expression | int = 0) -> Expression:
@@ -193,6 +193,16 @@ def log1p(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("log1p", expr)
 
 
+def pow(base: Expression, expr: Expression) -> Expression:
+    """The base^expr of a numeric expression."""
+    return Expression._call_builtin_scalar_fn("pow", base, expr)
+
+
+def power(base: Expression, expr: Expression) -> Expression:
+    """The base^expr of a numeric expression."""
+    return Expression._call_builtin_scalar_fn("power", base, expr)
+
+
 def exp(expr: Expression) -> Expression:
     """The e^expr of a numeric expression."""
     return Expression._call_builtin_scalar_fn("exp", expr)
@@ -220,19 +230,19 @@ def between(expr: Expression, lower: Expression | int | float, upper: Expression
         >>> df = daft.from_pydict({"data": [1, 2, 3, 4]})
         >>> df = df.select(between(df["data"], 1, 2))
         >>> df.collect()
-        ╭─────────╮
-        │ data    │
-        │ ---     │
-        │ Boolean │
-        ╞═════════╡
-        │ true    │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ true    │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ false   │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ false   │
-        ╰─────────╯
+        ╭───────╮
+        │ data  │
+        │ ---   │
+        │ Bool  │
+        ╞═══════╡
+        │ true  │
+        ├╌╌╌╌╌╌╌┤
+        │ true  │
+        ├╌╌╌╌╌╌╌┤
+        │ false │
+        ├╌╌╌╌╌╌╌┤
+        │ false │
+        ╰───────╯
         <BLANKLINE>
         (Showing first 4 of 4 rows)
 
@@ -260,17 +270,17 @@ def is_nan(expr: Expression) -> Expression:
         >>> df = daft.from_pydict({"data": [1.0, None, float("nan")]})
         >>> df = df.select(is_nan(df["data"]))
         >>> df.collect()
-        ╭─────────╮
-        │ data    │
-        │ ---     │
-        │ Boolean │
-        ╞═════════╡
-        │ false   │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ None    │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ true    │
-        ╰─────────╯
+        ╭───────╮
+        │ data  │
+        │ ---   │
+        │ Bool  │
+        ╞═══════╡
+        │ false │
+        ├╌╌╌╌╌╌╌┤
+        │ None  │
+        ├╌╌╌╌╌╌╌┤
+        │ true  │
+        ╰───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 
@@ -294,19 +304,19 @@ def is_inf(expr: Expression) -> Expression:
         >>> df = daft.from_pydict({"data": [-float("inf"), 0.0, float("inf"), None]})
         >>> df = df.select(is_inf(df["data"]))
         >>> df.collect()
-        ╭─────────╮
-        │ data    │
-        │ ---     │
-        │ Boolean │
-        ╞═════════╡
-        │ true    │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ false   │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ true    │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ None    │
-        ╰─────────╯
+        ╭───────╮
+        │ data  │
+        │ ---   │
+        │ Bool  │
+        ╞═══════╡
+        │ true  │
+        ├╌╌╌╌╌╌╌┤
+        │ false │
+        ├╌╌╌╌╌╌╌┤
+        │ true  │
+        ├╌╌╌╌╌╌╌┤
+        │ None  │
+        ╰───────╯
         <BLANKLINE>
         (Showing first 4 of 4 rows)
 
@@ -330,17 +340,17 @@ def not_nan(expr: Expression) -> Expression:
         >>> df = daft.from_pydict({"x": [1.0, None, float("nan")]})
         >>> df = df.select(not_nan(df["x"]))
         >>> df.collect()
-        ╭─────────╮
-        │ x       │
-        │ ---     │
-        │ Boolean │
-        ╞═════════╡
-        │ true    │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ None    │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ false   │
-        ╰─────────╯
+        ╭───────╮
+        │ x     │
+        │ ---   │
+        │ Bool  │
+        ╞═══════╡
+        │ true  │
+        ├╌╌╌╌╌╌╌┤
+        │ None  │
+        ├╌╌╌╌╌╌╌┤
+        │ false │
+        ╰───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
 

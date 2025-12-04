@@ -1,4 +1,4 @@
-use std::{cmp::max, sync::Arc};
+use std::cmp::max;
 
 use common_error::DaftResult;
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, is_partition_compatible};
@@ -11,8 +11,8 @@ use daft_logical_plan::{
 use daft_schema::schema::SchemaRef;
 
 use crate::pipeline_node::{
-    DistributedPipelineNode, NodeID,
-    join::{BroadcastJoinNode, CrossJoinNode, HashJoinNode},
+    DistributedPipelineNode,
+    join::{BroadcastJoinNode, CrossJoinNode, HashJoinNode, SortMergeJoinNode},
     translate::LogicalPlanToPipelineNodeTranslator,
 };
 
@@ -65,15 +65,14 @@ impl LogicalPlanToPipelineNodeTranslator {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn gen_hash_join_nodes(
         &mut self,
-        logical_node_id: Option<NodeID>,
-        left: Arc<dyn DistributedPipelineNode>,
-        right: Arc<dyn DistributedPipelineNode>,
+        left: DistributedPipelineNode,
+        right: DistributedPipelineNode,
         left_on: Vec<BoundExpr>,
         right_on: Vec<BoundExpr>,
         null_equals_nulls: Vec<bool>,
         join_type: JoinType,
         output_schema: SchemaRef,
-    ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
+    ) -> DaftResult<DistributedPipelineNode> {
         let left_spec = left.config().clustering_spec.as_ref();
         let right_spec = right.config().clustering_spec.as_ref();
 
@@ -117,7 +116,6 @@ impl LogicalPlanToPipelineNodeTranslator {
             || (num_partitions > 1 && !is_left_hash_partitioned)
         {
             self.gen_shuffle_node(
-                logical_node_id,
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
                     Some(num_partitions),
                     left_on.iter().map(|e| e.clone().into()).collect(),
@@ -133,7 +131,6 @@ impl LogicalPlanToPipelineNodeTranslator {
             || (num_partitions > 1 && !is_right_hash_partitioned)
         {
             self.gen_shuffle_node(
-                logical_node_id,
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
                     Some(num_partitions),
                     right_on.iter().map(|e| e.clone().into()).collect(),
@@ -147,7 +144,6 @@ impl LogicalPlanToPipelineNodeTranslator {
 
         Ok(HashJoinNode::new(
             self.get_next_pipeline_node_id(),
-            logical_node_id,
             &self.plan_config,
             left_on,
             right_on,
@@ -158,23 +154,22 @@ impl LogicalPlanToPipelineNodeTranslator {
             right,
             output_schema,
         )
-        .arced())
+        .into_node())
     }
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn gen_broadcast_join_node(
         &mut self,
-        logical_node_id: Option<NodeID>,
         left_on: Vec<BoundExpr>,
         right_on: Vec<BoundExpr>,
         null_equals_nulls: Vec<bool>,
         join_type: JoinType,
-        left_node: Arc<dyn DistributedPipelineNode>,
-        right_node: Arc<dyn DistributedPipelineNode>,
+        left_node: DistributedPipelineNode,
+        right_node: DistributedPipelineNode,
         left_stats: &ApproxStats,
         right_stats: &ApproxStats,
         output_schema: SchemaRef,
-    ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
+    ) -> DaftResult<DistributedPipelineNode> {
         // Calculate which side is larger for broadcast join logic
         let left_is_larger = right_stats.size_bytes < left_stats.size_bytes;
 
@@ -201,7 +196,6 @@ impl LogicalPlanToPipelineNodeTranslator {
         // Create broadcast join node
         Ok(BroadcastJoinNode::new(
             self.get_next_pipeline_node_id(),
-            logical_node_id,
             &self.plan_config,
             left_on,
             right_on,
@@ -212,16 +206,45 @@ impl LogicalPlanToPipelineNodeTranslator {
             receiver,
             output_schema,
         )
-        .arced())
+        .into_node())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn gen_sort_merge_join_node(
+        &mut self,
+        left: DistributedPipelineNode,
+        right: DistributedPipelineNode,
+        left_on: Vec<BoundExpr>,
+        right_on: Vec<BoundExpr>,
+        join_type: JoinType,
+        output_schema: SchemaRef,
+    ) -> DaftResult<DistributedPipelineNode> {
+        let num_partitions = {
+            let left_num_partitions = left.config().clustering_spec.num_partitions();
+            let right_num_partitions = right.config().clustering_spec.num_partitions();
+            max(left_num_partitions, right_num_partitions)
+        };
+
+        Ok(SortMergeJoinNode::new(
+            self.get_next_pipeline_node_id(),
+            &self.plan_config,
+            left_on,
+            right_on,
+            join_type,
+            num_partitions,
+            left,
+            right,
+            output_schema,
+        )
+        .into_node())
     }
 
     pub(crate) fn gen_cross_join_node(
         &mut self,
-        logical_node_id: Option<NodeID>,
-        left_node: Arc<dyn DistributedPipelineNode>,
-        right_node: Arc<dyn DistributedPipelineNode>,
+        left_node: DistributedPipelineNode,
+        right_node: DistributedPipelineNode,
         output_schema: SchemaRef,
-    ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
+    ) -> DaftResult<DistributedPipelineNode> {
         let num_partitions = {
             let left_num_partitions = left_node.config().clustering_spec.num_partitions();
             let right_num_partitions = right_node.config().clustering_spec.num_partitions();
@@ -230,23 +253,21 @@ impl LogicalPlanToPipelineNodeTranslator {
 
         Ok(CrossJoinNode::new(
             self.get_next_pipeline_node_id(),
-            logical_node_id,
             &self.plan_config,
             num_partitions,
             left_node,
             right_node,
             output_schema,
         )
-        .arced())
+        .into_node())
     }
 
     pub(crate) fn translate_join(
         &mut self,
-        logical_node_id: Option<NodeID>,
         join: &Join,
-        left_node: Arc<dyn DistributedPipelineNode>,
-        right_node: Arc<dyn DistributedPipelineNode>,
-    ) -> DaftResult<Arc<dyn DistributedPipelineNode>> {
+        left_node: DistributedPipelineNode,
+        right_node: DistributedPipelineNode,
+    ) -> DaftResult<DistributedPipelineNode> {
         let (remaining_on, left_on, right_on, null_equals_nulls) = join.on.split_eq_preds();
         if !remaining_on.is_empty() {
             todo!("FLOTILLA_MS?: Implement non-equality joins")
@@ -280,7 +301,6 @@ impl LogicalPlanToPipelineNodeTranslator {
 
         match join_strategy {
             JoinStrategy::Hash => self.gen_hash_join_nodes(
-                logical_node_id,
                 left_node,
                 right_node,
                 left_on,
@@ -289,23 +309,15 @@ impl LogicalPlanToPipelineNodeTranslator {
                 join.join_type,
                 join.output_schema.clone(),
             ),
-            JoinStrategy::SortMerge => {
-                tracing::warn!(
-                    "Sort-merge join is not implemented yet, falling back to hash join. Please use the legacy ray runner, daft.set_execution_config(use_legacy_ray_runner=True), for sort merge joins."
-                );
-                self.gen_hash_join_nodes(
-                    logical_node_id,
-                    left_node,
-                    right_node,
-                    left_on,
-                    right_on,
-                    null_equals_nulls,
-                    join.join_type,
-                    join.output_schema.clone(),
-                )
-            }
+            JoinStrategy::SortMerge => self.gen_sort_merge_join_node(
+                left_node,
+                right_node,
+                left_on,
+                right_on,
+                join.join_type,
+                join.output_schema.clone(),
+            ),
             JoinStrategy::Broadcast => self.gen_broadcast_join_node(
-                logical_node_id,
                 left_on,
                 right_on,
                 null_equals_nulls,
@@ -316,12 +328,9 @@ impl LogicalPlanToPipelineNodeTranslator {
                 &right_stats,
                 join.output_schema.clone(),
             ),
-            JoinStrategy::Cross => self.gen_cross_join_node(
-                logical_node_id,
-                left_node,
-                right_node,
-                join.output_schema.clone(),
-            ),
+            JoinStrategy::Cross => {
+                self.gen_cross_join_node(left_node, right_node, join.output_schema.clone())
+            }
         }
     }
 }

@@ -81,6 +81,8 @@ impl PushDownFilter {
                 match source.source_info.as_ref() {
                     // Filter pushdown is not supported for in-memory sources.
                     SourceInfo::InMemory(_) => return Ok(Transformed::no(plan)),
+                    // Filter pushdown is not supported for glob scan sources.
+                    SourceInfo::GlobScan(_) => return Ok(Transformed::no(plan)),
                     // Do not pushdown if Source node already has a limit
                     SourceInfo::Physical(external_info)
                         if let Some(_) = external_info.pushdowns.limit =>
@@ -427,7 +429,8 @@ impl PushDownFilter {
             | LogicalPlan::MonotonicallyIncreasingId(..)
             | LogicalPlan::SubqueryAlias(..)
             | LogicalPlan::Window(..)
-            | LogicalPlan::Distinct(..) => {
+            | LogicalPlan::Distinct(..)
+            | LogicalPlan::VLLMProject(..) => {
                 return Ok(Transformed::no(plan));
             }
         };
@@ -526,7 +529,7 @@ mod tests {
     /// Tests that we can't pushdown a filter into a ScanOperator if it has an udf-ish expression.
     #[test]
     fn filter_with_udf_not_pushed_down_into_scan() -> DaftResult<()> {
-        let pred: ExprRef = BuiltinScalarFn::new(
+        let pred: ExprRef = BuiltinScalarFn::new_async(
             UrlDownload,
             vec![resolved_col("a"), lit(1), lit(true), lit(true)],
         )

@@ -156,7 +156,7 @@ impl SpatialSimilarity for i8 {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct CosineDistanceFunction;
 
 fn compute_cosine_distance<T>(

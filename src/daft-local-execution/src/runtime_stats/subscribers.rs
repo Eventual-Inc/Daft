@@ -1,24 +1,21 @@
-pub(crate) mod dashboard;
-#[cfg(debug_assertions)]
-pub(crate) mod debug;
-pub(crate) mod opentelemetry;
 pub(crate) mod progress_bar;
+pub(crate) mod query;
 
+use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::StatSnapshotSend;
+use common_metrics::{NodeID, StatSnapshot};
 
-use crate::ops::NodeInfo;
-
+#[async_trait]
 pub trait RuntimeStatsSubscriber: Send + Sync + std::fmt::Debug {
     #[cfg(test)]
     #[allow(dead_code)]
     fn as_any(&self) -> &dyn std::any::Any;
     /// Called when a node starts.
-    fn initialize_node(&self, node_info: &NodeInfo) -> DaftResult<()>;
+    async fn initialize_node(&self, node_id: NodeID) -> DaftResult<()>;
     /// Called when a node finishes.
-    fn finalize_node(&self, node_info: &NodeInfo) -> DaftResult<()>;
+    async fn finalize_node(&self, node_id: NodeID) -> DaftResult<()>;
     /// Called each time the manager ticks and when a node finishes.
-    fn handle_event(&self, events: &[(&NodeInfo, StatSnapshotSend)]) -> DaftResult<()>;
+    async fn handle_event(&self, events: &[(NodeID, StatSnapshot)]) -> DaftResult<()>;
     /// Called when the entire pipeline finishes.
-    fn finish(self: Box<Self>) -> DaftResult<()>;
+    async fn finish(self: Box<Self>) -> DaftResult<()>;
 }

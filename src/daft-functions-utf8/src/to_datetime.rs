@@ -11,7 +11,7 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ToDatetime;
 
 #[typetag::serde]
@@ -162,7 +162,7 @@ fn to_datetime_impl(
                 }
                 _ => Ok(None),
             })
-            .collect::<DaftResult<arrow2::array::Int64Array>>()?;
+            .collect::<DaftResult<daft_arrow::array::Int64Array>>()?;
 
     let result = Int64Array::from((arr.name(), Box::new(arrow_result)));
     let result = TimestampArray::new(

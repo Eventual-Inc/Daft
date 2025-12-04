@@ -9,18 +9,21 @@ use daft_core::{
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
-use crate::{AsyncFileWriter, RETURN_PATHS_COLUMN_NAME, WriterFactory};
+use crate::{AsyncFileWriter, RETURN_PATHS_COLUMN_NAME, WriteResult, WriterFactory};
 
 pub struct IPCWriter {
     is_closed: bool,
     bytes_written: usize,
     file_path: String,
-    compression: Option<arrow2::io::ipc::write::Compression>,
-    writer: Option<arrow2::io::ipc::write::StreamWriter<File>>,
+    compression: Option<daft_arrow::io::ipc::write::Compression>,
+    writer: Option<daft_arrow::io::ipc::write::StreamWriter<File>>,
 }
 
 impl IPCWriter {
-    pub fn new(file_path: &str, compression: Option<arrow2::io::ipc::write::Compression>) -> Self {
+    pub fn new(
+        file_path: &str,
+        compression: Option<daft_arrow::io::ipc::write::Compression>,
+    ) -> Self {
         Self {
             is_closed: false,
             bytes_written: 0,
@@ -33,13 +36,13 @@ impl IPCWriter {
     fn get_or_create_writer(
         &mut self,
         schema: &Schema,
-    ) -> DaftResult<&mut arrow2::io::ipc::write::StreamWriter<File>> {
+    ) -> DaftResult<&mut daft_arrow::io::ipc::write::StreamWriter<File>> {
         if self.writer.is_none() {
             let file = File::create(self.file_path.as_str())?;
-            let options = arrow2::io::ipc::write::WriteOptions {
+            let options = daft_arrow::io::ipc::write::WriteOptions {
                 compression: self.compression,
             };
-            let mut writer = arrow2::io::ipc::write::StreamWriter::new(file, options);
+            let mut writer = daft_arrow::io::ipc::write::StreamWriter::new(file, options);
             writer.start(&schema.to_arrow()?, None)?;
             self.writer = Some(writer);
         }
@@ -52,18 +55,21 @@ impl AsyncFileWriter for IPCWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<RecordBatch>;
 
-    async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {
         assert!(!self.is_closed, "Writer is closed");
 
-        let size_bytes = data.size_bytes().unwrap_or(0);
+        let size_bytes = data.size_bytes();
+        let rows_written = data.len();
         let writer = self.get_or_create_writer(&data.schema())?;
-        let tables = data.get_tables()?;
-        for table in tables.iter() {
+        for table in data.record_batches() {
             let chunk = table.to_chunk();
             writer.write(&chunk, None)?;
         }
         self.bytes_written += writer.bytes_written();
-        Ok(size_bytes)
+        Ok(WriteResult {
+            bytes_written: size_bytes,
+            rows_written,
+        })
     }
 
     async fn close(&mut self) -> DaftResult<Self::Result> {
@@ -73,7 +79,7 @@ impl AsyncFileWriter for IPCWriter {
         // return the path
         let path_col = Series::from_arrow(
             Arc::new(Field::new(RETURN_PATHS_COLUMN_NAME, DataType::Utf8)),
-            Box::new(arrow2::array::Utf8Array::<i64>::from_iter_values(
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from_iter_values(
                 std::iter::once(self.file_path.clone()),
             )),
         )?;
@@ -92,11 +98,11 @@ impl AsyncFileWriter for IPCWriter {
 
 pub struct IPCWriterFactory {
     dir: String,
-    compression: Option<arrow2::io::ipc::write::Compression>,
+    compression: Option<daft_arrow::io::ipc::write::Compression>,
 }
 
 impl IPCWriterFactory {
-    pub fn new(dir: String, compression: Option<arrow2::io::ipc::write::Compression>) -> Self {
+    pub fn new(dir: String, compression: Option<daft_arrow::io::ipc::write::Compression>) -> Self {
         Self { dir, compression }
     }
 }

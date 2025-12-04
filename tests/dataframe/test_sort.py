@@ -481,3 +481,26 @@ def test_top_k_second_level_sorting(sort_keys, desc, nulls_first, expected):
     )
     result = df.sort(by=sort_keys, desc=desc, nulls_first=nulls_first).limit(6)
     assert result.to_pydict() == expected
+
+
+def test_literal_sorting(make_df):
+    df = make_df({"A": [1, 2, 3, 4, 5]})
+    result = df.sort(by=daft.lit(1))
+    assert result.to_pydict() == {"A": [1, 2, 3, 4, 5]}
+
+
+def test_sort_sampling_handles_small_partitions(make_df, with_morsel_size):
+    # Create tiny partitions relative to sample_size_for_sort (default 20)
+    df = make_df({"k": [3, 1, 2]}, repartition=3, repartition_columns=["k"])
+    out = df.sort(by="k")
+    out.collect()
+    assert out.to_pydict()["k"] == [1, 2, 3]
+
+
+def test_sort_with_constant_keys_and_small_partitions(make_df, with_morsel_size):
+    # Force duplicate samples across tiny partitions
+    df = make_df({"k": [5, 5, 5, 5]}, repartition=4, repartition_columns=["k"])
+    out = df.sort("k")
+    out.collect()
+    assert len(out) == 4
+    assert set(out.to_pydict()["k"]) == {5}

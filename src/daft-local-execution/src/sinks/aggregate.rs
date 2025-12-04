@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
@@ -12,7 +13,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     BlockingSinkStatus,
 };
-use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) enum AggregateState {
     Accumulating(Vec<Arc<MicroPartition>>),
@@ -59,7 +60,11 @@ impl AggregateSink {
         };
 
         let (sink_agg_exprs, finalize_agg_exprs, final_projections) =
-            daft_physical_plan::populate_aggregation_stages_bound(aggregations, input_schema, &[])?;
+            daft_local_plan::agg::populate_aggregation_stages_bound(
+                aggregations,
+                input_schema,
+                &[],
+            )?;
 
         Ok(Self {
             aggregate_name,

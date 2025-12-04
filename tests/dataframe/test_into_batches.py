@@ -1,22 +1,12 @@
 from __future__ import annotations
 
-import pytest
-
 import daft
-from daft.context import get_context
-from tests.conftest import get_tests_daft_runner_name
-
-pytestmark = pytest.mark.skipif(
-    get_tests_daft_runner_name() == "ray" and get_context().daft_execution_config.use_legacy_ray_runner is True,
-    reason="requires Native Runner or Flotilla to be in use",
-)
 
 
 def test_large_partition_into_batches(make_df):
     """Test splitting a large partition (size 64) into batches of size 8."""
     # Create a dataframe with 64 rows in a single partition
     df = make_df({"id": list(range(64))}, repartition=1)
-    assert df.num_partitions() == 1
 
     # Split into batches of size 8
     df = df.into_batches(8)
@@ -40,7 +30,6 @@ def test_many_small_partitions_into_batches(make_df):
     """Test coalescing many small partitions (64 partitions of size 1) into batches of size 8."""
     # Create a dataframe with 64 rows split into 64 partitions (1 row each)
     df = make_df({"id": list(range(64))}, repartition=64)
-    assert df.num_partitions() == 64
 
     # Split into batches of size 8
     df = df.into_batches(8)

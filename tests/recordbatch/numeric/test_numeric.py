@@ -145,8 +145,7 @@ def test_table_floor_bad_input() -> None:
         table.eval_expression_list([col("a").floor()])
 
 
-@pytest.mark.parametrize(("fun"), ["sign", "signum"])
-def test_table_numeric_sign(fun: str) -> None:
+def test_table_numeric_sign() -> None:
     table = MicroPartition.from_pydict(
         {
             "a": [None, -1, -5, 0, 5, 2, None],
@@ -156,8 +155,8 @@ def test_table_numeric_sign(fun: str) -> None:
     my_schema = pa.schema([pa.field("uint8", pa.uint8())])
     table_Unsign = MicroPartition.from_arrow(pa.Table.from_arrays([pa.array([None, 0, 1, 2, 3])], schema=my_schema))
 
-    sign_table = table.eval_expression_list([getattr(col("a"), fun)(), getattr(col("b"), fun)()])
-    unsign_sign_table = table_Unsign.eval_expression_list([getattr(col("uint8"), fun)()])
+    sign_table = table.eval_expression_list([col("a").sign(), col("b").sign()])
+    unsign_sign_table = table_Unsign.eval_expression_list([col("uint8").sign()])
 
     def checkSign(val):
         if val < 0:
@@ -177,39 +176,27 @@ def test_table_numeric_sign(fun: str) -> None:
     ] == unsign_sign_table.get_column_by_name("uint8").to_pylist()
 
 
-@pytest.mark.parametrize(
-    ("fun"),
-    [
-        "sign",
-        "signum",
-        "negate",
-        "negative",
-    ],
-)
-def test_table_sign_bad_input(fun: str) -> None:
+def test_table_sign_bad_input() -> None:
     table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
 
-    mapping = {"negate": "negative", "signum": "sign"}
-    true_fun = mapping[fun] if fun in mapping else fun
-    with pytest.raises(ValueError, match=f"Expected input to {true_fun} to be numeric"):
-        table.eval_expression_list([getattr(col("a"), fun)()])
+    with pytest.raises(ValueError, match="Expected input to sign to be numeric"):
+        table.eval_expression_list([col("a").sign()])
 
 
-@pytest.mark.parametrize(
-    ("fun"),
-    [
-        ("negate"),
-        ("negative"),
-    ],
-)
-def test_table_numeric_negative(fun: str) -> None:
+def test_table_negate_bad_input() -> None:
+    table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
+    with pytest.raises(ValueError, match="Expected input to negate to be numeric"):
+        table.eval_expression_list([col("a").negate()])
+
+
+def test_table_numeric_negative() -> None:
     table = MicroPartition.from_pydict(
         {
             "a": [None, -1, -5, 0, 5, 2, None],
             "b": [-1.7, -1.5, -1.3, 0.3, 0.7, None, None],
         }
     )
-    sign_table = table.eval_expression_list([getattr(col("a"), fun)(), getattr(col("b"), fun)()])
+    sign_table = table.eval_expression_list([col("a").negate(), col("b").negate()])
 
     # Check signed integers
     a_result = sign_table.to_pydict()["a"]
@@ -667,6 +654,64 @@ def test_table_log1p_bad_input() -> None:
         table.eval_expression_list([col("a").log1p()])
 
 
+def test_table_numeric_pow() -> None:
+    table = MicroPartition.from_pydict({"a": [0.1, 0.01, 1.5, 3, None], "b": [1, 10, 100, None, None]})
+    exprs = [0.01, 0.1, 1, 2, 10]
+    for expr in exprs:
+        pow_table = table.eval_expression_list([col("a").pow(expr), col("b").pow(expr)])
+        assert lists_close_with_nones(
+            [math.pow(v, expr) if v is not None else v for v in table.get_column_by_name("a").to_pylist()],
+            pow_table.get_column_by_name("a").to_pylist(),
+        )
+        assert lists_close_with_nones(
+            [math.pow(v, expr) if v is not None else v for v in table.get_column_by_name("b").to_pylist()],
+            pow_table.get_column_by_name("b").to_pylist(),
+        )
+
+
+def test_table_pow_bad_input() -> None:
+    table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
+    table2 = MicroPartition.from_pydict({"a": [1, 10, 100]})
+
+    with pytest.raises(ValueError, match="Expected input to compute pow to be numeric, got String"):
+        table.eval_expression_list([col("a").pow(1)])
+
+    with pytest.raises(ValueError, match="Expected input to compute pow to be numeric, got String"):
+        table.eval_expression_list([col("a").pow(0.1)])
+
+    with pytest.raises(ValueError, match='DaftError::ValueError Expected floating point number, received: "c"'):
+        table2.eval_expression_list([col("a").pow("c")])
+
+
+def test_table_numeric_power() -> None:
+    table = MicroPartition.from_pydict({"a": [0.1, 0.01, 1.5, 3, None], "b": [1, 10, 100, None, None]})
+    exprs = [0.01, 0.1, 1, 2, 10]
+    for expr in exprs:
+        power_table = table.eval_expression_list([col("a").power(expr), col("b").power(expr)])
+        assert lists_close_with_nones(
+            [math.pow(v, expr) if v is not None else v for v in table.get_column_by_name("a").to_pylist()],
+            power_table.get_column_by_name("a").to_pylist(),
+        )
+        assert lists_close_with_nones(
+            [math.pow(v, expr) if v is not None else v for v in table.get_column_by_name("b").to_pylist()],
+            power_table.get_column_by_name("b").to_pylist(),
+        )
+
+
+def test_table_power_bad_input() -> None:
+    table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
+    table2 = MicroPartition.from_pydict({"a": [1, 10, 100]})
+
+    with pytest.raises(ValueError, match="Expected input to compute power to be numeric, got String"):
+        table.eval_expression_list([col("a").power(1)])
+
+    with pytest.raises(ValueError, match="Expected input to compute power to be numeric, got String"):
+        table.eval_expression_list([col("a").power(0.1)])
+
+    with pytest.raises(ValueError, match='DaftError::ValueError Expected floating point number, received: "c"'):
+        table2.eval_expression_list([col("a").power("c")])
+
+
 def test_table_expm1() -> None:
     table = MicroPartition.from_pydict({"a": [0.1, 0.01, None], "b": [1, 10, None]})
     expm1_table = table.eval_expression_list([col("a").expm1(), col("b").expm1()])
@@ -728,14 +773,14 @@ def test_table_shift_left_with_scalar() -> None:
 def test_table_shift_left_bad_input() -> None:
     table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
 
-    with pytest.raises(ValueError, match="Cannot operate shift left on types: Utf8, Utf8"):
+    with pytest.raises(ValueError, match="Cannot operate shift left on types: String, String"):
         table.eval_expression_list([col("a") << (col("a"))])
 
 
 def test_table_shift_left_bad_shift() -> None:
     table = MicroPartition.from_pydict({"a": [1, 2, 4], "b": [3, 2, 1]})
 
-    with pytest.raises(ValueError, match="Cannot operate shift left on types: Int64, Utf8"):
+    with pytest.raises(ValueError, match="Cannot operate shift left on types: Int64, String"):
         table.eval_expression_list([col("a") << (lit("a"))])
 
 
@@ -776,14 +821,14 @@ def test_table_shift_right_with_scalar() -> None:
 def test_table_shift_right_bad_input() -> None:
     table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
 
-    with pytest.raises(ValueError, match="Cannot operate shift right on types: Utf8, Utf8"):
+    with pytest.raises(ValueError, match="Cannot operate shift right on types: String, String"):
         table.eval_expression_list([col("a") >> (col("a"))])
 
 
 def test_table_shift_right_bad_shift() -> None:
     table = MicroPartition.from_pydict({"a": [8, 4, 2], "b": [3, 2, 1]})
 
-    with pytest.raises(ValueError, match="Cannot operate shift right on types: Int64, Utf8"):
+    with pytest.raises(ValueError, match="Cannot operate shift right on types: Int64, String"):
         table.eval_expression_list([col("a") >> (lit("a"))])
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from typing import TYPE_CHECKING
 
 from daft.expressions.expressions import Expression, ExpressionsProjection
@@ -78,17 +79,20 @@ async def start_udf_actors(
     num_cpus_per_actor: float,
     memory_per_actor: float,
     timeout: int,
+    actor_name: str | None = None,
 ) -> list[UDFActorHandle]:
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
 
+    random_suffix = str(uuid.uuid4())[:8]
     actors: list[RayActorHandle] = [
         UDFActor.options(  # type: ignore
             scheduling_strategy="SPREAD",
             num_gpus=num_gpus_per_actor,
             num_cpus=num_cpus_per_actor,
             memory=memory_per_actor,
+            name=None if actor_name is None else f"{actor_name}:{random_suffix}-{rank}",
         ).remote(expr_projection)
-        for _ in range(num_actors)
+        for rank in range(num_actors)
     ]
 
     # Wait for actors to be ready

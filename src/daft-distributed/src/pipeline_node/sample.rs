@@ -1,23 +1,24 @@
 use std::sync::Arc;
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
-use super::{DistributedPipelineNode, SubmittableTaskStream};
+use super::{PipelineNodeImpl, SubmittableTaskStream};
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
+    pipeline_node::{
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+    },
     plan::{PlanConfig, PlanExecutionContext},
 };
 
 pub(crate) struct SampleNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    fraction: f64,
+    sampling_method: SamplingMethod,
     with_replacement: bool,
     seed: Option<u64>,
-    child: Arc<dyn DistributedPipelineNode>,
+    child: DistributedPipelineNode,
 }
 
 impl SampleNode {
@@ -26,76 +27,48 @@ impl SampleNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
-        fraction: f64,
+        fraction: Option<f64>,
+        size: Option<usize>,
         with_replacement: bool,
         seed: Option<u64>,
         schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
             child.config().clustering_spec.clone(),
         );
+        let sampling_method = if let Some(fraction) = fraction {
+            SamplingMethod::Fraction(fraction)
+        } else if let Some(size) = size {
+            SamplingMethod::Size(size)
+        } else {
+            panic!("Either fraction or size must be specified for sample");
+        };
         Self {
             config,
             context,
-            fraction,
+            sampling_method,
             with_replacement,
             seed,
             child,
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
-    }
-
-    fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec![];
-        res.push(format!("Sample: {}", self.fraction));
-        res.push(format!("With replacement = {}", self.with_replacement));
-        res.push(format!("Seed = {:?}", self.seed));
-        res
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 
-impl TreeDisplay for SampleNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.name()).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.name().to_string()
-    }
-}
-
-impl DistributedPipelineNode for SampleNode {
+impl PipelineNodeImpl for SampleNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -104,8 +77,21 @@ impl DistributedPipelineNode for SampleNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        let mut res = vec![];
+        match &self.sampling_method {
+            SamplingMethod::Fraction(fraction) => {
+                res.push(format!("Sample: {} (fraction)", fraction));
+            }
+            SamplingMethod::Size(size) => res.push(format!("Sample: {} rows", size)),
+        }
+        res.push(format!("With replacement = {}", self.with_replacement));
+        res.push(format!("Seed = {:?}", self.seed));
+        res
     }
 
     fn produce_tasks(
@@ -115,23 +101,24 @@ impl DistributedPipelineNode for SampleNode {
         let input_node = self.child.clone().produce_tasks(plan_context);
 
         // Create the plan builder closure
-        let fraction = self.fraction;
+        let sampling_method = self.sampling_method;
         let with_replacement = self.with_replacement;
         let seed = self.seed;
+        let node_id = self.node_id();
         let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
             LocalPhysicalPlan::sample(
                 input,
-                SamplingMethod::Fraction(fraction),
+                sampling_method,
                 with_replacement,
                 seed,
                 StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
+                },
             )
         };
 
-        input_node.pipeline_instruction(self.clone(), plan_builder)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
+        input_node.pipeline_instruction(self, plan_builder)
     }
 }

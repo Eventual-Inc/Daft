@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{JoinType, partitioning::HashClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
@@ -10,7 +9,7 @@ use futures::StreamExt;
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        SubmittableTaskStream,
+        PipelineNodeImpl, SubmittableTaskStream,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -29,8 +28,8 @@ pub(crate) struct HashJoinNode {
     null_equals_nulls: Option<Vec<bool>>,
     join_type: JoinType,
 
-    left: Arc<dyn DistributedPipelineNode>,
-    right: Arc<dyn DistributedPipelineNode>,
+    left: DistributedPipelineNode,
+    right: DistributedPipelineNode,
 }
 
 impl HashJoinNode {
@@ -39,24 +38,21 @@ impl HashJoinNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         left_on: Vec<BoundExpr>,
         right_on: Vec<BoundExpr>,
         null_equals_nulls: Option<Vec<bool>>,
         join_type: JoinType,
         num_partitions: usize,
-        left: Arc<dyn DistributedPipelineNode>,
-        right: Arc<dyn DistributedPipelineNode>,
+        left: DistributedPipelineNode,
+        right: DistributedPipelineNode,
         output_schema: SchemaRef,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![left.node_id(), right.node_id()],
-            vec![left.name(), right.name()],
-            logical_node_id,
         );
         let partition_cols = left_on
             .iter()
@@ -81,22 +77,8 @@ impl HashJoinNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
-    }
-
-    fn multiline_display(&self) -> Vec<String> {
-        use itertools::Itertools;
-        let mut res = vec!["Hash Join".to_string()];
-        res.push(format!(
-            "Left on: {}",
-            self.left_on.iter().map(|e| e.to_string()).join(", ")
-        ));
-        res.push(format!(
-            "Right on: {}",
-            self.right_on.iter().map(|e| e.to_string()).join(", ")
-        ));
-        res
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     fn build_hash_join_task(
@@ -117,6 +99,10 @@ impl HashJoinNode {
             self.join_type,
             self.config.schema.clone(),
             StatsState::NotMaterialized,
+            LocalNodeContext {
+                origin_node_id: Some(self.node_id() as usize),
+                additional: None,
+            },
         );
 
         let mut psets = left_task.task().psets().clone();
@@ -135,32 +121,7 @@ impl HashJoinNode {
     }
 }
 
-impl TreeDisplay for HashJoinNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.context.node_name).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.left.as_tree_display(), self.right.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.context.node_name.to_string()
-    }
-}
-
-impl DistributedPipelineNode for HashJoinNode {
+impl PipelineNodeImpl for HashJoinNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -169,8 +130,22 @@ impl DistributedPipelineNode for HashJoinNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.left.clone(), self.right.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        use itertools::Itertools;
+        let mut res = vec!["Hash Join".to_string()];
+        res.push(format!(
+            "Left on: {}",
+            self.left_on.iter().map(|e| e.to_string()).join(", ")
+        ));
+        res.push(format!(
+            "Right on: {}",
+            self.right_on.iter().map(|e| e.to_string()).join(", ")
+        ));
+        res
     }
 
     fn produce_tasks(
@@ -189,9 +164,5 @@ impl DistributedPipelineNode for HashJoinNode {
                 })
                 .boxed(),
         )
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
     }
 }

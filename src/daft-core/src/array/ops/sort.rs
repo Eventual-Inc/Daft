@@ -1,10 +1,10 @@
-use arrow2::{
+use common_error::DaftResult;
+use daft_arrow::{
     array::ord::{self, DynComparator},
     types::Index,
 };
-use common_error::DaftResult;
 
-use super::{arrow2::sort::primitive::common::multi_column_idx_sort, as_arrow::AsArrow};
+use super::{arrow::sort::primitive::common::multi_column_idx_sort, as_arrow::AsArrow};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
@@ -19,6 +19,7 @@ use crate::{
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
     },
+    file::DaftMediaType,
     kernels::search_sorted::{build_nulls_first_compare_with_nulls, cmp_float},
     series::Series,
 };
@@ -73,16 +74,15 @@ where
     pub fn argsort<I>(&self, descending: bool, nulls_first: bool) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: daft_arrow::types::Index,
     {
         let arrow_array = self.as_arrow();
 
-        let result =
-            crate::array::ops::arrow2::sort::primitive::indices::indices_sorted_unstable_by::<
-                I::Native,
-                T::Native,
-                _,
-            >(arrow_array, ord::total_cmp, descending, nulls_first);
+        let result = crate::array::ops::arrow::sort::primitive::indices::indices_sorted_unstable_by::<
+            I::Native,
+            T::Native,
+            _,
+        >(arrow_array, ord::total_cmp, descending, nulls_first);
 
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
@@ -95,7 +95,7 @@ where
     ) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: daft_arrow::types::Index,
     {
         let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
@@ -145,14 +145,14 @@ where
     }
 
     pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
-        let options = arrow2::compute::sort::SortOptions {
+        let options = daft_arrow::compute::sort::SortOptions {
             descending,
             nulls_first,
         };
 
         let arrow_array = self.as_arrow();
 
-        let result = crate::array::ops::arrow2::sort::primitive::sort::sort_by::<T::Native, _>(
+        let result = crate::array::ops::arrow::sort::primitive::sort::sort_by::<T::Native, _>(
             arrow_array,
             ord::total_cmp,
             &options,
@@ -167,16 +167,15 @@ impl Float32Array {
     pub fn argsort<I>(&self, descending: bool, nulls_first: bool) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: daft_arrow::types::Index,
     {
         let arrow_array = self.as_arrow();
 
-        let result =
-            crate::array::ops::arrow2::sort::primitive::indices::indices_sorted_unstable_by::<
-                I::Native,
-                f32,
-                _,
-            >(arrow_array, cmp_float::<f32>, descending, nulls_first);
+        let result = crate::array::ops::arrow::sort::primitive::indices::indices_sorted_unstable_by::<
+            I::Native,
+            f32,
+            _,
+        >(arrow_array, cmp_float::<f32>, descending, nulls_first);
 
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
@@ -189,7 +188,7 @@ impl Float32Array {
     ) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: daft_arrow::types::Index,
     {
         let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
@@ -239,14 +238,14 @@ impl Float32Array {
     }
 
     pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
-        let options = arrow2::compute::sort::SortOptions {
+        let options = daft_arrow::compute::sort::SortOptions {
             descending,
             nulls_first,
         };
 
         let arrow_array = self.as_arrow();
 
-        let result = crate::array::ops::arrow2::sort::primitive::sort::sort_by::<f32, _>(
+        let result = crate::array::ops::arrow::sort::primitive::sort::sort_by::<f32, _>(
             arrow_array,
             cmp_float::<f32>,
             &options,
@@ -261,16 +260,15 @@ impl Float64Array {
     pub fn argsort<I>(&self, descending: bool, nulls_first: bool) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: daft_arrow::types::Index,
     {
         let arrow_array = self.as_arrow();
 
-        let result =
-            crate::array::ops::arrow2::sort::primitive::indices::indices_sorted_unstable_by::<
-                I::Native,
-                f64,
-                _,
-            >(arrow_array, cmp_float::<f64>, descending, nulls_first);
+        let result = crate::array::ops::arrow::sort::primitive::indices::indices_sorted_unstable_by::<
+            I::Native,
+            f64,
+            _,
+        >(arrow_array, cmp_float::<f64>, descending, nulls_first);
 
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
@@ -283,7 +281,7 @@ impl Float64Array {
     ) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: daft_arrow::types::Index,
     {
         let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
@@ -333,14 +331,14 @@ impl Float64Array {
     }
 
     pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
-        let options = arrow2::compute::sort::SortOptions {
+        let options = daft_arrow::compute::sort::SortOptions {
             descending,
             nulls_first,
         };
 
         let arrow_array = self.as_arrow();
 
-        let result = crate::array::ops::arrow2::sort::primitive::sort::sort_by::<f64, _>(
+        let result = crate::array::ops::arrow::sort::primitive::sort::sort_by::<f64, _>(
             arrow_array,
             cmp_float::<f64>,
             &options,
@@ -355,16 +353,15 @@ impl Decimal128Array {
     pub fn argsort<I>(&self, descending: bool, nulls_first: bool) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: daft_arrow::types::Index,
     {
         let arrow_array = self.as_arrow();
 
-        let result =
-            crate::array::ops::arrow2::sort::primitive::indices::indices_sorted_unstable_by::<
-                I::Native,
-                i128,
-                _,
-            >(arrow_array, ord::total_cmp, descending, nulls_first);
+        let result = crate::array::ops::arrow::sort::primitive::indices::indices_sorted_unstable_by::<
+            I::Native,
+            i128,
+            _,
+        >(arrow_array, ord::total_cmp, descending, nulls_first);
 
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
@@ -377,7 +374,7 @@ impl Decimal128Array {
     ) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: daft_arrow::types::Index,
     {
         let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
@@ -427,14 +424,14 @@ impl Decimal128Array {
     }
 
     pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
-        let options = arrow2::compute::sort::SortOptions {
+        let options = daft_arrow::compute::sort::SortOptions {
             descending,
             nulls_first,
         };
 
         let arrow_array = self.as_arrow();
 
-        let result = crate::array::ops::arrow2::sort::primitive::sort::sort_by::<i128, _>(
+        let result = crate::array::ops::arrow::sort::primitive::sort::sort_by::<i128, _>(
             arrow_array,
             ord::total_cmp,
             &options,
@@ -449,7 +446,7 @@ impl NullArray {
     pub fn argsort<I>(&self, _descending: bool, _nulls_first: bool) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: daft_arrow::types::Index,
     {
         DataArray::<I>::arange(self.name(), 0_i64, self.len() as i64, 1)
     }
@@ -462,7 +459,7 @@ impl NullArray {
     ) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: daft_arrow::types::Index,
     {
         let first_nulls_first = *nulls_first.first().unwrap();
 
@@ -492,15 +489,15 @@ impl BooleanArray {
     pub fn argsort<I>(&self, descending: bool, nulls_first: bool) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: daft_arrow::types::Index,
     {
-        let options = arrow2::compute::sort::SortOptions {
+        let options = daft_arrow::compute::sort::SortOptions {
             descending,
             nulls_first,
         };
 
         let result =
-            arrow2::compute::sort::sort_to_indices::<I::Native>(self.data(), &options, None)?;
+            daft_arrow::compute::sort::sort_to_indices::<I::Native>(self.data(), &options, None)?;
 
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
@@ -513,7 +510,7 @@ impl BooleanArray {
     ) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: daft_arrow::types::Index,
     {
         let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
@@ -523,7 +520,7 @@ impl BooleanArray {
         let values = self
             .data()
             .as_any()
-            .downcast_ref::<arrow2::array::BooleanArray>()
+            .downcast_ref::<daft_arrow::array::BooleanArray>()
             .unwrap()
             .values();
 
@@ -567,12 +564,12 @@ impl BooleanArray {
     }
 
     pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
-        let options = arrow2::compute::sort::SortOptions {
+        let options = daft_arrow::compute::sort::SortOptions {
             descending,
             nulls_first,
         };
 
-        let result = arrow2::compute::sort::sort(self.data(), &options, None)?;
+        let result = daft_arrow::compute::sort::sort(self.data(), &options, None)?;
 
         Self::try_from((self.field.clone(), result))
     }
@@ -588,14 +585,14 @@ macro_rules! impl_binary_like_sort {
             ) -> DaftResult<DataArray<I>>
             where
                 I: DaftIntegerType,
-                <I as DaftNumericType>::Native: arrow2::types::Index,
+                <I as DaftNumericType>::Native: daft_arrow::types::Index,
             {
-                let options = arrow2::compute::sort::SortOptions {
+                let options = daft_arrow::compute::sort::SortOptions {
                     descending,
                     nulls_first,
                 };
 
-                let result = arrow2::compute::sort::sort_to_indices::<I::Native>(
+                let result = daft_arrow::compute::sort::sort_to_indices::<I::Native>(
                     self.data(),
                     &options,
                     None,
@@ -612,7 +609,7 @@ macro_rules! impl_binary_like_sort {
             ) -> DaftResult<DataArray<I>>
             where
                 I: DaftIntegerType,
-                <I as DaftNumericType>::Native: arrow2::types::Index,
+                <I as DaftNumericType>::Native: daft_arrow::types::Index,
             {
                 let first_desc = *descending.first().unwrap();
                 let first_nulls_first = *nulls_first.first().unwrap();
@@ -662,12 +659,12 @@ macro_rules! impl_binary_like_sort {
             }
 
             pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
-                let options = arrow2::compute::sort::SortOptions {
+                let options = daft_arrow::compute::sort::SortOptions {
                     descending,
                     nulls_first,
                 };
 
-                let result = arrow2::compute::sort::sort(self.data(), &options, None)?;
+                let result = daft_arrow::compute::sort::sort(self.data(), &options, None)?;
 
                 $da::try_from((self.field.clone(), result))
             }
@@ -682,7 +679,7 @@ impl FixedSizeBinaryArray {
     pub fn argsort<I>(&self, _descending: bool, _nulls_first: bool) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: daft_arrow::types::Index,
     {
         todo!("impl argsort for FixedSizeBinaryArray")
     }
@@ -694,7 +691,7 @@ impl FixedSizeBinaryArray {
     ) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: daft_arrow::types::Index,
     {
         todo!("impl argsort_multikey for FixedSizeBinaryArray")
     }
@@ -816,7 +813,10 @@ impl FixedShapeTensorArray {
     }
 }
 
-impl FileArray {
+impl<T> FileArray<T>
+where
+    T: DaftMediaType,
+{
     pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         todo!("impl sort for FileArray")
     }

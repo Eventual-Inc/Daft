@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use arrow2::{
+use common_error::DaftResult;
+use daft_arrow::{
     array::{MutableArray, MutablePrimitiveArray, PrimitiveArray},
     offset::OffsetsBuffer,
 };
-use common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::functions::prelude::*;
 use daft_io::IOConfig;
@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::bpe::DaftBPE;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct TokenizeEncodeFunction;
 
 #[derive(FunctionArgs)]

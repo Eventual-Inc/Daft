@@ -88,12 +88,12 @@ def test_fizzbuzz_sql():
 @pytest.mark.parametrize(
     "actual,expected",
     [
-        ("lower(text)", daft.col("text").str.lower()),
+        ("lower(text)", daft.functions.lower(daft.col("text"))),
         ("abs(n)", daft.col("n").abs()),
         ("n + 1", daft.col("n") + 1),
         ("ceil(1.1)", daft.lit(1.1).ceil()),
-        ("contains(text, 'hello')", daft.col("text").str.contains("hello")),
-        ("to_date(date_col, 'YYYY-MM-DD')", daft.col("date_col").str.to_date("YYYY-MM-DD")),
+        ("contains(text, 'hello')", daft.functions.contains(daft.col("text"), "hello")),
+        ("to_date(date_col, 'YYYY-MM-DD')", daft.functions.to_date(daft.col("date_col"), "YYYY-MM-DD")),
     ],
 )
 def test_sql_expr(actual, expected):
@@ -186,6 +186,23 @@ def test_sql_function_catalog_is_final(set_global_df):
 def test_sql_function_register_globals(set_global_df):
     with pytest.raises(Exception, match="Table not found"):
         daft.sql("SELECT * FROM GLOBAL_DF", register_globals=False)
+
+
+def test_sql_function_table_name_is_keyword(set_global_df):
+    with pytest.raises(Exception, match="is a SQL keyword, not a valid table name"):
+        daft.sql("SELECT * FROM TABLE")
+    with pytest.raises(Exception, match="is a SQL keyword, not a valid table name"):
+        daft.sql("SELECT * FROM              TABLE")
+    with pytest.raises(Exception, match="is a SQL keyword, not a valid table name"):
+        daft.sql("SELECT * FROM\nTABLE")
+    with pytest.raises(Exception, match="is a SQL keyword, not a valid table name"):
+        daft.sql("SELECT * FROM\n\n   \t\tTABLE")
+    with pytest.raises(Exception, match="is a SQL keyword, not a valid table name"):
+        daft.sql("SELECT * FROM UNNEST")
+    with pytest.raises(Exception, match="is a SQL keyword, not a valid table name"):
+        daft.sql("SELECT * FROM LATERAL")
+    with pytest.raises(Exception, match="failed to parse sql"):
+        daft.sql("SELECT * FROM")
 
 
 def test_sql_function_raises_when_cant_get_frame(monkeypatch):

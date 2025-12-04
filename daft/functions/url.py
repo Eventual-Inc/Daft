@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Literal
 
 from daft import context
 from daft.expressions import Expression
+from daft.runners import get_or_create_runner
 
 if TYPE_CHECKING:
     from daft.daft import IOConfig
@@ -24,7 +25,7 @@ def _should_use_multithreading_tokio_runtime() -> bool:
     For local execution, we run in a single process which means that it all shares the same tokio I/O runtime and connection pool.
     Thus we just have `(multithreaded=N_CPU * max_connections)` number of open connections, which is usually reasonable as well.
     """
-    using_ray_runner = context.get_context().get_or_create_runner().name == "ray"
+    using_ray_runner = get_or_create_runner().name == "ray"
     return not using_ray_runner
 
 
@@ -103,7 +104,7 @@ def upload(
     """Uploads a column of binary data to the provided location(s) (also supports S3, local etc).
 
     Files will be written into the location (folder(s)) with a generated UUID filename, and the result
-    will be returned as a column of string paths that is compatible with the ``.url.download()`` Expression.
+    will be returned as a column of string paths that is compatible with the ``download()`` Expression.
 
     Args:
         expr: The expression to upload.

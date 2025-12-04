@@ -1,7 +1,14 @@
 [dependencies]
-indicatif = "0.17.9"
+common-py-serde = {path = "../py-serde", default-features = false}
+indicatif = "0.17"
 serde = {workspace = true}
+bincode = {workspace = true}
 smallvec = {workspace = true, features = ["serde"]}
+pyo3 = {workspace = true, optional = true}
+daft-schema = {path = "../../daft-schema", default-features = false}
+
+[features]
+python = ["dep:pyo3"]
 
 [lints]
 workspace = true

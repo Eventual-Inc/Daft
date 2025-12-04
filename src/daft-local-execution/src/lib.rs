@@ -1,8 +1,8 @@
 mod buffer;
 mod channel;
 mod dispatcher;
+mod dynamic_batching;
 mod intermediate_ops;
-mod ops;
 mod pipeline;
 mod resource_manager;
 mod run;
@@ -11,7 +11,6 @@ mod sinks;
 mod sources;
 mod state_bridge;
 mod streaming_sink;
-
 use std::{
     future::Future,
     pin::Pin,
@@ -69,18 +68,11 @@ pub(crate) struct TaskSet<T> {
     inner: tokio::task::JoinSet<T>,
 }
 
-impl<T: 'static> TaskSet<T> {
+impl<T: Send + 'static> TaskSet<T> {
     fn new() -> Self {
         Self {
             inner: tokio::task::JoinSet::new(),
         }
-    }
-
-    fn spawn_local<F>(&mut self, future: F)
-    where
-        F: std::future::Future<Output = T> + 'static,
-    {
-        self.inner.spawn_local(future);
     }
 
     fn spawn<F>(&mut self, future: F)
@@ -98,8 +90,18 @@ impl<T: 'static> TaskSet<T> {
             .map(|r| r.map_err(|e| Error::JoinError { source: e }))
     }
 
-    async fn shutdown(&mut self) {
-        self.inner.shutdown().await;
+    fn try_join_next(&mut self) -> Option<Result<T, Error>> {
+        self.inner
+            .try_join_next()
+            .map(|r| r.map_err(|e| Error::JoinError { source: e }))
+    }
+
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    fn abort_all(&mut self) {
+        self.inner.abort_all();
     }
 }
 
@@ -114,6 +116,7 @@ impl<T> Future for SpawnedTask<T> {
 }
 
 struct RuntimeHandle(tokio::runtime::Handle);
+
 impl RuntimeHandle {
     fn spawn<F>(&self, future: F) -> SpawnedTask<F::Output>
     where
@@ -144,22 +147,32 @@ impl ExecutionRuntimeContext {
         }
     }
 
-    pub fn spawn_local(
+    pub fn spawn(
         &mut self,
-        task: impl std::future::Future<Output = DaftResult<()>> + 'static,
+        task: impl std::future::Future<Output = DaftResult<()>> + Send + 'static,
         node_name: &str,
     ) {
         let node_name = node_name.to_string();
         self.worker_set
-            .spawn_local(task.with_context(|_| PipelineExecutionSnafu { node_name }));
+            .spawn(task.with_context(|_| PipelineExecutionSnafu { node_name }));
     }
 
     pub async fn join_next(&mut self) -> Option<Result<crate::Result<()>, Error>> {
         self.worker_set.join_next().await
     }
 
-    pub async fn shutdown(&mut self) {
-        self.worker_set.shutdown().await;
+    pub async fn shutdown(&mut self) -> DaftResult<()> {
+        self.worker_set.abort_all();
+        while let Some(result) = self.join_next().await {
+            match result {
+                Ok(Err(e)) | Err(e) if !matches!(&e, Error::JoinError { source } if source.is_cancelled()) =>
+                {
+                    return Err(e.into());
+                }
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn handle(&self) -> RuntimeHandle {
@@ -177,6 +190,7 @@ impl ExecutionRuntimeContext {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct ExecutionTaskSpawner {
     runtime_ref: RuntimeRef,
     memory_manager: Arc<MemoryManager>,
@@ -308,6 +322,8 @@ pub enum Error {
         source: DaftError,
         node_name: String,
     },
+    #[snafu(display("ValueError: {}", message))]
+    ValueError { message: String },
 }
 
 impl From<Error> for DaftError {
@@ -321,6 +337,7 @@ impl From<Error> for DaftError {
                 log::error!("Error when running pipeline node {}", node_name);
                 source
             }
+            Error::ValueError { message } => Self::ValueError(message),
             _ => Self::External(err.into()),
         }
     }

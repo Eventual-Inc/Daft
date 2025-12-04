@@ -6,14 +6,8 @@ import pandas as pd
 import pytest
 
 from daft import Window, col
-from daft.context import get_context
 from daft.functions import dense_rank, rank, row_number
-from tests.conftest import assert_df_equals, get_tests_daft_runner_name
-
-pytestmark = pytest.mark.skipif(
-    get_tests_daft_runner_name() == "ray" and get_context().daft_execution_config.use_legacy_ray_runner is True,
-    reason="requires Native Runner or Flotilla to be in use",
-)
+from tests.conftest import assert_df_equals
 
 
 def test_row_number_function(make_df):
@@ -419,7 +413,7 @@ def test_multiple_rank_functions(make_df):
                 for i in range(1, len(unique_ranks)):
                     assert (
                         unique_ranks[i] == unique_ranks[i - 1] + 1
-                    ), f"Dense rank should increase by 1 for each distinct value: {unique_values[i]} has rank {unique_ranks[i]}, previous was {unique_ranks[i-1]}"
+                    ), f"Dense rank should increase by 1 for each distinct value: {unique_values[i]} has rank {unique_ranks[i]}, previous was {unique_ranks[i - 1]}"
 
     for partition, col_prefix in [
         (["category"], "by_category"),

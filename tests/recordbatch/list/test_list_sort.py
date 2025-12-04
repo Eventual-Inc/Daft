@@ -16,9 +16,9 @@ def test_list_sort():
 
     res = table.eval_expression_list(
         [
-            col("a").list.sort().alias("asc"),
-            col("a").list.sort(True).alias("desc"),
-            col("a").list.sort(col("b")).alias("mixed"),
+            col("a").list_sort().alias("asc"),
+            col("a").list_sort(True).alias("desc"),
+            col("a").list_sort(col("b")).alias("mixed"),
         ]
     )
 
@@ -39,9 +39,9 @@ def test_list_sort_fixed_size():
 
     res = table.eval_expression_list(
         [
-            col("a").list.sort().alias("asc"),
-            col("a").list.sort(True).alias("desc"),
-            col("a").list.sort(col("b")).alias("mixed"),
+            col("a").list_sort().alias("asc"),
+            col("a").list_sort(True).alias("desc"),
+            col("a").list_sort(col("b")).alias("mixed"),
         ]
     )
 
@@ -56,17 +56,17 @@ def test_list_sort_with_groupby():
     df = daft.from_pydict({"group_col": [1, 1, 1, 2, 2, 2], "id_col": ["c", "a", "b", "e", "d", "a"]})
 
     # Group by group_col, aggregate id_col as a list.
-    grouped_df = df.groupby("group_col").agg(daft.col("id_col").agg_list().alias("ids_col"))
+    grouped_df = df.groupby("group_col").agg(col("id_col").list_agg().alias("ids_col"))
 
     # Sort the list.
-    result = grouped_df.select(col("group_col"), col("ids_col").list.sort()).sort("group_col", desc=False)
+    result = grouped_df.select(col("group_col"), col("ids_col").list_sort()).sort("group_col", desc=False)
     result_dict = result.to_pydict()
     expected = {"group_col": [1, 2], "ids_col": [["a", "b", "c"], ["a", "d", "e"]]}
     assert result_dict == expected
 
     # Cast to fixed size list and sort.
     result = grouped_df.select(
-        col("group_col"), col("ids_col").cast(DataType.fixed_size_list(DataType.string(), 3)).list.sort()
+        col("group_col"), col("ids_col").cast(DataType.fixed_size_list(DataType.string(), 3)).list_sort()
     ).sort("group_col", desc=False)
     result_dict = result.to_pydict()
     expected = {"group_col": [1, 2], "ids_col": [["a", "b", "c"], ["a", "d", "e"]]}
@@ -94,10 +94,10 @@ def test_list_sort_groupby_larger_than_morsel_size():
             }
         )
         .groupby("group_id")
-        .agg(daft.col("record_id").agg_list().alias("record_ids"))
+        .agg(daft.col("record_id").list_agg().alias("record_ids"))
         .with_column(
             "record_ids_key",
-            daft.col("record_ids").list.sort(),
+            daft.functions.list_sort(daft.col("record_ids")),
         )
         .select(
             "group_id",

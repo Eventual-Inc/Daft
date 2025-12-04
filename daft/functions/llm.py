@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import Any, Literal
 
 from daft import DataType, Expression, Series, udf
 
 
 def llm_generate(
-    input_column: Expression,
+    text: Expression,
     model: str = "facebook/opt-125m",
     provider: Literal["vllm", "openai"] = "vllm",
     concurrency: int = 1,
@@ -23,20 +24,25 @@ def llm_generate(
     By default, it uses vLLM for efficient local inference.
 
     Args:
-        model: str, default="facebook/opt-125m"
+        text (String Expression):
+            The input text column to generate from
+        model (str, default="facebook/opt-125m"):
             The model identifier to use for generation
-        provider: str, default="vllm"
+        provider (str, default="vllm"):
             The LLM provider to use for generation. Supported values: "vllm", "openai"
-        concurrency: int, default=1
+        concurrency (int, default=1):
             The number of concurrent instances of the model to run
-        batch_size: int, default=None
+        batch_size (int, default=None):
             The batch size for the UDF. If None, the batch size will be determined by defaults based on the provider.
-        num_cpus: float, default=None
+        num_cpus (int, default=None):
             The number of CPUs to use for the UDF
-        num_gpus: float, default=None
+        num_gpus (int, default=None):
             The number of GPUs to use for the UDF
-        generation_config: dict, default={}
+        generation_config (dict, default={}):
             Configuration parameters for text generation (e.g., temperature, max_tokens)
+
+    Returns:
+        Expression (String Expression): The generated text column
 
     Examples:
         Use vLLM provider:
@@ -76,6 +82,12 @@ def llm_generate(
     Note:
         Make sure the required provider packages are installed (e.g. vllm, transformers, openai).
     """
+    warnings.warn(
+        "This method is deprecated and will be removed in v0.8.0. Use daft.functions.prompt instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
     cls: Any = None
     if provider == "vllm":
         cls = _vLLMGenerator
@@ -99,7 +111,7 @@ def llm_generate(
         generation_config=generation_config,
     )
 
-    return llm_generator(input_column)
+    return llm_generator(text)
 
 
 class _vLLMGenerator:

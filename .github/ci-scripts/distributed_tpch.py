@@ -7,18 +7,10 @@ import os
 import sys
 import time
 
-from ray.job_submission import JobDetails, JobStatus, JobSubmissionClient
+from ray.job_submission import JobStatus, JobSubmissionClient
 
 import daft
-from tools.ci_bench_utils import get_run_metadata, upload_to_google_sheets
-
-
-async def tail_logs(client: JobSubmissionClient, submission_id: str) -> JobDetails:
-    async for lines in client.tail_job_logs(submission_id):
-        print(lines, end="")
-
-    return client.get_job_info(submission_id)
-
+from tools.ci_bench_utils import get_run_metadata, tail_logs, upload_to_google_sheets
 
 SF_TO_S3_PATH = {
     100: "s3://eventual-dev-benchmarking-fixtures/uncompressed/tpch-dbgen/100_0/32/parquet/",
@@ -65,7 +57,7 @@ def run_benchmark():
 
 
 def main():
-    daft.context.set_runner_native()
+    daft.set_runner_native()
 
     metadata = get_run_metadata()
     scale_factor = int(os.getenv("TPCH_SCALE_FACTOR"))

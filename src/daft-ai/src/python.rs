@@ -1,20 +1,20 @@
-use pyo3::{Bound, PyObject, PyResult, Python, intern, prelude::*, types::PyModule};
+use pyo3::{Bound, Py, PyAny, PyResult, Python, intern, prelude::*, types::PyModule};
 
 use crate::provider::Provider;
 
 /// Implement the Provider trait for a python Provider(ABC)
 #[derive(Debug)]
-pub struct PyProviderWrapper(PyObject);
+pub struct PyProviderWrapper(Py<PyAny>);
 
-impl From<PyObject> for PyProviderWrapper {
-    fn from(value: PyObject) -> Self {
+impl From<Py<PyAny>> for PyProviderWrapper {
+    fn from(value: Py<PyAny>) -> Self {
         Self(value)
     }
 }
 
 impl Provider for PyProviderWrapper {
     fn name(&self) -> String {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let provider = self.0.bind(py);
             let name = provider
                 .getattr(intern!(py, "name"))
@@ -24,7 +24,7 @@ impl Provider for PyProviderWrapper {
         })
     }
 
-    fn to_py(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn to_py(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(self.0.clone_ref(py))
     }
 }

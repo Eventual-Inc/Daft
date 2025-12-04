@@ -7,7 +7,7 @@ use daft_micropartition::{MicroPartition, python::PyMicroPartition};
 use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
 use pyo3::{Python, types::PyAnyMethods};
 
-use crate::{AsyncFileWriter, WriterFactory};
+use crate::{AsyncFileWriter, WriteResult, WriterFactory};
 
 pub struct DataSinkWriter {
     is_closed: bool,
@@ -32,9 +32,10 @@ impl AsyncFileWriter for DataSinkWriter {
     type Input = Arc<MicroPartition>;
     type Result = Vec<RecordBatch>;
 
-    async fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
+    async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {
+        let rows_written = data.len();
         let mut bytes_written = 0;
-        let mp_result: PyRecordBatch = Python::with_gil(|py| -> pyo3::PyResult<_> {
+        let mp_result: PyRecordBatch = Python::attach(|py| -> pyo3::PyResult<_> {
             // Grab the current micropartition and pass it to the data sink.
             let py_micropartition = py
                 .import(pyo3::intern!(py, "daft.recordbatch"))?
@@ -58,19 +59,23 @@ impl AsyncFileWriter for DataSinkWriter {
             // Save return values into a record batch.
             let results_dict = pyo3::types::PyDict::new(py);
             results_dict.set_item("write_results", result_list)?;
-            py.import(pyo3::intern!(py, "daft.recordbatch"))?
+            Ok(py
+                .import(pyo3::intern!(py, "daft.recordbatch"))?
                 .getattr(pyo3::intern!(py, "RecordBatch"))?
                 .getattr(pyo3::intern!(py, "from_pydict"))?
                 .call1((results_dict,))?
                 .getattr(pyo3::intern!(py, "_recordbatch"))?
-                .extract()
+                .extract()?)
         })?;
 
         let mp_result: RecordBatch = mp_result.into();
         if !mp_result.is_empty() {
             self.results.push(mp_result);
         }
-        Ok(bytes_written)
+        Ok(WriteResult {
+            bytes_written,
+            rows_written,
+        })
     }
 
     fn bytes_written(&self) -> usize {

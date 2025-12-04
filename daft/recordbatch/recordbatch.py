@@ -12,14 +12,13 @@ from daft.daft import (
     JsonConvertOptions,
     JsonParseOptions,
     JsonReadOptions,
+    OperatorMetrics,
     PySeries,
 )
 from daft.daft import PyRecordBatch as _PyRecordBatch
-from daft.daft import ScanTask as _ScanTask
 from daft.daft import read_csv as _read_csv
 from daft.daft import read_json as _read_json
 from daft.daft import read_parquet as _read_parquet
-from daft.daft import read_parquet_bulk as _read_parquet_bulk
 from daft.daft import read_parquet_into_pyarrow as _read_parquet_into_pyarrow
 from daft.daft import read_parquet_into_pyarrow_bulk as _read_parquet_into_pyarrow_bulk
 from daft.daft import read_parquet_statistics as _read_parquet_statistics
@@ -72,10 +71,6 @@ class RecordBatch:
     def empty(schema: Schema | None = None) -> RecordBatch:
         pyt = _PyRecordBatch.empty(None) if schema is None else _PyRecordBatch.empty(schema._schema)
         return RecordBatch._from_pyrecordbatch(pyt)
-
-    @staticmethod
-    def _from_scan_task(_: _ScanTask) -> RecordBatch:
-        raise NotImplementedError("_from_scan_task is not implemented for legacy Python RecordBatch.")
 
     @staticmethod
     def _from_pyrecordbatch(pyt: _PyRecordBatch) -> RecordBatch:
@@ -145,6 +140,10 @@ class RecordBatch:
             series = item_to_series(k, v)
             series_dict[k] = series._series
         return RecordBatch._from_pyrecordbatch(_PyRecordBatch.from_pylist_series(series_dict))
+
+    @staticmethod
+    def from_ipc_stream(bytes: bytes) -> RecordBatch:
+        return RecordBatch._from_pyrecordbatch(_PyRecordBatch.from_ipc_stream(bytes))
 
     @classmethod
     def concat(cls, to_merge: list[RecordBatch]) -> RecordBatch:
@@ -230,6 +229,9 @@ class RecordBatch:
             else:
                 return arrow_table.to_pandas(coerce_temporal_nanoseconds=coerce_temporal_nanoseconds)
 
+    def to_ipc_stream(self) -> bytes:
+        return self._recordbatch.to_ipc_stream()
+
     ###
     # Compute methods (Table -> Table)
     ###
@@ -238,6 +240,12 @@ class RecordBatch:
         assert all(isinstance(e, Expression) for e in exprs)
         pyexprs = [e._expr for e in exprs]
         return RecordBatch._from_pyrecordbatch(self._recordbatch.eval_expression_list(pyexprs))
+
+    def eval_expression_list_with_metrics(self, exprs: ExpressionsProjection) -> tuple[RecordBatch, OperatorMetrics]:
+        assert all(isinstance(e, Expression) for e in exprs)
+        pyexprs = [e._expr for e in exprs]
+        record_batch, metrics = self._recordbatch.eval_expression_list_with_metrics(pyexprs)
+        return RecordBatch._from_pyrecordbatch(record_batch), metrics
 
     def head(self, num: int) -> RecordBatch:
         return RecordBatch._from_pyrecordbatch(self._recordbatch.head(num))
@@ -495,34 +503,6 @@ class RecordBatch:
                 coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
             )
         )
-
-    @classmethod
-    def read_parquet_bulk(
-        cls,
-        paths: list[str],
-        columns: list[str] | None = None,
-        start_offset: int | None = None,
-        num_rows: int | None = None,
-        row_groups_per_path: list[list[int] | None] | None = None,
-        predicate: Expression | None = None,
-        io_config: IOConfig | None = None,
-        num_parallel_tasks: int | None = 128,
-        multithreaded_io: bool | None = None,
-        coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
-    ) -> list[RecordBatch]:
-        PyRecordBatchs = _read_parquet_bulk(
-            uris=paths,
-            columns=columns,
-            start_offset=start_offset,
-            num_rows=num_rows,
-            row_groups=row_groups_per_path,
-            predicate=predicate._expr if predicate is not None else None,
-            io_config=io_config,
-            num_parallel_tasks=num_parallel_tasks,
-            multithreaded_io=multithreaded_io,
-            coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
-        )
-        return [RecordBatch._from_pyrecordbatch(t) for t in PyRecordBatchs]
 
     @classmethod
     def read_parquet_statistics(

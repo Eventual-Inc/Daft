@@ -3,13 +3,8 @@ from __future__ import annotations
 import dataclasses
 import functools
 import inspect
-import sys
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
-
-if sys.version_info >= (3, 10):
-    from typing import TypeAlias
-else:
-    from typing_extensions import TypeAlias
+import warnings
+from typing import TYPE_CHECKING, Any, Callable, Optional, TypeAlias, Union, cast
 
 import daft
 from daft.daft import PyDataType, PySeries, ResourceRequest
@@ -18,7 +13,8 @@ from daft.dependencies import np, pa
 from daft.errors import UDFException
 from daft.expressions import Expression
 from daft.series import Series
-from daft.udf._internal import check_fn_serializable
+
+from .udf_v2 import check_serializable
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -33,13 +29,18 @@ UserDefinedPyFuncLike: TypeAlias = Union[UserDefinedPyFunc, type]
 @dataclasses.dataclass(frozen=True)
 class UninitializedUdf:
     inner: Callable[..., UserDefinedPyFunc]
+    name: str
 
     def initialize(self, init_args: InitArgsType) -> UserDefinedPyFunc:
-        if init_args is None:
-            return self.inner()
-        else:
-            args, kwargs = init_args
-            return self.inner(*args, **kwargs)
+        try:
+            if init_args is None:
+                return self.inner()
+            else:
+                args, kwargs = init_args
+                return self.inner(*args, **kwargs)
+        except Exception as init_exc:
+            error_note = f"User-defined function `{self.name}` failed to initialize"
+            raise UDFException(error_note) from init_exc
 
 
 @dataclasses.dataclass(frozen=True)
@@ -267,14 +268,18 @@ class UDF:
 
         # construct the UninitializedUdf here so that the constructed expressions can maintain equality
         if isinstance(self.inner, type):
-            self.wrapped_inner = UninitializedUdf(self.inner)
+            self.wrapped_inner = UninitializedUdf(self.inner, self.name)
         else:
-            self.wrapped_inner = UninitializedUdf(lambda: self.inner)
+            self.wrapped_inner = UninitializedUdf(lambda: self.inner, self.name)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Expression:
         self._validate_init_args()
 
-        check_fn_serializable(self.inner, "@daft.udf")
+        check_serializable(
+            self.inner,
+            "`@daft.udf` requires that the UDF is serializable. Please double-check that the function does not use any global variables.\n\nIf it does, please use the legacy `@daft.udf` with a class UDF instead and initialize the global in the `__init__` method.",
+        )
+
         bound_args = self._bind_args(*args, **kwargs)
         expressions = list(bound_args.expressions().values())
 
@@ -425,17 +430,17 @@ class UDF:
             >>> df = df.with_column("bar_world", MyUdfWithInit(df["foo"]))
             >>> df = df.with_column("bar_custom", MyUdfWithInit_CustomInitArgs(df["foo"]))
             >>> df.show()
-            ╭───────┬─────────────┬─────────────────────╮
-            │ foo   ┆ bar_world   ┆ bar_custom          │
-            │ ---   ┆ ---         ┆ ---                 │
-            │ Utf8  ┆ Utf8        ┆ Utf8                │
-            ╞═══════╪═════════════╪═════════════════════╡
-            │ hello ┆ hello world ┆ hello my old friend │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ hello ┆ hello world ┆ hello my old friend │
-            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ hello ┆ hello world ┆ hello my old friend │
-            ╰───────┴─────────────┴─────────────────────╯
+            ╭────────┬─────────────┬─────────────────────╮
+            │ foo    ┆ bar_world   ┆ bar_custom          │
+            │ ---    ┆ ---         ┆ ---                 │
+            │ String ┆ String      ┆ String              │
+            ╞════════╪═════════════╪═════════════════════╡
+            │ hello  ┆ hello world ┆ hello my old friend │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ hello  ┆ hello world ┆ hello my old friend │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ hello  ┆ hello world ┆ hello my old friend │
+            ╰────────┴─────────────┴─────────────────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
@@ -465,7 +470,7 @@ def udf(
     concurrency: int | None = None,
     use_process: bool | None = None,
 ) -> Callable[[UserDefinedPyFuncLike], UDF]:
-    """`@udf` Decorator to convert a Python function/class into a `UDF`.
+    """(DEPRECATED) `@udf` Decorator to convert a Python function/class into a `UDF`.
 
     UDFs allow users to run arbitrary Python code on the outputs of Expressions.
 
@@ -603,6 +608,12 @@ def udf(
         ...         return self.model(data.to_pylist())
 
     """
+    warnings.warn(
+        "The `@daft.udf` decorator is deprecated since Daft version >= 0.7.0 and will be removed in >= 0.8.0. Please use `@daft.func` and `@daft.cls` instead.\nSee the migration guide for more details: https://docs.daft.ai/en/stable/custom-code/migration/",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
+
     inferred_return_dtype = DataType._infer(return_dtype)
 
     def _udf(f: UserDefinedPyFuncLike) -> UDF:

@@ -52,7 +52,7 @@ hooks: .venv
 
 .PHONY: build
 build: check-toolchain .venv  ## Compile and install Daft for development
-	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --extras=all --uv
+	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --uv
 
 .PHONY: build-release
 build-release: check-toolchain .venv  ## Compile and install a faster Daft binary
@@ -72,7 +72,7 @@ test: .venv build  ## Run tests
 
 .PHONY: doctests
 doctests: .venv
-	DAFT_BOLD_TABLE_HEADERS=0 DAFT_PROGRESS_BAR=0 $(VENV_BIN)/pytest --doctest-modules --continue-on-collection-errors --ignore=daft/functions/llm.py daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf/__init__.py daft/functions/ daft/datatype.py
+	DAFT_BOLD_TABLE_HEADERS=0 DAFT_PROGRESS_BAR=0 $(VENV_BIN)/pytest --doctest-modules --continue-on-collection-errors --ignore=daft/functions/llm.py --ignore=daft/functions/ai/__init__.py daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf/__init__.py daft/functions/ daft/datatype.py
 
 .PHONY: dsdgen
 dsdgen: .venv ## Generate TPC-DS data
@@ -96,9 +96,6 @@ docs: .venv install-docs-deps ## Build Daft documentation
 docs-serve: .venv install-docs-deps ## Build Daft documentation in development server
 	JUPYTER_PLATFORM_DIRS=1 uv run mkdocs serve -f mkdocs.yml
 
-.PHONY: daft-proto
-daft-proto: check-toolchain .venv ## Build Daft proto sources to avoid protoc build-time dependency.
-	trap 'mv src/daft-proto/build.rs src/daft-proto/.build.rs' EXIT && mv src/daft-proto/.build.rs src/daft-proto/build.rs && cargo build -p daft-proto
 
 .PHONY: check-format
 check-format: check-toolchain .venv  ## Check if code is properly formatted

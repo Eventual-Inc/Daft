@@ -1,10 +1,21 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import TYPE_CHECKING
 
 from daft.context import get_context
-from daft.daft import FileFormatConfig, FileInfos, IOConfig, LocalPhysicalPlan, set_compute_runtime_num_worker_threads
+from daft.daft import (
+    FileFormatConfig,
+    FileInfos,
+    IOConfig,
+    LocalPhysicalPlan,
+    PyQueryMetadata,
+    PyQueryResult,
+    QueryEndState,
+    set_compute_runtime_num_worker_threads,
+)
+from daft.errors import UDFException
 from daft.execution.native_executor import NativeExecutor
 from daft.filesystem import glob_path_with_stats
 from daft.recordbatch import MicroPartition
@@ -80,35 +91,50 @@ class NativeRunner(Runner[MicroPartition]):
         track_runner_on_scarf(runner=self.name)
 
         # NOTE: Freeze and use this same execution config for the entire execution
-        daft_execution_config = get_context().daft_execution_config
+        ctx = get_context()
+        query_id = str(uuid.uuid4())
+        output_schema = builder.schema()
 
         # Optimize the logical plan.
-        builder = builder.optimize()
-
-        # NOTE: ENABLE FOR DAFT-PROTO TESTING
-        # builder = _to_from_proto(builder)
+        ctx._notify_query_start(query_id, PyQueryMetadata(output_schema._schema, repr(builder)))
+        ctx._notify_optimization_start(query_id)
+        builder = builder.optimize(ctx.daft_execution_config)
+        ctx._notify_optimization_end(query_id, repr(builder))
 
         plan = LocalPhysicalPlan.from_logical_plan_builder(builder._builder)
         executor = NativeExecutor()
         results_gen = executor.run(
             plan,
             {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
-            daft_execution_config,
+            ctx,
             results_buffer_size,
+            {"query_id": query_id},
         )
-        yield from results_gen
+
+        try:
+            for result in results_gen:
+                ctx._notify_result_out(query_id, result.partition())
+                yield result
+        except KeyboardInterrupt as e:
+            query_result = PyQueryResult(QueryEndState.Canceled, "Query canceled by the user.")
+            ctx._notify_query_end(query_id, query_result)
+            raise e
+        except UDFException as e:
+            err_msg = f"UDF failed with exception: {e.original_exception}"
+            query_result = PyQueryResult(QueryEndState.Failed, err_msg)
+            ctx._notify_query_end(query_id, query_result)
+            raise e
+        except Exception as e:
+            err_msg = f"General Exception raised: {e}"
+            query_result = PyQueryResult(QueryEndState.Failed, err_msg)
+            ctx._notify_query_end(query_id, query_result)
+            raise e
+        else:
+            query_result = PyQueryResult(QueryEndState.Finished, "")
+            ctx._notify_query_end(query_id, query_result)
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
     ) -> Iterator[MicroPartition]:
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield result.partition()
-
-
-def _to_from_proto(builder: LogicalPlanBuilder) -> LogicalPlanBuilder:
-    """This is a testing utility which mutably roundtrips an *optimized* plan through daft-proto."""
-    from daft.daft import to_from_proto
-    from daft.logical.builder import LogicalPlanBuilder
-
-    print("!! TO-FROM PROTO CALLED !!")
-    return LogicalPlanBuilder(to_from_proto(builder._builder))

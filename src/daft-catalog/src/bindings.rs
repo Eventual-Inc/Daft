@@ -20,7 +20,8 @@ use std::collections::{HashMap, HashSet};
 /// -- 'alias' is a name (lvalue) to bind the resolved reference to.
 /// -- 'T' is an identifier (rvalue) to reference a table.
 /// ```
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Bindings<T> {
     /// case-preserved bindings (default)
     bindings: HashMap<String, T>,
@@ -29,14 +30,16 @@ pub struct Bindings<T> {
 }
 
 /// Bind mode is for lvalue handling which is currently out of scope.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub enum BindMode {
     Preserve,
     Normalize,
 }
 
 /// Lookup mode is for rvalue handling.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub enum LookupMode {
     Insensitive,
     Sensitive,

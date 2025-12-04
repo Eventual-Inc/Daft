@@ -42,7 +42,7 @@ impl ImageOps for ImageArray {
 
     fn resize(&self, w: u32, h: u32) -> DaftResult<Self> {
         let result = resize_images(self, w, h);
-        image_array_from_img_buffers(self.name(), result.as_slice(), self.image_mode())
+        image_array_from_img_buffers(self.name(), result.into_iter(), self.image_mode())
     }
 
     fn crop(&self, bboxes: &FixedSizeListArray) -> DaftResult<ImageArray> {
@@ -58,7 +58,7 @@ impl ImageOps for ImageArray {
             }))
         };
         let result = crop_images(self, &mut bboxes_iterator);
-        image_array_from_img_buffers(self.name(), result.as_slice(), self.image_mode())
+        image_array_from_img_buffers(self.name(), result.into_iter(), self.image_mode())
     }
 
     fn resize_to_fixed_shape_image_array(
@@ -72,10 +72,8 @@ impl ImageOps for ImageArray {
     }
 
     fn to_mode(&self, mode: ImageMode) -> DaftResult<Self> {
-        let buffers: Vec<Option<CowImage>> = ImageBufferIter::new(self)
-            .map(|img| img.map(|img| img.into_mode(mode)))
-            .collect();
-        image_array_from_img_buffers(self.name(), &buffers, Some(mode))
+        let buffers = ImageBufferIter::new(self).map(|img| img.map(|img| img.into_mode(mode)));
+        image_array_from_img_buffers(self.name(), buffers, Some(mode))
     }
 
     fn attribute(&self, attr: ImageProperty) -> DaftResult<DataArray<UInt32Type>> {
@@ -131,7 +129,7 @@ impl ImageOps for FixedShapeImageArray {
         };
         let result = crop_images(self, &mut bboxes_iterator);
 
-        image_array_from_img_buffers(self.name(), result.as_slice(), Some(*self.image_mode()))
+        image_array_from_img_buffers(self.name(), result.into_iter(), Some(*self.image_mode()))
     }
 
     fn resize_to_fixed_shape_image_array(
@@ -216,11 +214,11 @@ fn encode_images<Arr: AsImageObj>(
                 .transpose()
             })
             .collect::<DaftResult<Vec<_>>>()?;
-        arrow2::array::BinaryArray::<i64>::from_iter(values)
+        daft_arrow::array::BinaryArray::<i64>::from_iter(values)
     } else {
         let mut offsets = Vec::with_capacity(images.len() + 1);
         offsets.push(0i64);
-        let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(images.len());
+        let mut validity = daft_arrow::bitmap::MutableBitmap::with_capacity(images.len());
         let buf = Vec::new();
         let mut writer: CountingWriter<std::io::BufWriter<_>> =
             std::io::BufWriter::new(std::io::Cursor::new(buf)).into();
@@ -247,14 +245,14 @@ fn encode_images<Arr: AsImageObj>(
                 ))
             })?
             .into_inner();
-        let encoded_data: arrow2::buffer::Buffer<u8> = values.into();
-        let offsets_buffer = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
-        let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
+        let encoded_data: daft_arrow::buffer::Buffer<u8> = values.into();
+        let offsets_buffer = daft_arrow::offset::OffsetsBuffer::try_from(offsets)?;
+        let validity: Option<daft_arrow::bitmap::Bitmap> = match validity.unset_bits() {
             0 => None,
             _ => Some(validity.into()),
         };
-        arrow2::array::BinaryArray::<i64>::new(
-            arrow2::datatypes::DataType::LargeBinary,
+        daft_arrow::array::BinaryArray::<i64>::new(
+            daft_arrow::datatypes::DataType::LargeBinary,
             offsets_buffer,
             encoded_data,
             validity,

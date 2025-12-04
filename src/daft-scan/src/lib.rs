@@ -13,6 +13,7 @@ use common_file_formats::FileFormatConfig;
 use common_scan_info::{Pushdowns, ScanTaskLike, ScanTaskLikeRef};
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
+use either::Either;
 use itertools::Itertools;
 use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
@@ -414,7 +415,8 @@ impl DisplayAs for DataSource {
     }
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize, Hash)]
+#[derive(PartialEq, Serialize, Deserialize, Hash)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct ScanTask {
     pub sources: Vec<DataSource>,
 
@@ -434,6 +436,13 @@ pub struct ScanTask {
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
     pub generated_fields: Option<SchemaRef>,
+}
+
+#[cfg(not(debug_assertions))]
+impl std::fmt::Debug for ScanTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ScanTask")
+    }
 }
 
 #[typetag::serde]
@@ -644,6 +653,25 @@ impl ScanTask {
         ))
     }
 
+    /// Split the ScanTask into multiple ScanTasks, one for each source.
+    pub fn split(self: Arc<Self>) -> impl Iterator<Item = ScanTaskRef> {
+        if self.sources.len() == 1 {
+            Either::Left(std::iter::once(self))
+        } else {
+            // Multiple sources: need to clone the vector
+            Either::Right(self.sources.clone().into_iter().map(move |source| {
+                Arc::new(Self::new(
+                    vec![source],
+                    self.file_format_config.clone(),
+                    self.schema.clone(),
+                    self.storage_config.clone(),
+                    self.pushdowns.clone(),
+                    self.generated_fields.clone(),
+                ))
+            }))
+        }
+    }
+
     #[must_use]
     pub fn materialized_schema(&self) -> SchemaRef {
         match (&self.generated_fields, &self.pushdowns.columns) {
@@ -728,9 +756,8 @@ impl ScanTask {
                         .map_or_else(|| Cow::Owned(DaftExecutionConfig::default()), Cow::Borrowed);
                     let inflation_factor = match self.file_format_config.as_ref() {
                         FileFormatConfig::Parquet(_) => config.parquet_inflation_factor,
-                        FileFormatConfig::Csv(_) | FileFormatConfig::Json(_) => {
-                            config.csv_inflation_factor
-                        }
+                        FileFormatConfig::Csv(_) => config.csv_inflation_factor,
+                        FileFormatConfig::Json(_) => config.json_inflation_factor,
                         FileFormatConfig::Warc(_) => {
                             if self.is_gzipped() {
                                 5.0
@@ -741,7 +768,11 @@ impl ScanTask {
                         #[cfg(feature = "python")]
                         FileFormatConfig::Database(_) => 1.0,
                         #[cfg(feature = "python")]
-                        FileFormatConfig::PythonFunction => 1.0,
+                        FileFormatConfig::PythonFunction {
+                            source_type: _,
+                            module_name: _,
+                            function_name: _,
+                        } => 1.0,
                     };
                     let in_mem_size: f64 = (file_size as f64) * inflation_factor;
                     let read_row_size = if self.is_warc() {
@@ -1009,6 +1040,7 @@ mod test {
             infer_schema,
             Some(Arc::new(Schema::empty())),
             None,
+            false,
             false,
         )
         .await

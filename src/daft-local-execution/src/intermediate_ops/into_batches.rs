@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_io::IOStatsContext;
+use common_metrics::ops::NodeType;
 use daft_micropartition::MicroPartition;
 use tracing::Span;
 
@@ -10,7 +10,6 @@ use super::intermediate_op::{
 };
 use crate::{
     ExecutionTaskSpawner,
-    ops::NodeType,
     pipeline::{MorselSizeRequirement, NodeName},
 };
 
@@ -29,7 +28,7 @@ impl IntoBatchesOperator {
 
 impl IntermediateOperator for IntoBatchesOperator {
     type State = ();
-
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     fn execute(
         &self,
         input: Arc<MicroPartition>,
@@ -39,7 +38,7 @@ impl IntermediateOperator for IntoBatchesOperator {
         task_spawner
             .spawn(
                 async move {
-                    let out = match input.concat_or_get(IOStatsContext::new("into_batches"))? {
+                    let out = match input.concat_or_get()? {
                         Some(record_batch) => Arc::new(MicroPartition::new_loaded(
                             input.schema(),
                             Arc::new(vec![record_batch]),
@@ -62,7 +61,7 @@ impl IntermediateOperator for IntoBatchesOperator {
     fn multiline_display(&self) -> Vec<String> {
         vec![format!("IntoBatches: {}", self.batch_size)]
     }
-    async fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self) -> DaftResult<Self::State> {
         Ok(())
     }
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
@@ -77,5 +76,10 @@ impl IntermediateOperator for IntoBatchesOperator {
                 ))
             }
         }
+    }
+    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
+        Ok(crate::dynamic_batching::StaticBatchingStrategy::new(
+            self.morsel_size_requirement().unwrap_or_default(),
+        ))
     }
 }

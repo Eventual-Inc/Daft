@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 pytest.importorskip("openai")
 
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import numpy as np
-from openai import RateLimitError
-from openai.types.create_embedding_response import CreateEmbeddingResponse
+from openai import NOT_GIVEN, RateLimitError
+from openai.types.create_embedding_response import CreateEmbeddingResponse, Usage
 from openai.types.embedding import Embedding as OpenAIEmbedding
 
 from daft import DataType
@@ -29,12 +31,19 @@ def new_input(approx_tokens: int) -> str:
 
 @pytest.fixture
 def mock_client():
-    return Mock()
+    client = Mock()
+    client.embeddings = Mock()
+    client.embeddings.create = AsyncMock()
+    return client
 
 
 @pytest.fixture
 def mock_text_embedder(mock_client) -> TextEmbedder:
     return OpenAITextEmbedder(mock_client, "text-embedding-3-small")
+
+
+def run(coro):
+    return asyncio.run(coro)
 
 
 def test_valid_model_names():
@@ -44,6 +53,7 @@ def test_valid_model_names():
             provider_name="openai",
             provider_options={"api_key": "test-key"},
             model_name=model_name,
+            dimensions=None,
             model_options={},
         )
         assert descriptor.get_provider() == "openai"
@@ -59,6 +69,7 @@ def test_invalid_model_name():
             provider_name="openai",
             provider_options={"api_key": "test-key"},
             model_name="invalid-model",
+            dimensions=None,
             model_options={},
         )
 
@@ -69,6 +80,7 @@ def test_instantiate():
         provider_name="openai",
         provider_options={"api_key": "test-key"},
         model_name="text-embedding-3-small",
+        dimensions=None,
         model_options={},
     )
 
@@ -85,16 +97,17 @@ def test_embed_text_single_input(mock_text_embedder, mock_client):
     mock_response.data = [mock_embedding]
     mock_client.embeddings.create.return_value = mock_response
 
-    result = mock_text_embedder.embed_text(["Hello world"])
+    result = run(mock_text_embedder.embed_text(["Hello world"]))
 
     assert len(result) == 1
     assert isinstance(result[0], np.ndarray)
     assert result[0].shape == (1536,)
     assert result[0].dtype == np.float32
-    mock_client.embeddings.create.assert_called_once_with(
+    mock_client.embeddings.create.assert_awaited_once_with(
         input=["Hello world"],
         model="text-embedding-3-small",
         encoding_format="float",
+        dimensions=NOT_GIVEN,
     )
 
 
@@ -109,7 +122,7 @@ def test_embed_text_multiple_inputs(mock_text_embedder, mock_client):
     mock_response.data = mock_embeddings
     mock_client.embeddings.create.return_value = mock_response
 
-    result = mock_text_embedder.embed_text(["Hello", "World", "Test"])
+    result = run(mock_text_embedder.embed_text(["Hello", "World", "Test"]))
 
     assert len(result) == 3
     for i, embedding in enumerate(result):
@@ -118,10 +131,11 @@ def test_embed_text_multiple_inputs(mock_text_embedder, mock_client):
         assert embedding.dtype == np.float32
         assert embedding[0] == float(i)  # Check first value matches our mock
 
-    mock_client.embeddings.create.assert_called_once_with(
+    mock_client.embeddings.create.assert_awaited_once_with(
         input=["Hello", "World", "Test"],
         model="text-embedding-3-small",
         encoding_format="float",
+        dimensions=NOT_GIVEN,
     )
 
 
@@ -131,7 +145,7 @@ def test_embed_text_batch_splitting(mock_text_embedder, mock_client):
     text_md = new_input(approx_tokens=50_000)
     text_lg = new_input(approx_tokens=100_000)
 
-    def mock_create_embeddings(*args, **kwargs):
+    async def mock_create_embeddings(*args, **kwargs):
         input_batch = kwargs.get("input", [])
         mock_response = Mock(spec=CreateEmbeddingResponse)
         mock_embeddings = []
@@ -144,11 +158,11 @@ def test_embed_text_batch_splitting(mock_text_embedder, mock_client):
 
     mock_client.embeddings.create.side_effect = mock_create_embeddings
 
-    result = mock_text_embedder.embed_text([text_lg, text_md, text_sm])
+    result = run(mock_text_embedder.embed_text([text_lg, text_md, text_sm]))
 
-    assert mock_client.embeddings.create.call_count >= 2
+    assert mock_client.embeddings.create.await_count >= 2
     assert len(result) == 3
-    for call in mock_client.embeddings.create.call_args_list:
+    for call in mock_client.embeddings.create.await_args_list:
         assert call[1]["model"] == "text-embedding-3-small"
         assert call[1]["encoding_format"] == "float"
 
@@ -157,7 +171,7 @@ def test_embed_text_large_input_chunking(mock_text_embedder, mock_client):
     """Test that very large inputs are chunked appropriately."""
     input_lg = new_input(approx_tokens=10_000)
 
-    def mock_create_embeddings(*args, **kwargs):
+    async def mock_create_embeddings(*args, **kwargs):
         input_batch = kwargs.get("input", [])
         mock_response = Mock(spec=CreateEmbeddingResponse)
         mock_embeddings = []
@@ -175,7 +189,7 @@ def test_embed_text_large_input_chunking(mock_text_embedder, mock_client):
 
     mock_client.embeddings.create.side_effect = mock_create_embeddings
 
-    result = mock_text_embedder.embed_text([input_lg])
+    result = run(mock_text_embedder.embed_text([input_lg]))
 
     # we only want one result after chunking + weighted average.
     assert len(result) == 1
@@ -183,8 +197,8 @@ def test_embed_text_large_input_chunking(mock_text_embedder, mock_client):
     assert result[0].shape == (1536,)
 
     # should be called once with the chunked input.
-    mock_client.embeddings.create.assert_called_once()
-    call_args = mock_client.embeddings.create.call_args
+    mock_client.embeddings.create.assert_awaited_once()
+    call_args = mock_client.embeddings.create.await_args
     assert len(call_args[1]["input"]) == 2  # called with two chunks
 
 
@@ -194,7 +208,7 @@ def test_embed_text_mixed_batch_and_chunking(mock_text_embedder, mock_client):
     text_lg = new_input(approx_tokens=10_000)
     text_xl = new_input(approx_tokens=250_000)
 
-    def mock_create_embeddings(*args, **kwargs):
+    async def mock_create_embeddings(*args, **kwargs):
         input_batch = kwargs.get("input", [])
         mock_response = Mock(spec=CreateEmbeddingResponse)
         mock_embeddings = []
@@ -207,17 +221,45 @@ def test_embed_text_mixed_batch_and_chunking(mock_text_embedder, mock_client):
 
     mock_client.embeddings.create.side_effect = mock_create_embeddings
 
-    result = mock_text_embedder.embed_text([text_sm, text_lg, text_xl])
+    result = run(mock_text_embedder.embed_text([text_sm, text_lg, text_xl]))
 
     assert len(result) == 3
-    assert mock_client.embeddings.create.call_count >= 3
+    assert mock_client.embeddings.create.await_count >= 3
 
 
 def test_embed_text_empty_input(mock_text_embedder, mock_client):
     """Test embedding with empty input list."""
-    result = mock_text_embedder.embed_text([])
+    result = run(mock_text_embedder.embed_text([]))
     assert result == []
-    mock_client.embeddings.create.assert_not_called()
+    mock_client.embeddings.create.assert_not_awaited()
+
+
+def test_embed_text_with_none_values(mock_text_embedder, mock_client):
+    """Test that None values are handled gracefully and don't crash."""
+    mock_response = Mock(spec=CreateEmbeddingResponse)
+    mock_embeddings = []
+    for i in range(3):
+        mock_embedding = Mock(spec=OpenAIEmbedding)
+        mock_embedding.embedding = np.array([float(i), 0.2, 0.3] * 512, dtype=np.float32)  # 1536 dimensions
+        mock_embeddings.append(mock_embedding)
+    mock_response.data = mock_embeddings
+    mock_client.embeddings.create.return_value = mock_response
+
+    # Test with None values mixed with regular strings
+    result = run(mock_text_embedder.embed_text([None, "Hello", None]))
+
+    assert len(result) == 3
+    for embedding in result:
+        assert isinstance(embedding, np.ndarray)
+        assert embedding.shape == (1536,)
+        assert embedding.dtype == np.float32
+
+    # Verify that None values were converted to empty strings
+    mock_client.embeddings.create.assert_called_once()
+    call_args = mock_client.embeddings.create.call_args
+    assert call_args[1]["input"] == ["", "Hello", ""]
+    assert call_args[1]["model"] == "text-embedding-3-small"
+    assert call_args[1]["encoding_format"] == "float"
 
 
 def test_embed_text_failure_with_zero_on_failure(mock_text_embedder, mock_client):
@@ -225,10 +267,23 @@ def test_embed_text_failure_with_zero_on_failure(mock_text_embedder, mock_client
     mock_client.embeddings.create.side_effect = Exception("API Error")
     mock_text_embedder._zero_on_failure = True
 
-    result = mock_text_embedder._embed_text("Hello world")
+    result = run(mock_text_embedder._embed_text("Hello world"))
 
     assert isinstance(result, np.ndarray)
     assert result.shape == (1536,)
+    assert np.all(result == 0)  # Should be zero array
+
+
+def test_embed_text_failure_with_zero_on_failure_and_dimensions(mock_text_embedder, mock_client):
+    """Test that failures are handled when zero_on_failure is True."""
+    mock_client.embeddings.create.side_effect = Exception("API Error")
+    mock_text_embedder._zero_on_failure = True
+    mock_text_embedder._dimensions = 256
+
+    result = run(mock_text_embedder._embed_text("Hello world"))
+
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (256,)
     assert np.all(result == 0)  # Should be zero array
 
 
@@ -242,7 +297,7 @@ def test_embed_text_failure_without_zero_on_failure(mock_client):
     mock_client.embeddings.create.side_effect = Exception("API Error")
 
     with pytest.raises(Exception, match="API Error"):
-        embedder.embed_text(["Hello world"])
+        run(embedder.embed_text(["Hello world"]))
 
 
 def test_embed_text_batch_method(mock_text_embedder, mock_client):
@@ -256,7 +311,7 @@ def test_embed_text_batch_method(mock_text_embedder, mock_client):
     mock_response.data = mock_embeddings
     mock_client.embeddings.create.return_value = mock_response
 
-    result = mock_text_embedder._embed_text_batch(["text1", "text2"])
+    result = run(mock_text_embedder._embed_text_batch(["text1", "text2"]))
 
     assert len(result) == 2
     for i, embedding in enumerate(result):
@@ -273,7 +328,7 @@ def test_embed_text_single_method(mock_text_embedder, mock_client):
     mock_response.data = [mock_embedding]
     mock_client.embeddings.create.return_value = mock_response
 
-    result = mock_text_embedder._embed_text("Hello world")
+    result = run(mock_text_embedder._embed_text("Hello world"))
 
     assert isinstance(result, np.ndarray)
     assert result.shape == (1536,)
@@ -295,7 +350,7 @@ def test_different_model_dimensions(mock_client):
     mock_response.data = [mock_embedding]
     mock_client.embeddings.create.return_value = mock_response
 
-    result = embedder.embed_text(["Hello world"])
+    result = run(embedder.embed_text(["Hello world"]))
 
     assert len(result) == 1
     assert result[0].shape == (3072,)
@@ -337,12 +392,15 @@ def test_descriptor_to_embedder_workflow():
         provider_name="openai",
         provider_options={"api_key": "test-key"},
         model_name="text-embedding-3-small",
+        dimensions=None,
         model_options={},
     )
 
-    with patch("daft.ai.openai.protocols.text_embedder.OpenAI") as mock_openai_class:
+    with patch("daft.ai.openai.protocols.text_embedder.AsyncOpenAI") as mock_async_openai_class:
         mock_client = Mock()
-        mock_openai_class.return_value = mock_client
+        mock_client.embeddings = Mock()
+        mock_client.embeddings.create = AsyncMock()
+        mock_async_openai_class.return_value = mock_client
 
         mock_response = Mock(spec=CreateEmbeddingResponse)
         mock_embedding = Mock(spec=OpenAIEmbedding)
@@ -351,7 +409,7 @@ def test_descriptor_to_embedder_workflow():
         mock_client.embeddings.create.return_value = mock_response
 
         text_embedder = descriptor.instantiate()
-        result = text_embedder.embed_text(["Hello world"])
+        result = run(text_embedder.embed_text(["Hello world"]))
 
         assert len(result) == 1
         assert isinstance(result[0], np.ndarray)
@@ -370,6 +428,30 @@ def test_protocol_compliance():
     assert callable(text_embedder.embed_text)
 
 
+def test_embed_text_records_usage_metrics(mock_text_embedder, mock_client):
+    """Ensure that token/usage metrics are recorded."""
+    mock_response = Mock(spec=CreateEmbeddingResponse)
+    mock_response.usage = Usage(prompt_tokens=10, total_tokens=12)
+    mock_embedding = Mock(spec=OpenAIEmbedding)
+    mock_embedding.embedding = np.array([0.1, 0.2, 0.3] * 512, dtype=np.float32)
+    mock_response.data = [mock_embedding]
+    mock_client.embeddings.create.return_value = mock_response
+
+    with patch("daft.ai.metrics.increment_counter") as mock_counter:
+        result = run(mock_text_embedder.embed_text(["Hello world"]))
+
+    assert len(result) == 1
+    attrs = {
+        "model": "text-embedding-3-small",
+        "protocol": "embed",
+        "provider": "openai",
+    }
+    mock_counter.assert_any_call("input tokens", 10, attributes=attrs)
+    mock_counter.assert_any_call("total tokens", 12, attributes=attrs)
+    mock_counter.assert_any_call("requests", attributes=attrs)
+    assert mock_counter.call_count == 3
+
+
 def test_embed_text_batch_rate_limit_fallback(mock_text_embedder, mock_client):
     """Test that _embed_text_batch falls back to individual calls when rate limited."""
     mock_client.embeddings.create.side_effect = RateLimitError(
@@ -378,19 +460,15 @@ def test_embed_text_batch_rate_limit_fallback(mock_text_embedder, mock_client):
         body=None,
     )
 
-    def mock_individual_create(*args, **kwargs):
-        mock_response = Mock(spec=CreateEmbeddingResponse)
-        mock_embedding = Mock(spec=OpenAIEmbedding)
-        mock_embedding.embedding = np.array([0.1, 0.2, 0.3] * 512, dtype=np.float32)
-        mock_response.data = [mock_embedding]
-        return mock_response
-
-    with patch.object(mock_text_embedder, "_embed_text") as mock_embed_text:
-        mock_embed_text.return_value = np.array([0.1, 0.2, 0.3] * 512, dtype=np.float32)
-        result = mock_text_embedder._embed_text_batch(["text1", "text2", "text3"])
+    with patch.object(
+        mock_text_embedder,
+        "_embed_text",
+        new=AsyncMock(return_value=np.array([0.1, 0.2, 0.3] * 512, dtype=np.float32)),
+    ) as mock_embed_text:
+        result = run(mock_text_embedder._embed_text_batch(["text1", "text2", "text3"]))
 
         # should have called _embed_text for each input
-        assert mock_embed_text.call_count == 3
+        assert mock_embed_text.await_count == 3
         assert len(result) == 3
         for embedding in result:
             assert isinstance(embedding, np.ndarray)

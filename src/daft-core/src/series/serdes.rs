@@ -1,6 +1,6 @@
 use std::{borrow::Cow, sync::Arc};
 
-use arrow2::{offset::OffsetsBuffer, types::months_days_ns};
+use daft_arrow::{offset::OffsetsBuffer, types::months_days_ns};
 use serde::{Deserializer, de::Visitor};
 
 use crate::{
@@ -335,7 +335,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                     DataType::Unknown => {
                         panic!("Unable to deserialize Unknown DataType");
                     }
-                    DataType::File => {
+                    DataType::File(_) => {
                         panic!("Unable to deserialize File DataType");
                     }
                 }

@@ -1,13 +1,16 @@
 use std::sync::Arc;
 
+use common_error::DaftResult;
+use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
 use tracing::{Span, instrument};
 
 use super::base::{
-    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
+    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
+    StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
-use crate::{ExecutionTaskSpawner, ops::NodeType, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) struct MonotonicallyIncreasingIdState {
     id_offset: u64,
@@ -48,6 +51,7 @@ impl MonotonicallyIncreasingIdSink {
 
 impl StreamingSink for MonotonicallyIncreasingIdSink {
     type State = MonotonicallyIncreasingIdState;
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "MonotonicallyIncreasingIdSink::sink")]
     fn execute(
         &self,
@@ -61,9 +65,9 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
                 async move {
                     let mut id_offset = state.fetch_and_increment_offset(input.len() as u64);
 
-                    let tables = input.get_tables()?;
+                    let tables = input.record_batches();
                     let mut results = Vec::with_capacity(tables.len());
-                    for t in tables.iter() {
+                    for t in tables {
                         let len = t.len() as u64;
                         results.push(t.add_monotonically_increasing_id(
                             0,
@@ -105,19 +109,24 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
         &self,
         _states: Vec<Self::State>,
         _spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkFinalizeResult {
-        Ok(None).into()
+    ) -> StreamingSinkFinalizeResult<Self> {
+        Ok(StreamingSinkFinalizeOutput::Finished(None)).into()
     }
 
-    fn make_state(&self) -> Self::State {
-        MonotonicallyIncreasingIdState {
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(MonotonicallyIncreasingIdState {
             id_offset: self.params.starting_offset.unwrap_or(0),
-        }
+        })
     }
 
     // Monotonically increasing id is a memory-bound operation, so there's no performance benefit to parallelizing it.
     // Furthermore, it is much simpler to implement as a single-threaded operation, since we can just keep track of the current id offset without synchronization.
     fn max_concurrency(&self) -> usize {
         1
+    }
+    fn batching_strategy(&self) -> Self::BatchingStrategy {
+        crate::dynamic_batching::StaticBatchingStrategy::new(
+            self.morsel_size_requirement().unwrap_or_default(),
+        )
     }
 }

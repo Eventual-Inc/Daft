@@ -71,7 +71,7 @@ mod tests {
         .build();
         let scan_materializer = MaterializeScans::new();
         let plan = scan_materializer.try_optimize(plan).data().unwrap();
-        let stats_enricher = EnrichWithStats::new();
+        let stats_enricher = EnrichWithStats::new(None);
         stats_enricher.try_optimize(plan).data().unwrap()
     }
 

@@ -4,7 +4,7 @@ use daft_dsl::functions::{prelude::*, scalar::ScalarFn};
 use daft_hash::HashFunctionKind;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub(super) struct HashFunction;
 
 #[derive(FunctionArgs)]
@@ -34,7 +34,7 @@ impl ScalarUDF for HashFunction {
         let hash_function = hash_function
             .map(|s| s.parse::<HashFunctionKind>())
             .transpose()?
-            .unwrap_or(HashFunctionKind::XxHash);
+            .unwrap_or(HashFunctionKind::XxHash3_64);
 
         if let Some(seed) = seed {
             match seed.len() {

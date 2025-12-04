@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
     common_py_serde::{deserialize_py_object, serialize_py_object},
-    pyo3::PyObject,
+    pyo3::{Py, PyAny},
 };
 
 /// Common trait interface for dataset partitioning, defined in this shared crate to avoid circular dependencies.
@@ -14,8 +14,8 @@ use {
 /// Acts as a forward declaration for concrete partition implementations. _(Specifically the `MicroPartition` type defined in `daft-micropartition`)_
 pub trait Partition: std::fmt::Debug + Send + Sync {
     fn as_any(&self) -> &dyn Any;
-    fn size_bytes(&self) -> DaftResult<Option<usize>>;
-    fn num_rows(&self) -> DaftResult<usize>;
+    fn size_bytes(&self) -> usize;
+    fn num_rows(&self) -> usize;
 }
 
 impl<T> Partition for Arc<T>
@@ -25,11 +25,11 @@ where
     fn as_any(&self) -> &dyn Any {
         (**self).as_any()
     }
-    fn size_bytes(&self) -> DaftResult<Option<usize>> {
+    fn size_bytes(&self) -> usize {
         (**self).size_bytes()
     }
 
-    fn num_rows(&self) -> DaftResult<usize> {
+    fn num_rows(&self) -> usize {
         (**self).num_rows()
     }
 }
@@ -57,7 +57,7 @@ pub struct PartitionMetadata {
 /// So it is up to the implementation to manage any interior mutability.
 pub trait PartitionSet<T: Partition>: std::fmt::Debug + Send + Sync {
     /// Merge all micropartitions into a single micropartition
-    fn get_merged_partitions(&self) -> DaftResult<PartitionRef>;
+    fn get_merged_partitions(&self) -> DaftResult<T>;
     /// Get a preview of the micropartitions
     fn get_preview_partitions(&self, num_rows: usize) -> DaftResult<Vec<T>>;
     /// Number of partitions
@@ -85,9 +85,9 @@ pub trait PartitionSet<T: Partition>: std::fmt::Debug + Send + Sync {
 impl<P, PS> PartitionSet<P> for Arc<PS>
 where
     P: Partition + Clone,
-    PS: PartitionSet<P> + Clone,
+    PS: PartitionSet<P> + Clone + Sync,
 {
-    fn get_merged_partitions(&self) -> DaftResult<PartitionRef> {
+    fn get_merged_partitions(&self) -> DaftResult<P> {
         PS::get_merged_partitions(self)
     }
 
@@ -152,7 +152,7 @@ pub enum PartitionCacheEntry {
     )]
     #[cfg(feature = "python")]
     /// in python, the partition cache is a weakvalue dictionary, so it will store the entry as long as this reference exists.
-    Python(Arc<PyObject>),
+    Python(Arc<Py<PyAny>>),
 
     Rust {
         key: String,
@@ -177,7 +177,7 @@ impl PartitionCacheEntry {
         use pyo3::Python;
 
         match self {
-            Self::Python(obj) => Python::with_gil(|py| {
+            Self::Python(obj) => Python::attach(|py| {
                 let key = obj.getattr(py, "key").unwrap();
                 key.extract::<String>(py).unwrap()
             }),

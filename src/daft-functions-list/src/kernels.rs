@@ -1,14 +1,14 @@
 use std::{iter::repeat_n, sync::Arc};
 
-use arrow2::offset::{Offsets, OffsetsBuffer};
 use common_error::DaftResult;
+use daft_arrow::offset::{Offsets, OffsetsBuffer};
 use daft_core::{
     array::{
         FixedSizeListArray, ListArray, StructArray,
         growable::{Growable, make_growable},
-        ops::arrow2::comparison::build_is_equal,
+        ops::arrow::comparison::build_is_equal,
     },
-    datatypes::try_mean_aggregation_supertype,
+    datatypes::{try_mean_aggregation_supertype, try_sum_supertype},
     kernels::search_sorted::build_is_valid,
     prelude::{
         AsArrow, BooleanArray, CountMode, DataType, Field, Int64Array, MapArray, UInt64Array,
@@ -214,7 +214,8 @@ impl ListArrayExtension for ListArray {
         };
 
         let array = Box::new(
-            arrow2::array::PrimitiveArray::from_vec(counts).with_validity(self.validity().cloned()),
+            daft_arrow::array::PrimitiveArray::from_vec(counts)
+                .with_validity(self.validity().cloned()),
         );
         Ok(UInt64Array::from((self.name(), array)))
     }
@@ -277,7 +278,7 @@ impl ListArrayExtension for ListArray {
 
         Ok(Utf8Array::from((
             self.name(),
-            Box::new(arrow2::array::Utf8Array::from_iter(result)),
+            Box::new(daft_arrow::array::Utf8Array::from_iter(result)),
         )))
     }
 
@@ -424,10 +425,11 @@ impl ListArrayExtension for ListArray {
             result_validity.push(true);
         }
 
-        let validity_bitmap = arrow2::bitmap::Bitmap::from_iter(result_validity.iter().copied());
-        let values = arrow2::bitmap::Bitmap::from_iter(result.iter().copied());
-        let arrow_array = arrow2::array::BooleanArray::new(
-            arrow2::datatypes::DataType::Boolean,
+        let validity_bitmap =
+            daft_arrow::bitmap::Bitmap::from_iter(result_validity.iter().copied());
+        let values = daft_arrow::bitmap::Bitmap::from_iter(result.iter().copied());
+        let arrow_array = daft_arrow::array::BooleanArray::new(
+            daft_arrow::datatypes::DataType::Boolean,
             values,
             Some(validity_bitmap),
         );
@@ -480,10 +482,11 @@ impl ListArrayExtension for ListArray {
             result_validity.push(true);
         }
 
-        let validity_bitmap = arrow2::bitmap::Bitmap::from_iter(result_validity.iter().copied());
-        let values = arrow2::bitmap::Bitmap::from_iter(result.iter().copied());
-        let arrow_array = arrow2::array::BooleanArray::new(
-            arrow2::datatypes::DataType::Boolean,
+        let validity_bitmap =
+            daft_arrow::bitmap::Bitmap::from_iter(result_validity.iter().copied());
+        let values = daft_arrow::bitmap::Bitmap::from_iter(result.iter().copied());
+        let arrow_array = daft_arrow::array::BooleanArray::new(
+            daft_arrow::datatypes::DataType::Boolean,
             values,
             Some(validity_bitmap),
         );
@@ -528,7 +531,8 @@ impl ListArrayExtension for FixedSizeListArray {
         };
 
         let array = Box::new(
-            arrow2::array::PrimitiveArray::from_vec(counts).with_validity(self.validity().cloned()),
+            daft_arrow::array::PrimitiveArray::from_vec(counts)
+                .with_validity(self.validity().cloned()),
         );
         Ok(UInt64Array::from((self.name(), array)))
     }
@@ -582,7 +586,7 @@ impl ListArrayExtension for FixedSizeListArray {
 
         Ok(Utf8Array::from((
             self.name(),
-            Box::new(arrow2::array::Utf8Array::from_iter(result)),
+            Box::new(daft_arrow::array::Utf8Array::from_iter(result)),
         )))
     }
 
@@ -714,14 +718,14 @@ impl ListArrayExtension for FixedSizeListArray {
 }
 
 fn join_arrow_list_of_utf8s(
-    list_element: Option<&dyn arrow2::array::Array>,
+    list_element: Option<&dyn daft_arrow::array::Array>,
     delimiter_str: &str,
 ) -> Option<String> {
     list_element
         .map(|list_element| {
             list_element
                 .as_any()
-                .downcast_ref::<arrow2::array::Utf8Array<i64>>()
+                .downcast_ref::<daft_arrow::array::Utf8Array<i64>>()
                 .unwrap()
                 .iter()
                 .fold(String::new(), |acc, str_item| {
@@ -780,7 +784,7 @@ fn create_iter<'a>(arr: &'a Int64Array, len: usize) -> Box<dyn Iterator<Item = i
 fn get_chunks_helper(
     flat_child: &Series,
     field: Arc<Field>,
-    validity: Option<&arrow2::bitmap::Bitmap>,
+    validity: Option<&daft_arrow::bitmap::Bitmap>,
     size: usize,
     total_elements_to_skip: usize,
     to_skip: Option<impl Iterator<Item = usize>>,
@@ -799,7 +803,7 @@ fn get_chunks_helper(
         Ok(ListArray::new(
             inner_list_field.to_list_field(),
             inner_list.into_series(),
-            arrow2::offset::OffsetsBuffer::try_from(new_offsets)?,
+            daft_arrow::offset::OffsetsBuffer::try_from(new_offsets)?,
             validity.cloned(), // Copy the parent's validity.
         )
         .into_series())
@@ -823,7 +827,7 @@ fn get_chunks_helper(
         Ok(ListArray::new(
             inner_list_field.to_list_field(),
             inner_list.into_series(),
-            arrow2::offset::OffsetsBuffer::try_from(new_offsets)?,
+            daft_arrow::offset::OffsetsBuffer::try_from(new_offsets)?,
             validity.cloned(), // Copy the parent's validity.
         )
         .into_series())
@@ -956,7 +960,7 @@ macro_rules! impl_aggs_list_array {
     ($la:ident, $agg_helper:ident) => {
         impl ListArrayAggExtension for $la {
             fn sum(&self) -> DaftResult<Series> {
-                $agg_helper(self, |s| s.sum(None), |dtype| Ok(dtype.clone()))
+                $agg_helper(self, |s| s.sum(None), try_sum_supertype)
             }
 
             fn mean(&self) -> DaftResult<Series> {

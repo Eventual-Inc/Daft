@@ -21,13 +21,13 @@ pub fn record_batch_from_arrow(
     let names = schema.field_names().collect::<Vec<_>>();
     let num_batches = batches.len();
     // First extract all the arrays at once while holding the GIL
-    let mut extracted_arrow_arrays: Vec<(Vec<Box<dyn arrow2::array::Array>>, usize)> =
+    let mut extracted_arrow_arrays: Vec<(Vec<Box<dyn daft_arrow::array::Array>>, usize)> =
         Vec::with_capacity(num_batches);
 
     for rb in batches {
         let pycolumns = rb.getattr(pyo3::intern!(py, "columns"))?;
         let columns = pycolumns
-            .downcast::<PyList>()?
+            .cast::<PyList>()?
             .into_iter()
             .map(|col| common_arrow_ffi::array_to_rust(py, col))
             .collect::<PyResult<Vec<_>>>()?;
@@ -41,7 +41,7 @@ pub fn record_batch_from_arrow(
         extracted_arrow_arrays.push((columns, rb.len()?));
     }
     // Now do the heavy lifting (casting and concats) without the GIL.
-    py.allow_threads(|| {
+    py.detach(|| {
         let mut tables: Vec<RecordBatch> = Vec::with_capacity(num_batches);
         for (cols, num_rows) in extracted_arrow_arrays {
             let columns = cols
@@ -67,7 +67,7 @@ pub fn record_batch_to_arrow(
     py: Python,
     table: &RecordBatch,
     pyarrow: Bound<PyModule>,
-) -> PyResult<PyObject> {
+) -> PyResult<pyo3::Py<pyo3::PyAny>> {
     let mut arrays = Vec::with_capacity(table.num_columns());
     let mut names: Vec<String> = Vec::with_capacity(table.num_columns());
 

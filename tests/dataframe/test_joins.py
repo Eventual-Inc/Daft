@@ -5,7 +5,6 @@ import pytest
 
 import daft
 from daft import col
-from daft.context import get_context
 from daft.datatype import DataType
 from tests.conftest import get_tests_daft_runner_name
 from tests.utils import sort_arrow_table
@@ -16,11 +15,7 @@ def skip_invalid_join_strategies(join_strategy, join_type):
         if join_strategy not in [None, "hash"]:
             pytest.skip("Native executor fails for these tests")
     else:
-        if not get_context().daft_execution_config.use_legacy_ray_runner and join_strategy == "sort_merge":
-            pytest.skip("Sort merge joins are not supported on Flotilla")
-        elif (
-            join_strategy == "sort_merge" or join_strategy == "sort_merge_aligned_boundaries"
-        ) and join_type != "inner":
+        if (join_strategy == "sort_merge") and join_type != "inner":
             pytest.skip("Sort merge currently only supports inner joins")
         elif join_strategy == "broadcast" and join_type == "outer":
             pytest.skip("Broadcast join does not support outer joins")
@@ -73,11 +68,10 @@ def test_rename_join_keys_in_dataframe(make_df):
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
-    indirect=True,
+    [None, "hash", "sort_merge", "broadcast"],
 )
 @pytest.mark.parametrize("join_type", ["inner", "left", "right", "outer"])
-def test_joins(join_strategy, join_type, make_df, n_partitions: int, with_morsel_size):
+def test_joins(join_strategy, join_type, make_df, n_partitions, with_morsel_size):
     skip_invalid_join_strategies(join_strategy, join_type)
 
     df = make_df(
@@ -89,6 +83,7 @@ def test_joins(join_strategy, join_type, make_df, n_partitions: int, with_morsel
         repartition_columns=["A"],
     )
 
+    print(f"join_strategy: {join_strategy}, join_type: {join_type}")
     joined = df.join(df, on="A", strategy=join_strategy, how=join_type)
     # We shouldn't need to sort the joined output if using a sort-merge join.
     if join_strategy != "sort_merge":
@@ -105,8 +100,7 @@ def test_joins(join_strategy, join_type, make_df, n_partitions: int, with_morsel
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
-    indirect=True,
+    [None, "hash", "sort_merge", "broadcast"],
 )
 @pytest.mark.parametrize("join_type", ["inner", "left", "right", "outer"])
 def test_multicol_joins(join_strategy, join_type, make_df, n_partitions: int, with_morsel_size):
@@ -139,8 +133,7 @@ def test_multicol_joins(join_strategy, join_type, make_df, n_partitions: int, wi
 @pytest.mark.parametrize("n_partitions", [1, 2, 4, 8])
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
-    indirect=True,
+    [None, "hash", "sort_merge", "broadcast"],
 )
 @pytest.mark.parametrize("join_type", ["inner", "left", "right", "outer"])
 def test_dupes_join_key(join_strategy, join_type, make_df, n_partitions: int, with_morsel_size):
@@ -169,8 +162,7 @@ def test_dupes_join_key(join_strategy, join_type, make_df, n_partitions: int, wi
 @pytest.mark.parametrize("n_partitions", [1, 2, 4, 8])
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
-    indirect=True,
+    [None, "hash", "sort_merge", "broadcast"],
 )
 @pytest.mark.parametrize("join_type", ["inner", "left", "right", "outer"])
 def test_multicol_dupes_join_key(join_strategy, join_type, make_df, n_partitions: int, with_morsel_size):
@@ -201,8 +193,7 @@ def test_multicol_dupes_join_key(join_strategy, join_type, make_df, n_partitions
 @pytest.mark.parametrize("n_partitions", [1, 2, 4, 6])
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
-    indirect=True,
+    [None, "hash", "sort_merge", "broadcast"],
 )
 @pytest.mark.parametrize("join_type", ["inner", "left", "right", "outer"])
 def test_joins_all_same_key(join_strategy, join_type, make_df, n_partitions: int, with_morsel_size):
@@ -231,8 +222,7 @@ def test_joins_all_same_key(join_strategy, join_type, make_df, n_partitions: int
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
-    indirect=True,
+    [None, "hash", "sort_merge", "broadcast"],
 )
 @pytest.mark.parametrize(
     "join_type,flip,expected",
@@ -314,8 +304,7 @@ def test_joins_no_overlap_disjoint(
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
-    indirect=True,
+    [None, "hash", "sort_merge", "broadcast"],
 )
 @pytest.mark.parametrize(
     "join_type,flip,expected",
@@ -399,8 +388,7 @@ def test_joins_no_overlap_interleaved(
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
-    indirect=True,
+    [None, "hash", "sort_merge", "broadcast"],
 )
 @pytest.mark.parametrize("join_type", ["inner", "left", "right", "outer"])
 def test_limit_after_join(join_strategy, join_type, make_df, n_partitions: int, with_morsel_size):
@@ -434,8 +422,7 @@ def test_limit_after_join(join_strategy, join_type, make_df, n_partitions: int, 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
-    indirect=True,
+    [None, "hash", "sort_merge", "broadcast"],
 )
 @pytest.mark.parametrize(
     "join_type,expected",
@@ -497,8 +484,7 @@ def test_join_with_null(join_strategy, join_type, expected, make_df, repartition
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
-    indirect=True,
+    [None, "hash", "sort_merge", "broadcast"],
 )
 @pytest.mark.parametrize(
     "join_type,expected",
@@ -567,8 +553,7 @@ def test_join_with_null_multikey(join_strategy, join_type, expected, make_df, re
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
-    indirect=True,
+    [None, "hash", "sort_merge", "broadcast"],
 )
 @pytest.mark.parametrize(
     "join_type,expected",
@@ -656,8 +641,7 @@ def test_join_with_null_asymmetric_multikey(
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
-    indirect=True,
+    [None, "hash", "sort_merge", "broadcast"],
 )
 @pytest.mark.parametrize(
     "join_type,expected",
@@ -726,8 +710,7 @@ def test_join_all_null(join_strategy, join_type, expected, make_df, repartition_
 
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
-    indirect=True,
+    [None, "hash", "sort_merge", "broadcast"],
 )
 @pytest.mark.parametrize(
     "join_type,expected",
@@ -770,8 +753,7 @@ def test_join_null_type_column(join_strategy, join_type, expected, make_df, with
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
-    indirect=True,
+    [None, "hash", "sort_merge", "broadcast"],
 )
 @pytest.mark.parametrize(
     "join_type,expected",
@@ -823,8 +805,7 @@ def test_join_semi_anti(join_strategy, join_type, expected, make_df, repartition
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
-    indirect=True,
+    [None, "hash", "sort_merge", "broadcast"],
 )
 @pytest.mark.parametrize(
     "join_type,expected",
@@ -932,7 +913,7 @@ def test_join_true_join_keys(join_type, expected_dtypes, make_df, with_morsel_si
         }
     )
 
-    result = daft_df.join(daft_df2, left_on=["id", "values"], right_on=["id", col("values").str.left(1)], how=join_type)
+    result = daft_df.join(daft_df2, left_on=["id", "values"], right_on=["id", col("values").left(1)], how=join_type)
 
     assert result.schema().column_names() == ["id", "values", "right.values"]
     assert result.schema()["id"].dtype == expected_dtypes["id"]
@@ -942,8 +923,7 @@ def test_join_true_join_keys(join_type, expected_dtypes, make_df, with_morsel_si
 
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
-    indirect=True,
+    [None, "hash", "sort_merge", "broadcast"],
 )
 @pytest.mark.parametrize(
     "join_type,expected",
@@ -1013,8 +993,7 @@ def test_join_with_alias_in_key(join_strategy, join_type, expected, make_df, wit
 
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
-    indirect=True,
+    [None, "hash", "sort_merge", "broadcast"],
 )
 @pytest.mark.parametrize(
     "join_type,expected",
@@ -1084,8 +1063,7 @@ def test_join_same_name_alias(join_strategy, join_type, expected, make_df, with_
 
 @pytest.mark.parametrize(
     "join_strategy",
-    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
-    indirect=True,
+    [None, "hash", "sort_merge", "broadcast"],
 )
 @pytest.mark.parametrize(
     "join_type,expected",
@@ -1153,6 +1131,20 @@ def test_join_same_name_alias_with_compute(join_strategy, join_type, expected, m
     assert sort_arrow_table(pa.Table.from_pydict(daft_df.to_pydict()), "a") == sort_arrow_table(
         pa.Table.from_pydict(expected), "a"
     )
+
+
+def test_sort_merge_join_small_partitions(make_df, with_morsel_size):
+    # Small partitions should not fail even if sample_size_for_sort > partition size
+    left = make_df({"k": [1, 2, 3], "lv": [10, 20, 30]}, repartition=3, repartition_columns=["k"])
+    right = make_df({"k": [2, 3], "rv": [200, 300]}, repartition=2, repartition_columns=["k"])
+
+    out = left.join(right, on=["k"], how="inner", strategy="sort_merge").sort("k")
+    out.collect()
+
+    pd = out.to_pydict()
+    assert pd["k"] == [2, 3]
+    assert pd["lv"] == [20, 30]
+    assert pd["rv"] == [200, 300]
 
 
 @pytest.mark.parametrize(

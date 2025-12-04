@@ -4,12 +4,12 @@ use std::{
     time::Duration,
 };
 
-use arrow2::{
+use common_error::DaftResult;
+use common_runtime::get_io_runtime;
+use daft_arrow::{
     bitmap::Bitmap,
     io::parquet::read::schema::{SchemaInferenceOptions, StringEncoding},
 };
-use common_error::DaftResult;
-use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
 #[cfg(feature = "python")]
 use daft_core::python::PyTimeUnit;
@@ -708,11 +708,15 @@ pub fn read_parquet(
         .await
     })
 }
-pub type ArrowChunk = Vec<Box<dyn arrow2::array::Array>>;
+pub type ArrowChunk = Vec<Box<dyn daft_arrow::array::Array>>;
 pub type ArrowChunkIters = Vec<
-    Box<dyn Iterator<Item = arrow2::error::Result<Box<dyn arrow2::array::Array>>> + Send + Sync>,
+    Box<
+        dyn Iterator<Item = daft_arrow::error::Result<Box<dyn daft_arrow::array::Array>>>
+            + Send
+            + Sync,
+    >,
 >;
-pub type ParquetPyarrowChunk = (arrow2::datatypes::SchemaRef, Vec<ArrowChunk>, usize);
+pub type ParquetPyarrowChunk = (daft_arrow::datatypes::SchemaRef, Vec<ArrowChunk>, usize);
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet_into_pyarrow(
     uri: &str,
@@ -1112,19 +1116,19 @@ pub fn read_parquet_statistics(
 
     let row_count_series = UInt64Array::from((
         "row_count",
-        Box::new(arrow2::array::UInt64Array::from_iter(
+        Box::new(daft_arrow::array::UInt64Array::from_iter(
             all_tuples.iter().map(|v| v.0.map(|v| v as u64)),
         )),
     ));
     let row_group_series = UInt64Array::from((
         "row_group_count",
-        Box::new(arrow2::array::UInt64Array::from_iter(
+        Box::new(daft_arrow::array::UInt64Array::from_iter(
             all_tuples.iter().map(|v| v.1.map(|v| v as u64)),
         )),
     ));
     let version_series = Int32Array::from((
         "version",
-        Box::new(arrow2::array::Int32Array::from_iter(
+        Box::new(daft_arrow::array::Int32Array::from_iter(
             all_tuples.iter().map(|v| v.2),
         )),
     ));
@@ -1141,8 +1145,8 @@ pub fn read_parquet_statistics(
 mod tests {
     use std::{path::PathBuf, sync::Arc};
 
-    use arrow2::{datatypes::DataType, io::parquet::read::schema::StringEncoding};
     use common_error::DaftResult;
+    use daft_arrow::{datatypes::DataType, io::parquet::read::schema::StringEncoding};
     use daft_io::{IOClient, IOConfig};
     use futures::StreamExt;
     use parquet2::{
@@ -1235,8 +1239,11 @@ mod tests {
 
         runtime_handle.block_within_async_context(async move {
             let metadata = read_parquet_metadata(&file, io_client, None, None).await?;
-            let serialized = bincode::serialize(&metadata).unwrap();
-            let deserialized = bincode::deserialize::<FileMetaData>(&serialized).unwrap();
+            let config = bincode::config::legacy();
+            let serialized = bincode::serde::encode_to_vec(&metadata, config).unwrap();
+            let deserialized: FileMetaData = bincode::serde::decode_from_slice(&serialized, config)
+                .unwrap()
+                .0;
             assert_eq!(metadata, deserialized);
             Ok(())
         })?

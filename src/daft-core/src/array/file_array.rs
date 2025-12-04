@@ -1,12 +1,16 @@
-#[cfg(feature = "python")]
-use common_file::DaftFileType;
-use common_io_config::IOConfig;
-#[cfg(feature = "python")]
-use daft_schema::{dtype::DataType, field::Field};
+use std::sync::Arc;
 
-#[cfg(feature = "python")]
-use crate::series::IntoSeries;
-use crate::{array::prelude::*, datatypes::FileType};
+use common_error::DaftResult;
+use common_io_config::IOConfig;
+use daft_arrow::array::{MutableArray, MutableBinaryArray, MutableUtf8Array};
+use daft_schema::{dtype::DataType, field::Field, media_type::MediaType};
+
+use crate::{
+    array::prelude::*,
+    datatypes::logical::LogicalArrayImpl,
+    file::{DaftMediaType, FileReference, FileType},
+    series::{IntoSeries, Series},
+};
 
 /// FileArray is a logical array that represents a collection of files.
 ///
@@ -23,96 +27,190 @@ use crate::{array::prelude::*, datatypes::FileType};
 ///
 /// The io_config field contains bincode-serialized IOConfig objects, as this was the most
 /// straightforward approach to store these configuration objects in our array structure.
-pub type FileArray = LogicalArray<FileType>;
+pub type FileArray<T> = LogicalArray<FileType<T>>;
 
-impl FileArray {
-    #[cfg(feature = "python")]
+impl<U> FileArray<U>
+where
+    U: DaftMediaType,
+{
+    /// Converts to a different file format
+    pub fn change_type<T: DaftMediaType>(self) -> FileArray<T> {
+        let LogicalArrayImpl {
+            field,
+            mut physical,
+            ..
+        } = self;
+        physical.field = Arc::new(Field::new(
+            "literal",
+            DataType::File(T::get_type()).to_physical(),
+        ));
+
+        FileArray::new(
+            Field::new(&field.name, DataType::File(T::get_type())),
+            physical,
+        )
+    }
+}
+
+impl<T> FileArray<T>
+where
+    T: DaftMediaType,
+{
+    pub fn media_type(&self) -> MediaType {
+        T::get_type()
+    }
+    pub fn new_from_file_references<I: Iterator<Item = DaftResult<Option<FileReference>>>>(
+        name: &str,
+        iter: I,
+    ) -> DaftResult<Self> {
+        let mut io_conf_arr = MutableBinaryArray::<i64>::new();
+        let mut urls_arr = MutableUtf8Array::<i64>::new();
+
+        for value in iter {
+            let value = value?;
+            match value {
+                Some(value) => {
+                    urls_arr.push(Some(value.url));
+                    let io_config = value.io_config.map(|c| {
+                        bincode::serde::encode_to_vec(&c, bincode::config::legacy())
+                            .expect("Failed to serialize IOConfig")
+                    });
+                    io_conf_arr.push(io_config);
+                }
+                None => {
+                    urls_arr.push_null();
+                    io_conf_arr.push_null();
+                }
+            }
+        }
+        let sa_field = Field::new("literal", DataType::File(T::get_type()).to_physical());
+        let urls = Series::from_arrow(
+            Arc::new(Field::new("url", DataType::Utf8)),
+            urls_arr.as_box(),
+        )?;
+        let io_config = Series::from_arrow(
+            Arc::new(Field::new("io_config", DataType::Binary)),
+            io_conf_arr.as_box(),
+        )?;
+        let validity = urls.validity().cloned();
+        let sa = StructArray::new(sa_field, vec![urls, io_config], validity);
+
+        Ok(FileArray::new(
+            Field::new(name, DataType::File(T::get_type())),
+            sa,
+        ))
+    }
     pub fn new_from_reference_array(
         name: &str,
         urls: &Utf8Array,
         io_config: Option<IOConfig>,
     ) -> Self {
-        use crate::series::IntoSeries;
-
-        let discriminant = UInt8Array::from_values(
-            "discriminant",
-            std::iter::repeat_n(DaftFileType::Reference as u8, urls.len()),
-        )
-        .into_series();
-
-        let sa_field = Field::new("literal", DataType::File.to_physical());
-
-        let io_conf = io_config.map(|c| {
-            let io_conf = common_io_config::python::IOConfig::from(c);
-
-            use std::sync::Arc;
-
-            use pyo3::{IntoPyObjectExt, Python};
-
-            Arc::new(Python::with_gil(|py| {
-                io_conf
-                    .into_py_any(py)
-                    .expect("Failed to convert ioconfig to PyObject")
-            }))
+        let sa_field = Field::new("literal", DataType::File(T::get_type()).to_physical());
+        let io_conf: Option<Vec<u8>> = io_config.map(|c| {
+            bincode::serde::encode_to_vec(&c, bincode::config::legacy())
+                .expect("Failed to serialize IOConfig")
         });
+        let io_conf = BinaryArray::from_iter("io_config", std::iter::repeat_n(io_conf, urls.len()));
 
-        let io_configs =
-            PythonArray::from_iter("io_config", std::iter::repeat_n(io_conf, urls.len()));
-
-        let data = BinaryArray::full_null("data", &DataType::Binary, urls.len()).into_series();
-        let io_configs = io_configs
+        let io_conf = io_conf
             .with_validity(urls.validity().cloned())
             .expect("Failed to set validity");
 
         let sa = StructArray::new(
             sa_field,
             vec![
-                discriminant,
-                data,
                 urls.clone().into_series().rename("url"),
-                io_configs.into_series(),
+                io_conf.into_series(),
             ],
             urls.validity().cloned(),
         );
-        FileArray::new(Field::new(name, DataType::File), sa)
+        FileArray::new(Field::new(name, DataType::File(T::get_type())), sa)
     }
 
-    #[cfg(not(feature = "python"))]
-    pub fn new_from_reference_array(
-        name: &str,
-        urls: &Utf8Array,
-        io_config: Option<IOConfig>,
-    ) -> Self {
-        unimplemented!()
+    pub fn iter(&self) -> FileArrayIter<'_, T> {
+        FileArrayIter {
+            array: self,
+            idx: 0,
+        }
     }
+}
 
-    #[cfg(feature = "python")]
-    pub fn new_from_data_array(name: &str, values: &BinaryArray) -> Self {
-        let discriminant = UInt8Array::from_values(
-            "discriminant",
-            std::iter::repeat_n(DaftFileType::Data as u8, values.len()),
-        )
-        .into_series();
+pub struct FileArrayIter<'a, T>
+where
+    T: DaftMediaType,
+{
+    array: &'a FileArray<T>,
+    idx: usize,
+}
 
-        let fld = Field::new("literal", DataType::File.to_physical());
-        let urls = Utf8Array::full_null("url", &DataType::Utf8, values.len()).into_series();
-        let io_configs =
-            PythonArray::full_null("io_config", &DataType::Python, values.len()).into_series();
-        let sa = StructArray::new(
-            fld,
-            vec![
-                discriminant,
-                values.clone().into_series().rename("data"),
-                urls,
-                io_configs,
-            ],
-            values.validity().cloned(),
-        );
-        FileArray::new(Field::new(name, DataType::File), sa)
+impl<T> Iterator for FileArrayIter<'_, T>
+where
+    T: DaftMediaType,
+{
+    type Item = Option<FileReference>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.idx >= self.array.len() {
+            None
+        } else {
+            let file_ref = self.array.get(self.idx);
+            self.idx += 1;
+            Some(file_ref)
+        }
     }
+}
 
-    #[cfg(not(feature = "python"))]
-    pub fn new_from_data_array(name: &str, values: &BinaryArray) -> Self {
-        unimplemented!()
+impl<'a, T> IntoIterator for &'a FileArray<T>
+where
+    T: DaftMediaType,
+{
+    type Item = Option<FileReference>;
+    type IntoIter = FileArrayIter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        FileArrayIter {
+            array: self,
+            idx: 0,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common_io_config::IOConfig;
+
+    use crate::{
+        datatypes::FileArray,
+        file::{FileReference, MediaTypeUnknown},
+        lit::Literal,
+        prelude::FromArrow,
+        series::Series,
+    };
+
+    #[test]
+    fn test_arrow_roundtrip_url_variant() {
+        let io_conf = Some(IOConfig::default());
+        let url = "file://example.com";
+
+        let urls: Series = Literal::Utf8(url.to_string()).into();
+        let urls = urls.utf8().unwrap();
+
+        let arr =
+            FileArray::<MediaTypeUnknown>::new_from_reference_array("urls", urls, io_conf.clone());
+        let arrow_data = arr.to_arrow();
+
+        let new_arr = FileArray::<MediaTypeUnknown>::from_arrow(arr.field.clone(), arrow_data)
+            .expect("Failed to create FileArray from arrow data");
+
+        let FileReference {
+            media_type: _,
+            url,
+            io_config,
+        } = new_arr.get(0).expect("Failed to get data");
+
+        assert_eq!(url, "file://example.com");
+        assert_eq!(io_config, io_conf.map(Arc::new));
     }
 }

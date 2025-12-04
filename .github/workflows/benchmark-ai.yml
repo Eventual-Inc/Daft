@@ -1,0 +1,135 @@
+name: Benchmark AI Workloads
+
+on:
+  workflow_dispatch:
+    inputs:
+      daft_index_url:
+        description: The index URL of the Daft build to benchmark. If not provided, builds Daft off of the provided branch.
+        type: string
+        default: ""
+        required: false
+      benchmark_type:
+        description: Type of AI benchmark to run
+        type: choice
+        options:
+        - all
+        - audio_transcription
+        - document_embedding
+        - image_classification
+        - video_object_detection
+        default: all
+        required: true
+  workflow_call:
+    inputs:
+      daft_index_url:
+        description: The index URL of the Daft build to benchmark. If not provided, builds Daft off of the provided branch.
+        type: string
+        default: ""
+        required: false
+      benchmark_type:
+        description: Type of AI benchmark to run
+        type: string
+        default: "all"
+        required: true
+
+env:
+  DAFT_INDEX_URL: ${{ inputs.daft_index_url != '' && inputs.daft_index_url || format('https://d1p3klp2t5517h.cloudfront.net/builds/dev/{0}', github.sha) }}
+  AWS_REGION: us-west-2
+
+  AI_BENCHMARK_TYPE: ${{ inputs.benchmark_type }}
+
+  DAFT_ANALYTICS_ENABLED: "0"
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  build:
+    name: Build and publish wheels if necessary
+    if: ${{ inputs.daft_index_url == '' }}
+    uses: ./.github/workflows/publish-dev-s3.yml
+    secrets: inherit
+
+  benchmark:
+    needs: build
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: [self-hosted, linux, x64, job-runner]
+    strategy:
+      matrix:
+        benchmark:
+        - audio_transcription
+        - document_embedding
+        - image_classification
+        - video_object_detection
+        include:
+        - benchmark: audio_transcription
+          cluster_file: benchmarking/ai/audio_transcription/cluster.yaml
+          role_name: DaftAIAudioTranscriptionGitHubWorkflow
+        - benchmark: document_embedding
+          cluster_file: benchmarking/ai/document_embedding/cluster.yaml
+          role_name: DaftAIDocumentEmbeddingGitHubWorkflow
+        - benchmark: image_classification
+          cluster_file: benchmarking/ai/image_classification/cluster.yaml
+          role_name: DaftAIImageClassificationGitHubWorkflow
+        - benchmark: video_object_detection
+          cluster_file: benchmarking/ai/video_object_detection/cluster.yaml
+          role_name: DaftAIVideoObjectDetectionGitHubWorkflow
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+    - name: Check if benchmark should run
+      if: ${{ inputs.benchmark_type != 'all' && inputs.benchmark_type != matrix.benchmark }}
+      run: |
+        echo "🚫 CANCELLED: ${{ matrix.benchmark }} benchmark (selected: ${{ inputs.benchmark_type }})"
+        echo "This job was cancelled because it doesn't match the selected benchmark type"
+        exit 0
+    - uses: actions/checkout@v6
+      with:
+        submodules: true
+    - name: Assume GitHub Actions AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v5
+      with:
+        aws-region: ${{ env.AWS_REGION }}
+        role-session-name: ${{ matrix.role_name }}
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
+    - name: Setup Virtual Env
+      run: |
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+        source .venv/bin/activate
+        rm -rf daft
+        uv pip install daft --pre --extra-index-url ${{ env.DAFT_INDEX_URL }}
+        uv pip install ray[default] boto3 gspread
+    - name: Write service account secret file
+      run: |
+        mkdir -p ~/.config/gspread
+        cat << EOF > ~/.config/gspread/service_account.json
+        ${{ secrets.GOOGLE_SHEETS_SERVICE_ACCOUNT }}
+        EOF
+    - name: Generate Ray yaml
+      run: |
+        envsubst < ${{ matrix.cluster_file }} > ray.yaml
+        cat ray.yaml
+    - name: Download private ssh key
+      run: |
+        KEY=$(aws secretsmanager get-secret-value --secret-id ci-github-actions-ray-cluster-key-3 --query SecretString --output text)
+        echo "$KEY" > ~/.ssh/ci-github-actions-ray-cluster-key.pem
+        chmod 600 ~/.ssh/ci-github-actions-ray-cluster-key.pem
+    - name: Spin up and connect to ray cluster
+      run: |
+        source .venv/bin/activate
+        ray up ray.yaml -y
+        ray dashboard ray.yaml &
+    - name: Run AI benchmark
+      run: |
+        source .venv/bin/activate
+        PYTHONPATH=. python .github/ci-scripts/run_ai_benchmark.py ${{ matrix.benchmark }}
+    - name: Spin down ray cluster
+      if: always()
+      run: |
+        source .venv/bin/activate
+        ray down ray.yaml -y

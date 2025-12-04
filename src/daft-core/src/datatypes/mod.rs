@@ -7,10 +7,10 @@ pub mod prelude;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
 pub use agg_ops::{
-    try_mean_aggregation_supertype, try_skew_aggregation_supertype,
+    try_mean_aggregation_supertype, try_product_supertype, try_skew_aggregation_supertype,
     try_stddev_aggregation_supertype, try_sum_supertype,
 };
-use arrow2::{
+use daft_arrow::{
     compute::comparison::Simd8,
     types::{NativeType, simd::Simd},
 };
@@ -27,9 +27,12 @@ use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero}
 use serde::Serialize;
 
 pub use crate::array::{DataArray, FixedSizeListArray, file_array::FileArray};
-use crate::array::{ListArray, StructArray, ops::as_arrow::AsArrow};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
+use crate::{
+    array::{ListArray, StructArray, ops::as_arrow::AsArrow},
+    file::{DaftMediaType, FileType},
+};
 
 pub mod interval;
 pub mod logical;
@@ -59,6 +62,20 @@ pub trait DaftDataType: Sync + Send + Clone + 'static {
     fn get_dtype() -> DataType
     where
         Self: Sized;
+}
+
+impl<T> DaftDataType for T
+where
+    T: DaftMediaType,
+{
+    type ArrayType = FileArray<T>;
+
+    fn get_dtype() -> DataType
+    where
+        Self: Sized,
+    {
+        DataType::File(T::get_type())
+    }
 }
 
 pub trait DaftPhysicalType: Send + Sync + DaftDataType {}
@@ -228,8 +245,6 @@ impl_daft_logical_data_array_datatype!(TimestampType, Unknown, Int64Type);
 impl_daft_logical_data_array_datatype!(DateType, Date, Int32Type);
 impl_daft_logical_data_array_datatype!(TimeType, Unknown, Int64Type);
 impl_daft_logical_data_array_datatype!(DurationType, Unknown, Int64Type);
-impl_daft_logical_data_array_datatype!(FileType, File, StructType);
-
 impl_daft_logical_data_array_datatype!(ImageType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(TensorType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(SparseTensorType, Unknown, StructType);
@@ -238,6 +253,25 @@ impl_daft_logical_fixed_size_list_datatype!(EmbeddingType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeImageType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeTensorType, Unknown);
 impl_daft_logical_list_datatype!(MapType, Unknown);
+
+impl<T> DaftDataType for FileType<T>
+where
+    T: DaftMediaType,
+{
+    #[inline]
+    fn get_dtype() -> DataType {
+        DataType::File(T::get_type())
+    }
+    #[allow(clippy::use_self)]
+    type ArrayType = logical::LogicalArray<FileType<T>>;
+}
+
+impl<T> DaftLogicalType for FileType<T>
+where
+    T: DaftMediaType,
+{
+    type PhysicalType = StructType;
+}
 
 #[cfg(feature = "python")]
 #[derive(Clone, Debug)]
@@ -420,7 +454,7 @@ impl<T: DaftNumericType> DataArray<T> {
 impl<P: AsRef<str>> FromIterator<Option<P>> for Utf8Array {
     #[inline]
     fn from_iter<I: IntoIterator<Item = Option<P>>>(iter: I) -> Self {
-        let arrow_arr = arrow2::array::Utf8Array::<i64>::from_iter(iter);
+        let arrow_arr = daft_arrow::array::Utf8Array::<i64>::from_iter(iter);
         Self::from(("", Box::new(arrow_arr)))
     }
 }

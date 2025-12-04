@@ -5,10 +5,9 @@ use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
     AggExpr, ApproxPercentileParams, Column, Expr, ExprRef,
+    expr::VLLMExpr,
     functions::{FunctionArgs, scalar::ScalarFn},
-    optimization,
-    python_udf::{PyScalarFn, RowWisePyFn},
-    resolved_col,
+    optimization, resolved_col,
 };
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
@@ -20,7 +19,8 @@ use crate::{
     stats::StatsState,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Project {
     pub plan_id: Option<usize>,
     pub node_id: Option<usize>,
@@ -29,6 +29,15 @@ pub struct Project {
     pub projection: Vec<ExprRef>,
     pub projected_schema: SchemaRef,
     pub stats_state: StatsState,
+}
+#[cfg(not(debug_assertions))]
+impl std::fmt::Debug for Project {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Project")
+            .field("plan_id", &self.plan_id)
+            .field("node_id", &self.node_id)
+            .finish()
+    }
 }
 
 impl Project {
@@ -480,14 +489,9 @@ fn replace_column_with_semantic_id(
                     Transformed::yes(Expr::InSubquery(expr.data, subquery.clone()).into())
                 }
             }
-            Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
-                function_name: name,
-                inner: func,
-                return_dtype,
-                original_args,
-                args: children,
-            }))) => {
-                let transforms = children
+            Expr::ScalarFn(ScalarFn::Python(udf)) => {
+                let transforms = udf
+                    .args()
                     .iter()
                     .map(|e| {
                         replace_column_with_semantic_id(e.clone(), subexprs_to_replace, schema)
@@ -502,15 +506,16 @@ fn replace_column_with_semantic_id(
                         .map(|t| t.data.clone())
                         .collect::<Vec<_>>();
                     Transformed::yes(Arc::new(Expr::ScalarFn(ScalarFn::Python(
-                        PyScalarFn::RowWise(RowWisePyFn {
-                            function_name: name.clone(),
-                            inner: func.clone(),
-                            return_dtype: return_dtype.clone(),
-                            original_args: original_args.clone(),
-                            args: new_children,
-                        }),
+                        udf.with_new_children(new_children),
                     ))))
                 }
+            }
+            Expr::VLLM(VLLMExpr { input, .. }) => {
+                replace_column_with_semantic_id(input.clone(), subexprs_to_replace, schema)
+                    .map_yes_no(
+                        |transformed_input| Arc::new(e.with_new_children(vec![transformed_input])),
+                        |e| e,
+                    )
             }
         }
     }
@@ -540,6 +545,10 @@ fn replace_column_with_semantic_id_aggexpr(
         AggExpr::Sum(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Sum, |_| e)
+        }
+        AggExpr::Product(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::Product, |_| e)
         }
         AggExpr::ApproxPercentile(ApproxPercentileParams {
             ref child,

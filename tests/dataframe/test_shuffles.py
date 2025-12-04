@@ -11,7 +11,6 @@ import pyarrow as pa
 import pytest
 
 import daft
-from daft.context import get_context
 from daft.io._generator import read_generator
 from daft.recordbatch.recordbatch import RecordBatch
 from tests.conftest import get_tests_daft_runner_name
@@ -174,8 +173,8 @@ def test_pre_shuffle_merge_randomly_sized_partitions(pre_shuffle_merge_ctx, inpu
 
 
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() != "ray" or get_context().daft_execution_config.use_legacy_ray_runner is False,
-    reason="shuffle tests are meant for the ray runner and flight shuffle is not yet supported for flotilla",
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
 )
 @pytest.mark.parametrize(
     "input_partitions, output_partitions",
@@ -190,18 +189,20 @@ def test_flight_shuffle(flight_shuffle_ctx, input_partitions, output_partitions)
     def bytes_per_row_fn():
         return 200
 
-    with flight_shuffle_ctx():
-        df = (
-            read_generator(
-                generator(input_partitions, num_rows_fn, bytes_per_row_fn),
-                schema=daft.Schema._from_field_name_and_types(
-                    [
-                        ("ints", daft.DataType.uint64()),
-                        ("bytes", daft.DataType.fixed_size_binary(200)),
-                    ]
-                ),
+    # TODO: Remove raises flag once flight shuffle is supported in Flotilla
+    with pytest.raises(TypeError):
+        with flight_shuffle_ctx():
+            df = (
+                read_generator(
+                    generator(input_partitions, num_rows_fn, bytes_per_row_fn),
+                    schema=daft.Schema._from_field_name_and_types(
+                        [
+                            ("ints", daft.DataType.uint64()),
+                            ("bytes", daft.DataType.fixed_size_binary(200)),
+                        ]
+                    ),
+                )
+                .repartition(output_partitions, "ints")
+                .collect()
             )
-            .repartition(output_partitions, "ints")
-            .collect()
-        )
-        assert len(df) == input_partitions * output_partitions
+            assert len(df) == input_partitions * output_partitions

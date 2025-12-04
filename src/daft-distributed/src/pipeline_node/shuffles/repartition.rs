@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_error::DaftResult;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        SubmittableTaskStream, make_in_memory_task_from_materialized_outputs,
+        PipelineNodeImpl, SubmittableTaskStream, make_in_memory_task_from_materialized_outputs,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -27,7 +26,7 @@ pub(crate) struct RepartitionNode {
     context: PipelineNodeContext,
     repartition_spec: RepartitionSpec,
     num_partitions: usize,
-    child: Arc<dyn DistributedPipelineNode>,
+    child: DistributedPipelineNode,
 }
 
 impl RepartitionNode {
@@ -35,20 +34,17 @@ impl RepartitionNode {
 
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         repartition_spec: RepartitionSpec,
         num_partitions: usize,
         schema: SchemaRef,
-        child: Arc<dyn DistributedPipelineNode>,
+        child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -67,14 +63,8 @@ impl RepartitionNode {
         }
     }
 
-    pub fn arced(self) -> Arc<dyn DistributedPipelineNode> {
-        Arc::new(self)
-    }
-
-    fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec![format!("Repartition: {}", self.repartition_spec.var_name())];
-        res.extend(self.repartition_spec.multiline_display());
-        res
+    pub fn into_node(self) -> DistributedPipelineNode {
+        DistributedPipelineNode::new(Arc::new(self))
     }
 
     // Async execution to get all partitions out
@@ -98,9 +88,10 @@ impl RepartitionNode {
             let task = make_in_memory_task_from_materialized_outputs(
                 TaskContext::from((&self_clone.context, task_id_counter.next())),
                 partition_group,
-                &(self_clone as Arc<dyn DistributedPipelineNode>),
+                self_clone.config.schema.clone(),
+                &(self_clone as Arc<dyn PipelineNodeImpl>),
                 None,
-            )?;
+            );
 
             let _ = result_tx.send(task).await;
         }
@@ -109,32 +100,7 @@ impl RepartitionNode {
     }
 }
 
-impl TreeDisplay for RepartitionNode {
-    fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        let mut display = String::new();
-        match level {
-            DisplayLevel::Compact => {
-                writeln!(display, "{}", self.context.node_name).unwrap();
-            }
-            _ => {
-                let multiline_display = self.multiline_display().join("\n");
-                writeln!(display, "{}", multiline_display).unwrap();
-            }
-        }
-        display
-    }
-
-    fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        vec![self.child.as_tree_display()]
-    }
-
-    fn get_name(&self) -> String {
-        self.context.node_name.to_string()
-    }
-}
-
-impl DistributedPipelineNode for RepartitionNode {
+impl PipelineNodeImpl for RepartitionNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -143,8 +109,14 @@ impl DistributedPipelineNode for RepartitionNode {
         &self.config
     }
 
-    fn children(&self) -> Vec<Arc<dyn DistributedPipelineNode>> {
+    fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        let mut res = vec![format!("Repartition: {}", self.repartition_spec.var_name())];
+        res.extend(self.repartition_spec.multiline_display());
+        res
     }
 
     fn produce_tasks(
@@ -156,13 +128,17 @@ impl DistributedPipelineNode for RepartitionNode {
 
         // First pipeline the local repartition op
         let self_clone = self.clone();
-        let local_repartition_node = input_node.pipeline_instruction(self.clone(), move |input| {
+        let local_repartition_node = input_node.pipeline_instruction(self, move |input| {
             LocalPhysicalPlan::repartition(
                 input,
                 self_clone.repartition_spec.clone(),
                 self_clone.num_partitions,
                 self_clone.config.schema.clone(),
                 StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(self_clone.node_id() as usize),
+                    additional: None,
+                },
             )
         });
 
@@ -184,9 +160,5 @@ impl DistributedPipelineNode for RepartitionNode {
 
         plan_context.spawn(map_reduce_execution);
         SubmittableTaskStream::from(result_rx)
-    }
-
-    fn as_tree_display(&self) -> &dyn TreeDisplay {
-        self
     }
 }

@@ -103,7 +103,7 @@ mod tests {
     use super::*;
     use crate::{
         scheduling::{
-            scheduler::{SubmittableTask, spawn_default_scheduler_actor},
+            scheduler::{SubmittableTask, spawn_scheduler_actor},
             tests::{
                 MockTask, MockTaskBuilder, MockTaskFailure, MockWorkerManager,
                 create_mock_partition_ref, setup_workers,
@@ -123,7 +123,7 @@ mod tests {
             let workers = setup_workers(worker_configs);
             let worker_manager = Arc::new(MockWorkerManager::new(workers));
             let mut joinset = JoinSet::new();
-            let scheduler_handle = spawn_default_scheduler_actor(
+            let scheduler_handle = spawn_scheduler_actor(
                 worker_manager,
                 &mut joinset,
                 StatisticsManagerRef::default(),
@@ -165,7 +165,7 @@ mod tests {
         results: &[DaftResult<MaterializedOutput>],
         expected_specs: &[(usize, usize)],
         should_error: &[bool],
-    ) -> DaftResult<()> {
+    ) {
         assert_eq!(results.len(), expected_specs.len());
 
         for ((result, expected), should_error) in results
@@ -177,11 +177,10 @@ mod tests {
                 assert!(result.is_err());
             } else {
                 let materialized_output = result.as_ref().expect("Result should be Ok");
-                assert_eq!(materialized_output.num_rows()?, expected.0);
-                assert_eq!(materialized_output.size_bytes()?, expected.1);
+                assert_eq!(materialized_output.num_rows(), expected.0);
+                assert_eq!(materialized_output.size_bytes(), expected.1);
             }
         }
-        Ok(())
     }
 
     #[tokio::test]
@@ -226,7 +225,7 @@ mod tests {
             &std::iter::repeat(false)
                 .take(partition_specs.len())
                 .collect::<Vec<_>>(),
-        )?;
+        );
         test_context.cleanup().await?;
         Ok(())
     }
@@ -269,7 +268,7 @@ mod tests {
             &std::iter::repeat(false)
                 .take(partition_specs.len())
                 .collect::<Vec<_>>(),
-        )?;
+        );
         test_context.cleanup().await?;
         Ok(())
     }
@@ -320,7 +319,7 @@ mod tests {
         .collect::<Vec<_>>()
         .await;
 
-        verify_materialized_results(&results, &partition_specs, &should_error)?;
+        verify_materialized_results(&results, &partition_specs, &should_error);
         test_context.cleanup().await?;
         Ok(())
     }

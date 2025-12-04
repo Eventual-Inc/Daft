@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::{BroadcastedStrIter, create_broadcasted_str_iter, parse_inputs};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Substr;
 
 #[derive(FunctionArgs)]
@@ -259,7 +259,7 @@ where
                 _ => Ok(None),
             }
         })
-        .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+        .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>()?;
 
     Ok(Utf8Array::from((name, Box::new(arrow_result))))
 }
