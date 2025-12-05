@@ -373,7 +373,7 @@ def _io_config_from_storage_location(storage_location: str, properties: dict[str
         access_key = properties.get("s3-access-key-id")
         secret_key = properties.get("s3-secret-access-key")
         endpoint_url = properties.get("s3-endpoint")
-        session_token = properties.get("s3.session-token")
+        session_token = properties.get("s3-session-token")
         region_name = properties.get("s3-region")
 
         # Try to extract region from endpoint URL if not explicitly provided
