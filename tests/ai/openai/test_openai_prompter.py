@@ -513,7 +513,7 @@ def test_openai_prompter_raises_without_pillow_on_image():
             prompter = create_prompter()
             image = np.zeros((100, 100, 3), dtype=np.uint8)
 
-            with pytest.raises(ImportError, match="Pillow is required"):
+            with pytest.raises(ImportError, match=r"Please `pip install 'daft\[openai\]'` to use the prompt function with this provider."):
                 await prompter.prompt(("Image", image))
 
     run_async(_test())

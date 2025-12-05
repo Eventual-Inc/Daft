@@ -8,7 +8,7 @@ if sys.version_info < (3, 11):
 else:
     from typing import Unpack
 
-from daft.ai.provider import Provider
+from daft.ai.provider import Provider, ProviderImportError
 
 if TYPE_CHECKING:
     from daft.ai.openai.typing import OpenAIProviderOptions
@@ -28,16 +28,12 @@ class OpenAIProvider(Provider):
         try:
             import openai  # noqa: F401
         except ImportError:
-            raise ImportError(
-                "openai is required for the OpenAIProvider. Please install it using `pip install 'daft[openai]'`"
-            )
+            raise ProviderImportError("openai")
 
         from daft.dependencies import np
 
         if not np.module_available():  # type: ignore[attr-defined]
-            raise ImportError(
-                "numpy is required for the OpenAIProvider. Please install it using `pip install 'daft[openai]'`"
-            )
+            raise ProviderImportError("openai")
 
     @property
     def name(self) -> str:

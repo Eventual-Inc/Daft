@@ -111,11 +111,12 @@ def test_openai_text_embedder_descriptor_overridden_dimensions():
 
 def test_openai_provider_raises_import_error_without_numpy():
     with patch("daft.dependencies.np.module_available", return_value=False):
-        with pytest.raises(ImportError, match="numpy is required for the OpenAIProvider"):
+        with pytest.raises(ImportError, match=r"Please `pip install 'daft\[openai\]'` with this provider"):
             OpenAIProvider(api_key="test-key")
 
 
 def test_openai_provider_raises_import_error_without_openai():
-    with patch("daft.dependencies.openai.module_available", return_value=False):
-        with pytest.raises(ImportError, match="openai is required for the OpenAIProvider"):
+    # We need to mock openai module if it is installed
+    with patch.dict("sys.modules", {"openai": None}):
+        with pytest.raises(ImportError, match=r"Please `pip install 'daft\[openai\]'` with this provider"):
             OpenAIProvider(api_key="test-key")

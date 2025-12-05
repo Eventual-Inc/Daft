@@ -3,7 +3,7 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING, Any
 
-from daft.ai.provider import Provider
+from daft.ai.provider import Provider, ProviderImportError
 
 if TYPE_CHECKING:
     from daft.ai.protocols import (
@@ -29,15 +29,8 @@ class TransformersProvider(Provider):
 
         from daft.dependencies import np, torch
 
-        if not torch.module_available():
-            raise ImportError(
-                "torch is required for the TransformersProvider. Please install it using `pip install 'daft[transformers]'`"
-            )
-
-        if not np.module_available():  # type: ignore[attr-defined]
-            raise ImportError(
-                "numpy is required for the TransformersProvider. Please install it using `pip install 'daft[transformers]'`"
-            )
+        if not torch.module_available() or not np.module_available():  # type: ignore[attr-defined]
+            raise ProviderImportError("transformers")
 
     @property
     def name(self) -> str:
@@ -46,14 +39,8 @@ class TransformersProvider(Provider):
     def get_image_embedder(self, model: str | None = None, **options: Any) -> ImageEmbedderDescriptor:
         from daft.dependencies import pil_image, torchvision
 
-        if not torchvision.module_available():
-            raise ImportError(
-                "torchvision is required to embed_image with the TransformersProvider. Please install it using `pip install 'daft[transformers]'`"
-            )
-        if not pil_image.module_available():
-            raise ImportError(
-                "Pillow is required to embed_image with the TransformersProvider. Please install it using `pip install 'daft[transformers]'`"
-            )
+        if not torchvision.module_available() or not pil_image.module_available():
+            raise ProviderImportError("transformers", "get_image_embedder")
 
         from daft.ai.transformers.protocols.image_embedder import TransformersImageEmbedderDescriptor
 
@@ -88,14 +75,8 @@ class TransformersProvider(Provider):
     def get_image_classifier(self, model: str | None = None, **options: Any) -> ImageClassifierDescriptor:
         from daft.dependencies import pil_image, torchvision
 
-        if not torchvision.module_available():
-            raise ImportError(
-                "torchvision is required to classify_image with TransformersProvider. Please install it using `pip install 'daft[transformers]'`"
-            )
-        if not pil_image.module_available():
-            raise ImportError(
-                "Pillow is required to classify_image with the TransformersProvider. Please install it using `pip install 'daft[transformers]'`"
-            )
+        if not torchvision.module_available() or not pil_image.module_available():
+            raise ProviderImportError("transformers", "classify_image")
 
         from daft.ai.transformers.protocols.image_classifier import (
             TransformersImageClassifierDescriptor,

@@ -8,7 +8,7 @@ if sys.version_info < (3, 11):
 else:
     from typing import Unpack
 
-from daft.ai.provider import Provider
+from daft.ai.provider import Provider, ProviderImportError
 
 if TYPE_CHECKING:
     from daft.ai.google.typing import GoogleProviderOptions
@@ -28,16 +28,12 @@ class GoogleProvider(Provider):
         try:
             from google import genai  # noqa: F401
         except ImportError:
-            raise ImportError(
-                "google-genai is required for the GoogleProvider. Please install it using `pip install 'daft[google]'`"
-            )
+            raise ProviderImportError("google")
 
         from daft.dependencies import np
 
         if not np.module_available():  # type: ignore[attr-defined]
-            raise ImportError(
-                "numpy is required for the GoogleProvider. Please install it using `pip install 'daft[google]'`"
-            )
+            raise ProviderImportError("google")
 
     @property
     def name(self) -> str:

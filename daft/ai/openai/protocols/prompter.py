@@ -10,6 +10,7 @@ from openai.types.responses import ResponseUsage
 
 from daft.ai.metrics import record_token_metrics
 from daft.ai.protocols import Prompter, PrompterDescriptor
+from daft.ai.provider import ProviderImportError
 from daft.ai.typing import UDFOptions
 from daft.dependencies import np
 from daft.file import File
@@ -132,9 +133,7 @@ class OpenAIPrompter(Prompter):
             from daft.dependencies import pil_image
 
             if not pil_image.module_available():
-                raise ImportError(
-                    "Pillow is required to process images with OpenAI Prompter. Please install it using `pip install 'daft[openai]'`"
-                )
+                raise ProviderImportError("openai", "prompt")
 
             pil_image = pil_image.fromarray(msg)
             bio = io.BytesIO()

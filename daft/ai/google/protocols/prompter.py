@@ -9,6 +9,7 @@ from google.genai import types
 
 from daft.ai.metrics import record_token_metrics
 from daft.ai.protocols import Prompter, PrompterDescriptor
+from daft.ai.provider import ProviderImportError
 from daft.ai.typing import UDFOptions
 from daft.dependencies import np
 from daft.file import File
@@ -149,9 +150,7 @@ class GooglePrompter(Prompter):
             from daft.dependencies import pil_image
 
             if not pil_image.module_available():
-                raise ImportError(
-                    "Pillow is required to process images with Google Prompter. Please install it using `pip install 'daft[google]'`"
-                )
+                raise ProviderImportError("google", "prompt")
 
             pil_image = pil_image.fromarray(msg)
             bio = io.BytesIO()
