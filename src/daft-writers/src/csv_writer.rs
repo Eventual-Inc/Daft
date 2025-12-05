@@ -50,14 +50,14 @@ macro_rules! try_encode_binary_utf8 {
 
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
-use daft_io::{IOConfig, SourceType, parse_url};
+use daft_io::{IOConfig, SourceType, parse_url, utils::ObjectPath};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
 use crate::{
     AsyncFileWriter,
     batch_file_writer::BatchFileWriter,
-    storage_backend::{FileStorageBackend, S3StorageBackend, StorageBackend},
+    storage_backend::{FileStorageBackend, ObjectStorageBackend, StorageBackend},
     utils::build_filename,
 };
 
@@ -107,11 +107,11 @@ pub(crate) fn create_native_csv_writer(
             )))
         }
         SourceType::S3 => {
-            let (scheme, _, _) = daft_io::s3_like::parse_s3_url(root_dir.as_ref())?;
+            let ObjectPath { scheme, .. } = daft_io::utils::parse_object_url(root_dir.as_ref())?;
             let io_config = io_config.ok_or_else(|| {
                 DaftError::InternalError("IO config is required for S3 writes".to_string())
             })?;
-            let storage_backend = S3StorageBackend::new(scheme, io_config);
+            let storage_backend = ObjectStorageBackend::new(scheme, io_config);
             Ok(Box::new(make_csv_writer(
                 filename,
                 partition_values.cloned(),
