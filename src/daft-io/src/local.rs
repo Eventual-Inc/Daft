@@ -268,7 +268,6 @@ impl ObjectSource for LocalSource {
         const LOCAL_PROTOCOL: &str = "file://";
         if let Some(path) = uri.strip_prefix(LOCAL_PROTOCOL) {
             match tokio::fs::remove_file(path).await {
-                Ok(_) => Ok(()),
                 Err(err) => {
                     use std::io::ErrorKind;
                     match err.kind() {
@@ -281,6 +280,7 @@ impl ObjectSource for LocalSource {
                         .into()),
                     }
                 }
+                _ => Ok(()),
             }
         } else {
             Err(Error::InvalidFilePath { path: uri.into() }.into())
