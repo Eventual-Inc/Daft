@@ -1,7 +1,7 @@
 use std::ops::{AddAssign, SubAssign};
 
 use common_error::{DaftError, DaftResult};
-use daft_arrow::bitmap::MutableBitmap;
+use daft_arrow::buffer::NullBufferBuilder;
 use daft_core::{
     array::ops::DaftIsNan,
     datatypes::{DaftPrimitiveType, try_sum_supertype},
@@ -23,7 +23,7 @@ where
     sum_vec: Vec<T::Native>,
     valid_count: usize,
     nan_count: usize,
-    validity: MutableBitmap,
+    validity: NullBufferBuilder,
 }
 
 impl<T> SumWindowState<T>
@@ -51,7 +51,7 @@ where
             sum_vec: Vec::with_capacity(total_length),
             valid_count: 0,
             nan_count: 0,
-            validity: MutableBitmap::with_capacity(total_length),
+            validity: NullBufferBuilder::new(total_length),
         }
     }
 }
@@ -113,7 +113,7 @@ where
         } else {
             self.sum_vec.push(self.sum);
         }
-        self.validity.push(self.valid_count > 0);
+        self.validity.append(self.valid_count > 0);
         Ok(())
     }
 
@@ -124,7 +124,7 @@ where
         ));
         DataArray::<T>::new(field.into(), arrow_array)?
             .into_series()
-            .with_validity(Some(self.validity.clone().into()))
+            .with_validity(self.validity.finish_cloned())
     }
 }
 

@@ -80,7 +80,7 @@ impl Growable for FixedSizeListGrowable<'_> {
         let grown_validity = std::mem::take(&mut self.growable_validity);
 
         let built_child = self.child_growable.build()?;
-        let built_validity = grown_validity.map(|v| v.build());
+        let built_validity = grown_validity.and_then(|v| v.build());
         Ok(FixedSizeListArray::new(
             Field::new(self.name.clone(), self.dtype.clone()),
             built_child,

@@ -64,7 +64,7 @@ impl FromArrow for FixedSizeListArray {
                 Ok(Self::new(
                     field.clone(),
                     child_series,
-                    arrow_arr.validity().cloned(),
+                    arrow_arr.validity().cloned().map(Into::into),
                 ))
             }
             (d, a) => Err(DaftError::TypeError(format!(
@@ -113,7 +113,7 @@ impl FromArrow for ListArray {
                     target_field.clone(),
                     child_series,
                     arrow_arr.offsets().clone(),
-                    arrow_arr.validity().cloned(),
+                    arrow_arr.validity().cloned().map(Into::into),
                 ))
             }
             (DataType::List(daft_child_dtype), daft_arrow::datatypes::DataType::Map { .. }) => {
@@ -166,7 +166,7 @@ impl FromArrow for StructArray {
                 Ok(Self::new(
                     field.clone(),
                     child_series,
-                    arrow_arr.validity().cloned(),
+                    arrow_arr.validity().cloned().map(Into::into),
                 ))
             }
             (d, a) => Err(DaftError::TypeError(format!(
@@ -211,7 +211,7 @@ impl FromArrow for MapArray {
                     physical_field,
                     child_series,
                     arrow_arr.offsets().into(),
-                    arrow_arr.validity().cloned(),
+                    arrow_arr.validity().cloned().map(Into::into),
                 );
 
                 Ok(Self::new(field, physical))

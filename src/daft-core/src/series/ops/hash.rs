@@ -1,5 +1,5 @@
 use common_error::DaftResult;
-use daft_arrow::bitmap::Bitmap;
+use daft_arrow::buffer::NullBuffer;
 use daft_hash::HashFunctionKind;
 
 use crate::{
@@ -32,7 +32,7 @@ impl Series {
     pub fn hash_with_validity(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
         let hash = self.hash(seed)?;
         let validity = if matches!(self.data_type(), DataType::Null) {
-            Some(Bitmap::new_zeroed(self.len()))
+            Some(NullBuffer::new_null(self.len()))
         } else {
             self.validity().cloned()
         };

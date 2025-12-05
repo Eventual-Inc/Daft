@@ -491,7 +491,13 @@ impl RecordBatch {
             // num_filtered is the number of 'false' or null values in the mask
             let num_filtered = mask
                 .validity()
-                .map(|validity| daft_arrow::bitmap::and(validity, mask.as_bitmap()).unset_bits())
+                .map(|validity| {
+                    daft_arrow::bitmap::and(
+                        &daft_arrow::buffer::from_null_buffer(validity.clone()),
+                        mask.as_bitmap(),
+                    )
+                    .unset_bits()
+                })
                 .unwrap_or_else(|| mask.as_bitmap().unset_bits());
             mask.len() - num_filtered
         };

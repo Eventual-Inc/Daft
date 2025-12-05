@@ -1,11 +1,11 @@
 use common_error::DaftResult;
-use daft_arrow::bitmap::Bitmap;
+use daft_arrow::buffer::NullBuffer;
 use daft_core::{count_mode::CountMode, prelude::*};
 
 use super::WindowAggStateOps;
 
 pub struct CountWindowState {
-    source_validity: Option<Bitmap>,
+    source_validity: Option<NullBuffer>,
     valid_count: usize,
     total_count: usize,
     count_vec: Vec<u64>,
@@ -37,7 +37,7 @@ impl WindowAggStateOps for CountWindowState {
         if matches!(self.count_mode, CountMode::Valid | CountMode::Null) {
             for i in start_idx..end_idx {
                 if self.source_validity.is_none()
-                    || self.source_validity.as_ref().unwrap().get_bit(i)
+                    || self.source_validity.as_ref().unwrap().is_valid(i)
                 {
                     self.valid_count += 1;
                 }
@@ -56,7 +56,7 @@ impl WindowAggStateOps for CountWindowState {
         if matches!(self.count_mode, CountMode::Valid | CountMode::Null) {
             for i in start_idx..end_idx {
                 if self.source_validity.is_none()
-                    || self.source_validity.as_ref().unwrap().get_bit(i)
+                    || self.source_validity.as_ref().unwrap().is_valid(i)
                 {
                     self.valid_count -= 1;
                 }

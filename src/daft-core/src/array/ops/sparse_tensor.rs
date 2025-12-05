@@ -48,7 +48,7 @@ mod tests {
     #[test]
     fn test_sparse_tensor_to_fixed_shape_sparse_tensor_roundtrip() -> DaftResult<()> {
         let raw_validity = vec![true, false, true];
-        let validity = daft_arrow::bitmap::Bitmap::from(raw_validity.as_slice());
+        let validity = daft_arrow::buffer::NullBuffer::from(raw_validity.as_slice());
 
         let values_array = ListArray::new(
             Field::new("values", DataType::List(Box::new(DataType::Int64))),

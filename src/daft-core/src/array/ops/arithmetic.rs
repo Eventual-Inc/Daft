@@ -383,13 +383,13 @@ where
     let (result_child, validity) = match (lhs_len, rhs_len) {
         (a, b) if a == b => Ok((
             kernel(lhs_child, rhs_child)?,
-            crate::utils::arrow::arrow_bitmap_and_helper(lhs.validity(), rhs.validity()),
+            daft_arrow::buffer::NullBuffer::union(lhs.validity(), rhs.validity()),
         )),
         (l, 1) => {
             let validity = if rhs.is_valid(0) {
                 lhs.validity().cloned()
             } else {
-                Some(daft_arrow::bitmap::Bitmap::new_zeroed(l))
+                Some(daft_arrow::buffer::NullBuffer::new_null(l))
             };
             Ok((kernel(lhs_child, &rhs_child.repeat(lhs_len)?)?, validity))
         }
@@ -397,7 +397,7 @@ where
             let validity = if lhs.is_valid(0) {
                 rhs.validity().cloned()
             } else {
-                Some(daft_arrow::bitmap::Bitmap::new_zeroed(r))
+                Some(daft_arrow::buffer::NullBuffer::new_null(r))
             };
             Ok((kernel(&lhs_child.repeat(lhs_len)?, rhs_child)?, validity))
         }

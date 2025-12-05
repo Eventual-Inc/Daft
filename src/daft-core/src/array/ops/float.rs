@@ -32,7 +32,9 @@ impl DaftIsNan for DataArray<NullType> {
         Ok(BooleanArray::from((
             self.name(),
             daft_arrow::array::BooleanArray::from_slice(vec![false; self.len()]).with_validity(
-                Some(daft_arrow::bitmap::Bitmap::from(vec![false; self.len()])),
+                daft_arrow::buffer::wrap_null_buffer(Some(
+                    daft_arrow::buffer::NullBuffer::new_null(self.len()),
+                )),
             ),
         )))
     }
@@ -62,7 +64,9 @@ impl DaftIsInf for DataArray<NullType> {
         Ok(BooleanArray::from((
             self.name(),
             daft_arrow::array::BooleanArray::from_slice(vec![false; self.len()]).with_validity(
-                Some(daft_arrow::bitmap::Bitmap::from(vec![false; self.len()])),
+                daft_arrow::buffer::wrap_null_buffer(Some(
+                    daft_arrow::buffer::NullBuffer::new_null(self.len()),
+                )),
             ),
         )))
     }
@@ -93,7 +97,9 @@ impl DaftNotNan for DataArray<NullType> {
         Ok(BooleanArray::from((
             self.name(),
             daft_arrow::array::BooleanArray::from_slice(vec![false; self.len()]).with_validity(
-                Some(daft_arrow::bitmap::Bitmap::from(vec![false; self.len()])),
+                daft_arrow::buffer::wrap_null_buffer(Some(
+                    daft_arrow::buffer::NullBuffer::new_null(self.len()),
+                )),
             ),
         )))
     }
