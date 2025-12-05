@@ -5,7 +5,7 @@ import itertools
 import pyarrow as pa
 import pytest
 
-from daft import col
+from daft import DataType, col
 from daft.logical.schema import Schema
 from daft.recordbatch import MicroPartition
 from daft.series import Series
@@ -22,13 +22,13 @@ from tests.recordbatch import daft_int_types, daft_numeric_types
 def test_micropartitions_take_empty(mp) -> None:
     assert len(mp) == 0
 
-    indices = Series.from_arrow(pa.array([], type=pa.int64()))
+    indices = Series.from_arrow(pa.array([], type=pa.uint64()))
     taken = mp.take(indices)
     assert len(taken) == 0
     assert taken.column_names() == ["a"]
     assert taken.to_pydict() == {"a": []}
 
-    indices = Series.from_arrow(pa.array([1], type=pa.int64()))
+    indices = Series.from_arrow(pa.array([1], type=pa.uint64()))
 
     with pytest.raises(BaseException, match="index out of bounds"):
         taken = mp.take(indices)
@@ -51,19 +51,19 @@ def test_micropartitions_take(mp: MicroPartition) -> None:
     assert mp.column_names() == ["a"]
     assert len(mp) == 4
 
-    indices = Series.from_pylist([0, 1])
+    indices = Series.from_pylist([0, 1], dtype=DataType.uint64())
     taken = mp.take(indices)
     assert len(taken) == 2
     assert taken.column_names() == ["a"]
     assert taken.to_pydict() == {"a": [1, 2]}
 
-    indices = Series.from_pylist([3, 2])
+    indices = Series.from_pylist([3, 2], dtype=DataType.uint64())
     taken = mp.take(indices)
     assert len(taken) == 2
     assert taken.column_names() == ["a"]
     assert taken.to_pydict() == {"a": [4, 3]}
 
-    indices = Series.from_pylist([3, 2, 2, 2, 3])
+    indices = Series.from_pylist([3, 2, 2, 2, 3], dtype=DataType.uint64())
     taken = mp.take(indices)
     assert len(taken) == 5
     assert taken.column_names() == ["a"]
