@@ -45,4 +45,3 @@ def test_google_provider_raises_import_error_without_numpy():
     with patch("daft.dependencies.np.module_available", return_value=False):
         with pytest.raises(ImportError, match=r"Please `pip install 'daft\[google\]'` with this provider"):
             GoogleProvider(api_key="test-key")
-
