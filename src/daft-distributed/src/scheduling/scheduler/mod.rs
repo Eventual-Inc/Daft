@@ -26,6 +26,7 @@ pub(super) trait Scheduler<T: Task>: Send + Sync {
     fn schedule_tasks(&mut self) -> Vec<ScheduledTask<T>>;
     fn get_autoscaling_request(&mut self) -> Option<Vec<TaskResourceRequest>>;
     fn num_pending_tasks(&self) -> usize;
+    fn get_backlog_resource_requests(&self) -> Vec<TaskResourceRequest>;
 }
 
 pub(crate) struct PendingTask<T: Task> {
