@@ -4,6 +4,7 @@ import os
 
 from daft.scarf_telemetry import track_import_on_scarf
 
+
 ###
 # Set up code coverage for when running code coverage with ray
 ###
@@ -152,6 +153,7 @@ import daft.io as io
 import daft.runners as runners
 import daft.datasets as datasets
 import daft.functions as functions
+import daft.extensions as _
 
 __all__ = [
     "AudioFile",

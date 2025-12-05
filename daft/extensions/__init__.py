@@ -1,14 +1,23 @@
 from __future__ import annotations
 
+import importlib
+import pkgutil
 import sys
 from types import ModuleType
-from typing import Callable, Generic, TypeVar, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar
 from warnings import warn
 
 if TYPE_CHECKING:
     from daft import DataFrame
 
 NS = TypeVar("NS")
+
+_discovered_packages: dict[str, str] = {
+    name.removeprefix("daft_"): name for _, name, _ in pkgutil.iter_modules() if name.startswith("daft_")
+}
+_registered_namespaces: dict[str, ModuleType] = {}
+_dataframe_extensions_registry: dict[str, type] = {}
+_applied_dataframe_extensions: set[str] = set()
 
 
 class NameSpace(Generic[NS]):
@@ -27,7 +36,11 @@ class NameSpace(Generic[NS]):
         return ns_instance
 
 
-_registered_namespaces = {}
+def _load_daft_packages() -> None:
+    """Load all daft_* packages to trigger their extension registrations."""
+    for short_name, full_name in _discovered_packages.items():
+        if short_name not in _registered_namespaces:
+            _registered_namespaces[short_name] = importlib.import_module(full_name)
 
 
 def _create_module(name: str, obj: Any) -> ModuleType:
@@ -44,53 +57,6 @@ def _create_module(name: str, obj: Any) -> ModuleType:
     return mod
 
 
-def register_extension(name: str) -> Any:
-    """Register a module namespace under daft.extensions.*.
-
-    This allows third-party packages to add functionality to Daft through a plugin system.
-    Registered extensions can be accessed as `daft.extensions.<name>` or imported directly.
-
-    Args:
-        name: The namespace name for the extension (e.g., "mylib", "analytics")
-
-    Returns:
-        A decorator that registers the class or module as an extension
-
-    Examples:
-        Register a class with static methods:
-
-        >>> from daft.extensions import register_extension
-        >>>
-        >>> @register_extension("mylib")
-        ... class MyLibExtension:
-        ...     @staticmethod
-        ...     def hello(name: str):
-        ...         return f"Hello, {name}!"
-        >>>
-        >>> # Use via attribute access
-        >>> daft.extensions.mylib.hello("World")
-        'Hello, World!'
-        >>>
-        >>> # Or import directly
-        >>> from daft.extensions.mylib import hello
-        >>> hello("World")
-        'Hello, World!'
-    """
-
-    def decorator(obj: Any) -> Any:
-        _registered_namespaces[name] = obj
-        _create_module(name, obj)
-        return obj
-
-    return decorator
-
-
-def __getattr__(name: str) -> ModuleType:
-    if name in _registered_namespaces:
-        return _create_module(name, _registered_namespaces[name])
-    raise AttributeError(f"module 'daft.extensions' has no attribute '{name}'")
-
-
 def _create_extension(name: str, cls: type[DataFrame]) -> Callable[[type[NS]], type[NS]]:
     """Register custom extension against the underlying class."""
 
@@ -99,6 +65,7 @@ def _create_extension(name: str, cls: type[DataFrame]) -> Callable[[type[NS]], t
             warn(
                 f"Overriding existing custom namespace {name!r} (on {cls.__name__!r})",
                 UserWarning,
+                stacklevel=2,
             )
 
         setattr(cls, name, NameSpace(name, ns_class))
@@ -106,6 +73,30 @@ def _create_extension(name: str, cls: type[DataFrame]) -> Callable[[type[NS]], t
         return ns_class
 
     return namespace
+
+
+def _auto_register_dataframe_extensions() -> None:
+    """Auto-register DataFrame extensions from daft_* packages."""
+    from daft import DataFrame
+
+    _load_daft_packages()
+
+    for name, extension_class in _dataframe_extensions_registry.items():
+        if name not in _applied_dataframe_extensions:
+            _create_extension(name, DataFrame)(extension_class)
+            _applied_dataframe_extensions.add(name)
+
+
+def __getattr__(name: str) -> ModuleType:
+    if name in _registered_namespaces:
+        return _create_module(name, _registered_namespaces[name])
+
+    if name in _discovered_packages:
+        full_name = _discovered_packages[name]
+        _registered_namespaces[name] = importlib.import_module(full_name)
+        return _create_module(name, _registered_namespaces[name])
+
+    raise AttributeError(f"module 'daft.extensions' has no attribute '{name}'")
 
 
 def register_dataframe_extension(name: str) -> Callable[[type[NS]], type[NS]]:
@@ -150,10 +141,21 @@ def register_dataframe_extension(name: str) -> Callable[[type[NS]], type[NS]]:
         <BLANKLINE>
         (Showing first 3 of 3 rows)
     """
-    from daft import DataFrame
 
-    return _create_extension(name, DataFrame)
+    def decorator(ns_class: type[NS]) -> type[NS]:
+        _dataframe_extensions_registry[name] = ns_class
+
+        if "daft.dataframe" in sys.modules:
+            from daft import DataFrame
+
+            if name not in _applied_dataframe_extensions:
+                _create_extension(name, DataFrame)(ns_class)
+                _applied_dataframe_extensions.add(name)
+
+        return ns_class
+
+    return decorator
 
 
 __path__ = []
-__all__ = ["register_dataframe_extension", "register_extension"]
+_auto_register_dataframe_extensions()
