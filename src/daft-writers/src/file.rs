@@ -169,7 +169,8 @@ impl AsyncFileWriter for TargetFileSizeWriter {
     }
 
     async fn close(&mut self) -> DaftResult<Self::Result> {
-        if self.current_in_memory_bytes_written > 0
+        // empty results means no available data wrote, but we still need to close the writer to make file visible.
+        if (self.results.is_empty() || self.current_in_memory_bytes_written > 0)
             && let Some(result) = self.current_writer.close().await?
         {
             self.results.push(result);
