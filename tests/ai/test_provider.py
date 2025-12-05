@@ -17,9 +17,9 @@ from daft.ai.provider import (
 
 
 def test_provider_import_error_message():
-    err = ProviderImportError(["dep1", "dep2"], "tag")
-    assert "Missing required dependencies: 'dep1', 'dep2'" in str(err)
-    assert "pip install 'daft[tag]'" in str(err)
+    err = ProviderImportError("google")
+    assert "pip install 'daft[google]'" in str(err)
+    assert "with this provider" in str(err)
 
 
 def test_load_provider_invalid():
