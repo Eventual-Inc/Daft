@@ -1,6 +1,6 @@
-use arrow2::temporal_conversions;
 use chrono::Datelike;
 use common_error::{DaftError, DaftResult, ensure};
+use daft_arrow::temporal_conversions;
 use daft_core::{
     prelude::{AsArrow, DataType, DateArray, Field, Int32Array, Schema, Utf8Array},
     series::{IntoSeries, Series},
@@ -73,7 +73,7 @@ fn to_date_impl(arr: &Utf8Array, format: &str) -> DaftResult<DateArray> {
             }
             _ => Ok(None),
         })
-        .collect::<DaftResult<arrow2::array::Int32Array>>()?;
+        .collect::<DaftResult<daft_arrow::array::Int32Array>>()?;
 
     let result = Int32Array::from((arr.name(), Box::new(arrow_result)));
     let result = DateArray::new(Field::new(arr.name(), DataType::Date), result);

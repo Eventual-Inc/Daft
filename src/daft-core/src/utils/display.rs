@@ -66,9 +66,9 @@ pub fn display_timestamp(val: i64, unit: &TimeUnit, timezone: &Option<String>) -
             // In arrow, timezone string can be either:
             // 1. a fixed offset "-07:00", parsed using parse_offset, or
             // 2. a timezone name e.g. "America/Los_Angeles", parsed using parse_offset_tz.
-            if let Ok(offset) = arrow2::temporal_conversions::parse_offset(timezone) {
+            if let Ok(offset) = daft_arrow::temporal_conversions::parse_offset(timezone) {
                 timestamp_to_str_offset(val, unit, &offset)
-            } else if let Ok(tz) = arrow2::temporal_conversions::parse_offset_tz(timezone) {
+            } else if let Ok(tz) = daft_arrow::temporal_conversions::parse_offset_tz(timezone) {
                 timestamp_to_str_tz(val, unit, &tz)
             } else {
                 panic!("Unable to parse timezone string {}", timezone)

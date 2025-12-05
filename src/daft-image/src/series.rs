@@ -12,7 +12,7 @@ fn image_decode_impl(
     let arrow_array = ba
         .data()
         .as_any()
-        .downcast_ref::<arrow2::array::BinaryArray<i64>>()
+        .downcast_ref::<daft_arrow::array::BinaryArray<i64>>()
         .unwrap();
     let mut img_bufs = Vec::<Option<CowImage>>::with_capacity(arrow_array.len());
     let mut cached_dtype: Option<DataType> = None;

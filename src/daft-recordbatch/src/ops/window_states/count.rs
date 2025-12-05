@@ -1,5 +1,5 @@
-use arrow2::bitmap::Bitmap;
 use common_error::DaftResult;
+use daft_arrow::bitmap::Bitmap;
 use daft_core::{count_mode::CountMode, prelude::*};
 
 use super::WindowAggStateOps;

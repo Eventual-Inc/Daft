@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_io::IOStatsContext;
 use daft_recordbatch::RecordBatch;
 
 use crate::micropartition::MicroPartition;
@@ -40,9 +39,7 @@ impl MicroPartition {
         exprs: &[BoundExpr],
         num_partitions: usize,
     ) -> DaftResult<Vec<Self>> {
-        let io_stats = IOStatsContext::new("MicroPartition::partition_by_hash");
-
-        let tables = self.tables_or_read(io_stats)?;
+        let tables = self.record_batches();
 
         if tables.is_empty() {
             return Ok(
@@ -60,9 +57,7 @@ impl MicroPartition {
     }
 
     pub fn partition_by_random(&self, num_partitions: usize, seed: u64) -> DaftResult<Vec<Self>> {
-        let io_stats = IOStatsContext::new("MicroPartition::partition_by_random");
-
-        let tables = self.tables_or_read(io_stats)?;
+        let tables = self.record_batches();
 
         if tables.is_empty() {
             return Ok(
@@ -86,9 +81,7 @@ impl MicroPartition {
         boundaries: &RecordBatch,
         descending: &[bool],
     ) -> DaftResult<Vec<Self>> {
-        let io_stats = IOStatsContext::new("MicroPartition::partition_by_range");
-
-        let tables = self.tables_or_read(io_stats)?;
+        let tables = self.record_batches();
 
         if tables.is_empty() {
             let num_partitions = boundaries.len() + 1;
@@ -110,16 +103,11 @@ impl MicroPartition {
         &self,
         partition_keys: &[BoundExpr],
     ) -> DaftResult<(Vec<Self>, Self)> {
-        let io_stats = IOStatsContext::new("MicroPartition::partition_by_value");
-
-        let tables = self.concat_or_get(io_stats)?;
-
-        if tables.is_none() {
+        let Some(table) = self.concat_or_get()? else {
             let empty = Self::empty(Some(self.schema.clone()));
             let pkeys = empty.eval_expression_list(partition_keys)?;
             return Ok((vec![], pkeys));
-        }
-        let table = tables.unwrap();
+        };
 
         let (tables, values) = table.partition_by_value(partition_keys)?;
 
