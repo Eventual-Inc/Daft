@@ -117,35 +117,42 @@ pub struct ExecStartArgs {
     pub physical_plan: QueryPlan,
 }
 
+#[derive(Clone, Deserialize)]
+struct PlanJsonConfig {
+    pub id: usize,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub node_type: Arc<str>,
+    pub category: Arc<str>,
+    pub children: Option<Vec<PlanJsonConfig>>,
+}
+
 fn parse_physical_plan(physical_plan: &QueryPlan) -> OperatorInfos {
-    let parsed_plan = serde_json::from_str::<serde_json::Value>(physical_plan)
+    let parsed_plan = serde_json::from_str::<PlanJsonConfig>(physical_plan)
         .expect("Failed to parse physical plan");
     let mut operators = HashMap::new();
 
     let mut plans = vec![parsed_plan];
     while let Some(plan) = plans.pop() {
-        let node_id = plan.get("id").unwrap().as_u64().unwrap() as usize;
+        let node_id = plan.id;
         let node_info = NodeInfo {
             id: node_id,
-            name: plan.get("name").unwrap().as_str().unwrap().into(),
-            node_type: plan.get("type").unwrap().as_str().unwrap().into(),
-            node_category: plan.get("category").unwrap().as_str().unwrap().into(),
+            name: plan.name,
+            node_type: plan.node_type.clone(),
+            node_category: plan.category.clone(),
         };
 
         operators.insert(
             node_id,
             OperatorInfo {
                 status: OperatorStatus::Pending,
-                node_info: node_info.clone(),
+                node_info,
                 stats: HashMap::new(),
             },
         );
 
-        if let Some(children) = plan.get("children") {
-            let children = children.as_array().unwrap();
-            for child in children {
-                plans.push(child.clone());
-            }
+        if let Some(children) = plan.children {
+            plans.extend(children);
         }
     }
     operators
