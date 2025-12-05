@@ -86,7 +86,7 @@ impl BlockingSink for CommitWriteSink {
                         WriteMode::Overwrite | WriteMode::OverwritePartitions
                     ) {
                         let (_, root_uri) = parse_url(&file_info.root_dir)?;
-                        let root_uri = root_uri.trim_end_matches("/");
+                        let scheme = root_uri.split("://").next().unwrap_or("file");
 
                         let written_paths: Vec<String> = written_file_path_record_batches
                             .iter()
@@ -103,7 +103,7 @@ impl BlockingSink for CommitWriteSink {
                                 if p.contains("://") {
                                     p
                                 } else {
-                                    format!("{}://{}", root_uri, p)
+                                    format!("{}://{}", scheme, p)
                                 }
                             })
                             .collect();
