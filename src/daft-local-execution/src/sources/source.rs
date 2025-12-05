@@ -134,6 +134,10 @@ impl SourceNode {
 }
 
 impl TreeDisplay for SourceNode {
+    fn id(&self) -> String {
+        self.node_id().to_string()
+    }
+
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -166,7 +170,9 @@ impl TreeDisplay for SourceNode {
 
     fn repr_json(&self) -> serde_json::Value {
         serde_json::json!({
-            "id": self.id(),
+            "id": self.node_id(),
+            "category": "Source",
+            "type": self.source.op_type().to_string(),
             "name": self.name(),
         })
     }
@@ -219,9 +225,10 @@ impl PipelineNode for SourceNode {
                 let mut source_stream = source
                     .get_data(maintain_order, io_stats, chunk_size)
                     .await?;
+                stats_manager.activate_node(node_id);
+
                 while let Some(part) = source_stream.next().await {
                     has_data = true;
-                    stats_manager.activate_node(node_id);
                     if counting_sender.send(part?).await.is_err() {
                         stats_manager.finalize_node(node_id);
                         return Ok(());

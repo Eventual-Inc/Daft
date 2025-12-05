@@ -30,7 +30,6 @@ To set up your development environment:
 9. `make precommit`: run all pre-commit hooks, must install pre-commit first(pip install pre-commit)
 10. `make build-release`: perform a full release build of Daft
 11. `make build-whl`: recompile your code after modifying any Rust code in `src/` for development, only generate `whl` file without installation
-12. `make daft-proto`: build Daft proto sources in `src/daft-proto`
 
 ### Note about Developing `daft-dashboard`
 
@@ -40,7 +39,7 @@ You simply need to install bun, and everything else should work out of the box!
 
 ## Developing with Ray
 
-Running a development version of Daft on a local Ray cluster is as simple as including `daft.context.set_runner_ray()` in your Python script and then building and executing it as usual.
+Running a development version of Daft on a local Ray cluster is as simple as including `daft.set_runner_ray()` in your Python script and then building and executing it as usual.
 
 To use a remote Ray cluster, run the following steps on the same operating system version as your Ray nodes, in order to ensure that your binaries are executable on Ray.
 
@@ -390,8 +389,7 @@ def test_extract(test_expression):
     test_expression(
         data=test_data,
         expected=expected,
-        name="extract",
-        namespace="str",
+        name="regexp_extract",
         sql_name="regexp_extract", # if this is not provided, it will be the same as `name`
         args=[regex],
         kwargs={}

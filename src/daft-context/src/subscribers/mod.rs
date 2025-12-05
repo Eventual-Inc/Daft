@@ -7,7 +7,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshot, ops::NodeInfo};
+use common_metrics::{NodeID, QueryEndState, QueryID, QueryPlan, StatSnapshot};
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartitionRef;
 
@@ -16,14 +16,20 @@ pub struct QueryMetadata {
     pub unoptimized_plan: QueryPlan,
 }
 
+#[derive(Debug, Clone)]
+pub struct QueryResult {
+    pub end_state: QueryEndState,
+    pub error_message: Option<String>,
+}
+
 #[async_trait]
 pub trait Subscriber: Send + Sync + std::fmt::Debug + 'static {
     fn on_query_start(&self, query_id: QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()>;
-    fn on_query_end(&self, query_id: QueryID) -> DaftResult<()>;
+    fn on_query_end(&self, query_id: QueryID, result: QueryResult) -> DaftResult<()>;
     fn on_result_out(&self, query_id: QueryID, result: MicroPartitionRef) -> DaftResult<()>;
     fn on_optimization_start(&self, query_id: QueryID) -> DaftResult<()>;
     fn on_optimization_end(&self, query_id: QueryID, optimized_plan: QueryPlan) -> DaftResult<()>;
-    fn on_exec_start(&self, query_id: QueryID, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()>;
+    fn on_exec_start(&self, query_id: QueryID, physical_plan: QueryPlan) -> DaftResult<()>;
     async fn on_exec_operator_start(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()>;
     async fn on_exec_emit_stats(
         &self,

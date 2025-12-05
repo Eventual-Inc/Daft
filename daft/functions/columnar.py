@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from daft.expressions import Expression, list_
+from daft.expressions import Expression, col
+from daft.functions.list import to_list
 
 
 def columns_sum(*exprs: Expression | str) -> Expression:
@@ -33,7 +34,8 @@ def columns_sum(*exprs: Expression | str) -> Expression:
     """
     if not exprs:
         raise ValueError("columns_sum requires at least one expression")
-    return list_(*exprs).list_sum().alias("columns_sum")
+    exprs_list = [col(e) if isinstance(e, str) else e for e in exprs]
+    return to_list(*exprs_list).list_sum().alias("columns_sum")
 
 
 def columns_mean(*exprs: Expression | str) -> Expression:
@@ -64,7 +66,8 @@ def columns_mean(*exprs: Expression | str) -> Expression:
     """
     if not exprs:
         raise ValueError("columns_mean requires at least one expression")
-    return list_(*exprs).list_mean().alias("columns_mean")
+    exprs_list = [col(e) if isinstance(e, str) else e for e in exprs]
+    return to_list(*exprs_list).list_mean().alias("columns_mean")
 
 
 def columns_avg(*exprs: Expression | str) -> Expression:
@@ -95,7 +98,8 @@ def columns_avg(*exprs: Expression | str) -> Expression:
     """
     if not exprs:
         raise ValueError("columns_avg requires at least one expression")
-    return list_(*exprs).list_mean().alias("columns_avg")
+    exprs_list = [col(e) if isinstance(e, str) else e for e in exprs]
+    return to_list(*exprs_list).list_mean().alias("columns_avg")
 
 
 def columns_min(*exprs: Expression | str) -> Expression:
@@ -126,7 +130,8 @@ def columns_min(*exprs: Expression | str) -> Expression:
     """
     if not exprs:
         raise ValueError("columns_min requires at least one expression")
-    return list_(*exprs).list_min().alias("columns_min")
+    exprs_list = [col(e) if isinstance(e, str) else e for e in exprs]
+    return to_list(*exprs_list).list_min().alias("columns_min")
 
 
 def columns_max(*exprs: Expression | str) -> Expression:
@@ -157,4 +162,5 @@ def columns_max(*exprs: Expression | str) -> Expression:
     """
     if not exprs:
         raise ValueError("columns_max requires at least one expression")
-    return list_(*exprs).list_max().alias("columns_max")
+    exprs_list = [col(e) if isinstance(e, str) else e for e in exprs]
+    return to_list(*exprs_list).list_max().alias("columns_max")

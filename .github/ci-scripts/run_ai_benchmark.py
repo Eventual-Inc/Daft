@@ -62,7 +62,7 @@ def main():
         print(f"Available benchmarks: {', '.join(valid_benchmarks)}")
         sys.exit(1)
 
-    daft.context.set_runner_native()
+    daft.set_runner_native()
 
     metadata = get_run_metadata()
 

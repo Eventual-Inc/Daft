@@ -1,5 +1,5 @@
-use arrow2::types::Index;
 use common_error::DaftResult;
+use daft_arrow::types::Index;
 
 use super::as_arrow::AsArrow;
 use crate::{
@@ -18,9 +18,9 @@ where
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: daft_arrow::types::Index,
     {
-        let result = arrow2::compute::take::take(self.data(), idx.as_arrow())?;
+        let result = daft_arrow::compute::take::take(self.data(), idx.as_arrow())?;
         Self::try_from((self.field.clone(), result))
     }
 }
@@ -32,9 +32,9 @@ macro_rules! impl_dataarray_take {
             pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
             where
                 I: DaftIntegerType,
-                <I as DaftNumericType>::Native: arrow2::types::Index,
+                <I as DaftNumericType>::Native: daft_arrow::types::Index,
             {
-                let result = arrow2::compute::take::take(self.data(), idx.as_arrow())?;
+                let result = daft_arrow::compute::take::take(self.data(), idx.as_arrow())?;
                 Self::try_from((self.field.clone(), result))
             }
         }
@@ -47,7 +47,7 @@ macro_rules! impl_logicalarray_take {
             pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
             where
                 I: DaftIntegerType,
-                <I as DaftNumericType>::Native: arrow2::types::Index,
+                <I as DaftNumericType>::Native: daft_arrow::types::Index,
             {
                 let new_array = self.physical.take(idx)?;
                 Ok(Self::new(self.field.clone(), new_array))
@@ -83,7 +83,7 @@ where
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: daft_arrow::types::Index,
     {
         let new_array = self.physical.take(idx)?;
         Ok(Self::new(self.field.clone(), new_array))
@@ -94,7 +94,7 @@ impl FixedSizeBinaryArray {
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: daft_arrow::types::Index,
     {
         let mut growable = Self::make_growable(
             self.name(),
@@ -124,7 +124,7 @@ impl PythonArray {
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: daft_arrow::types::Index,
     {
         let mut growable = Self::make_growable(
             self.name(),
@@ -153,7 +153,7 @@ impl FixedSizeListArray {
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: daft_arrow::types::Index,
     {
         let mut growable = Self::make_growable(
             self.name(),
@@ -182,7 +182,7 @@ impl ListArray {
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: daft_arrow::types::Index,
     {
         let child_capacity = idx
             .as_arrow()
@@ -223,13 +223,13 @@ impl StructArray {
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
+        <I as DaftNumericType>::Native: daft_arrow::types::Index,
     {
         let idx_as_u64 = idx.cast(&DataType::UInt64)?;
         let taken_validity = self.validity().map(|v| {
-            arrow2::bitmap::Bitmap::from_iter(idx.into_iter().map(|i| match i {
+            daft_arrow::buffer::NullBuffer::from_iter(idx.into_iter().map(|i| match i {
                 None => false,
-                Some(i) => v.get_bit(i.to_usize()),
+                Some(i) => v.is_valid(i.to_usize()),
             }))
         });
         Ok(Self::new(

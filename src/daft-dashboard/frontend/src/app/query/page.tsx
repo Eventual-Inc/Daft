@@ -18,6 +18,12 @@ import { Status } from "./status";
 import { ExecutingState, OperatorInfo, QueryInfo } from "./types";
 import ProgressTable from "./progress-table";
 
+
+function formatPlanJSON(plan: string) {
+  const parsedPlan = JSON.parse(plan);
+  return JSON.stringify(parsedPlan, null, 2);
+}
+
 /**
  * Query detail page component
  * Displays details for a specific query by ID using query parameters
@@ -84,7 +90,9 @@ function QueryPageInner() {
   }
 
   const end_sec =
-    query.state.status === "Finished" ? query.state.end_sec : null;
+    query.state.status === "Finished" || query.state.status === "Canceled" || query.state.status === "Failed"
+      ? query.state.end_sec
+      : null;
 
   return (
     <div className="h-full flex flex-col">
@@ -201,7 +209,7 @@ function QueryPageInner() {
           >
             <div className="bg-zinc-900 h-full">
               {query.state.status === "Pending" ||
-              query.state.status === "Optimizing" ? (
+                query.state.status === "Optimizing" ? (
                 <div className="p-8 text-center">
                   <p className={`${main.className} text-zinc-400`}>
                     Execution not yet started
@@ -227,7 +235,7 @@ function QueryPageInner() {
                   className={`${main.className} text-sm font-mono text-zinc-300 whitespace-pre-wrap`}
                 >
                   {"plan_info" in query.state
-                    ? query.state.plan_info.optimized_plan
+                    ? formatPlanJSON(query.state.plan_info.optimized_plan)
                     : "No optimized plan available"}
                 </pre>
               )}
@@ -242,7 +250,7 @@ function QueryPageInner() {
               <pre
                 className={`${main.className} text-sm font-mono text-zinc-300 whitespace-pre-wrap`}
               >
-                {query.unoptimized_plan}
+                {formatPlanJSON(query.unoptimized_plan)}
               </pre>
             </div>
           </TabsContent>

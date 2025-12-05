@@ -1,4 +1,4 @@
-use std::{iter::repeat, sync::Arc};
+use std::{iter::repeat, ops::Not, sync::Arc};
 
 use common_error::DaftResult;
 
@@ -21,11 +21,11 @@ where
             // If the bitmap is None, the arrow array doesn't have null values
             // (unless it's a NullArray - so check the null count)
             None => match arrow_array.null_count() {
-                0 => arrow2::array::BooleanArray::from_slice(vec![!is_null; arrow_array.len()]), // false for is_null and true for not_null
-                _ => arrow2::array::BooleanArray::from_slice(vec![is_null; arrow_array.len()]), // true for is_null and false for not_null
+                0 => daft_arrow::array::BooleanArray::from_slice(vec![!is_null; arrow_array.len()]), // false for is_null and true for not_null
+                _ => daft_arrow::array::BooleanArray::from_slice(vec![is_null; arrow_array.len()]), // true for is_null and false for not_null
             },
-            Some(bitmap) => arrow2::array::BooleanArray::new(
-                arrow2::datatypes::DataType::Boolean,
+            Some(bitmap) => daft_arrow::array::BooleanArray::new(
+                daft_arrow::datatypes::DataType::Boolean,
                 if is_null { !bitmap } else { bitmap.clone() }, // flip the bitmap for is_null
                 None,
             ),
@@ -64,16 +64,22 @@ impl PythonArray {
     // Common functionality for nullity checks
     fn check_nullity(&self, is_null: bool) -> DaftResult<DataArray<BooleanType>> {
         let bitmap = if let Some(validity) = self.validity() {
-            if is_null { !validity } else { validity.clone() }
+            if is_null {
+                validity.inner().not().into()
+            } else {
+                validity.clone()
+            }
+        } else if is_null {
+            daft_arrow::buffer::NullBuffer::new_null(self.len())
         } else {
-            arrow2::bitmap::Bitmap::new_constant(!is_null, self.len())
+            daft_arrow::buffer::NullBuffer::new_valid(self.len())
         };
 
         BooleanArray::new(
             Arc::new(Field::new(self.name(), DataType::Boolean)),
-            Box::new(arrow2::array::BooleanArray::new(
-                arrow2::datatypes::DataType::Boolean,
-                bitmap,
+            Box::new(daft_arrow::array::BooleanArray::new(
+                daft_arrow::datatypes::DataType::Boolean,
+                daft_arrow::buffer::from_null_buffer(bitmap),
                 None,
             )),
         )
@@ -110,13 +116,13 @@ macro_rules! check_nullity_nested_array {
             ))),
             Some(validity) => Ok(BooleanArray::from((
                 $arr.name(),
-                arrow2::array::BooleanArray::new(
-                    arrow2::datatypes::DataType::Boolean,
-                    if $is_null {
-                        !validity
+                daft_arrow::array::BooleanArray::new(
+                    daft_arrow::datatypes::DataType::Boolean,
+                    daft_arrow::buffer::from_null_buffer(if $is_null {
+                        validity.inner().not().into()
                     } else {
                         validity.clone()
-                    },
+                    }),
                     None,
                 ),
             ))),
@@ -171,7 +177,7 @@ impl FixedSizeListArray {
     pub fn is_valid(&self, idx: usize) -> bool {
         match self.validity() {
             None => true,
-            Some(validity) => validity.get(idx).unwrap(),
+            Some(validity) => validity.is_valid(idx),
         }
     }
 }
@@ -181,7 +187,7 @@ impl ListArray {
     pub fn is_valid(&self, idx: usize) -> bool {
         match self.validity() {
             None => true,
-            Some(validity) => validity.get(idx).unwrap(),
+            Some(validity) => validity.is_valid(idx),
         }
     }
 }
@@ -191,7 +197,7 @@ impl StructArray {
     pub fn is_valid(&self, idx: usize) -> bool {
         match self.validity() {
             None => true,
-            Some(validity) => validity.get(idx).unwrap(),
+            Some(validity) => validity.is_valid(idx),
         }
     }
 }

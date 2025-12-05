@@ -34,7 +34,7 @@ def test_read_volume(make_df, local_unity_catalog, repartition_nparts, with_mors
 
     io_config = local_unity_catalog.to_io_config()
 
-    df = df.select("id", df["files"].url.download(io_config=io_config))
+    df = df.select("id", df["files"].download(io_config=io_config))
 
     result = df.sort("id").to_pydict()
     assert result == {

@@ -8,7 +8,7 @@ use std::{
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayLevel, mermaid::MermaidDisplayOptions};
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_metrics::StatSnapshot;
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
@@ -128,7 +128,7 @@ impl PyNativeExecutor {
         })?;
 
         let py_execution_result = PyExecutionEngineResult {
-            result: Arc::new(Mutex::new(res)),
+            result: Arc::new(Mutex::new(Some(res))),
         };
         Ok(py_execution_result.into_pyobject(py)?.into_any())
     }
@@ -206,16 +206,27 @@ impl NativeExecutor {
         additional_context: Option<HashMap<String, String>>,
     ) -> DaftResult<ExecutionEngineResult> {
         let cancel = self.cancel.clone();
-        let ctx = RuntimeContext::new_with_context(additional_context.unwrap_or_default());
+        let additional_context = additional_context.unwrap_or_default();
+        let ctx = RuntimeContext::new_with_context(additional_context.clone());
         let pipeline =
             translate_physical_plan_to_pipeline(local_physical_plan, psets, &exec_cfg, &ctx)?;
 
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
         let enable_explain_analyze = self.enable_explain_analyze;
 
+        let query_id: common_metrics::QueryID = additional_context
+            .get("query_id")
+            .ok_or_else(|| {
+                common_error::DaftError::ValueError(
+                    "query_id not found in additional_context".to_string(),
+                )
+            })?
+            .clone()
+            .into();
+
         // Spawn execution on the global runtime - returns immediately
         let handle = get_global_runtime();
-        let stats_manager = RuntimeStatsManager::try_new(handle, &pipeline, subscribers)?;
+        let stats_manager = RuntimeStatsManager::try_new(handle, &pipeline, subscribers, query_id)?;
         let task = async move {
             let stats_manager_handle = stats_manager.handle();
             let execution_task = async {
@@ -226,20 +237,11 @@ impl NativeExecutor {
 
                 while let Some(val) = receiver.recv().await {
                     if tx.send(val).await.is_err() {
-                        break;
+                        return Ok(());
                     }
                 }
 
-                while let Some(result) = runtime_handle.join_next().await {
-                    match result {
-                        Ok(Err(e)) | Err(e) => {
-                            runtime_handle.shutdown().await;
-                            return DaftResult::Err(e.into());
-                        }
-                        _ => {}
-                    }
-                }
-                Ok(())
+                runtime_handle.shutdown().await
             };
 
             let result = tokio::select! {
@@ -278,13 +280,12 @@ impl NativeExecutor {
                 )?;
             }
             flush_opentelemetry_providers();
-
             result.map(|()| final_stats)
         };
 
         Ok(ExecutionEngineResult {
             receiver: rx,
-            handle: Some(RuntimeTask::new(handle, task)),
+            handle: RuntimeTask::new(handle, task),
         })
     }
 
@@ -373,7 +374,7 @@ fn should_enable_explain_analyze() -> bool {
 type ExecutionEngineFinalResult = DaftResult<Vec<(usize, StatSnapshot)>>;
 
 pub struct ExecutionEngineResult {
-    handle: Option<RuntimeTask<ExecutionEngineFinalResult>>,
+    handle: RuntimeTask<ExecutionEngineFinalResult>,
     receiver: Receiver<Arc<MicroPartition>>,
 }
 
@@ -382,19 +383,13 @@ impl ExecutionEngineResult {
         self.receiver.recv().await
     }
 
-    async fn finish(&mut self) -> ExecutionEngineFinalResult {
-        match self.handle.take() {
-            Some(handle) => {
-                let result = handle.await;
-                match result {
-                    Ok(Ok(final_stats)) => Ok(final_stats),
-                    Ok(Err(e)) => Err(e),
-                    Err(e) => Err(e),
-                }
-            }
-            None => Err(DaftError::InternalError(
-                "ExecutionEngineResult was already finished".to_string(),
-            )),
+    async fn finish(self) -> ExecutionEngineFinalResult {
+        drop(self.receiver);
+        let result = self.handle.await;
+        match result {
+            Ok(Ok(final_stats)) => Ok(final_stats),
+            Ok(Err(e)) => Err(e),
+            Err(e) => Err(e),
         }
     }
 
@@ -407,7 +402,7 @@ impl ExecutionEngineResult {
 
         let state = StreamState {
             receiver: self.receiver,
-            handle: self.handle,
+            handle: Some(self.handle),
         };
 
         futures::stream::unfold(state, |mut state| async {
@@ -435,7 +430,7 @@ impl ExecutionEngineResult {
     pyclass(module = "daft.daft", name = "PyExecutionEngineResult", frozen)
 )]
 pub struct PyExecutionEngineResult {
-    result: Arc<Mutex<ExecutionEngineResult>>,
+    result: Arc<Mutex<Option<ExecutionEngineResult>>>,
 }
 
 #[cfg(feature = "python")]
@@ -449,7 +444,11 @@ impl PyExecutionEngineResult {
         let result = self.result.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let result = result.lock().await;
-            let part = result.next().await;
+            let part = result
+                .as_ref()
+                .expect("ExecutionEngineResult.__anext__() should not be called after finish().")
+                .next()
+                .await;
             Ok(part.map(PyMicroPartition::from))
         })
     }
@@ -458,7 +457,11 @@ impl PyExecutionEngineResult {
         let result = self.result.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut result = result.lock().await;
-            let stats = result.finish().await?;
+            let stats = result
+                .take()
+                .expect("ExecutionEngineResult.finish() should not be called more than once.")
+                .finish()
+                .await?;
             Ok(bincode::encode_to_vec(&stats, bincode::config::legacy())
                 .expect("Failed to serialize stats object"))
         })

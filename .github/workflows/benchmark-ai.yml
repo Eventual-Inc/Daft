@@ -82,16 +82,16 @@ jobs:
         echo "🚫 CANCELLED: ${{ matrix.benchmark }} benchmark (selected: ${{ inputs.benchmark_type }})"
         echo "This job was cancelled because it doesn't match the selected benchmark type"
         exit 0
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
       with:
         submodules: true
     - name: Assume GitHub Actions AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v5
       with:
         aws-region: ${{ env.AWS_REGION }}
         role-session-name: ${{ matrix.role_name }}
     - name: Install uv
-      uses: astral-sh/setup-uv@v6
+      uses: astral-sh/setup-uv@v7
       with:
         python-version: ${{ env.PYTHON_VERSION }}
         enable-cache: true

@@ -311,17 +311,9 @@ class Series:
         """The sign of a numeric series."""
         return self._eval_expressions("sign")
 
-    def signum(self) -> Series:
-        """The signum of a numeric series."""
-        return self._eval_expressions("sign")
-
     def negate(self) -> Series:
         """The negative of a numeric series."""
-        return self._eval_expressions("negative")
-
-    def negative(self) -> Series:
-        """The negative of a numeric series."""
-        return self._eval_expressions("negative")
+        return self._eval_expressions("negate")
 
     def round(self, decimals: int = 0) -> Series:
         return self._eval_expressions("round", decimals=decimals)
@@ -424,6 +416,22 @@ class Series:
             base: The base of the logarithm.
         """
         return self._eval_expressions("log", base=base)
+
+    def pow(self, exp: float) -> Series:
+        """The elementwise exponentiation of a series.
+
+        Args:
+            exp: The exponent to raise each element to.
+        """
+        return self._eval_expressions("pow", exp=exp)
+
+    def power(self, exp: float) -> Series:
+        """The elementwise exponentiation of a series.
+
+        Args:
+            exp: The exponent to raise each element to.
+        """
+        return self._eval_expressions("power", exp=exp)
 
     def ln(self) -> Series:
         """The elementwise ln of a numeric series."""

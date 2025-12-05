@@ -1,9 +1,9 @@
 use std::{collections::HashSet, sync::Arc};
 
-use arrow2::io::csv::read_async::{AsyncReader, AsyncReaderBuilder};
 use async_compat::CompatExt;
 use common_error::DaftResult;
 use csv_async::ByteRecord;
+use daft_arrow::io::csv::read_async::{AsyncReader, AsyncReaderBuilder};
 use daft_compression::CompressionCodec;
 use daft_core::prelude::Schema;
 use daft_decoding::inference::infer;
@@ -181,7 +181,7 @@ async fn read_csv_arrow_schema_from_uncompressed_reader<R>(
     reader: R,
     parse_options: CsvParseOptions,
     max_bytes: Option<usize>,
-) -> DaftResult<(arrow2::datatypes::Schema, CsvReadStats)>
+) -> DaftResult<(daft_arrow::datatypes::Schema, CsvReadStats)>
 where
     R: AsyncRead + Unpin + Send,
 {
@@ -205,7 +205,7 @@ async fn infer_schema<R>(
     max_rows: Option<usize>,
     max_bytes: Option<usize>,
     has_header: bool,
-) -> arrow2::error::Result<(Vec<arrow2::datatypes::Field>, CsvReadStats)>
+) -> daft_arrow::error::Result<(Vec<daft_arrow::datatypes::Field>, CsvReadStats)>
 where
     R: futures::AsyncRead + Unpin + Send,
 {
@@ -236,7 +236,7 @@ where
         )
     };
     // keep track of inferred field types
-    let mut column_types: Vec<HashSet<arrow2::datatypes::DataType>> =
+    let mut column_types: Vec<HashSet<daft_arrow::datatypes::DataType>> =
         vec![HashSet::new(); headers.len()];
     let mut records_count = 0;
     let mut total_bytes = 0;

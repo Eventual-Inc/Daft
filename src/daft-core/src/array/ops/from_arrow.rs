@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use arrow2::{array::Array, compute::cast::cast};
 use common_error::{DaftError, DaftResult};
+use daft_arrow::{array::Array, compute::cast::cast};
 
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
@@ -14,26 +14,35 @@ use crate::{
     series::Series,
 };
 
-/// Arrays that implement [`FromArrow`] can be instantiated from a Box<dyn arrow2::array::Array>
+/// Arrays that implement [`FromArrow`] can be instantiated from a Box<dyn daft_arrow::array::Array>
 pub trait FromArrow
 where
     Self: Sized,
 {
-    fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self>;
+    fn from_arrow(
+        field: FieldRef,
+        arrow_arr: Box<dyn daft_arrow::array::Array>,
+    ) -> DaftResult<Self>;
 }
 
 impl<T: DaftPhysicalType> FromArrow for DataArray<T> {
-    fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
+    fn from_arrow(
+        field: FieldRef,
+        arrow_arr: Box<dyn daft_arrow::array::Array>,
+    ) -> DaftResult<Self> {
         Self::try_from((field, arrow_arr))
     }
 }
 
 impl FromArrow for FixedSizeListArray {
-    fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
+    fn from_arrow(
+        field: FieldRef,
+        arrow_arr: Box<dyn daft_arrow::array::Array>,
+    ) -> DaftResult<Self> {
         match (&field.dtype, arrow_arr.data_type()) {
             (
                 DataType::FixedSizeList(daft_child_dtype, daft_size),
-                arrow2::datatypes::DataType::FixedSizeList(_arrow_child_field, arrow_size),
+                daft_arrow::datatypes::DataType::FixedSizeList(_arrow_child_field, arrow_size),
             ) => {
                 if daft_size != arrow_size {
                     return Err(DaftError::TypeError(format!(
@@ -45,7 +54,7 @@ impl FromArrow for FixedSizeListArray {
                 let arrow_arr = arrow_arr
                     .as_ref()
                     .as_any()
-                    .downcast_ref::<arrow2::array::FixedSizeListArray>()
+                    .downcast_ref::<daft_arrow::array::FixedSizeListArray>()
                     .unwrap();
                 let arrow_child_array = arrow_arr.values();
                 let child_series = Series::from_arrow(
@@ -55,7 +64,7 @@ impl FromArrow for FixedSizeListArray {
                 Ok(Self::new(
                     field.clone(),
                     child_series,
-                    arrow_arr.validity().cloned(),
+                    arrow_arr.validity().cloned().map(Into::into),
                 ))
             }
             (d, a) => Err(DaftError::TypeError(format!(
@@ -69,7 +78,7 @@ impl FromArrow for FixedSizeListArray {
 impl FromArrow for ListArray {
     fn from_arrow(
         target_field: FieldRef,
-        arrow_arr: Box<dyn arrow2::array::Array>,
+        arrow_arr: Box<dyn daft_arrow::array::Array>,
     ) -> DaftResult<Self> {
         let target_dtype = &target_field.dtype;
         let arrow_dtype = arrow_arr.data_type();
@@ -77,22 +86,22 @@ impl FromArrow for ListArray {
         let result = match (target_dtype, arrow_dtype) {
             (
                 DataType::List(daft_child_dtype),
-                arrow2::datatypes::DataType::List(arrow_child_field),
+                daft_arrow::datatypes::DataType::List(arrow_child_field),
             )
             | (
                 DataType::List(daft_child_dtype),
-                arrow2::datatypes::DataType::LargeList(arrow_child_field),
+                daft_arrow::datatypes::DataType::LargeList(arrow_child_field),
             ) => {
                 // unifying lists
                 let arrow_arr = cast(
                     &*arrow_arr,
-                    &arrow2::datatypes::DataType::LargeList(arrow_child_field.clone()),
+                    &daft_arrow::datatypes::DataType::LargeList(arrow_child_field.clone()),
                     Default::default(),
                 )?;
 
                 let arrow_arr = arrow_arr
                     .as_any()
-                    .downcast_ref::<arrow2::array::ListArray<i64>>() // list array with i64 offsets
+                    .downcast_ref::<daft_arrow::array::ListArray<i64>>() // list array with i64 offsets
                     .unwrap();
 
                 let arrow_child_array = arrow_arr.values();
@@ -104,10 +113,10 @@ impl FromArrow for ListArray {
                     target_field.clone(),
                     child_series,
                     arrow_arr.offsets().clone(),
-                    arrow_arr.validity().cloned(),
+                    arrow_arr.validity().cloned().map(Into::into),
                 ))
             }
-            (DataType::List(daft_child_dtype), arrow2::datatypes::DataType::Map { .. }) => {
+            (DataType::List(daft_child_dtype), daft_arrow::datatypes::DataType::Map { .. }) => {
                 Err(DaftError::TypeError(format!(
                     "Arrow Map type should be converted to Daft Map type, not List. Attempted to create Daft ListArray with type {daft_child_dtype} from Arrow Map type.",
                 )))
@@ -123,9 +132,12 @@ impl FromArrow for ListArray {
 }
 
 impl FromArrow for StructArray {
-    fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
+    fn from_arrow(
+        field: FieldRef,
+        arrow_arr: Box<dyn daft_arrow::array::Array>,
+    ) -> DaftResult<Self> {
         match (&field.dtype, arrow_arr.data_type()) {
-            (DataType::Struct(fields), arrow2::datatypes::DataType::Struct(arrow_fields)) => {
+            (DataType::Struct(fields), daft_arrow::datatypes::DataType::Struct(arrow_fields)) => {
                 if fields.len() != arrow_fields.len() {
                     return Err(DaftError::ValueError(format!(
                         "Attempting to create Daft StructArray with {} fields from Arrow array with {} fields: {} vs {:?}",
@@ -139,7 +151,7 @@ impl FromArrow for StructArray {
                 let arrow_arr = arrow_arr
                     .as_ref()
                     .as_any()
-                    .downcast_ref::<arrow2::array::StructArray>()
+                    .downcast_ref::<daft_arrow::array::StructArray>()
                     .unwrap();
                 let arrow_child_arrays = arrow_arr.values();
 
@@ -154,7 +166,7 @@ impl FromArrow for StructArray {
                 Ok(Self::new(
                     field.clone(),
                     child_series,
-                    arrow_arr.validity().cloned(),
+                    arrow_arr.validity().cloned().map(Into::into),
                 ))
             }
             (d, a) => Err(DaftError::TypeError(format!(
@@ -166,14 +178,17 @@ impl FromArrow for StructArray {
 }
 
 impl FromArrow for MapArray {
-    fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
+    fn from_arrow(
+        field: FieldRef,
+        arrow_arr: Box<dyn daft_arrow::array::Array>,
+    ) -> DaftResult<Self> {
         // we need to handle map type separately because the physical type of map in arrow2 is map but in Daft is list
 
         match (&field.dtype, arrow_arr.data_type()) {
-            (DataType::Map { key, value }, arrow2::datatypes::DataType::Map(map_field, _)) => {
+            (DataType::Map { key, value }, daft_arrow::datatypes::DataType::Map(map_field, _)) => {
                 let arrow_arr = arrow_arr
                     .as_any()
-                    .downcast_ref::<arrow2::array::MapArray>()
+                    .downcast_ref::<daft_arrow::array::MapArray>()
                     .unwrap();
                 let arrow_child_array = arrow_arr.field();
 
@@ -196,7 +211,7 @@ impl FromArrow for MapArray {
                     physical_field,
                     child_series,
                     arrow_arr.offsets().into(),
-                    arrow_arr.validity().cloned(),
+                    arrow_arr.validity().cloned().map(Into::into),
                 );
 
                 Ok(Self::new(field, physical))
@@ -211,7 +226,10 @@ impl FromArrow for MapArray {
 
 #[cfg(feature = "python")]
 impl FromArrow for PythonArray {
-    fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
+    fn from_arrow(
+        field: FieldRef,
+        arrow_arr: Box<dyn daft_arrow::array::Array>,
+    ) -> DaftResult<Self> {
         assert_eq!(field.dtype, DataType::Python);
 
         let target_convert = field.to_physical();
@@ -221,7 +239,7 @@ impl FromArrow for PythonArray {
 
         let physical_arrow_array = physical_arrow_array
             .as_any()
-            .downcast_ref::<arrow2::array::BinaryArray<i64>>() // list array with i64 offsets
+            .downcast_ref::<daft_arrow::array::BinaryArray<i64>>() // list array with i64 offsets
             .expect("PythonArray::from_arrow: Failed to downcast to BinaryArray<i64>");
 
         Self::from_iter_pickled(&field.name, physical_arrow_array.iter())
@@ -233,7 +251,7 @@ macro_rules! impl_logical_from_arrow {
         impl FromArrow for LogicalArray<$logical_type> {
             fn from_arrow(
                 field: FieldRef,
-                arrow_arr: Box<dyn arrow2::array::Array>,
+                arrow_arr: Box<dyn daft_arrow::array::Array>,
             ) -> DaftResult<Self> {
                 let target_convert = field.to_physical();
                 let target_convert_arrow = target_convert.dtype.to_arrow()?;
@@ -266,7 +284,10 @@ impl<T> FromArrow for LogicalArray<FileType<T>>
 where
     T: DaftMediaType,
 {
-    fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
+    fn from_arrow(
+        field: FieldRef,
+        arrow_arr: Box<dyn daft_arrow::array::Array>,
+    ) -> DaftResult<Self> {
         let target_convert = field.to_physical();
         let target_convert_arrow = target_convert.dtype.to_arrow()?;
         let physical_arrow_array = arrow_arr.convert_logical_type(target_convert_arrow);
