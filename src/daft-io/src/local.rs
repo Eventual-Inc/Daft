@@ -264,7 +264,7 @@ impl ObjectSource for LocalSource {
         })
     }
 
-    async fn delete(&self, uri: &str, _io_stats: Option<IOStatsRef>) -> super::Result<()> {
+    async fn delete(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<()> {
         const LOCAL_PROTOCOL: &str = "file://";
         if let Some(path) = uri.strip_prefix(LOCAL_PROTOCOL) {
             match tokio::fs::remove_file(path).await {
@@ -280,7 +280,12 @@ impl ObjectSource for LocalSource {
                         .into()),
                     }
                 }
-                _ => Ok(()),
+                _ => {
+                    if let Some(is) = io_stats.as_ref() {
+                        is.mark_delete_requests(1);
+                    }
+                    Ok(())
+                }
             }
         } else {
             Err(Error::InvalidFilePath { path: uri.into() }.into())
