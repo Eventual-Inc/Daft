@@ -277,7 +277,7 @@ impl Series {
                     PrimitiveArray::from_trusted_len_iter(
                         groups
                             .iter()
-                            .map(|g| g.iter().find(|i| validity.get_bit(**i as usize)).copied()),
+                            .map(|g| g.iter().find(|i| validity.is_valid(**i as usize)).copied()),
                     )
                 } else {
                     PrimitiveArray::from_trusted_len_iter(groups.iter().map(|g| g.first().copied()))

@@ -7,7 +7,6 @@ use super::full::FullNull;
 use crate::{
     array::DataArray,
     datatypes::{DaftNumericType, DaftPrimitiveType},
-    utils::arrow::arrow_bitmap_and_helper,
 };
 
 impl<T> DataArray<T>
@@ -22,7 +21,8 @@ where
         let arr: &PrimitiveArray<T::Native> = self.data().as_any().downcast_ref().unwrap();
         let iter = arr.values_iter().map(|v| func(*v));
 
-        Self::from_values_iter(self.field.clone(), iter).with_validity(arr.validity().cloned())
+        Self::from_values_iter(self.field.clone(), iter)
+            .with_validity(arr.validity().cloned().map(Into::into))
     }
 
     // applies a native binary function to two DataArrays, maintaining validity.
@@ -41,7 +41,13 @@ where
                 let rhs_arr: &PrimitiveArray<R::Native> =
                     rhs.data().as_any().downcast_ref().unwrap();
 
-                let validity = arrow_bitmap_and_helper(lhs_arr.validity(), rhs_arr.validity());
+                let lhs_validity = lhs_arr.validity().map(|v| v.clone().into());
+                let rhs_validity = rhs_arr.validity().map(|v| v.clone().into());
+
+                let validity = daft_arrow::buffer::NullBuffer::union(
+                    lhs_validity.as_ref(),
+                    rhs_validity.as_ref(),
+                );
 
                 let iter =
                     zip(lhs_arr.values_iter(), rhs_arr.values_iter()).map(|(a, b)| func(*a, *b));
@@ -60,7 +66,7 @@ where
                 if let Some(value) = self.get(0) {
                     let iter = rhs_arr.values_iter().map(|v| func(value, *v));
                     Self::from_values_iter(self.field.clone(), iter)
-                        .with_validity(rhs_arr.validity().cloned())
+                        .with_validity(rhs_arr.validity().cloned().map(Into::into))
                 } else {
                     Ok(Self::full_null(self.name(), self.data_type(), r_size))
                 }

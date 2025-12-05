@@ -1191,7 +1191,7 @@ class Expression:
         """Hashes the values in the Expression.
 
         Tip: See Also
-            [`daft.functions.hash`](https://docs.daft.ai/en/stable/api/functions/hash/)
+            [`daft.functions.hash`](https://docs.daft.ai/en/stable/api/functions/hash/): use the function for hashing multiple columns together.
         """
         from daft.functions import hash
 

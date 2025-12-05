@@ -190,9 +190,9 @@ impl ListArray {
 impl StructArray {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
         let taken_validity = self.validity().map(|v| {
-            daft_arrow::bitmap::Bitmap::from_iter(idx.into_iter().map(|i| match i {
+            daft_arrow::buffer::NullBuffer::from_iter(idx.into_iter().map(|i| match i {
                 None => false,
-                Some(i) => v.get_bit(i.to_usize()),
+                Some(i) => v.is_valid(i.to_usize()),
             }))
         });
         Ok(Self::new(

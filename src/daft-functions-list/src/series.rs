@@ -104,7 +104,9 @@ impl SeriesListExtension for Series {
                     daft_arrow::array::PrimitiveArray::from_vec(
                         offsets.lengths().map(|l| l as u64).collect(),
                     )
-                    .with_validity(data_array.validity().cloned()),
+                    .with_validity(daft_arrow::buffer::wrap_null_buffer(
+                        data_array.validity().cloned(),
+                    )),
                 );
                 Ok(UInt64Array::from((self.name(), array)))
             }

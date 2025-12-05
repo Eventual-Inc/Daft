@@ -37,13 +37,13 @@ macro_rules! impl_series_like_for_logical_array {
 
             fn with_validity(
                 &self,
-                validity: Option<daft_arrow::bitmap::Bitmap>,
+                validity: Option<daft_arrow::buffer::NullBuffer>,
             ) -> DaftResult<Series> {
                 let new_array = self.0.physical.with_validity(validity)?;
                 Ok($da::new(self.0.field.clone(), new_array).into_series())
             }
 
-            fn validity(&self) -> Option<&daft_arrow::bitmap::Bitmap> {
+            fn validity(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
                 self.0.physical.validity()
             }
 
@@ -212,11 +212,14 @@ where
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    fn with_validity(&self, validity: Option<daft_arrow::bitmap::Bitmap>) -> DaftResult<Series> {
+    fn with_validity(
+        &self,
+        validity: Option<daft_arrow::buffer::NullBuffer>,
+    ) -> DaftResult<Series> {
         let new_array = self.0.physical.with_validity(validity)?;
         Ok(FileArray::<T>::new(self.0.field.clone(), new_array).into_series())
     }
-    fn validity(&self) -> Option<&daft_arrow::bitmap::Bitmap> {
+    fn validity(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
         self.0.physical.validity()
     }
     fn broadcast(&self, num: usize) -> DaftResult<Series> {

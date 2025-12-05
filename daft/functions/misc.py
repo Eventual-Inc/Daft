@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 import daft.daft as native
 from daft.datatype import DataType, DataTypeLike
-from daft.expressions import Expression
+from daft.expressions import Expression, col
 from daft.expressions.expressions import WhenExpr
 from daft.series import item_to_series
 
@@ -267,7 +267,7 @@ def is_in(expr: Expression, other: Any) -> Expression:
 
 
 def hash(
-    expr: Expression,
+    *exprs: Expression,
     seed: Any | None = None,
     hash_function: Literal["xxhash", "xxhash32", "xxhash64", "xxhash3_64", "murmurhash3", "sha1"] | None = "xxhash",
 ) -> Expression:
@@ -276,7 +276,7 @@ def hash(
     Uses the specified hash function to hash the values in the expression. Default to [XXH3_64bits](https://xxhash.com/) non-cryptographic hash function.
 
     Args:
-        expr: The expression to hash.
+        exprs: One or more expressions (or column names/wildcards) to hash.
         seed (optional): Seed used for generating the hash. Defaults to 0.
         hash_function (optional): Hash function to use. One of "xxhash" (alias for "xxhash3_64"), "xxhash32", "xxhash64", "xxhash3_64", "murmurhash3", or "sha1". Defaults to "xxhash" (alias for "xxhash3_64").
 
@@ -289,11 +289,21 @@ def hash(
     """
     # Only pass hash_function if explicitly provided to maintain backward compatibility in string representation
     kwargs = {}
+    if not exprs:
+        raise ValueError("hash() requires at least one expression")
+    normalized = []
+    for expr in exprs:
+        if isinstance(expr, str):
+            resolved = col(expr)
+            normalized.append(resolved)
+        else:
+            resolved = Expression._to_expression(expr)
+            normalized.append(resolved)
     if seed is not None:
         kwargs["seed"] = seed
     if hash_function is not None:
         kwargs["hash_function"] = hash_function
-    return Expression._call_builtin_scalar_fn("hash", expr, **kwargs)
+    return Expression._call_builtin_scalar_fn("hash", *normalized, **kwargs)
 
 
 def minhash(

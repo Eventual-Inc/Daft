@@ -1,7 +1,8 @@
 use std::{cmp, iter::repeat_n, ops::Not, sync::Arc};
 
+use arrow_array::builder::BooleanBufferBuilder;
 use common_error::DaftResult;
-use daft_arrow::{bitmap::MutableBitmap, types::IndexRange};
+use daft_arrow::{buffer::NullBufferBuilder, types::IndexRange};
 use daft_core::{
     array::ops::{DaftIsNull, arrow::comparison::build_multi_array_is_equal, as_arrow::AsArrow},
     prelude::*,
@@ -149,7 +150,7 @@ pub(super) fn hash_left_right_join(
         let mut left_idx = Vec::with_capacity(min_rows);
         let mut right_idx = Vec::with_capacity(min_rows);
 
-        let mut l_valid = MutableBitmap::with_capacity(min_rows);
+        let mut l_valid = NullBufferBuilder::new(min_rows);
 
         for (r_idx, h) in r_hashes.as_arrow().values_iter().enumerate() {
             if let Some((_, indices)) = probe_table.raw_entry().from_hash(*h, |other| {
@@ -161,17 +162,17 @@ pub(super) fn hash_left_right_join(
                 for l_idx in indices {
                     left_idx.push(*l_idx);
                     right_idx.push(r_idx as u64);
-                    l_valid.push(true);
+                    l_valid.append_non_null();
                 }
             } else {
                 left_idx.push(0);
                 right_idx.push(r_idx as u64);
-                l_valid.push(false);
+                l_valid.append_null();
             }
         }
 
         (
-            UInt64Array::from(("left_indices", left_idx)).with_validity(Some(l_valid.into()))?,
+            UInt64Array::from(("left_indices", left_idx)).with_validity(l_valid.finish())?,
             UInt64Array::from(("right_indices", right_idx)),
         )
     };
@@ -325,10 +326,10 @@ pub(super) fn hash_outer_join(
         let mut left_idx = Vec::with_capacity(min_rows);
         let mut right_idx = Vec::with_capacity(min_rows);
 
-        let mut l_valid = MutableBitmap::with_capacity(min_rows);
-        let mut r_valid = MutableBitmap::with_capacity(min_rows);
+        let mut l_valid = NullBufferBuilder::new(min_rows);
+        let mut r_valid = NullBufferBuilder::new(min_rows);
 
-        let mut left_idx_used = MutableBitmap::from_len_zeroed(lkeys.len());
+        let mut left_idx_used = BooleanBufferBuilder::new(lkeys.len());
 
         for (r_idx, h) in r_hashes.as_arrow().values_iter().enumerate() {
             if let Some((_, indices)) = probe_table.raw_entry().from_hash(*h, |other| {
@@ -339,36 +340,35 @@ pub(super) fn hash_outer_join(
             }) {
                 for l_idx in indices {
                     left_idx.push(*l_idx);
-                    left_idx_used.set(*l_idx as usize, true);
+                    left_idx_used.set_bit(*l_idx as usize, true);
 
                     right_idx.push(r_idx as u64);
 
-                    l_valid.push(true);
-                    r_valid.push(true);
+                    l_valid.append_non_null();
+                    r_valid.append_non_null();
                 }
             } else {
                 left_idx.push(0);
                 right_idx.push(r_idx as u64);
 
-                l_valid.push(false);
-                r_valid.push(true);
+                l_valid.append_null();
+                r_valid.append_non_null();
             }
         }
 
-        for (l_idx, used) in left_idx_used.into_iter().enumerate() {
+        for (l_idx, used) in left_idx_used.finish().into_iter().enumerate() {
             if !used {
                 left_idx.push(l_idx as u64);
                 right_idx.push(0);
 
-                l_valid.push(true);
-                r_valid.push(false);
+                l_valid.append_non_null();
+                r_valid.append_null();
             }
         }
 
-        let larr =
-            UInt64Array::from(("left_indices", left_idx)).with_validity(Some(l_valid.into()))?;
+        let larr = UInt64Array::from(("left_indices", left_idx)).with_validity(l_valid.finish())?;
         let rarr =
-            UInt64Array::from(("right_indices", right_idx)).with_validity(Some(r_valid.into()))?;
+            UInt64Array::from(("right_indices", right_idx)).with_validity(r_valid.finish())?;
 
         if probe_left {
             (larr, rarr)

@@ -41,12 +41,12 @@ macro_rules! impl_series_like_for_data_array {
 
             fn with_validity(
                 &self,
-                validity: Option<daft_arrow::bitmap::Bitmap>,
+                validity: Option<daft_arrow::buffer::NullBuffer>,
             ) -> DaftResult<Series> {
                 Ok(self.0.with_validity(validity)?.into_series())
             }
 
-            fn validity(&self) -> Option<&daft_arrow::bitmap::Bitmap> {
+            fn validity(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
                 self.0.validity()
             }
 

@@ -169,13 +169,13 @@ impl MapArray {
                 .iter()
                 .map(|s| s.to_arrow())
                 .collect(),
-            inner_struct_array.validity().cloned(),
+            daft_arrow::buffer::wrap_null_buffer(inner_struct_array.validity().cloned()),
         ));
         Box::new(daft_arrow::array::MapArray::new(
             arrow_dtype,
             self.physical.offsets().try_into().unwrap(),
             arrow_field,
-            self.physical.validity().cloned(),
+            daft_arrow::buffer::wrap_null_buffer(self.physical.validity().cloned()),
         ))
     }
 }
