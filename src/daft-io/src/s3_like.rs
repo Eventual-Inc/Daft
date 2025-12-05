@@ -1511,7 +1511,7 @@ impl ObjectSource for S3LikeSource {
             .await
             .context(UnableToGrabSemaphoreSnafu)?;
 
-        let (_scheme, bucket, key) = parse_s3_url(uri)?;
+        let ObjectPath { bucket, key, .. } = parse_object_url(uri)?;
         if key.is_empty() {
             return Err(Error::NotAFile { path: uri.into() }.into());
         }
