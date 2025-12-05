@@ -34,6 +34,8 @@ pub struct TosConfig {
     pub read_timeout_ms: u64,
     pub max_concurrent_requests: u32,
     pub max_connections_per_io_thread: u32,
+    pub multipart_size: u64,
+    pub multipart_max_concurrency: u32,
 }
 
 impl Default for TosConfig {
@@ -51,6 +53,8 @@ impl Default for TosConfig {
             read_timeout_ms: 30_000,
             max_concurrent_requests: 50,
             max_connections_per_io_thread: 50,
+            multipart_size: 8 * 1024 * 1024,
+            multipart_max_concurrency: 16,
         }
     }
 }
@@ -86,6 +90,11 @@ impl TosConfig {
         res.push(format!(
             "Max connections = {}",
             self.max_connections_per_io_thread
+        ));
+        res.push(format!("Multipart size = {}", self.multipart_size));
+        res.push(format!(
+            "Multipart max concurrency = {}",
+            self.multipart_max_concurrency
         ));
         res
     }
