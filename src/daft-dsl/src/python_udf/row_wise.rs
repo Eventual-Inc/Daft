@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display, num::NonZeroUsize, sync::Arc};
+use std::{collections::BTreeMap, fmt::Display, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::{prelude::*, series::Series};
@@ -29,7 +29,7 @@ pub fn row_wise_udf(
     on_error: crate::functions::python::OnError,
     original_args: RuntimePyObject,
     args: Vec<ExprRef>,
-    ray_options: Option<HashMap<String, String>>,
+    ray_options: Option<BTreeMap<String, String>>,
 ) -> Expr {
     Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
         function_name: Arc::from(name),
@@ -49,7 +49,7 @@ pub fn row_wise_udf(
     })))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RowWisePyFn {
     pub function_name: Arc<str>,
     pub cls: RuntimePyObject,
@@ -63,7 +63,7 @@ pub struct RowWisePyFn {
     pub max_concurrency: Option<NonZeroUsize>,
     pub max_retries: Option<usize>,
     pub on_error: crate::functions::python::OnError,
-    pub ray_options: Option<HashMap<String, String>>,
+    pub ray_options: Option<BTreeMap<String, String>>,
 }
 
 impl Display for RowWisePyFn {
@@ -471,29 +471,6 @@ impl RowWisePyFn {
         }
 
         Ok(py_series.series.rename(name))
-    }
-}
-
-impl std::hash::Hash for RowWisePyFn {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.function_name.hash(state);
-        // Skip hashing cls and method as they may not be hashable
-        self.is_async.hash(state);
-        self.return_dtype.hash(state);
-        self.gpus.hash(state);
-        self.use_process.hash(state);
-        self.max_concurrency.hash(state);
-        // Skip hashing original_args as it may not be hashable
-        self.args.hash(state);
-        self.max_retries.hash(state);
-        // Skip hashing on_error as it may not be hashable
-        // Hash ray_options manually
-        if let Some(ray_options) = &self.ray_options {
-            for (key, value) in ray_options {
-                key.hash(state);
-                value.hash(state);
-            }
-        }
     }
 }
 

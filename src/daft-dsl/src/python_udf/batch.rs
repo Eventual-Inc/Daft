@@ -45,7 +45,7 @@ pub fn batch_udf(
     })))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct BatchPyFn {
     pub function_name: Arc<str>,
     pub cls: RuntimePyObject,
@@ -295,21 +295,5 @@ impl BatchPyFn {
         _metrics: &mut dyn MetricsCollector,
     ) -> DaftResult<Series> {
         panic!("Cannot evaluate a BatchPyFn without compiling for Python");
-    }
-}
-
-impl std::hash::Hash for BatchPyFn {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.function_name.hash(state);
-        // Skip hashing cls and method as they may not be hashable
-        self.is_async.hash(state);
-        self.return_dtype.hash(state);
-        self.gpus.hash(state);
-        self.use_process.hash(state);
-        self.max_concurrency.hash(state);
-        self.batch_size.hash(state);
-        // Skip hashing original_args as it may not be hashable
-        self.args.hash(state);
-        self.max_retries.hash(state);
     }
 }

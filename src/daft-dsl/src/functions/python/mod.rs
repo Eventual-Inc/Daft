@@ -1,12 +1,7 @@
 mod runtime_py_object;
 mod udf;
 
-use std::{
-    hash::{Hash, Hasher},
-    num::NonZeroUsize,
-    str::FromStr,
-    sync::Arc,
-};
+use std::{hash::Hash, num::NonZeroUsize, str::FromStr, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
@@ -273,7 +268,7 @@ pub fn initialize_udfs(expr: ExprRef) -> DaftResult<ExprRef> {
     .map(|transformed| transformed.data)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct UDFProperties {
     pub name: String,
     pub resource_request: Option<ResourceRequest>,
@@ -285,21 +280,6 @@ pub struct UDFProperties {
     pub is_scalar: bool,
     pub on_error: Option<OnError>,
     pub ray_options: Option<RuntimePyObject>,
-}
-
-impl Hash for UDFProperties {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
-        self.resource_request.hash(state);
-        self.batch_size.hash(state);
-        self.concurrency.hash(state);
-        self.use_process.hash(state);
-        self.max_retries.hash(state);
-        self.is_async.hash(state);
-        self.is_scalar.hash(state);
-        self.on_error.hash(state);
-        // Intentionally exclude ray_options from hashing to avoid optimizer plan identity shifts
-    }
 }
 
 impl UDFProperties {
