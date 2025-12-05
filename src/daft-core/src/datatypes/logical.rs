@@ -91,7 +91,7 @@ macro_rules! impl_logical_type {
 impl<L: DaftLogicalType> LogicalArrayImpl<L, DataArray<L::PhysicalType>> {
     impl_logical_type!(DataArray);
 
-    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+    pub fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
         let daft_type = self.data_type();
         let arrow_logical_type = daft_type.to_arrow().unwrap();
         let physical_arrow_array = self.physical.data();
@@ -100,10 +100,10 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, DataArray<L::PhysicalType>> {
             // For wrapped primitive types, switch the datatype label on the arrow2 Array.
             Decimal128(..) | Date | Timestamp(..) | Duration(..) | Time(..) => {
                 with_match_daft_logical_primitive_types!(daft_type, |$P| {
-                    use arrow2::array::Array;
+                    use daft_arrow::array::Array;
                     physical_arrow_array
                         .as_any()
-                        .downcast_ref::<arrow2::array::PrimitiveArray<$P>>()
+                        .downcast_ref::<daft_arrow::array::PrimitiveArray<$P>>()
                         .unwrap()
                         .clone()
                         .to(arrow_logical_type)
@@ -111,10 +111,10 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, DataArray<L::PhysicalType>> {
                 })
             }
             // Otherwise, use arrow cast to make sure the result arrow2 array is of the correct type.
-            _ => arrow2::compute::cast::cast(
+            _ => daft_arrow::compute::cast::cast(
                 physical_arrow_array,
                 &arrow_logical_type,
-                arrow2::compute::cast::CastOptions {
+                daft_arrow::compute::cast::CastOptions {
                     wrapped: true,
                     partial: false,
                 },
@@ -128,7 +128,7 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, DataArray<L::PhysicalType>> {
 impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
     impl_logical_type!(FixedSizeListArray);
 
-    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+    pub fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
         let mut fixed_size_list_arrow_array = self.physical.to_arrow();
         let arrow_logical_type = self.data_type().to_arrow().unwrap();
         fixed_size_list_arrow_array.change_type(arrow_logical_type);
@@ -140,7 +140,7 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
 impl<L: DaftLogicalType> LogicalArrayImpl<L, StructArray> {
     impl_logical_type!(StructArray);
 
-    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+    pub fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
         let mut struct_arrow_array = self.physical.to_arrow();
         let arrow_logical_type = self.data_type().to_arrow().unwrap();
         struct_arrow_array.change_type(arrow_logical_type);
@@ -151,10 +151,10 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, StructArray> {
 impl MapArray {
     impl_logical_type!(ListArray);
 
-    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+    pub fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
         let arrow_dtype = self.data_type().to_arrow().unwrap();
         let inner_struct_arrow_dtype = match &arrow_dtype {
-            arrow2::datatypes::DataType::Map(field, _) => field.data_type().clone(),
+            daft_arrow::datatypes::DataType::Map(field, _) => field.data_type().clone(),
             _ => unreachable!("Expected map type"),
         };
         let inner_struct_array = self
@@ -162,7 +162,7 @@ impl MapArray {
             .flat_child
             .struct_()
             .expect("Expected struct array");
-        let arrow_field = Box::new(arrow2::array::StructArray::new(
+        let arrow_field = Box::new(daft_arrow::array::StructArray::new(
             inner_struct_arrow_dtype,
             inner_struct_array
                 .children
@@ -171,7 +171,7 @@ impl MapArray {
                 .collect(),
             inner_struct_array.validity().cloned(),
         ));
-        Box::new(arrow2::array::MapArray::new(
+        Box::new(daft_arrow::array::MapArray::new(
             arrow_dtype,
             self.physical.offsets().try_into().unwrap(),
             arrow_field,

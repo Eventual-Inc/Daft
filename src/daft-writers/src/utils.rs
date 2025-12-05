@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common_error::{DaftError, DaftResult};
-use daft_io::SourceType;
+use daft_io::{SourceType, utils::ObjectPath};
 use daft_recordbatch::RecordBatch;
 
 /// The default value used by Hive for null partition values.
@@ -99,7 +99,11 @@ fn build_local_file_path(
 
 /// Helper function to build the path to an S3 url.
 fn build_s3_path(root_dir: &str, partition_path: PathBuf, filename: String) -> DaftResult<PathBuf> {
-    let (_scheme, bucket, key) = daft_io::s3_like::parse_s3_url(root_dir)?;
+    let ObjectPath {
+        scheme: _scheme,
+        bucket,
+        key,
+    } = daft_io::utils::parse_object_url(root_dir)?;
     let key = Path::new(&key).join(partition_path).join(filename);
     Ok(PathBuf::from(format!("{}/{}", bucket, key.display())))
 }
@@ -121,21 +125,23 @@ mod tests {
     fn test_record_batch_to_partition_string() -> DaftResult<()> {
         let year_series = Series::from_arrow(
             Arc::new(Field::new("year", DataType::Utf8)),
-            Box::new(arrow2::array::Utf8Array::<i64>::from_slice(&["2023"])),
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(&["2023"])),
         )?;
         let month_series = Series::from_arrow(
             Arc::new(Field::new("month", DataType::Utf8)),
-            Box::new(arrow2::array::Utf8Array::<i64>::from_slice(&["1"])),
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(&["1"])),
         )?;
         // Include a column with a null value.
         let day_series = Series::from_arrow(
             Arc::new(Field::new("day", DataType::Utf8)),
-            Box::new(arrow2::array::Utf8Array::<i64>::from([None::<&str>])),
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from([None::<&str>])),
         )?;
         // Include a column with a name that needs to be URL-encoded.
         let date_series = Series::from_arrow(
             Arc::new(Field::new("today's date", DataType::Utf8)),
-            Box::new(arrow2::array::Utf8Array::<i64>::from_slice(&["2025/04/29"])),
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(&[
+                "2025/04/29",
+            ])),
         )?;
         let batch = RecordBatch::from_nonempty_columns(vec![
             year_series,
@@ -168,13 +174,13 @@ mod tests {
     fn test_record_batch_to_partition_string_multi_row_error() -> DaftResult<()> {
         let year_series = Series::from_arrow(
             Arc::new(Field::new("year", DataType::Utf8)),
-            Box::new(arrow2::array::Utf8Array::<i64>::from_slice(&[
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(&[
                 "2023", "2024",
             ])),
         )?;
         let month_series = Series::from_arrow(
             Arc::new(Field::new("month", DataType::Utf8)),
-            Box::new(arrow2::array::Utf8Array::<i64>::from_slice(&["1", "2"])),
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(&["1", "2"])),
         )?;
         let batch = RecordBatch::from_nonempty_columns(vec![year_series, month_series])?;
 

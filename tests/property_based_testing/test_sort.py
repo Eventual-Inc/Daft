@@ -196,7 +196,7 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
             DataType.float64(): lambda e, other: e + other,
             DataType.bool(): lambda e, other: e | other,
             # No meaningful binary operations supported for these yet
-            DataType.date(): lambda e, other: e.dt.year(),
+            DataType.date(): lambda e, other: e.year(),
             DataType.binary(): lambda e, other: e,
             DataType.null(): lambda e, other: e,
         }

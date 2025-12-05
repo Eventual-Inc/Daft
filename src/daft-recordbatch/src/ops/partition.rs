@@ -1,7 +1,7 @@
 use std::ops::Rem;
 
-use arrow2::array::{Array, DictionaryKey};
 use common_error::{DaftError, DaftResult};
+use daft_arrow::array::{Array, DictionaryKey};
 use daft_core::{
     array::ops::{IntoGroups, as_arrow::AsArrow},
     datatypes::UInt64Array,

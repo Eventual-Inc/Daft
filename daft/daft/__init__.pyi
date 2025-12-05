@@ -1069,18 +1069,6 @@ def read_parquet(
     multithreaded_io: bool | None = None,
     coerce_int96_timestamp_unit: PyTimeUnit | None = None,
 ) -> PyRecordBatch: ...
-def read_parquet_bulk(
-    uris: list[str],
-    columns: list[str] | None = None,
-    start_offset: int | None = None,
-    num_rows: int | None = None,
-    row_groups: list[list[int] | None] | None = None,
-    predicate: PyExpr | None = None,
-    io_config: IOConfig | None = None,
-    num_parallel_tasks: int | None = 128,
-    multithreaded_io: bool | None = None,
-    coerce_int96_timestamp_unit: PyTimeUnit | None = None,
-) -> list[PyRecordBatch]: ...
 def read_parquet_statistics(
     uris: PySeries,
     io_config: IOConfig | None = None,
@@ -1712,8 +1700,6 @@ class PyMicroPartition:
     @staticmethod
     def empty(schema: PySchema | None = None) -> PyMicroPartition: ...
     @staticmethod
-    def from_scan_task(scan_task: ScanTask) -> PyMicroPartition: ...
-    @staticmethod
     def from_record_batches(record_batches: list[PyRecordBatch]) -> PyMicroPartition: ...
     @staticmethod
     def from_arrow_record_batches(record_batches: list[pa.RecordBatch], schema: PySchema) -> PyMicroPartition: ...
@@ -1794,20 +1780,6 @@ class PyMicroPartition:
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
         coerce_int96_timestamp_unit: PyTimeUnit = PyTimeUnit.nanoseconds(),
-    ) -> PyMicroPartition: ...
-    @classmethod
-    def read_parquet_bulk(
-        cls,
-        uris: list[str],
-        columns: list[str] | None = None,
-        start_offset: int | None = None,
-        num_rows: int | None = None,
-        row_groups: list[list[int] | None] | None = None,
-        predicate: PyExpr | None = None,
-        io_config: IOConfig | None = None,
-        num_parallel_tasks: int | None = None,
-        multithreaded_io: bool | None = None,
-        coerce_int96_timestamp_unit: PyTimeUnit | None = None,
     ) -> PyMicroPartition: ...
     @classmethod
     def read_csv(

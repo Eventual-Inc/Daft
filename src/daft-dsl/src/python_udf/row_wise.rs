@@ -3,6 +3,9 @@ use std::{fmt::Display, num::NonZeroUsize, sync::Arc};
 use common_error::DaftResult;
 use daft_core::prelude::*;
 use itertools::Itertools;
+use opentelemetry::logs::{AnyValue, LogRecord, Logger, LoggerProvider};
+#[cfg(feature = "python")]
+use pyo3::{PyErr, Python, prelude::*};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -189,11 +192,83 @@ impl RowWisePyFn {
                 log::warn!("Python UDF error: {}", err);
                 let num_rows = args.iter().map(Series::len).max().unwrap();
 
+                let logger_provider = common_tracing::GLOBAL_LOGGER_PROVIDER.lock().unwrap();
+                if let Some(logger_provider) = logger_provider.as_ref() {
+                    let logger = logger_provider.logger("python-udf-error");
+                    let mut log_record = logger.create_log_record();
+
+                    if let DaftError::PyO3Error(py_err) = &err {
+                        Python::attach(|py| {
+                            Self::capture_exception_details(py, py_err, &mut log_record);
+                        });
+                    } else {
+                        log_record.set_body(format!("{err}").into());
+                    }
+
+                    logger.emit(log_record);
+                }
+
                 Ok(Series::full_null(name, &self.return_dtype, num_rows))
             }
             (Err(_), OnError::Ignore) => {
                 let num_rows = args.iter().map(Series::len).max().unwrap();
                 Ok(Series::full_null(name, &self.return_dtype, num_rows))
+            }
+        }
+    }
+
+    #[cfg(feature = "python")]
+    pub(crate) fn capture_exception_details<R: LogRecord>(
+        py: Python,
+        py_err: &PyErr,
+        log_record: &mut R,
+    ) {
+        let exception_type = py_err.get_type(py);
+        let exception_value = py_err.value(py);
+
+        let type_str = exception_type
+            .name()
+            .and_then(|name| name.to_str().map(|s| s.to_string()));
+
+        let msg_str = exception_value
+            .str()
+            .and_then(|value| value.to_str().map(|s| s.to_string()));
+
+        if let Ok(msg_str) = msg_str {
+            log_record.set_body(AnyValue::String(msg_str.into()));
+        }
+
+        if let Ok(type_str) = type_str {
+            log_record.add_attribute("type", AnyValue::String(type_str.into()));
+        }
+
+        let format_exception = py
+            .import(pyo3::intern!(py, "traceback"))
+            .and_then(|module| module.getattr("format_exception"));
+
+        if let Ok(format_exception) = format_exception {
+            let exception_traceback = py_err.traceback(py);
+
+            let formatted =
+                format_exception.call1((exception_type, exception_value, exception_traceback));
+
+            if let Ok(formatted) = &formatted {
+                let formatted_list = formatted.cast::<pyo3::types::PyList>();
+
+                if let Ok(formatted_list) = formatted_list {
+                    let formatted_list: Vec<AnyValue> = formatted_list
+                        .iter()
+                        .map(|frame| {
+                            frame
+                                .extract::<String>()
+                                .unwrap_or_else(|_| "<unrepresentable frame>".to_string())
+                        })
+                        .map(|frame| frame.into())
+                        .collect();
+
+                    log_record
+                        .add_attribute("traceback", AnyValue::ListAny(Box::new(formatted_list)));
+                }
             }
         }
     }
@@ -241,7 +316,25 @@ impl RowWisePyFn {
                             match on_error {
                                 OnError::Raise => res = Err(e),
                                 OnError::Log => {
-                                    log::warn!("Retrying function call after error: {}", e);
+                                    let lg = common_tracing::GLOBAL_LOGGER_PROVIDER.lock().unwrap();
+                                    if let Some(logger_provider) = lg.as_ref() {
+                                        let logger = logger_provider.logger("python-udf-error");
+                                        let mut log_record = logger.create_log_record();
+
+                                        if let DaftError::PyO3Error(py_err) = &e {
+                                            RowWisePyFn::capture_exception_details(
+                                                py,
+                                                py_err,
+                                                &mut log_record,
+                                            );
+                                        } else {
+                                            log_record.set_body(format!("{e}").into());
+                                        }
+
+                                        logger.emit(log_record);
+                                    }
+
+                                    log::warn!("Python UDF error: {}", e);
                                     res = Ok(Literal::Null);
                                 }
                                 OnError::Ignore => {
@@ -373,5 +466,97 @@ impl RowWisePyFn {
         }
 
         Ok(py_series.series.rename(name))
+    }
+}
+
+#[cfg(all(test, feature = "python"))]
+mod tests {
+    use std::ffi::CString;
+
+    use opentelemetry::logs::{AnyValue, Logger, LoggerProvider};
+    use opentelemetry_sdk::{Resource, logs::SdkLoggerProvider};
+    use pyo3::prelude::*;
+
+    use crate::python_udf::RowWisePyFn;
+
+    #[test]
+    fn capture_exception_details_includes_type_and_traceback() {
+        Python::initialize();
+        Python::attach(|py| {
+            let code = r#"
+def failing():
+    raise RuntimeError("boom")
+"#;
+            let module = PyModule::new(py, "test_mod").unwrap();
+            let code_cstr = CString::new(code).unwrap();
+            py.run(code_cstr.as_c_str(), Some(&module.dict()), None)
+                .unwrap();
+            let func = module.getattr("failing").unwrap();
+
+            let result = func.call0();
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+
+            // Create an in-memory logger provider for testing
+            let logger_provider = SdkLoggerProvider::builder()
+                .with_resource(Resource::builder().build())
+                .build();
+            let logger = logger_provider.logger("test-logger");
+            let mut log_record = logger.create_log_record();
+
+            RowWisePyFn::capture_exception_details(py, &err, &mut log_record);
+
+            // Verify the log record has a body with the error message
+            let body = log_record.body();
+            assert!(body.is_some(), "Log record should have a body");
+            if let Some(AnyValue::String(body_str)) = body {
+                assert!(
+                    body_str.as_str().contains("boom"),
+                    "Body should contain error message"
+                );
+            }
+
+            // Verify the log record has the "type" attribute
+            let type_attr = log_record.attributes_iter().find(|(key, value)| {
+                key.as_str() == "type"
+                    && if let AnyValue::String(s) = value {
+                        s.as_str() == "RuntimeError"
+                    } else {
+                        false
+                    }
+            });
+            assert!(
+                type_attr.is_some(),
+                "Log record should have a 'type' attribute with value 'RuntimeError'"
+            );
+
+            // Verify the log record has the "traceback" attribute
+            let traceback_attr = log_record
+                .attributes_iter()
+                .find(|(key, _)| key.as_str() == "traceback");
+            assert!(
+                traceback_attr.is_some(),
+                "Log record should have a 'traceback' attribute"
+            );
+
+            // Verify traceback contains the function name "failing"
+            if let Some((_, AnyValue::ListAny(traceback_list))) = traceback_attr {
+                assert!(!traceback_list.is_empty(), "Traceback should not be empty");
+                let traceback_str: String = traceback_list
+                    .iter()
+                    .map(|v| {
+                        if let AnyValue::String(s) = v {
+                            s.as_str().to_string()
+                        } else {
+                            String::new()
+                        }
+                    })
+                    .collect();
+                assert!(
+                    traceback_str.contains("failing"),
+                    "Traceback should contain function name 'failing'"
+                );
+            }
+        });
     }
 }

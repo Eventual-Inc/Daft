@@ -6,13 +6,13 @@ use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
-use daft_io::{IOConfig, SourceType, parse_url};
+use daft_io::{IOConfig, SourceType, parse_url, utils::ObjectPath};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
 use crate::{
     AsyncFileWriter, WriteResult,
-    storage_backend::{FileStorageBackend, S3StorageBackend, StorageBackend},
+    storage_backend::{FileStorageBackend, ObjectStorageBackend, StorageBackend},
     utils::build_filename,
 };
 
@@ -51,11 +51,11 @@ pub(crate) fn create_native_json_writer(
             )))
         }
         SourceType::S3 => {
-            let (scheme, _, _) = daft_io::s3_like::parse_s3_url(root_dir.as_ref())?;
+            let ObjectPath { scheme, .. } = daft_io::utils::parse_object_url(root_dir.as_ref())?;
             let io_config = io_config.ok_or_else(|| {
                 DaftError::InternalError("IO config is required for S3 writes".to_string())
             })?;
-            let storage_backend = S3StorageBackend::new(scheme, io_config);
+            let storage_backend = ObjectStorageBackend::new(scheme, io_config);
             Ok(Box::new(JsonWriter::new(
                 filename,
                 partition_values.cloned(),
@@ -94,7 +94,7 @@ impl<B: StorageBackend> JsonWriter<B> {
     /// Estimates the number of bytes that will be written for the given data.
     /// This is a temporary workaround since arrow-json doesn't provide bytes written or access to the underlying writer.
     fn estimate_bytes_to_write(&self, data: &MicroPartition) -> DaftResult<usize> {
-        let base_size = data.size_bytes().unwrap_or(0);
+        let base_size = data.size_bytes();
         let estimated_size = (base_size as f64 * Self::INFLATION_FACTOR) as usize;
         Ok(estimated_size)
     }
@@ -123,7 +123,7 @@ impl<B: StorageBackend> AsyncFileWriter for JsonWriter<B> {
         // us from using a counting writer. We need to fix this upstream.
         let est_bytes_to_write = self.estimate_bytes_to_write(&data)?;
         self.bytes_written += est_bytes_to_write;
-        let record_batches = data.get_tables()?;
+        let record_batches = data.record_batches();
         let record_batches: Vec<ArrowRecordBatch> = record_batches
             .iter()
             .map(|rb| rb.clone().try_into())
@@ -169,7 +169,7 @@ impl<B: StorageBackend> AsyncFileWriter for JsonWriter<B> {
         let field = Field::new(Self::PATH_FIELD_NAME, DataType::Utf8);
         let filename_series = Series::from_arrow(
             Arc::new(field.clone()),
-            Box::new(arrow2::array::Utf8Array::<i64>::from_slice([&self
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice([&self
                 .filename
                 .to_string_lossy()])),
         )?;
