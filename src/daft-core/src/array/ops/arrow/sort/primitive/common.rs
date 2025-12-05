@@ -1,7 +1,7 @@
 use daft_arrow::{
     array::{PrimitiveArray, ord::DynComparator},
     bitmap::Bitmap,
-    types::{Index, NativeType},
+    types::NativeType,
 };
 
 pub fn idx_sort<F>(
@@ -69,7 +69,7 @@ fn generate_initial_indices(
         let mut valids = 0;
         validity
             .iter()
-            .zip(u64::range(0, length).unwrap())
+            .zip(0..length as u64)
             .for_each(|(is_not_null, index)| {
                 match (is_not_null, nulls_first) {
                     // value && nulls first
@@ -106,10 +106,6 @@ fn generate_initial_indices(
 
         (indices, start_idx, end_idx)
     } else {
-        (
-            u64::range(0, length).unwrap().collect::<Vec<_>>(),
-            0,
-            length,
-        )
+        ((0..length as u64).collect::<Vec<u64>>(), 0, length)
     }
 }
