@@ -5,7 +5,6 @@ use daft_core::{
     array::ops::full::FullNull,
     datatypes::{DataType, UInt64Array},
     kernels::search_sorted::build_partial_compare_with_nulls,
-    series::{IntoSeries, Series},
 };
 
 use crate::RecordBatch;
@@ -41,7 +40,10 @@ enum MergeJoinState {
     StagedRightEqualRun(usize),
 }
 
-pub fn merge_inner_join(left: &RecordBatch, right: &RecordBatch) -> DaftResult<(Series, Series)> {
+pub fn merge_inner_join(
+    left: &RecordBatch,
+    right: &RecordBatch,
+) -> DaftResult<(UInt64Array, UInt64Array)> {
     if left.num_columns() != right.num_columns() {
         return Err(DaftError::ValueError(format!(
             "Mismatch of join on clauses: left: {:?} vs right: {:?}",
@@ -60,8 +62,8 @@ pub fn merge_inner_join(left: &RecordBatch, right: &RecordBatch) -> DaftResult<(
         || right.columns.iter().any(|s| s.data_type().is_null());
     if has_null_type {
         return Ok((
-            UInt64Array::empty("left_indices", &DataType::UInt64).into_series(),
-            UInt64Array::empty("right_indices", &DataType::UInt64).into_series(),
+            UInt64Array::empty("left_indices", &DataType::UInt64),
+            UInt64Array::empty("right_indices", &DataType::UInt64),
         ));
     }
     let types_not_match = left
@@ -107,8 +109,8 @@ pub fn merge_inner_join(left: &RecordBatch, right: &RecordBatch) -> DaftResult<(
         )
     {
         return Ok((
-            UInt64Array::empty("left_indices", &DataType::UInt64).into_series(),
-            UInt64Array::empty("right_indices", &DataType::UInt64).into_series(),
+            UInt64Array::empty("left_indices", &DataType::UInt64),
+            UInt64Array::empty("right_indices", &DataType::UInt64),
         ));
     }
 
@@ -241,5 +243,5 @@ pub fn merge_inner_join(left: &RecordBatch, right: &RecordBatch) -> DaftResult<(
     }
     let left_series = UInt64Array::from(("left_indices", left_indices));
     let right_series = UInt64Array::from(("right_indices", right_indices));
-    Ok((left_series.into_series(), right_series.into_series()))
+    Ok((left_series, right_series))
 }

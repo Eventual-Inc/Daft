@@ -97,7 +97,10 @@ impl WindowAggStateOps for MinMaxWindowState {
     fn build(&self) -> DaftResult<Series> {
         let result = self
             .source
-            .take(&DataArray::<UInt64Type>::from(("", self.result_idxs.clone())).into_series())
+            .take(&DataArray::<UInt64Type>::from((
+                "",
+                self.result_idxs.clone(),
+            )))
             .unwrap();
         result.with_validity(Some(self.validity.clone().into()))
     }

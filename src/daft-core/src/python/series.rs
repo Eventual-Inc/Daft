@@ -219,7 +219,8 @@ impl PySeries {
     }
 
     pub fn take(&self, idx: &Self) -> PyResult<Self> {
-        Ok(self.series.take(&idx.series)?.into())
+        let idx = idx.series.u64()?;
+        Ok(self.series.take(idx)?.into())
     }
 
     pub fn slice(&self, start: i64, end: i64) -> PyResult<Self> {

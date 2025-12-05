@@ -400,7 +400,7 @@ impl RecordBatch {
         };
         let indices: daft_core::array::DataArray<daft_core::datatypes::UInt64Type> =
             UInt64Array::from(("idx", values));
-        self.take(&indices.into_series())
+        self.take(&indices)
     }
 
     pub fn add_monotonically_increasing_id(
@@ -424,7 +424,7 @@ impl RecordBatch {
 
         if num == 0 {
             let indices = UInt64Array::empty("idx", &DataType::UInt64);
-            return self.take(&indices.into_series());
+            return self.take(&indices);
         }
 
         let self_len = self.len();
@@ -439,7 +439,7 @@ impl RecordBatch {
             })
             .collect();
         let indices = UInt64Array::from(("idx", sample_points));
-        self.take(&indices.into_series())
+        self.take(&indices)
     }
 
     pub fn size_bytes(&self) -> usize {
@@ -499,7 +499,7 @@ impl RecordBatch {
         Self::new_with_size(self.schema.clone(), new_series?, num_rows)
     }
 
-    pub fn take(&self, idx: &Series) -> DaftResult<Self> {
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
         let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.take(idx)).collect();
         Self::new_with_size(self.schema.clone(), new_series?, idx.len())
     }

@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
-use daft_core::series::Series;
+use daft_core::prelude::UInt64Array;
 use daft_recordbatch::RecordBatch;
 
 use crate::micropartition::MicroPartition;
 
 impl MicroPartition {
-    pub fn take(&self, idx: &Series) -> DaftResult<RecordBatch> {
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<RecordBatch> {
         if idx.is_empty() {
             return Ok(RecordBatch::empty(Some(self.schema.clone())));
         }
