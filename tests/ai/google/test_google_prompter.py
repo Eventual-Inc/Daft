@@ -506,7 +506,7 @@ def test_google_prompter_raises_without_pillow_on_image():
             prompter = create_prompter()
             image = np.zeros((100, 100, 3), dtype=np.uint8)
 
-            with pytest.raises(ImportError, match="Pillow is required"):
+            with pytest.raises(ImportError, match=r"Please `pip install 'daft\[google\]'` to use the prompt function with this provider."):
                 # We use run_async here because prompt is async
                 await prompter.prompt(("Image", image))
 
