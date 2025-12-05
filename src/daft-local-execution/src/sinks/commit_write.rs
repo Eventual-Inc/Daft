@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
@@ -214,7 +214,7 @@ async fn glob_files(
     source: Arc<dyn daft_io::ObjectSource>,
     glob_path: &str,
 ) -> DaftResult<Vec<String>> {
-    let glob_pattern = format!("{}/**", glob_path.trim_end_matches("/"));
+    let glob_pattern = format!("{}/**", glob_path.trim_end_matches('/'));
     let mut out: Vec<String> = vec![];
     let mut stream = source
         .glob(
@@ -241,7 +241,7 @@ async fn glob_files(
         Ok(None) => {
             log::debug!("No files found for glob pattern: {:?}", glob_pattern);
         }
-        Err(err) if matches!(err, Error::NotFound { .. }) => {
+        Err(Error::NotFound { .. }) => {
             log::debug!("No files found for glob pattern: {:?}", glob_pattern);
         }
         Err(err) => return Err(err.into()),
@@ -259,7 +259,6 @@ async fn overwrite_files(
     let mut all_files: Vec<String> = vec![];
 
     if overwrite_partitions {
-        use std::collections::HashSet;
         let mut partition_dirs: HashSet<String> = HashSet::new();
         for f in &new_files {
             if let Some(idx) = f.rfind('/') {
@@ -275,8 +274,7 @@ async fn overwrite_files(
         all_files.append(&mut files);
     }
 
-    // Delete files that are not among written
-    use std::collections::HashSet;
+    // Delete files that are not among new_files
     let written_set: HashSet<&str> = new_files.iter().map(|s| s.as_str()).collect();
     for f in all_files {
         if !written_set.contains(f.as_str()) {

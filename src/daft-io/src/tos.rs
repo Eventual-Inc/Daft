@@ -710,7 +710,7 @@ impl ObjectSource for TosSource {
         self
     }
 
-    async fn delete(&self, uri: &str, _io_stats: Option<IOStatsRef>) -> Result<()> {
+    async fn delete(&self, uri: &str, io_stats: Option<IOStatsRef>) -> Result<()> {
         let (bucket, key) = Self::parse_tos_url(uri, false)?;
 
         // TODO: consider idempotence problem
@@ -736,6 +736,10 @@ impl ObjectSource for TosSource {
             },
         )
         .await?;
+
+        if let Some(is) = io_stats.as_ref() {
+            is.mark_delete_requests(1);
+        }
 
         Ok(())
     }
