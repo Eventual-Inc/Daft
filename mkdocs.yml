@@ -142,6 +142,8 @@ plugins:
       catalogs/s3tables.md: connectors/s3tables.md
       integrations/unity_catalog.md: connectors/unity_catalog.md
       catalogs/unity_catalog.md: connectors/unity_catalog.md
+      integrations/gravitino.md: connectors/gravitino.md
+      catalogs/gravitino.md: connectors/gravitino.md
       integrations.md: connectors/index.md
       io/index.md: connectors/index.md
       sql_overview.md: sql/index.md
@@ -155,7 +157,6 @@ plugins:
       resources/tutorials.md: examples/index.md
       migration/dask_migration.md: index.md
       resources/benchmarks/tpch.md: benchmarks/index.md
-      spark_connect.md: api/spark_connect.md
       core_concepts.md: index.md
 - mkdocstrings:
     custom_templates: docs/templates

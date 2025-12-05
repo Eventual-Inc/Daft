@@ -395,6 +395,7 @@ Now that you have a basic sense of Daft's functionality and features, here are s
 - [Delta Lake](connectors/delta_lake.md)
 - [Hugging Face Datasets](connectors/huggingface.md)
 - [Unity Catalog](connectors/unity_catalog.md)
+- [Apache Gravitino](connectors/gravitino.md)
 <!-- - [**LanceDB**](io/lancedb.md) -->
 
 </div>

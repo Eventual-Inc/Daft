@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common_error::{DaftError, DaftResult};
-use daft_io::SourceType;
+use daft_io::{SourceType, utils::ObjectPath};
 use daft_recordbatch::RecordBatch;
 
 /// The default value used by Hive for null partition values.
@@ -70,7 +70,7 @@ fn record_batch_to_partition_path(
         .iter()
         .map(|col| {
             let key = urlencoding::encode(col.name());
-            if col.inner.validity().is_none_or(|v| v.get_bit(0)) {
+            if col.inner.validity().is_none_or(|v| v.is_valid(0)) {
                 let value = col.inner.str_value(0)?;
                 Ok(format!("{}={}", key, urlencoding::encode(&value)))
             } else {
@@ -99,7 +99,11 @@ fn build_local_file_path(
 
 /// Helper function to build the path to an S3 url.
 fn build_s3_path(root_dir: &str, partition_path: PathBuf, filename: String) -> DaftResult<PathBuf> {
-    let (_scheme, bucket, key) = daft_io::s3_like::parse_s3_url(root_dir)?;
+    let ObjectPath {
+        scheme: _scheme,
+        bucket,
+        key,
+    } = daft_io::utils::parse_object_url(root_dir)?;
     let key = Path::new(&key).join(partition_path).join(filename);
     Ok(PathBuf::from(format!("{}/{}", bucket, key.display())))
 }

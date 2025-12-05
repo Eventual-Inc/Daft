@@ -6,7 +6,6 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use daft_arrow::{
-    bitmap::utils::SlicesIterator,
     compute::{
         self,
         cast::{CastOptions, can_cast_types, cast},
@@ -832,7 +831,7 @@ impl TensorArray {
                 let mut non_zero_values = Vec::new();
                 let mut non_zero_indices = Vec::new();
                 for (i, (shape_series, data_series)) in shape_and_data_iter.enumerate() {
-                    let is_valid = validity.is_none_or(|v| v.get_bit(i));
+                    let is_valid = validity.is_none_or(|v| v.is_valid(i));
                     if !is_valid {
                         // Handle invalid row by populating dummy data.
                         non_zero_values.push(Series::empty("dummy", inner_dtype.as_ref()));
@@ -960,7 +959,7 @@ impl TensorArray {
                 let da = self.data_array();
                 let validity = da.validity();
                 for i in 0..num_rows {
-                    let is_valid = validity.is_none_or(|v| v.get_bit(i));
+                    let is_valid = validity.is_none_or(|v| v.is_valid(i));
                     if !is_valid {
                         // Handle invalid row by populating dummy data.
                         channels.push(1);
@@ -1059,7 +1058,7 @@ fn cast_sparse_to_dense_for_inner_dtype(
             let mut values = vec![0 as <$T as DaftNumericType>::Native; n_values];
             let validity = non_zero_values_array.validity();
             for i in 0..non_zero_values_array.len() {
-                let is_valid = validity.is_none_or(|v| v.get_bit(i));
+                let is_valid = validity.is_none_or(|v| v.is_valid(i));
                 if !is_valid {
                     continue;
                 }
@@ -1351,7 +1350,7 @@ impl FixedShapeTensorArray {
                 let mut non_zero_values = Vec::new();
                 let mut non_zero_indices = Vec::new();
                 for (i, data_series) in physical_arr.into_iter().enumerate() {
-                    let is_valid = validity.is_none_or(|v| v.get_bit(i));
+                    let is_valid = validity.is_none_or(|v| v.is_valid(i));
                     if !is_valid {
                         // Handle invalid row by populating dummy data.
                         non_zero_values.push(Series::empty("dummy", inner_dtype.as_ref()));
@@ -1597,11 +1596,12 @@ impl ListArray {
                         );
 
                         let mut invalid_ptr = 0;
-                        for (start, len) in SlicesIterator::new(validity) {
+                        for (start, end) in validity.valid_slices() {
+                            let len = end - start;
                             child_growable.add_nulls((start - invalid_ptr) * size);
                             let child_start = self.offsets().start_end(start).0;
                             child_growable.extend(0, child_start, len * size);
-                            invalid_ptr = start + len;
+                            invalid_ptr = end;
                         }
                         child_growable.add_nulls((self.len() - invalid_ptr) * size);
 

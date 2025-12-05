@@ -179,7 +179,6 @@ impl UdfRuntimeStats {
 
 /// Common parameters for UDF handle and operator
 struct UdfParams {
-    expr: BoundExpr,
     udf_properties: UDFProperties,
     passthrough_columns: Vec<BoundExpr>,
     output_schema: SchemaRef,
@@ -376,8 +375,8 @@ impl UdfOperator {
         let udf_name: Arc<str> = udf_properties.name.clone().into();
 
         Ok(Self {
+            expr,
             params: Arc::new(UdfParams {
-                expr,
                 udf_properties,
                 passthrough_columns,
                 output_schema: output_schema.clone(),
@@ -436,6 +435,7 @@ impl IntermediateOperator for UdfOperator {
             .as_any_arc()
             .downcast::<UdfRuntimeStats>()
             .expect("Expected UdfRuntimeStats in task_spawner.runtime_stats");
+        let params = self.params.clone();
         let fut = task_spawner.spawn_with_memory_request(
             memory_request,
             async move {
@@ -470,7 +470,7 @@ impl IntermediateOperator for UdfOperator {
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![
             format!("UDF: {}", self.params.udf_properties.name.as_str()),
-            format!("Expr = {}", self.params.expr),
+            format!("Expr = {}", self.expr),
             format!(
                 "Passthrough Columns = [{}]",
                 self.params.passthrough_columns.iter().join(", ")
