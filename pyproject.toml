@@ -30,7 +30,7 @@ homepage = "https://www.daft.ai"
 repository = "https://github.com/Eventual-Inc/Daft"
 
 [project.optional-dependencies]
-all = ["daft[aws, azure, clickhouse, deltalake, gcp, google, hudi, huggingface, iceberg, lance, numpy, openai, pandas, postgres, ray, sentence-transformers, spark, sql, transformers, turbopuffer, unity, video]"]
+all = ["daft[aws, azure, clickhouse, deltalake, gcp, google, hudi, huggingface, iceberg, lance, numpy, openai, pandas, postgres, ray, sentence-transformers, sql, transformers, turbopuffer, unity, video]"]
 aws = ["boto3<1.43.0"]
 azure = []
 clickhouse = ["clickhouse_connect<0.11.0"]
@@ -54,7 +54,6 @@ ray = [
   'ray[data, client]>=2.10.0,<2.53.0; platform_system == "Windows"'  # ray 2.10 has the pyarrow upper pin removed
 ]
 transformers = ["transformers<4.58.0", "sentence-transformers<5.2.0", "torch<2.10.0", "torchvision<0.25.0"]
-spark = ["googleapis-common-protos >= 1.56.4,<1.73.0", "grpcio >= 1.48,<1.77.0", "grpcio-status >= 1.48,<1.77.0", "numpy >= 1.15,<2.4.0", "pandas >= 1.0.5,<2.4.0", "py4j >= 0.10.9.7,<0.10.10.0", "pyspark == 3.5.5"]
 # connectorx 0.4.4 is needed for pgvector support.
 sql = ["connectorx>=0.4.4,<0.5.0", "sqlalchemy<2.1.0", "sqlglot<28.1.0"]
 turbopuffer = ["turbopuffer<1.9.0"]
@@ -102,8 +101,8 @@ dev = [
   "datasets==4.4.1",
   "torch==2.8.0",
   "torchvision==0.23.0",
-  "tensorflow==2.18.1; python_version < '3.13'",
-  "tf-keras==2.18.0; python_version < '3.13'",
+  "tensorflow==2.20.0",
+  "tf-keras==2.20.1",
   "jax==0.6.2",
   "jaxtyping==0.3.3",
   # Pyarrow
@@ -144,10 +143,6 @@ dev = [
   "gcsfs==2024.9.0.post1",
   # Hugging Face
   "huggingface-hub==0.36.0",
-  # Daft connect testing
-  "pyspark==3.5.5",
-  "grpcio==1.68.1",
-  "grpcio-status==1.67.0",
   # AI
   "vllm==0.11.0",
   "openai==2.8.1",
