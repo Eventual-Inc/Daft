@@ -33,6 +33,8 @@ audio_metadata_fn = Func._from_func(
     use_process=None,
     is_batch=False,
     batch_size=None,
+    min_batch_size=None,
+    max_batch_size=None,
     max_retries=None,
     on_error=None,
 )
@@ -66,6 +68,8 @@ resample_fn = Func._from_func(
     use_process=None,
     is_batch=False,
     batch_size=None,
+    min_batch_size=None,
+    max_batch_size=None,
     max_retries=None,
     on_error=None,
 )

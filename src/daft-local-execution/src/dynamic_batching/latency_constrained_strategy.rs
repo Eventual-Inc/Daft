@@ -144,13 +144,7 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
     type State = LatencyConstrainedBatchingState;
 
     fn make_state(&self) -> Self::State {
-        log::debug!(
-            "[{}] Initializing state with search space [1, 256]",
-            std::thread::current().name().unwrap_or("unknown")
-        );
-
-        // start off with a small search space (1 - 256)
-        LatencyConstrainedBatchingState::new(self.b_min, self.b_min, 256)
+        LatencyConstrainedBatchingState::new(self.b_min, self.b_min, self.b_max)
     }
 
     fn initial_requirements(&self) -> MorselSizeRequirement {

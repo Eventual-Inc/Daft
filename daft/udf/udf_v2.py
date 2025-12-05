@@ -22,7 +22,7 @@ from typing import (
 if TYPE_CHECKING:
     from typing import Concatenate, Literal
 
-from daft.daft import batch_udf, row_wise_udf
+from daft.daft import batch_udf, get_context, row_wise_udf
 from daft.datatype import DataType, DataTypeLike
 from daft.expressions.expressions import Expression
 
@@ -32,6 +32,8 @@ UNNEST_ATTR = "_daft_unnest"
 USE_PROCESS_ATTR = "_daft_use_process"
 BATCH_ATTR = "_daft_batch_method"
 BATCH_SIZE_ATTR = "_daft_batch_size"
+MIN_BATCH_SIZE_ATTR = "_daft_min_batch_size"
+MAX_BATCH_SIZE_ATTR = "_daft_max_batch_size"
 MAX_RETRIES_ATTR = "_daft_max_retries"
 ON_ERROR_ATTR = "_daft_on_error"
 
@@ -57,6 +59,8 @@ class Func(Generic[P, T, C]):
     is_async: bool
     is_batch: bool
     batch_size: int | None
+    min_batch_size: int | None
+    max_batch_size: int | None
     unnest: bool
     gpus: int
     use_process: bool | None
@@ -75,6 +79,8 @@ class Func(Generic[P, T, C]):
         use_process: bool | None,
         is_batch: bool,
         batch_size: int | None,
+        min_batch_size: int | None,
+        max_batch_size: int | None,
         max_retries: int | None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Func[P, T, None]:
@@ -91,7 +97,7 @@ class Func(Generic[P, T, C]):
 
         is_generator = inspect.isgeneratorfunction(fn)
         is_async = inspect.iscoroutinefunction(fn)
-
+        Func.check_batching_args(batch_size, min_batch_size, max_batch_size)
         return_dtype = cls._get_return_dtype(fn, return_dtype, is_generator, is_batch)
 
         return Func(
@@ -101,6 +107,8 @@ class Func(Generic[P, T, C]):
             is_async,
             is_batch,
             batch_size,
+            min_batch_size,
+            max_batch_size,
             unnest,
             0,
             use_process,
@@ -127,7 +135,10 @@ class Func(Generic[P, T, C]):
         unnest = getattr(method, UNNEST_ATTR, False)
         is_batch = getattr(method, BATCH_ATTR, False)
         batch_size = getattr(method, BATCH_SIZE_ATTR, None)
+        min_batch_size = getattr(method, MIN_BATCH_SIZE_ATTR, None)
+        max_batch_size = getattr(method, MAX_BATCH_SIZE_ATTR, None)
         return_dtype = getattr(method, RETURN_DTYPE_ATTR, None)
+        Func.check_batching_args(batch_size, min_batch_size, max_batch_size)
         return_dtype = cls._get_return_dtype(method, return_dtype, is_generator, is_batch)
         return cls(
             cls_,
@@ -136,6 +147,8 @@ class Func(Generic[P, T, C]):
             is_async,
             is_batch,
             batch_size,
+            min_batch_size,
+            max_batch_size,
             unnest,
             gpus,
             use_process,
@@ -144,6 +157,18 @@ class Func(Generic[P, T, C]):
             on_error,
             return_dtype,
         )
+
+    @staticmethod
+    def check_batching_args(batch_size: int | None, min_batch_size: int | None, max_batch_size: int | None) -> None:
+        is_dyn_batching_enabled = get_context()._daft_execution_config.enable_dynamic_batching
+
+        if not is_dyn_batching_enabled and (min_batch_size or max_batch_size):
+            raise ValueError(
+                "Enable dynamic batching via `daft.set_execution_config(enable_dynamic_batching=True)` in order to use min/max_batch_size"
+            )
+
+        if (min_batch_size or max_batch_size) and batch_size:
+            raise ValueError("can not specify both batch_size and min/max_batch_size")
 
     def __post_init__(self) -> None:
         """Post-init checks and setup."""
@@ -261,6 +286,8 @@ class Func(Generic[P, T, C]):
                     self.use_process,
                     self.max_concurrency,
                     self.batch_size,
+                    self.min_batch_size,
+                    self.max_batch_size,
                     self.max_retries,
                     self.on_error,
                     (args, kwargs),
@@ -297,6 +324,8 @@ def mark_cls_method(
     unnest: bool,
     is_batch: bool,
     batch_size: int | None,
+    min_batch_size: int | None,
+    max_batch_size: int | None,
     max_retries: int | None = None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
 ) -> Callable[P, T]:
@@ -305,6 +334,8 @@ def mark_cls_method(
     setattr(method, UNNEST_ATTR, unnest)
     setattr(method, BATCH_ATTR, is_batch)
     setattr(method, BATCH_SIZE_ATTR, batch_size)
+    setattr(method, MIN_BATCH_SIZE_ATTR, min_batch_size)
+    setattr(method, MAX_BATCH_SIZE_ATTR, max_batch_size)
     setattr(method, MAX_RETRIES_ATTR, max_retries)
     setattr(method, ON_ERROR_ATTR, on_error)
     return method
