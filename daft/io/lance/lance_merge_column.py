@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Any, Callable
 
 import daft.pickle
 from daft.datatype import DataType
-from daft.udf import udf
 
 if TYPE_CHECKING:
     import pathlib
@@ -14,7 +13,7 @@ if TYPE_CHECKING:
     from daft.dependencies import pa
 
 
-@udf(return_dtype=DataType.struct({"fragment_meta": DataType.binary(), "schema": DataType.binary()}), concurrency=1)
+@daft.cls(max_concurrency=1)
 class FragmentHandler:
     def __init__(
         self,
@@ -28,6 +27,9 @@ class FragmentHandler:
         self.read_columns = read_columns
         self.reader_schema = reader_schema
 
+    @daft.method.batch(
+        return_dtype=DataType.struct({"fragment_meta": DataType.binary(), "schema": DataType.binary()}),
+    )
     def __call__(self, fragment_ids: list[int]) -> list[dict[str, bytes]]:
         results = []
         for fragment_id in fragment_ids:
