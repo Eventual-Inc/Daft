@@ -5,7 +5,7 @@ pub use arrow2::{
 };
 
 pub mod buffer {
-    pub use arrow_buffer::{NullBuffer, NullBufferBuilder};
+    pub use arrow_buffer::{BooleanBufferBuilder, NullBuffer, NullBufferBuilder};
     pub use arrow2::buffer::*;
 
     /// Convert an arrow_buffer::buffer::NullBuffer to an arrow2::bitmap::Bitmap.
