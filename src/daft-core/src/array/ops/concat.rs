@@ -23,7 +23,7 @@ macro_rules! impl_variable_length_concat {
             let mut offsets = daft_arrow::offset::Offsets::<i64>::with_capacity(num_rows);
 
             let mut validity = if need_validity {
-                Some(daft_arrow::bitmap::MutableBitmap::with_capacity(num_rows))
+                Some(daft_arrow::buffer::NullBufferBuilder::new(num_rows))
             } else {
                 None
             };
@@ -33,10 +33,13 @@ macro_rules! impl_variable_length_concat {
                 let arr = arr.as_any().downcast_ref::<$arrow_type>().unwrap();
                 offsets.try_extend_from_slice(arr.offsets(), 0, arr.len())?;
                 if let Some(ref mut bitmap) = validity {
-                    if let Some(b) = arr.validity() {
-                        bitmap.extend_from_bitmap(b);
+                    if let Some(v) = arr.validity() {
+                        for b in v.iter() {
+                            // TODO: Replace with .append_buffer in v57.1.0
+                            bitmap.append(b);
+                        }
                     } else {
-                        bitmap.extend_constant(arr.len(), true);
+                        bitmap.append_n_non_nulls(arr.len());
                     }
                 }
                 let range = (*arr.offsets().first() as usize)..(*arr.offsets().last() as usize);
@@ -49,7 +52,9 @@ macro_rules! impl_variable_length_concat {
                     dtype,
                     offsets.into(),
                     buffer.into(),
-                    validity.map(|v| v.into()),
+                    daft_arrow::buffer::wrap_null_buffer(
+                        validity.map(|mut v| v.finish()).flatten(),
+                    ),
                 )
             }?;
             Ok(Box::new(result_array))
@@ -102,7 +107,7 @@ where
 #[cfg(feature = "python")]
 impl PythonArray {
     pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {
-        use daft_arrow::{bitmap::MutableBitmap, buffer::Buffer};
+        use daft_arrow::buffer::{Buffer, NullBufferBuilder};
         if arrays.is_empty() {
             return Err(DaftError::ValueError(
                 "Need at least 1 array to perform concat".to_string(),
@@ -118,17 +123,19 @@ impl PythonArray {
         let validity = if arrays.iter().any(|a| a.validity().is_some()) {
             let total_len = arrays.iter().map(|a| a.len()).sum();
 
-            let mut validity = MutableBitmap::with_capacity(total_len);
+            let mut validity = NullBufferBuilder::new(total_len);
 
             for a in arrays {
                 if let Some(v) = a.validity() {
-                    validity.extend_from_bitmap(v);
+                    for b in v {
+                        validity.append(b); // TODO: Replace with .append_buffer in v57.1.0
+                    }
                 } else {
-                    validity.extend_constant(a.len(), true);
+                    validity.append_n_non_nulls(a.len());
                 }
             }
 
-            Some(validity.into())
+            validity.finish()
         } else {
             None
         };

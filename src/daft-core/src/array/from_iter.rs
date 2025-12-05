@@ -206,14 +206,14 @@ impl PythonArray {
         name: &str,
         iter: impl daft_arrow::trusted_len::TrustedLen<Item = Option<Arc<Py<PyAny>>>>,
     ) -> Self {
-        use daft_arrow::bitmap::MutableBitmap;
+        use daft_arrow::buffer::NullBufferBuilder;
         use pyo3::Python;
 
         let (_, upper) = iter.size_hint();
         let len = upper.expect("trusted_len_unzip requires an upper limit");
 
         let mut values = Vec::with_capacity(len);
-        let mut validity = MutableBitmap::with_capacity(len);
+        let mut validity = NullBufferBuilder::new(len);
 
         let pynone = Arc::new(Python::attach(|py| py.None()));
         for v in iter {
@@ -226,18 +226,14 @@ impl PythonArray {
 
             if let Some(obj) = v {
                 values.push(obj);
-                validity.push(true);
+                validity.append_non_null();
             } else {
                 values.push(pynone.clone());
-                validity.push(false);
+                validity.append_null();
             }
         }
 
-        let validity = if validity.unset_bits() > 0 {
-            Some(validity.into())
-        } else {
-            None
-        };
+        let validity = validity.finish();
 
         Self::new(
             Arc::new(Field::new(name, DataType::Python)),
@@ -254,14 +250,14 @@ impl PythonArray {
         I: daft_arrow::trusted_len::TrustedLen<Item = Option<T>>,
         T: AsRef<[u8]>,
     {
-        use daft_arrow::bitmap::MutableBitmap;
+        use daft_arrow::buffer::NullBufferBuilder;
         use pyo3::Python;
 
         let (_, upper) = iter.size_hint();
         let len = upper.expect("trusted_len_unzip requires an upper limit");
 
         let mut values = Vec::with_capacity(len);
-        let mut validity = MutableBitmap::with_capacity(len);
+        let mut validity = NullBufferBuilder::new(len);
 
         Python::attach(|py| {
             use pyo3::PyErr;
@@ -280,21 +276,17 @@ impl PythonArray {
                     );
 
                     values.push(Arc::new(obj.unbind()));
-                    validity.push(true);
+                    validity.append_non_null();
                 } else {
                     values.push(pynone.clone());
-                    validity.push(false);
+                    validity.append_null();
                 }
             }
 
             Ok::<_, PyErr>(())
         })?;
 
-        let validity = if validity.unset_bits() > 0 {
-            Some(validity.into())
-        } else {
-            None
-        };
+        let validity = validity.finish();
 
         Ok(Self::new(
             Arc::new(Field::new(name, DataType::Python)),

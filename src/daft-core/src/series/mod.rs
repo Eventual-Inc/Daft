@@ -189,11 +189,14 @@ impl Series {
         )
     }
 
-    pub fn with_validity(&self, validity: Option<daft_arrow::bitmap::Bitmap>) -> DaftResult<Self> {
+    pub fn with_validity(
+        &self,
+        validity: Option<daft_arrow::buffer::NullBuffer>,
+    ) -> DaftResult<Self> {
         self.inner.with_validity(validity)
     }
 
-    pub fn validity(&self) -> Option<&daft_arrow::bitmap::Bitmap> {
+    pub fn validity(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
         self.inner.validity()
     }
 
@@ -201,7 +204,7 @@ impl Series {
         let Some(validity) = self.validity() else {
             return true;
         };
-        validity.get_bit(idx)
+        validity.is_valid(idx)
     }
 
     /// Attempts to downcast the Series to a primitive slice

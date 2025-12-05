@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshot, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshot};
 use daft_micropartition::MicroPartitionRef;
 use dashmap::DashMap;
 
@@ -68,11 +68,11 @@ impl Subscriber for DebugSubscriber {
         Ok(())
     }
 
-    fn on_exec_start(&self, query_id: QueryID, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()> {
-        eprintln!("Started executing query `{}`", query_id);
-        for node_info in node_infos {
-            eprintln!("  - Node {}: {}", node_info.id, node_info.name);
-        }
+    fn on_exec_start(&self, query_id: QueryID, physical_plan: QueryPlan) -> DaftResult<()> {
+        eprintln!(
+            "Started executing query `{}` with physical plan:\n{}",
+            query_id, physical_plan
+        );
         Ok(())
     }
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 from contextlib import contextmanager
@@ -75,9 +76,20 @@ class AutoscalingCluster:
         ray.init("auto").
         """
         subprocess.check_call(["ray", "stop", "--force"])
-        _, fake_config = tempfile.mkstemp()
+        _, fake_config = tempfile.mkstemp(suffix=".yaml")
         with open(fake_config, "w") as f:
-            f.write(json.dumps(self._config))
+            yaml.dump(self._config, f)
+
+        # Copy our fake_cluster.yaml to the path that Ray expects
+        # Ray looks for example.yaml in ray.autoscaler._private.fake_multi_node package
+        import ray.autoscaler._private.fake_multi_node as ray_fake_multinode
+
+        ray_expected_path = os.path.join(os.path.dirname(ray_fake_multinode.__file__), "example.yaml")
+        our_fake_cluster_yaml = os.path.join(os.path.dirname(__file__), "fake_cluster.yaml")
+
+        # Copy our config file to where Ray expects it
+        shutil.copy2(our_fake_cluster_yaml, ray_expected_path)
+
         cmd = [
             "ray",
             "start",
@@ -115,7 +127,7 @@ class AutoscalingCluster:
 
 
 @contextmanager
-def autoscaling_cluster_context(head_resources: dict, worker_node_types: dict, autoscaler_v2: bool = False):
+def autoscaling_cluster_context(head_resources: dict, worker_node_types: dict, autoscaler_v2: bool = True):
     """Context manager for managing AutoscalingCluster with proper setup and teardown.
 
     The cluster is created before ray.init() as requested, and properly cleaned up afterward.

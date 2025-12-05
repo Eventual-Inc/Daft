@@ -332,7 +332,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .collect::<DaftResult<_>>()?;
 
-            let validity = daft_arrow::bitmap::Bitmap::from_trusted_len_iter(
+            let validity = daft_arrow::buffer::NullBuffer::from_iter(
                 values
                     .iter()
                     .map(|(_, v)| v.as_ref().is_ok_and(|v| v != &Literal::Null)),
@@ -417,7 +417,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .unzip();
 
-            let validity = daft_arrow::bitmap::Bitmap::from(validity);
+            let validity = daft_arrow::buffer::NullBuffer::from(validity);
 
             let flat_child = Series::concat(&data.iter().collect::<Vec<_>>())?;
 

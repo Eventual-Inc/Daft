@@ -1,7 +1,6 @@
 use common_error::DaftResult;
 use daft_arrow::{
     array::{Array, Utf8Array},
-    bitmap::utils::SlicesIterator,
     offset::OffsetsBuffer,
     types::Index,
 };
@@ -31,8 +30,8 @@ impl DaftConcatAggable for ListArray {
         // Only the all-null case leads to a null result. If any single element is non-null (e.g. an empty list []),
         // The concat will successfully return a single non-null element.
         let new_validity = match self.validity() {
-            Some(validity) if validity.unset_bits() == self.len() => {
-                Some(daft_arrow::bitmap::Bitmap::from(vec![false]))
+            Some(validity) if validity.null_count() == self.len() => {
+                Some(daft_arrow::buffer::NullBuffer::new_null(1))
             }
             _ => None,
         };
@@ -45,9 +44,9 @@ impl DaftConcatAggable for ListArray {
             true,
             self.flat_child.len(), // Conservatively reserve a capacity == full size of the child
         );
-        for (start_valid, len_valid) in SlicesIterator::new(self.validity().unwrap()) {
+        for (start_valid, end_valid) in self.validity().unwrap().valid_slices() {
             let child_start = self.offsets().start_end(start_valid).0;
-            let child_end = self.offsets().start_end(start_valid + len_valid - 1).1;
+            let child_end = self.offsets().start_end(end_valid - 1).1;
             child_growable.extend(0, child_start, child_end - child_start);
         }
         let new_child = child_growable.build()?;
@@ -94,7 +93,7 @@ impl DaftConcatAggable for ListArray {
         let new_validities = if all_valid {
             None
         } else {
-            Some(daft_arrow::bitmap::Bitmap::from(group_valids))
+            Some(daft_arrow::buffer::NullBuffer::from(group_valids))
         };
 
         Ok(Self::new(
@@ -111,8 +110,8 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
 
     fn concat(&self) -> Self::Output {
         let new_validity = match self.validity() {
-            Some(validity) if validity.unset_bits() == self.len() => {
-                Some(daft_arrow::bitmap::Bitmap::from(vec![false]))
+            Some(validity) if validity.null_count() == self.len() => {
+                Some(daft_arrow::buffer::NullBuffer::new_null(1))
             }
             _ => None,
         };
@@ -123,7 +122,7 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
             arrow_array.data_type().clone(),
             new_offsets,
             arrow_array.values().clone(),
-            new_validity,
+            daft_arrow::buffer::wrap_null_buffer(new_validity),
         );
 
         let result_box = Box::new(output);
@@ -190,7 +189,9 @@ mod test {
             ))
             .into_series(),
             daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 0, 0, 0])?,
-            Some(daft_arrow::bitmap::Bitmap::from_iter(repeat_n(false, 3))),
+            Some(daft_arrow::buffer::NullBuffer::from_iter(repeat_n(
+                false, 3,
+            ))),
         );
 
         // Expected: [None]
@@ -198,7 +199,9 @@ mod test {
         assert_eq!(concatted.len(), 1);
         assert_eq!(
             concatted.validity(),
-            Some(&daft_arrow::bitmap::Bitmap::from_iter(repeat_n(false, 1)))
+            Some(&daft_arrow::buffer::NullBuffer::from_iter(repeat_n(
+                false, 1
+            )))
         );
         Ok(())
     }
@@ -216,7 +219,7 @@ mod test {
             ))
             .into_series(),
             daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 3, 5, 6, 6, 6, 7])?,
-            Some(daft_arrow::bitmap::Bitmap::from(vec![
+            Some(daft_arrow::buffer::NullBuffer::from(vec![
                 true, true, true, true, true, false, false,
             ])),
         );
@@ -262,7 +265,7 @@ mod test {
             ))
             .into_series(),
             daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 3, 5, 6, 8, 8, 8, 9])?,
-            Some(daft_arrow::bitmap::Bitmap::from(vec![
+            Some(daft_arrow::buffer::NullBuffer::from(vec![
                 true, true, true, true, true, false, false, false,
             ])),
         );
@@ -274,7 +277,7 @@ mod test {
         assert_eq!(concatted.len(), 4);
         assert_eq!(
             concatted.validity(),
-            Some(&daft_arrow::bitmap::Bitmap::from(vec![
+            Some(&daft_arrow::buffer::NullBuffer::from(vec![
                 true, true, true, false
             ]))
         );

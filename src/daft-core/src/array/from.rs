@@ -248,8 +248,7 @@ impl TryFrom<(&str, &[Option<&Series>])> for ListArray {
         let lengths = data.iter().map(|s| s.map_or(0, Series::len));
         let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)?.into();
 
-        let validity =
-            daft_arrow::bitmap::Bitmap::from_trusted_len_iter(data.iter().map(Option::is_some));
+        let validity = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
         let flat_child = Series::concat(&data.iter().flatten().copied().collect::<Vec<_>>())?;
 
@@ -271,8 +270,7 @@ impl TryFrom<(&str, &[Option<Series>])> for ListArray {
         let lengths = data.iter().map(|s| s.as_ref().map_or(0, |s| s.len()));
         let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)?.into();
 
-        let validity =
-            daft_arrow::bitmap::Bitmap::from_trusted_len_iter(data.iter().map(Option::is_some));
+        let validity = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
         let flat_child = Series::concat(&data.iter().flatten().collect::<Vec<_>>())?;
 
@@ -306,8 +304,7 @@ impl ListArray {
             .unwrap()
             .into();
 
-        let validity =
-            daft_arrow::bitmap::Bitmap::from_trusted_len_iter(data.iter().map(Option::is_some));
+        let validity = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
         Self::new(
             flat_child.field().to_list_field().rename(name),
@@ -331,8 +328,7 @@ impl ListArray {
             .unwrap()
             .into();
 
-        let validity =
-            daft_arrow::bitmap::Bitmap::from_trusted_len_iter(data.iter().map(Option::is_some));
+        let validity = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
         Self::new(
             flat_child.field().to_list_field().rename(name),

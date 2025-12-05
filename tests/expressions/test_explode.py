@@ -4,6 +4,7 @@ import pytest
 
 import daft
 from daft import col
+from daft.functions import abs, explode
 
 
 def test_explode_basic():
@@ -42,3 +43,14 @@ def test_explode_mismatched_column():
 
     with pytest.raises(Exception, match="DaftError::ValueError In multicolumn explode, list length did not match"):
         exploded.collect()
+
+
+def test_explode_with_another_projection_and_limit():
+    """Test combining explode with another projection and limit operations."""
+    df = daft.from_pydict({"list": [[1, 2], [3, 4]]})
+    result = df.select(abs(explode(col("list")))).limit(2)
+
+    result_dict = result.to_pydict()
+
+    assert len(result_dict["list"]) == 2
+    assert result_dict["list"] == [1, 2]
