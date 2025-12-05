@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import itertools
-
 import pyarrow as pa
 import pytest
 
@@ -9,7 +7,7 @@ from daft import DataType, col
 from daft.logical.schema import Schema
 from daft.recordbatch import MicroPartition
 from daft.series import Series
-from tests.recordbatch import daft_int_types, daft_numeric_types
+from tests.recordbatch import daft_numeric_types
 
 
 @pytest.mark.parametrize(
@@ -70,8 +68,8 @@ def test_micropartitions_take(mp: MicroPartition) -> None:
     assert taken.to_pydict() == {"a": [4, 3, 3, 3, 4]}
 
 
-@pytest.mark.parametrize("data_dtype, idx_dtype", itertools.product(daft_numeric_types, daft_int_types))
-def test_table_take_numeric(data_dtype, idx_dtype) -> None:
+@pytest.mark.parametrize("data_dtype", daft_numeric_types)
+def test_table_take_numeric(data_dtype) -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
     daft_recordbatch = MicroPartition.from_arrow(pa_table)
     daft_recordbatch = daft_recordbatch.eval_expression_list([col("a").cast(data_dtype), col("b")])
@@ -79,7 +77,7 @@ def test_table_take_numeric(data_dtype, idx_dtype) -> None:
     assert len(daft_recordbatch) == 4
     assert daft_recordbatch.column_names() == ["a", "b"]
 
-    indices = Series.from_pylist([0, 1]).cast(idx_dtype)
+    indices = Series.from_pylist([0, 1], dtype=DataType.uint64())
 
     taken = daft_recordbatch.take(indices)
     assert len(taken) == 2
@@ -87,7 +85,7 @@ def test_table_take_numeric(data_dtype, idx_dtype) -> None:
 
     assert taken.to_pydict() == {"a": [1, 2], "b": [5, 6]}
 
-    indices = Series.from_pylist([3, 2]).cast(idx_dtype)
+    indices = Series.from_pylist([3, 2], dtype=DataType.uint64())
 
     taken = daft_recordbatch.take(indices)
     assert len(taken) == 2
@@ -95,7 +93,7 @@ def test_table_take_numeric(data_dtype, idx_dtype) -> None:
 
     assert taken.to_pydict() == {"a": [4, 3], "b": [8, 7]}
 
-    indices = Series.from_pylist([3, 2, 2, 2, 3]).cast(idx_dtype)
+    indices = Series.from_pylist([3, 2, 2, 2, 3], dtype=DataType.uint64())
 
     taken = daft_recordbatch.take(indices)
     assert len(taken) == 5
@@ -104,14 +102,13 @@ def test_table_take_numeric(data_dtype, idx_dtype) -> None:
     assert taken.to_pydict() == {"a": [4, 3, 3, 3, 4], "b": [8, 7, 7, 7, 8]}
 
 
-@pytest.mark.parametrize("idx_dtype", daft_int_types)
-def test_table_take_str(idx_dtype) -> None:
+def test_table_take_str() -> None:
     pa_table = pa.Table.from_pydict({"a": ["1", "2", "3", "4"], "b": ["5", "6", "7", "8"]})
     daft_recordbatch = MicroPartition.from_arrow(pa_table)
     assert len(daft_recordbatch) == 4
     assert daft_recordbatch.column_names() == ["a", "b"]
 
-    indices = Series.from_pylist([0, 1]).cast(idx_dtype)
+    indices = Series.from_pylist([0, 1], dtype=DataType.uint64())
 
     taken = daft_recordbatch.take(indices)
     assert len(taken) == 2
@@ -119,7 +116,7 @@ def test_table_take_str(idx_dtype) -> None:
 
     assert taken.to_pydict() == {"a": ["1", "2"], "b": ["5", "6"]}
 
-    indices = Series.from_pylist([3, 2]).cast(idx_dtype)
+    indices = Series.from_pylist([3, 2], dtype=DataType.uint64())
 
     taken = daft_recordbatch.take(indices)
     assert len(taken) == 2
@@ -127,7 +124,7 @@ def test_table_take_str(idx_dtype) -> None:
 
     assert taken.to_pydict() == {"a": ["4", "3"], "b": ["8", "7"]}
 
-    indices = Series.from_pylist([3, 2, 2, 2, 3]).cast(idx_dtype)
+    indices = Series.from_pylist([3, 2, 2, 2, 3], dtype=DataType.uint64())
 
     taken = daft_recordbatch.take(indices)
     assert len(taken) == 5
@@ -136,14 +133,13 @@ def test_table_take_str(idx_dtype) -> None:
     assert taken.to_pydict() == {"a": ["4", "3", "3", "3", "4"], "b": ["8", "7", "7", "7", "8"]}
 
 
-@pytest.mark.parametrize("idx_dtype", daft_int_types)
-def test_table_take_bool(idx_dtype) -> None:
+def test_table_take_bool() -> None:
     pa_table = pa.Table.from_pydict({"a": [False, True, False, True], "b": [True, False, True, False]})
     daft_recordbatch = MicroPartition.from_arrow(pa_table)
     assert len(daft_recordbatch) == 4
     assert daft_recordbatch.column_names() == ["a", "b"]
 
-    indices = Series.from_pylist([0, 1]).cast(idx_dtype)
+    indices = Series.from_pylist([0, 1], dtype=DataType.uint64())
 
     taken = daft_recordbatch.take(indices)
     assert len(taken) == 2
@@ -151,7 +147,7 @@ def test_table_take_bool(idx_dtype) -> None:
 
     assert taken.to_pydict() == {"a": [False, True], "b": [True, False]}
 
-    indices = Series.from_pylist([3, 2]).cast(idx_dtype)
+    indices = Series.from_pylist([3, 2], dtype=DataType.uint64())
 
     taken = daft_recordbatch.take(indices)
     assert len(taken) == 2
@@ -159,7 +155,7 @@ def test_table_take_bool(idx_dtype) -> None:
 
     assert taken.to_pydict() == {"a": [True, False], "b": [False, True]}
 
-    indices = Series.from_pylist([3, 2, 2, 2, 3]).cast(idx_dtype)
+    indices = Series.from_pylist([3, 2, 2, 2, 3], dtype=DataType.uint64())
 
     taken = daft_recordbatch.take(indices)
     assert len(taken) == 5
@@ -168,14 +164,13 @@ def test_table_take_bool(idx_dtype) -> None:
     assert taken.to_pydict() == {"a": [True, False, False, False, True], "b": [False, True, True, True, False]}
 
 
-@pytest.mark.parametrize("idx_dtype", daft_int_types)
-def test_table_take_null(idx_dtype) -> None:
+def test_table_take_null() -> None:
     pa_table = pa.Table.from_pydict({"a": [None, None, None, None], "b": [None, None, None, None]})
     daft_recordbatch = MicroPartition.from_arrow(pa_table)
     assert len(daft_recordbatch) == 4
     assert daft_recordbatch.column_names() == ["a", "b"]
 
-    indices = Series.from_pylist([0, 1]).cast(idx_dtype)
+    indices = Series.from_pylist([0, 1], dtype=DataType.uint64())
 
     taken = daft_recordbatch.take(indices)
     assert len(taken) == 2
@@ -190,7 +185,7 @@ def test_table_take_pyobject() -> None:
     assert len(daft_recordbatch) == 4
     assert daft_recordbatch.column_names() == ["objs"]
 
-    indices = Series.from_pylist([0, 1])
+    indices = Series.from_pylist([0, 1], dtype=DataType.uint64())
 
     taken = daft_recordbatch.take(indices)
     assert len(taken) == 2
@@ -198,7 +193,7 @@ def test_table_take_pyobject() -> None:
 
     assert taken.to_pydict()["objs"] == objects[:2]
 
-    indices = Series.from_pylist([3, 2])
+    indices = Series.from_pylist([3, 2], dtype=DataType.uint64())
 
     taken = daft_recordbatch.take(indices)
     assert len(taken) == 2
@@ -206,7 +201,7 @@ def test_table_take_pyobject() -> None:
 
     assert taken.to_pydict()["objs"] == [objects[3], objects[2]]
 
-    indices = Series.from_pylist([3, 2, 2, 2, 3])
+    indices = Series.from_pylist([3, 2, 2, 2, 3], dtype=DataType.uint64())
 
     taken = daft_recordbatch.take(indices)
     assert len(taken) == 5
@@ -215,8 +210,7 @@ def test_table_take_pyobject() -> None:
     assert taken.to_pydict()["objs"] == [objects[3], objects[2], objects[2], objects[2], objects[3]]
 
 
-@pytest.mark.parametrize("idx_dtype", daft_int_types)
-def test_table_take_fixed_size_list(idx_dtype) -> None:
+def test_table_take_fixed_size_list() -> None:
     pa_table = pa.Table.from_pydict(
         {
             "a": pa.array([[1, 2], [3, None], None, [None, None]], type=pa.list_(pa.int64(), 2)),
@@ -227,7 +221,7 @@ def test_table_take_fixed_size_list(idx_dtype) -> None:
     assert len(daft_recordbatch) == 4
     assert daft_recordbatch.column_names() == ["a", "b"]
 
-    indices = Series.from_pylist([0, 1]).cast(idx_dtype)
+    indices = Series.from_pylist([0, 1], dtype=DataType.uint64())
 
     taken = daft_recordbatch.take(indices)
     assert len(taken) == 2
@@ -235,7 +229,7 @@ def test_table_take_fixed_size_list(idx_dtype) -> None:
 
     assert taken.to_pydict() == {"a": [[1, 2], [3, None]], "b": [[4, 5], [6, None]]}
 
-    indices = Series.from_pylist([3, 2]).cast(idx_dtype)
+    indices = Series.from_pylist([3, 2], dtype=DataType.uint64())
 
     taken = daft_recordbatch.take(indices)
     assert len(taken) == 2
@@ -243,7 +237,7 @@ def test_table_take_fixed_size_list(idx_dtype) -> None:
 
     assert taken.to_pydict() == {"a": [[None, None], None], "b": [[None, None], None]}
 
-    indices = Series.from_pylist([3, 2, 2, 2, 3]).cast(idx_dtype)
+    indices = Series.from_pylist([3, 2, 2, 2, 3], dtype=DataType.uint64())
 
     taken = daft_recordbatch.take(indices)
     assert len(taken) == 5
