@@ -34,11 +34,10 @@ pub(crate) fn native_parquet_writer_supported(
     file_schema: &SchemaRef,
 ) -> DaftResult<bool> {
     let (source_type, _) = parse_url(root_dir)?;
-    match source_type {
-        SourceType::File => {}
-        SourceType::S3 => {}
-        _ => return Ok(false),
+    if !source_type.support_native_writer() {
+        return Ok(false);
     }
+
     // TODO(desmond): Currently we do not support extension and timestamp types.
     #[allow(deprecated, reason = "arrow2 migration")]
     let arrow_schema = match file_schema.to_arrow2() {
@@ -111,7 +110,7 @@ pub(crate) fn create_native_parquet_writer(
                 storage_backend,
             )))
         }
-        SourceType::S3 => {
+        source if source.support_native_writer() => {
             let ObjectPath { scheme, .. } = daft_io::utils::parse_object_url(root_dir.as_ref())?;
             let io_config = io_config.ok_or_else(|| {
                 DaftError::InternalError("IO config is required for S3 writes".to_string())
