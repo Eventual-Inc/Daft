@@ -149,9 +149,6 @@ jobs:
       run: |
         source .venv/bin/activate
         uv pip install pyarrow==${{ matrix.pyarrow-version }}
-        if [ "$(printf '%s\n' "${{ matrix.pyarrow-version }}" "22.0.0" | sort -V | head -n1)" != "22.0.0" ]; then
-          uv pip install tensorflow==2.18.1
-        fi
 
     - name: Build library and Test with pytest
       run: |
