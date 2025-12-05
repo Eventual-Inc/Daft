@@ -15,7 +15,19 @@ from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial, reduce
-from typing import TYPE_CHECKING, Any, Callable, Concatenate, Literal, Optional, ParamSpec, TypeVar, Union, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    ClassVar,
+    Concatenate,
+    Literal,
+    Optional,
+    ParamSpec,
+    TypeVar,
+    Union,
+    overload,
+)
 
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
@@ -97,6 +109,8 @@ class DataFrame:
 
     It has columns, where each column has a type and the same number of items (rows) as all other columns.
     """
+
+    _accessors: ClassVar[set[str]] = set()
 
     def __init__(self, builder: LogicalPlanBuilder) -> None:
         """Constructs a DataFrame according to a given LogicalPlan.
