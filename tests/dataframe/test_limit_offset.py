@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import lance
 import pytest
 
 import daft
@@ -7,10 +8,9 @@ from daft import col
 from daft.functions import format
 
 
-@pytest.fixture(params=[True, False])
-def input_df(request):
-    dynamic_batching = request.param
-    with daft.execution_config_ctx(enable_dynamic_batching=dynamic_batching):
+@pytest.fixture(params=["memory", "parquet", "lance"], scope="session")
+def input_df(request, tmp_path_factory):
+    with daft.execution_config_ctx(enable_dynamic_batching=True):
         df = daft.range(start=0, end=1024, partitions=100)
         df = df.with_columns(
             {
@@ -18,7 +18,16 @@ def input_df(request):
                 "email": format("user_{}@daft.ai", df["id"]),
             }
         )
-        return df
+
+        path = str(tmp_path_factory.mktemp(request.param))
+        if request.param == "parquet":
+            df.write_parquet(path)
+            return daft.read_parquet(path)
+        elif request.param == "lance":
+            lance.write_dataset(df.to_arrow(), path)
+            return daft.read_lance(path)
+        else:
+            return df
 
 
 def test_negative_limit(input_df):
