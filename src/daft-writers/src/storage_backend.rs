@@ -6,20 +6,21 @@ use std::{
 };
 
 use async_trait::async_trait;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_runtime::{RuntimeTask, get_io_runtime};
-use daft_io::{IOConfig, S3LikeSource, S3MultipartWriter, S3PartBuffer, get_io_client};
+use daft_io::{IOConfig, get_io_client, multipart::MultipartBuffer};
 use parking_lot::Mutex;
 
-/// A trait for storage backends. Currently only supports files and S3 as backends.
+/// A trait for storage backends. Currently only supports files and some object storages which support multipart upload as backends.
 #[async_trait]
 pub(crate) trait StorageBackend: Send + Sync + 'static {
     type Writer: Write + Send + Sync;
 
-    /// Create the output buffer (buffered file writer, S3 buffer, etc).
+    /// Create the output buffer, the upstream(e.g. parquet writer) will write data to this buffer,
+    /// and the writer will flush the buffer to destination storage.
     async fn create_writer(&mut self, filename: &Path) -> DaftResult<Self::Writer>;
 
-    /// Finalize the write operation (close file, await upload to S3, etc).
+    /// Finalize the write operation (close file, flush buffer and await upload to object storage, etc).
     async fn finalize(&mut self) -> DaftResult<()>;
 }
 
@@ -51,32 +52,12 @@ impl StorageBackend for FileStorageBackend {
     }
 }
 
-pub(crate) struct S3StorageBackend {
-    scheme: String,
-    io_config: IOConfig,
-    s3_client: Option<Arc<S3LikeSource>>,
-    s3part_buffer: Option<Arc<Mutex<S3PartBuffer>>>,
-    upload_task: Option<RuntimeTask<DaftResult<()>>>,
+/// A Send and Sync wrapper around MultipartBuffer.
+pub(crate) struct SharedMultiPartBuffer {
+    inner: Arc<Mutex<MultipartBuffer>>,
 }
 
-impl S3StorageBackend {
-    pub(crate) fn new(scheme: String, io_config: IOConfig) -> Self {
-        Self {
-            scheme,
-            io_config,
-            s3_client: None,
-            s3part_buffer: None,
-            upload_task: None,
-        }
-    }
-}
-
-/// A Send and Sync wrapper around S3PartBuffer.
-pub(crate) struct SharedS3PartBuffer {
-    inner: Arc<Mutex<S3PartBuffer>>,
-}
-
-impl Write for SharedS3PartBuffer {
+impl Write for SharedMultiPartBuffer {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.inner.lock().write(buf)
     }
@@ -86,72 +67,76 @@ impl Write for SharedS3PartBuffer {
     }
 }
 
+pub(crate) struct ObjectStorageBackend {
+    scheme: String,
+    io_config: IOConfig,
+    upload_task: Option<RuntimeTask<DaftResult<()>>>,
+    writer_buffer: Option<Arc<Mutex<MultipartBuffer>>>,
+}
+
+impl ObjectStorageBackend {
+    pub(crate) fn new(scheme: String, io_config: IOConfig) -> Self {
+        Self {
+            scheme,
+            io_config,
+            upload_task: None,
+            writer_buffer: None,
+        }
+    }
+}
+
 #[async_trait]
-impl StorageBackend for S3StorageBackend {
-    type Writer = SharedS3PartBuffer;
+impl StorageBackend for ObjectStorageBackend {
+    type Writer = SharedMultiPartBuffer;
 
     async fn create_writer(&mut self, filename: &Path) -> DaftResult<Self::Writer> {
         let filename = filename.to_string_lossy().to_string();
-        let part_size = NonZeroUsize::new(self.io_config.s3.multipart_size as usize)
-            .expect("S3 multipart part size must be non-zero");
-        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
 
-        // Create the S3 part buffer that interfaces with parquet-rs.
-        let s3part_buffer = Arc::new(Mutex::new(S3PartBuffer::new(part_size, tx)));
-        self.s3part_buffer = Some(s3part_buffer.clone());
+        let io_config = Arc::new(self.io_config.clone());
+        let io_client = get_io_client(true, io_config)?;
 
-        if self.s3_client.is_none() {
-            // Initialize S3 client if needed.
-            let io_config = Arc::new(self.io_config.clone());
-
-            let io_client = get_io_client(true, io_config)?;
-            let s3_client = io_client
-                .get_source(&format!("s3://{}", filename))
-                .await?
-                .as_any_arc()
-                .downcast()
-                .unwrap();
-            self.s3_client = Some(s3_client);
-        }
-
-        // Spawn background upload thread.
-        let s3_client = self
-            .s3_client
-            .clone()
-            .expect("S3 client must be initialized");
         let uri = format!("{}://{}", self.scheme, filename);
+        let mut writer = match io_client
+            .get_source(&uri)
+            .await?
+            .create_multipart_writer(&uri)
+            .await?
+        {
+            Some(writer) => writer,
+            None => {
+                return Err(DaftError::InternalError(format!(
+                    "The source {} does not support multipart upload",
+                    self.scheme
+                )));
+            }
+        };
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        let part_size = NonZeroUsize::new(writer.part_size())
+            .expect("Object multipart part size must be non-zero");
+        let multipart_buffer = Arc::new(Mutex::new(MultipartBuffer::new(part_size, tx)));
 
         let io_runtime = get_io_runtime(true);
-
-        let mut s3_multipart_writer = S3MultipartWriter::create(
-            uri,
-            part_size,
-            NonZeroUsize::new(self.io_config.s3.multipart_max_concurrency as usize)
-                .expect("S3 multipart concurrent uploads per object must be non-zero"),
-            s3_client,
-        )
-        .await
-        .expect("Failed to create S3 multipart writer");
-
         let background_task = io_runtime.spawn(async move {
             while let Some(part) = rx.recv().await {
-                s3_multipart_writer.write_part(part).await?;
+                writer.put_part(part).await?;
             }
-            s3_multipart_writer.shutdown().await.map_err(|e| e.into())
+            writer.complete().await.map_err(|e| e.into())
         });
-
         self.upload_task = Some(background_task);
+        self.writer_buffer = Some(multipart_buffer.clone());
 
-        Ok(SharedS3PartBuffer {
-            inner: s3part_buffer,
+        Ok(SharedMultiPartBuffer {
+            inner: multipart_buffer,
         })
     }
 
     async fn finalize(&mut self) -> DaftResult<()> {
-        let part_buffer = self
-            .s3part_buffer
+        let write_buffer = self
+            .writer_buffer
             .take()
-            .expect("S3 part buffer must be initialized for multipart upload");
+            .expect("Writer buffer must be initialized for multipart upload");
+
         let upload_task = self
             .upload_task
             .take()
@@ -161,8 +146,8 @@ impl StorageBackend for S3StorageBackend {
 
         io_runtime
             .spawn_blocking(move || -> DaftResult<()> {
-                // Close the S3PartBuffer, this flushes any remaining data to S3 as the final part.
-                part_buffer.lock().shutdown()?;
+                // Close the MultiPartBuffer, this flushes any remaining data to object store as the final part.
+                write_buffer.lock().shutdown()?;
                 Ok(())
             })
             .await??;

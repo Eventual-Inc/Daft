@@ -180,7 +180,7 @@ pub struct LSResult {
 
 use async_stream::stream;
 
-use crate::range::GetRange;
+use crate::{multipart::MultipartWriter, range::GetRange};
 
 #[async_trait]
 pub trait ObjectSource: Sync + Send {
@@ -189,6 +189,15 @@ pub trait ObjectSource: Sync + Send {
     /// Many object sources backed by http servers may not support range requests.
     /// So we need to check if the source supports range requests.
     async fn supports_range(&self, uri: &str) -> super::Result<bool>;
+
+    /// Create a multipart writer to upload via multipart upload.
+    /// Return None if the source does not support multipart upload.
+    async fn create_multipart_writer(
+        self: Arc<Self>,
+        _uri: &str,
+    ) -> super::Result<Option<Box<dyn MultipartWriter>>> {
+        Ok(None)
+    }
 
     /// Return the bytes with given range.
     /// Will return [`Error::InvalidRangeRequest`] if range start is greater than range end
