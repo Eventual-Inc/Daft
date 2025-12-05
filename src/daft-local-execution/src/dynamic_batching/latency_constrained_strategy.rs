@@ -296,7 +296,7 @@ mod tests {
 
         assert_eq!(state.current_batch_size, 1);
         assert_eq!(state.b_low, 1);
-        assert_eq!(state.b_high, 256);
+        assert_eq!(state.b_high, 512);
     }
 
     #[test]
